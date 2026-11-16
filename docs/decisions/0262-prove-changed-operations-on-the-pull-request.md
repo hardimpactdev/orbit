@@ -68,6 +68,20 @@ The exception covers exactly this code:
 
 A fixture case that tests only this code stays when it is reasonably expected in normal use. A case for a rare situation of this code follows the rare-case rule above too: it is designed away or dropped. A fixture case that tests other code follows the rule above. When a file holds both kinds, only its other cases move. The [fixture retirement](/reference/fixture-retirement) pages name the cases that stay.
 
+### When a family retires
+
+A family's fixtures retire only when the proof fleet hosts Instances cheaply, so that the proof of a pull request fits in the five minutes it may take ([Implementation loop](/reference/implementation-loop)). Decided by the owner on 2026-11-16. Until then, the fixtures stay.
+
+A pull request's proof fits only when its slowest batch fits. For the Instance cases, that needs all of these together:
+
+- The base snapshot of the copy holds the inner Incus, the prepared Instance image and a `proof-web` default with its seed. A batch then makes only clones in its setup.
+- A batch holds about 4 deployment cases, or about 6 clone, sleep or wake cases.
+- A copy has a second Instance host, so two writers run at the same time.
+- The selection is per phase: a change to one phase of the container playbook selects only the cases of that phase.
+- Each batch of the selection gets one free proof place.
+
+Then a full selection is about eight batches of under five minutes each, and needs about eight free places. A narrow selection needs one or two. [Fixture retirement: instance containers](/reference/fixture-retirement/instance-container#the-five-minute-math) has the detail.
+
 ### Quick checks stay where they run
 
 The quick checks of a public repository run on GitHub-hosted runners, as today. Private repositories run only on Orbit's runners. Code from a fork never runs on Orbit's runners; its proof follows the existing outside-proof rule.
@@ -75,8 +89,8 @@ The quick checks of a public repository run on GitHub-hosted runners, as today. 
 ### Build order
 
 1. Make the proof blocking again, with its cases selected per changed operation. This needs proof capacity on more than one Node ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies)).
-2. Remove the after-merge consumers and the full set: `Main deferred fixtures`, `Main full set`, `Main copy proof`, the answer collector and the failure sweep, with their scripts and repository variables.
-3. Retire the fixtures, file by file: move each realistic uncovered case into a proof case, then delete the file and its registration.
+2. Remove the after-merge consumers and the full set: `Main deferred fixtures`, `Main full set`, `Main copy proof`, the answer collector and the failure sweep, with their scripts and repository variables. The 23 fixture files whose registration marks them or some of their cases `after_merge` become units that a pull request selects by their inputs, like every other fixture. No coverage is dropped.
+3. Retire the fixtures, file by file: move each realistic uncovered case into a proof case, then delete the file and its registration. A family retires only when its proof fits the condition in [When a family retires](#when-a-family-retires).
 4. Absorb this ADR into [Implementation loop](/reference/implementation-loop#ci) and the proof pages, and retire [Main full set](/reference/main-full-set).
 
 ## Rejected alternatives
