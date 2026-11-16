@@ -2301,7 +2301,7 @@ The fleet's egress proxy lies in the Instance container's own bridge, in `10.253
 
 #### Raise a default to 2,000,000
 
-The window raises the converted default 2454 from 1,165,536 to 2,000,000 once, after the release. Copies keep their size for life, and `gateway:instance-idmap-size` refuses with `instance.idmap_size_copies_smaller` while a copy at 1,165,536 exists. **B** is a hand step on the Node, **G** a command on the Gateway host, **P** a product Operation.
+The window raises the converted default 2454 from 1,165,536 to 2,000,000 once, after the release and before the default's next deployment: at 1,165,536 the refresh's `host` part fails at the stock image build of `nested-app-dev` (`Not enough uid/gid available for the container`), so that deployment fails and keeps the old seed. Copies keep their size for life, and `gateway:instance-idmap-size` refuses with `instance.idmap_size_copies_smaller` while a copy at 1,165,536 exists. **B** is a hand step on the Node, **G** a command on the Gateway host, **P** a product Operation.
 
 | Step | Who | Action |
 | --- | --- | --- |
