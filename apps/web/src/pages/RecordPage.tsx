@@ -28,6 +28,7 @@ import type {
     Schedule,
 } from "../api/types";
 import {
+    bestEffortWarnings,
     deploymentHealthy,
     firewallHealthy,
     instancePlacement,
@@ -703,6 +704,11 @@ export function DeploymentPage() {
                         },
                         { name: "Failed step", value: deployment.failed_step },
                         { name: "Error code", value: deployment.error_code },
+                        {
+                            name: "Best-effort steps",
+                            value: bestEffortWarnings(deployment),
+                            warn: bestEffortWarnings(deployment).length > 0,
+                        },
                         { name: "Selected release", value: deployment.selected_release },
                         { name: "Triggered by", value: deployment.triggered_by },
                         {

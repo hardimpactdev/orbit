@@ -254,6 +254,7 @@ sequenceDiagram
     %%> Result:
     %%> - deployment 88 succeeds with its release and commit
     %%> - a container default deletes the Processes marked `removing` and names them in the result's `processes_removed`; a failed run keeps them `removing`
+    %%> - a container default records each best-effort step's exit code in the result's `best_effort_steps`, never its output; a nonzero code does not fail the deployment
     %%> - task #5150 succeeds
   else a required step fails
     N--xSW: exit ≠ 0 or timeout

@@ -13,6 +13,10 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class InstanceDeploymentData extends Data
 {
+    /**
+     * @param  list<array{name: string, exit_code: int|null}>|null  $bestEffortSteps  The exit code of each best-effort development deploy
+     *                                                                                step that ran; null is a line that was not a code.
+     */
     public function __construct(
         public int $id,
         public int $instanceId,
@@ -30,6 +34,7 @@ final class InstanceDeploymentData extends Data
         public ?string $triggeredBy,
         public ?int $callerNodeId,
         public ?string $callerNodeName,
+        public ?array $bestEffortSteps = null,
     ) {}
 
     public static function fromModel(InstanceDeployment $deployment): self
@@ -51,6 +56,7 @@ final class InstanceDeploymentData extends Data
             triggeredBy: $deployment->triggered_by,
             callerNodeId: $deployment->caller_node_id,
             callerNodeName: $deployment->callerNode?->name,
+            bestEffortSteps: $deployment->best_effort_steps,
         );
     }
 }

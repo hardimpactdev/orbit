@@ -14,7 +14,7 @@ covers:
 
 # Operations
 
-Swamp is the sole executor of task groups. The Gateway stores task state and runs requested keyed primitives. Operation recovery resumes a primitive without choosing the next task phase. An old task VM row that reads `parked` reports stopped power only after provider confirmation; an unconfirmed one reports unknown power.
+Swamp is the sole executor of task groups. The Gateway stores task state and runs requested keyed primitives. Operation recovery resumes a primitive without choosing the next task phase.
 
 A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), is a record in the Gateway database with named steps. Swamp runs it: the Gateway admits the intent, starts one native workflow, and projects the workflow's result into the record ([How an operation runs](#how-an-operation-runs)). The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
 
@@ -356,7 +356,7 @@ A check returns `{ outcome, deliverables, check_id, commit, head, tree, output, 
 
 A kind that leaves the registry keeps its old Operations as history. `operation:list`, `operation:show` and the web views show them with their stored kind, status and result; no projection class is needed to read them.
 
-The reconcile pass reads no Swamp run for them. An open one ends on a cancel request (`cancelled`), or as `failed` with `operation.timed_out` at the history budget of its kind ([Native run budgets](#native-run-budgets)). The release's idle guard waits only for the kind families it names (Instance lifecycle, deploy, Conn and Process kinds), so it does not wait for an old task VM row. The task VM kinds `task_vm.image_refresh`, `task_vm.hub_converge`, `task_vm.resume` and `task_vm.slot_release` left the registry this way, and so did the [Pi task loop](/reference/old-paths#the-pi-task-loop) kinds `tasks.prep`, `tasks.prep_fix`, `tasks.build`, `tasks.review_round`, `tasks.maintenance`, `tasks.package`, `tasks.script`, `tasks.idle_save` and `tasks.turn`.
+The reconcile pass reads no Swamp run for them. An open one ends on a cancel request (`cancelled`), or as `failed` with `operation.timed_out` at the history budget of its kind ([Native run budgets](#native-run-budgets)). The release's idle guard waits only for the kind families it names (Instance lifecycle, deploy, Conn and Process kinds). The task VM kinds `task_vm.image_refresh`, `task_vm.hub_converge`, `task_vm.resume` and `task_vm.slot_release` left the registry this way, and so did the [Pi task loop](/reference/old-paths#the-pi-task-loop) kinds `tasks.prep`, `tasks.prep_fix`, `tasks.build`, `tasks.review_round`, `tasks.maintenance`, `tasks.package`, `tasks.script`, `tasks.idle_save` and `tasks.turn`.
 
 ## Start an operation
 

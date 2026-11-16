@@ -10,13 +10,10 @@ use App\Domain\Routes\NativeRouteRemovalCompletion;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\WebSocket\WebSocketRegistry;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
-use App\Models\TaskVm;
-use App\Models\TaskVmImageBuild;
 use App\Models\WebSocketRuntime;
 use App\Support\ValidatedData;
 use Illuminate\Container\Attributes\Tag;
@@ -72,8 +69,6 @@ final readonly class NodeRemovalRecords
             $this->registry->abandonNode($node->id);
             Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->get()->each(static fn (Process $process): bool => $process->delete() ?? false);
             $node->roles()->delete();
-            TaskVm::query()->where('host_node_id', $node->id)->delete();
-            TaskVmImageBuild::query()->where('host_node_id', $node->id)->whereIn('state', [TaskVmImageBuildState::Succeeded, TaskVmImageBuildState::Failed])->delete();
             WebSocketRuntime::query()->where('node_id', $node->id)->delete();
             foreach ($this->hooks as $hook) {
                 $hook->removing($node);

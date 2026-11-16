@@ -25,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $triggered_by
  * @property string $kind `deploy` or `rollback`
  * @property list<array<string, mixed>>|null $events
+ * @property list<array{name:string,exit_code:?int}>|null $best_effort_steps The exit code of each best-effort development deploy step that ran
  * @property-read Instance $instance
  * @property-read Node|null $callerNode
  */
@@ -51,6 +52,7 @@ final class InstanceDeployment extends Model
         'caller_node_id',
         'kind',
         'events',
+        'best_effort_steps',
     ];
 
     public const string Rollback = 'rollback';
@@ -76,6 +78,7 @@ final class InstanceDeployment extends Model
             'duration_seconds' => 'integer',
             'caller_node_id' => 'integer',
             'events' => 'array',
+            'best_effort_steps' => 'array',
         ];
     }
 }

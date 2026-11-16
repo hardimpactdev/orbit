@@ -21,6 +21,7 @@
             "triggered_by": "swamp:auto-deploy",
             "caller_node_id": 1,
             "caller_node_name": "gateway",
+            "best_effort_steps": null,
             "events": [
                 {
                     "type": "phase",

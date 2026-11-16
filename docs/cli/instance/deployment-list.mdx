@@ -34,7 +34,7 @@ The list shows what the Gateway recorded. It does not contact any Node, so it wo
 | `DURATION` | The run time in seconds, such as `42s`. Empty until the run finishes. |
 | `STATUS` | `running`, `succeeded`, or `failed`. A cancelled run is `failed` with the error code `deployment.cancelled`, and a refused or timed-out run is `failed` too. |
 
-A missing value shows `—`. An empty history says `No deployment history found.`. The human output ends with the request ID. With `--json`, stdout holds `{ deployments, request_id }`, and each row has `id`, `instance_id`, `kind`, `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status`, `failed_step`, `error_code`, `selected_release`, `triggered_by`, `caller_node_id` and `caller_node_name`. The Gateway sets the caller Node for every run. See [`instance:deployment:show`](/cli/instance/deployment-show) for one run.
+A missing value shows `—`. An empty history says `No deployment history found.`. The human output ends with the request ID. With `--json`, stdout holds `{ deployments, request_id }`, and each row has `id`, `instance_id`, `kind`, `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status`, `failed_step`, `error_code`, `selected_release`, `triggered_by`, `caller_node_id`, `caller_node_name` and `best_effort_steps`: the exit code of each best-effort development deploy step that ran in a container deployment, as `{name, exit_code}`, or `null`. The Gateway sets the caller Node for every run. See [`instance:deployment:show`](/cli/instance/deployment-show) for one run.
 
 ## Errors
 

@@ -18,9 +18,6 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskPublishProjection;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\NativeStepFailure;
@@ -33,7 +30,6 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -98,7 +94,6 @@ it('publishes a task copy through its container, with its start commit and the p
         ->and($workspace['branch'])->toBe('task-'.$group->id)
         ->and($workspace['start'])->toBe(str_repeat('a', 40))
         ->and($workspace['environment_path'])->toBe($environment)
-        ->and(TaskVm::query()->count())->toBe(0)
         ->and(Operation::query()->where('kind', 'task_vm.resume')->count())->toBe(0);
 })->with([
     'root .env' => ['public', '.env'],
@@ -427,12 +422,9 @@ function vmPublishWorld(): array
         'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => $address, 'public_ssh_port' => 22,
         'wireguard_ip' => $address, 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
     ]));
-    $host = $node('shark', '10.44.0.11');
     $guest = $node('tvm-598', '10.44.0.137');
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main']);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'orchestration' => 'external', 'status' => TaskGroupStatus::Running]);
-    TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-598',
-        'state' => TaskVmState::Ready, 'address' => '10.251.78.33', 'wireguard_ip' => '10.44.0.137', 'size' => TaskVmSize::Normal, 'pi_token' => str_repeat('p', 64)]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
         'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Active]);
     $group->update(['taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id]);

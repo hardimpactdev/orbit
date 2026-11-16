@@ -6,7 +6,10 @@ namespace Orbit\Sdk\Responses\Deployments;
 
 final readonly class InstanceDeploymentResponse
 {
-    /** @param list<InstanceDeploymentEvent>|null $events */
+    /**
+     * @param  list<InstanceDeploymentEvent>|null  $events
+     * @param  list<array{name:string,exit_code:?int}>|null  $bestEffortSteps  The exit code of each best-effort development deploy step that ran
+     */
     public function __construct(
         public int $id,
         public int $instanceId,
@@ -25,6 +28,7 @@ final readonly class InstanceDeploymentResponse
         public string $requestId,
         public ?int $callerNodeId = null,
         public ?string $callerNodeName = null,
+        public ?array $bestEffortSteps = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -60,7 +64,26 @@ final readonly class InstanceDeploymentResponse
             requestId: $requestId,
             callerNodeId: is_int($data['caller_node_id'] ?? null) ? $data['caller_node_id'] : null,
             callerNodeName: is_string($data['caller_node_name'] ?? null) ? $data['caller_node_name'] : null,
+            bestEffortSteps: self::bestEffortSteps($data['best_effort_steps'] ?? null),
         );
+    }
+
+    /** @return list<array{name:string,exit_code:?int}>|null */
+    private static function bestEffortSteps(mixed $rows): ?array
+    {
+        if (! is_array($rows)) {
+            return null;
+        }
+
+        $steps = [];
+
+        foreach ($rows as $row) {
+            if (is_array($row) && is_string($row['name'] ?? null)) {
+                $steps[] = ['name' => $row['name'], 'exit_code' => is_int($row['exit_code'] ?? null) ? $row['exit_code'] : null];
+            }
+        }
+
+        return $steps;
     }
 
     /**
@@ -99,6 +122,7 @@ final readonly class InstanceDeploymentResponse
             'triggered_by' => $this->triggeredBy,
             'caller_node_id' => $this->callerNodeId,
             'caller_node_name' => $this->callerNodeName,
+            'best_effort_steps' => $this->bestEffortSteps,
             'events' => $this->events === null ? null : array_map(
                 static fn (InstanceDeploymentEvent $event): array => $event->toArray(),
                 $this->events,

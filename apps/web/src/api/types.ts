@@ -39,7 +39,11 @@ export type ToolInventory = Omit<Schema<"ToolInventory">, "managers"> & {
 };
 export type Database = Schema<"DatabaseConnection">;
 export type DatabaseUser = Schema<"DatabaseUser">;
-export type Deployment = Schema<"InstanceDeployment">;
+export type Deployment = Omit<Schema<"InstanceDeployment">, "best_effort_steps"> & {
+    best_effort_steps: BestEffortStep[] | null;
+};
+/** A best-effort development deploy step that ran: its exit code, or null when it printed none. */
+export type BestEffortStep = { name: string; exit_code: number | null };
 export type DoctorReport = Schema<"DoctorReport">;
 
 export type DeploymentEvent = {

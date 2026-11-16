@@ -41,6 +41,11 @@ describe('instance deployment contract', function (): void {
         run_contract('instances/instance-deployment-show/default', 'instance:deployment:show', ['deployment' => '1'], 'instances/instance-deployment-show/default.human.txt', 0);
         run_contract('instances/instance-deployment-show/default', 'instance:deployment:show', ['deployment' => '1', '--json' => true], 'instances/instance-deployment-show/default.json', 0);
     });
+
+    it('warns about each best-effort step of a deployment that did not exit 0, and keeps the codes in JSON', function (): void {
+        run_contract('instances/instance-deployment-show/best-effort', 'instance:deployment:show', ['deployment' => '1'], 'instances/instance-deployment-show/best-effort.human.txt', 0);
+        run_contract('instances/instance-deployment-show/best-effort', 'instance:deployment:show', ['deployment' => '1', '--json' => true], 'instances/instance-deployment-show/best-effort.json', 0);
+    });
 });
 
 it('renders automatic admission resolution from the Gateway fixture', function (): void {
