@@ -88,6 +88,9 @@ cases = [
   "a normal container's create and deploy start run no Club key task and no Club key command",
   "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk",
   "a default with an inner volume seeds the container and the volume under one name, retakes both, and keeps only the current pair",
+  "the proof default's retake keeps the seed that a CI Node holds as its one base pair, and a second retake at that commit keeps it",
+  "the proof default's retake at a new commit keeps the seed that a CI Node holds as the base and drops every other base pair",
+  "the proof default's retake at a new commit keeps the base it holds while the Gateway names it, and drops it once the Gateway names none",
   "the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes",
   "a failed volume snapshot deletes the container half of the seed, keeps the older pair and fails the seed by name",
   "a same-commit retake of a pair takes both new halves under next- first, and a failure of either half keeps the old pair whole",
@@ -98,7 +101,7 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 4949
+cost = 5235
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   # The run after a fast wake of its Operation (41s locally, run in full before the PR): a 72nd slice would push the file to 9 hosted
@@ -162,8 +165,8 @@ after_merge_cases = [
 ]
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
-# 72 slices give each of the 72 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 72
+# 75 slices give each of the 75 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 75
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -275,3 +278,6 @@ inputs = [
   "a normal container's create and deploy start run no Club key task and no Club key command" = 79 # hosted run 43787856522: 68.5s x 1.15, rounded up
   "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk" = 123 # hosted run 43787856522: 106.2s x 1.15, rounded up
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left" = 96 # hosted run 43787856522: 83.1s x 1.15, rounded up
+  "the proof default's retake keeps the seed that a CI Node holds as its one base pair, and a second retake at that commit keeps it" = 98 # LOCAL measure until a hosted run: 49s alone x 2
+  "the proof default's retake at a new commit keeps the seed that a CI Node holds as the base and drops every other base pair" = 96 # LOCAL measure until a hosted run: 48s alone x 2
+  "the proof default's retake at a new commit keeps the base it holds while the Gateway names it, and drops it once the Gateway names none" = 92 # LOCAL measure until a hosted run: 46s alone x 2

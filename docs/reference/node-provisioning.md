@@ -321,6 +321,8 @@ A [`node:converge`](/cli/node/converge) of the Node runs the same node phase in 
 
 The default's Node gets no listener and no change to its Incus daemon. Each seed copy adds a client remote of root there for each CI Node, `proof-node-<id>`, when it is missing.
 
+Through the trust, a seed copy may also rename the holder's seed snapshots on the CI Node, in `orbit-instances-nested` only. It gives them the name of the default's base, so the refresh sends only the change ([How the seed moves](/reference/development-containers#how-the-seed-moves)).
+
 When a converge finds that the Node offers no proof places, or that the proof Project has no default, the converge removes the trust entry `orbit-proof-seed`, unsets `core.https_address` when it is the listener above, and deletes both UFW rules. It can name the allow rule only while the proof Project has a default.
 
 A removal of the `ci-runner` role does the same. It stops the listener and removes the trust in a phase of its own, before the firewall rules go, so the port is never open to every WireGuard member while Incus still listens. The Node finds the trust entry by its name, so the Gateway never needs its fingerprint. The holder stays, as the other Incus resources of the branch do.

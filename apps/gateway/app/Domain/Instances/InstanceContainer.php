@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
@@ -300,6 +301,8 @@ final readonly class InstanceContainer
                 ? ['allowed_devices' => $this->allowedDevices($instance, $runtime), 'club_key' => NestedFleetClubKey::intent()] : []),
             // Only a runtime that records an inner volume names it; absent, every step keeps the directory pool of Instance 2454.
             ...(NestedFleetInnerVolume::intent($runtime) === null ? [] : ['inner_volume' => NestedFleetInnerVolume::intent($runtime)]),
+            // The proof default's seed that a CI Node holds: its retake keeps it as the base of the next seed copy.
+            ...(($base = app(ProofSeeds::class)->base($instance, $runtime)) === null ? [] : ['seed_base' => $base]),
             'acl' => $runtime->container_name, 'nic_acl' => InstanceHostIntent::NicAcl,
             'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
             'bridge_admitted_at' => $admittedAt,
