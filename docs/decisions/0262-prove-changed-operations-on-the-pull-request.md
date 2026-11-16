@@ -52,6 +52,20 @@ The shape-gate fixtures are retired. For each fixture file, a case that a proof 
 
 The Swamp shape gate's linters and validators stay quick checks. They test the source, not an operation's behavior.
 
+### Exception: the code that makes the proof copy
+
+No proof can cover the code that makes, starts, resets or removes the proof copy and its nested fleet. The proof runs inside that copy, and the released code makes the copy, not the candidate. So the fixture cases of this code stay quick checks with stand-ins. Decided by the owner on 2026-11-16.
+
+The exception covers exactly this code:
+
+- The nested fleet in an Instance container: `swamp/ansible/instance_nested.py`, `swamp/ansible/instance_nested_club_key.sh`, `swamp/ansible/instance_fleet_shrink.py`, `swamp/ansible/fleet-converge-inputs.json`, `swamp/ansible/tasks/instance-nested-club-key.yml` and `swamp/ansible/tasks/instance-fleet*.yml`.
+- The nested-fleet branch of `swamp/ansible/instance-container.yml` and `swamp/ansible/instance-container-destroy.yml`: the nested project and image, the start gate, the inner volume and its seed pair, the Club key, the fleet step and the release of the CI place (`swamp/ansible/tasks/task-copy-base-names.yml`).
+- The proof default and its seed: `swamp/ansible/tasks/instance-proof-checkout.yml`, `swamp/ansible/proof-seed-copy.yml`, `swamp/ansible/tasks/proof-seed-*.yml` and `swamp/workflows/workflow-operation-instance-seed-copy.yaml`.
+- The proof copy and its fleet: the fleet step of `swamp/workflows/workflow-operation-instance-start.yaml`, `swamp/workflows/workflow-operation-proof-run-copy.yaml`, `swamp/workflows/workflow-proof-copy-fleet-reset.yaml`, `swamp/workflows/workflow-proof-fleet-*.yaml`, `swamp/ansible/proof-gateway.yml`, `swamp/ansible/proof-observers.yml`, `swamp/ansible/proof-observer-facts.php` and `swamp/ansible/tasks/proof-gateway-release.yml`.
+- The task VM's proof fleet: `swamp/ansible/task-vm-*.yml` and `swamp/ansible/tasks/task-vm-*.yml`.
+
+A fixture case that tests only this code stays. A fixture case that tests other code follows the rule above. When a file holds both kinds, only its other cases move. The [classification of the instance-container fixtures](/reference/fixture-retirement/instance-container) names the cases that stay there.
+
 ### Quick checks stay where they run
 
 The quick checks of a public repository run on GitHub-hosted runners, as today. Private repositories run only on Orbit's runners. Code from a fork never runs on Orbit's runners; its proof follows the existing outside-proof rule.
@@ -76,6 +90,7 @@ The quick checks of a public repository run on GitHub-hosted runners, as today. 
 - A failing proof stops the merge, not main.
 - Orbit deletes about 179 test files, their cost files, and the after-merge workflows and scripts.
 - Rare failure paths lose their stand-in tests. Each one needs a design that makes it impossible, or a proof case if it is realistic.
+- The fixtures of the code that makes the proof copy stay. They are the only test of that code.
 
 ## Affects
 
