@@ -9,7 +9,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 
 uses(LazilyRefreshDatabase::class);
@@ -83,7 +83,7 @@ describe('a task group cannot declare a topology', function (): void {
 
         $group = Task::topLevel()->sole();
         expect($response->json('data.subtasks.0'))->toHaveKey('title')->not->toHaveKey('topology')
-            ->and(DB::table('tasks')->where('parent_id', $group->id)->value('topology'))->toBeNull();
+            ->and(Schema::hasColumn('tasks', 'topology'))->toBeFalse();
     });
 
     it('refuses a new subtask that declares a topology', function (array $topology): void {
@@ -112,7 +112,7 @@ describe('a task group cannot declare a topology', function (): void {
         $response = topology_refusal_send('POST', '/api/v1/tasks', ['parent_id' => $group->id, ...topology_refusal_subtask([])])->assertStatus(201);
 
         expect($response->json('data'))->toHaveKey('title')->not->toHaveKey('topology')
-            ->and(DB::table('tasks')->where('parent_id', $group->id)->value('topology'))->toBeNull();
+            ->and(Schema::hasColumn('tasks', 'topology'))->toBeFalse();
     });
 
     it('refuses an update that gives a subtask a topology', function (array $topology): void {
@@ -123,7 +123,7 @@ describe('a task group cannot declare a topology', function (): void {
 
         $response->assertStatus(422);
         expect($response->json('error.code'))->toBe('tasks.orchestration_unsupported')
-            ->and(DB::table('tasks')->where('id', $subtask->id)->value('topology'))->toBeNull();
+            ->and(Schema::hasColumn('tasks', 'topology'))->toBeFalse();
     })->with(['valid' => [['app-dev']], 'unknown node' => [['x']]]);
 
     it('ignores an update that sends an empty topology', function (): void {
@@ -137,12 +137,12 @@ describe('a task group cannot declare a topology', function (): void {
             ->and($response->json('data'))->not->toHaveKey('topology');
     });
 
-    it('neither reads nor shows a topology stored before the field went', function (): void {
+    it('has no column for a topology and shows none on a group\'s subtasks', function (): void {
         $group = ($this->group)();
         foreach (['First', 'Second'] as $index => $title) {
-            $stored = $group->tasks()->create(['title' => $title, 'brief' => 'Do it', 'position' => $index + 1]);
-            DB::table('tasks')->where('id', $stored->id)->update(['topology' => json_encode(['app-dev', 'app-prod', 'app-prod-2'])]);
+            $group->tasks()->create(['title' => $title, 'brief' => 'Do it', 'position' => $index + 1]);
         }
+        expect(Schema::hasColumn('tasks', 'topology'))->toBeFalse();
 
         $response = topology_refusal_send('POST', '/api/v1/tasks', ['parent_id' => $group->id, ...topology_refusal_subtask([])]);
 
