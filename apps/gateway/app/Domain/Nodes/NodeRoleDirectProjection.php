@@ -87,6 +87,11 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
             if (NativeRunResult::stepStatus($raw, 'Apply Analytics runtime-0') === 'succeeded') {
                 app(NodeRoleRuntimeProjection::class)->record($snapshot);
             }
+            // The ci-runner converge reads its CI bridge, also when the run then fails on a clash with the Instance bridge.
+            $ciBridge = ValidatedData::object(ValidatedData::object($raw['steps'] ?? [])[NodeBridges::CiBridgeStep] ?? [])['stdout'] ?? null;
+            if ($snapshot['role'] === RoleName::CiRunner->value && is_string($ciBridge)) {
+                NodeBridges::recordCiBridge(ValidatedData::integer($operation->node_id), $ciBridge);
+            }
             $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $snapshot['role'])->firstOrFail();
             if ($proven) {
                 $assignment->markConvergenceActive();

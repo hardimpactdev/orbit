@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Actions\Schedules\RunScheduleAction;
 use App\Data\Nodes\NodeTaskVmsData;
 use App\Domain\Doctor\DoctorFamily;
@@ -20,6 +21,7 @@ use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeBridges;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
@@ -50,6 +52,7 @@ use App\Models\ProofSeed;
 use App\Models\Schedule;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketAppTarget;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -290,6 +293,65 @@ function proofSeedDefault(string $takenAt = '2026-11-16 00:00:00'): Instance
 
     return $default->refresh();
 }
+
+describe('the CI bridge of a Node (docs/reference/development-containers.md#nodes)', function (): void {
+    it('allocates no Instance bridge in a /24 that any Node\'s orbitci0 holds', function (): void {
+        $other = ciNode(3, LifecycleStatus::Active, 'ci-other', '10.44.0.31');
+        NodeBridges::recordCiBridge($other->id, '10.253.0.1/24');
+        $node = ciNode();
+        NodeBridges::recordCiBridge($node->id, '10.253.1.1/24');
+
+        expect($other->refresh()->ci_bridge)->toBe('10.253.0.0/24')
+            ->and(app(AllocateInstanceBridgeAction::class)->execute($node->refresh()))->toBe('10.253.2.0/24');
+    });
+
+    it('gives back an unused Instance bridge that clashes with the recorded CI bridge, so the next admission allocates around it', function (): void {
+        $node = ciNode();
+        expect(app(AllocateInstanceBridgeAction::class)->execute($node))->toBe('10.253.0.0/24');
+
+        NodeBridges::recordCiBridge($node->id, '10.253.0.1/24');
+        expect($node->refresh()->instance_bridge)->toBeNull()
+            ->and(app(AllocateInstanceBridgeAction::class)->execute($node))->toBe('10.253.1.0/24');
+        // An unreadable read records nothing.
+        NodeBridges::recordCiBridge($node->id, '');
+        NodeBridges::recordCiBridge($node->id, 'none');
+        expect($node->refresh()->ci_bridge)->toBe('10.253.0.0/24');
+    });
+
+    it('keeps an Instance bridge that a container uses, whatever the CI bridge', function (): void {
+        $node = containerDefaultNode();
+        $bridge = app(AllocateInstanceBridgeAction::class)->execute($node);
+        recordedNestedInstance(otherProject('tool', true), nestedSwitch($node, true));
+
+        NodeBridges::recordCiBridge($node->id, $bridge);
+        expect($node->refresh()->instance_bridge)->toBe($bridge)
+            // The database keeps the rule too.
+            ->and(fn () => Node::query()->whereKey($node->id)->update(['instance_bridge' => null]))->toThrow(QueryException::class, 'A Node keeps its Instance bridge.');
+    });
+
+    it('records the CI bridge from a ci-runner run, also a failed one, and not from another role', function (): void {
+        $node = ciNode(3, LifecycleStatus::Provisioning);
+        $assignment = $node->roles()->sole();
+        $run = function (string $role, int $assignmentId, string $status) use ($node): void {
+            $operation = Operation::query()->create(['kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+                'status' => 'running', 'triggered_by' => 'test', 'state' => ['swamp_run_id' => 'run-'.$role],
+                'input' => ['_role' => ['assignment_id' => $assignmentId, 'role' => $role, 'created' => true, 'certificates' => ['leaves' => []]],
+                    'native_role' => ['runtime' => [], 'publications' => [], 'artifact_digests' => []]]]);
+            $failed = $status === 'failed';
+            app(NodeRoleDirectProjection::class)->apply($operation, ['run_id' => 'run-'.$role, 'status' => $status, 'started_at' => now()->toIso8601String(),
+                'finished_at' => now()->toIso8601String(), 'result' => ['steps' => [
+                    'Read the CI bridge' => ['status' => 'succeeded', 'stdout' => $role === 'ci-runner' ? "10.253.7.1/24\n" : "10.253.9.1/24\n"],
+                    ...($failed ? ['Apply the role on the Node' => ['status' => 'failed']] : ['Check the role' => ['status' => 'succeeded']])],
+                    'summary' => ['failed_steps' => $failed ? ['Apply the role on the Node'] : []]]]);
+        };
+        $run('ci-runner', $assignment->id, 'failed');
+        expect($node->refresh()->ci_bridge)->toBe('10.253.7.0/24');
+
+        $database = $node->roles()->create(['role' => RoleName::Database, 'status' => 'provisioning']);
+        $run('database', $database->id, 'succeeded');
+        expect($node->refresh()->ci_bridge)->toBe('10.253.7.0/24');
+    });
+});
 
 describe('the seed of the proof default on each Node that offers proof places', function (): void {
     it('targets each other Node that offers proof places and is behind the default\'s current seed, never the default\'s Node', function (): void {

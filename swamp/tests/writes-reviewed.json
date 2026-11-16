@@ -427,6 +427,7 @@
   },
   "operation-node-role-add": {
    "Check the role": "read-only",
+   "Read the CI bridge": "read-only",
    "Read the OS release": "read-only",
    "Wait for Analytics": "read-only"
   },
