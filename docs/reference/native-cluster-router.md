@@ -17,7 +17,7 @@ The candidate serves every Cluster Route before private DNS selects it:
 6. `Select the Router in DNS` points the Cluster names at the candidate, then waits the DNS grace.
 7. `Retire the old Router` writes the old Router's lasting Caddyfile and removes its Router certificates and the LAN rules only it needed.
 
-When a step before the selection fails, `Restore the before state` writes the captured before Caddyfiles, removes the LAN rules the change added and puts the before DNS records back. The old Router keeps serving and the candidate assignment is marked failed. When `Retire the old Router` fails, the candidate already serves: it becomes active and the old assignment stays unfinished for a rerun. A new version of a certificate scope that a site still names installs only in the retire step.
+When a step before the selection fails, `Restore the before state` writes the captured before Caddyfiles, removes the LAN rules the change added and puts the before DNS records back. The old Router keeps serving and the candidate assignment is marked failed. To drop that candidate, run `node:role:remove NODE router`: it withdraws the candidate from its Node ([a stale Router assignment](/cli/node/role-remove#a-stale-router-assignment)). When `Retire the old Router` fails, the candidate already serves: it becomes active and the old assignment stays unfinished for a rerun. A new version of a certificate scope that a site still names installs only in the retire step.
 
 ## Unset a Router
 
