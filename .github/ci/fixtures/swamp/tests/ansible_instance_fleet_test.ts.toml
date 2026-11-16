@@ -6,10 +6,10 @@ cases = [
   "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts",
   "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words",
   "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written",
-  "a refresh applies the checkout, converges the three Node bases, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
+  "a refresh applies the checkout, converges the three Nodes one at a time, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
   "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers",
   "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units",
-  "the due Nodes converge side by side, and a failed or refused Node fails the refresh only after every admitted converge has ended",
+  "the due Nodes converge one at a time, gateway, app-prod, then app-dev; a refused or failed converge stops the Nodes after it and fails the refresh",
   "a reset stops the three containers in one call, restores base on each stopped one, keeps the rules of base, starts the fleet and polls every second; a base without the rules is refused",
   "a reset that fails after its stop starts the containers that ran again and fails with the first reason",
   "a reset refuses an Instance that is not a clone with instance.fleet_reset_not_clone before any command",
@@ -78,7 +78,7 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 3181
+cost = 3227
 slices = 76
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
@@ -108,10 +108,10 @@ inputs = [
   "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words" = 35
   "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts" = 12 # ESTIMATE: local 5s x 2.1, rounded up, plus 1s
   "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written" = 18
-  "a refresh applies the checkout, converges the three Node bases, stops the fleet, takes base with the rules, then starts it and waits for readiness once" = 75 # ESTIMATE: local 35s x 2.1, rounded up, plus 1s (CI run 43905014099 took 75.6s before the case ran below 2,000,000)
+  "a refresh applies the checkout, converges the three Nodes one at a time, stops the fleet, takes base with the rules, then starts it and waits for readiness once" = 75 # ESTIMATE: local 35s x 2.1, rounded up, plus 1s (CI run 43905014099 took 75.6s before the case ran below 2,000,000)
   "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers" = 79
   "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units" = 35
-  "the due Nodes converge side by side, and a failed or refused Node fails the refresh only after every admitted converge has ended" = 35 # ESTIMATE: same shape as the failed-converge case (14 s locally)
+  "the due Nodes converge one at a time, gateway, app-prod, then app-dev; a refused or failed converge stops the Nodes after it and fails the refresh" = 81 # ESTIMATE: local 38s x 2.1, rounded up, plus 1s (two refreshes)
   "a reset stops the three containers in one call, restores base on each stopped one, keeps the rules of base, starts the fleet and polls every second; a base without the rules is refused" = 45 # ESTIMATE: the earlier 44 plus 1s for the added Doctor retry at the reset's 1 s delay (local 16s)
   "a reset that fails after its stop starts the containers that ran again and fails with the first reason" = 33 # ESTIMATE: local 15s x 2.1, rounded up, plus 1s
   "a reset refuses an Instance that is not a clone with instance.fleet_reset_not_clone before any command" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s
