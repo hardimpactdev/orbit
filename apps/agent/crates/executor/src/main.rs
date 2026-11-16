@@ -113,18 +113,14 @@ fn serve() -> Result<(), String> {
     });
 
     let journal = Path::new(JOURNAL_PATH);
-    let (executor, recovered) =
-        Executor::start(journal, Families, server::now_ms()).map_err(|error| error.to_string())?;
+    let (executor, recovered) = Executor::start(journal, Families, server::now_ms, log)
+        .map_err(|error| error.to_string())?;
     for done in &recovered {
         log(&format!(
             "recovered {} {} {}: {:?}",
             done.key.operation, done.key.action, done.key.target, done.outcome
         ));
     }
-    executor
-        .journal()
-        .spawn_syncer(|error| log(&format!("journal sync failed: {error}")))
-        .map_err(|error| error.to_string())?;
     let listener = server::bind(Path::new(SOCKET_PATH), relay_user.map(|(_, gid)| gid))
         .map_err(|error| format!("bind {SOCKET_PATH}: {error}"))?;
     log(&format!("serving {SOCKET_PATH}"));

@@ -11,7 +11,9 @@ use serde::Serialize;
 
 use crate::action::Action;
 use crate::ids::{Nonce, OperationId, TargetId};
-use crate::journal::{DoneKey, Journal, JournalError, Outcome, Record, DONE_RETENTION_MS};
+use crate::journal::{
+    self, Compaction, DoneKey, Journal, JournalError, Live, Outcome, Record, DONE_RETENTION_MS,
+};
 use crate::order::VerifiedOrder;
 
 /// Runs an allowlisted action. The binary implements it over the action family crates.
@@ -70,7 +72,6 @@ struct SeenNonce {
 
 #[derive(Debug, Clone)]
 struct Finished {
-    nonce: Nonce,
     outcome: Outcome,
     at_ms: u64,
 }
@@ -102,8 +103,9 @@ pub struct Recovered {
 }
 
 impl<R: Run> Executor<R> {
-    /// Loads the journal at `path`, keeps the nonces that have not expired and the done records of the last
-    /// 24 hours, compacts the journal, and finishes every open order that has no result.
+    /// Loads the journal at `path`, keeps its [`Live`] records (nonces that have not expired, open orders and
+    /// the done records of the last 24 hours), rewrites the journal with them, starts its writer, and
+    /// finishes every open order that has no result.
     ///
     /// # Errors
     ///
@@ -115,94 +117,56 @@ impl<R: Run> Executor<R> {
     pub fn start(
         path: &Path,
         runner: R,
-        now_ms: u64,
+        clock: fn() -> u64,
+        log: fn(&str),
     ) -> Result<(Self, Vec<Recovered>), JournalError> {
-        let mut nonces = HashMap::new();
-        let mut done = HashMap::new();
-        let mut open: Vec<(Nonce, DoneKey, u64)> = Vec::new();
-        for record in Journal::read(path)? {
-            match record {
-                Record::Open {
-                    nonce,
-                    key,
-                    expires_ms,
-                } => {
-                    nonces.insert(
-                        nonce,
-                        SeenNonce {
-                            expires_ms,
-                            key: key.clone(),
-                        },
-                    );
-                    open.push((nonce, key, expires_ms));
-                }
-                Record::Seen {
-                    nonce,
-                    key,
-                    expires_ms,
-                } => {
-                    nonces.insert(nonce, SeenNonce { expires_ms, key });
-                }
-                Record::Done {
-                    nonce,
-                    key,
-                    outcome,
-                    at_ms,
-                } => {
-                    open.retain(|(open_nonce, _, _)| *open_nonce != nonce);
-                    done.insert(
-                        key,
-                        Finished {
-                            nonce,
-                            outcome,
-                            at_ms,
-                        },
-                    );
-                }
-            }
-        }
-        let unfinished: Vec<(Nonce, DoneKey, u64)> = open
-            .into_iter()
-            .filter(|(_, key, _)| !done.contains_key(key))
-            .collect();
-        nonces.retain(|nonce, seen| {
-            seen.expires_ms > now_ms
-                || unfinished
-                    .iter()
-                    .any(|(open_nonce, _, _)| open_nonce == nonce)
-        });
-        done.retain(|_, finished| now_ms.saturating_sub(finished.at_ms) < DONE_RETENTION_MS);
+        Self::start_with(path, runner, Compaction::default(), clock, log)
+    }
 
-        // Open records first, so that a crash during recovery repeats them again; done records last.
-        let mut kept: Vec<Record> = Vec::new();
-        for (nonce, seen) in &nonces {
-            let (key, expires_ms) = (seen.key.clone(), seen.expires_ms);
-            if unfinished
-                .iter()
-                .any(|(open_nonce, _, _)| open_nonce == nonce)
-            {
-                kept.push(Record::Open {
-                    nonce: *nonce,
-                    key,
-                    expires_ms,
-                });
-            } else {
-                kept.push(Record::Seen {
-                    nonce: *nonce,
-                    key,
-                    expires_ms,
-                });
-            }
-        }
-        for (key, finished) in &done {
-            kept.push(Record::Done {
-                nonce: finished.nonce,
-                key: key.clone(),
-                outcome: finished.outcome.clone(),
-                at_ms: finished.at_ms,
-            });
-        }
-        let journal = Journal::rewrite(path, &kept)?;
+    /// [`Executor::start`] with its own compaction schedule.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JournalError`] when the journal cannot be read, compacted or written.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a lock of the new state is poisoned, which cannot happen before it is shared.
+    pub fn start_with(
+        path: &Path,
+        runner: R,
+        compaction: Compaction,
+        clock: fn() -> u64,
+        log: fn(&str),
+    ) -> Result<(Self, Vec<Recovered>), JournalError> {
+        let mut live = Live::from_records(journal::read(path)?);
+        live.prune(clock());
+        let unfinished = live.unfinished();
+        let nonces: HashMap<Nonce, SeenNonce> = live
+            .nonces()
+            .map(|(nonce, key, expires_ms)| {
+                (
+                    nonce,
+                    SeenNonce {
+                        expires_ms,
+                        key: key.clone(),
+                    },
+                )
+            })
+            .collect();
+        let done: HashMap<DoneKey, Finished> = live
+            .done()
+            .map(|(key, _, outcome, at_ms)| {
+                (
+                    key.clone(),
+                    Finished {
+                        outcome: outcome.clone(),
+                        at_ms,
+                    },
+                )
+            })
+            .collect();
+        let journal = Journal::start(path, live, compaction, clock, log)?;
         let executor = Self {
             journal,
             runner,
@@ -212,18 +176,13 @@ impl<R: Run> Executor<R> {
         };
 
         let mut recovered = Vec::new();
-        for (nonce, key, _) in unfinished {
+        for (nonce, key) in unfinished {
             let order = VerifiedOrder::recovered(nonce, &key);
             let outcome = executor.runner.run(&order);
-            executor.finish(nonce, &key, &outcome, now_ms)?;
+            executor.finish(nonce, &key, &outcome, clock())?;
             recovered.push(Recovered { key, outcome });
         }
         Ok((executor, recovered))
-    }
-
-    /// The journal, for the sync thread.
-    pub fn journal(&self) -> &Journal {
-        &self.journal
     }
 
     /// Checks the nonce and the Operation of a verified order, then runs it once under its target's lock.
@@ -324,7 +283,6 @@ impl<R: Run> Executor<R> {
         done.insert(
             key.clone(),
             Finished {
-                nonce,
                 outcome: outcome.clone(),
                 at_ms: now_ms,
             },
@@ -397,9 +355,13 @@ mod tests {
     fn an_order_runs_once_and_a_repeat_returns_the_first_result() {
         let dir = tempfile::tempdir().expect("tempdir");
         let runs = Arc::new(AtomicUsize::new(0));
-        let (executor, _) =
-            Executor::start(&dir.path().join("j"), Counting(Arc::clone(&runs)), NOW)
-                .expect("start");
+        let (executor, _) = Executor::start(
+            &dir.path().join("j"),
+            Counting(Arc::clone(&runs)),
+            || NOW,
+            |_| {},
+        )
+        .expect("start");
         let first = executor.handle(&order(N1, "op-1"), NOW).expect("runs");
         assert!(!first.repeat);
         let second = executor.handle(&order(N2, "op-1"), NOW).expect("repeat");
@@ -412,7 +374,8 @@ mod tests {
     fn a_replayed_nonce_refuses_with_the_first_result() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (executor, _) =
-            Executor::start(&dir.path().join("j"), Counting::default(), NOW).expect("start");
+            Executor::start(&dir.path().join("j"), Counting::default(), || NOW, |_| {})
+                .expect("start");
         executor.handle(&order(N1, "op-1"), NOW).expect("runs");
         let Err(StateRefusal::ReplayedNonce { first: Some(first) }) =
             executor.handle(&order(N1, "op-1"), NOW)
@@ -427,11 +390,12 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("j");
         {
-            let (executor, _) = Executor::start(&path, Counting::default(), NOW).expect("start");
+            let (executor, _) =
+                Executor::start(&path, Counting::default(), || NOW, |_| {}).expect("start");
             executor.handle(&order(N1, "op-1"), NOW).expect("runs");
         }
         let (executor, recovered) =
-            Executor::start(&path, Counting::default(), NOW + 1).expect("restart");
+            Executor::start(&path, Counting::default(), || NOW + 1, |_| {}).expect("restart");
         assert_eq!(recovered, vec![]);
         assert!(matches!(
             executor.handle(&order(N1, "op-1"), NOW + 1),
@@ -455,18 +419,22 @@ mod tests {
             action: open.action(),
             target: open.target().clone(),
         };
-        let journal = Journal::rewrite(&path, &[]).expect("journal");
-        journal
-            .append(&Record::Open {
-                nonce: open.nonce(),
-                key: key.clone(),
-                expires_ms: open.expires_ms(),
-            })
-            .expect("open");
+        // A crash after the open record and before the done record leaves exactly this journal.
+        let record = Record::Open {
+            nonce: open.nonce(),
+            key: key.clone(),
+            expires_ms: open.expires_ms(),
+        };
+        std::fs::write(
+            &path,
+            format!("{}\n", serde_json::to_string(&record).expect("json")),
+        )
+        .expect("journal");
 
         let runs = Arc::new(AtomicUsize::new(0));
         let (executor, recovered) =
-            Executor::start(&path, Counting(Arc::clone(&runs)), NOW + 60_000).expect("recover");
+            Executor::start(&path, Counting(Arc::clone(&runs)), || NOW + 60_000, |_| {})
+                .expect("recover");
         assert_eq!(
             recovered,
             vec![Recovered {
@@ -487,8 +455,9 @@ mod tests {
         );
         assert_eq!(runs.load(Ordering::SeqCst), 1);
 
-        let (_, again) = Executor::start(&path, Counting(Arc::clone(&runs)), NOW + 60_000)
-            .expect("second start");
+        let (_, again) =
+            Executor::start(&path, Counting(Arc::clone(&runs)), || NOW + 60_000, |_| {})
+                .expect("second start");
         assert_eq!(
             again,
             vec![],
@@ -501,13 +470,19 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("j");
         {
-            let (executor, _) = Executor::start(&path, Counting::default(), NOW).expect("start");
+            let (executor, _) =
+                Executor::start(&path, Counting::default(), || NOW, |_| {}).expect("start");
             executor.handle(&order(N1, "op-1"), NOW).expect("runs");
         }
         let runs = Arc::new(AtomicUsize::new(0));
         let later = NOW + DONE_RETENTION_MS;
-        let (executor, _) =
-            Executor::start(&path, Counting(Arc::clone(&runs)), later).expect("restart");
+        let (executor, _) = Executor::start(
+            &path,
+            Counting(Arc::clone(&runs)),
+            || NOW + DONE_RETENTION_MS,
+            |_| {},
+        )
+        .expect("restart");
         let mut fresh = payload();
         fresh["nonce"] = N2.into();
         fresh["expires_ms"] = (later + 5_000).into();

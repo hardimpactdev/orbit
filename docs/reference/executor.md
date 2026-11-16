@@ -36,14 +36,14 @@ systemd only starts the executor at boot and restarts it after a crash. No syste
 
 ## The socket and the caller check
 
-The executor binds `/run/orbit-executor.sock` itself, with mode `0660`, owner root and group `orbit-executor-relay`. It accepts a connection only from:
+The executor binds `/run/orbit-executor.sock` itself, with mode `0660`, owner root and group `orbit-executor-relay`. It binds the socket inside a new folder of mode `0700`, sets its mode and group there, and then renames it into place. So the socket is never reachable with wider rights. It accepts a connection only from:
 
 - root whose cgroup is exactly `0::/system.slice/orbit-agent.service`: the observer, or
 - the user `orbit-executor-relay` whose executable is exactly the executor binary: the relay.
 
 It reads the peer with `SO_PEERCRED` and `SO_PEERPIDFD`, reads the peer's cgroup and executable in `/proc`, and then sends signal 0 to the pidfd. A live pidfd proves that the PID was not reused during the check. It refuses every other caller without a reply and logs the reason: `caller_other_user`, `caller_outside_observer_unit`, `caller_relay_other_program`, `caller_unknown`, `caller_unreadable` or `caller_gone`.
 
-An allowed caller sends one order and gets two JSON lines: `{"status":"accepted"}` at once, then the result. The executor serves at most 64 connections at once and waits at most 10 s for an order.
+An allowed caller sends one order and gets two JSON lines: `{"status":"accepted"}` at once, then the result. The executor serves at most 64 connections at once. It waits at most 10 s for the whole order, however slowly the caller sends it.
 
 ## The order
 
@@ -63,9 +63,13 @@ Orders for one target run one at a time under that target's lock; different targ
 
 ## Journal and recovery
 
-The journal is `/var/lib/orbit/executor/journal`, one JSON record per line. Before an action the executor writes an `open` record, and after it a `done` record. A repeat writes a `seen` record for its nonce. No write is synced on the order's path; a background thread syncs the file once a second. The page cache survives an executor crash, and a Node reboot expires every order.
+The journal is `/var/lib/orbit/executor/journal`, one JSON record per line. Before an action the executor writes an `open` record, and after it a `done` record. A repeat writes a `seen` record for its nonce.
 
-At start-up the executor reloads the nonces that have not expired and the done records of the last 24 hours, and rewrites the journal with only those, synced. Then it runs every `open` order without a `done` record again and records its result. It pushes nothing by itself: the Gateway learns the result by sending the same Operation again.
+One writer thread owns the file. Each connection thread hands it a record and waits until the record is written, so the `open` record is on file before the action runs. No write is synced on the order's path: the writer syncs the file once a second. The page cache survives an executor crash, and a Node reboot expires every order.
+
+The journal keeps only its live records: the nonces that have not expired, every order still open without a result, and the done records of the last 24 hours. The writer compacts the journal to these records every 10 minutes, or after 10,000 new records, while the executor runs. It writes the compacted file, syncs it, and renames it into place.
+
+At start-up the executor reads the journal, keeps the same live records and rewrites the journal with them. Then it runs every `open` order without a `done` record again and records its result. It pushes nothing by itself: the Gateway learns the result by sending the same Operation again.
 
 ## The relay command
 

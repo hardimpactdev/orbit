@@ -63,7 +63,7 @@ fn start(dir: &Path, policy: Policy) -> PathBuf {
         node: "7".parse().expect("node"),
     });
     let (executor, _) =
-        Executor::start(&dir.join("journal"), Noop, server::now_ms()).expect("start");
+        Executor::start(&dir.join("journal"), Noop, server::now_ms, |_| {}).expect("start");
     let executor = Arc::new(executor);
     thread::spawn(move || server::serve(&listener, &settings, &executor, |_| {}));
     socket
