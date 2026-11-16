@@ -1773,7 +1773,7 @@ jobs:
   - name: Write the container intent
     # A default Instance in a container deploys in it (docs/cli/instance/container/deploy-default.mmd). Each machine phase is a tag of
     # instance-container.yml, and one step runs the phases that share their failure handling; the Project's commands run in the
-    # container as `agent`, the workspace's owner (ADR 0267), each from its own vault copy.
+    # container as `agent`, the workspace's owner (ADR 0268), each from its own vault copy.
     labels:
       role: swamp
     writes: true

@@ -67,7 +67,7 @@ final readonly class CloneStage
                 'mail' => $this->read('ansible/instance_mail.py'),
                 'bridge' => $this->read('ansible/instance_bridge.py'),
                 'node' => $this->read('ansible/instance_node_runtime.py'),
-                // Root's workspace pass, which the services part runs as a deployment does (ADR 0267).
+                // Root's workspace pass, which the services part runs as a deployment does (ADR 0268).
                 'workspace_owner' => $this->read('ansible/instance_workspace_owner.py'),
                 // Only a nested-fleet clone delivers its nested Gateway's Club key.
                 ...(self::present($container, 'club_key') ? ['club_key' => $this->read('ansible/instance_nested_club_key.sh')] : []),

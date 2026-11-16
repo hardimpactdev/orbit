@@ -176,7 +176,7 @@ sys.exit(subprocess.run(args).returncode)
     def test_the_config_clear_runs_as_orbit_with_its_groups(self):
         import yaml
         play = next(play for play in yaml.safe_load((ROOT / 'swamp/ansible/instance-connection-environment.yml').read_text()) if 'as_orbit' in play.get('vars', {}))
-        # `runuser` gives `orbit` its groups, among them `work`, which opens the workspace that `agent` owns (ADR 0267); `incus exec
+        # `runuser` gives `orbit` its groups, among them `work`, which opens the workspace that `agent` owns (ADR 0268); `incus exec
         # --user 1000 --group 1000` gives none, so its `cd` into the workspace failed and `failed_when: false` hid it.
         self.assertEqual(play['vars']['as_orbit'],
                          "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/home/orbit', container.name, '--', 'runuser', "

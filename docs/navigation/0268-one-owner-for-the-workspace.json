@@ -3,9 +3,9 @@
     {
       "tab": "Decisions",
       "group": "Records",
-      "order": 267,
+      "order": 268,
       "pages": [
-        "decisions/0267-one-owner-for-the-workspace"
+        "decisions/0268-one-owner-for-the-workspace"
       ]
     }
   ]

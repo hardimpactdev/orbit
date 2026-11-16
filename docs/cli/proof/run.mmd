@@ -83,7 +83,7 @@ sequenceDiagram
     %%> A held child has no native admission deadline. Release starts its normal 600-second admission budget and preserves its captured execution budget. A lost successor uses the existing watchdog: after the parent's allowance, all children quiet for 300 seconds makes unstarted children fail with proof.admission_interrupted and cleans up their groups.
   end
   SW->>CP: Bring in the commit
-  %%> One Ansible phase from the copy's Node, as `agent` in the copy (ADR 0267): fetch the commit by SHA from the public Orbit repository through the copy's own egress, check it out detached, and run each of the Project's development deploy steps whose inputs changed since the seed. A failed fetch fails by name after 60 s. No retry.
+  %%> One Ansible phase from the copy's Node, as `agent` in the copy (ADR 0268): fetch the commit by SHA from the public Orbit repository through the copy's own egress, check it out detached, and run each of the Project's development deploy steps whose inputs changed since the seed. A failed fetch fails by name after 60 s. No retry.
   %%> No mirror:
   %%> - A proof copy needs no Git mirror of the Project on its Node, so a CI Node keeps none. Its clone brings no branch into a Node mirror; this fetch is the only way the commit comes in, on every Node.
   SW->>SW: Check the workspace commit

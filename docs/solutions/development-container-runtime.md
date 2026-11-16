@@ -272,7 +272,7 @@ The container:
 Its work:
 
 - Orbit writes `.env` for `orbit` with group `work`. There are no setup steps.
-- The development deploy steps run as `agent`, the workspace's owner, each from its own vault copy ([ADR 0267](/decisions/0267-one-owner-for-the-workspace)).
+- The development deploy steps run as `agent`, the workspace's owner, each from its own vault copy ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)).
 - FrankenPHP runs as the `orbit` unit `orbit-frankenphp.service` on port 8080 of the bridge address.
 - The container's own ACL lets only the Node's Caddy reach that port, and the Route proxies to it.
 - After the first build and each deployment, Orbit stops the units and takes the snapshot `seed-<commit>`. It deletes older seeds and records the commit on the runtime row.

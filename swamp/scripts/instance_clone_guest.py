@@ -240,7 +240,7 @@ def phase_main(phase, raw):
     private = sys.stdin.read()
 
     def run(argv, check=True, agent=False, orbit=False, owner=False, timeout=40, private_input=None, isolated=False):
-        # `owner`: as `agent`, the workspace's owner, in the workspace (ADR 0267); `agent`: as `agent` in its home; `orbit`: the app user.
+        # `owner`: as `agent`, the workspace's owner, in the workspace (ADR 0268); `agent`: as `agent` in its home; `orbit`: the app user.
         command = argv
         if agent or orbit or owner:
             argv = ["runuser", "-u", "orbit" if orbit else "agent", "--"] + argv
@@ -496,7 +496,7 @@ def phase_main(phase, raw):
             changes.append(PHP_CLI_INI)
         # A running unit read the old settings at its start.
         php_settings_changed = len(changes) > php_settings
-        # Root's workspace pass, the one program a deployment runs too (instance_workspace_owner.py, ADR 0267): the group gets back what
+        # Root's workspace pass, the one program a deployment runs too (instance_workspace_owner.py, ADR 0268): the group gets back what
         # the owner has, and `agent` gets each entry that `orbit` owns, so a copy of an older seed gets its one owner here.
         # A copy of an older seed gives every entry away, `vendor` and `node_modules` too: it has the processes phase's whole time.
         if run(["python3", "-I", "-c", c["workspace_owner"], ws, "1000", "2750"], timeout=120).stdout.strip():

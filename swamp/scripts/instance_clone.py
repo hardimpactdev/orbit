@@ -265,7 +265,7 @@ def main():
         if member in {"workspace", "services"}:
             # The guest writes the shipped Node runtime helper itself, in this one exec: no Incus file call, whose helper may exit as
             # the request reaches it (docs/reference/development-containers.md#a-failed-clone-phase-names-its-command). The services
-            # part runs root's workspace pass, the program a deployment runs (ADR 0267).
+            # part runs root's workspace pass, the program a deployment runs (ADR 0268).
             bundle = json.loads(sys.argv[6])
             intent = {**intent, "node_runtime": bundle["node"], "workspace_owner": bundle["workspace_owner"]}
         payload = ["python3", "-c", guest, member, json.dumps(intent)]

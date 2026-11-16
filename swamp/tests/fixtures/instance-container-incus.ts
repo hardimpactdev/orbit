@@ -356,7 +356,7 @@ if (family === "list") {
   if (command[0] === "runuser") command = command.slice(command.indexOf("--") + 1);
   const commandTimeout = command[0] === "timeout" ? Number(command[1]) : null;
   if (command[0] === "timeout") command = command.slice(2);
-  // Who runs each call in the workspace, and what (ADR 0267: `agent` owns it).
+  // Who runs each call in the workspace, and what (ADR 0268: `agent` owns it).
   if (cwd === "/srv/workspace") {
     state.workspace_calls ??= [];
     state.workspace_calls.push(`${user} ${command[0]}`);

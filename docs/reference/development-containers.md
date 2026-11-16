@@ -152,7 +152,7 @@ Every development container has the same layout. The image and the create set it
 | --- | --- |
 | Image | Ubuntu 26.04 with the OS packages the runtime needs, the users, `nftables`, `acl` and `hidepid`. No PHP, no Node, no agent software |
 | Egress | The [proxy settings](#egress-and-dns) for every unit, login shell and apt, and no DNS server |
-| `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process. Owns no part of the workspace that Orbit keeps ([ADR 0267](/decisions/0267-one-owner-for-the-workspace)) |
+| `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process. Owns no part of the workspace that Orbit keeps ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)) |
 | `agent` | uid 2750, home `/home/agent` mode 0700, password locked. Runs T3, the agents, Orbit's checkout Git calls and the deploy steps. Owns the workspace, the T3 state, the agent settings and the placeholder key |
 | `work` | gid 2760, members `agent` and `orbit` |
 | Sudo | None for either user. The image's `sudoers.d` grant is removed. The [nested-fleet image](#the-nested-fleet-image) gives `agent` alone passwordless sudo, so it is root in its own [nested-fleet](#users) container |
@@ -183,7 +183,7 @@ The app runs as `orbit`: FrankenPHP, queue workers and every Orbit Process. `orb
 
 T3 and the agents run as `agent`, and so do the shell commands of Claude Code and Codex. There is no wrapper shell.
 
-`agent` owns the workspace ([ADR 0267](/decisions/0267-one-owner-for-the-workspace)). Orbit's own work in it runs as `agent` too, with `HOME=/home/agent`. That is the checkout's Git calls, the line that keeps `.env` out of Git and the record of the deploy steps. It is also each development deploy step of a deployment, a create and a proof run. A deploy step runs as uid 2750, so it can reach the model forwarder, as the agent can. `orbit` stays off the model route.
+`agent` owns the workspace ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)). Orbit's own work in it runs as `agent` too, with `HOME=/home/agent`. That is the checkout's Git calls, the line that keeps `.env` out of Git and the record of the deploy steps. It is also each development deploy step of a deployment, a create and a proof run. A deploy step runs as uid 2750, so it can reach the model forwarder, as the agent can. `orbit` stays off the model route.
 
 Both users read and write the workspace: a file each one writes is `rw-rw----`, group `work`. Some calls only a file's owner may make, such as `chmod`, `utime` with explicit times and `setfacl`. So an `orbit` file in the workspace, such as one that the running app wrote in `storage/` or `bootstrap/cache`, stays `orbit`'s only until root's next pass.
 
@@ -1062,7 +1062,7 @@ A proof copy's runtime still names the default as its clone source, so the defau
 | Git | The Node fetches with the read token into its mirror `/var/lib/orbit/instance-repositories/<id>.git`. A bundle carries the branch into the container, and `agent` checks it out in `/srv/workspace` |
 | Checkout path | The workspace's path on the Node, inside the container's root file system. It keeps the path unique on the Node; Orbit never works in it from the Node |
 | `.env` | In the workspace's application directory, for `orbit` with group `work`, mode 0640. Git never takes it: see [the `.env` stays out of Git](#the-env-stays-out-of-git) |
-| Deploy steps | Each runs as `agent` at `/srv/workspace`, from its own vault copy ([ADR 0267](/decisions/0267-one-owner-for-the-workspace)). Its environment holds only `HOME=/home/agent`, `USER=agent`, `LOGNAME=agent`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, the [proxy settings](#proxy-settings-in-a-container), and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |
+| Deploy steps | Each runs as `agent` at `/srv/workspace`, from its own vault copy ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)). Its environment holds only `HOME=/home/agent`, `USER=agent`, `LOGNAME=agent`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, the [proxy settings](#proxy-settings-in-a-container), and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders |
 | FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile` as `orbit` on port 8080. The Route proxies to the bridge address; the Node runs no PHP pool for it |
 | Seed | The first build and each passed deployment take `seed-<commit>` with the units stopped. Older seeds go, except the proof default's [base](#a-retake-keeps-the-seed). The runtime row records the commit |
