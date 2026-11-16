@@ -45,7 +45,7 @@ Deno.test("a deployment without a step that has inputs reads no skip list, and i
   ]);
 });
 
-Deno.test("each step runs as agent, the workspace's owner, in the workspace with only its own environment (ADR 0266)", () => {
+Deno.test("each step runs as agent, the workspace's owner, in the workspace with only its own environment", () => {
   const command = argv(plain);
   assertEquals(command.slice(0, command.indexOf("/bin/sh")), [
     "incus", "exec", "--project", "orbit-instances", "--cwd", "/srv/workspace", "instance-7", "--",

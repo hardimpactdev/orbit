@@ -116,6 +116,7 @@ inputs = [
   "swamp/ansible/instance_nested.py",
   "swamp/ansible/instance_nested_club_key.sh",
   "swamp/ansible/instance_node_services.py",
+  "swamp/ansible/instance_workspace_owner.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",

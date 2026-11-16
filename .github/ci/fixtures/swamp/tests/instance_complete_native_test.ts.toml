@@ -14,6 +14,7 @@ cost = 30
 after_merge = true
 reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
 inputs = [
+  "swamp/ansible/instance_workspace_owner.py",
   "swamp/tests/_support/native_auth.ts",
   "swamp/extensions/behaviors/node-worker/config.ts",
   "swamp/workflows/workflow-operation-instance-complete.yaml",

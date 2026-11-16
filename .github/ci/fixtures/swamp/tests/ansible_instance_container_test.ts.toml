@@ -169,6 +169,7 @@ after_merge_cases = [
 slices = 75
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/instance_workspace_owner.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",

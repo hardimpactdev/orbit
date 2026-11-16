@@ -8,6 +8,7 @@ file = "swamp/tests/clone_launch_redactor_test.ts"
 cost = 3 # ESTIMATE: 3 cases in 0.02 s locally after the pinned module download; one second per case
 inputs = [
   "apps/gateway/app/Domain/Instances/CloneStage.php",
+  "swamp/ansible/instance_workspace_owner.py",
   "swamp/scripts/instance_clone.py",
   "swamp/scripts/instance_clone_guest.py",
   "swamp/scripts/instance_clone_launch.py",
