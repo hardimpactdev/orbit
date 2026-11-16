@@ -15,6 +15,7 @@ cases = [
   "a reset refuses an Instance that is not a clone with instance.fleet_reset_not_clone before any command",
   "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts",
   "a live fleet with a foreign difference is refused by the check and by the rules before any change",
+  "the nested Gateway's Horizon and PHP-FPM pool get the fleet's egress proxy from files of their own, so a Gateway role converge keeps them",
   "a fleet built from the rules has the live shape, with boot.autostart true",
   "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base",
   "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base",
@@ -75,8 +76,8 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2953
-slices = 73
+cost = 2992
+slices = 74
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
   "swamp/ansible/fleet-converge-inputs.json",
@@ -114,6 +115,7 @@ inputs = [
   "a reset refuses an Instance that is not a clone with instance.fleet_reset_not_clone before any command" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s
   "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 39
   "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 18
+  "the nested Gateway's Horizon and PHP-FPM pool get the fleet's egress proxy from files of their own, so a Gateway role converge keeps them" = 39 # ESTIMATE: local 18s x 2.1, rounded up, plus 1s
   "a fleet built from the rules has the live shape, with boot.autostart true" = 31
   "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base" = 74 # ESTIMATE: local 34.4s (main 32.4s; the converge now installs the power helper) x 2.1, rounded up, plus 1s
   "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base" = 22 # ESTIMATE: prior local x 3, plus 1s

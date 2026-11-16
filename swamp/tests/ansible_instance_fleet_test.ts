@@ -29,7 +29,12 @@ const proxy = {
 const outerBypass = "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24";
 const dropIn = "[Service]\nEnvironment=" + Object.entries(proxy).map(([key, value]) => `"${key}=${value}"`).join(" ") + "\n";
 const environment = Object.fromEntries(Object.entries(proxy).map(([key, value]) => [`environment.${key}`, value]));
-const units = ["/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf", "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf"];
+const units = ["/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf", "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf",
+  "/etc/systemd/system/orbit-gateway-horizon.service.d/50-inner-fleet-proxy.conf"];
+/** The Gateway's PHP-FPM pool `orbit-gateway` gets the egress proxy from a file of its own: php-fpm merges a repeated pool section. */
+const pool = "/etc/php/8.5/fpm/pool.d/zz-orbit-nested-egress.conf";
+const poolFile = "; Managed by Orbit: the fleet's egress proxy for the Gateway's pool (docs/reference/development-containers.md#fleet-rules).\n[orbit-gateway]\n" +
+  Object.entries(proxy).map(([key, value]) => `env[${key}] = "${value}"`).join("\n") + "\n";
 const idmap = "both 1000 1000\nuid 2750 2750\ngid 2760 2760";
 /** The egress files of every nested container: apt and sudo and SSH sessions reach the internet only through the egress proxy. */
 const aptFile = `Acquire::http::Proxy "${proxy.HTTP_PROXY}";\nAcquire::https::Proxy "${proxy.HTTPS_PROXY}";\n`;
@@ -57,6 +62,7 @@ const memory: Record<string, string> = { "nested-gateway": "4GiB", "nested-app-d
 /** Each file rule in the order the rules read it: the nested Gateway's drop-ins and marker, then the owned files of each container. */
 const fileRules: [string, string][] = [
   ...units.map((unit): [string, string] => ["nested-gateway", unit]),
+  ["nested-gateway", pool],
   ["nested-gateway", marker],
   ...names.flatMap((name) => Object.keys(ownedBy(name)).map((path): [string, string] => [name, path])),
 ];
@@ -78,7 +84,7 @@ function ruled() {
   containers["nested-app-prod"].devices["apparmor-off"] = apparmor;
   for (const name of names) containers[name].config["raw.idmap"] = idmap;
   for (const name of names) Object.assign(containers[name].config, environment);
-  containers["nested-gateway"].files = { ...Object.fromEntries(units.map((unit) => [unit, dropIn])), [marker]: markerFile };
+  containers["nested-gateway"].files = { ...Object.fromEntries(units.map((unit) => [unit, dropIn])), [pool]: poolFile, [marker]: markerFile };
   Object.assign(containers["nested-app-dev"].config, instanceHostKeys);
   for (const name of names) containers[name].config["limits.memory"] = memory[name];
   for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...ownedBy(name) };
@@ -878,6 +884,26 @@ Deno.test({
 });
 
 Deno.test({
+  name: "the nested Gateway's Horizon and PHP-FPM pool get the fleet's egress proxy from files of their own, so a Gateway role converge keeps them",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(structuredClone(shapes), { club: true, bridge: exportedBridge });
+    try {
+      const ruledRun = f.run("rules");
+      assert(ruledRun.ok, ruledRun.output);
+      const files = f.state().containers["nested-gateway"].files;
+      assertEquals([files[units[2]], files[pool]], [dropIn, poolFile]);
+      for (const key of ["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy"]) assertStringIncludes(files[pool], `env[${key}] = "`);
+      // The pool file names the role's own pool; it never touches the role's file.
+      assertStringIncludes(files[pool], "[orbit-gateway]\n");
+      assertEquals(f.calls().filter((call) => call.includes("orbit-gateway.conf")), []);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a fleet built from the rules has the live shape, with boot.autostart true",
   ignore: !hasAnsible,
   fn() {
@@ -890,7 +916,7 @@ Deno.test({
         const want = structuredClone(live[name]);
         want.config["boot.autostart"] = "true";
         // The live fleet was built before the egress files and the marker; they are owned rules, which the refresh writes.
-        want.files = { ...(want.files ?? {}), ...(name === "nested-gateway" ? { [marker]: markerFile } : {}), ...ownedBy(name) };
+        want.files = { ...(want.files ?? {}), ...(name === "nested-gateway" ? { [units[2]]: dropIn, [pool]: poolFile, [marker]: markerFile } : {}), ...ownedBy(name) };
         assertEquals(state[name].devices, want.devices, name);
         assertEquals(state[name].files ?? {}, want.files ?? {}, name);
         const keys = ["raw.idmap", "boot.autostart", ...Object.keys(environment)];
@@ -917,7 +943,7 @@ Deno.test({
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
-      const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [marker] : []), ...Object.keys(ownedBy(name))].map((path) => push(name, path)));
+      const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [units[2], pool, marker] : []), ...Object.keys(ownedBy(name))].map((path) => push(name, path)));
       assertEquals(writes(calls).filter((call) => !/ (stop|snapshot) /.test(call)),
         [...egressWrites, ...names.flatMap((name) => ["boot.autostart=true", ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : []),
           ...(name === "nested-gateway" ? [] : [`limits.memory=${memory[name]}`])]
@@ -1616,7 +1642,7 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 const tokenMark = (milliseconds: number) => new Date(milliseconds).toISOString().slice(0, 19).replace(/[^0-9]/g, "");
 /** The fleet files in the order the rules list them, as the refresh's `rules` digest reads them. */
 const fleetFiles = fileRules.map(([container, path]) => ({ container, path,
-  content: units.includes(path) ? dropIn : path === marker ? markerFile : (ownedBy(container) as Record<string, string>)[path] }));
+  content: units.includes(path) ? dropIn : path === pool ? poolFile : path === marker ? markerFile : (ownedBy(container) as Record<string, string>)[path] }));
 /**
  * The record a passed refresh of the fixture's default inputs writes, with `converged` at the given time (seconds) and the oldest
  * token made at `tokens` (a day ago by default, as the fake's tokens are).

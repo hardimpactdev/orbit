@@ -104,10 +104,22 @@
     # The inner Incus starts the fleet when the Instance container boots; the start also starts any nested container that is stopped.
     fleet_autostart: {boot.autostart: "true"}
     fleet_environment: "{{ dict(intent.fleet.proxy.keys() | map('regex_replace', '^', 'environment.') | zip(intent.fleet.proxy.values())) }}"
-    # The Swamp units of the nested Gateway reach Swamp Club through the proxy: one Environment line, every proxy setting quoted.
+    # The Swamp units and Horizon of the nested Gateway reach Swamp Club and Git through the proxy: one Environment line, every proxy
+    # setting quoted.
     fleet_unit_environment: |
       [Service]
       Environment={{ intent.fleet.proxy | dict2items | map(attribute='key') | zip(intent.fleet.proxy.values()) | map('join', '=') | map('regex_replace', '^(.*)$', '"\1"') | join(' ') }}
+    # The nested Gateway's PHP-FPM pool `orbit-gateway` clears its environment, so `project:create` could not reach GitHub. php-fpm merges a
+    # repeated pool section, and the Gateway role writes only `orbit-gateway.conf` (GatewayRuntimeFiles::Pool), so this file survives a
+    # role converge. A file is read when its process starts: the refresh retakes `base` with the container stopped and started again.
+    fleet_pool_files:
+      - path: /etc/php/8.5/fpm/pool.d/zz-orbit-nested-egress.conf
+        content: |
+          ; Managed by Orbit: the fleet's egress proxy for the Gateway's pool (docs/reference/development-containers.md#fleet-rules).
+          [orbit-gateway]
+          {% for key, value in intent.fleet.proxy.items() %}
+          env[{{ key }}] = "{{ value }}"
+          {% endfor %}
     # The marker of the nested Gateway of an Instance fleet (InstanceFleetGateway::Marker): the Gateway reads it and names no task VM
     # package cache for its Nodes (TaskVmAptCache).
     fleet_marker_files:
@@ -116,7 +128,7 @@
           # Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).
     fleet_unit_files: >-
       {%- set out = [] -%}
-      {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service'] -%}
+      {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service', 'orbit-gateway-horizon.service'] -%}
       {%-   set _ = out.append({'path': '/etc/systemd/system/' ~ unit ~ '.d/50-inner-fleet-proxy.conf', 'content': fleet_unit_environment}) -%}
       {%- endfor -%}
       {{ out }}
@@ -156,7 +168,7 @@
           {{ fleet_checkout_device | combine({'club-key': {'type': 'disk', 'source': fleet_club_folder,
              'path': fleet_club_mount, 'required': 'false', 'shift': 'false'}}) }}
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, {'limits.memory': intent.fleet.layout.gateway.memory}) }}"
-        files: "{{ fleet_unit_files + fleet_marker_files + fleet_egress_files + fleet_size_files }}"
+        files: "{{ fleet_unit_files + fleet_pool_files + fleet_marker_files + fleet_egress_files + fleet_size_files }}"
       app-dev:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_instance_host, {'limits.memory': intent.fleet.layout['app-dev'].memory}) }}"
