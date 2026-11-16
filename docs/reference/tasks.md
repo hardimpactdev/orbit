@@ -955,6 +955,8 @@ The task goes back to `todo` and keeps the copy until Orbit [removes it](#remova
 
 When the retry fails too, or its start refuses, the task stays in `todo` and records no further retry. It asks for assistance with kind `failure`; the reason names both Operations, their failed steps and their error codes, and `orbit task:start <task-id>`. `task:show` and `task:status` show it. Orbit removes the second copy the same way. `task:start` of the task works again once the copy is gone; while it is still bound, the start answers `tasks.copy_removing` (409). A later copy that comes up `active` clears that request, and only that one.
 
+`task:cancel` of the task while it holds the failed copy cancels the task when the copy's destroy succeeds, and nothing starts again. A task moved to `backlog` before the copy is gone owes no retry either.
+
 A cancel of the create is a stop that someone asked for: the task is `failed`, and nothing starts again. The copy of a proof belongs to its run, which fails with it, so its create never starts again either.
 
 #### Removal by Orbit

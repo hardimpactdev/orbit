@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Jobs\Tasks;
 
+use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskProvisionIntent;
 use App\Models\Operation;
 use App\Models\Task;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Starts the create of a group's task copy once more after its first create failed and its copy is gone
- * (docs/reference/tasks.md#a-failed-create): the normal start of the group, as its first caller. A group that someone started, cancelled
+ * (docs/reference/tasks.md#a-failed-create): the normal start of the group, as its first caller, with the tasks extension on. A group that someone started, cancelled
  * or moved meanwhile, or that records another failure, is left alone. A start that refuses is the second failure: it asks for
  * assistance with both, and nothing is left to remove.
  */
@@ -30,7 +30,7 @@ final class RetryTaskCopyCreate implements ShouldQueue
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Tasks->value)->afterCommit();
     }
 
-    public function handle(TaskProvisionIntent $intent): void
+    public function handle(StartTaskProvisionAction $start): void
     {
         [$group] = $this->owed() ?? [null];
         if ($group === null) {
@@ -38,7 +38,7 @@ final class RetryTaskCopyCreate implements ShouldQueue
         }
         try {
             // The start reads the default and its Node before its own transaction, so it runs outside any lock.
-            $intent->start($group, Operation::query()->find($this->operationId)->triggered_by ?? 'tasks', null);
+            $start->execute($group, Operation::query()->find($this->operationId)->triggered_by ?? 'tasks', null);
         } catch (ResourceOperationException $refusal) {
             DB::transaction(function () use ($refusal): void {
                 [$group, $first] = $this->owed(lock: true) ?? [null, null];

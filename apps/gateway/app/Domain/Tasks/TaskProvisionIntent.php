@@ -37,7 +37,7 @@ final readonly class TaskProvisionIntent
             && Instance::query()->whereKey($group->taskable_id)->where('task_workspace_owner_id', $group->id)->exists()) {
             // The copy of a failed create stays bound until its destroy succeeds (docs/reference/tasks.md#a-failed-create).
             throw new ResourceOperationException('tasks.copy_removing',
-                'The failed copy of this task is still being removed. Start the task again once it is gone.', 409, details: ['instance_id' => $group->taskable_id]);
+                'The copy of a failed create is still bound to this task. Orbit removes it, unless it holds work: then the task asks for assistance. Start the task again once the copy is gone.', 409, details: ['instance_id' => $group->taskable_id]);
         }
         if ($group->status !== TaskGroupStatus::Todo || $group->taskable_id !== null) {
             throw TaskGroupGuard::alreadyClaimed();

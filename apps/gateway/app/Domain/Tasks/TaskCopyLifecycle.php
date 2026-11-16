@@ -162,8 +162,9 @@ final readonly class TaskCopyLifecycle
     /**
      * The destroy of a copy succeeded, before its row goes. The group lets go of it; a group that still runs is cancelled with its open
      * subtasks, because its work place is gone. A request that DestroyTaskCopy recorded when it kept the copy has no cause left, and
-     * only that request ends, as a task VM release ends its own. A `todo` group that records its first failed create starts the create
-     * once more, after the commit, now that the copy's name is free.
+     * only that request ends, as a task VM release ends its own. A `todo` group whose copy a `task:cancel` destroyed is cancelled too. A
+     * `todo` group that records its first failed create starts the create once more, after the commit, now that the copy's name is free;
+     * a group that moved out of `todo` meanwhile owes no retry any more.
      */
     public function destroyed(int $instanceId): void
     {
@@ -171,7 +172,7 @@ final readonly class TaskCopyLifecycle
         if ($group === null) {
             return;
         }
-        if (in_array($group->status, TaskGroupStatus::active(), true)) {
+        if (in_array($group->status, TaskGroupStatus::active(), true) || self::cancelling($group, $instanceId)) {
             app(TaskGroupEnding::class)->settle($group, 'tasks.cancel');
 
             return;
@@ -181,9 +182,22 @@ final readonly class TaskCopyLifecycle
         if ($group->assistance_kind === AssistanceKind::RemovalFailure && str_starts_with((string) $group->assistance_reason, DestroyTaskCopy::KeptReason)) {
             TaskAssistance::apply($group);
         }
-        if ($group->status === TaskGroupStatus::Todo && $group->copy_create_failure !== null) {
-            RetryTaskCopyCreate::dispatch($group->id, $group->copy_create_failure['operation_id']);
+        $failure = $group->copy_create_failure;
+        if ($failure !== null && $group->status === TaskGroupStatus::Todo) {
+            RetryTaskCopyCreate::dispatch($group->id, $failure['operation_id']);
+        } elseif ($failure !== null) {
+            $group->update(['copy_create_failure' => null]);
         }
+    }
+
+    /**
+     * Whether a `task:cancel` of the group admitted a destroy of this copy (TaskCopyEnd::cancel). That cancel succeeds at its admission
+     * and leaves the group to the destroy, so any one that names the copy counts.
+     */
+    private static function cancelling(Task $group, int $instanceId): bool
+    {
+        return Operation::query()->where('kind', 'tasks.cancel')->where('target_type', 'task_group')->where('target_id', $group->id)
+            ->where('input->instance_id', $instanceId)->where('status', OperationStatus::Succeeded)->exists();
     }
 
     /** @return array{0: Instance, 1: Task}|null The copy and the group that owns it and is bound to it. */

@@ -864,6 +864,18 @@ describe('a failed create of the copy retries once', function (): void {
         Queue::assertPushed(RetryTaskCopyCreate::class, static fn (RetryTaskCopyCreate $job): bool => $job->groupId === $failed->id);
     });
 
+    it('cancels a todo group that task:cancel ends while it holds its failed copy, and starts no retry', function (): void {
+        $group = copyGroup(copySource()->project);
+        $first = startCopy($group);
+        failCopyCreate($first, 'instance.create_failed', 'clone');
+
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        destroySucceeded(Operation::query()->findOrFail($cancel->result['destroy_operation_id'] ?? $cancel->state['destroy_operation_id']));
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled)->and($group->taskable_id)->toBeNull();
+        Queue::assertNotPushed(RetryTaskCopyCreate::class);
+    });
+
     it('refuses task:start with tasks.copy_removing while the failed copy is bound, and starts the group again once it is gone', function (): void {
         $group = copyGroup(copySource()->project);
         $first = startCopy($group);

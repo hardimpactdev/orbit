@@ -44,7 +44,7 @@ final readonly class ContainerWorkspaceRead
     /**
      * The baseline read's bounds: the reader's budget, the outer `timeout` and the SSH command bound. A clone's create fails when its
      * baseline cannot be read, and that read runs while the host may be under load, where a read took up to 2.2 s: the normal read's
-     * 2 s budget is too short for it. With its one retry, a stuck read ends in about 20 s (docs/reference/development-containers.md#workspace-work-state).
+     * 2 s budget is too short for it. With its one retry, a stuck read ends in about 21 s (docs/reference/development-containers.md#workspace-work-state).
      */
     public const float BaselineBudgetSeconds = 6.0;
 
