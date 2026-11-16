@@ -17,8 +17,7 @@ class TaskCopyTurnCostTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         fixture = fixtures[FILE]
         self.assertEqual(set(fixture['cases']), set(evidence['completed_max_seconds']) | set(evidence['estimates']))
-        self.assertFalse(fixture.get('after_merge'))
-        self.assertFalse(fixture.get('after_merge_cases'))
+        self.assertFalse(fixture.get('self_hosted'))
         self.assertEqual(fixture['cost'], sum(fixture['case_costs'].values()))
         for case, seconds in evidence['completed_max_seconds'].items():
             self.assertGreaterEqual(fixture['case_costs'][case], math.ceil(seconds * 1.25) + 1, case)
@@ -27,7 +26,6 @@ class TaskCopyTurnCostTest(unittest.TestCase):
             self.assertGreater(cost, evidence['censored_seconds'][case])
         planned = units.plan([FILE], budget, fixtures, defaults)
         self.assertFalse(planned.get('capacity'))
-        self.assertFalse(planned['deferred'])
         actual = []
         for unit, cost in units.units_for(fixture, budget):
             cases = units.case_names(unit, fixtures)

@@ -269,8 +269,8 @@ def fixture_population(plan, deadline):
         _budget, fixtures, _defaults = units.configuration()
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         return Part('fixture-population', 'FAILED', time.monotonic() - started, 'the fixture table does not load', str(error))
-    # The units CI runs on the PR. A deferred unit runs in the main full set, which collects its cases live.
-    planned = [unit for shard in plan['shards'] for unit in shard['units']]
+    # The units CI runs on the PR, hosted and self-hosted.
+    planned = units.planned_units(plan)
     files = list(dict.fromkeys(unit.split('#')[0] for unit in planned))
     # CI compares the registered cases of a Deno fixture only; the table load checks a Python fixture.
     files = [file for file in files if file in fixtures and 'cases' in fixtures[file] and not file.endswith('.py')
@@ -333,10 +333,9 @@ def fixtures(plan, deadline, table):
     """Admit planned units while they still pack into the time left, by the rule of bin/ci-units; name the rest.
     A unit whose declared host program is missing in this copy does not run: CI has the program and runs it."""
     started = time.monotonic()
-    planned = [unit for shard in plan['shards'] for unit in shard['units']]
-    deferred = [f'{unit} (deferred by the CI plan)' for unit in plan['deferred']]
+    planned = units.planned_units(plan)
     if not planned:
-        return Part('fixtures', 'not selected', 0, 'no planned unit' + ('; ' + ', '.join(deferred) if deferred else ''))
+        return Part('fixtures', 'not selected', 0, 'no planned unit')
     lacking = missing_programs(planned, table)
     unrunnable = {unit for units_of in lacking.values() for unit in units_of}
     lacks = '; '.join(f'{len(units_of)} not runnable here: {names} missing in this copy ({", ".join(units_of)})' for names, units_of in lacking.items())
@@ -357,7 +356,7 @@ def fixtures(plan, deadline, table):
             skipped.append(f'{unit} (budget: declared {costs[unit]:g}s)')
     if not admitted:
         return Part('fixtures', 'skipped', 0, '; '.join(([lacks] if lacks else []) + ([
-            'budget skipped: ' + ', '.join(skipped + deferred)] if skipped or deferred else [])))
+            'budget skipped: ' + ', '.join(skipped)] if skipped else [])))
     with tempfile.TemporaryDirectory(prefix='task-check-units-') as scratch:
         times = Path(scratch) / 'times.json'
         code, output = run(['python3', 'bin/ci-units', 'run', '--units', json.dumps(admitted), '--times', str(times),
@@ -380,8 +379,8 @@ def fixtures(plan, deadline, table):
         detail += '; not run: ' + ', '.join(not_run)
     if lacks:
         detail += '; ' + lacks
-    if stopped or skipped or deferred:
-        detail += '; budget skipped: ' + ', '.join(stopped + skipped + deferred)
+    if stopped or skipped:
+        detail += '; budget skipped: ' + ', '.join(stopped + skipped)
     seconds = time.monotonic() - started
     if failed or not_run or (code not in (0, None) and not stopped):
         return Part('fixtures', 'FAILED', seconds, detail, output)

@@ -81,9 +81,7 @@ class InputClosureTest(unittest.TestCase):
                              ('swamp/tests/fixtures/fleet-reboot-ssh.py', 'swamp/tests/fleet_reboot_unreachable_test.ts')]:
             with self.subTest(helper=helper):
                 plan = api['plan']([helper], budget, fixtures, defaults)
-                selected = {u.split('#')[0] for s in plan['shards'] for u in s['units']}
-                selected.update(u.split('#')[0] for u in plan['deferred'])
-                selected.update(row['file'] for row in plan.get('excluded', []))
+                selected = {u.split('#')[0] for u in [*api['planned_units'](plan), *api['unplaced_units'](plan)]}
                 self.assertIn(file, selected)
 
 

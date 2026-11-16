@@ -101,9 +101,8 @@ cases = [
   "source move initial import uses older unprefixed source, not gate witness",
 ]
 file = "swamp/bin/check-swamp-shape_test.ts"
+self_hosted = true
 cost = 14
-after_merge = true
-reason = "Repository scanner fixtures create dynamic source inventories; their complete input closure needs a separate mapping."
 inputs = [
   "swamp/bin/constant-name.ts",
   "swamp/bin/bounded-phase-scripts.ts",

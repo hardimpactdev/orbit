@@ -43,10 +43,9 @@ cases = [
   "worker renewal: the worker set is made whole: only a worker without token files is minted and placed, with no secret in output",
 ]
 file = "swamp/tests/swamp_worker_renewal_test.ts"
+self_hosted = true
 cost = 1793
 slices = 41
-after_merge = true
-reason = "Renewal runs after merge in independent slices with hosted per-case costs."
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",

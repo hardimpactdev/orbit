@@ -12,7 +12,16 @@ unit_ceiling_seconds = 180
 slice_seconds = 60
 slice_startup_seconds = 6
 pr_shards = 10
+# Shards of self_hosted fixture files, on the self-hosted CI pool; they do not count against pr_shards.
+self_hosted_shards = 8
 default_cost = 30
+# A change to the fixture machinery (this table's shared sections, the loader, planner, runner or slice preload)
+# selects these files, not every fixture: a Python unit, a Python unit with case_costs and a Deno unit with a receipt.
+machinery_canary = [
+  "swamp/tests/ansible_inputs_test.py",
+  "swamp/tests/instance_machine_name_test.py",
+  "swamp/tests/clone_launch_redactor_test.ts",
+]
 
 [fixtures]
 default = ["swamp/tests/ansible_inputs_test.py"]

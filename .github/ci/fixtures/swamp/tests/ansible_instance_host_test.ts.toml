@@ -13,8 +13,7 @@ cases = [
   "a CI Node's intent without Caddy parts gets the Instance side without the dev-port table, the own-site rules and the wake",
 ]
 file = "swamp/tests/ansible_instance_host_test.ts"
-after_merge = true
-reason = "The build-list case has no completed individual measurement; its conservative 186-second declaration exceeds the 150-second lane. This file stays after-merge-only pending an isolated hosted measurement; its other cases are also deferred and named."
+self_hosted = true
 cost = 334
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (88s); these are estimates, not completed measurements.

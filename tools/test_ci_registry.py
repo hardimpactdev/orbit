@@ -28,7 +28,7 @@ class RegistryTest(unittest.TestCase):
         self.records = [dict(file=file, cost=100, inputs=['swamp/shared.yml'], slices=2,
                              case_costs={'later': 60, 'first': 40}) for file in self.files]
         self.population = {file: dict(cases=['later', 'first']) for file in self.files}
-        self.shared = '[budget]\n' + ''.join(f'{k} = {v}\n' for k, v in BUDGET.items()) + '\n[fixtures]\ndefault = []\n'
+        self.shared = '[budget]\n' + ''.join(f'{k} = {json.dumps(v)}\n' for k, v in {**BUDGET, 'machinery_canary': ['swamp/z.ts']}.items()) + '\n[fixtures]\ndefault = []\n'
         legacy = self.shared + ''.join('\n[[fixture]]\n' + self.record_text(row, 'fixture.') for row in self.records)
         self.write(registry.TABLE, legacy)
         self.write(registry.LEGACY_INVENTORY, json.dumps(self.population))
@@ -87,12 +87,12 @@ class RegistryTest(unittest.TestCase):
         with patch.object(units, 'ROOT', self.root), patch.object(units, 'fixture_steps', return_value={}):
             budget, migrated, defaults = units.configuration(self.root / registry.TABLE)
         self.assertEqual(list(fixtures), list(migrated))
-        # Reduced admission capacity must defer a.ts, despite its lexical priority.
+        # Reduced admission capacity must leave a.ts out, despite its lexical priority.
         tight = {**budget, 'pr_shards': 1, 'shard_workers': 1}
         for paths in ([self.files[0]], ['swamp/shared.yml'], ['swamp/unknown'], ['docs/a.md']):
             self.assertEqual(units.plan(paths, tight, fixtures, []), units.plan(paths, tight, migrated, defaults))
         result = units.plan(['swamp/shared.yml'], tight, migrated, defaults)
-        self.assertEqual(result['deferred'], ['swamp/a.ts#0/2', 'swamp/a.ts#1/2'])
+        self.assertEqual(units.unplaced_units(result), ['swamp/a.ts#0/2', 'swamp/a.ts#1/2'])
         for file in self.files:
             for unit, cost in units.units_for(fixtures[file], budget):
                 self.assertEqual(units.case_names(unit, fixtures), units.case_names(unit, migrated))
@@ -202,7 +202,7 @@ class RegistryTest(unittest.TestCase):
         self.git('checkout', '-q', base)
         self.write(file, case.format(name='first', value='True') + case.format(name='renamed', value='True'))
         stale = self.commit()
-        with self.assertRaisesRegex(ValueError, file + ': case_costs must name every retained case'):
+        with self.assertRaisesRegex(ValueError, file + ': case_costs must name every case'):
             load(stale)
 
     def test_conflicting_edits_to_same_fixture_still_conflict(self):

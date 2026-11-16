@@ -11,9 +11,8 @@ cases = [
   "pinned migrate advisory mail mail-invalid (clone): cutover and retirement succeed without rollback",
 ]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"
+self_hosted = true
 cost = 100
-after_merge = true
-reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
 inputs = [
   "swamp/tests/_support/native_auth.ts",
   "bin/swamp-shape-gate",

@@ -35,9 +35,8 @@ cases = [
   "test_node_add_refuses_to_move_any_live_tunnel_to_another_hub_endpoint",
 ]
 file = "swamp/tests/ansible_wireguard_hub_lan_test.py"
+self_hosted = true
 cost = 167
-after_merge = true
-reason = "Python file costs 167 seconds and cannot be sliced."
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
