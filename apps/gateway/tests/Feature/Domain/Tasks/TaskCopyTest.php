@@ -2555,6 +2555,34 @@ describe('a copy group whose watched pull request merged settles itself', functi
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed);
     });
 
+    it('retries a destroy that an earlier complete could not admit, and leaves any other request on a completed group to a person', function (string $reason, int $destroys): void {
+        [$group, $copy] = watchedCopy();
+        $group->update(['watched_pr_state' => 'merged', 'watched_pr_completion' => 'merged', 'merged_at' => '2026-11-16T20:00:00Z', 'status' => TaskGroupStatus::Completed]);
+        TaskAssistance::apply($group->refresh(), AssistanceKind::RemovalFailure, null, $reason, replaceFailure: true);
+
+        observeWatched($group, 'merged');
+
+        expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->count())->toBe($destroys);
+    })->with([
+        'a refused destroy admission' => [RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node refused the destroy.', 1],
+        'an earlier settle refusal' => ['Settle on merge refused: tasks.approved_work_unpublished.', 0],
+    ]);
+
+    it('records a completed group\'s refusal as removal_failure assistance, which an ended group keeps', function (): void {
+        [$group] = watchedCopy();
+        $group->update(['watched_pr_state' => 'merged', 'watched_pr_completion' => 'merged', 'merged_at' => '2026-11-16T20:00:00Z', 'status' => TaskGroupStatus::Completed]);
+        // An approval whose commit origin's branch cannot be shown, as GitHub cannot be read: the retry refuses before it admits a destroy.
+        Http::fake(['api.github.com/*' => Http::response([], 500)]);
+        TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $group->tasks()->value('id'), 'type' => TaskCommentType::Approved,
+            'body' => 'Approved.', 'author' => 'reviewer', 'commit_sha' => str_repeat('a', 40), 'posted_at' => now()]);
+
+        observeWatched($group, 'merged');
+
+        expect($group->refresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
+            ->and($group->assistance_reason)->toContain('tasks.approved_work_unpublished')
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+    });
+
     it('reads the pull request of a completed group again while it keeps its copy after a failed destroy', function (bool $kept): void {
         [$group, $copy] = watchedCopy();
         $group->project->update(['source_access' => ProjectSourceAccess::GitHubApp]);

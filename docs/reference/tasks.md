@@ -1433,14 +1433,19 @@ The hourly `project.observe` run of [Project maintenance](/reference/projects#ma
 - **Merged.** The Gateway records `watched_pr_completion` `merged` and `merged_at`. Then it completes the group as [`task:complete`](#complete-and-cleanup) does, with no GitHub read and no sync.
 - **The result.** The group ends `completed` with `settled_at` and `merged_at` set, so task insights count it as completed. The copy's destroy is admitted.
 - **Closed without a merge.** The Gateway records the state only. A person completes or cancels the group.
+
 The tick waits for the group to be free and keeps the copy's work:
 
 - **Busy.** The tick skips a group with an open Operation of its own: a turn, a check or a publish. The next tick tries again.
-- **No new work.** The recorded merge holds new turns and checks back.
-- **Unpublished work.** Completion refuses a copy that holds uncommitted, untracked, stashed or other-branch work. The copy stays.
-- **The refusal.** The tick records it once as `failure` assistance.
+- **A held copy.** The tick also skips a copy that an Operation holds, such as a destroy that runs.
+- **Refused.** Completion refuses a copy that holds uncommitted, untracked, stashed or other-branch work. The copy stays.
+- **The request.** The tick records such a refusal once as assistance: `failure` on a running group, `removal_failure` on a completed one.
+- **The refusals.** `tasks.copy_unpublished_work`, `tasks.copy_workspace_unknown`, `tasks.approved_work_unpublished` and `tasks.not_settling`.
 - **After a refusal.** The tick leaves the group alone until a person resolves the request.
-- **A failed destroy.** The group is `completed` and still names the copy. The next tick reads it again and completes it again, which admits a new destroy.
+A copy that the tick could not remove stays with its group until a later tick:
+
+- **A failed destroy.** The group is `completed` and still names the copy. The next tick completes it again, which admits a new destroy.
+- **A refused destroy.** A destroy that could not be admitted is retried the same way.
 - **Repeats.** A crash between the record and the complete leaves `merged` recorded. The next tick completes the group.
 
 #### Trusted GitHub feedback
