@@ -45,21 +45,25 @@ The [idle sleep](/reference/development-containers#sleep-and-wake) acts on the l
 - the table of reasons and its order;
 - `orbit:runtime-hibernator --dry-run`, which lists each release container with its reason.
 
-The `ContainerSleepScope` and the sweep gain production live containers. The three `t3_` rows and `t3_server` never apply, because a production container has no T3 server. So the values `without_t3` and `true` of `ORBIT_HIBERNATION_CONTAINER_SLEEP` both act on live. Production gets no value of its own.
+The `ContainerSleepScope` and the sweep gain production live containers. The three `t3_` rows and `t3_server` never apply, because a production container has no T3 server. So the values `without_t3` and `true` of `ORBIT_HIBERNATION_CONTAINER_SLEEP` both act on live. Production gets no value of its own. A Gateway that already uses `without_t3` or `true` puts each production live to sleep as soon as production containers exist.
 
 The reason `not_development` goes. A new reason, `not_live`, keeps a hot or old release container awake: the sweep never acts on it.
 
 ### 2. Hot never sleeps
 
-Hot exists only during a deploy Operation. An open Operation keeps the Instance awake with `busy`, so the sweep never sleeps hot, and never sleeps live while a deploy or rollback runs.
+Hot exists only during a deploy Operation. An open Operation keeps the Instance awake with `busy`, so the sweep never sleeps hot, and never sleeps live while a deploy or rollback runs. The sweep reports `not_live` for hot, because that row comes first.
+
+A native Schedule fire records its `schedule.run` Operation only after it ends. So `busy` also covers a fire whose Swamp run has not ended: the sweep reads the Instance's running `schedule-<uuid>` runs with the check that retire uses.
 
 ### 3. A deploy and the switch
 
-A deploy does not wake a sleeping live. Hot is a ZFS clone of live's `release` snapshot, not of the running live, so a frozen live gives the same clone. Without a memory limit, the [capacity check](/reference/production-containers#capacity) takes the memory that live used before its last sleep, which the sleep records, in place of live's current use.
+A deploy does not wake a sleeping live. Hot is a ZFS clone of live's `release` snapshot, not of the running live, so a frozen live gives the same clone. The [capacity check](/reference/production-containers#capacity) counts a sleeping live too, because a visit can wake it during the deploy and the handover resumes it. For a sleeping live, the Node's available memory must cover hot's need plus the memory that live used before its last sleep, which the sleep records, plus 1 GiB. Without a memory limit, hot's need is that recorded use.
 
-A visit during a deploy wakes live as at any other time. A deploy changes live only after the switch, so the wake of a production live is admitted beside an open deploy or rollback. The switch and the wake take the Instance's power lock, so a switch never runs in the middle of a wake.
+A visit during a deploy wakes live as at any other time. A deploy changes live only after the switch, so the wake of a production live is admitted beside an open deploy or rollback. The switch, the wake and the handover's resume take the Instance's power lock, the unit `orbit-instance-power-<id>` of the [power helper](/reference/prepared-restore), so none of them runs in the middle of another.
 
-The switch never waits for a wake: the new live just passed readiness. In the same step as it replaces the upstream file and the live link, the switch removes the Instance's asleep marker. A failed switch puts the marker back with the previous files. The new live starts its own watch, so it has one full idle window before its first sleep.
+The switch never waits for a wake: the new live just passed readiness. The switch step renames the upstream file and the live link into place and reloads Caddy. Once the reload succeeded, the same step removes the Instance's asleep marker. A failed switch keeps the marker, or puts it back, with the previous files. The new live starts its own watch, so it has one full idle window before its first sleep.
+
+A wake reads the live link after it takes the power lock, and acts only on the container that the link names. A wake that finds no marker after the switch ends with `wake: already_running` and never resumes or starts the previous live.
 
 After the switch, the handover needs the previous live running to stop its units. When the previous live is frozen, the handover resumes it, with no restore, and closes its swap. Then it stops its timers and Processes, and retire stops it as old. A clean stop of a frozen container times out ([Sleep and wake](/reference/development-containers#sleep-and-wake)), so the resume always comes first.
 
@@ -73,7 +77,7 @@ Old is stopped, so it holds no memory and no swap. A rollback boots it. The swee
 
 A development sleep stops the container when swap cannot take its memory. A production sleep never does: a stopped live would cold-boot its units at the next visit. The sleep resumes live, closes swap, removes the marker and fails with `instance.container_freeze_failed`. The sweep then keeps live awake for one idle window with the new reason `swap_full`.
 
-Live keeps `boot.autostart`. A Node reboot boots live awake, with its Processes and timers. A boot unit that the `app-prod` role installs removes the asleep marker of each production Instance after Incus starts its live container.
+Live keeps `boot.autostart`. A Node reboot boots live awake, with its Processes and timers. The marker stays on disk until the first request or Schedule fire meets it. That starts a wake, which finds live running, removes the marker and records `power_state` `running` (`wake: already_running`), as in development. That visitor waits only for the wake's check.
 
 ### 6. A running live never swaps
 
@@ -87,16 +91,16 @@ A request with `X-Orbit-Probe: 1` does not count, such as the readiness check an
 
 ### 8. A visitor waits for the wake
 
-A production visitor never gets the development progress page with status 401. When a request meets the asleep marker, Caddy holds it, starts or joins the Instance's `instance.wake`, and passes the request to live once the wake ended. A person, an API client or a webhook only sees a slower first answer. The budget is about 1.5 s for a warm wake and about 2.4 s for a cold wake.
+A production visitor never gets the development progress page with status 401. When a request meets the asleep marker, Caddy holds it, starts or joins the Instance's `instance.wake`, and passes the request to live once the wake ended. A person, an API client or a webhook only sees a slower first answer. The targets are about 1.5 s for a warm wake, in which the fast wake's [prepared restore](/reference/prepared-restore) reads the recorded pages back, and about 2.4 s for a cold wake, in which the pages come back from swap one fault at a time. The live proof measures them.
 
-The hold has a bound of 10 s. After it, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance. The wake goes on, and the next request after it finds live awake. A failed wake answers the same `503` and stores the failure as in development. The next request is a new try, as Try again is in development.
+The hold has a bound of 10 s. After it, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance. The wake goes on, and the next request after it finds live awake. A failed wake answers the same `503` and stores the failure as in development. While the failure is stored, each request gets that `503` at once and starts no new wake. `instance:wake` starts a new one.
 
 The `app-prod` role installs the power helper and the fast wake's worker, as the `app-dev` role does.
 
 ### 9. Schedules and workers
 
 - **Native cron Schedules.** A due fire that finds the asleep marker starts or joins the wake and waits for it. Then it runs in live. The wake that a fire starts does not count as activity, so live sleeps again at the next sweep when nothing else keeps it awake. The sweep never sleeps live while a fire runs in it (`busy`).
-- **Per-minute schedulers.** The container timer pauses with the container. Missed minutes are skipped, not caught up: at the resume the timer fires once, then each minute.
+- **Container timers.** Each systemd-calendar Schedule, such as the per-minute Laravel scheduler, is a container timer, and it pauses with the container. Missed fires are not caught up: a timer that came due during the sleep fires once at the resume. So a per-minute scheduler skips the minutes of the sleep, and a daily timer fires late, at the next wake.
 - **Queue workers.** The worker Processes pause with the container. Queued jobs wait for the next wake.
 
 A Project whose jobs or scheduler must run without visitors sets [never sleep](#10-never-sleep-is-a-field-of-the-instance) on the Instance, or gives a Process `keep_alive`. A desired-running `keep_alive` Process keeps the whole container awake, as in development.
@@ -113,8 +117,8 @@ Production joins the sweep under the existing values of `ORBIT_HIBERNATION_CONTA
 
 The live proof of ADR 0263 changes:
 
-- **One fire.** Each Schedule fires once each minute, except while the Node reboots and while live sleeps.
-- **Sleep and wake, new.** Live sleeps after its idle window. The proof measures how long Caddy holds a visit, and checks that a due native Schedule wakes live and runs once, that the worker resumes and runs the queued jobs, and that no request fails.
+- **One fire.** Each Schedule fires once each minute, except while the Node reboots. While live sleeps, a container timer skips its minutes; a native cron Schedule still fires each minute, because each fire wakes live.
+- **Sleep and wake, new.** The load loop pauses, and live sleeps after its idle window. The proof measures how long Caddy holds a visit, and checks that a due native Schedule wakes live and runs once, that the worker resumes and runs the queued jobs, and that no request fails. Then a deploy and a rollback each run while live sleeps: no request fails, the previous live stops as old, and each job runs once. Last, the Node reboots while live sleeps: live boots awake, and the first request removes the marker.
 
 ## Rejected alternatives
 
@@ -134,7 +138,9 @@ The live proof of ADR 0263 changes:
 - A per-minute scheduler skips the minutes while live sleeps. A Project that needs every minute sets `never_sleep` or a `keep_alive` Process.
 - An uptime check without the probe header keeps live awake.
 - An Instance with PowerSync never sleeps while its Node service is attached.
-- A Node reboot loses the frozen state. Live boots with its units, and its first visitor waits for no wake.
+- A Node reboot loses the frozen state. Live boots with its units, and its first visitor waits only for the wake's check.
+- A sleeping live wakes only while the Gateway answers, because Caddy's activation call and the fast wake go through it. A held request takes one Gateway worker for up to 10 s.
+- A failed wake keeps live's Routes on `503` until `instance:wake` succeeds.
 
 ## Affects
 

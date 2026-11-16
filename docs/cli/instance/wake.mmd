@@ -23,6 +23,7 @@ sequenceDiagram
   %%> - planned: a due native cron Schedule of a production Instance whose live sleeps; the fire waits for the wake, and this wake does not count as activity
   %%> - not needed by a copy: a clone or task copy of an asleep default copies its seed snapshot
   %%> - a deployment of a sleeping Instance resumes or starts it in its own run, and removes the marker there
+  %%> - planned: a production deploy does not wake live; its switch removes the marker (container/deploy-production.mmd)
   %%> Requirements:
   %%> - the caller is the Instance's Node or has node access to it
   Note over GW: Start or join the wake<br/>one per Instance
@@ -83,11 +84,13 @@ sequenceDiagram
     GW-->>CL: Pass on after the wake<br/>bound 10 s · else 503
     %%> What it does:
     %%> - Caddy holds the visitor's request; the Gateway answers its activation call once the marker is gone, and Caddy passes the request to live
-    %%> - a person, an API client or a webhook sees only a slower first answer: about 1.5 s warm, 2.4 s cold
+    %%> - a person, an API client or a webhook sees only a slower first answer; targets about 1.5 s with the prepared restore, 2.4 s without
+    %%> - the wake reads the live link after the power lock and acts only on that container; after a switch it finds no marker, `wake: already_running`
     %%> Why:
     %%> - a progress page with status 401 breaks an API client and a webhook (ADR 0265)
     %%> On failure:
-    %%> - after 10 s, or after a failed wake, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance; the wake goes on, and a failure is stored as in development
+    %%> - after 10 s, or after a failed wake, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance; the wake goes on
+    %%> - a failure is stored as in development: each later request gets that `503` at once and starts no wake; only `instance:wake` starts a new one
     %%> - when the fast wake fell back to the run below, the hold goes on until the run ends or the bound
   end
   GW->>SW: Start run, full intent<br/>operation-instance-wake

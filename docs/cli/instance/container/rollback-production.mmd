@@ -50,13 +50,13 @@ sequenceDiagram
     SW->>N: Switch the Routes<br/>Ansible · tags switch
     %%> What it does:
     %%> - the same switch as a deploy: one Caddy reload; requests in progress on live finish there
-    %%> - planned: in the same step, removes the asleep marker; a failed switch puts it back with the previous files
+    %%> - planned: in the same step, once the reload succeeded, removes the asleep marker; a failed switch keeps it, or puts it back, with the previous files
     opt the rolled-away live is frozen, planned
       Note over N: Resume rolled-away live<br/>no restore · close swap
       %%> Why:
       %%> - a sleeping live slept on (ADR 0265); the handover must stop its units, and a clean stop of a frozen container times out (development-containers.md#sleep-and-wake)
       %%> What it does:
-      %%> - `incus resume` with no prepared restore, then `memory.swap.max` back to 0; no request reaches it, because the switch already moved the Routes
+      %%> - under the Instance's power lock: `incus resume` with no prepared restore, then `memory.swap.max` back to 0; no request reaches it, because the switch already moved the Routes
     end
     SW->>N: Hand over the work<br/>Ansible · tags handover
     %%> What it does:

@@ -1683,9 +1683,13 @@ The [agent development servers](#agent-development-servers) site on port 444 has
 
 **What wakes an Instance.** A visit to its Route, a deployment of it, and [`instance:wake`](/cli/instance/wake). A default with no visitor stays asleep until one of them comes. A clone or task copy of an asleep default does not wake it: the copy comes from the seed snapshot. A deployment that starts or resumes the container removes the asleep marker once its `start` part passed (the container runs and its units are active; there is no web probe), so the Route serves the app again; its result records `power_state` `running`.
 
+Planned for a production live ([ADR 0265](/decisions/0265-sleep-idle-production-containers)): a deploy does not wake it, and a due native cron Schedule does. That wake does not count as `woke_recently`. The switch removes the marker. See [Production containers](/reference/production-containers#sleep-and-wake).
+
 The end of a deployment counts as activity, like the end of a wake: the Instance stays awake with `deployed_recently` for one idle window, then sleeps when nothing else keeps it awake. An automatic deployment of a default is the exception: it does not count, so the default sleeps again at the next sweep when nothing else keeps it awake.
 
 **While asleep.** Schedules run only while the container runs (decided 2026-11-12): Schedules in the container do not run, and a scheduler or queue Process in a sleeping container waits until the wake. A Process that must keep running gets `keep_alive`, which keeps the whole container awake. At the resume, systemd timers that came due during the freeze run at once. Other Operations that need the running container refuse it with `process.target_inactive` or `schedule.target_inactive`. Env, mail and Node service updates and the task workspace read `power_state`. Process and Schedule work on the Node refuses a container that is not `Running`, and Incus reports a frozen one as `Frozen`.
+
+Planned for a production live: a due native cron Schedule wakes it and waits for the wake instead of a refusal. A container timer that came due during the sleep fires once at the resume.
 
 A connection held open across a freeze meets the server's idle timeout at the resume, and clients reconnect. A deployment's start resumes a frozen container, or boots a stopped one, before it converges. A destroy deletes a frozen container with `incus delete --force` and needs no wake.
 

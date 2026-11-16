@@ -198,7 +198,7 @@ The fixture is a small Laravel app, cloned to production on a fixture `app-prod`
 - a PostgreSQL database on a Database server, with one migration per case;
 - a page that subscribes to a channel on the shared Reverb, and an event that the worker broadcasts.
 
-During every case, a load loop sends a request to the health path and to one page every 100 ms through the public Route, and records each status. The loop also holds one request that takes 10 seconds across each switch.
+During every case except the sleep case, a load loop sends a request to the health path and to one page every 100 ms through the public Route, and records each status. The loop also holds one request that takes 10 seconds across each switch.
 
 | Case | What it does | What it measures | Passes when |
 | --- | --- | --- | --- |
@@ -211,8 +211,8 @@ During every case, a load loop sends a request to the health path and to one pag
 | Capacity refusal | A memory limit set above the Node's free memory, then removed | The tick's results | `deployment.node_capacity` with nothing made; the commit is not blocked; the tick deploys it after the limit is removed |
 | Rollback and forward | `instance:rollback`, then `instance:rollback` again | Time to the first response of each release, failed requests | Each switch has no failed request; the workers and timers run only in the new live; automatic deploys are paused and the commit is blocked |
 | Node reboot | A reboot of the Node between deploys | The containers and units after the boot | Only live starts, with its Processes and timers; old stays stopped |
-| One fire | Every case above, read from the fire records | Fires per Schedule per minute | Each Schedule fired once each minute: no minute twice and none skipped, except while the Node rebooted and while live slept ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) |
-| Sleep and wake | Live sleeps after its idle window. Then a visit, a due native Schedule and a queued job meet it asleep ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) | How long Caddy holds the visit; the fire and job records | No request fails, and the visit is held for at most 10 s; the native Schedule wakes live and runs once; the worker resumes and runs the queued job |
+| One fire | Every case above, read from the fire records | Fires per Schedule per minute | Each Schedule fired once each minute: no minute twice and none skipped, except while the Node rebooted, and for a container timer while live slept ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) |
+| Sleep and wake | The sleep-and-wake checks of [ADR 0265 part 11](/decisions/0265-sleep-idle-production-containers#11-rollout), with the load loop paused | Hold time; fire, job and release records | Every check of ADR 0265 part 11 passes |
 | Jobs across the switch | Jobs dispatched without pause through a deploy and a rollback | Jobs run, and the drain time | Every job ran once; the drain ended within 120 s |
 | Uploads survive | An upload before a deploy, one in hot's time and one after a rollback | The files in the volume | Every upload reads back from live after each deploy and rollback; the Passport keys did not change |
 | WebSocket | The page stays open through a deploy | Reconnect time, and the event after the switch | The client reconnects by itself and gets the event |
