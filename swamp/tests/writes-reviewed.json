@@ -410,6 +410,10 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-instance-seed-copy": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-instance-start": {
    "result": "read-only",
    "cleanup": "idempotent"

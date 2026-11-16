@@ -4,15 +4,24 @@ declare(strict_types=1);
 
 namespace App\Domain\Proof;
 
+use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\DefaultInstanceName;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStore;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Models\ProofSeed;
+use App\Support\ValidatedData;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * The seed of the proof default on each Node that offers proof places (docs/reference/development-containers.md#the-seed-on-each-ci-node,
@@ -21,6 +30,16 @@ use App\Models\ProofSeed;
  */
 final readonly class ProofSeeds
 {
+    public const string Kind = 'instance.seed_copy';
+
+    /** The holder of the seed on each CI Node, a stopped container, and its inner volume, both in the nested Incus project. */
+    public const string Holder = 'proof-seed';
+
+    public const string HolderVolume = self::Holder.'-inner';
+
+    /** The client remote of root on the default's Node that names a CI Node's listener. */
+    public const string RemotePrefix = 'proof-node-';
+
     public function __construct(private ProofSettings $settings) {}
 
     /** The Incus listener port of a CI Node, on its WireGuard address only (docs/reference/node-provisioning.md#the-seed-listener). */
@@ -92,6 +111,61 @@ final readonly class ProofSeeds
 
             return ProofCopyHosts::offersPlaces($node) && ! ($seed instanceof ProofSeed && self::current($seed, $source));
         })->all());
+    }
+
+    /**
+     * Admits one seed copy to the Nodes that are behind. Best effort: nothing waits for it, so a refusal or an error is a log line, never
+     * an exception. An open copy refuses by its lock (`operation.target_busy`); its end admits the next one.
+     */
+    public function admit(string $trigger): ?Operation
+    {
+        try {
+            $source = $this->source();
+            $targets = $this->targets();
+            if ($source === null || $targets === []) {
+                return null;
+            }
+            $input = ['default_instance_id' => $source->instance_id, 'commit' => $source->seed_commit,
+                'taken_at' => $source->seed_taken_at?->toIso8601String(),
+                'targets' => array_map(static fn (Node $node): int => $node->id, $targets)];
+
+            return app(StartOperationAction::class)->execute(self::Kind, 'instance', $source->instance_id, $source->node_id, $input,
+                $trigger, null, lockKey: OperationStore::lockKey('instance_seed_copy', $source->instance_id));
+        } catch (ResourceOperationException $refused) {
+            Log::info('Proof seed copy not admitted.', ['trigger' => $trigger, 'code' => $refused->errorCode]);
+        } catch (Throwable $failed) {
+            report($failed);
+        }
+
+        return null;
+    }
+
+    /**
+     * The workflow intent (docs/cli/instance/seed-copy.mmd): the default's Node, container and inner volume, the seed snapshot that the
+     * run was admitted for, and per target its Node, the remote of root on the default's Node and the listener it names.
+     *
+     * @return array<string, mixed>
+     */
+    public function intent(Operation $operation): array
+    {
+        $runtime = InstanceRuntime::query()->where('instance_id', $operation->target_id)->firstOrFail();
+        $ssh = app(SwampSshExecutionInput::class);
+        $ids = ValidatedData::integerList($operation->input['targets']);
+
+        return [
+            'project' => InstancePlacement::NestedProject,
+            'pool' => InstanceHostIntent::Pool,
+            'snapshot' => 'seed-'.ValidatedData::string($operation->input['commit']),
+            'holder' => self::Holder,
+            'holder_volume' => self::HolderVolume,
+            // The holder never starts: its NIC gets no static address and only the common ACL, which every Node with the branch has.
+            'holder_nic_acl' => InstanceHostIntent::NicAcl,
+            'source' => ['node_id' => $runtime->node_id, 'ssh_execution' => $ssh->forNode(Node::query()->findOrFail($runtime->node_id)),
+                'container' => $runtime->container_name, 'inner_volume' => $runtime->inner_volume],
+            'targets' => Node::query()->whereIn('id', $ids)->orderBy('id')->get()->map(static fn (Node $node): array => [
+                'node_id' => $node->id, 'ssh_execution' => $ssh->forNode($node), 'remote' => self::RemotePrefix.$node->id,
+                'listen' => ValidatedData::string($node->wireguard_ip).':'.self::ListenerPort])->all(),
+        ];
     }
 
     private static function current(ProofSeed $seed, InstanceRuntime $source): bool

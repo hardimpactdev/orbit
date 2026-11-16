@@ -10,6 +10,7 @@ use App\Domain\Instances\BaselineNormalInstanceContainer;
 use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceContainer;
@@ -19,10 +20,12 @@ use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Proof\ProofCopyHosts;
+use App\Domain\Proof\ProofSeedCopyProjection;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -34,6 +37,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
+use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -431,6 +435,102 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and($desired['orbit:proof-seed-deny']->shape->action)->toBe('deny')
             ->and($desired['orbit:proof-seed-deny']->shape->source)->toBe('any')
             ->and($desired->has('orbit:wireguard-members'))->toBeTrue();
+    });
+
+    it('admits one seed copy to the Nodes behind the seed, under the default\'s seed-copy lock, with the push intent', function (): void {
+        $default = proofSeedDefault();
+        $runtime = $default->runtime()->firstOrFail();
+        $runtime->update(['inner_volume' => 'inner-'.$default->id]);
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+
+        $operation = app(ProofSeeds::class)->admit('seed');
+        expect($operation?->kind)->toBe('instance.seed_copy')
+            ->and($operation->target_id)->toBe($default->id)
+            ->and($operation->node_id)->toBe($default->node_id)
+            ->and($operation->lock_key)->toBe('instance_seed_copy:'.$default->id)
+            ->and($operation->input)->toBe(['default_instance_id' => $default->id, 'commit' => str_repeat('a', 40),
+                'taken_at' => $runtime->refresh()->seed_taken_at?->toIso8601String(), 'targets' => [$node->id]])
+            // One copy at a time: the open copy admits the next one when it ends.
+            ->and(app(ProofSeeds::class)->admit('seed'))->toBeNull()
+            ->and(Operation::query()->where('kind', 'instance.seed_copy')->count())->toBe(1);
+
+        $intent = app(ProofSeedCopyProjection::class)->input($operation)['intent'];
+        expect(collect($intent)->except(['source', 'targets'])->all())->toBe(['project' => 'orbit-instances-nested', 'pool' => 'orbit-instances',
+            'snapshot' => 'seed-'.str_repeat('a', 40), 'holder' => 'proof-seed', 'holder_volume' => 'proof-seed-inner', 'holder_nic_acl' => 'orbitinst0-proxy'])
+            ->and(collect($intent['source'])->except('ssh_execution')->all())->toBe(['node_id' => $default->node_id,
+                'container' => $runtime->container_name, 'inner_volume' => 'inner-'.$default->id])
+            ->and(collect($intent['targets'][0])->except('ssh_execution')->all())->toBe(['node_id' => $node->id, 'remote' => 'proof-node-'.$node->id,
+                'listen' => '10.44.0.30:8444'])
+            ->and($intent['targets'][0]['ssh_execution']['target']['host'])->toBe('10.44.0.30');
+    });
+
+    it('records the seed of each passed Node, an Activity problem for each failed one, and admits the next copy for the Nodes still behind', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $passed = ciNode();
+        $failed = ciNode(2, LifecycleStatus::Active, 'ci-two', '10.44.0.31');
+        foreach ([$passed, $failed] as $node) {
+            Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        }
+        $operation = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        $operation->forceFill(['status' => 'running', 'state' => [...($operation->state ?? []), 'swamp_run_id' => 'run-1']])->save();
+
+        app(ProofSeedCopyProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['targets' => [['node_id' => $passed->id, 'status' => 'succeeded'],
+                ['node_id' => $failed->id, 'status' => 'failed', 'failed_phase' => 'copy', 'detail' => 'Error: no free ID range']]]]);
+
+        $seed = ProofSeed::query()->where('node_id', $passed->id)->sole();
+        expect([$seed->holder, $seed->commit, $seed->operation_id])->toBe(['proof-seed', str_repeat('a', 40), $operation->id])
+            ->and(app(ProofSeeds::class)->holder($passed)?->holder)->toBe('proof-seed')
+            ->and(ProofSeed::query()->where('node_id', $failed->id)->exists())->toBeFalse()
+            ->and($operation->refresh()->result['failed'])->toBe([['node_id' => $failed->id, 'detail' => 'Error: no free ID range']]);
+        $problem = Activity::query()->where('description', 'instance.seed_copy_failed')->sole();
+        expect($problem->subject_id)->toBe($failed->id)
+            ->and($problem->properties['operation_id'])->toBe($operation->id);
+        // The end of the copy admits the next one, for the failed Node alone.
+        $next = Operation::query()->where('kind', 'instance.seed_copy')->whereKeyNot($operation->id)->sole();
+        expect($next->input['targets'])->toBe([$failed->id])
+            ->and($next->triggered_by)->toBe('seed_copy');
+    });
+
+    it('admits the seed copy when a deployment of the proof default records a new seed', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        $commit = str_repeat('b', 40);
+        $deploy = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id,
+            'node_id' => $default->node_id, 'status' => 'running', 'triggered_by' => 'release',
+            'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($default)], 'state' => ['swamp_run_id' => 'run-1']]);
+
+        app(InstanceDeployProjection::class)->apply($deploy, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)]],
+                'summary' => ['failed_steps' => []]]]);
+
+        $copy = Operation::query()->where('kind', 'instance.seed_copy')->sole();
+        expect($copy->input['commit'])->toBe($commit)
+            ->and($copy->input['targets'])->toBe([$node->id])
+            ->and($copy->triggered_by)->toBe('seed');
+    });
+
+    it('admits the seed copy when a ci-runner add of a Node that offers proof places passes', function (): void {
+        proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode(3, LifecycleStatus::Provisioning);
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        $assignment = $node->roles()->sole();
+        $add = Operation::query()->create(['kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+            'status' => 'running', 'triggered_by' => 'test', 'state' => ['swamp_run_id' => 'run-1'],
+            'input' => ['_role' => ['assignment_id' => $assignment->id, 'role' => 'ci-runner', 'created' => true, 'certificates' => ['leaves' => []]],
+                'native_role' => ['runtime' => [], 'publications' => [], 'artifact_digests' => []]]]);
+
+        app(NodeRoleDirectProjection::class)->apply($add, ['run_id' => 'run-1', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['steps' => ['Check the role' => ['status' => 'succeeded']], 'summary' => ['failed_steps' => []]]]);
+
+        expect($assignment->refresh()->status)->toBe(LifecycleStatus::Active)
+            ->and(Operation::query()->where('kind', 'instance.seed_copy')->sole()->input['targets'])->toBe([$node->id]);
     });
 
     it('has no targets while the proof default has no seed', function (): void {

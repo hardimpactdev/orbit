@@ -10,6 +10,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\NativeOperationProjection;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\NativeRunResult;
@@ -89,6 +90,11 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
             $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $snapshot['role'])->firstOrFail();
             if ($proven) {
                 $assignment->markConvergenceActive();
+                // A Node that offers proof places gets its seed of the proof default now, not at the next release
+                // (docs/reference/development-containers.md#the-seed-on-each-ci-node).
+                if ($assignment->role === RoleName::CiRunner) {
+                    DB::afterCommit(static fn (): ?Operation => app(ProofSeeds::class)->admit('node_role'));
+                }
                 $digests = ValidatedData::stringMap($intent['artifact_digests']);
                 if ($digests !== []) {
                     $entries = [];

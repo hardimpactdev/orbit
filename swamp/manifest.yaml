@@ -30,6 +30,8 @@ additionalFiles:
   - ansible/operation-node-converge.yml
   - ansible/fleet-converge-inputs.json
   - ansible/tasks/node-role-runtime.yml
+  - ansible/tasks/proof-seed-listener.yml
+  - ansible/proof-seed-copy.yml
   - ansible/tasks/node-converge-cli-absent.yml
   - ansible/tasks/node-converge-base.yml
   - ansible/tasks/node-kernel-policy.yml

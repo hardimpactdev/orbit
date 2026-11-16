@@ -2713,7 +2713,7 @@ Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each
 
 #### The seed on each CI Node
 
-This is the target design of ADR 0260, build step 4. Built: the Gateway records each Node's seed, finds the Nodes that are behind, and starts a copy on a Node from that Node's current seed. Not built yet: the `instance.seed_copy` run, its triggers and the listener of the `ci-runner` role.
+This is the target design of ADR 0260, build step 4. Built, not yet proven on the live fleet: the listener of the `ci-runner` role, the `instance.seed_copy` run and its triggers, the record of each Node's seed, and the start of a copy from its own Node's seed. ADR 0260 build step 5 places copies on CI Nodes.
 
 Each Node that [offers proof places](/reference/node-provisioning#proof-copies-on-a-ci-node), other than the default's own Node, keeps its own seed of the proof Project's default: a copy of the default's [seed pair](#the-seed-pair) on the Node. A proof copy on that Node starts from it. The default's Node holds the seed itself, and a copy there clones the default, as before. In this section a CI Node is such a Node. No copy fetches a seed over the network when it starts.
 
@@ -2736,7 +2736,7 @@ Incus moves it, from the default's Node straight to each CI Node over WireGuard.
 - `incus copy <default> proof-node-<id>:proof-seed --refresh --mode=push`, in the project `orbit-instances-nested`;
 - `incus storage volume copy` of the default's inner volume to `proof-seed-inner` on the same remote, with `--refresh --mode=push`.
 
-An instance copy does not take its attached custom volumes, so the volume has its own copy.
+An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
 
 `--refresh` sends only what changed since the last copy. Incus compares the snapshots on both sides and sends the newer ones as ZFS increments, so the holder gets the new `seed-<commit>` snapshot natively. The first copy to a Node sends the whole seed pair. The copy reads the default as an instance, not one snapshot of it: a snapshot source carries no snapshots, so `--refresh` could not find a common one and would send the whole pair each time.
 
