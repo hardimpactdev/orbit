@@ -84,7 +84,7 @@ final readonly class TaskSyncProjection implements DirectOperationProjection, Di
 
     /**
      * The evidence of the copy's base phase: the default head now in `refs/remotes/origin/<default>`, the branch commit, how far
-     * the branch is behind and the copy's start. A run without it records no field.
+     * the branch is behind, the copy's start and its content read, `work` (TaskCopyWork). A run without it records no field.
      *
      * @return array<string,mixed>
      */
@@ -92,7 +92,7 @@ final readonly class TaskSyncProjection implements DirectOperationProjection, Di
     {
         $evidence = is_array($captured) && is_array($captured['evidence'] ?? null) ? $captured['evidence'] : [];
 
-        return array_intersect_key($evidence, array_flip(['default_branch', 'default_commit', 'branch', 'branch_commit', 'behind_by', 'start']));
+        return array_intersect_key($evidence, array_flip(['default_branch', 'default_commit', 'branch', 'branch_commit', 'behind_by', 'start', 'work']));
     }
 
     /**

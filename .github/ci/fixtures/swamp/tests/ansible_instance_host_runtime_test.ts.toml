@@ -2,16 +2,15 @@ order = 80
 cases = [
   "the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin",
   "a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused",
-  "the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links",
+  "the runtime builds its Vite+ home and reuses it in another folder version",
+  "a mapped Vite+ home stays until no process maps it and no folder version links it",
+  "a Vite+ home with the wrong Node version is refused without replacing current",
 ]
 file = "swamp/tests/ansible_instance_host_runtime_test.ts"
 self_hosted = true
 host_programs = ["zip", "unzip"]
-# 180.025s, hosted four-worker run 43000765953 (unit cutoff; case unfinished).
-cost = 320
-# Completed Deno case times rounded up by one second; startup is added per slice.
-# Unmeasured cases use the observed maximum (115s); these are estimates, not completed measurements.
-slices = 3
+cost = 465
+slices = 5
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "apps/gateway/resources/machine-software/recipe.json",
@@ -40,11 +39,15 @@ inputs = [
   "swamp/ansible/transport-exit-codes.json",
   "swamp/tests/_support/fixture_supervisor.py",
   "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/_support/host_task_scope.ts",
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
 
+# Scoped subsystem case costs are ESTIMATES pending managed-pool receipts.
 [case_costs]
-  "the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin" = 90 # completed body 65.337s, run 43010311414; larger completed history retained
-  "a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused" = 115 # completed body 85.653s, run 43010311414; larger completed history retained
-"the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links" = 115 # ESTIMATE: the file's observed maximum (115s); unmeasured
+"the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin" = 45
+"a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused" = 70
+"the runtime builds its Vite+ home and reuses it in another folder version" = 110
+"a mapped Vite+ home stays until no process maps it and no folder version links it" = 140
+"a Vite+ home with the wrong Node version is refused without replacing current" = 100

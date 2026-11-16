@@ -54,6 +54,7 @@ sequenceDiagram
     %%> - root makes the bundle folder fresh and owns it and the bundle; `agent` can read it and cannot replace it
     %%> - as `agent`, `git fetch` of the bundle into `refs/remotes/origin/<default>` only
     %%> - reads the default head, the branch commit, `git rev-list --count task-42..origin/<default>` and the copy's start
+    %%> - then one content read, `work`: whether every path HEAD changed since its merge base with the default head holds the same content on the default head or in a published commit, and the uncommitted, untracked and stashed counts (docs/reference/tasks.md#published-work-of-a-copy); `task:cancel` and `task:complete` read it
     %%> Result:
     %%> - HEAD, the working tree, the index and the local branches are not touched; nothing is merged or rebased
     %%> Source:
@@ -106,7 +107,7 @@ sequenceDiagram
     Note over GW: Record the result<br/>refs · behind_by
     %%> Result:
     %%> - a task VM: the commit of the default branch and the commit of `task-42`
-    %%> - a task copy: `default_branch`, `default_commit`, `branch`, `branch_commit`, `behind_by` and `start`
+    %%> - a task copy: `default_branch`, `default_commit`, `branch`, `branch_commit`, `behind_by`, `start` and `work`
   else a step failed
     SW--xGW: Run failed<br/>error_code · failed step
     %%> The Gateway reads:
