@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\NodeDesiredConvergeInput;
+use App\Domain\Nodes\NodeRoleCertificateInput;
+use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\SwampRoleUnits;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -145,7 +147,8 @@ it('prints the phase input digest of the default converge without --base, writes
 
 it('carries the units of the Node roles in the base intent, never the serve unit, so the digest moves when their text does', function (): void {
     $gateway = Node::query()->where('name', 'gateway')->sole();
-    $gateway->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+    // The admission of the role records its runtime material; the default capture reads it.
+    app(NodeRoleRuntimeInput::class)->prepare($gateway, $gateway->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']));
     $units = app(NodeDesiredConvergeInput::class)->baseIntent($gateway)['role_units'];
 
     expect(array_column($units, 'name'))->toBe(['orbit-swamp-worker@.service', 'orbit-websocket.service'])
@@ -174,4 +177,16 @@ it('also prints the named Node\'s Instance host intent digest as host, empty whi
         ->expectsOutput(json_encode(['app-dev' => app(NodeDesiredConvergeInput::class)->baseDigest($this->node), 'host' => $host], JSON_THROW_ON_ERROR))->assertSuccessful();
     $this->artisan('orbit:node-converge-digest', ['nodes' => ['app-dev'], '--base' => true, '--host' => 'nowhere'])
         ->expectsOutputToContain('The Node nowhere is unknown.')->assertFailed();
+});
+
+it('gives a role with a certificate leaf the same default digest at each read, though each capture mints a new leaf version', function (): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: the leaf version is a value of the Operation, not an input.
+    config(['swamp.run_token' => 'test-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
+    $gateway = Node::query()->where('name', 'gateway')->sole();
+    // The admission of the role records its runtime material; the default capture reads it.
+    app(NodeRoleRuntimeInput::class)->prepare($gateway, $gateway->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']));
+    $leaves = fn (): array => app(NodeRoleCertificateInput::class)->capture($gateway, RoleName::WebSocket)['leaves'];
+
+    expect($leaves()[0]['version'])->not->toBe($leaves()[0]['version'])
+        ->and(app(NodeDesiredConvergeInput::class)->defaultDigest($gateway))->toBe(app(NodeDesiredConvergeInput::class)->defaultDigest($gateway));
 });

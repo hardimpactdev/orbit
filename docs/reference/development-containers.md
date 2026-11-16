@@ -2642,7 +2642,7 @@ The cover test fails, with the file and line, on what it cannot follow:
 
 After the migrate, the refresh runs `php artisan orbit:node-converge-digest gateway app-dev app-prod` in the nested Gateway. The command builds each intent as a default `node.converge` does. It admits no Operation, makes no execution copy and writes nothing.
 
-A file list cannot follow the Gateway code that builds an intent: through its models, that code reaches much of the Gateway. So the nested Gateway hashes the intent itself. The intent holds no time, token, signed URL or random id. The Operation id and the agent verifier live in the execution copies, which are not part of it.
+A file list cannot follow the Gateway code that builds an intent: through its models, that code reaches much of the Gateway. So the nested Gateway hashes the intent itself. The intent holds no time, token or signed URL. Its one random id, the version that each capture gives a role's certificate leaf, is left out of the hash: it names the folder of that leaf, not an input. The Operation id and the agent verifier live in the execution copies, which are not part of it.
 
 The list holds the four include groups of the playbook: roles, software, Tools and the network. A default intent selects each of them that the Node records.
 

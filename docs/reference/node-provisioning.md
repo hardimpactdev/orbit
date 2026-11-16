@@ -623,7 +623,9 @@ A phase digest is the SHA-256 of the phase name and of what the phases read. Swa
 - the Ansible bundle, which also builds each role's variables;
 - the Tool helper and the shipped Tool files that it imports.
 
-The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies. Swamp replaces the attempt's Operation ID with a fixed mark before it hashes a file, so two attempts with the same recorded state have the same digest. The digests the Node records are not in the variables, so a digest does not read its own record.
+The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies.
+
+Swamp replaces the attempt's Operation ID, and the version that the admission gives each role certificate leaf, with fixed marks before it hashes a file, so two attempts with the same recorded state have the same digest. A leaf version is new at each admission and names only the leaf's folder on the Node. The digests the Node records are not in the variables, so a digest does not read its own record.
 
 Every phase reads the same variables, so all phase digests move together. A change of any recorded input, secret value, plan or shipped converge code runs every phase again.
 

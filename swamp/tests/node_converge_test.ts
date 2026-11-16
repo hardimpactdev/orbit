@@ -441,13 +441,14 @@ Deno.test("the code digest moves with a file's content and name", async () => {
 });
 
 /** Input preparation in a fresh run folder, as one Operation of the given ID; the intent names that Operation, as a role's runtime does. */
-async function prepared(recorded: Record<string, string>, change: { operationId?: number; plans?: string; secret?: string; code?: string[] } = {}) {
+async function prepared(recorded: Record<string, string>, change: { operationId?: number; plans?: string; secret?: string; code?: string[]; leaf?: string } = {}) {
     const folder = await Deno.makeTempDir();
     try {
         const operationId = change.operationId ?? 41;
         const ssh = { identity_file: "/test/identity", target: { host: "10.44.0.7", port: 22, user: "orbit", host_keys: ["ssh-ed25519 pinned"] } };
+        const certificates = change.leaf === undefined ? {} : { certificates: { leaves: [{ node_id: 7, scope: "role-websocket", domain: "reverb.orbit", version: change.leaf }] } };
         await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [], container: `orbit-analytics-operation-${operationId}-createdb`,
-            recorded_digests: recorded }));
+            ...certificates, recorded_digests: recorded }));
         await Deno.writeTextFile(`${folder}/plans.json`, change.plans ?? JSON.stringify({ ci: { runner: "one" } }));
         await Deno.writeTextFile(`${folder}/secret-agent_verifier`, change.secret ?? "v");
         const phases = await convergeInput(folder, operationId, "/unused", "/shipped/helper.ts", change.code ?? []);
@@ -499,6 +500,13 @@ Deno.test("a changed plan or secret value moves the roles digest, and the Operat
     // plans.json carries the CI host spec and the ClickHouse files, which the roles phase applies.
     assertEquals((await prepared(first.phases.digests, { plans: JSON.stringify({ ci: { runner: "two" } }) })).phases.unchanged.includes("roles"), false);
     assertEquals((await prepared(first.phases.digests, { secret: "w" })).phases.unchanged.includes("roles"), false);
+});
+
+Deno.test("the version a capture mints for a certificate leaf does not move a digest; the leaf's domain does", async () => {
+    const first = await prepared({}, { leaf: "0123456789abcdef" });
+    assertEquals((await prepared(first.phases.digests, { leaf: "fedcba9876543210", operationId: 42 })).phases.unchanged, [...skippable]);
+    assertEquals((await prepared(first.phases.digests, { leaf: "fedcba9876543210" })).phases.unchanged, [...skippable]);
+    assertEquals((await prepared({}, { leaf: "0123456789abcdef" })).phases.digests.roles === (await prepared({})).phases.digests.roles, false);
 });
 
 Deno.test("a changed shipped Tool file that the Tool helper imports moves the tools digest", async () => {

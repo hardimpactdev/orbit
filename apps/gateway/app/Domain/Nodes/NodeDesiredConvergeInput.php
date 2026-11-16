@@ -97,6 +97,19 @@ final readonly class NodeDesiredConvergeInput
         } finally {
             DB::rollBack();
         }
+        // Each capture mints a new certificate leaf version (NodeRoleCertificateInput): a value of the Operation, not an input, as the
+        // converge's own phase digests read it (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+        if (is_array($intent['roles'] ?? null)) {
+            $intent['roles'] = array_map(function (mixed $role): mixed {
+                $certificates = is_array($role) && is_array($role['certificates'] ?? null) ? $role['certificates'] : [];
+                if (! is_array($role) || ! is_array($certificates['leaves'] ?? null)) {
+                    return $role;
+                }
+                $certificates['leaves'] = array_map(fn (mixed $leaf): array => array_diff_key(ValidatedData::object($leaf), ['version' => true]), $certificates['leaves']);
+
+                return [...$role, 'certificates' => $certificates];
+            }, $intent['roles']);
+        }
 
         return hash('sha256', json_encode($intent, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
