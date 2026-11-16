@@ -167,7 +167,11 @@ After the checkouts, the agent sends the `checkouts` index. The Gateway deletes 
 
 ### Task VM egress
 
-The [watch list](#watch-list) sends `egress: null` to every Node, because no Node is a task VM host any more, and the Gateway refuses every `egress` fact with `422 agent.fact_not_expected`. This section describes what the agent does when a watch list names a bridge. A task VM host's watch list named the Incus bridge of the task VMs in `egress`, and on a container host also the bridge of the task containers. The agent then records which outside hosts each VM or container connects to and sends one `egress` fact per guest, named by the guest in `subject`. It runs one observer per bridge, with its own files, offsets and state. The record is a log only: nothing is blocked. The agent reads three kinds of files, starts no program and opens no port.
+The [watch list](#watch-list) sends `egress: null` to every Node, because no Node is a task VM host any more. The Gateway refuses every `egress` fact with `422 agent.fact_not_expected`.
+
+The rest of this section describes what the agent does when a watch list names a bridge. A task VM host's watch list named the Incus bridge of the task VMs in `egress`, and on a container host also the bridge of the task containers.
+
+The agent then records which outside hosts each VM or container connects to and sends one `egress` fact per guest, named by the guest in `subject`. It runs one observer per bridge, with its own files, offsets and state. The record is a log only: nothing is blocked. The agent reads three kinds of files, starts no program and opens no port.
 
 | Source | Path | What the agent takes |
 | --- | --- | --- |
