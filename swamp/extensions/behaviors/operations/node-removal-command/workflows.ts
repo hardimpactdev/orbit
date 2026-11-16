@@ -295,6 +295,15 @@ export function roleRemovalWorkflow(): ReturnType<typeof workflow> {
                 alternatives: [],
             },
         )],
+        // A CI Node's seed listener goes before the firewall phase of the resources, so its port is never open to every WireGuard
+        // member while Incus still listens (docs/reference/node-provisioning.md#the-seed-listener).
+        [{
+            ...cfg("Stop the seed listener", "exec", items("seed_listener"), {
+                command: ex("self.action.command"),
+                onlyIf: ex("self.action.only_if"),
+            }),
+            concurrency: 1,
+        }],
         ...resources(items),
         // The role certificate current path may be a directory or a symlink. Neither cfgmgmt file nor directory covers both.
         [ssh(

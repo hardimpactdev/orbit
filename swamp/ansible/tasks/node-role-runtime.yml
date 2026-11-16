@@ -88,7 +88,13 @@
   register: runtime_units
   notify: Reload units
 - { name: Reload units before services start, ansible.builtin.meta: flush_handlers }
-# Only the intent of an app-dev Node on the build list has `instances` (docs/reference/development-containers.md#the-build-list).
+# Only the intent of an app-dev Node on the build list, or of the ci-runner role on a CI Node that hosts proof copies, has `instances`
+# (docs/reference/development-containers.md#the-build-list, docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
+# The CI bridge is read before the branch, which refuses an Instance bridge that overlaps it, and again after the CI resources, which
+# make a new `orbitci0`; the Gateway records the last read.
+- name: Read the CI bridge before the Instance container host
+  when: rt.ci_host
+  ansible.builtin.include_tasks: ci-bridge-read.yml
 - name: Prepare the Instance container host
   when: rt.instances is defined
   ansible.builtin.include_tasks: instance-host.yml
@@ -107,10 +113,20 @@
 - name: Apply Gateway DNS policy
   when: rt.gateway_dns is not none
   ansible.builtin.import_tasks: gateway-dns.yml
+# Only a ci-runner intent has `proof_seed`: present on a Node that offers proof places other than the default's Node, absent on the others.
+- name: Apply the seed listener
+  when: rt.proof_seed is defined
+  ansible.builtin.include_tasks: proof-seed-listener.yml
+  vars:
+    seed: "{{ rt.proof_seed }}"
+    seed_certificate: "{{ hostvars['n' ~ rt.proof_seed.sender.node_id].proof_seed_certificate if rt.proof_seed.present else '' }}"
 - name: Apply CI host resources
   when: rt.ci_host
   ansible.builtin.import_tasks: ci.yml
   vars: { ci_check_only: false }
+- name: Read the CI bridge after the CI host resources
+  when: rt.ci_host
+  ansible.builtin.include_tasks: ci-bridge-read.yml
 - name: Run Metrics
   when: rt.metrics is not none
   ansible.builtin.import_tasks: metrics.yml

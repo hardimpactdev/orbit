@@ -3,10 +3,11 @@
 
 CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units plans the Swamp fixture units.
 Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
-names for changed SDK fixtures, and the whole SDK suite, which takes seconds. The Gateway, CLI and docs suites
-are left to CI and named as skipped. A change to what CI's own policy tests read (the CI registry and its
-fixture tomls, workflows, CI scripts, Swamp test files) adds those tests, tools/test_ci_*.py, before Pest and the fixtures. Every part gets the time left as its limit; a part the budget stops or
-leaves out is named as skipped. The output ends with a summary of at most SUMMARY_BYTES: one line per part with its
+names for changed SDK fixtures, the project's pin test files (PIN_TESTS), and the whole SDK suite, which takes
+seconds. The rest of the Gateway, CLI and docs suites is left to CI and named as skipped. A change to what CI's own
+policy tests read (the CI registry and its fixture tomls, workflows, CI scripts, Swamp test files) adds those tests,
+tools/test_ci_*.py, before Pest and the fixtures. Every part gets the time left as its limit; a part the budget stops
+or leaves out is named as skipped. The output ends with a summary of at most SUMMARY_BYTES: one line per part with its
 outcome and seconds, then the last lines of each failed part, so the stored tail of the output always holds it.
 
 --base REF        the start commit (default: the merge base with origin/main, else main)
@@ -52,8 +53,16 @@ PHP_PROJECTS = review['PHP_PROJECTS']
 PEST_JOBS = {'gateway-tests': 'apps/gateway', 'cli-tests': 'apps/cli', 'sdk-tests': 'packages/php-sdk', 'docs': 'apps/docs'}
 STATIC_JOBS = {'gateway-static': 'apps/gateway', 'cli-static': 'apps/cli', 'sdk-static': 'packages/php-sdk',
                'e2e-static': 'apps/e2e'}
-# The suites small enough to run whole. Each other suite runs only its changed and contract-mapped test files.
+# The suites small enough to run whole. Each other suite runs only its changed, contract-mapped and pin test files.
 FULL_SUITES = ('packages/php-sdk',)
+# The test files of a project that pin a whole surface: a whole intent, a digest or the command surface. A change far
+# from such a test breaks it, so no path mapping finds it. Each runs whenever CI selects its project's Pest job.
+PIN_TESTS = {
+    'apps/gateway': ('tests/Feature/Domain/Nodes/GatewayRuntimeFilesTest.php', 'tests/Feature/NestedFleetHostingTest.php',
+                     'tests/Feature/Extensions/Conn/ConnThreadStartTest.php', 'tests/Feature/Domain/Proof/ProofRunCopiesTest.php',
+                     'tests/Feature/InstanceNodeServiceTargetsTest.php', 'tests/Feature/Http/CollectionAccessContractTest.php'),
+    'apps/cli': ('tests/Feature/CommandSurfaceTest.php',),
+}
 # The CI policy tests that CI's changes job runs on every PR, and the changed paths that select them here: what those tests read.
 # They check the CI registry and its fixture tomls, the workflows, the CI scripts and this check, their own evidence files, and
 # the Swamp test files whose cases and sources the registry pins. Other test files they do not read.
@@ -67,7 +76,7 @@ OUTPUT_LINES = 80
 SUMMARY_BYTES = 12 * 1024
 # The most bytes of one output or summary line; a longer line keeps its start and names its size.
 LINE_BYTES = 300
-NOT_IN_CHECK = ('Not in this check: Rector, the full PHPStan analysis, the Gateway, CLI and docs Pest suites, web app '
+NOT_IN_CHECK = ('Not in this check: Rector, the full PHPStan analysis, the full Gateway, CLI and docs Pest suites, web app '
                 'checks, Rust formatting, generated contracts, Swamp workflow validation. CI runs them.')
 DEFAULT_BUDGET = 270
 
@@ -228,22 +237,27 @@ def pest_plan(jobs, paths, base):
         if project in FULL_SUITES:
             entries.append((name, project, None, 'run', 'the whole suite'))
             continue
-        files = set(test_files(paths, project))
+        changed = set(test_files(paths, project))
         if project == 'apps/cli':
-            files |= {str(path.relative_to(ROOT)) for fixture in contract.changed_fixtures(base)
-                      for path in contract.replay_tests(fixture)}
+            changed |= {str(path.relative_to(ROOT)) for fixture in contract.changed_fixtures(base)
+                        for path in contract.replay_tests(fixture)}
+        pins = PIN_TESTS.get(project, ())
+        changed -= {f'{project}/{pin}' for pin in pins}
+        files = changed | {f'{project}/{pin}' for pin in pins}
         if files:
-            entries.append((name, project, sorted(files), 'run', f'{len(files)} changed or contract-mapped test files'))
+            detail = f'{len(changed)} changed or contract-mapped, {len(pins)} pin test files'
+            entries.append((name, project, sorted(files), 'run',
+                            detail + (': ' + ', '.join(Path(pin).stem for pin in pins) if pins else '')))
         entries.append((f'{name} suite', project, [], 'skipped', 'CI runs the full suite'))
     return entries
 
 
-def pest(name, project, files, deadline):
+def pest(name, project, files, detail, deadline):
     argv = [str(ROOT / 'bin/pest-plain'), 'vendor/bin/pest', '--compact', '--colors=never',
             *[str(Path(file).relative_to(project)) for file in files or ()]]
     part = timed(name, [argv], deadline, cwd=ROOT / project)
     if part.status != 'skipped':
-        part.detail = (part.detail + '; ' if part.detail else '') + (f'{len(files)} test files' if files else 'the whole suite')
+        part.detail = (part.detail + '; ' if part.detail else '') + detail
     return part
 
 
@@ -501,7 +515,7 @@ def main(argv=None):
         record(fixture_population(plan, deadline))
     if want('pest'):
         for name, project, files, status, detail in pest_plan(jobs, paths, base):
-            record(pest(name, project, files, deadline) if status == 'run' else Part(name, status, 0, detail))
+            record(pest(name, project, files, detail, deadline) if status == 'run' else Part(name, status, 0, detail))
     if want('fixtures'):
         try:
             _budget, table, _defaults = units.configuration()

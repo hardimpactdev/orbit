@@ -410,6 +410,10 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-instance-seed-copy": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-instance-start": {
    "result": "read-only",
    "cleanup": "idempotent"
@@ -423,6 +427,7 @@
   },
   "operation-node-role-add": {
    "Check the role": "read-only",
+   "Read the CI bridge": "read-only",
    "Read the OS release": "read-only",
    "Wait for Analytics": "read-only"
   },

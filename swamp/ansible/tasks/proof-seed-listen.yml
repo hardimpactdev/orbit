@@ -1,0 +1,13 @@
+---
+# The seed listener of a CI Node opens in the firewall phase, after the converge has inserted the allow from the default's Node and
+# the deny of every other source in front of the WireGuard member trust (docs/reference/node-provisioning.md#the-seed-listener).
+# Incus listens on the WireGuard address only, so the port is never reachable before its rules exist. Reads `seed` (the runtime's
+# `proof_seed`).
+- name: Read the Incus listener
+  ansible.builtin.command: { argv: [incus, config, get, core.https_address] }
+  register: seed_listener
+  changed_when: false
+- name: Listen on the WireGuard address
+  when: seed_listener.stdout | trim != seed.listen
+  ansible.builtin.command: { argv: [incus, config, set, core.https_address, "{{ seed.listen }}"] }
+  changed_when: true

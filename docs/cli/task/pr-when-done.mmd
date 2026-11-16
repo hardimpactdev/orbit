@@ -22,7 +22,7 @@ sequenceDiagram
   Note over GW: Find the done groups<br/>own records only
   %%> What it does:
   %%> - takes each open group whose workspace is a task copy and that has no pull request
-  %%> - keeps a group whose work is done: every subtask ended and one completed; the last completed one has an eligible passed handoff check, and no newer handoff check exists; the reviewer thread's newest turn reviewed exactly that commit and ended `done` (a subtask of a task copy cannot be completed while a turn runs); no turn may still run and no Operation of the group runs
+  %%> - keeps a group whose work is done: every subtask ended and one completed; the last completed one has an eligible passed handoff check, and no newer handoff check exists; the reviewer thread's newest turn reviewed exactly that commit and ended `done` (a subtask of a task copy cannot be completed or reopened while a turn runs; a reopened subtask has not ended, so its group is not done); no turn may still run and no Operation of the group runs
   %%> - keeps a group whose mode now resolves to `pr_when_done` (group, then Project, then Gateway) and whose done check recorded `pr_when_done` when it passed
   %%> Result:
   %%> - a group in `review_before_pr`, or whose done check recorded it, stays `waiting_for_release`; nothing happens on GitHub

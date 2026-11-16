@@ -18,11 +18,13 @@ use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\ContainerWorkspaceRead;
 use App\Infrastructure\Instances\NodeIdMapRead;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
@@ -111,13 +113,40 @@ final readonly class TaskCopyStart
             throw new ResourceOperationException('tasks.copy_capacity_full',
                 "The Node holds {$live} task copies; the Gateway allows {$limit} at once.", 409, details: ['live' => $live, 'limit' => $limit]);
         }
+        // Placement is unchanged: a copy goes to the default's Node until ADR 0260 build step 5 chooses the Node. The copy starts from
+        // the seed of the Node it is placed on.
+        $node = $default->node()->firstOrFail();
+        self::seed($runtime, $node);
         $this->assertIdRanges($default, $runtime, $host);
         $operation = app(StartDevelopmentInstanceCreateAction::class)->execute(
-            new CreateInstanceData($project->id, $default->node_id, $name, null, null, $name), $caller, $request, $group, $read['agent_files']);
+            new CreateInstanceData($project->id, $node->id, $name, null, null, $name), $caller, $request, $group, $read['agent_files']);
         $group->taskable()->associate(Instance::query()->findOrFail($operation->target_id));
         $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
 
         return $operation;
+    }
+
+    /**
+     * The seed a copy on the Node starts from (docs/reference/development-containers.md#the-seed-on-each-ci-node): on the default's own
+     * Node, the default's seed pair; on another Node, that Node's seed holder of the proof default, which must be the default's current
+     * seed. No copy fetches a seed over the network. A Node without a current seed refuses.
+     *
+     * @return array{source: string, snapshot: string, seed_commit: string, inner_volume: string|null}
+     */
+    public static function seed(InstanceRuntime $default, Node $node): array
+    {
+        $commit = $default->seed_commit ?? throw new LogicException('A copied default records its seed commit.');
+        if ($node->id === $default->node_id) {
+            return ['source' => $default->container_name, 'snapshot' => 'seed-'.$commit, 'seed_commit' => $commit, 'inner_volume' => $default->inner_volume];
+        }
+        $proof = app(ProofSeeds::class);
+        $held = $proof->source()?->id === $default->id ? $proof->holder($node) : null;
+        if ($held === null) {
+            throw new ResourceOperationException('tasks.copy_source_unavailable',
+                "Node [{$node->name}] holds no current seed of the default Instance to copy.", 409, details: ['node_id' => $node->id]);
+        }
+
+        return ['source' => $held->holder, 'snapshot' => 'seed-'.$held->commit, 'seed_commit' => $held->commit, 'inner_volume' => $held->volume()];
     }
 
     /**

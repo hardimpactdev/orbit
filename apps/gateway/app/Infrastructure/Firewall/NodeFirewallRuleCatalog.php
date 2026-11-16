@@ -11,12 +11,12 @@ use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressPolicy;
-use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceOwnSite;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -39,22 +39,24 @@ final readonly class NodeFirewallRuleCatalog
 
     /**
      * DHCP, the egress proxy and a container's own site for the Instance bridge of a Node on the build list, and no DNS: the proxy
-     * resolves every name (docs/reference/development-containers.md#egress-and-dns, #the-own-site-from-inside).
+     * resolves every name (docs/reference/development-containers.md#egress-and-dns, #the-own-site-from-inside). A CI Node that hosts
+     * proof copies gets DHCP and the proxy only: it runs no Caddy, so a container there has no own site.
      */
     public const array InstanceInputComments = ['orbit:instances-dhcp', InstanceEgress::Comment, ...InstanceOwnSite::Ports];
 
     /** @return list<UfwManagedRule> */
     public function instanceHostInput(Node $node): array
     {
-        if ($node->instance_bridge === null || ! app(ContainerNodes::class)->includes($node)) {
+        $role = $node->instance_bridge === null ? null : app(InstanceHostIntent::class)->role($node);
+        if ($role === null) {
             return [];
         }
-        [$gateway] = Ipv4Subnet::from($node->instance_bridge)->usableRange();
+        [$gateway] = Ipv4Subnet::from((string) $node->instance_bridge)->usableRange();
 
         return [
             $this->dhcpInput(InstanceHostIntent::Network, self::InstanceInputComments[0]),
             InstanceEgress::rule(InstanceHostIntent::Network, $gateway),
-            ...InstanceOwnSite::rules($gateway),
+            ...($role === RoleName::AppDev ? InstanceOwnSite::rules($gateway) : []),
         ];
     }
 
@@ -479,6 +481,26 @@ final readonly class NodeFirewallRuleCatalog
             new UfwRuleShape($comment, $action, 'in', $source, $destination, $port, 'tcp', 'orbit', null, 'v4'),
             ['sudo', 'ufw', $action, 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', $port, 'comment', $comment],
         );
+    }
+
+    /**
+     * The seed listener of a CI Node (docs/reference/node-provisioning.md#the-seed-listener): the default's Node may reach the Incus
+     * port on the WireGuard address, and every other source may not. Both go in front of `orbit:wireguard-members`, which admits every
+     * port from every member, so the first match decides. A `$sender` of null gives the deny alone, which a removal deletes.
+     *
+     * @return array{allow: UfwManagedRule|null, deny: UfwManagedRule}
+     */
+    public function proofSeedListener(Node $node, ?Node $sender): array
+    {
+        $destination = $this->wireguardIp($node);
+        $port = (string) ProofSeeds::ListenerPort;
+        $rule = static fn (string $comment, string $action, string $source): UfwManagedRule => new UfwManagedRule(
+            new UfwRuleShape($comment, $action, 'in', $source, $destination, $port, 'tcp', 'orbit', null, 'v4'),
+            ['sudo', 'ufw', $action, 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', $port, 'comment', $comment],
+        );
+
+        return ['allow' => $sender === null ? null : $rule('orbit:proof-seed', 'allow', $this->wireguardIp($sender)),
+            'deny' => $rule('orbit:proof-seed-deny', 'deny', 'any')];
     }
 
     public function metricsGrafanaUpstream(Node $metricsNode, string $gatewayAddress): UfwManagedRule

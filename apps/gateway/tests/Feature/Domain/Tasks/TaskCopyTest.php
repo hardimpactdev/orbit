@@ -11,10 +11,12 @@ use App\Actions\Tasks\ReadAgentThreadAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
+use App\Actions\Tasks\UpdateTaskAction;
 use App\Data\Tasks\AgentThreadData;
 use App\Data\Tasks\StartTaskCheckData;
 use App\Data\Tasks\StartTaskPublishData;
 use App\Data\Tasks\TaskTurnData;
+use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerServer;
@@ -63,6 +65,7 @@ use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnPrompt;
 use App\Domain\Tasks\TaskVmRemoved;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Processes\CommandResult;
@@ -1479,17 +1482,18 @@ describe('a turn of a group that owns a copy', function (): void {
                 'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'candidate' => null, 'settle' => [], 'seconds' => 3600,
                 'title' => 'Orbit task '.$group->id.' thread '.$thread->id])
             // The implementer learns how to ask: a question ends the turn.
-            // Every turn learns its clock: the admission's time and the end of its bound.
-            ->and($turn->input['turn']['prompt'])->toBe("Subtask: Step\n\nBrief:\nDo it\n\nThis turn started at 2026-11-16T10:00:00Z and Orbit ends it at 2026-11-16T11:00:00Z. "
-                ."Commit your work before then.\n\nPrompt of this turn:\nRun Doctor and commit a note.\n\n"
+            // The group's title and brief come first, the copy rules once, then the turn's clock: the admission's time and the end of its bound.
+            ->and($turn->input['turn']['prompt'])->toBe("Task group: Group\n\nGroup brief:\nBrief\n\nSubtask: Step\n\nBrief:\nDo it\n\n".TaskTurnPrompt::CopyRules
+                ."\n\nThis turn started at 2026-11-16T10:00:00Z and Orbit ends it at 2026-11-16T11:00:00Z. Commit your work before then."
+                ."\n\nPrompt of this turn:\nRun Doctor and commit a note.\n\n"
                 .'To ask a question, use your question tool. Asking ends this turn; the answer comes as the next turn.')
             ->and($thread->only(['driver', 'role', 'model', 'effort', 'provider_instance', 'node_id']))->toBe(['driver' => 't3', 'role' => 'implementer', 'model' => 'claude-opus-5-5',
                 'effort' => 'medium', 'provider_instance' => 'claudeMedium', 'node_id' => $copy->node_id])
             ->and($group->tasks()->firstOrFail()->implementer_agent_thread_id)->toBe($thread->id)
             ->and(TaskVm::query()->count())->toBe(0)
-            // T3 issues its own session inside the copy: no vault key, no token.
+            // T3 issues its own session inside the copy: no vault key, no token. The prompt, pinned above, is text: its copy rules name both.
             ->and(app(DirectOperation::class)->definition('tasks.copy_turn'))->not->toHaveKey('execution_copies')
-            ->and(json_encode($turn->input, JSON_THROW_ON_ERROR))->not->toContain('vault')->not->toContain('token')->not->toContain('session');
+            ->and(json_encode(Arr::except($turn->input, 'turn.prompt'), JSON_THROW_ON_ERROR))->not->toContain('vault')->not->toContain('token')->not->toContain('session');
     });
 
     it('moves the current subtask from todo to running at the turn\'s admission, and never completes it', function (): void {
@@ -1508,6 +1512,27 @@ describe('a turn of a group that owns a copy', function (): void {
         // A done reviewer turn leaves the subtask running: only the caller completes it (docs/reference/tasks.md#subtask-status-in-a-task-copy).
         expect($subtask->refresh()->status)->toBe(TaskStatus::Running)
             ->and(app(TaskGroupDone::class)->check($group->refresh()))->toBeNull();
+    });
+
+    it('admits an implementer turn on the reopened last subtask, which continues its thread (docs/reference/tasks.md#reopen-the-last-subtask)', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $subtask = $group->tasks()->firstOrFail();
+        $first = copyTurn($group);
+        copyTurnEnded($first, 'succeeded', copyTurnDone('mcp:1'));
+        copyTurnEnded(copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]), 'succeeded', copyTurnDone('mcp:2'));
+        $move = fn (TaskStatus $to): Task => app(UpdateTaskAction::class)->execute($group->refresh(), $subtask->refresh(), new UpdateTaskData(null, null, null, status: $to));
+        $move(TaskStatus::Completed);
+        expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.subtask_not_current 409');
+
+        expect($move(TaskStatus::Running)->status)->toBe(TaskStatus::Running);
+        $fix = copyTurn($group, ['prompt' => 'Fix the CI failure.']);
+
+        expect($fix->input['subtask'])->toBe($subtask->id)
+            ->and($fix->input['thread_id'])->toBe($first->input['thread_id'])
+            ->and($fix->input['turn']['thread'])->toBe('continue')
+            ->and($subtask->refresh()->status)->toBe(TaskStatus::Running);
     });
 
     it('leaves the subtask todo when the turn is refused', function (): void {
@@ -1731,9 +1756,11 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($review->input)->toMatchArray(['role' => 'reviewer', 'check' => $check->id, 'candidate' => $check->commit_sha])
             // The phase checks the candidate out for the reviewer, and the prompt names it.
             ->and($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'claudeHigh', 'candidate' => $check->commit_sha])
-            ->and($review->input['turn']['prompt'])->toContain("Prompt of this turn:\nReview the checked commit.\n\nThe checked commit under review: {$check->commit_sha}.")
-            // The reviewer learns its clock as the implementer does.
-            ->and($review->input['turn']['prompt'])->toMatch('/\n\nThis turn started at (\S+Z) and Orbit ends it at \S+Z\. Commit your work before then\.\n\nPrompt of this turn:\n/')
+            // The reviewer gets the group's title and brief first, the copy rules once and its clock, as the implementer does.
+            ->and($review->input['turn']['prompt'])->toStartWith("Task group: Group\n\nGroup brief:\nBrief\n\nSubtask: Step\n\n")
+            ->and(substr_count($review->input['turn']['prompt'], TaskTurnPrompt::CopyRules))->toBe(1)
+            ->and($review->input['turn']['prompt'])->toMatch('/'.preg_quote(TaskTurnPrompt::CopyRules, '/').'\n\nThis turn started at \S+Z and Orbit ends it at \S+Z\. Commit your work before then\.\n\n'
+                .'Prompt of this turn:\nReview the checked commit\.\n\nThe checked commit under review: '.$check->commit_sha.'\./')
             // A reviewer that approves sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
             ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::PrTextRule)
             ->and($again->input['turn']['candidate'])->toBe($check->commit_sha)
@@ -2060,7 +2087,11 @@ describe('a turn of a group that owns a copy', function (): void {
         try {
             $check();
         } catch (ResourceOperationException $error) {
-            expect($error->details)->toBe(['operation_id' => $cut->id]);
+            // It names the way out: the next turn stops the earlier run and settles it.
+            expect($error->details)->toBe(['operation_id' => $cut->id])
+                ->and($error->getMessage())->toBe('An earlier turn may still run in the task copy or left its checkout unrestored. '
+                    .'A check, publish or proof waits for the next task:turn, which stops that run and settles it. operation:cancel ends a running turn, '
+                    .'and the next turn stops its run.');
         }
 
         // The next turn is admitted and settles the earlier one in its own phase first, also on another thread.
