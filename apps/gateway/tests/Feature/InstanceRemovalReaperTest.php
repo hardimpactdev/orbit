@@ -146,17 +146,6 @@ describe('the reaper never starts', function (): void {
         expect(($this->reap)())->toBe([])->and($removal->fresh()->retry_count)->toBe(0);
     });
 
-    it('when admission refuses, and does not count it', function (): void {
-        $removal = ($this->failed)();
-        $this->travel(5)->minutes();
-        // A refusal that only admission sees: the Node lost its app-dev role, so the placement has no destroy flow.
-        $this->node->roles()->delete();
-
-        expect(($this->reap)())->toBe([])->and($removal->fresh()->retry_count)->toBe(0)
-            ->and($removal->fresh()->status)->toBe(InstanceRemovalStatus::Failed)
-            ->and(Operation::query()->where('triggered_by', InstanceRemovalReaper::Trigger)->exists())->toBeFalse();
-    });
-
     it('while the operator turned it off', function (): void {
         $removal = ($this->failed)();
         $this->travel(5)->minutes();
@@ -231,6 +220,55 @@ describe('a stuck removal', function (): void {
         DB::table('instance_removal_members')->where('instance_id', $this->instance->id)->update(['row_deleted_at' => now()]);
         Schema::withoutForeignKeyConstraints(fn () => DB::table('instances')->where('id', $this->instance->id)->delete());
         expect(($this->stuckIssues)())->toBe([]);
+    });
+});
+
+describe('a failed retry', function (): void {
+    it('counts a start that admission refuses, waits the next delay from it, and reports the removal stuck after three', function (): void {
+        $removal = ($this->failed)();
+        // A refusal that only admission sees: the Node lost its app-dev role, so the placement has no destroy flow.
+        $this->node->roles()->delete();
+        $this->travel(5)->minutes();
+        expect(($this->reap)())->toBe([])->and($removal->fresh()->retry_count)->toBe(1);
+        $this->travel(14)->minutes();
+        expect(($this->reap)())->toBe([])->and($removal->fresh()->retry_count)->toBe(1);
+        $this->travel(1)->minutes();
+        expect(($this->reap)())->toBe([])->and($removal->fresh()->retry_count)->toBe(2);
+        $this->travel(60)->minutes();
+        expect(($this->reap)())->toBe([])->and($removal->fresh()->retry_count)->toBe(3)
+            ->and(Activity::query()->where('description', 'instance.removal_stuck')->count())->toBe(0);
+
+        // The next pass records the Activity entry; Doctor reads the count itself.
+        ($this->reap)();
+
+        expect(Operation::query()->where('triggered_by', InstanceRemovalReaper::Trigger)->exists())->toBeFalse()
+            ->and($removal->fresh()->status)->toBe(InstanceRemovalStatus::Failed)
+            ->and(($this->stuckIssues)())->toHaveCount(1)
+            ->and(Activity::query()->where('description', 'instance.removal_stuck')->count())->toBe(1);
+    });
+
+    it('starts a failed removal that no Operation carries, counting from the removal\'s last change', function (): void {
+        $removal = ($this->failed)();
+        Schema::withoutForeignKeyConstraints(fn () => Operation::query()->where('input->removal_id', $removal->id)->delete());
+        $this->travel(4)->minutes();
+        expect(($this->reap)())->toBe([]);
+        $this->travel(1)->minutes();
+
+        $started = ($this->reap)();
+
+        expect($started)->toHaveCount(1)->and($started[0]->input['removal_id'])->toBe($removal->id)
+            ->and($removal->fresh()->retry_count)->toBe(1);
+    });
+
+    it('never starts a removal whose dataset another one holds, and reports it stuck at once', function (): void {
+        $removal = ($this->failed)();
+        $removal->update(['error_code' => 'instance.removal_dataset_taken']);
+        $this->travel(1)->days();
+
+        expect(($this->reap)())->toBe([])->and(($this->reap)())->toBe([])->and($removal->fresh()->retry_count)->toBe(0);
+        $issues = ($this->stuckIssues)();
+        expect($issues)->toHaveCount(1)->and($issues[0]->observed)->toBe('runtime_cleanup: instance.removal_dataset_taken')
+            ->and(Activity::query()->where('description', 'instance.removal_stuck')->count())->toBe(1);
     });
 });
 

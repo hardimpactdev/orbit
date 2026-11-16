@@ -40,6 +40,9 @@ final readonly class InstanceRemovalReaper
 
     public const string StuckCode = 'instance.removal_stuck';
 
+    /** A removal that failed with one of these needs a person: the reaper never starts it and reports it stuck at once. */
+    public const array PersonCodes = ['instance.removal_dataset_taken'];
+
     public function __construct(private StartInstanceDestroyAction $destroy, private OperationIdempotency $idempotency) {}
 
     public static function delayMinutes(int $retries): int
@@ -51,7 +54,7 @@ final readonly class InstanceRemovalReaper
     public static function stuck(InstanceRemoval $removal): bool
     {
         return $removal->status === InstanceRemovalStatus::Failed && $removal->kind === InstanceRemovalKind::Destroy
-            && $removal->retry_count >= self::MaxRetries;
+            && ($removal->retry_count >= self::MaxRetries || in_array($removal->error_code, self::PersonCodes, true));
     }
 
     /** @return list<Operation> the Operations this pass started */
@@ -68,8 +71,11 @@ final readonly class InstanceRemovalReaper
             try {
                 $operation = $this->reap($removal);
             } catch (ResourceOperationException $refusal) {
-                // Admission refused, such as operation.target_busy: no start, no count; the next pass tries again.
+                // Admission refused: a failed retry like a failed run. It counts, and the next start waits the next delay from now, so
+                // a removal that admission refuses for good reports stuck after MaxRetries.
                 Log::info('Removal reaper start refused', ['removal_id' => $removal->id, 'error_code' => $refusal->errorCode]);
+                InstanceRemoval::query()->whereKey($removal->id)->where('status', InstanceRemovalStatus::Failed)
+                    ->where('retry_count', $removal->retry_count)->update(['retry_count' => $removal->retry_count + 1]);
 
                 continue;
             } catch (Throwable $exception) {
@@ -97,13 +103,15 @@ final readonly class InstanceRemovalReaper
                     ->orWhere('lock_key', OperationStore::lockKey('instance', $instance->id)))->exists()) {
             return null;
         }
-        $failedAt = $this->failedAt($removal, $instance);
-        if ($failedAt === null) {
-            return null;
-        }
         if (self::stuck($removal) && $removal->stuck_at === null) {
             $this->reportStuck($removal, $instance);
         }
+        if (in_array($removal->error_code, self::PersonCodes, true)) {
+            return null;
+        }
+        // The removal record changes at each failed run and each refused start, so its last change is when the last try ended; a
+        // failed removal without any Operation counts from it too.
+        $failedAt = CarbonImmutable::instance($removal->updated_at ?? $removal->created_at ?? now());
         if (CarbonImmutable::now()->lt($failedAt->addMinutes(self::delayMinutes($removal->retry_count)))) {
             return null;
         }
@@ -121,15 +129,6 @@ final readonly class InstanceRemovalReaper
 
                     return $operation;
                 }));
-    }
-
-    /** When the removal's last run ended: the end of the newest destroy Operation of this removal. */
-    private function failedAt(InstanceRemoval $removal, Instance $instance): ?CarbonImmutable
-    {
-        $last = Operation::query()->where('kind', InstanceDestroyKind::forInstance($instance))->where('target_type', 'instance')
-            ->where('target_id', $instance->id)->where('input->removal_id', $removal->id)->orderByDesc('id')->first();
-
-        return $last?->finished_at === null ? null : CarbonImmutable::instance($last->finished_at);
     }
 
     /** Once per removal: the Activity entry; Doctor reports the issue for as long as the removal stays stuck (FactDoctor). */

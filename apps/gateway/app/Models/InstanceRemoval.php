@@ -29,6 +29,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $route_withdrawn_at
  * @property int $retry_count
  * @property Carbon|null $stuck_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property-read Collection<int, InstanceRemovalMember> $members
  */
 final class InstanceRemoval extends Model
