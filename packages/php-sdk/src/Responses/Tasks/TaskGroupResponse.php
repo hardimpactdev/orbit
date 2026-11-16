@@ -60,6 +60,8 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
         public ?string $prMode = null,
         public ?string $prModeSource = null,
         public ?TaskPublicationResponse $publication = null,
+        /** The GitHub issue the group's pull request closes; a Gateway before it shipped answers none. */
+        public ?int $issue = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -114,6 +116,7 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             prMode: TaskFields::nullableText($data, 'pr_mode'),
             prModeSource: TaskFields::nullableText($data, 'pr_mode_source'),
             publication: TaskPublicationResponse::fromGatewayData($data['publication'] ?? null, $requestId),
+            issue: TaskFields::nullableInt($data, 'issue'),
         );
     }
 
@@ -180,6 +183,7 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             // Every group has a mode in effect (a Gateway before it shipped answers null); a list row carries the mode without the show-only publication.
             ...($this->publication === null && $this->prModeSource === null ? [] : ['pr_mode' => $this->prMode, 'pr_mode_source' => $this->prModeSource]),
             ...($this->publication === null ? [] : ['publication' => $this->publication->toArray()]),
+            ...($this->issue === null ? [] : ['issue' => $this->issue]),
             'last_activity_at' => $this->lastActivityAt,
             'preview_url' => $this->previewUrl,
             'capacity_wait' => $this->capacityWait?->toArray(),

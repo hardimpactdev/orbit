@@ -39,6 +39,7 @@ it('reports each publication state of a task copy from its records', function (C
         ->and($publication?->operationId)->toBe($operation instanceof Operation ? $operation->id : null);
 })->with([
     'waiting for release' => [fn (TaskCopyDoneFixture $w) => null, 'waiting_for_release', null, true],
+    'waiting for the pull request text' => [fn (TaskCopyDoneFixture $w) => $w->check->update(['pr_text_operation_id' => null]) && false, 'waiting_for_pr_text', null, true],
     'working' => [fn (TaskCopyDoneFixture $w) => $w->turn->update(['result' => ['state' => 'asking_for_input', 'ended' => true]]) && false, 'working', null, false],
     'refused at admission' => [fn (TaskCopyDoneFixture $w) => $w->group->update(['publish_refusal' => ['code' => 'tasks.copy_publish_held', 'check_id' => $w->check->id, 'at' => now()->toIso8601String()]]) && false,
         'refused', 'tasks.copy_publish_held', true],
@@ -68,7 +69,9 @@ it('shows the mode, its source and the publication on task:show, and the mode bu
     expect($shown['pr_mode'])->toBe('review_before_pr')
         ->and($shown['pr_mode_source'])->toBe('project')
         ->and($shown['publication'])->toMatchArray(['mode' => 'review_before_pr', 'mode_source' => 'project', 'state' => 'waiting_for_release', 'check_id' => $world->check->id,
-            'commit' => TaskCopyDoneFixture::Commit, 'operation_id' => null, 'error_code' => null])
+            'commit' => TaskCopyDoneFixture::Commit, 'operation_id' => null, 'error_code' => null,
+            'pr_text' => ['title' => TaskCopyDoneFixture::Title, 'body' => TaskCopyDoneFixture::Body, 'operation_id' => $world->turn->id]])
+        ->and($shown['issue'])->toBeNull()
         ->and(TaskGroupData::fromModel($plain->refresh())->toArray())->toMatchArray(['pr_mode' => 'review_before_pr', 'pr_mode_source' => 'project', 'publication' => null]);
 });
 
@@ -79,6 +82,11 @@ it('lists the waiting and the refused task copies under releases in task:status'
 
     expect($releases)->toBe([['id' => $world->group->id, 'project_id' => $world->group->project_id, 'project' => 'trial', 'project_code' => $world->group->project->code,
         'title' => 'Add the export', 'state' => 'waiting_for_release', 'check_id' => $world->check->id, 'commit' => TaskCopyDoneFixture::Commit, 'error_code' => null]]);
+
+    // A done group that waits for its reviewer's text is listed too: an older copy has no key and needs a person's publish.
+    $world->check->update(['pr_text_operation_id' => null]);
+    expect(data_get(app(ShowTasksStatusAction::class)->execute()->toArray(), 'releases.0.state'))->toBe('waiting_for_pr_text');
+    $world->check->update(['pr_text_operation_id' => $world->turn->id]);
 
     publicationPublish($world, OperationStatus::Failed, 'tasks.push_failed');
     expect(data_get(app(ShowTasksStatusAction::class)->execute()->toArray(), 'releases.0'))->toMatchArray(['state' => 'refused', 'error_code' => 'tasks.push_failed']);

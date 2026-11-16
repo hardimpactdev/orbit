@@ -26,9 +26,10 @@ sequenceDiagram
   %%> - keeps a group whose mode now resolves to `pr_when_done` (group, then Project, then Gateway) and whose done check recorded `pr_when_done` when it passed
   %%> Result:
   %%> - a group in `review_before_pr`, or whose done check recorded it, stays `waiting_for_release`; nothing happens on GitHub
+  %%> - a done group whose reviewer thread's newest turn sent no pull request text stays `waiting_for_pr_text`; the tick admits nothing and stores nothing
   Note over GW: Admit the publish<br/>pr-when-done:GROUP:CHECK
   %%> What it does:
-  %%> - starts the `tasks.publish` admission of `task:publish` with the done check, the group title, a body of the brief, the completed subtasks and the checked commit, and a ready pull request
+  %%> - starts the `tasks.publish` admission of `task:publish` with the done check, the reviewer's title and body that its newest turn recorded on the done check (with `Closes #N` for a group that names issue N), and a ready pull request
   %%> Requirements:
   %%> - every guard of a manual publish: the group lock, the copy publish allow list, the eligible candidate, the running container
   %%> - the key `pr-when-done:GROUP:CHECK` was not admitted before, and no publish of this check failed or was cancelled; a repeat tick starts nothing
@@ -45,7 +46,7 @@ sequenceDiagram
   %%> - the workspace phase is the behavior `task-workspace-NODE-GROUP`, and every publish step names its group too, so the publish of another group on this Node never waits for its lock
   Note over SW: Check the .env content
   %%> How:
-  %%> - the `.env` path and content checks, with the Club key of a nested-fleet copy, run before any token exists; the title and body Orbit wrote are checked too
+  %%> - the `.env` path and content checks, with the Club key of a nested-fleet copy, run before any token exists; the reviewer's title and body are checked too
   SW->>GH: Push and open the PR<br/>task-GROUP · ready
   %%> How:
   %%> - the push step mints its own token; the pull request opens ready, not as a draft

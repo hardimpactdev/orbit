@@ -1,8 +1,0 @@
-manifestVersion: 1
-name: "@nckrtl/task-maintenance"
-version: 2026.11.02.1
-visibility: private
-license: MIT
-description: Captured maintenance policy, argv and result shaping for official SSH package actions.
-behaviors:
-  - operations/task-maintenance/metadata.ts

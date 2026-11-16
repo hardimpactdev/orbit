@@ -57,7 +57,7 @@ function verifyCopy(?string $container = null, string $incusProject = InstancePl
         'status' => InstanceState::Active, 'branch' => 'task-1', 'task_workspace_owner_id' => $group->id]);
     $runtime = InstanceRuntime::query()->create(['node_id' => $beast->id, 'power_state' => 'running', 'runtime_version' => 'test', 'agent_version' => 'test',
         'instance_id' => $instance->id, 'incus_project' => $incusProject, 'container_name' => $container ?? 'instance-'.$instance->id, 'bridge_address' => '10.253.0.5',
-        'seed_commit' => str_repeat('c', 40), 't3_port' => $t3Port,
+        'seed_commit' => str_repeat('c', 40), 't3_port' => $t3Port, 'container_server' => $t3Port === null ? null : 't3',
         'idmap_size' => $incusProject === InstancePlacement::NestedProject ? InstanceHostIntent::TaskPlaceIds : null]);
     $group->taskable()->associate($instance)->save();
     $mini = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'mini', 'status' => 'active', 'platform' => 'macos', 'architecture' => 'arm64',

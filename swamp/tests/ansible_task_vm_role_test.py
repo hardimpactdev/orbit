@@ -19,7 +19,7 @@ spec.loader.exec_module(builder)
 def intent(**extra):
     return {'ssh': {'identity_file': '/role/identity', 'target': {
         'host': '10.252.7.9', 'port': 22, 'user': 'orbit', 'host_keys': ['ssh-ed25519 vm']}},
-        'recipe': {'tools': {}}, 'profile': 'base', 'image': False, 'vp_lock': '{}', 'pi': None, 'nested': None, **extra}
+        'recipe': {'tools': {}}, 'profile': 'base', 'image': False, 'vp_lock': '{}', 'nested': None, **extra}
 
 
 class TaskVmRoleTest(unittest.TestCase):

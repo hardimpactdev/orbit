@@ -461,7 +461,7 @@ it('renders both sites when a queued create gains the Node after another create 
         if ($container) {
             InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances',
                 'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.'.($instance->id + 1), 'runtime_version' => 'runtime', 'agent_version' => 'agent',
-                'power_state' => 'stopped', 't3_port' => 3800 + $instance->id]);
+                'power_state' => 'stopped', 't3_port' => 3800 + $instance->id, 'container_server' => 't3']);
         }
         $route = Route::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'domain' => $name.'.bench.test',
             'kind' => 'app', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);

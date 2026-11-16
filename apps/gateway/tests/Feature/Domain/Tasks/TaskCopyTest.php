@@ -17,8 +17,10 @@ use App\Data\Tasks\StartTaskPublishData;
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
+use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceDestroyReplicationSlots;
 use App\Domain\Instances\InstanceHostIntent;
@@ -38,6 +40,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Projects\ProjectAgentInstructionSource;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
@@ -427,6 +430,39 @@ describe('a task start on the copy path', function (): void {
             ->and(TaskVm::query()->count())->toBe(0);
     });
 
+    it('reads the Project\'s agent instructions before its admission transaction and gives the copy them', function (): void {
+        $default = copySource('app', nested: false);
+        $group = copyGroup($default->project);
+        // A source that reads its bodies as Documents does: never inside a transaction deeper than the test's own.
+        $levels = [];
+        $outer = DB::transactionLevel();
+        $source = new class($levels) implements ProjectAgentInstructionSource
+        {
+            /** @param list<int> $levels */
+            public function __construct(public array &$levels) {}
+
+            public function files(Project $project): array
+            {
+                return ['AGENTS.md' => ['bytes' => 5, 'read' => function (): string {
+                    $this->levels[] = DB::transactionLevel();
+
+                    return "Test.\n";
+                }]];
+            }
+
+            public function summary(Project $project): ?array
+            {
+                return null;
+            }
+        };
+        app()->instance(InstanceAgentInstructions::class, new InstanceAgentInstructions([$source]));
+
+        $operation = startCopy($group);
+
+        expect($levels)->toBe([$outer])
+            ->and(containerIntentOf($operation)['clone']['agent_instructions']['files'][0]['content'])->toEndWith("# This Project\n\nTest.\n");
+    });
+
     it('replays the same create for a retry with the request\'s key', function (): void {
         $group = copyGroup(copySource()->project);
         $idempotency = app(OperationIdempotency::class);
@@ -709,6 +745,21 @@ describe('the address of a copy (docs/reference/development-containers.md#the-ad
         expect($run['intent']['container']['project'])->toBe(InstancePlacement::NestedProject)
             ->and($run['intent']['container']['club_key'] ?? null)->not->toBeNull();
     });
+
+    it('mints the copy key of a task copy at its create run, and none for a plain clone of the same default', function (): void {
+        swampVaultStandIn();
+        $default = copySource();
+        $copy = startCopy(copyGroup($default->project));
+        $plain = containerCreate($default->project, $default->node, 'feature');
+
+        $run = app(NativeDevelopmentInstanceInput::class)->create($copy);
+        app(NativeDevelopmentInstanceInput::class)->create($plain);
+
+        // Only the hash stays on the runtime; the key itself goes to the copy through the vault (docs/reference/development-containers.md#the-copy-key).
+        expect(InstanceRuntime::query()->where('instance_id', $copy->target_id)->value('agent_key_hash'))->toMatch('/\A[0-9a-f]{64}\z/')
+            ->and(InstanceRuntime::query()->where('instance_id', $plain->target_id)->value('agent_key_hash'))->toBeNull()
+            ->and(json_encode($run))->not->toContain('ORBIT_COPY_KEY');
+    });
 });
 
 describe('the end of the copy\'s create', function (): void {
@@ -977,7 +1028,7 @@ describe('the end of the copy\'s create', function (): void {
             ->and($group->assistance_reason)->toBe(DestroyTaskCopy::KeptReason.'it holds work that origin lacks: 4 unpushed commits, 3 uncommitted files, 2 of them untracked, 1 stashes. '
                 ."End it with `orbit task:cancel {$group->id}`, with `--discard` if the work is not wanted.");
     })->with([
-        'a registered T3 server' => [fn () => copyT3Registered()],
+        'a registered T3 server' => [copyT3Registered(...)],
         'a create that succeeded' => [fn (Operation $create) => $create->forceFill(['status' => 'succeeded'])->save()],
     ]);
 
@@ -1025,7 +1076,7 @@ describe('the end of the copy\'s create', function (): void {
         $this->ssh->answer = $state === 'clean' ? $this->ssh->answer : ['state' => 'unknown', 'reason' => 'stopped'];
         // During the read, a person's destroy of the copy is admitted.
         $read = $this->ssh;
-        app()->instance(SshExecutor::class, new class($read, $copy) implements SshExecutor
+        app()->instance(SshExecutor::class, new readonly class($read, $copy) implements SshExecutor
         {
             public function __construct(private SshExecutor $read, private Instance $copy) {}
 
@@ -1396,6 +1447,21 @@ function copyCandidate(Task $group): TaskCheck
 }
 
 describe('a turn of a group that owns a copy', function (): void {
+    it('runs the turn\'s commands with the server its copy recorded: the Conn Server of a Project that chose it', function (): void {
+        containerServerConnPinned();
+        $source = copySource();
+        $source->project->update(['container_server' => ContainerServer::Conn]);
+        $group = copyGroup($source->project);
+        $copy = finishedCopy($group, startCopy($group));
+        // A later change of the Project's setting does not reach the copy.
+        $source->project->update(['container_server' => ContainerServer::T3]);
+
+        $turn = copyTurn($group);
+
+        expect($copy->runtime->container_server)->toBe(ContainerServer::Conn)
+            ->and($turn->input['turn']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server');
+    });
+
     it('admits one tasks.copy_turn on the copy\'s Node with the composed prompt and the copy\'s model, and names no credential', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
@@ -1662,6 +1728,8 @@ describe('a turn of a group that owns a copy', function (): void {
             // The phase checks the candidate out for the reviewer, and the prompt names it.
             ->and($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'claudeHigh', 'candidate' => $check->commit_sha])
             ->and($review->input['turn']['prompt'])->toContain("Prompt of this turn:\nReview the checked commit.\n\nThe checked commit under review: {$check->commit_sha}.")
+            // A reviewer that approves sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
+            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::PrTextRule)
             ->and($again->input['turn']['candidate'])->toBe($check->commit_sha)
             ->and($group->refresh()->reviewer_agent_thread_id)->toBe($thread->id)
             ->and($again->input['thread_id'])->toBe($thread->id)->and($again->input['turn']['thread'])->toBe('continue');
@@ -1774,7 +1842,7 @@ describe('a turn of a group that owns a copy', function (): void {
         'a copy not fully set up' => [function (Task $group, Operation $create): void {
             finishedCopy($group, $create)->update(['status' => InstanceState::Reserved]);
         }, [], 'tasks.copy_not_ready 409'],
-        'a reviewer turn on no checked candidate' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['role' => 'reviewer', 'check' => 1], 'tasks.commit_not_checked 422'],
+        'a reviewer turn on no checked candidate' => [finishedCopy(...), ['role' => 'reviewer', 'check' => 1], 'tasks.commit_not_checked 422'],
     ]);
 
     it('refuses a turn, a check and a publish while the copy\'s completion failed, and each is only not ready while a retry runs', function (): void {

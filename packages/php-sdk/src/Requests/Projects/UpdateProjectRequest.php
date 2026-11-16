@@ -38,6 +38,8 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
         private readonly ?string $taskPrMode = null,
         private readonly bool $taskPrModeProvided = false,
         private readonly ?bool $defaultAutoDeploy = null,
+        /** `t3` or `conn`: the server of the Project's containers that Orbit reserves after the change; null leaves it. */
+        private readonly ?string $containerServer = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -67,6 +69,7 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
                 ...($this->mergeCheckProvided ? ['merge_check' => $this->mergeCheck] : []),
                 ...($this->taskPrModeProvided ? ['task_pr_mode' => $this->taskPrMode] : []),
                 ...($this->defaultAutoDeploy === null ? [] : ['default_auto_deploy' => $this->defaultAutoDeploy]),
+                'container_server' => $this->containerServer,
             ],
             static fn (mixed $value, string $key): bool => in_array($key, ['task_check', 'task_workspace_routed', 'merge_check', 'task_pr_mode', 'default_auto_deploy'], true) || $value !== null,
             ARRAY_FILTER_USE_BOTH,

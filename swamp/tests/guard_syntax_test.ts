@@ -40,8 +40,6 @@ Deno.test("every step guard is one ${{ }} expression", async () => {
  * run without its result (tasks.publish 20763, #3681). Such a wait must name `skipped` too, unless both steps share one guard (a
  * deliberate chain that skips together).
  */
-const vmOnly = new Set(["workflow-operation-task-idle-save.yaml: Confirm the save <- Revoke the token"]); // Task VM path; it goes away.
-
 Deno.test("a step that waits for a guarded step with `completed` also accepts `skipped`", async () => {
     const accepts = (condition: Condition, status: string): boolean =>
         condition.type === "or" ? (condition.conditions ?? []).some((item) => accepts(item, status)) : condition.type === status ||
@@ -60,7 +58,7 @@ Deno.test("a step that waits for a guarded step with `completed` also accepts `s
                 }
                 checked += 1;
                 const name = `${entry.name}: ${step.name} <- ${waited.name}`;
-                if (!accepts(dependency.condition, "skipped") && waited.guard !== step.guard && !vmOnly.has(name)) bad.push(name);
+                if (!accepts(dependency.condition, "skipped") && waited.guard !== step.guard) bad.push(name);
             }
         }
     }

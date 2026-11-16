@@ -372,9 +372,11 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'Reason' => self::askingText($group->assistanceRequested, $group->assistanceReason),
             'Instance' => $group->taskableId,
             'Pull request' => $group->prUrl,
+            ...($group->issue === null ? [] : ['Issue' => '#'.$group->issue]),
             ...($group->publication === null ? [] : [
                 'Pull request mode' => $group->prMode === null ? null : "{$group->prMode} ({$group->prModeSource})",
                 'Publication' => $group->publication->state.($group->publication->errorCode === null ? '' : ': '.$group->publication->errorCode),
+                ...($group->publication->prText === null ? [] : ['Pull request title' => $group->publication->prText['title']]),
             ]),
             ...($group->reviewAndMerge === null ? [] : [
                 'Review and merge' => $group->reviewAndMerge->enabled,

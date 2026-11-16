@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\WireGuard\Ipv4Subnet;
 use Illuminate\Database\Eloquent\Model;
@@ -26,6 +27,7 @@ use LogicException;
  * @property string $container_name
  * @property string $bridge_address
  * @property int|null $t3_port
+ * @property ContainerServer|null $container_server
  * @property string $runtime_version
  * @property string $agent_version
  * @property int|null $clone_source_instance_id
@@ -36,6 +38,7 @@ use LogicException;
  * @property Carbon|null $idle_watch_started_at
  * @property string|null $inner_volume
  * @property int|null $idmap_size
+ * @property string|null $agent_key_hash the SHA-256 hash of a task copy's key for Orbit (TaskCopyKey); null for every other container
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Instance $instance
@@ -53,6 +56,7 @@ final class InstanceRuntime extends Model
         'container_name',
         'bridge_address',
         't3_port',
+        'container_server',
         'runtime_version',
         'agent_version',
         'clone_source_instance_id',
@@ -64,6 +68,10 @@ final class InstanceRuntime extends Model
         'inner_volume',
         'idmap_size',
     ];
+
+    /** @var list<string> */
+    #[\Override]
+    protected $hidden = ['agent_key_hash'];
 
     /** A container gets a guest address of its Node's bridge; the bridge keeps the first usable address. */
     protected static function booted(): void
@@ -78,6 +86,12 @@ final class InstanceRuntime extends Model
                 throw new LogicException("[{$runtime->bridge_address}] is not a guest address of the Instance bridge [{$bridge}].");
             }
         });
+    }
+
+    /** The server this container runs; only a runtime with a T3 port has one (docs/reference/development-containers.md#container-server). */
+    public function server(): ContainerServer
+    {
+        return $this->container_server ?? throw new LogicException("Instance runtime [{$this->id}] runs no container server.");
     }
 
     /** @return BelongsTo<Instance, $this> */
@@ -100,6 +114,7 @@ final class InstanceRuntime extends Model
             'instance_id' => 'integer',
             'node_id' => 'integer',
             't3_port' => 'integer',
+            'container_server' => ContainerServer::class,
             'clone_source_instance_id' => 'integer',
             'idmap_size' => 'integer',
             'power_state' => InstanceRuntimePowerState::class,

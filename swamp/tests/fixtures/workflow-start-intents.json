@@ -81,7 +81,7 @@
                     "acl": "instance-2",
                     "nic_acl": "orbitinst0-proxy",
                     "bridge_cidr": "10.253.0.0/24",
-                    "bridge_admitted_at": 1794704498542429,
+                    "bridge_admitted_at": 1794778544819133,
                     "bridge_endpoints": [],
                     "acl_rules": {
                         "description": "Orbit Instance 2",
@@ -361,16 +361,32 @@
                                 "gid": 0,
                                 "mode": "0644",
                                 "content": "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"
+                            },
+                            {
+                                "path": "/etc/systemd/system/t3.service.d/20-orbit-server.conf",
+                                "before_start": true,
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644",
+                                "content": "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n"
                             }
                         ],
                         "links": [
                             {
                                 "path": "/home/agent/.claude/CLAUDE.md",
-                                "target": "/opt/orbit-agent/current/notes/package.md"
+                                "target": "/home/agent/.config/orbit/agent/AGENTS.md"
                             },
                             {
                                 "path": "/home/agent/.codex/AGENTS.md",
-                                "target": "/opt/orbit-agent/current/notes/package.md"
+                                "target": "/home/agent/.config/orbit/agent/AGENTS.md"
+                            },
+                            {
+                                "path": "/home/agent/.claude/skills",
+                                "target": "/home/agent/.config/orbit/agent/.skills"
+                            },
+                            {
+                                "path": "/home/agent/.agents/skills",
+                                "target": "/home/agent/.config/orbit/agent/.skills"
                             }
                         ]
                     },
@@ -515,7 +531,7 @@
                         "acl": "instance-2",
                         "nic_acl": "orbitinst0-proxy",
                         "bridge_cidr": "10.253.0.0/24",
-                        "bridge_admitted_at": 1794704498542429,
+                        "bridge_admitted_at": 1794778544819133,
                         "bridge_endpoints": [],
                         "acl_rules": {
                             "description": "Orbit Instance 2",
@@ -795,16 +811,32 @@
                                     "gid": 0,
                                     "mode": "0644",
                                     "content": "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"
+                                },
+                                {
+                                    "path": "/etc/systemd/system/t3.service.d/20-orbit-server.conf",
+                                    "before_start": true,
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644",
+                                    "content": "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n"
                                 }
                             ],
                             "links": [
                                 {
                                     "path": "/home/agent/.claude/CLAUDE.md",
-                                    "target": "/opt/orbit-agent/current/notes/package.md"
+                                    "target": "/home/agent/.config/orbit/agent/AGENTS.md"
                                 },
                                 {
                                     "path": "/home/agent/.codex/AGENTS.md",
-                                    "target": "/opt/orbit-agent/current/notes/package.md"
+                                    "target": "/home/agent/.config/orbit/agent/AGENTS.md"
+                                },
+                                {
+                                    "path": "/home/agent/.claude/skills",
+                                    "target": "/home/agent/.config/orbit/agent/.skills"
+                                },
+                                {
+                                    "path": "/home/agent/.agents/skills",
+                                    "target": "/home/agent/.config/orbit/agent/.skills"
                                 }
                             ]
                         },

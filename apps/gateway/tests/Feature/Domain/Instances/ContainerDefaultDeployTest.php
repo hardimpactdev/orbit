@@ -912,7 +912,7 @@ it('retains admission-wide PHP facts after deployment failure or cancellation wh
         'name' => 'feature', 'checkout_path' => '/srv/tool/feature', 'status' => InstanceState::Active]);
     $runtime = InstanceRuntime::query()->create(['instance_id' => $clone->id, 'node_id' => $clone->node_id,
         'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$clone->id, 'bridge_address' => '10.253.0.3',
-        'runtime_version' => 'r', 'agent_version' => 'a', 't3_port' => 3800, 'clone_source_instance_id' => $instance->id,
+        'runtime_version' => 'r', 'agent_version' => 'a', 't3_port' => 3800, 'container_server' => 't3', 'clone_source_instance_id' => $instance->id,
         'power_state' => InstanceRuntimePowerState::Stopped]);
     $cloneIntent = app(InstanceContainer::class)->intent($clone, $runtime);
     expect($cloneIntent['clone']['seed_commit'])->toBe($seed);
@@ -978,7 +978,7 @@ it('gives only a clone of a nested-fleet default on a switched-on Node the fleet
     $clone = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $default->node_id, 'name' => 'seedcopy1',
         'checkout_path' => '/srv/tool/seedcopy1', 'status' => InstanceState::Reserved]);
     $runtime = InstanceRuntime::query()->create(['instance_id' => $clone->id, 'node_id' => $default->node_id, 'incus_project' => $incusProject,
-        'container_name' => 'instance-'.$clone->id, 'bridge_address' => '10.253.0.3', 't3_port' => 3800, 'clone_source_instance_id' => $default->id,
+        'container_name' => 'instance-'.$clone->id, 'bridge_address' => '10.253.0.3', 't3_port' => 3800, 'container_server' => 't3', 'clone_source_instance_id' => $default->id,
         'runtime_version' => 'r', 'agent_version' => 'a', 'power_state' => InstanceRuntimePowerState::Stopped]);
     $intents = app(NestedFleetIntent::class);
 
@@ -1030,7 +1030,7 @@ it('refuses the refresh of a nested-fleet default while a clone of it is being c
         'name' => 'feature', 'checkout_path' => '/srv/tool/feature', 'status' => InstanceState::Active]);
     InstanceRuntime::query()->create(['instance_id' => $clone->id, 'node_id' => $clone->node_id, 'incus_project' => InstancePlacement::NestedProject,
         'container_name' => 'instance-'.$clone->id, 'bridge_address' => '10.253.0.3', 'runtime_version' => 'r', 'agent_version' => 'a',
-        't3_port' => 3800, 'clone_source_instance_id' => $instance->id, 'power_state' => InstanceRuntimePowerState::Stopped, 'idmap_size' => 101000000]);
+        't3_port' => 3800, 'container_server' => 't3', 'clone_source_instance_id' => $instance->id, 'power_state' => InstanceRuntimePowerState::Stopped, 'idmap_size' => 101000000]);
     Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
         'status' => $status, 'input' => [], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
 

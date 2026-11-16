@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -13,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 
 # Mirrored by the Node boundary; the clone tests keep the two sets in sync.
-GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
+GUEST_COMMANDS = ("conn-server", "curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 # The Node's clone script hands this helper to the `workspace` and `services` parts in their intent.
 NODE_RUNTIME = "/usr/local/libexec/orbit-instance-node-runtime.py"
 # The commands whose own stderr follows the diagnostic line, for the Node's clone script to redact: none of them sees a token that T3
@@ -292,6 +293,37 @@ def phase_main(phase, raw):
             private_input=private_input,
         )
 
+    def agent_folder():
+        """A clone's agent folder (development-containers.md#agent-instructions). The create's intent names its whole content: the
+        folder is made again with exactly those files, owned by root, so the agent reads them and a file the Project removed is gone.
+        A folder whose path runs through a link is refused: root never removes or writes outside it. Every clone create carries the
+        content; an intent without it fails the part, so no link points at a missing folder."""
+        content = c["clone"]["agent_instructions"]
+        folder = content["folder"]
+        base = root(folder)
+        if os.path.realpath(base) != str(base) or (base.exists() and not base.is_dir()):
+            raise RuntimeError("instance.agent_folder_refused")
+        wanted = {}
+        for item in content["files"]:
+            path = os.path.normpath(folder + "/" + item["path"])
+            if not path.startswith(folder + "/"):
+                raise RuntimeError("instance.agent_folder_refused")
+            wanted[path] = item["content"]
+        # A rerun of the create finds the folder as it wrote it, and changes nothing.
+        held = {} if not base.exists() else {
+            folder + "/" + str(p.relative_to(base)): p for p in base.rglob("*") if p.is_file() or p.is_symlink()}
+        if set(held) == set(wanted) and all(not p.is_symlink() and p.read_text() == wanted[k] for k, p in held.items()) \
+                and (base / ".skills").is_dir():
+            return
+        if base.exists():
+            shutil.rmtree(base)
+        for path, text in wanted.items():
+            write(path, text)
+        (base / ".skills").mkdir(parents=True, exist_ok=True)
+        for made in [base, *[p for p in base.rglob("*") if p.is_dir()]]:
+            os.chmod(made, 0o755)
+        changes.append(folder)
+
     def require_units():
         for unit in c['units'] + c['processes']:
             if unit.get('desired', 'running') != 'running':
@@ -563,8 +595,11 @@ def phase_main(phase, raw):
                     else json.dumps(merged, separators=(",", ":")) + "\n"
                 )
             write(f["path"], value, f["uid"], f["gid"], f["mode"])
+        agent_folder()
         for f in c["clone"]["links"]:
             p = root(f["path"])
+            if not p.parent.is_dir():
+                run(["mkdir", "-p", "-m", "0700", str(p.parent)], agent=True)
             if not p.is_symlink() or os.readlink(p) != f["target"]:
                 p.unlink(missing_ok=True)
                 p.symlink_to(f["target"])
@@ -576,6 +611,10 @@ def phase_main(phase, raw):
         # Gateway's run, a retry on a running copy) starts it here. A unit that failed at boot is started again once and named
         # (docs/reference/development-containers.md#t3-starts-with-the-copy).
         active = run(["systemctl", "is-active", "--quiet", t["unit"]], False).returncode == 0
+        # The agent part may have just written T3's drop-ins, the container server's among them, into this running copy: systemd reads
+        # them only after a reload, or it would start the server the cached unit names (docs/reference/development-containers.md#container-server).
+        if not active:
+            run(["systemctl", "daemon-reload"])
         if not active and run(["systemctl", "is-failed", "--quiet", t["unit"]], False).returncode == 0:
             run(["systemctl", "reset-failed", t["unit"]])
             run(["systemctl", "start", t["unit"]])

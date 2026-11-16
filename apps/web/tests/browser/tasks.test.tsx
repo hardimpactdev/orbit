@@ -20,6 +20,7 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         review_and_merge: null,
         pr_mode: null,
         pr_mode_source: null,
+        issue: null,
         publication: null,
         last_activity_at: null,
         preview_url: null,

@@ -1083,6 +1083,14 @@ describe('the pull request mode of a task group', function (): void {
             ->toBe(['project_id' => 1, 'title' => 'Mode', 'brief' => 'Work', 'pr_mode' => 'pr_when_done']);
     });
 
+    it('sends the issue task:create names', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/created'));
+        expect(Artisan::call('task:create', ['title' => 'Issue', '--project' => '1', '--brief' => 'Work', '--issue' => '9', '--json' => true]))->toBe(0);
+        expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['project_id' => 1, 'title' => 'Issue', 'brief' => 'Work', 'issue' => 9]);
+
+    });
+
     it('sends the mode task:update names', function (): void {
         $mock = MockClient::global(gateway_fixture_mock('tasks/task-update/updated'));
         expect(Artisan::call('task:update', ['task' => '1', '--pr-mode' => 'review_before_pr', '--json' => true]))->toBe(0);
@@ -1098,6 +1106,9 @@ describe('the pull request mode of a task group', function (): void {
         'create' => ['task:create', ['title' => 'Mode', '--project' => '1', '--brief' => 'Work', '--pr-mode' => 'merge_when_green'], 'task.pr_mode_invalid'],
         'update' => ['task:update', ['task' => '1', '--pr-mode' => 'merge_when_green'], 'task.pr_mode_invalid'],
         'subtask' => ['task:create', ['--parent' => '1', 'title' => 'Step', '--brief' => 'Work', '--pr-mode' => 'pr_when_done'], 'task.option_invalid'],
+        'issue zero' => ['task:create', ['title' => 'Issue', '--project' => '1', '--brief' => 'Work', '--issue' => '0'], 'task.issue_invalid'],
+        'issue with a hash' => ['task:create', ['title' => 'Issue', '--project' => '1', '--brief' => 'Work', '--issue' => '#9'], 'task.issue_invalid'],
+        'issue on a subtask' => ['task:create', ['--parent' => '1', 'title' => 'Step', '--brief' => 'Work', '--issue' => '9'], 'task.option_invalid'],
     ]);
 
     it('shows the mode, its source and the publication of a task copy group', function (): void {
@@ -1108,6 +1119,20 @@ describe('the pull request mode of a task group', function (): void {
 
         expect(Artisan::call('task:show', ['task' => '1']))->toBe(0);
         expect(Artisan::output())->toContain('Pull request mode')->toContain('review_before_pr (project)')->toContain('refused: tasks.copy_publish_held');
+    });
+
+    it('shows the issue and the reviewer\'s pull request title, and keeps them in JSON', function (): void {
+        $reply = json_decode(gateway_fixture('tasks/task-show/default')['body'], true, flags: JSON_THROW_ON_ERROR);
+        $text = ['title' => 'Keep every field', 'body' => "Type and website were lost.\n", 'operation_id' => 21890];
+        $reply['data'] = [...$reply['data'], 'pr_mode' => 'pr_when_done', 'pr_mode_source' => 'project', 'issue' => 9, 'publication' => ['mode' => 'pr_when_done',
+            'mode_source' => 'project', 'state' => 'publishing', 'check_id' => 17, 'commit' => str_repeat('b', 40), 'operation_id' => null, 'error_code' => null, 'pr_text' => $text]];
+        MockClient::global([ShowTaskRequest::class => MockResponse::make($reply)]);
+
+        expect(Artisan::call('task:show', ['task' => '1']))->toBe(0);
+        expect(Artisan::output())->toContain('Issue')->toContain('#9')->toContain('Pull request title')->toContain('Keep every field');
+        expect(Artisan::call('task:show', ['task' => '1', '--json' => true]))->toBe(0);
+        $shown = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($shown['issue'])->toBe(9)->and($shown['publication']['pr_text'])->toBe($text);
     });
 
     it('lists the groups waiting for release in task:status', function (): void {

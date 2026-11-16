@@ -10,6 +10,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\GitHub\GitHubBranchPolicy;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Instances\ProductionRepositoryRecord;
@@ -56,6 +57,8 @@ final readonly class UpdateProjectAction
     {
         // The flag rule runs first: before the source read and before any write.
         $this->assertNestedFleetChange($project, $data);
+        // A container server no container could start is refused before any write (docs/reference/development-containers.md#container-server).
+        $data->containerServer?->assertPinned(app(InstanceContainer::class)->folders());
         // A changed source refreshes the facts a development create needs; the read happens before any change commits.
         $facts = app(CaptureProjectSourceFactsAction::class);
         $read = $data->typeProvided || $data->sourceAccessProvided || $data->hasReconcilableChanges() ? $facts->read(
@@ -234,6 +237,9 @@ final readonly class UpdateProjectAction
         }
         if ($data->defaultAutoDeployProvided) {
             $changes['default_auto_deploy'] = $data->defaultAutoDeploy;
+        }
+        if ($data->containerServer !== null) {
+            $changes['container_server'] = $data->containerServer;
         }
         $changes = [...$changes, ...$data->taskAgents];
         if ($changes === []) {

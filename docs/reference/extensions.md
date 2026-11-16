@@ -94,6 +94,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | Interface | Called by | Methods |
 | --- | --- | --- |
 | `App\Domain\Projects\ProjectRemovalHook` | `project:destroy` | `lock()` and `remove()` |
+| `App\Domain\Projects\ProjectAgentInstructionSource` | A clone's create and `project:show` ([Agent instructions](/reference/development-containers#agent-instructions)) | `files()` returns each file's size and a reader of its body; `summary()` reads the records only. Documents answers as if no Project had instructions while it is off |
 | `App\Domain\GatewayReleases\GatewayReleaseCleanup` | The [release cleanup command](/reference/gateway-recovery#release-as-a-swamp-run) | `configured()`, `status()`, `reconcile()`, and `resume()` |
 | `App\Domain\Activity\ActivityInputRedaction` | The [Activity](/cli/activity) recorder | `commands()` and `input()` |
 | `App\Infrastructure\Firewall\ContributedNodeFirewallRules` | The desired firewall of a Node: `firewall:list --managed` and the live match | `forNode()` returns the UFW rules the extension's own operation keeps on the Node |

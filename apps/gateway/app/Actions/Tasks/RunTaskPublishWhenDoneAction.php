@@ -82,6 +82,10 @@ final readonly class RunTaskPublishWhenDoneAction
         if ($mode !== TaskPrMode::PrWhenDone || $check->pr_mode !== TaskPrMode::PrWhenDone) {
             return self::result($group, $check->id, 'waiting', null);
         }
+        // No text from the reviewer's newest turn: the group waits for it, and nothing is stored (docs/reference/tasks.md#the-reviewers-pull-request-text).
+        if (TaskGroupDone::prText($group, $check) === null) {
+            return self::result($group, $check->id, 'waiting', TaskDonePublication::TextMissingCode);
+        }
         if (($group->publish_refusal['check_id'] ?? null) === $check->id) {
             return self::result($group, $check->id, 'skipped', $group->publish_refusal['code'] ?? null);
         }

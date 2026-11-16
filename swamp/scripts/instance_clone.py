@@ -23,7 +23,7 @@ BOOT_SOURCES = ("/etc/orbit/agent/ca.pem",)
 INCUS_SOCKET = "/var/lib/incus/unix.socket"
 
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
-GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
+GUEST_COMMANDS = ("conn-server", "curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 
 # A failed command's detail: its code line, what it did and the end of its stderr, in at most this many UTF-8 bytes, so the native
 # step's wrapper ("exec failed on 1/1 host(s): target (exit 1: ...)") still fits the Gateway's 4,096-byte detail.
@@ -258,6 +258,10 @@ def main():
     def inside(member, private="", intent=None):
         # `intent`: the checkout's own copy of the intent, so the T3 part beside it never reads a dict that it changes.
         intent = container if intent is None else intent
+        # Only the agent part reads the agent folder's content (development-containers.md#agent-instructions); every other member's one
+        # argument stays without it, beside the Node runtime helper that the workspace and services parts carry.
+        if member != "agent" and "agent_instructions" in intent.get("clone", {}):
+            intent = {**intent, "clone": {k: v for k, v in intent["clone"].items() if k != "agent_instructions"}}
         if member in {"workspace", "services"}:
             # The guest writes the shipped Node runtime helper itself, in this one exec: no Incus file call, whose helper may exit as
             # the request reaches it (docs/reference/development-containers.md#a-failed-clone-phase-names-its-command).

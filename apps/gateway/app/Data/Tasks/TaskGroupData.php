@@ -36,7 +36,7 @@ final class TaskGroupData extends Data
         'current_recipe', 'reviewer_agent_thread_id', 'pr_url', 'watched_pr_url', 'watched_pr_number', 'watched_pr_state', 'pr_branch', 'merge_status',
         'merge_reason', 'merged_sha', 'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'capacity_wait_reason',
         'implementer_agent_provider', 'implementer_agent_model', 'implementer_agent_effort', 'reviewer_agent_provider', 'reviewer_agent_model',
-        'reviewer_agent_effort', 'pr_mode', 'tokens', 'line_diff', 'lines_added', 'lines_deleted', 'duration_ms', 'questions', 'escalations',
+        'reviewer_agent_effort', 'pr_mode', 'issue_number', 'tokens', 'line_diff', 'lines_added', 'lines_deleted', 'duration_ms', 'questions', 'escalations',
         'started_at', 'settled_at', 'ended_at',
     ];
 
@@ -91,6 +91,8 @@ final class TaskGroupData extends Data
         public array $resolvedAgents = [],
         public ?TaskPrMode $prMode = null,
         public ?string $prModeSource = null,
+        /** The GitHub issue the group's pull request closes (docs/reference/tasks.md#closes-the-issue). */
+        public ?int $issue = null,
         /** Show only: a list row leaves it out, so its reads never run for a list (docs/reference/tasks.md#publication-state). */
         public Lazy|TaskPublicationData|null $publication = null,
     ) {}
@@ -169,6 +171,7 @@ final class TaskGroupData extends Data
             reviewAndMerge: TaskReviewAndMergeData::fromModel($group),
             prMode: $mode?->mode,
             prModeSource: $mode?->source,
+            issue: $group->issue_number,
             publication: Lazy::create(static fn (): ?TaskPublicationData => TaskPublicationData::fromModel($group))->defaultIncluded(),
 
             id: $group->id,

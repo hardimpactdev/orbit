@@ -79,7 +79,7 @@ An `internal` tool is an Orbit-built binary pinned by `source_commit` (12 to 40 
 
 Internal pins do not require publishing HTTPS releases. Third-party tools still require HTTPS artifact pins. Online validation fails clearly if a local file is missing or its digest differs. It never executes the binary. Existing installers keep their pre-install hash verification.
 
-The Pi pin came from `apps/pi-server`, which is [removed](/reference/old-paths#the-pi-agent-server), at source commit `23e7198f7c98`, file `pi-server-23e7198f7c98-linux-x64`, SHA-256 `df3aa5aea1788c3bcfdd576d0124b252b640c66c2bfa78e69b985bca9f39f438`. It is an `amd64` build, like every recipe artifact. It must equal `task_vms.pi.artifact_sha256`: the enrolment check compares the Pi build of the image with that setting. The first pin was `e5933d4c8696`.
+No catalogued tool is `internal` today: the Pi build, its last user, [left the recipe](/reference/old-paths#the-pi-agent-server).
 
 A profile's effective set is the union of `common` and its own list, sorted by tool identifier. A `php:<version>` entry expands to that version's PHP set. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's set is the union of its roles, not the base image set.
 
@@ -332,7 +332,7 @@ The recipe's `instances.php` section defines the builds:
 | `versions.<X.Y>.php_version` | The exact PHP release, such as `8.5.12`. It can differ from the Node pin's patch release for a while, because a new release needs a new build |
 | `versions.<X.Y>.build` | The build id: a SHA-256 over the PHP release, FrankenPHP, the static-php-cli commit, the extension list, `tools/static-php/craft.yml` and `bin/static-php-build` |
 | `versions.<X.Y>.url` | The release asset `static-php-<php_version>-<build id prefix>-linux-x86_64.tar.gz` under the `static-php-<php_version>-<build id prefix>` release |
-| `versions.<X.Y>.sha256` | The asset's SHA-256, or `null` until main has published the build |
+| `versions.<X.Y>.sha256` | The asset's SHA-256, or `null` until the build is published |
 
 static-php-cli resolves the sources of the libraries and PECL extensions when it builds, so two builds of one id can differ. The archive's `sources.json`, static-php-cli's download record, names each source's version and hash. The published SHA-256 is what fixes the bytes a Node installs.
 
@@ -355,16 +355,31 @@ The check is the Ansible module `orbit_static_php`. The [runtime folder](/refere
 
 The `Static PHP build` workflow runs when the recipe, the build files or the workflow change. It requires every pin to name its definition. Compilation exceeds the [CI budget](/reference/implementation-loop#ci-budget), so a pull request only validates the pins. On main, a push or a manual run builds the versions whose release does not exist yet. The proof job keeps each archive it proved in the Actions cache under its build id, so a change to the proof alone does not build again.
 
-A proof job unpacks the archive, checks its SHA-256, refuses a binary that is not fully static, and runs the extension check. It then runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan and Pest with `php -d memory_limit=1G vendor/bin/pest`, and serves the Gateway's `/up` with `frankenphp php-server`.
+A proof job unpacks the archive, checks its SHA-256 and runs the extension check. Then `tools/static-php/prove.py` proves the build. It runs from the run's own commit, so a manual run from main uses main's copy, not the built branch's. A branch's change to its own proof is never what proves it. The branch's own code still runs in the job, so run only a reviewed ref.
+
+The proof has four parts:
+
+- **Linkage.** `php`, `frankenphp` and each CLI-only extension in `modules/` may need only glibc's own libraries, no newer than Ubuntu 26.04's glibc. A fully static binary also passes.
+- **CLI only.** The proof writes the `php-cli.ini` that a container has. It holds one `extension=` line for each CLI-only extension in the archive's `build.json`. `php -m` with it must list each one.
+- **Not in FrankenPHP.** `frankenphp php-server` serves a page with the same configuration. The page must run under the `frankenphp` SAPI and load no CLI-only extension.
+- **Coverage.** After the Gateway install, Pest runs with that `php-cli.ini`. It runs `tests/Unit/Infrastructure/MachineSoftware` with a clover report. The report must cover lines of `StaticPhpBuild.php`.
+
+The job also runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan, and serves the Gateway's `/up` with `frankenphp php-server`. A build whose `build.json` names no `cli_extensions`, such as a fully static musl build, fails the proof.
 
 On main, from a push or a manual run, the publish job creates the release with the archive and `SHA256SUMS`. It never replaces a release: a published SHA-256 may already be pinned. Pull requests never build, prove or publish.
 
+A manual run from main takes an optional `ref`: a branch of this repository or a full commit SHA. The run resolves it to one commit, then builds, proves and publishes that commit's definition, and the release targets that commit. The workflow file is always main's. Without `ref` the run builds its own commit.
+
+So a pull request that changes a build records the published SHA-256 before it merges, and the new build id and its SHA-256 reach main together. After the merge, main's push run finds the release and builds nothing. Its code publishes from main, so run only a ref you have reviewed. Only main's own commits fill the cache.
+
 #### Change a static build
 
+A build whose `sha256` is `null` is not in the runtime folder. A release of a new build id without its SHA-256 would remove that PHP version from every container. So one pull request records both:
+
 1. Change the definition: the `instances.php` section, the PHP build's extensions, `tools/static-php/craft.yml` or `bin/static-php-build`.
-2. Run `bin/static-php-build definition`. Record each changed version's `build` and `url`, and set its `sha256` to `null`.
-3. The pull request's workflow validates the pins. After merge, main builds, proves and publishes the definition.
-4. A second pull request records the published SHA-256 from the release's `SHA256SUMS`. Only then can a Node install the build.
+2. Run `bin/static-php-build definition`. Record each changed version's `build` and `url`, set its `sha256` to `null`, and push the branch. The pull request's workflow validates the pins.
+3. Run the workflow from main with the branch as `ref`: `gh workflow run static-php.yml --ref main -f ref=<branch>`. It builds, proves and publishes the new definition.
+4. Record the published SHA-256 from the release's `SHA256SUMS` in the same pull request. Every `sha256` must be set before the merge.
 
 ### Recipe identity
 
@@ -623,17 +638,16 @@ The Gateway puts these in the intent:
 
 - The `recipe.json` of the release and the Vite+ lock.
 - The VM's SSH target with its recorded host key.
-- The Pi server digest and its place on the Gateway host.
 
 No task file names a version.
 
-The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` and `jq` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust, the Swamp binary and the Pi server follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
+The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` and `jq` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust and the Swamp binary follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
 
 The `tools` phase installs the shape gate linters and prepares the Incus client config for the SSH user `orbit` with one serial read. Existing client configs stay in place. Task copies inherit the config, so later parallel Incus calls, including proof restores, cannot race on its first-use write. Incus creates or truncates that file before writing its YAML. The nested fleet is Incus system containers that take the checkout as a disk device, so the VM serves nothing to them.
 
 - The intent names the nested subnet and the interface `nested` (`TaskVmNestedFleet`), so the VM leads the nested network of that subnet.
 - UFW then allows DHCP, DNS and the package cache from the nested bridge, and routes it out.
-- The linters build into `/opt/orbit-shape-gate`, named by the digest of the pins in `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`.
+- The linters build into `/opt/orbit-shape-gate`. The venv name covers the pins and the interpreter that builds it, by the rule of [the shape gate](/reference/implementation-loop#run-the-swamp-shape-gate-before-you-push).
 - `bin/swamp-shape-gate` finds the folder by that name. The handoff check then runs offline.
 
 The `check` phase is the one end check. It asserts every package at its pin, every runtime and tool at its version, and the package cache active.
@@ -1087,13 +1101,11 @@ A new host gets its base VM in the first phase of its first refresh, `base-start
 
 Until a snapshot is proved and recorded, each refresh discards any unpromoted base VM and seed before building from stock. Cloud-init can mark its package module as run even when the first boot fails to install the SSH server; restarting that VM does not run the module again. A host with a recorded snapshot keeps its existing base unless `--from-stock` is requested.
 
-The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The Pi server is fetched for it. The refresh then stops the VM, snapshots it and proves the snapshot like any other.
+The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
 The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs. The base is identified by the recipe identity that its refresh converged to, recorded on the build row. Image freshness counts a path when it belongs to a carried folder or matches any carried lock-file pattern.
 
 The converge of a refresh installs the recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and installs with the `apt` module with `APT_CONFIG` pointing at it, and `allow_downgrade` because the pins are exact. The index read goes over plain http through the `apt-cacher-ng` of the VM (`localhost:3142`, no request pipelining, signatures still checked), which the first software task installs; the packages stay a direct download over https. The cache stays in the base VM, and the nested Nodes of a task VM read the snapshot indexes from it. The `check` phase asserts every package at its pin.
-
-The converge copies the pinned Pi build from the Gateway Node to 209 with official SSH and checks its SHA-256 there. The `software` phase copies it to `~orbit/.local/bin/pi-server` on the guest when the digest differs from the pin, and checks the digest again. The refresh fetches it only when the recipe of the base is older than the release's.
 
 #### The topology seed
 

@@ -3,7 +3,7 @@ title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml}
@@ -152,7 +152,7 @@ Every development container has the same layout. The image and the create set it
 | Workspace | `/srv/workspace`, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others. `core.sharedRepository=group` |
 | Git | `safe.directory=/srv/workspace` in `/etc/gitconfig`, for every user and only that path; the agent part of the T3 step also writes it to `agent`'s own Git config and preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
-| T3 unit | `User=agent`, `UMask=0007`, `PATH` from the shared folders, `Requires=nftables.service`, `ConditionPathExists=/etc/orbit/instance`. The unit file is mode 0640 |
+| T3 unit | `User=agent`, `UMask=0007`, `PATH` from the shared folders, `Requires=nftables.service`, `ConditionPathExists=/etc/orbit/instance`. The unit file is mode 0640. A drop-in names the [container server](#container-server) it starts |
 | `PATH` | The runtime folder's `bin` first, for units, login shells and `incus exec` sessions, so `composer` is on it |
 | `php` | `/usr/local/bin/php` links to the Project's static `php` in the runtime folder. A Project without a PHP version has none. The create and each start set it |
 | Instance file | `/etc/orbit/instance`, root-owned and readable by all: Instance, Project id, slug and quoted one-line name, Node and URL. Absent on the default, keeping T3 stopped |
@@ -298,7 +298,7 @@ The software that the app and the agents run lives once per Node, in two version
 | `/opt/orbit-runtime/<version>/{lib,fonts}` | The [browser libraries and fonts](#browser-libraries-and-fonts) | Everyone |
 | `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |
 | `/opt/orbit-runtime/vite-plus/<digest>` | The [Vite+ home](/reference/compute-drivers#the-vite-home) that `vp` runs from, linked as `<version>/vite-plus-home` | Everyone |
-| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex` | `root:2750`, mode 0750 |
+| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex`, and `conn-server` once the recipe pins it ([Container server](#container-server)) | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/agent/{t3,claude-code,codex}` | The releases | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
 
@@ -317,6 +317,23 @@ A running process runs only what existed when it started. So a new version that 
 The CLI self-updaters are off: `DISABLE_AUTOUPDATER=1` in the T3 unit, which Claude Code inherits, and `check_for_update_on_startup = false` in the image's Codex configuration. The T3 server has no self-updater; it runs from the read-only folder.
 
 The OS packages of the image change rarely. The Node's patch run of ADR 0250 upgrades them in each running container from the Node; a sleeping container gets the upgrade when it next wakes.
+
+## Container server
+
+A Project chooses the server that runs in its containers, in its [`container_server`](/reference/projects#container-server) field: `t3`, the T3 server and the default, or `conn`, the [Conn Server](https://github.com/nckrtl/conn). The Conn Server serves the same client contract: `/mcp`, `/.well-known/t3/environment`, the HTTP and WebSocket API, and the `t3` CLI subcommands that Orbit calls. Only the program differs. Credentials stay the same: `model.env` and Codex's `config.toml` ([Model access](#model-access)). ADR 0258 records the decision.
+
+| Choice | Program in the agent folder |
+| --- | --- |
+| `t3` | `/opt/orbit-agent/current/agent/bin/t3` |
+| `conn` | `/opt/orbit-agent/current/agent/bin/conn-server` |
+
+When Orbit reserves the runtime of a container with a server, a clone or a [migrated checkout](#migrate-a-checkout-instance), the runtime records the Project's choice as its own `container_server`. The default's runtime records none: the default runs no server. Every later step reads the runtime's record, never the Project's setting. So a changed setting reaches only containers that Orbit reserves after the change. An existing container keeps its server: the two servers store threads and pairings differently, and nothing converts them.
+
+The record names the program that every call inside the container runs: the create's sessions and `project add`, and a task turn's `thread` commands and its RPC helper. The drop-in `/etc/systemd/system/t3.service.d/20-orbit-server.conf` sets the unit's `ExecStart` to the same program, with the image's arguments: `serve --host=0.0.0.0 --port=3773 --no-browser`. A clone gets it before its first start, with [T3's other files](#t3-starts-with-the-copy). A migrated checkout gets it with the agent's files, and its T3 phase reloads systemd before it starts the unit.
+
+The image and its unit do not change. The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
+
+The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins no Conn Server release yet, so `conn` is refused. The releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host. Once the recipe pins a release as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, every agent folder holds both programs. The new folder version only adds files, so no running server restarts.
 
 ## Workspace volumes (draft)
 
@@ -682,11 +699,49 @@ Each Project type has one note in the agent folder, at `notes/<note>.md`. The no
 | `monorepo` | `monorepo` |
 | `laravel-package`, `node-package` | `package` |
 
-When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are.
+A container that runs T3 without a default to copy, such as a migrated checkout, links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A clone reads the note through its own [agent instructions](#agent-instructions). A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are.
 
 It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow. It says that there is no sudo and no direct internet, how the egress proxy works, and how Git leaves the container. The note does not state the nested-fleet exception yet, where `agent` has sudo.
 
-A note gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
+A note gives no instructions about the work. The Project's own instructions and skills come from its [agent instructions](#agent-instructions); MCP servers come from the project's own files.
+
+## Agent instructions
+
+A Project keeps its own agent instructions in the reserved `agent/` folder of its [Project Documents](/reference/project-documents#agent-instructions) ([ADR 0259](/decisions/0259-deliver-per-project-agent-instructions-from-documents)):
+
+| Document path | In the clone |
+| --- | --- |
+| `agent/AGENTS.md` | `/home/agent/.config/orbit/agent/AGENTS.md`, after the note of the Project's type, under the heading `# This Project` |
+| `agent/.skills/<skill>/SKILL.md` and the files beside it | `/home/agent/.config/orbit/agent/.skills/<skill>/...` |
+
+The folder lives in the copy's own agent home, not in the Node's agent folder that every container mounts, so only the Project's own containers hold its text. It is owned by root; `agent` reads it. Every clone links its agents to it:
+
+| Link | Target | Read by |
+| --- | --- | --- |
+| `/home/agent/.claude/CLAUDE.md` | `AGENTS.md` | Claude Code |
+| `/home/agent/.codex/AGENTS.md` | `AGENTS.md` | Codex |
+| `/home/agent/.claude/skills` | `.skills` | Claude Code |
+| `/home/agent/.agents/skills` | `.skills` | Codex |
+
+### When a copy gets them
+
+A clone's create reads the Project's `agent/` folder before its admission. It puts the folder's whole content in the clone intent, as `clone.agent_instructions`. The agent part of the create's T3 step makes the folder again with exactly those files. A file that the Project removed is gone from the copy.
+
+A copy keeps the version of its create. A Documents change reaches the next copy. Claude Code and Codex read their instructions when their process starts, and each turn starts a new process.
+
+A Project without an `AGENTS.md` gets the type note alone as `AGENTS.md`. While the `documents` extension is off, no Project has instructions.
+
+### What counts
+
+An archived file or folder is absent. Only `AGENTS.md` and the files below `.skills/<skill>/` are instructions; other files in `agent/` stay out.
+
+The folder holds at most 32 files and 32 KiB in all, of UTF-8 text with no control character but a tab or a line end. The create intent crosses as one command argument, which Linux holds to 128 KiB; JSON escapes text to at most three times its size. Each name after `.skills` holds only letters, digits, `.`, `_` and `-`. When the folder breaks a limit, the create of a clone is refused before any record, with `projects.agent_instructions_too_large` or `projects.agent_instructions_invalid` (422). When the store fails, the create is refused with the store's own error, such as `project_documents.storage_unavailable`.
+
+### Other phases of a clone
+
+Only a clone's create writes the folder. The intent carries the content only for the agent part; the other parts of the create get the intent without it. A clone made before agent instructions existed keeps its links to the type note.
+
+[`project:show`](/cli/project/show) reports what the next copies read, from the records alone; it does not check the limits, which the next create checks.
 
 ## Development mail
 
@@ -753,6 +808,31 @@ Both environment checks read the source checkout before the copy. A `log` mailer
 ## Model access
 
 A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder at port 8319 of the bridge's gateway address. The [forwarder](/reference/ai-router#container-model-forwarder) passes them to the model router guard, which admits the agent Node and swaps in the real key. The real key stays off the Node. While the forwarder's table is loaded, only containers on the bridge reach the guard, through the forwarder. The guard accepts the `?beta=true` query that Claude Code sends. On a prepared Node, `ai-router:model-forwarder NODE --bridge=orbitinst0 --address=<bridge address>` places the forwarder.
+
+### The copy key
+
+The model key does not tell one container from another: every container holds the same placeholder. So a [task copy](/reference/tasks#task-copy) gets one more key of its own, the copy key. It is the only way a copy calls Orbit, and Orbit uses it only for the [reviewer's pull request text](/reference/tasks#the-reviewers-pull-request-text).
+
+The Gateway makes a random key each time it writes a task copy's model environment, at the copy's create. A task copy is never migrated: it already runs in a container. The Gateway stores only the key's SHA-256 hash, on the copy's runtime record. A new key replaces the hash, so the older key stops working.
+
+The key goes into `model.env` as `ORBIT_COPY_KEY`. This is the same `0600` file of `agent` that holds the placeholder. `ORBIT_COPY_API` in the same file holds `http://<bridge address>:8319/orbit/v1/copy`. T3 hands both values to Claude Code and Codex. The app user `orbit` cannot read them.
+
+A clone that is not a task copy gets no copy key and no `ORBIT_COPY_*` line. The copy's destroy deletes its runtime record, so the key ends with the copy. The copy holds no other credential for Orbit and no Git token.
+
+A call reaches the Gateway only through the [forwarder's Orbit routes](/reference/ai-router#orbit-routes-for-task-copies). The Gateway accepts it only when both of these hold:
+
+1. The bearer key's hash matches one runtime record of a task copy. Otherwise it answers 401 `copy.key_invalid`.
+2. The request comes from the WireGuard address of that runtime's Node. Otherwise it answers 403 `copy.peer_mismatch`. A key that leaves its Node is useless.
+
+From the runtime, the Gateway finds the copy and then its group. The request never names a group, a check or a commit.
+
+`GET $ORBIT_COPY_API/whoami` answers the copy's Instance, Project and group:
+
+```json
+{"data": {"instance_id": 2611, "project_id": 68, "group_id": 5257}}
+```
+
+A task copy made before this release has no copy key. It keeps working, but it cannot call Orbit.
 
 ## Network
 
@@ -1063,7 +1143,7 @@ When both parts have ended, the step checks the two sessions and the checkout. B
 
 #### T3 starts with the copy
 
-The copy step writes T3's files into the stopped copy before its first start. First the placeholder model environment, then Codex's `config.toml`, Claude Code's `.claude.json` and T3's `settings.json`, and the drop-in `/etc/systemd/system/t3.service.d/10-orbit-boot.conf`. The two JSON files merge into the seed's own, as the agent part merges them. Last comes `/etc/orbit/instance`, the file that `t3.service` waits for. The copy's boot then starts T3, and T3's cold start runs beside private names, Node services, mail and branch. No snapshot holds the model environment: the default never has it, and Orbit takes no snapshot of a clone.
+The copy step writes T3's files into the stopped copy before its first start. First the placeholder model environment, then Codex's `config.toml`, Claude Code's `.claude.json` and T3's `settings.json`, the drop-in `/etc/systemd/system/t3.service.d/10-orbit-boot.conf`, and the drop-in that names the [container server](#container-server). The two JSON files merge into the seed's own, as the agent part merges them. Last comes `/etc/orbit/instance`, the file that `t3.service` waits for. The copy's boot then starts T3, and T3's cold start runs beside private names, Node services, mail and branch. No snapshot holds the model environment: the default never has it, and Orbit takes no snapshot of a clone.
 
 The drop-in turns off T3's default dependencies. T3 then starts after `nftables.service`, the local file systems, the journal socket and `systemd-sysctl.service`, and stops before shutdown. T3 skips the wait for `sysinit.target`, which udev's trigger holds about 0.6 s in a container. `Requires=nftables.service` stays in the unit, so T3 still starts only with its firewall.
 
@@ -1087,7 +1167,7 @@ The destroy deletes the launch copy with the clone copy, and the earlier stage a
 
 Once the workflow reads it, a clone runs the scripts of the Gateway release that admitted it. A release loads Swamp before its Gateway switches, so a create admitted just before a release runs the older scripts on the newer workflow. A change to the clone script's phases, its argument list, or the lines and timings that the result reads must work across that one release: the newer workflow and result reader must accept what the older scripts do and print.
 
-The T3 step does not start a T3 that runs. It starts T3 when T3 does not run, for example on a retry over a copy that an earlier attempt started.
+The T3 step does not start a T3 that runs. It starts T3 when T3 does not run, for example on a retry over a copy that an earlier attempt started. Before it starts T3, it reloads systemd, so the start reads the drop-ins the agent part wrote, the [container server's](#container-server) among them.
 
 A failed create stops its copy, and a retry writes the model environment again into a copy that is not running. Only a copy that a release before 2065 started and that still runs holds none: its retry fails in the agent part with `instance.container_agent_failed`; remove it with `instance:destroy` and create it again.
 
@@ -2508,7 +2588,7 @@ The same step keeps three host programs that Swamp fixture units run: `zip`, `un
 
 It also keeps `btrfs-progs`. The inner Incus needs it for its btrfs pool on the [inner volume](#the-inner-volume). The nested image carries it since PR #3706, so a new nested-fleet default has it from its image. A default made from an older image, Instance 2454 among them, keeps that image and lacks it until this step installs it. [Convert a default](#convert-a-default) needs it inside the container before the inner pool can be made.
 
-The step sends `swamp/ansible/instance_shape_tools.py` into the outer container and runs it as root, with the workspace as its argument. The script loads the checkout's own `bin/swamp-shape-gate`. The gate names the tools from its three pin files: `/opt/orbit-shape-gate/venv-<digest>` from `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`, and `/opt/orbit-shape-gate/collections-<digest>` from `swamp/ansible/requirements.yml`. The gate also builds the venv. So the step, the gate and the proof runner always use the same names, and no version or naming rule exists twice.
+The step sends `swamp/ansible/instance_shape_tools.py` into the outer container and runs it as root, with the workspace as its argument. The script loads the checkout's own `bin/swamp-shape-gate`. The gate names the tools: `/opt/orbit-shape-gate/venv-<digest>` from `swamp/ansible/shape-gate-requirements.txt`, `swamp/ansible/requirements.txt` and the interpreter that builds the venv, by [the gate's venv rule](/reference/implementation-loop#run-the-swamp-shape-gate-before-you-push), and `/opt/orbit-shape-gate/collections-<digest>` from `swamp/ansible/requirements.yml`. The gate also builds the venv. So the step, the gate and the proof runner always use the same names, and no version or naming rule exists twice.
 
 | State in the default | What the step does | Result |
 | --- | --- | --- |
@@ -2526,7 +2606,7 @@ A build does five things:
 2. It builds the venv with the gate's own `tool_path`.
 3. It installs the collections into a `.partial` folder and renames it. Collections that are complete already stay.
 4. It writes the venv's `.complete`, the marker of ready tools.
-5. It removes the `venv-*` and `collections-*` folders of other pins.
+5. It removes the `venv-*` and `collections-*` folders of other pins or another interpreter.
 
 The build reaches three services: the Ubuntu mirror (apt, for the packages), the Python package index (pip) and Ansible Galaxy (`ansible-galaxy`). All three go through the Node's egress proxy: apt by its own setting in the image, pip and `ansible-galaxy` by `HTTPS_PROXY` from the Instance profile. The first build in a copy took about 30 s. The folders are mode 0755 and the files 0644, so `agent` reads them. The runner's own `ansible-galaxy collection install` then finds every collection and writes nothing.
 
@@ -2798,16 +2878,20 @@ Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each contai
 | `incus_project`, `container_name` | The container in Incus on the Instance's Node |
 | `bridge_address` | The container's address on its Node's bridge. It is a guest address: never the network, broadcast or first usable address, which the bridge keeps |
 | `t3_port` | The port of the Node's WireGuard address that publishes T3, from 3800 to 3999. The default Instance has none |
+| `container_server` | The [container server](#container-server) the container runs, `t3` or `conn`, from its Project's setting at the reservation. Null exactly when `t3_port` is null |
 | `runtime_version`, `agent_version` | The versions of the shared folders the container started with |
 | `operation_id` | The migrate Operation that owns this reservation. A new retry takes ownership before its run starts |
 | `clone_source_instance_id` | The default Instance it was cloned from. Null for the default Instance and for a migrated checkout |
 | `power_state` | `running` or `stopped`. A sleeping container is stopped. The terminal results of create, deploy, migrate, sleep and wake write it |
 | `seed_commit` | A default Instance's commit of its newest `seed-<commit>` snapshot, which clones copy. Null before its first seed |
+| `agent_key_hash` | The SHA-256 hash of a task copy's [copy key](#the-copy-key). Null for every other container, and for a task copy made before the copy key existed |
 
 The database keeps these rules:
 
 - A Node's container, bridge address and T3 port each belong to one runtime.
-- A runtime keeps its Node, container, address, port and clone source; only the versions and the power state change.
+- A runtime keeps its Node, container, address, port, container server and clone source.
+- A runtime changes only its versions, its power state and its copy key hash.
+- A runtime records its container server, `t3` or `conn`, exactly when it has a T3 port.
 - A clone source is the Instance named `default` of the same Project on the same Node, and runs in a container.
 - A default with clones keeps its runtime and its name.
 - A container Instance keeps its Node, Project and name.
@@ -2843,6 +2927,9 @@ The container runtime adds these codes. The other codes of create and destroy st
 | --- | --- | --- |
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
+| `project.container_server_unavailable` | 409 | `instance:create`, `instance:migrate` or `task:start` of a container with a server, while the recipe's agent folder does not pin the program of the Project's [container server](#container-server). Nothing is recorded |
+| `projects.agent_instructions_too_large` | 422 | `instance:create` or `task:start` of a clone while the Project's [agent instructions](#agent-instructions) hold more than 32 files or 32 KiB. Nothing is recorded |
+| `projects.agent_instructions_invalid` | 422 | `instance:create` or `task:start` of a clone while an agent instruction file breaks a rule of [What counts](#what-counts). Nothing is recorded |
 | `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on a Node of the build list |
 | `instance.migrate_retirement_blocked` | 409 | Owner dependencies, registered descendants, changed Git identity or submodule changes block retirement. Names 20 paths and total counts |
 | `instance.migrate_git_filter_unsupported` | 409 | A tracked path uses a clean/smudge filter; use an unfiltered checkout without changing source data |

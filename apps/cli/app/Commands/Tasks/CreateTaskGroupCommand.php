@@ -43,6 +43,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--reviewer-model= : Reviewer model in a task copy}
         {--reviewer-effort= : Reviewer effort in a task copy}
         {--pr-mode= : review_before_pr or pr_when_done: what Orbit does once the work of a task copy is done}
+        {--issue= : The GitHub issue number in the Project repository that the pull request of the task closes}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -53,7 +54,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         $child = $this->option('parent') !== null;
         $unsupported = $child
             ? ['status', 'orchestration', 'subtasks', 'review', 'preview', 'current-recipe', 'implementer-provider', 'implementer-model', 'implementer-effort',
-                'reviewer-provider', 'reviewer-model', 'reviewer-effort', 'pr-mode']
+                'reviewer-provider', 'reviewer-model', 'reviewer-effort', 'pr-mode', 'issue']
             : ['deliverables'];
         foreach ($unsupported as $option) {
             if (! in_array($this->option($option), [null, false], true)) {
@@ -76,6 +77,11 @@ final class CreateTaskGroupCommand extends TaskCommand
         $prMode = $this->prModeOption('pr-mode');
         if ($prMode === false) {
             return self::FAILURE;
+        }
+        $issue = $this->option('issue') === null ? null
+            : filter_var($this->option('issue'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 2147483647]]);
+        if ($issue === false) {
+            return $this->renderGatewayFailure('task.issue_invalid', 'The issue must be a GitHub issue number from 1 up.');
         }
         $status = $this->option('status');
 
@@ -142,6 +148,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 review: is_string($review) ? $review : null,
                 agents: $agents,
                 prMode: $prMode,
+                issue: $issue,
             ),
             TaskRecordResponse::class,
             ['Create task group', 'Creating task group', 'Created task group'],

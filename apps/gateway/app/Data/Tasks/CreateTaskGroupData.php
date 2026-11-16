@@ -32,5 +32,7 @@ final class CreateTaskGroupData extends Data
         public array $agents = [],
         /** The group's own mode; null inherits the Project's, then the Gateway's (docs/reference/tasks.md#where-the-mode-comes-from). */
         public ?TaskPrMode $prMode = null,
+        /** The GitHub issue of the Project's repository that the group's pull request closes (docs/reference/tasks.md#closes-the-issue). */
+        public ?int $issue = null,
     ) {}
 }

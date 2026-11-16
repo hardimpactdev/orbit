@@ -1161,6 +1161,18 @@ class CloneGuestTest(unittest.TestCase):
                          [["systemctl", "reset-failed", "t3.service"], ["systemctl", "start", "t3.service"]])
         self.assertIn("restart:t3", result["changes"])
 
+    def test_a_t3_the_step_starts_is_started_after_a_reload_so_it_runs_the_recorded_server(self):
+        # The agent part wrote the server's drop-in into a running copy: the start must read it (development-containers.md#container-server).
+        for unit in ("inactive", "failed"):
+            with self.subTest(unit=unit):
+                commands, _, _ = self.readiness("t3", existing=False, expected_exit=0, t3=T3_INTENT, t3_unit=unit)
+                systemctl = [argv[1] for argv in commands if argv[:1] == ["systemctl"] and argv[1] in ("daemon-reload", "reset-failed", "start")]
+                self.assertEqual(systemctl[0], "daemon-reload")
+                self.assertEqual(systemctl[-1], "start")
+        # A T3 the copy's boot started already read the drop-ins at that boot: no reload.
+        commands, _, _ = self.readiness("t3", existing=False, expected_exit=0, t3=T3_INTENT, t3_unit="active")
+        self.assertNotIn(["systemctl", "daemon-reload"], commands)
+
     def test_a_t3_that_does_not_answer_adds_no_project_so_a_retry_adds_it_once(self):
         commands, output, error = self.readiness("t3", existing=False, fail="curl", entrypoint=True, t3=T3_INTENT)
         self.assertEqual((output, error), ("", "instance.container_t3_failed: command curl exited 17\n"))
@@ -1169,6 +1181,12 @@ class CloneGuestTest(unittest.TestCase):
     def test_a_failed_session_issue_fails_the_t3_step_by_the_command_and_its_exit(self):
         _, output, error = self.readiness("t3", existing=False, fail="/opt/agent/bin/t3", entrypoint=True, t3=T3_INTENT)
         self.assertEqual((output, error), ("", "instance.container_t3_failed: command t3 exited 17\n"))
+
+    def test_a_failed_session_issue_of_the_conn_server_names_its_program(self):
+        # A copy whose runtime records the Conn Server runs its program (docs/reference/development-containers.md#container-server).
+        conn = {**T3_INTENT, "t3": "/opt/agent/bin/conn-server"}
+        _, output, error = self.readiness("t3", existing=False, fail="/opt/agent/bin/conn-server", entrypoint=True, t3=conn)
+        self.assertEqual((output, error), ("", "instance.container_t3_failed: command conn-server exited 17\n"))
 
     def test_non_php_check_has_no_php_probe(self):
         commands, _, _ = self.readiness("check")
@@ -1486,6 +1504,7 @@ class CloneGuestTest(unittest.TestCase):
                         }
                     ],
                     "links": [],
+                    "agent_instructions": {"folder": "/home/agent/.config/orbit/agent", "files": []},
                     "model_environment": {
                         "path": "/home/agent/.config/orbit/model.env",
                         "uid": os.getuid(),
@@ -1545,6 +1564,98 @@ class CloneGuestTest(unittest.TestCase):
             model.unlink()
             with self.assertRaises(RuntimeError):
                 run()
+
+
+class AgentFolderTest(unittest.TestCase):
+    """A clone's agent folder (development-containers.md#agent-instructions), written by the agent part under a temporary root."""
+
+    FOLDER = "/home/agent/.config/orbit/agent"
+    LINKS = (
+        {"path": "/home/agent/.claude/CLAUDE.md", "target": FOLDER + "/AGENTS.md"},
+        {"path": "/home/agent/.codex/AGENTS.md", "target": FOLDER + "/AGENTS.md"},
+        {"path": "/home/agent/.claude/skills", "target": FOLDER + "/.skills"},
+        {"path": "/home/agent/.agents/skills", "target": FOLDER + "/.skills"},
+    )
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.base = Path(folder.name)
+        (self.base / "home/agent/.config/orbit").mkdir(parents=True)
+        (self.base / "home/agent/.config/orbit/model.env").write_text("ORBIT_MODEL_KEY=seeded\n")
+        self.made = []
+
+    def run_agent(self, clone):
+        container = {"workspace": "/srv/workspace", "clone": {"files": [], "model_environment": {"path": "/home/agent/.config/orbit/model.env"},
+                                                               "links": list(self.LINKS), **clone}}
+
+        def command(argv, **_kwargs):
+            # `mkdir` as agent makes a link's missing folder; Git answers as a configured agent.
+            actual = argv[4:] if argv[0] == "runuser" else argv
+            if actual[0] == "mkdir":
+                # The guest names the folder by its path under the patched root.
+                self.made.append(actual[-1].replace(str(self.base), ""))
+                Path(actual[-1]).mkdir(parents=True, exist_ok=True)
+                return subprocess.CompletedProcess(argv, 0, "", "")
+            return subprocess.CompletedProcess(argv, 0, "/srv/workspace\n" if actual[-1] == "safe.directory" else "Agent\n", "")
+
+        output = io.StringIO()
+        with (
+            patch.object(GUEST.pathlib, "Path", lambda value: self.base / str(value).lstrip("/")),
+            patch.object(GUEST.subprocess, "run", command),
+            patch.object(GUEST.os, "chown"),
+            patch.object(GUEST.os, "lchown"),
+            patch.object(GUEST.sys, "stdin", io.StringIO("")),
+            contextlib.redirect_stdout(output),
+        ):
+            GUEST.phase_main("agent", json.dumps(container))
+        return json.loads(output.getvalue())["changes"]
+
+    def tree(self):
+        root = self.base / self.FOLDER.lstrip("/")
+        return {str(p.relative_to(root)): (p.read_text() if p.is_file() else None, p.stat().st_mode & 0o777) for p in sorted(root.rglob("*"))}
+
+    def instructions(self, files):
+        return {"agent_instructions": {"folder": self.FOLDER, "files": [{"path": p, "content": c} for p, c in files.items()]}}
+
+    def test_the_create_writes_exactly_its_files_and_links_both_agents_to_them(self):
+        # The seed's folder holds a skill the Project has since removed.
+        (self.base / (self.FOLDER + "/.skills/old").lstrip("/")).mkdir(parents=True)
+        (self.base / (self.FOLDER + "/.skills/old/SKILL.md").lstrip("/")).write_text("removed")
+        changes = self.run_agent(self.instructions({"AGENTS.md": "note\n\n# This Project\n\nRun the tests.\n",
+                                                     ".skills/release-notes/SKILL.md": "Write the notes.\n"}))
+
+        self.assertEqual(self.tree(), {
+            ".skills": (None, 0o755), ".skills/release-notes": (None, 0o755), ".skills/release-notes/SKILL.md": ("Write the notes.\n", 0o644),
+            "AGENTS.md": ("note\n\n# This Project\n\nRun the tests.\n", 0o644)})
+        for link in self.LINKS:
+            self.assertEqual(os.readlink(self.base / link["path"].lstrip("/")), link["target"])
+        self.assertIn("/home/agent/.agents", self.made)
+        self.assertIn(self.FOLDER, [c.replace(str(self.base), "") for c in changes])
+
+    def test_a_rerun_with_the_same_content_changes_nothing_and_new_content_replaces_the_folder(self):
+        files = {"AGENTS.md": "one\n", ".skills/a/SKILL.md": "a\n"}
+        self.run_agent(self.instructions(files))
+        self.assertNotIn(self.FOLDER, [c.replace(str(self.base), "") for c in self.run_agent(self.instructions(files))])
+        self.run_agent(self.instructions({"AGENTS.md": "two\n"}))
+        self.assertEqual(self.tree(), {".skills": (None, 0o755), "AGENTS.md": ("two\n", 0o644)})
+
+    def test_a_path_out_of_the_folder_is_refused(self):
+        with self.assertRaisesRegex(RuntimeError, "instance.agent_folder_refused"):
+            self.run_agent(self.instructions({"../model.env": "x"}))
+        self.assertEqual((self.base / "home/agent/.config/orbit/model.env").read_text(), "ORBIT_MODEL_KEY=seeded\n")
+
+    def test_a_folder_reached_through_a_link_is_refused_and_its_target_stays(self):
+        # The agent owns ~/.config/orbit: a link there must not make root remove or write another folder.
+        elsewhere = self.base / "srv/elsewhere"
+        (elsewhere / "agent").mkdir(parents=True)
+        (elsewhere / "agent/keep").write_text("kept")
+        (self.base / "home/agent/.config/orbit").rename(self.base / "home/agent/.config/held")
+        (self.base / "home/agent/.config/orbit").symlink_to(elsewhere)
+        (elsewhere / "model.env").write_text("ORBIT_MODEL_KEY=seeded\n")
+        with self.assertRaisesRegex(RuntimeError, "instance.agent_folder_refused"):
+            self.run_agent(self.instructions({"AGENTS.md": "x"}))
+        self.assertEqual((elsewhere / "agent/keep").read_text(), "kept")
 
 
 if __name__ == "__main__":

@@ -18,6 +18,9 @@ final class UpdateProjectCommand extends GatewayCommand
     use ParsesTaskWorkspaceRouted;
     use ReadsTaskAgentOptions;
 
+    /** The container servers a Project chooses from (docs/reference/projects.md#container-server). */
+    private const array CONTAINER_SERVERS = ['t3', 'conn'];
+
     #[\Override]
     protected $signature = 'project:update
         {project : Numeric project ID}
@@ -44,6 +47,7 @@ final class UpdateProjectCommand extends GatewayCommand
         {--clear-task-reviewer-agent : Clear the reviewer defaults}
         {--task-pr-mode= : review_before_pr or pr_when_done: the mode of task copy groups that set none}
         {--clear-task-pr-mode : Remove the Project\'s mode, so its task groups use the Gateway\'s default}
+        {--container-server= : t3 or conn: the server of the Project\'s containers that Orbit makes after the change}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -134,6 +138,15 @@ final class UpdateProjectCommand extends GatewayCommand
             return $this->renderGatewayFailure('project.task_pr_mode_invalid', 'The task pull request mode must be review_before_pr or pr_when_done.');
         }
 
+        $containerServer = null;
+        // A given option must name a server: an empty value is refused, not dropped.
+        if ($this->input->hasParameterOption('--container-server')) {
+            $containerServer = $this->option('container-server');
+            if (! in_array($containerServer, self::CONTAINER_SERVERS, true)) {
+                return $this->renderGatewayFailure('project.container_server_invalid', 'The container server must be t3 or conn.');
+            }
+        }
+
         if (! $taskWorkspaceRouted['valid']) {
             return $this->renderGatewayFailure(
                 'project.task_workspace_routed_invalid',
@@ -151,7 +164,7 @@ final class UpdateProjectCommand extends GatewayCommand
         }
 
         if ($name === null && $type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null
-            && $mergeCheck === null && ! $clearMergeCheck && $taskAgents === null && $taskPrMode === null && ! $clearTaskPrMode && $defaultAutoDeploy === null) {
+            && $mergeCheck === null && ! $clearMergeCheck && $taskAgents === null && $taskPrMode === null && ! $clearTaskPrMode && $defaultAutoDeploy === null && $containerServer === null) {
             return $this->renderGatewayFailure(
                 'project.update_required',
                 'Provide at least one Project update.',
@@ -184,6 +197,7 @@ final class UpdateProjectCommand extends GatewayCommand
                 taskPrMode: $taskPrMode,
                 taskPrModeProvided: $taskPrMode !== null || $clearTaskPrMode,
                 defaultAutoDeploy: $defaultAutoDeploy,
+                containerServer: $containerServer,
             ),
             ProjectResponse::class,
             ['Update Project', 'Updating Project', 'Updated Project'],

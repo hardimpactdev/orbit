@@ -35,6 +35,15 @@ final readonly class TaskCopyTurn
     /** How an implementer in a copy asks: T3 has no other way to hand a question back, and Orbit ends the turn at it. */
     public const string AskRule = 'To ask a question, use your question tool. Asking ends this turn; the answer comes as the next turn.';
 
+    /**
+     * How a reviewer in a copy approves (docs/reference/tasks.md#the-reviewers-pull-request-text): it sends the pull request text through
+     * its copy key. Orbit opens the pull request once the group is done; the copy holds no Git token.
+     */
+    public const string PrTextRule = 'If you approve this commit, write its pull request: a title of one line, and a body in Markdown in a file such as '
+        .'pr-body.md. Send them before this turn ends: . ~/.config/orbit/model.env && curl -sS --fail-with-body -H "Authorization: Bearer $ORBIT_COPY_KEY" '
+        .'--form-string "title=$TITLE" -F \'body=<pr-body.md\' "$ORBIT_COPY_API/pull-request" (set TITLE to the title first). A second send replaces the text. '
+        .'Orbit opens the pull request with it once the work is done. If you do not approve, send nothing.';
+
     public function __construct(private TaskOperations $operations, private TaskCheckedCandidate $candidates) {}
 
     public function start(Task $group, TaskTurnData $data, string $caller, ?string $request): Operation
@@ -104,13 +113,13 @@ final readonly class TaskCopyTurn
         // A turn that continues a thread whose last turn asked answers it: the questions come first, in the agent's own words.
         $prompt = $provider === null && $thread->questions !== null ? self::asked($thread->questions)."\n\nAnswer:\n".$data->prompt : $data->prompt;
         $prompt = $candidate === null ? $prompt."\n\n".self::AskRule : $prompt."\n\nThe checked commit under review: {$candidate}. The checkout holds it, "
-            .'detached. Orbit checks the task branch out again after this turn and discards every change in the checkout.';
+            .'detached. Orbit checks the task branch out again after this turn and discards every change in the checkout.'."\n\n".self::PrTextRule;
 
         return [
             ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
-            'turn' => ['t3' => InstanceContainer::T3, 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
+            'turn' => ['t3' => $instance->runtime()->firstOrFail()->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
                 'candidate' => $candidate, 'settle' => $settle, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
                 'prompt' => TaskTurnPrompt::compose($task, $prompt)],
         ];
