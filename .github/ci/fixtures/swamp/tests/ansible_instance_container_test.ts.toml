@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "3d0e83fcce6475879f1c4e82cbb0c5298ea49cf15e98c6d1aadddaa56be7cd00"
+source_sha256 = "6fecc44b4a681f4b7757e5d123a6fe0e402d50c4e3ce44710eb43c8ed2f201fb"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -9,13 +9,14 @@ cases = [
   "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
   "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing",
   "a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name",
-  "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
+  "a deployment checks out the branch's new commit, seeds it and deletes the older seed; a failed phase names itself and stops its play",
+  "a deployment refuses a pinned commit off the branch at its fetch, and dirty or diverged work at its checkout",
   "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase",
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes",
   "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer",
-  "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing",
+  "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing, and a drifted web configuration alone restarts PHP",
   "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file",
   "a deployment's start waits only for enabled Process units; the processes phase enables, starts and waits for a new or resumed one",
   "a new Process that does not start fails the deployment's processes phase, which names its unit",
@@ -33,7 +34,7 @@ cases = [
   "a deployment's start resumes a Frozen container and then converges as usual",
   "a clone runs its own Process units: the default's units and folders from the seed go, and its own start",
   "a clone's first boot starts no unit of the default and the clone has its own machine-id",
-  "the workspace stays writable for its group before and after the deploy steps, whoever installed last",
+  "the workspace stays writable for its group before and after the deploy steps, whoever installed last; Git excludes the .env once, beside the container's own lines",
   "the agent phase trusts only its workspace and preserves other Git settings on reruns",
   "the agent can commit with its default identity and keeps each configured identity value",
   "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, and a Project without PHP loses php-cli.ini",
@@ -97,9 +98,14 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 4113
+cost = 4034
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # Two of the four nested clone probe damages (2026-11-16): splitting the two cases that ran 177-180s on a loaded CI unit adds one
+  # case's setup, and the file then needs 9 hosted shards, above the 8-shard PR limit. The PR keeps the probe's refusal end to end for a
+  # raw.lxc key and an extra share key, and the guard's refusal of security.privileged and an extra device in instance_clone_test.py.
+  "the nested clone probe refuses a profile with security.privileged before it starts",
+  "the nested clone probe refuses a profile with a host disk before it starts",
   # The proof checkout of a copy (21s locally, run in full before the PR): the file sits at the 8-shard PR limit. The PR keeps the
   # workflow's expressions in workflow_start_resolution_test.ts and the Gateway's input in ProofRunCopiesTest.php.
   "a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name",
@@ -111,8 +117,8 @@ after_merge_cases = [
   "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait",
   # The merged deploy steps' equivalence (two fixtures, separate and merged plays, a phase handler before the seed, a play killed after
   # its start phase, and a later phase's failure; about 145s locally): a 72nd slice would push the file above the 8-shard PR limit. The PR keeps the merged plays of a normal
-  # default's deploy (start,fetch and seed,check), a refusal in the second phase and a failed first phase in "a deployment checks out
-  # the branch's new commit", at its former cost, and a failed fleet_refresh in a four-phase play in "a nested-fleet default runs its
+  # default's deploy (start,fetch and seed,check), a failed first phase in "a deployment checks out the branch's new
+  # commit" and a refusal in the second phase in "a deployment refuses a pinned commit off the branch", and a failed fleet_refresh in a four-phase play in "a nested-fleet default runs its
   # fleet phases by tag"; the workflow test checks the handler flush after each phase.
   "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase",
   # The deploy-step record across four checkouts (45s locally, run in full before the PR): a 72nd slice would defer the whole file. The PR
@@ -158,8 +164,8 @@ after_merge_cases = [
 # Each retained case cost is the 90th percentile of its completed hosted PR times across the runs listed in
 # docs/reference/implementation-loop.md (2026-11-13), rounded up plus one second; startup is added per slice.
 # Cases with fewer than five hosted runs keep an estimate. The 190-second shard deadline is the headroom above p90.
-# 71 slices give each of the 71 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 71
+# 70 slices give each of the 70 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 70
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -197,12 +203,13 @@ inputs = [
   "a normal container start never writes boot.autostart; a stopped one gets the presented machine name before its boot, unless its Incus templates are pending" = 41 # ESTIMATE: local time * 2.1, rounded up + 1s
   "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start, never into a running one" = 60 # ESTIMATE: local time * 2.1, rounded up + 1s
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary" = 72 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 43.6-73.7s
-  "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 135 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 82.0-126.2s; plus 11s ESTIMATE for three workspace runs of the .env exclude (local 5s x 2.1, rounded up)
-  "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 144 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 96.9-146.7s; the merged plays (2026-11-14) ran as long locally: 63-68s on main, 65-67s merged
+  "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 107 # ESTIMATE: p90 of 19 completed hosted PR runs on 2026-11-13 (123s, range 82.0-126.2s) times the 54.7 of 63.5 local play seconds it keeps after the Caddyfile drift and the .env exclude moved out (2026-11-16), rounded up, plus 1s; it ran 176.9s on a loaded CI unit before the split
+  "a deployment checks out the branch's new commit, seeds it and deletes the older seed; a failed phase names itself and stops its play" = 100 # ESTIMATE: p90 of 19 completed hosted PR runs on 2026-11-13 (143s, range 96.9-146.7s) times the 51.0 of 74.1 local play seconds it keeps after its refusals moved out (2026-11-16), rounded up, plus 1s; it ran 177-180s on loaded CI units before the split
+  "a deployment refuses a pinned commit off the branch at its fetch, and dirty or diverged work at its checkout" = 88 # ESTIMATE: the same p90 (143s) times its 44.8 of 74.1 local play seconds (2026-11-16), rounded up, plus 1s
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 57 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 33.6-61.7s
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes" = 68 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 36.0-71.1s
   "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer" = 91 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 56.5-95.7s
-  "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing" = 70 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 42.9-72.5s
+  "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing, and a drifted web configuration alone restarts PHP" = 89 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 42.9-72.5s; plus 19s ESTIMATE for the two processes runs of the Caddyfile drift (local 8.8s x 2.1, rounded up)
   "a deployment's start waits only for enabled Process units; the processes phase enables, starts and waits for a new or resumed one" = 73 # ESTIMATE: local 24s x 3, plus 1s
   "a new Process that does not start fails the deployment's processes phase, which names its unit" = 97 # ESTIMATE: local 32s x 3, plus 1s
   "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file" = 126 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 78.4-131.6s
@@ -217,7 +224,7 @@ inputs = [
   "a deployment's start resumes a Frozen container and then converges as usual" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s
   "a clone runs its own Process units: the default's units and folders from the seed go, and its own start" = 116 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 70.1-118.2s
   "a clone's first boot starts no unit of the default and the clone has its own machine-id" = 117 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 85.6-118.1s
-  "the workspace stays writable for its group before and after the deploy steps, whoever installed last" = 77 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 44.7-76.6s
+  "the workspace stays writable for its group before and after the deploy steps, whoever installed last; Git excludes the .env once, beside the container's own lines" = 106 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 44.7-76.6s; plus 29s ESTIMATE for the three workspace runs of the .env exclude (local 13.8s x 2.1, rounded up)
   "the agent phase trusts only its workspace and preserves other Git settings on reruns" = 54 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 34.2-55.3s
   "the agent can commit with its default identity and keeps each configured identity value" = 67 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 32.7-67.1s
   "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, and a Project without PHP loses php-cli.ini" = 62 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 24.5-41.1s; plus 21s ESTIMATE for the php-cli.ini repair and removal starts (local 20s before, 30s with them: 10s x 2.1, rounded up). At most 66 keeps the file within the 8-shard PR limit
@@ -250,8 +257,6 @@ inputs = [
   "a switched-on host with a short subuid range refuses before any nesting change" = 5 # p90 of 15 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 2.3-4.1s
   "a switched-on host with a short subgid range refuses before any nesting change" = 5 # p90 of 15 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 2.4-3.7s
   "the nested clone probe refuses a profile with a raw.lxc key before it starts" = 73 # p90 of 14 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 40.9-74.1s
-  "the nested clone probe refuses a profile with security.privileged before it starts" = 74 # p90 of 14 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 46.8-76.7s
-  "the nested clone probe refuses a profile with a host disk before it starts" = 69 # p90 of 13 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 47.1-73.9s
   "the nested clone probe refuses a profile with an extra share key before it starts" = 76 # p90 of 14 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 46.4-80.7s
   "a changed shared folder restarts running normal and nested runtimes before clearing its marker" = 23 # p90 of 14 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 17.2-22.3s
   "a changed shared folder on a normal Node runs main's list and restart command lines" = 23 # p90 of 14 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 13.1-22.2s
