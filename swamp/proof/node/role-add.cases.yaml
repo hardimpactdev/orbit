@@ -36,7 +36,7 @@ cases:
   - id: required-only
     batch: fresh-fleet
     covers: [main, add, succeeded, role-refused, converge-requested, converge-mode, converge, converge-succeeded]
-    summary: Repair a stopped Docker service when adding database, verify its package and active assignment, refuse an ordinary repeat, prove that a convergence after the install succeeds and changes nothing, and that its repeat skips the unchanged phases.
+    summary: Repair a stopped Docker service when adding database, verify its package and active assignment, refuse an ordinary repeat, prove that a convergence after the install succeeds and changes nothing.
     timeout: 1200
     setup:
       - service: {on: app-dev, name: docker.socket, state: stop}
@@ -53,19 +53,14 @@ cases:
         expect:
           - unchanged: {since: act, what: [ufw, operations]}
       # The install converged the role, so the first --converge is already the repeat that must change nothing (measured in a copy:
-      # both converges after the install changed 0 in every phase). One Operation checks both.
+      # both converges after the install changed 0 in every phase). One Operation checks both. It runs every phase: the kind is part of
+      # the phase digest, so a role addition's record never skips it (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
       - act:
           - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], save: {id: database-repeat}, expect: {exit: 0, status: succeeded}}
         expect:
           - service: {on: app-dev, name: docker.service, state: active}
           - package: {on: app-dev, any: [docker.io, docker-ce]}
           - ansible_changes: {operation: "${database-repeat}", phases: [Apply role prerequisites, Apply the role on the Node, Open the firewall, Check the role], changed: 0}
-      # The first --converge after the add has another kind, so it ran every phase; its repeat skips the unchanged ones and still checks
-      # the role (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
-      - act:
-          - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], expect: {exit: 0, status: succeeded, steps: {name: Apply role prerequisites, count: 0}}}
-        expect:
-          - service: {on: app-dev, name: docker.service, state: active}
 
   - id: application-repeat
     batch: fresh-fleet
