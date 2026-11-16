@@ -120,7 +120,7 @@ it('adds no rule for a task_vms value that a Node still stores', function (): vo
         ->and(array_filter($stored, static fn ($rule): bool => str_starts_with($rule->name, 'orbit:task-')))->toBe([]);
 });
 
-it('keeps no vpn rule into the reserved range, and retires the hub routes the vpn Node kept into it', function (): void {
+it('sends the vpn Node no task VM rule to keep or to remove: its hub converge deletes the old ones', function (): void {
     $control = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'swamp', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.15', 'public_ssh_host' => '10.44.0.15', 'user' => 'orbit',
     ]));
@@ -133,8 +133,11 @@ it('keeps no vpn rule into the reserved range, and retires the hub routes the vp
 
     $commands = app(NodeRoleFirewallInput::class)->convergeCommands($vpn, RoleName::Vpn);
 
-    expect(array_filter($catalog->forRole($vpn, RoleName::Vpn), static fn ($rule): bool => $rule->shape->destination === WireGuardAddressAllocator::ReservedRange))->toBe([])
-        ->and(array_filter($commands['desired'], static fn (array $command): bool => in_array(WireGuardAddressAllocator::ReservedRange, $command, true)))->toBe([])
-        ->and(array_values(array_intersect(array_map(static fn (array $command): string => (string) end($command), $commands['remove']), $catalog::RetiredReservedRangeComments)))
-        ->toBe($catalog::RetiredReservedRangeComments);
+    $taskVm = static fn (array $command): bool => in_array(WireGuardAddressAllocator::ReservedRange, $command, true)
+        || str_starts_with((string) end($command), 'orbit:task-vm-');
+
+    expect(array_filter($catalog->forRole($vpn, RoleName::Vpn), static fn ($rule): bool => $rule->shape->destination === WireGuardAddressAllocator::ReservedRange
+        || $rule->shape->source === WireGuardAddressAllocator::ReservedRange))->toBe([])
+        ->and(array_filter($commands['desired'], $taskVm))->toBe([])
+        ->and(array_filter($commands['remove'], $taskVm))->toBe([]);
 });

@@ -20,7 +20,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\LanAddress;
-use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Models\Node;
@@ -37,9 +36,6 @@ final readonly class NodeFirewallRuleCatalog
 
     /** The same rules that the bridge of a host's task containers once had. */
     public const array TaskContainerInputComments = ['orbit:task-containers-dhcp', 'orbit:task-containers-dns-tcp', 'orbit:task-containers-dns-udp'];
-
-    /** The vpn hub's retired routes into the reserved range, in the order control SSH, control TLS, Swamp Pi. */
-    public const array RetiredReservedRangeComments = ['orbit:task-vm-control-ssh', 'orbit:task-vm-control-web', 'orbit:task-vm-swamp-pi'];
 
     /**
      * DHCP, the egress proxy and a container's own site for the Instance bridge of a Node on the build list, and no DNS: the proxy
@@ -215,10 +211,6 @@ final readonly class NodeFirewallRuleCatalog
             return $this->ingressPublicHttp($node) === [] ? [...$rules, ...$this->ingressRules()] : $rules;
         }
 
-        if ($role === RoleName::Vpn) {
-            return [...$rules, ...$this->retiredReservedRangeRoutes()];
-        }
-
         if ($role === RoleName::AppProd) {
             return [
                 ...$rules,
@@ -238,22 +230,6 @@ final readonly class NodeFirewallRuleCatalog
             $this->rule('orbit:app-dev-direct-http', '80'),
             $this->rule('orbit:app-dev-direct-https', '443'),
         ];
-    }
-
-    /**
-     * The routes the vpn hub once kept into the reserved range for task VMs: control SSH, control TLS and the Swamp Pi port. The
-     * converge deletes them by comment, so the source does not need to match the installed one.
-     *
-     * @return list<UfwManagedRule>
-     */
-    private function retiredReservedRangeRoutes(): array
-    {
-        $range = WireGuardAddressAllocator::ReservedRange;
-
-        return array_map(static fn (string $comment, string $port): UfwManagedRule => new UfwManagedRule(
-            new UfwRuleShape($comment, 'allow', 'fwd', 'any', $range, $port, 'tcp', 'orbit', 'orbit', 'v4'),
-            ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', $range, 'port', $port, 'comment', $comment],
-        ), self::RetiredReservedRangeComments, ['22', '443', '3774']);
     }
 
     /** @return list<UfwManagedRule> */
