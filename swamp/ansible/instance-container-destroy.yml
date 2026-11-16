@@ -132,6 +132,16 @@
                     | selectattr('name', 'equalto', container.inner_volume) | selectattr('type', 'equalto', 'custom') | list | length == 0
                 fail_msg: instance.removal_incomplete
                 quiet: true
+            # Only once the copy is gone: the last hold on the Node starts the runners that the holds stopped
+            # (docs/reference/node-provisioning.md#proof-places-on-a-ci-node). A rerun changes nothing. A Node whose ci-runner role
+            # went has no script, no hold and no runner to start.
+            - name: Release the proof copy's CI place
+              when: container.ci_hold | default(false)
+              ansible.builtin.command:
+                argv: [/usr/bin/timeout, "240", /usr/local/libexec/orbit-ci-runner-hold, release, "{{ container.name }}"]
+                removes: /usr/local/libexec/orbit-ci-runner-hold
+                stdin: ""
+              changed_when: true
         - name: Write the phase result
           ansible.builtin.copy:
             content: "{{ {'container_present': present | length > 0, 'removed': phase == 'remove'} | to_json }}"

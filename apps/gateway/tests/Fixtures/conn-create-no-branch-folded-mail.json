@@ -222,7 +222,6 @@
                     "source": "instance-1",
                     "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
                     "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
-                    "source_mirror": "/var/lib/orbit/instance-repositories/1.git",
                     "t3": {
                         "port": 3800,
                         "listen": "10.44.0.7",
@@ -407,6 +406,7 @@
         "run_budget_seconds": 1800
     },
     "clone_steps": [
+        "clone-ci-hold",
         "clone-container",
         "clone-club-key",
         "clone-t3",
@@ -662,7 +662,6 @@
                     "source": "instance-1",
                     "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
                     "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
-                    "source_mirror": "/var/lib/orbit/instance-repositories/1.git",
                     "t3": {
                         "port": 3800,
                         "listen": "10.44.0.7",

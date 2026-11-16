@@ -277,7 +277,7 @@ The [Metrics role](/reference/metrics#exporter-selection)'s node exporter reads 
 
 ### Proof copies on a CI Node
 
-This part is the target design of [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies), build steps 3 and 4.
+This part is the target design of [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies), build steps 3, 4 and 5.
 
 Two rules decide what a Node with the `ci-runner` role does for [proof](/cli/proof/run) copies. Both are in one class, `ProofCopyHosts`, and the other pages link here. For both, a `ci-runner` role that is being added or converged counts, so its own converge prepares the Node. A role that is being removed does not count. The CI places are the Node's count from ADR 0260. A proof copy takes one CI place.
 
@@ -286,7 +286,7 @@ Two rules decide what a Node with the `ci-runner` role does for [proof](/cli/pro
 | A CI-only Node (`ciOnly`) | `ci-runner`, at least one CI place, and no `app-dev` | Its `ci-runner` converge prepares the Instance container branch, and it takes no Instance but a proof copy |
 | The Node offers proof places (`offersPlaces`) | `ci-runner` and at least one CI place, with or without `app-dev` | It keeps a seed of the proof default and can hold proof copies |
 
-A Node that also has `app-dev`, such as the Node of the proof default, already hosts containers through its `app-dev` role. So it offers proof places, but it is not a CI-only Node: its `app-dev` converge prepares it, and it takes normal Instances. The default's own Node needs no seed copy, because it holds the seed. ADR 0260 build step 5 decides which Node takes each proof copy. Orbit never adds `app-dev` to a CI Node to host proof copies.
+A Node that also has `app-dev`, such as the Node of the proof default, already hosts containers through its `app-dev` role. So it offers proof places, but it is not a CI-only Node: its `app-dev` converge prepares it, and it takes normal Instances. The default's own Node needs no seed copy, because it holds the seed. [proof:run](/cli/proof/run#the-run) decides which Node takes each proof copy: one copy per free place, on every Node that offers proof places. Orbit never adds `app-dev` to a CI Node to host proof copies.
 
 On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent, with its `nested` part, for two kinds of Node: an `app-dev` Node on the build list, and a CI-only Node. The role runtime runs the branch for either one. The CI Node gets no `app-dev` role for this.
 
@@ -343,6 +343,31 @@ The converge makes no seed. When a `ci-runner` add or converge of a Node that of
 A CI-only Node takes no other Instance. `instance:create` refuses it with `instance.node_ci_only` (409) before any record. Only a proof copy is made there. A proof copy there gets no Route: the Node runs no Caddy and has no TLD.
 
 When the Node stops being CI-only, the converge sends no branch, and nothing is removed. This is the same as when the [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is cleared.
+
+#### Proof places on a CI Node
+
+A place runs one runner job or one proof copy. While a proof holds places on a Node, the Node's idle runners stop, so the one count stays true. Busy runners finish their job and are never stopped. The rule holds on every Node that offers proof places, the default's own Node too. [proof:run](/cli/proof/run#the-run) counts the free places.
+
+The `ci-runner` role installs the script `/usr/local/libexec/orbit-ci-runner-hold` beside the [runner state](#runner-state-for-the-runner-view) script. Role convergence writes and repairs it. Role removal removes it and its folder of holds: by then the Node has no runner container to start. The proof copy's create and destroy call it over SSH as root, as a step of their own Ansible phases. The Node agent has no part in it.
+
+| Call | When | What it does |
+| --- | --- | --- |
+| `hold <copy> <places>` | In each proof copy's create on the Node, before the copy starts its inner fleet | Records the hold of the copy, then stops idle runner services in `orbit-ci` down to the places left to runners, and records each one. `<places>` is the Node's `ci_places`, which the Gateway passes. |
+| `release <copy>` | In each proof copy's destroy on the Node, also after a failed create | Removes the hold of the copy. When no hold is left, it starts the service of each recorded runner and clears the record |
+
+An idle runner service is active, and no `Runner.Worker` process runs in its container. Both calls run under one lock file per Node, so two copies never read the holds at the same time. The holds and the record of stopped runners are files under `/var/lib/orbit/ci-hold`, readable by root only. Each call changes nothing when it finds nothing to do, so a rerun is safe.
+
+Each hold stops idle runners only down to a limit. Let P be the Node's `ci_places`, B its busy runners, and H the proof holds on the Node with the new one. The running runners, busy and idle, must not exceed P - H; the hold stops idle runners down to that number and records exactly those.
+
+With P = 5, B = 0 and two holds, two idle runners stop and three run. When the busy runners alone already exceed P - H, every idle runner stops and the busy ones finish. A runner that was busy at one hold and has since finished can stop at the next hold. The release starts exactly the recorded runners, no other.
+
+The test for busy is the one that the runner state script uses: the runner is busy while a `Runner.Worker` process runs in its container. The script reads it in the same command that stops the service. A runner that takes a job in that short moment between the two keeps its job. The Node then runs one more job than its places until that job ends.
+
+The release is the last step of a proof copy's destroy, after the container is gone. So the stopped runners start again only when the destroy of the last copy on the Node succeeds. A run end of any kind, a pass, a failure, a cancel or a timeout, cancels the group with discard, which destroys the copy.
+
+A destroy that fails keeps the copy and its hold, and the runners stay stopped. The watchdog asks again for the cancel of each group that still owns a copy, until `ProofRunWatch::CopyGiveUpHours` after the run's end. After that, the copy shows in the Instance list, and its runners start again only when an operator destroys it. A runner that is gone by the release is skipped. The [runner view](/reference/ci-runner-view) shows a stopped runner as stopped.
+
+The script never registers, deletes or creates a runner, and never stops a container. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) still owns the containers.
 
 ## macOS Nodes
 

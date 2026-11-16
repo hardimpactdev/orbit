@@ -108,6 +108,8 @@ Each entry of `runners`:
 | `current_job` | The newest `in_progress` job whose `runner_name` is this runner: `job_id`, `repository`, `workflow`, `job`, `started_at` and `url`. Null when there is none. A busy runner with a null `current_job` runs a job that the Gateway did not read. |
 | `stats` | The completed jobs of this runner in the window: `jobs`, `failed`, `queue_wait_seconds_median`, `run_seconds_median` and `busy_seconds`. A job failed when its conclusion is `failure`, `timed_out` or `startup_failure`. The medians are null when `jobs` is 0. |
 
+A runner that a proof stopped while the proof holds places on the Node reads `service: inactive` in a running container ([Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node)).
+
 Each entry of `jobs`:
 
 | Field | Meaning |

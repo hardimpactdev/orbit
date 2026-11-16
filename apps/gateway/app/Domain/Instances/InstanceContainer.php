@@ -474,10 +474,10 @@ final readonly class InstanceContainer
             ."wire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"{$workspace}\"]\ntrust_level = \"trusted\"\n";
 
         return [
-            // The default's mirror on the Node holds the seed's commit: a new branch starts there, without the network.
-            // The seed of the copy's own Node (TaskCopyStart::seed): the default's pair on its Node, else that Node's seed holder.
+            // The seed of the copy's own Node (TaskCopyStart::seed): the default's pair on its Node, else that Node's seed holder. A new
+            // branch at the seed's commit comes from the seed's own repository, so the clone names no mirror of the default: a CI Node
+            // keeps none (docs/reference/development-containers.md#create).
             ...($seed === null ? [] : ['source' => $seed['source'], 'snapshot' => $seed['snapshot'], 'seed_commit' => $seed['seed_commit'],
-                'source_mirror' => self::mirror(Instance::query()->findOrFail($runtime->clone_source_instance_id)),
                 // The seed's inner volume, whose snapshot of the seed's name the copy's own volume starts from.
                 ...($seed['inner_volume'] === null ? [] : ['inner_volume' => $seed['inner_volume']])]),
             // A task copy starts from its start commit alone: the checkout drops the default's modified and untracked files

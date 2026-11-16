@@ -3,9 +3,10 @@ cases = [
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config",
   "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker, mirror and task base scratch; a retry changes nothing",
   "a destroy deletes the inner volume its intent names, with its snapshots, after the container; another volume stays and a retry changes nothing",
+  "a proof copy's destroy releases its CI place only after the container is gone; any other removal, and a Node without the hold script, release nothing",
 ]
 file = "swamp/tests/ansible_instance_container_destroy_test.ts"
-cost = 24
+cost = 64
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (12s); these are estimates, not completed measurements.
 slices = 1
@@ -32,3 +33,4 @@ inputs = [
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config" = 1
   "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker, mirror and task base scratch; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
   "a destroy deletes the inner volume its intent names, with its snapshots, after the container; another volume stays and a retry changes nothing" = 11 # estimate: local run on Beast, not a CI measurement
+  "a proof copy's destroy releases its CI place only after the container is gone; any other removal, and a Node without the hold script, release nothing" = 40 # estimate: local run of 20s x 2, not a CI measurement

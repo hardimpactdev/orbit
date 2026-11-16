@@ -17,18 +17,15 @@ use App\Data\Ci\CiRunnerStateData;
 use App\Data\Ci\CiRunnerStatsData;
 use App\Data\Ci\CiUsageData;
 use App\Data\Nodes\NodeCiData;
-use App\Domain\Instances\InstancePlacement;
 use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
-use App\Domain\Proof\ProofGroup;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\GitHub\GitHubActionsJobs;
 use App\Infrastructure\Metrics\PrometheusCiRunnerStates;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeFact;
-use App\Models\Operation;
 use Carbon\CarbonImmutable;
 
 /**
@@ -95,10 +92,7 @@ final readonly class ShowCiRunnersAction
     private function proofCopies(array $nodeIds): array
     {
         $copies = [];
-        $instances = Instance::query()->whereIn('node_id', $nodeIds)->whereNotNull('task_workspace_owner_id')
-            ->whereHas('runtime', static fn ($runtime) => $runtime->where('incus_project', InstancePlacement::NestedProject))
-            ->whereIn('task_workspace_owner_id', Operation::query()->select('target_id')->where('kind', ProofGroup::OwnerKind)->where('target_type', 'task_group'))
-            ->orderBy('name')->get(['id', 'node_id', 'name', 'task_workspace_owner_id']);
+        $instances = ProofCopyHosts::copies()->whereIn('node_id', $nodeIds)->orderBy('name')->get(['id', 'node_id', 'name', 'task_workspace_owner_id']);
 
         foreach ($instances as $instance) {
             $copies[$instance->node_id][] = new CiProofCopyData($instance->id, $instance->name, (int) $instance->task_workspace_owner_id);
@@ -170,15 +164,11 @@ final readonly class ShowCiRunnersAction
         );
     }
 
-    /** The Node's `ci` setting counts its places; on a proof-only Node a runner job uses none of them. */
+    /** The Node's `ci` setting counts its places; ProofCopyHosts holds the rule of the free ones. */
     private static function places(?NodeCiData $ci, int $busyRunners, int $proofCopies): CiPlacesData
     {
-        $proofOnly = $ci?->proof_only === true;
-        $runnerJobs = $proofOnly ? 0 : $busyRunners;
-        $total = $ci?->places;
-
-        return new CiPlacesData($total, $proofOnly, $runnerJobs, $proofCopies,
-            $total === null ? null : max(0, $total - $runnerJobs - $proofCopies));
+        return new CiPlacesData($ci?->places, $ci?->proof_only === true, ProofCopyHosts::runnerJobs($ci, $busyRunners), $proofCopies,
+            $ci === null ? null : ProofCopyHosts::freePlaces($ci, $busyRunners, $proofCopies));
     }
 
     /** @param list<int> $values */

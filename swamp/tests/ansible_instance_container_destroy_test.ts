@@ -328,3 +328,64 @@ Deno.test({
         }
     },
 });
+Deno.test({
+    name: "a proof copy's destroy releases its CI place only after the container is gone; any other removal, and a Node without the hold script, release nothing",
+    ignore: !available,
+    fn() {
+        const folder = Deno.makeTempDirSync();
+        const root = new URL("../ansible/", import.meta.url);
+        const hold = `${folder}/libexec/orbit-ci-runner-hold`;
+        try {
+            for (const dir of ["bin", "run", "tasks", "libexec", "mirror.git"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
+            Deno.writeTextFileSync(`${folder}/instance-container-destroy.yml`, Deno.readTextFileSync(new URL("instance-container-destroy.yml", root))
+                .replaceAll("/var/lib/orbit/instance-mail", `${folder}/mail-state`).replaceAll("/usr/local/libexec/orbit-ci-runner-hold", hold));
+            Deno.copyFileSync(new URL("tasks/address-node.yml", root), `${folder}/tasks/address-node.yml`);
+            Deno.copyFileSync(new URL("tasks/task-copy-base-names.yml", root), `${folder}/tasks/task-copy-base-names.yml`);
+            installPowerHelper(folder, folder);
+            Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`);
+            Deno.writeTextFileSync(`${folder}/bin/ufw`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-ufw.ts", import.meta.url).pathname}' "$@"\n`);
+            // The hold script logs each call with whether the container was still in the fixture's state.
+            Deno.writeTextFileSync(hold, `#!/bin/sh\nif grep -q '"instance-7"' '${folder}/state.json'; then present=yes; else present=no; fi\necho "$* $present" >> '${folder}/holds'\n`);
+            for (const file of [`${folder}/bin/incus`, `${folder}/bin/ufw`, hold]) Deno.chmodSync(file, 0o755);
+            Deno.writeTextFileSync(`${folder}/ufw.json`, "[]");
+            const container = (copy: boolean) => {
+                Deno.mkdirSync(`${folder}/containers/instance-7`, { recursive: true });
+                Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({ containers: { "instance-7": { status: "Running" } }, "network-acls": [] }));
+                Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
+                    ssh_execution: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
+                    container_destroy: { instance_id: 7, name: "instance-7", project: "orbit-instances-nested", pool: "orbit-instances", acl: "instance-7",
+                        mirror: `${folder}/mirror.git`, firewall_prefix: "orbit:instance-7-", ...(copy ? { ci_hold: true } : {}) },
+                }));
+            };
+            const run = () => {
+                const done = new Deno.Command("ansible-playbook", {
+                    args: ["-i", "localhost,", "--tags", "remove", "-e", "ansible_connection=local", "-e", "ansible_become=false",
+                        "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", `task_base_root=${folder}/task-base`,
+                        `${folder}/instance-container-destroy.yml`],
+                    env: { ANSIBLE_CONFIG: stepEnv.ANSIBLE_CONFIG, HOST_FIXTURE: folder, ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
+                        ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1" },
+                }).outputSync();
+                return { ok: done.success, output: new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr) };
+            };
+            const holds = () => { try { return Deno.readTextFileSync(`${folder}/holds`).trim().split("\n"); } catch { return []; } };
+            container(false);
+            let done = run();
+            assert(done.ok, done.output);
+            assertEquals(holds(), []);
+            container(true);
+            done = run();
+            assert(done.ok, done.output);
+            // A retry, after a failure or by the watchdog, releases again; the script changes nothing then.
+            done = run();
+            assert(done.ok, done.output);
+            assertEquals(holds(), ["release instance-7 no", "release instance-7 no"]);
+            Deno.removeSync(hold);
+            container(true);
+            done = run();
+            assert(done.ok, done.output);
+            assertEquals(holds(), ["release instance-7 no", "release instance-7 no"]);
+        } finally {
+            Deno.removeSync(folder, { recursive: true });
+        }
+    },
+});

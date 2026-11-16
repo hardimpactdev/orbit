@@ -4,36 +4,42 @@ declare(strict_types=1);
 
 namespace App\Domain\Proof;
 
+use App\Actions\Ci\ShowCiRunnersAction;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\Deployment\DevelopmentDeploySteps;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyLifecycle;
-use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskInstanceWorkspace;
+use App\Infrastructure\Metrics\PrometheusCiRunnerStates;
+use App\Infrastructure\Metrics\PrometheusMemAvailable;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Support\ValidatedData;
-use Illuminate\Support\Facades\Config;
 
 /**
- * The runs of `proof:run` in copies of the proof Project's default Instance (docs/cli/proof/run.mdx#the-run): how many copies a proof
- * may take, whether a run's copy is ready for its start, and the run's workflow input when it starts. The copy itself is a task copy
- * (TaskCopyStart) that the run's group owns; its end is the group's cancel (ProofGroup).
+ * The runs of `proof:run` in copies of the proof Project's default Instance (docs/cli/proof/run.mdx#the-run): the free CI places a proof
+ * may take on each Node, whether a run's copy is ready for its start, and the run's workflow input when it starts. The copy itself is a
+ * task copy (TaskCopyStart) that the run's group owns; its end is the group's cancel (ProofGroup).
+ *
+ * @phpstan-import-type CiNodeRunnerStates from PrometheusCiRunnerStates
+ *
+ * @phpstan-type ProofPlaceReads array{states: array<string, CiNodeRunnerStates>|null, memory: array<string, int>|null}
  */
 final readonly class ProofCopies
 {
-    /** The copy places a proof always leaves free for task groups. */
-    public const int KeptForTasks = 2;
+    /** The step and capacity reason of a proof that waits for a free CI place. */
+    public const string WaitStep = 'Wait for a free CI place';
 
-    /** The step and capacity reason of a proof that waits for a copy place. */
-    public const string WaitStep = 'Wait for a free copy place';
-
-    public function __construct(private ProofSettings $settings) {}
+    public function __construct(private ProofSettings $settings, private PrometheusCiRunnerStates $states, private PrometheusMemAvailable $memory) {}
 
     /** Whether proofs of this Project run in copies: its tasks run as copies of its default. */
     public static function runs(Project $project): bool
@@ -41,19 +47,75 @@ final readonly class ProofCopies
         return InstancePlacement::copiesTasks($project);
     }
 
-    /** The copy places a proof may take now: at most `proof.copies`, and never the last two copy places of the default's Node. */
-    public function places(Project $project): int
+    /**
+     * The runner state and the available memory of every Node, from Prometheus. Read them before the admission transaction.
+     *
+     * @return ProofPlaceReads
+     */
+    public function read(): array
     {
-        $default = Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->first();
-        $live = $default === null ? 0 : TaskCopyStart::live($default->node_id);
-
-        return max(0, min($this->settings->copies(), Config::integer('orbit.tasks.copies_max') - $live - self::KeptForTasks));
+        return ['states' => $this->states->states(), 'memory' => $this->memory->bytes()];
     }
 
-    /** The copy places a proof would have with no other copy on the Node. */
-    public function mostPlaces(): int
+    /**
+     * The free CI places a proof may take now on each Node, by Node id, Nodes without one left out. A Node counts when it offers proof
+     * places and holds the default's current seed: the default's own Node holds it. Its places are its free CI places
+     * (ProofCopyHosts::freePlaces), and no more than its available memory holds copy peaks. A Node without a fresh runner state or a
+     * memory read offers none.
+     *
+     * @param  ProofPlaceReads  $read
+     * @return array<int, int>
+     */
+    public function places(Project $project, array $read): array
     {
-        return max(0, min($this->settings->copies(), Config::integer('orbit.tasks.copies_max') - self::KeptForTasks));
+        return $this->count($project, $read, false);
+    }
+
+    /**
+     * The places the proof would have with no busy runner and no other proof copy on any Node, its available memory as read.
+     *
+     * @param  ProofPlaceReads  $read
+     */
+    public function mostPlaces(Project $project, array $read): int
+    {
+        return array_sum($this->count($project, $read, true));
+    }
+
+    /**
+     * @param  ProofPlaceReads  $read
+     * @return array<int, int>
+     */
+    private function count(Project $project, array $read, bool $allFree): array
+    {
+        $default = Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->first();
+        if ($default === null || $read['states'] === null || $read['memory'] === null) {
+            return [];
+        }
+        $nodes = Node::query()->where('status', LifecycleStatus::Active)
+            ->whereHas('roles', static fn ($roles) => $roles->where('role', RoleName::CiRunner)->where('status', '!=', LifecycleStatus::Removing))
+            ->orderBy('id')->get()
+            ->filter(static fn (Node $node): bool => ProofCopyHosts::offersPlaces($node)
+                && ($node->id === $default->node_id || app(ProofSeeds::class)->holder($node) !== null));
+        $copies = ProofCopyHosts::copies()->whereIn('node_id', $nodes->modelKeys())->pluck('node_id')->countBy();
+        $fresh = now()->getTimestamp() - ShowCiRunnersAction::StaleSeconds;
+
+        $places = [];
+        foreach ($nodes as $node) {
+            $state = $read['states'][$node->name] ?? null;
+            $memory = $read['memory'][$node->name] ?? null;
+            $ci = app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->ci();
+            if ($state === null || ! $state['read_ok'] || ($state['observed_at'] ?? 0) < $fresh || $memory === null || $ci === null) {
+                continue;
+            }
+            $busy = count(array_filter($state['runners'], static fn (array $runner): bool => $runner['busy']));
+            $free = min($allFree ? ProofCopyHosts::freePlaces($ci, 0, 0) : ProofCopyHosts::freePlaces($ci, $busy, $copies->get($node->id, 0)),
+                ProofCopyHosts::memoryPlaces($memory));
+            if ($free > 0) {
+                $places[$node->id] = $free;
+            }
+        }
+
+        return $places;
     }
 
     /** Whether the run of `proof.command` proves in a copy. */

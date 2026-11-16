@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction,StartInstanceUnregisterAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
   - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,InstanceRemovalKind.php,InstanceUnregisterProjection.php,Removal/**}
   - apps/gateway/app/{Http/Requests/Instances/RemoveInstanceRequest,Models/InstanceRemoval,Models/InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_28_000000_add_kind_to_instance_removals}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_03_01_000000_add_kind_to_instance_removals}.php
   - apps/cli/app/Commands/Instances/{DestroyInstanceCommand,UnregisterInstanceCommand}.php
   - swamp/{workflows/workflow-operation-instance-destroy.yaml,workflows/workflow-operation-instance-unregister.yaml,ansible/instance-container-destroy.yml}
 ---
@@ -105,6 +105,8 @@ Destroy also deletes migration execution copies, including the remote-read crede
 Destroy also deletes the [execution copies](/reference/deployments#execution-copies) of each deploy of the Instance, as each deploy does when it ends. For a task copy, destroy also deletes the rendered `.env` that each [publish](/reference/tasks#task-copy) of the copy received. For a proof copy, it deletes the development deploy step commands that each [`proof:run`](/cli/proof/run#the-run) run in the copy received. The clone's Valkey user is deleted with its owned databases; the default's Valkey user stays. The runtime row stays until success, so its address and port stay reserved during a failed removal.
 
 Destroy removes the Instance's folder for pending mail activation from the Node, `/var/lib/orbit/instance-mail/<container>`, its [asleep marker](/reference/development-containers#sleep-and-wake), so no later Instance or domain finds it, and, through the power helper's `discard`, its plan, limits record, target descriptor and fast wake files ([Lifecycle](/reference/prepared-restore#lifecycle)). The discard waits for a helper call still at work on the Instance. It also removes a task copy's base scratch, `/var/tmp/orbit-task-base-<id>`, the bundle a cancelled [`task:sync`](/reference/tasks#bring-main-into-a-copy) may leave; it holds no credential. A sleeping container is deleted as it is, without a wake. Its shared bridge endpoint stays for ordinary host reconciliation, as database endpoints do.
+
+A proof copy's destroy then releases its CI place, once the container is gone: when no other hold is left on the Node, the runners that the holds stopped start again ([Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node)).
 
 ## Retry and ownership
 

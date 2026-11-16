@@ -1,7 +1,7 @@
 ---
 title: "ADR 0260: Share CI places between runners and proof copies"
 sidebarTitle: "0260 Shared CI places"
-description: "In progress. Each CI Node offers a fixed number of CI places. A place runs one runner job or one proof copy. A proof spreads its shards over all free places, so another place makes CI faster. Orbit shows what each place is doing."
+description: "In progress: build step 5 in work. Each CI Node offers a fixed number of CI places. A place runs one runner job or one proof copy. A proof spreads its shards over all free places, so another place makes CI faster. Orbit shows what each place is doing."
 ---
 
 # ADR 0260: Share CI places between runners and proof copies
@@ -12,13 +12,15 @@ The CI Nodes form one pool. Each offers a fixed number of CI places, its `ci_pla
 
 In progress.
 
-Decided by the owner on 2026-11-15.
+Build step 5 is in work.
+
+Decided by the owner on 2026-11-15. The owner answered the open question on 2026-11-16.
 
 Principle: [Lean](/mission#principles): one pool and one count per Node, instead of host-specific labels, separate proof capacity and a fixed copy limit. It also serves [Agents operate, humans steer](/mission#principles): the runner view lets a human see what CI is doing.
 
-Open:
+Answered:
 
-- How Orbit keeps the count when a runner takes a job by itself: count the busy runners and start a proof copy only in a free place, or stop runner services while a proof holds their places.
+1. How Orbit keeps the count when a runner takes a job by itself. Answer: while a proof holds places on a CI Node, Orbit stops that Node's idle runner services. Busy runners finish their job and are never stopped. The stopped runners start again when the proof's copies on that Node end, also when the proof fails or is cancelled. See [Runners stop while a proof holds places](#runners-stop-while-a-proof-holds-places).
 
 ## Context
 
@@ -40,9 +42,21 @@ Runners carry one shared label and no host label. A workflow never names a host.
 
 ### A proof uses every free place
 
-`proof:run` places its shards on free places across all CI Nodes, up to one shard per free place, instead of at most `proof.copies` copies on the default's Node. The balance of whole batches by measured time stays. A batch stays on one copy, so the longest batch sets the floor. Copies also start one at a time today, so their start-up grows with the number of shards.
+`proof:run` places its shards on free places across all CI Nodes, up to one shard per free place, instead of at most `proof.copies` copies on the default's Node. `proof.copies` is gone. The balance of whole batches by measured time stays.
+
+The free places of a Node are its `ci_places` minus its busy runners minus the proof copies already on it, of any proof. Task copies take no place. A copy takes a place on a Node only when the Node's available memory (Linux `MemAvailable`) also holds one copy's peak, the Gateway setting `proof.copy_memory`. So a Node takes at most as many copies as its available memory holds whole peaks. A Node short of memory offers fewer places, and the proof uses other Nodes or waits. The Gateway reads the busy runners and the available memory of each Node from Prometheus before admission. A Node without a fresh read offers no place. The CPU count stays the main limit; the memory check only keeps a copy off a Node that cannot hold it. A batch stays on one copy, so the longest batch sets the floor. Copies also start one at a time today, so their start-up grows with the number of shards.
 
 The workflow job that calls Orbit runs on the host-level proof runner, which holds no place.
+
+### Runners stop while a proof holds places
+
+A runner takes a job by itself, when GitHub gives it one. So while a proof holds places on a CI Node, Orbit stops the Node's idle runner services, and the one count stays true. Each proof copy's create holds its place on the Node and stops idle runners only down to a limit: the running runners must not exceed the Node's `ci_places` minus the proof holds on it. It records exactly the runners it stops. A runner is busy while a `Runner.Worker` process runs; a busy runner finishes its job and is never stopped. Each copy's destroy drops its hold, and the destroy of the last copy on the Node starts exactly the recorded runners again. A run end of any kind asks for the destroy of its copy, so the runners start again after a failure or a cancel too, once that destroy succeeds. A failed destroy keeps them stopped while the watchdog asks again.
+
+The `ci-runner` role installs the script that holds and releases, and the copy's own Ansible phases call it over SSH. The Node agent has no part in it ([Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node)).
+
+A runner can take a job in the short moment between the busy test and the stop. It keeps the job, and the Node runs one more job than its places until the job ends. Orbit accepts that short overlap rather than kill a job.
+
+A copy on a CI Node clones that Node's seed holder. Its runtime still names the default as its clone source, and the database accepts a clone on another Node than its default only when that Node holds the default's current seed. The copy needs no Git mirror of the Project on its Node: it fetches the commit under proof by its SHA from the public repository, as every proof copy does.
 
 Each CI Node keeps its own seed of the proof Project's default. The refresh after each release, which already refreshes the nested-fleet default ([Development containers](/reference/development-containers#refresh-after-a-release)), refreshes the seed on every CI Node. A copy starts from its own Node's seed.
 
@@ -66,7 +80,7 @@ Orbit reads the runner containers on each CI Node for their state, version and b
 2. Measure a proof copy under load, then set each CI Node's `ci_places`.
 3. Let a CI Node host proof copies.
 4. Keep a proof seed on each CI Node, refreshed after each release.
-5. Change `proof:run` to place shards on free places across CI Nodes, with the agreed way to keep the count. Its chart changes first, in that pull request.
+5. Change `proof:run` to place shards on free places across CI Nodes, stop idle runners while a proof holds their places, and check each Node's available memory. Its chart changes first, in that pull request. In work.
 6. Build the runner view in the Gateway and the web app.
 7. Absorb this ADR into [Node provisioning](/reference/node-provisioning#ci-runner-role), [proof:run](/cli/proof/run) and [Implementation loop](/reference/implementation-loop#ci).
 
@@ -74,6 +88,9 @@ Orbit reads the runner containers on each CI Node for their state, version and b
 
 - Separate fixed capacity for runners and for proof: idle places in one stay unused while the other queues.
 - Size places from container memory limits: containers use far less than their limits, and CPU runs out first.
+- Keep runners running and count only busy runners: an idle runner can take a job at any time, so the count would not hold while a proof runs.
+- Stop busy runners too: that kills a job that a pull request waits for.
+- Keep a Git mirror of the Project on each CI Node, or carry a bundle of the commit: the copy already fetches the commit by its SHA, so either one adds a second way in for no gain.
 - One seed on one Node that every other Node copies from at start: each copy would cross the network and wait for it.
 - A ZFS stream of the seed through the Swamp worker, with bookmarks of Orbit's own: the worker is on another host and short of CPU, and Incus already sends the change between snapshots.
 - Use GitHub-hosted runners for the proof: the proof needs an enrolled Node that reaches the Gateway.
@@ -84,10 +101,11 @@ Orbit reads the runner containers on each CI Node for their state, version and b
 - Another place on any CI Node makes a proof faster. A busy pool makes it slower, and the view shows why.
 - Private repositories and the proof compete for the same places.
 - Each CI Node stores a seed of the proof container and refreshes it after each release.
+- While a proof runs on a CI Node, that Node's idle runners are stopped. Runner jobs that arrive then wait for a place on another Node or for the proof to end.
 
 ## Affects
 
 - Components: apps/gateway, apps/web, apps/docs
 - ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role), [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers), [0262](/decisions/0262-prove-changed-operations-on-the-pull-request)
 - Detail: [Node provisioning: ci-runner role](/reference/node-provisioning#ci-runner-role); [Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node); [The seed on each CI Node](/reference/development-containers#the-seed-on-each-ci-node); [proof:run](/cli/proof/run); [Implementation loop: CI](/reference/implementation-loop#ci)
-- Verify: a proof with more batches than one Node's places runs copies on several CI Nodes and merges one result; the count holds while runner jobs and proof copies start together; the runner view lists each Node's places and each runner's current job
+- Verify: a proof with more batches than one Node's places runs copies on several CI Nodes, each from its own Node's seed, and merges one result; idle runners stop while a proof holds places and start again when its copies end, and busy runners are left alone; a Node without memory for a copy's peak takes no copy; the runner view lists each Node's places and each runner's current job
