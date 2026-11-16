@@ -1690,7 +1690,7 @@
                     "php_version": "8.5.12",
                     "build": "d17101464dc3fe420f6c96542ce63c48d1a727ccb7a6e6a324c7e3bab55a41a4",
                     "url": "https://github.com/hardimpactdev/orbit/releases/download/static-php-8.5.12-d17101464dc3/static-php-8.5.12-d17101464dc3-linux-x86_64.tar.gz",
-                    "sha256": null
+                    "sha256": "770c4f2e6dd393ddd355c2a498f2a4867b601fdc60a066b147b6a09cb1584aef"
                 }
             }
         }
