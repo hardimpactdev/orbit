@@ -340,6 +340,30 @@
                                                     "value": "max"
                                                 }
                                             ]
+                                        },
+                                        "codexLow": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, low effort"
+                                        },
+                                        "codexMedium": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, medium effort"
+                                        },
+                                        "codexHigh": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, high effort"
+                                        },
+                                        "codexXhigh": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, xhigh effort"
+                                        },
+                                        "codexMax": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, max effort"
+                                        },
+                                        "codexUltra": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, ultra effort"
                                         }
                                     }
                                 }
@@ -780,6 +804,30 @@
                                                         "value": "max"
                                                     }
                                                 ]
+                                            },
+                                            "codexLow": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, low effort"
+                                            },
+                                            "codexMedium": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, medium effort"
+                                            },
+                                            "codexHigh": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, high effort"
+                                            },
+                                            "codexXhigh": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, xhigh effort"
+                                            },
+                                            "codexMax": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, max effort"
+                                            },
+                                            "codexUltra": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, ultra effort"
                                             }
                                         }
                                     }
