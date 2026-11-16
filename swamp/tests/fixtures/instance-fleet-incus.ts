@@ -370,7 +370,9 @@ if (command[0] === "incus") {
       if (state.intentDigestFail) fail("The base intent of app-dev cannot be built: RuntimeException");
       const own: Record<string, string> = { gateway: "1", "app-dev": "2", "app-prod": "3" };
       const nodes = rest.slice(rest.indexOf("--base") + 1);
-      done(JSON.stringify(Object.fromEntries(nodes.map((node) => [node, state.intentDigests?.[node] ?? own[node].repeat(64)]))));
+      // `--host app-dev`: nested-app-dev's Instance host intent digest (`hostIntentDigest`), or empty before it has its bridge.
+      const host = rest.includes("--host") ? { host: state.hostIntentDigest ?? "4".repeat(64) } : {};
+      done(JSON.stringify({ ...Object.fromEntries(nodes.map((node) => [node, state.intentDigests?.[node] ?? own[node].repeat(64)])), ...host }));
     }
     if (rest[0] === "php" && rest.includes("migrate")) {
       state.migrated = true;

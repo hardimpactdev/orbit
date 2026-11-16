@@ -260,7 +260,7 @@ const convergeInputs: string[] = JSON.parse(Deno.readTextFileSync(new URL("fleet
 const recordReads = [`cat ${record}`,
   `git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract ${convergeInputs.map((path) => `HEAD:${path}`).join(" ")} HEAD:swamp/ansible HEAD:apps/gateway/resources/machine-software HEAD:swamp`];
 /** After the migrate, the nested Gateway prints the digest of each Node's base converge intent; it admits and writes nothing. */
-const intentRead = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan orbit:node-converge-digest --base gateway app-dev app-prod";
+const intentRead = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan orbit:node-converge-digest --host app-dev --base gateway app-dev app-prod";
 /** With the Club key every refresh reads the nested Gateway's Swamp tokens: names and dates, no secret. */
 const tokenRead = "incus exec nested-gateway --cwd /home/orbit/orbit/swamp -- runuser -u orbit -- env HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp " +
   "SWAMP_CONFIG_DIR=/home/orbit/.config/swamp SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1 " +
@@ -1666,7 +1666,7 @@ function seededRecord(converged: number | number[], fleet = fixtureFleet, tokens
     grants: sha256("a1 c3"),
     rules: sha256(pythonJson(fleetFiles)),
     // The Instance host: the `swamp/ansible` tree and the machine-software recipe.
-    host: sha256("host c3 e5"),
+    host: sha256("host c3 e5 " + "4".repeat(64)),
     tokens,
   };
 }
@@ -1750,12 +1750,12 @@ Deno.test({
       f.change((state) => state.intentDigestFail = true);
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
-      // The host is recorded and its inputs did not move: the three converge their bases only.
-      assertEquals(f.calls().filter(convergeApi), convergeCallsFor([1, 2, 3]));
+      // The same read carries the Instance host intent: unreadable, the host is due too, after the two bases.
+      assertEquals(f.calls().filter(convergeApi), convergeCallsFor([1, 2, 3], true));
       const result = f.refreshed()!;
       assertEquals([result.converge, result.converge_reason, result.record], ["ran", "digest_unreadable", "present"]);
       // Without its digest the next refresh converges again.
-      assertEquals(Object.keys(JSON.parse(f.state().outer.files[record])), ["code", ...convergedKeys.toSorted(), "grants", "host", "rules", "tokens"]);
+      assertEquals(Object.keys(JSON.parse(f.state().outer.files[record])), ["code", ...convergedKeys.toSorted(), "grants", "rules", "tokens"]);
     } finally {
       f.cleanup();
     }
@@ -1841,6 +1841,30 @@ Deno.test({
       assert(refreshed.ok, refreshed.output);
       assertEquals(f.calls().filter(convergeApi), convergeCallsFor([1, 2, 3], true));
       assertEquals([f.refreshed()!.host, f.state().roleConverges], ["converged", [2]]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      // The nested Gateway renders another branch intent for nested-app-dev (InstanceHostIntent::digest), and the converge runs for 200
+      // reads: more than the 180 of a base converge's 900 s, within the 360 of the host's 1800 s (roles_seconds).
+      f.change((state) => {
+        state.hostIntentDigest = "5".repeat(64);
+        state.convergeRunning = { 2: 200 };
+        delete state.roleConverges;
+      });
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      assertEquals(f.calls().filter((call) => call.includes("/converge ")), [convergeAdmit(2, true)]);
+      assertEquals([f.refreshed()!.host, f.state().roleConverges, f.state().convergeRunning], ["converged", [2], { 2: 0 }]);
+      assertEquals(JSON.parse(f.state().outer.files[record]).host, sha256("host c3 e5 " + "5".repeat(64)));
     } finally {
       f.cleanup();
     }

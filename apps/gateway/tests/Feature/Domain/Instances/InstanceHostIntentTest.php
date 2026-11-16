@@ -103,6 +103,23 @@ describe('the container branch of the app-dev converge', function (): void {
         }
     });
 
+    // docs/reference/development-containers.md#instance-host-in-the-fleet: the refresh rebuilds the host when this digest moves.
+    it('digests the whole branch intent but its admission time, the image definition included, and none before the bridge', function (): void {
+        $node = instanceHostNode();
+        config(['instances.container_nodes' => [$node->id]]);
+        expect(app(InstanceHostIntent::class)->digest($node))->toBeNull();
+        app(InstanceHostIntent::class)->prepare($node);
+        $intent = app(InstanceHostIntent::class)->for($node->refresh());
+        $digest = app(InstanceHostIntent::class)->digest($node);
+        expect($digest)->toBe(hash('sha256', json_encode(array_diff_key($intent, ['bridge_admitted_at' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)))
+            ->and(array_keys($intent))->toContain('image', 'folders', 'incus');
+        // Another admission time is the same digest; another image definition is another.
+        $this->travel(5)->seconds();
+        expect(app(InstanceHostIntent::class)->digest($node))->toBe($digest)
+            ->and(hash('sha256', json_encode(array_diff_key([...$intent, 'image' => [...$intent['image'], 'packages' => ['git']]], ['bridge_admitted_at' => true]),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)))->not->toBe($digest);
+    });
+
     it('names the project, pool, image and folders of a prepared Node', function (): void {
         $node = instanceHostNode();
         config(['instances.container_nodes' => [$node->id]]);

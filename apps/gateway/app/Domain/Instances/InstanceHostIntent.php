@@ -152,6 +152,24 @@ final readonly class InstanceHostIntent
         return is_string($cidr) ? Ipv4Subnet::from($cidr)->usableRange()[0] : null;
     }
 
+    /**
+     * The digest of the Node's branch intent as the converge would send it, without the admission time: what the nested-fleet refresh
+     * compares to rebuild the Instance host on nested-app-dev only when the image, the folders, Incus or the rest changed
+     * (docs/reference/development-containers.md#instance-host-in-the-fleet). Null for a Node without the branch, or before the admission
+     * allocated its bridge.
+     */
+    public function digest(Node $node): ?string
+    {
+        try {
+            $intent = $this->for($node);
+        } catch (ResourceOperationException) {
+            return null;
+        }
+
+        return $intent === null ? null
+            : hash('sha256', json_encode(array_diff_key($intent, ['bridge_admitted_at' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
     /** @return array<string, mixed>|null */
     public function for(Node $node): ?array
     {
