@@ -7,11 +7,13 @@ cases = [
   "test_a_second_run_changes_nothing",
   "test_a_hub_that_never_had_the_filter_changes_nothing",
   "test_a_task_vm_folder_with_other_files_stays",
+  "test_a_stopped_and_disabled_unit_loses_only_its_files",
+  "test_a_table_left_alone_is_deleted",
   "test_the_hub_converge_removes_the_filter",
 ]
 file = "swamp/tests/ansible_hub_prune_test.py"
-# ESTIMATE: supervised local run 14.6s for the eight cases; confirm the 32s allowance on hosted CI.
-cost = 32
+# ESTIMATE: supervised local run 16.3s for the ten cases; confirm the 36s allowance on hosted CI.
+cost = 36
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",

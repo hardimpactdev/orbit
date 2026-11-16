@@ -164,6 +164,23 @@ class HubFilterAbsentTest(unittest.TestCase):
         self.assertIn('etc/orbit/task-vms/notes.txt', self.remaining())
         self.assertNotIn('etc/orbit/task-vms/hub.nft', self.remaining())
 
+    def test_a_stopped_and_disabled_unit_loses_only_its_files(self):
+        self.install_filter()
+        for marker in ('active', 'enabled', 'table'):
+            (self.folder / marker).unlink()
+        code, output, changed, calls = self.converge()
+        # The two files, the reload and the empty folder; no stop, disable or table delete.
+        self.assertEqual((code, changed), (0, 3), output)
+        self.assertFalse([call for call in calls if call.startswith(('systemctl stop', 'systemctl disable', 'nft delete'))], calls)
+        self.assertEqual(self.remaining(), ['etc', 'etc/orbit', 'etc/systemd', 'etc/systemd/system'])
+
+    def test_a_table_left_alone_is_deleted(self):
+        (self.folder / 'table').write_text('')
+        code, output, changed, calls = self.converge()
+        self.assertEqual((code, changed), (0, 1), output)
+        self.assertEqual(calls, ['nft list table inet orbit_task_vms', 'nft delete table inet orbit_task_vms'])
+        self.assertEqual(self.remaining(), [])
+
     def test_the_hub_converge_removes_the_filter(self):
         tasks = {task['name']: task for task in yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub.yml').read_text())}
         self.assertEqual(tasks['Remove the task VM hub filter']['ansible.builtin.import_tasks'], 'node-converge-hub-filter-absent.yml')
