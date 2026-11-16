@@ -2758,7 +2758,7 @@ A CI Node is ready when the Gateway records, from its last `ci-runner` converge,
 - at the end of a seed copy during which the default's seed moved: for every Node behind the new seed;
 - at the end of a seed copy at the same seed: for the Nodes that no seed copy has tried at that seed.
 
-One seed copy takes at most as many targets as its [run budget](/reference/operations) can hold, and it leaves the other Nodes behind the seed untried. So its end admits the next copy for them.
+One seed copy takes at most as many targets as its [run budget](/reference/operations) can hold, and it leaves the other Nodes behind the seed untried. So its end admits the next copy for them. A copy that a `ci-runner` add or converge admits always takes that Node: the Node may have failed a copy at this seed, so the end of another copy would not admit it.
 
 So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own `ci-runner` converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no free ID range, does not repeat with a new Operation each time.
 
@@ -2773,7 +2773,7 @@ Incus moves it, from the default's Node straight to each CI Node over WireGuard.
 
 The copies to the targets never overlap. Each push of the inner volume takes a snapshot of it on the default's Node. The volume is mounted in the default, so Incus freezes its file system (`fsfreeze --freeze`) for that snapshot. A second freeze of a frozen file system fails with `Device or resource busy`. So two copies of one source side by side can fail a target.
 
-The certificate reads and the checks run on the CI Nodes, and they still run side by side. So the run time grows with the number of targets, and the Gateway captures the run budget from it at admission. Each `incus` push stops after 1,200 seconds: a first full copy of the seed pair is a few GB over WireGuard, and a refresh is small.
+The certificate reads and the checks run on the CI Nodes, and they still run side by side. Because the copies run one at a time, the run time grows with the number of targets, and the Gateway captures the run budget from it at admission. Each `incus` push stops after 1,200 seconds: a first full copy of the seed pair is a few GB over WireGuard, and a refresh is small.
 
 A retake of the default and a seed copy can still freeze the same volume at the same time. The seed-copy lock is not the default's Instance lock, so a deployment of the default can run beside a copy.
 

@@ -103,7 +103,8 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
                 // A Node that offers proof places gets its seed of the proof default now, not at the next release
                 // (docs/reference/development-containers.md#the-seed-on-each-ci-node).
                 if ($assignment->role === RoleName::CiRunner) {
-                    DB::afterCommit(static fn (): ?Operation => app(ProofSeeds::class)->admit('node_role'));
+                    $converged = ValidatedData::integer($operation->node_id);
+                    DB::afterCommit(static fn (): ?Operation => app(ProofSeeds::class)->admit('node_role', node: $converged));
                 }
                 $digests = ValidatedData::stringMap($intent['artifact_digests']);
                 if ($digests !== []) {

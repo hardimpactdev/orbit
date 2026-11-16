@@ -28,7 +28,7 @@ sequenceDiagram
   %%> Not a target:
   %%> - a Node whose listener is not ready: no copy fails on it and no copy marks it tried; its next passed `ci-runner` converge makes it a target
   %%> - one copy at a time: an open copy holds the default's seed-copy lock, `operation.target_busy`
-  %%> - a Node past the run's target limit: the copies run one target at a time, so the run budget grows with the targets and must fit in the Swamp serve run cap; the limit is the number of copy steps that fit beside the fixed phases (`ProofSeeds::maxTargets`), and the end of the run admits the Nodes it left out
+  %%> - a Node past the run's target limit: the copies run one target at a time, so the run budget grows with the targets and must fit in the Swamp serve run cap; the limit is the number of copy steps that fit beside the fixed phases (`ProofSeeds::maxTargets`), and the end of the run admits the Nodes it left out; a `ci-runner` add or converge names its own Node, and the limit keeps that Node, because the end of a run admits no Node that a copy tried at the seed
   %%> Result:
   %%> - a task is recorded with the full intent: the default's Node, container and inner volume, per target its Node and WireGuard address, and `release_base` when the run's targets are all the Nodes behind the seed
   %%> - the run budget is captured: the fixed phases plus one copy step bound per target (`ProofSeeds::budgetSeconds`)

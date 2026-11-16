@@ -34,8 +34,9 @@ final readonly class ProofSeeds
     public const string Kind = 'instance.seed_copy';
 
     /**
-     * The bound of one `incus` push, the `timeout` of each push in the playbook `proof-seed-copy.yml`. A first full copy of the seed
-     * pair is a few GB over WireGuard; a refresh sends only the new snapshot, which is small.
+     * The bound of one `incus` push, the `timeout` of each push in the playbook `proof-seed-copy.yml`. Basis: a measured full copy of
+     * the seed pair, both halves and about 4 GB, took about 4 minutes over the WireGuard path; the inner volume holds about 3 GB of data,
+     * not its 30 GiB size. So 1,200 s per half gives a wide margin. A refresh sends only the new snapshot, which is small.
      */
     public const int PushSeconds = 1200;
 
@@ -215,16 +216,20 @@ final readonly class ProofSeeds
     /**
      * Admits one seed copy to the Nodes that are behind, at most {@see self::maxTargets()} of them. Best effort: nothing waits for it, so a refusal or an error is a log line, never
      * an exception. An open copy refuses by its lock (`operation.target_busy`); its end admits the next one ({@see self::admitAfter()}).
-     * `$except` names Nodes that this admission leaves out.
+     * `$except` names Nodes that this admission leaves out. `$node` names the Node whose own trigger this is: when the limit cuts the
+     * targets, it keeps that Node, because the end of the run admits only Nodes that no copy has tried at the seed.
      *
      * @param  list<int>  $except
      */
-    public function admit(string $trigger, array $except = []): ?Operation
+    public function admit(string $trigger, array $except = [], ?int $node = null): ?Operation
     {
         try {
             $source = $this->source();
             $behind = $this->targets();
-            $targets = array_slice(array_values(array_filter($behind, static fn (Node $node): bool => ! in_array($node->id, $except, true))), 0, self::maxTargets());
+            $candidates = array_filter($behind, static fn (Node $target): bool => ! in_array($target->id, $except, true));
+            $named = array_filter($candidates, static fn (Node $target): bool => $target->id === $node);
+            $targets = array_slice([...$named, ...array_diff_key($candidates, $named)], 0, self::maxTargets());
+            usort($targets, static fn (Node $a, Node $b): int => $a->id <=> $b->id);
             if ($source === null || $targets === []) {
                 return null;
             }

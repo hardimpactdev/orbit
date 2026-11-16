@@ -845,6 +845,23 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and(Operation::query()->where('kind', 'instance.seed_copy')->sole()->input['targets'])->toBe([$node->id]);
     });
 
+    it('keeps the converged Node in the run when more Nodes are behind the seed than one run takes', function (): void {
+        proofSeedDefault();
+        seedSwampNode();
+        $nodes = array_map(static fn (int $index): Node => ciNode(2, LifecycleStatus::Active, 'ci-'.$index, '10.44.0.'.(40 + $index)), range(1, 6));
+        seedListening(...array_slice($nodes, 0, 5));
+        $converged = $nodes[5];
+        Node::withoutEvents(fn (): bool => $converged->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+
+        // The end of a run admits only Nodes that no copy has tried at the seed, so a run without the converged Node would leave it behind.
+        endCiRunnerConverge($converged, 'succeeded');
+
+        $targets = Operation::query()->where('kind', ProofSeeds::Kind)->sole()->input['targets'];
+        expect($targets)->toHaveCount(ProofSeeds::maxTargets())
+            ->and($targets)->toContain($converged->id)
+            ->and($targets)->toBe([...array_map(static fn (Node $node): int => $node->id, array_slice($nodes, 0, 4)), $converged->id]);
+    });
+
     it('targets only a Node whose passed ci-runner converge opened the seed listener for the default\'s Node, and never marks another tried', function (): void {
         $default = proofSeedDefault();
         seedSwampNode();
