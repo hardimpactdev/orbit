@@ -132,7 +132,6 @@ function instance_operation_payload(string $kind, ?array $result = null, array $
         'started_at' => '2026-10-29T10:00:00+00:00',
         'finished_at' => '2026-10-29T10:00:01+00:00',
         'poll_after_seconds' => null,
-        'capacity_wait' => null,
         ...$overrides,
     ];
 }

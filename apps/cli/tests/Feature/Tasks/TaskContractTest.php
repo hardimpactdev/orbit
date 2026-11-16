@@ -70,11 +70,9 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks/task-status/enabled', 'task:status', [], 0);
         run_task_contract('tasks/task-status/assistance', 'task:status', [], 0);
         run_task_contract('tasks/task-status/merges', 'task:status', [], 0);
-        run_task_contract('tasks/task-status/capacity', 'task:status', [], 0);
     });
 
-    it('renders the queue position of a waiting group and the preview URL of a routed one', function (): void {
-        run_task_contract('task-show/waiting', 'task:show', ['task' => '1'], 0);
+    it('renders the preview URL of a routed group', function (): void {
         run_task_contract('task-show/preview', 'task:show', ['task' => '1'], 0);
     });
 
