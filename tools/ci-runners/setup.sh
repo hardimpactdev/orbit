@@ -33,6 +33,10 @@ BUN_VERSION=1.4.2
 BUN_SHA256=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
 COMPOSER_VERSION=2.10.3
 COMPOSER_SHA256=7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
+# The recipe's pinned Swamp binary, for the self-hosted native fixtures (ADR 0262).
+SWAMP_BINARY=/usr/local/bin/orbit-swamp-proof
+read -r SWAMP_URL SWAMP_SHA256 < <(python3 -c 'import json,sys; a=json.load(open(sys.argv[1]))["tools"]["swamp"]["artifacts"]["amd64"]; print(a["url"], a["sha256"])' \
+  "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json")
 REPO_URL=https://github.com/hardimpactdev
 # The labels every hardimpactdev shard runner carries. No runner carries a host label: all CI Nodes form one pool.
 LABELS=self-hosted,Linux,X64,hardimpact,orbit-shard
@@ -82,7 +86,8 @@ container() {
 
   in_ct "$name" env RUNNER_VERSION="$RUNNER_VERSION" RUNNER_SHA256="$RUNNER_SHA256" \
     COMPOSER_VERSION="$COMPOSER_VERSION" COMPOSER_SHA256="$COMPOSER_SHA256" \
-    DENO_VERSION="$DENO_VERSION" DENO_SHA256="$DENO_SHA256" BUN_VERSION="$BUN_VERSION" BUN_SHA256="$BUN_SHA256" bash -euo pipefail <<'SH'
+    DENO_VERSION="$DENO_VERSION" DENO_SHA256="$DENO_SHA256" BUN_VERSION="$BUN_VERSION" BUN_SHA256="$BUN_SHA256" \
+    SWAMP_URL="$SWAMP_URL" SWAMP_SHA256="$SWAMP_SHA256" SWAMP_BINARY="$SWAMP_BINARY" bash -euo pipefail <<'SH'
 export DEBIAN_FRONTEND=noninteractive
 caddy_key=/usr/share/keyrings/caddy-stable-archive-keyring.gpg
 if [ ! -s "$caddy_key" ]; then
@@ -172,6 +177,13 @@ if [ "$(bun --version 2>/dev/null)" != "$BUN_VERSION" ]; then
   install -m 0755 "$tool_directory/bun-linux-x64/bun" /usr/local/bin/bun
   rm -rf "$tool_archive" "$tool_directory"
 fi
+if ! echo "${SWAMP_SHA256}  $SWAMP_BINARY" | sha256sum -c - >/dev/null 2>&1; then
+  tool_archive=$(mktemp)
+  curl -fsSLo "$tool_archive" "$SWAMP_URL"
+  echo "${SWAMP_SHA256}  $tool_archive" | sha256sum -c - >/dev/null
+  install -m 0755 "$tool_archive" "$SWAMP_BINARY"
+  rm -f "$tool_archive"
+fi
 
 if [ ! -x /home/runner/actions-runner/config.sh ]; then
   curl -fsSLo /tmp/runner.tgz "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
@@ -233,10 +245,11 @@ hook() {
   in_ct "$name" bash -euo pipefail -c '
     env_file=/home/runner/actions-runner/.env
     touch "$env_file"
-    sed -i "/^ACTIONS_RUNNER_HOOK_JOB_STARTED=/d" "$env_file"
+    sed -i "/^ACTIONS_RUNNER_HOOK_JOB_STARTED=/d;/^ORBIT_SWAMP_PROOF_BINARY=/d" "$env_file"
     echo "ACTIONS_RUNNER_HOOK_JOB_STARTED=/home/runner/actions-runner/job-started-hook.sh" >> "$env_file"
+    echo "ORBIT_SWAMP_PROOF_BINARY=$1" >> "$env_file"
     chown runner:runner "$env_file"
-  '
+  ' hook "$SWAMP_BINARY"
   echo "$name: job-started hook installed; restart its runner service when idle to load it"
 }
 

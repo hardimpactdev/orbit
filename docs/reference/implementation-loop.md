@@ -189,8 +189,8 @@ The self-hosted pool has the tools these files need. The [CI runner role](/refer
 
 | Need | Where it comes from on a CI runner |
 | --- | --- |
-| Pinned FrankenPHP | `setup.sh container` installs the recipe's FrankenPHP version, checks its checksum, and sets `ORBIT_FRANKENPHP` in the runner environment |
-| Pinned Swamp binary | `setup.sh container` installs the pinned Swamp release, checks its checksum, and sets `ORBIT_SWAMP_PROOF_BINARY` in the runner environment |
+| Pinned FrankenPHP | Not supplied yet: the recipe pins only its version, with no checked artifact. Until then, the FrankenPHP proxy fixture fails on the self-hosted pool |
+| Pinned Swamp binary | `setup.sh container` installs the recipe's Swamp artifact as `/usr/local/bin/orbit-swamp-proof`, checks its SHA-256 first, and sets `ORBIT_SWAMP_PROOF_BINARY` in the runner `.env` |
 | User systemd manager | `setup.sh container` enables the runner user's manager with lingering; `setup.sh user_manager NAME` repairs it alone |
 
 A hosted runner has none of these, so a `self_hosted` file never runs there.
