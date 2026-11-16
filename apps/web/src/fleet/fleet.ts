@@ -20,6 +20,15 @@ export const instanceHealthy = (instance: Instance): boolean => instance.status 
 export const firewallHealthy = (rule: FirewallRule): boolean => rule.status === "active";
 export const deploymentHealthy = (deployment: Deployment): boolean =>
     deployment.status === "succeeded";
+/** Each best-effort step that did not exit 0. It does not fail the deployment, so it is a warning, not a failure. */
+export const bestEffortWarnings = (deployment: Deployment): string[] =>
+    (deployment.best_effort_steps ?? [])
+        .filter((step) => step.exit_code !== 0)
+        .map((step) =>
+            step.exit_code === null
+                ? `best-effort step ${step.name} printed no exit code`
+                : `best-effort step ${step.name} exited ${step.exit_code}`,
+        );
 export const scheduleHealthy = (schedule: Schedule): boolean =>
     schedule.desired_timer_state === "enabled" && schedule.status !== "failed";
 

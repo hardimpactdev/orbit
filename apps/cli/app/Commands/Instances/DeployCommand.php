@@ -8,6 +8,7 @@ use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
@@ -52,5 +53,13 @@ final class DeployCommand extends GatewayCommand
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Deploy Instance [{$instanceId}]", 'Deployment')
             : self::FAILURE;
+    }
+
+    /** A deployment that passed can still have a best-effort step that failed. */
+    protected function writeOperationResult(OperationResponse $operation): void
+    {
+        foreach (BestEffortStepWarnings::of($operation->result['best_effort_steps'] ?? null) as $warning) {
+            ConsoleWriter::write($this->output, $this->humanRenderer()->warning('Warning: '.$warning));
+        }
     }
 }
