@@ -535,10 +535,6 @@
    "Read the PR": "read-only",
    "Read the PR result": "read-only"
   },
-  "operation-task-provision": {
-   "Reach the VM by WireGuard": "read-only",
-   "Read the readiness": "read-only"
-  },
   "operation-task-publish": {
    "Check the environment file": "read-only",
    "Copy the bundle": "idempotent",

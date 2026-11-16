@@ -213,7 +213,6 @@ additionalFiles:
   - ansible/tasks/instance-image.yml
   - ansible/library/orbit_incus_images.py
   - ansible/tasks/task-container-host-prepare.yml
-  - ansible/task-vm-start.yml
   - ansible/tasks/task-vm-boot.yml
   - ansible/tasks/task-vm-checkout.yml
   - ansible/tasks/task-vm-branch.yml
