@@ -148,6 +148,13 @@ function bounded(paths: string[], budget: number) {
     }
     return { shown, more: paths.length - shown.length };
 }
+
+/** One refusal line: its code, then the quoted items that fit BASE_BYTES, then how many more there were. */
+function refusal(prefix: string, items: string[], extra: number) {
+    const total = items.length + extra;
+    const { shown, more } = bounded(items, BASE_BYTES - bytes(prefix) - bytes(` and ${total} more`));
+    return prefix + shown.map((item) => JSON.stringify(item)).join(", ") + (more + extra > 0 ? ` and ${more + extra} more` : "");
+}
 export const BaseFacts = z.object({
     base_commit: Sha,
     default_commit: Sha,
@@ -165,33 +172,31 @@ const names = (
 ) => [...new Set(text.split("\0").filter((name) => name !== ""))];
 
 /**
- * The files "Read the base" wrote: the default head, the merge base, how far behind, the overlapping paths and the merge-tree
- * reply. Exit 0 states the base; exit 3 is a real conflict, refused with its paths; anything else is an error of the read.
+ * The files "Read the base" wrote: the default head, the merge base, how far behind, the overlapping paths, the workflow paths and
+ * the merge-tree reply. A path under .github/workflows/ that differs between the default head and the candidate refuses first,
+ * because GitHub refuses that net diff to a token without the workflows permission; then exit 0 states the base; exit 3 is a real conflict, refused with its paths; anything else is an error of the
+ * read. A workflow list the read did not write is an error, never an empty list.
  */
 export function baseFacts(
     exitCode: number,
-    files: Record<"head" | "base" | "behind" | "overlap" | "merge", string>,
+    files: Record<"head" | "base" | "behind" | "overlap" | "merge", string> & { workflows: string | null },
 ) {
     const head = files.head.trim(),
         base = files.base.trim(),
         behind = files.behind.trim();
     const read = Sha.safeParse(head).success && Sha.safeParse(base).success &&
-        /^[0-9]+$/.test(behind);
+        /^[0-9]+$/.test(behind) && files.workflows !== null;
+    if (read && (exitCode === 0 || exitCode === 3)) {
+        const workflows = names(files.workflows ?? "");
+        if (workflows.length > 0) {
+            return { facts: null, error_code: refusal("tasks.publish_workflow_change: ", workflows, 0) };
+        }
+    }
     if (exitCode === 3 && read) {
         // merge-tree --name-only -z: the tree, then each conflicted path.
         const conflicts = names(files.merge).slice(1);
         if (conflicts.length > 0) {
-            // The prefix and the widest count take their bytes first.
-            const prefix = "tasks.publish_conflict: ";
-            const room = BASE_BYTES - bytes(prefix) -
-                bytes(` and ${conflicts.length} more`);
-            const { shown, more } = bounded(conflicts, room);
-            return {
-                facts: null,
-                error_code: prefix +
-                    shown.map((path) => JSON.stringify(path)).join(", ") +
-                    (more > 0 ? ` and ${more} more` : ""),
-            };
+            return { facts: null, error_code: refusal("tasks.publish_conflict: ", conflicts, 0) };
         }
     }
     if (exitCode !== 0 || !read) {
@@ -375,8 +380,6 @@ const CopyHit = z.object({
 const CopyScan = z.object({
     secrets: z.array(CopyHit),
     secrets_more: z.number().int().min(0),
-    workflows: z.array(z.string()),
-    workflows_more: z.number().int().min(0),
     sources: z.array(z.string()),
     values: z.number().int().min(0),
     short_skipped: z.record(z.string(), z.number().int().min(0)),
@@ -385,17 +388,10 @@ const CopyScan = z.object({
     seconds: z.number().min(0),
 }).strict();
 
-/** One refusal line: its code, then the quoted items that fit BASE_BYTES, then how many more there were. */
-function refusal(prefix: string, items: string[], extra: number) {
-    const total = items.length + extra;
-    const { shown, more } = bounded(items, BASE_BYTES - bytes(prefix) - bytes(` and ${total} more`));
-    return prefix + shown.map((item) => JSON.stringify(item)).join(", ") + (more + extra > 0 ? ` and ${more + extra} more` : "");
-}
-
 /**
  * The copy check of a publication (docs/reference/tasks.md#the-copy-check), as its workspace phase recorded it. A secret of the copy in
- * the range refuses with its paths, lines and secret names; then a workflow change refuses with its paths; an error of the check refuses
- * as unchecked. A pass keeps the public facts: what was read, what was skipped, and the digest of the objects the check read.
+ * the range refuses with its paths, lines and secret names; an error of the check refuses as unchecked. Workflow changes are judged by
+ * baseFacts, against the real default head. A pass keeps the public facts: what was read, what was skipped, and the digest of the objects the check read.
  */
 export function copyCheck(raw: unknown) {
     const evidence = z.object({ phase: z.literal("scan"), evidence: z.unknown() }).parse(raw).evidence;
@@ -417,9 +413,6 @@ export function copyCheck(raw: unknown) {
             ),
         };
     }
-    if (scan.workflows.length > 0) {
-        return { checked: false, error_code: refusal("tasks.publish_workflow_change: ", scan.workflows, scan.workflows_more) };
-    }
-    const { secrets: _s, secrets_more: _m, workflows: _w, workflows_more: _x, ...facts } = scan;
+    const { secrets: _s, secrets_more: _m, ...facts } = scan;
     return { checked: true, error_code: "", ...facts };
 }

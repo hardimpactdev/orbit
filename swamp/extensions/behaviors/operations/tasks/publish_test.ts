@@ -206,7 +206,7 @@ Deno.test("a duplicate, wrong base or failed lookup refuses the write", () => {
 
 const files = (
     overrides: Partial<
-        Record<"head" | "base" | "behind" | "overlap" | "merge", string>
+        Record<"head" | "base" | "behind" | "overlap" | "merge", string> & { workflows: string | null }
     > = {},
 ) => ({
     head: "c".repeat(40) + "\n",
@@ -214,6 +214,7 @@ const files = (
     behind: "2\n",
     overlap: "",
     merge: "",
+    workflows: "" as string | null,
     ...overrides,
 });
 
@@ -256,6 +257,19 @@ Deno.test("a copy's base is stated, behind or not, and only a real conflict refu
     );
 });
 
+Deno.test("a workflow change the default head lacks refuses with its paths, before a conflict", () => {
+    const workflows = ".github/workflows/x.yml\0.github/workflows/y.yml\0";
+    const line = 'tasks.publish_workflow_change: ".github/workflows/x.yml", ".github/workflows/y.yml"';
+    assertEquals(baseFacts(0, files({ workflows })), { facts: null, error_code: line });
+    // A conflict as well: the workflow change refuses first, because the token could never push it.
+    assertEquals(baseFacts(3, files({ workflows, merge: "d".repeat(40) + "\0app/a.php\0" })).error_code, line);
+    // A list the read did not write, or a read that failed, is an error: never a pass, never a refusal.
+    assertEquals(baseFacts(0, files({ workflows: null })).error_code, "tasks.publish_failed");
+    assertEquals(baseFacts(3, files({ workflows: null, merge: "d".repeat(40) + "\0app/a.php\0" })).error_code, "tasks.publish_failed");
+    assertEquals(baseFacts(2, files({ workflows })).error_code, "tasks.publish_failed");
+    assertEquals(baseFacts(0, files({ workflows, head: "" })).error_code, "tasks.publish_failed");
+});
+
 Deno.test("the base path lists stop at their bound and count the rest", () => {
     const many = Array.from(
         { length: BASE_PATHS + 5 },
@@ -272,6 +286,10 @@ Deno.test("the base path lists stop at their bound and count the rest", () => {
         files({ merge: ["d".repeat(40), ...many].join("\0") + "\0" }),
     ).error_code;
     assertEquals(refused.endsWith('"f99" and 5 more'), true);
+    const workflows = Array.from({ length: BASE_PATHS + 5 }, (_, index) => `.github/workflows/w${index}.yml`);
+    const line = baseFacts(0, files({ workflows: workflows.join("\0") + "\0" })).error_code;
+    assertEquals(line.startsWith('tasks.publish_workflow_change: ".github/workflows/w0.yml", '), true);
+    assertEquals(line.endsWith('".github/workflows/w99.yml" and 5 more'), true);
 });
 
 Deno.test("the body ends with one Base section, also on a re-publish", () => {
@@ -423,6 +441,11 @@ Deno.test("a long conflict or overlap stays within its byte bound and counts the
         bytes(JSON.stringify(stated?.overlapping_paths)) <= BASE_BYTES,
         true,
     );
+    const workflows = paths.map((path) => ".github/workflows/" + path.replaceAll("/", "-") + ".yml");
+    const workflow = baseFacts(0, files({ workflows: workflows.join("\0") + "\0" })).error_code;
+    assertEquals(workflow.startsWith('tasks.publish_workflow_change: ".github/workflows/apps-'), true);
+    assertEquals(bytes(workflow) <= BASE_BYTES, true);
+    assertEquals(workflow.endsWith(` and ${300 - workflow.split('", "').length} more`), true);
     assertEquals(
         (stated?.overlapping_paths.length ?? 0) +
             (stated?.overlapping_more ?? 0),
@@ -430,12 +453,12 @@ Deno.test("a long conflict or overlap stays within its byte bound and counts the
     );
 });
 
-Deno.test("the copy check refuses a secret value, then a workflow change, and names no value", () => {
+Deno.test("the copy check refuses a secret value, names no value and judges no workflow", () => {
     const scan = (over: Record<string, unknown> = {}) => ({
         phase: "scan",
         evidence: {
             scan: {
-                secrets: [], secrets_more: 0, workflows: [], workflows_more: 0, sources: ["club-key"], values: 3,
+                secrets: [], secrets_more: 0, sources: ["club-key"], values: 3,
                 short_skipped: { "nested-gateway:env": 2 }, objects: 4, objects_sha256: "e".repeat(64), seconds: 0.4, ...over,
             },
             changed: false,
@@ -447,13 +470,11 @@ Deno.test("the copy check refuses a secret value, then a workflow change, and na
     });
     const secret = { path: "notes/a.txt", line: 2, secret: "club-key:/run/orbit-club/swamp-club-api-key" };
     assertEquals(
-        copyCheck(scan({ secrets: [secret, { path: "commit " + "a".repeat(40), secret: "x" }], secrets_more: 4, workflows: [".github/workflows/x.yml"] })).error_code,
+        copyCheck(scan({ secrets: [secret, { path: "commit " + "a".repeat(40), secret: "x" }], secrets_more: 4 })).error_code,
         'tasks.publish_secret_value: "notes/a.txt:2 club-key:/run/orbit-club/swamp-club-api-key", "commit ' + "a".repeat(40) + ' x" and 4 more',
     );
-    assertEquals(
-        copyCheck(scan({ workflows: [".github/workflows/x.yml", ".github/workflows/y.yml"] })).error_code,
-        'tasks.publish_workflow_change: ".github/workflows/x.yml", ".github/workflows/y.yml"',
-    );
+    // Workflow changes are the base check's: evidence that still names them is no copy check of this publish.
+    assertEquals(copyCheck(scan({ workflows: [".github/workflows/x.yml"], workflows_more: 0 })).error_code, "tasks.publish_secret_unchecked");
     // An error of the check, a value-shaped extra field or another phase is never a pass.
     assertEquals(copyCheck({ phase: "scan", evidence: { error_code: "tasks.publish_secret_unchecked" } }).error_code, "tasks.publish_secret_unchecked");
     assertEquals(

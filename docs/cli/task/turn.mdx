@@ -11,7 +11,7 @@ orbit task:turn <task> --role=implementer --prompt="Fix the failing test."
 orbit task:turn 43 --role=reviewer --prompt="Review the checked commit." --thread=new --check=19 --json
 ```
 
-The agent receives the title, brief and deliverables of the subtask, then your prompt, for every role. Send only what this turn adds; do not paste the brief.
+The agent receives the group's title and brief, then the title, brief and deliverables of the subtask, then Orbit's copy rules, then your prompt, for every role. Send only what this turn adds; do not paste the group's brief or the subtask's brief, and do not restate the copy rules.
 
 `--role` is `implementer` or `reviewer`. A turn without `--thread` continues the role's thread, `--thread=new` starts a new thread, and `--thread=ID` names the thread the turn continues. A new thread takes its role's model; a continued thread keeps its model.
 

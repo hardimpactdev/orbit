@@ -29,7 +29,7 @@ The caller supplies the recorded Incus project and container name, expected bran
 | `receipt` | Original digest and candidate head/tree | At most 65,536 UTF-8 bytes from the guest scratch receipt; reject a symlink, oversized data or a different snapshot/candidate |
 | `export` | Preflight identity and candidate head/tree | Create and verify the exact candidate bundle as `agent`; transfer it to Node scratch and verify its checksum, or with `worker_bundle` fetch it to the worker |
 | `discard` | Preflight identity | Remove only this snapshot's guest scratch after its users have stopped |
-| `scan` | Head, the copy's start and `nested` | Run [the copy check](/reference/tasks#the-copy-check) as root in the container, with Git as `agent`; return paths, lines, secret names, workflow paths and the object digest, never a value |
+| `scan` | Head, the copy's start and `nested` | Run [the copy check](/reference/tasks#the-copy-check) as root in the container, with Git as `agent`; return paths, lines, secret names and the object digest, never a value |
 | `base` | Branch, default branch, repository and mirror | Fetch the default branch into the copy's Node mirror and import only what the copy lacks into `refs/remotes/origin/<default branch>`; return the default head, branch commit, `behind_by` and start |
 | `base-cleanup` | The copy's Instance id | Remove the copy's bundle on the Node and its root-owned bundle folder in the guest |
 
