@@ -191,7 +191,7 @@ A tool that asks for a narrower mode, such as Bun with its 0755 folders in `node
 
 One program does the pass: `swamp/ansible/instance_workspace_owner.py`. It names each entry it changed, up to 20; above that it prints only the count.
 
-The workspace is live while root does this: Git, the app or an agent may remove an entry between its listing and its change. An entry that is gone needs nothing. Any other error fails the pass and names the path. The pass never follows a link: it changes the mode and the owner through the entry it opened without following one, and it gives a link itself to `agent`, never its target.
+The workspace is live while root does this: Git, the app or an agent may remove an entry between its listing and its change. An entry that is gone needs nothing. Any other error fails the pass and names the path. The pass never follows a link: it changes the mode and the owner through the entry it opened without following one, and it gives a link or a socket itself to `agent`, never its target. A file it gives to `agent` loses its setuid and setgid bits, so `orbit` cannot make a program that runs as `agent`.
 
 Orbit's own Git commands in the workspace start no automatic maintenance (`maintenance.auto=false`, `gc.auto=0`): a fetch would otherwise repack in the background and remove pack files while the pass and the deploy steps run. The Git commands of the people and agents who work in the workspace still repack it.
 
