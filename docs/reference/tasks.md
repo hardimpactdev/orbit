@@ -257,6 +257,10 @@ The copy rules are one fixed text, the same for the implementer and the reviewer
 
 For a group with a task copy, `task:publish <group>` without `--check` publishes the group's done check, as [Release a waiting group](#release-a-waiting-group) describes. The JSON input is then `{}`.
 
+For a group with a task copy and no pull request, `--check` without `pull_request` opens the pull request in the same Operation when the check is the group's [done check](#when-the-work-is-done) and the reviewer sent its [text](#the-reviewers-pull-request-text). The Gateway then publishes exactly what the release publishes: the reviewer's title and body, a ready pull request, and the done check read again under the group lock. So one `task:publish <group> --check=<id>` after the approval opens the pull request of a `review_before_pr` group.
+
+Any other check only pushes: one that is not the done check, such as a newer check the reviewer has not approved, and the done check while the reviewer's newest turn sent no text. The Operation's input and its result then name why in `pull_request_withheld`; the run's intent never carries it. A group that has its pull request only pushes, as before.
+
 The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
 
 A step of the run asks the Gateway for the token right before the push (`operation:direct:github-token`, with the run id), so the token is fresh whenever the run reaches that step. The Gateway checks the Operation, the run and the repository. It mints a token for that one repository with `contents: write` and `pull_requests: write`, and writes the two values. The token has no `workflows` permission, so it cannot push a change under `.github/workflows/`. Its Activity row names the repository and these two permissions. The reply holds vault descriptors only.
@@ -1382,6 +1386,8 @@ A group can name the GitHub issue it works on: [`task:create --issue=<number>`](
 ### Release a waiting group
 
 `task:publish <group>` without `--check`, `--title` and `--body` publishes what the automatic publish would: the done check, the reviewer's title and body, and a ready pull request. It refuses with `tasks.not_done` (409) when the group's work is not done, and with `tasks.pr_text_missing` (409) when the group waits for its text. It also releases a group in `refused` after the cause is fixed. The form with `--check` stays as [Publish an external group](#publish-an-external-group) describes. A group without a task copy has no done check: without `--check`, its publish keeps the validation error (422) on `check`.
+
+On a group that has its pull request, the same call publishes the done check again: a republish. The work must be done by every other rule of [When the work is done](#when-the-work-is-done): the newest handoff check is the last subtask's, and the reviewer approved its commit. The publish pushes that check to the pull request's branch with no pull request text, so the open pull request keeps its title and body and shows the new commits. The tick never republishes: it publishes only a group without a pull request.
 
 The admission reads done again inside its transaction, after it locks the group's row. A subtask added or a turn started since the first read refuses with `tasks.not_done`. For the automatic publish it also reads the mode again there: a group or done check outside `pr_when_done` refuses the same way.
 
