@@ -64,9 +64,9 @@ if (args[0] === "query") {
     if (!state.containers[parts[4]]) fail("Storage pool volume not found");
     console.log(JSON.stringify({ name: parts[4], type: "container", config: state.containers[parts[4]].volume_config ?? {} }));
   } else if (parts[0] === "storage-pools" && parts[3] === "custom" && parts[5] === "snapshots") {
-    // A custom volume's snapshots, by their own names.
+    // A custom volume's snapshots, named `<volume>/<snapshot>` as Incus names them.
     if (!state.volumes?.[parts[4]]) fail("Storage pool volume not found");
-    console.log(JSON.stringify((state.volumes[parts[4]].snapshots ?? []).map((name: string) => ({ name }))));
+    console.log(JSON.stringify((state.volumes[parts[4]].snapshots ?? []).map((name: string) => ({ name: `${parts[4]}/${name}` }))));
   } else if (parts[0] === "storage-pools" && parts[3] === "custom") {
     if (!state.volumes?.[parts[4]]) fail("Storage pool volume not found");
     console.log(JSON.stringify({ name: parts[4], type: "custom", config: state.volumes[parts[4]].config }));

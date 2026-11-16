@@ -91,7 +91,7 @@
                     destroy_datasets: >-
                       {{ (([own_root] + (destroy_container_snapshots.stdout | from_json | map(attribute='name')
                            | map('regex_replace', '^', own_root ~ '@snapshot-') | list)) if present | length > 0 else [])
-                         + (([own_inner] + (destroy_inner_snapshots.stdout | from_json | map(attribute='name')
+                         + (([own_inner] + (destroy_inner_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '')
                            | map('regex_replace', '^', own_inner ~ '@snapshot-') | list)) if inner_present else []) }}
                   vars:
                     own_root: "{{ (destroy_pool.stdout | from_json).config['zfs.pool_name'] }}/containers/{{ container.project }}_{{ container.name }}"
@@ -119,10 +119,10 @@
             - name: Delete the inner volume's snapshots
               when: inner_present
               ansible.builtin.command:
-                argv: "{{ incus + ['storage', 'volume', 'snapshot', 'delete', container.pool, container.inner_volume, item.name] }}"
+                argv: "{{ incus + ['storage', 'volume', 'snapshot', 'delete', container.pool, container.inner_volume, item] }}"
                 stdin: ""
-              loop: "{{ (destroy_inner_snapshots.stdout | default('[]')) | from_json }}"
-              loop_control: { label: "{{ item.name }}" }
+              # Incus names a volume snapshot `<volume>/<snapshot>`; the snapshot's own name is the last part.
+              loop: "{{ (destroy_inner_snapshots.stdout | default('[]')) | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | list }}"
               changed_when: true
             - name: Delete the inner volume
               when: inner_present
@@ -242,6 +242,9 @@
             failure_head: >-
               {{ (ansible_failed_task.name | default('A removal task')) ~ ': '
                  ~ (ansible_failed_result.msg | default('The task failed.') | string | trim) }}
-            failure_stderr: "{{ ansible_failed_result.stderr | default('') | string | trim }}"
+            # A loop's failure keeps its stderr per item. ASCII only, so the JSON stays as long as its characters.
+            failure_stderr: >-
+              {{ (ansible_failed_result.stderr | default(ansible_failed_result.results | default([]) | selectattr('failed', 'defined')
+                 | selectattr('failed') | map(attribute='stderr', default='') | join('\n')) | string | trim) | regex_replace('[^\x00-\x7f]', '?') }}
         - name: Fail the phase
           ansible.builtin.fail: { msg: "{{ ansible_failed_result.msg | default('Container removal failed.') }}" }
