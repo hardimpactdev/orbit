@@ -6,8 +6,7 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { fileURLToPath } from "node:url";
 
 const tasks = fileURLToPath(new URL("../ansible/tasks/instance-pool-create.yml", import.meta.url));
-const venv = [...Deno.readDirSync("/opt/orbit-shape-gate")].find((entry) => entry.name.startsWith("venv-"))?.name;
-const playbook = venv ? `/opt/orbit-shape-gate/${venv}/bin/ansible-playbook` : "ansible-playbook";
+const hasAnsible = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 
 type Pool = { name: string; driver: string; config: Record<string, string> };
 
@@ -29,7 +28,7 @@ exit 0
             vars: { instances: { pool: "orbit-instances", create_pool: true } },
             tasks: [{ name: "Create the Instance pool of a CI-only Node", "ansible.builtin.include_tasks": tasks }],
         }]));
-        const result = await new Deno.Command(playbook, {
+        const result = await new Deno.Command("ansible-playbook", {
             args: ["-i", "localhost,", `${folder}/play.yml`], stdout: "piped", stderr: "piped",
             env: { PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_LOCALHOST_WARNING: "False" },
         }).output();
@@ -43,25 +42,25 @@ exit 0
 
 const zfs = (name: string, dataset: string): Pool => ({ name, driver: "zfs", config: { "zfs.pool_name": dataset, source: dataset } });
 
-Deno.test("a CI-only Node without the pool gets it on a new dataset of the zpool its ZFS Incus pool uses", async () => {
+Deno.test("a CI-only Node without the pool gets it on a new dataset of the zpool its ZFS Incus pool uses", { ignore: !hasAnsible }, async () => {
     const { code, calls } = await run([zfs("default", "tank/incus"), { name: "scratch", driver: "dir", config: { source: "/var/lib/x" } }]);
     assertEquals(code, 0);
     assertEquals(calls, ["storage create orbit-instances zfs source=tank/orbit-instances"]);
 });
 
-Deno.test("two ZFS Incus pools on the same zpool still name one zpool", async () => {
+Deno.test("two ZFS Incus pools on the same zpool still name one zpool", { ignore: !hasAnsible }, async () => {
     const { code, calls } = await run([zfs("default", "tank/incus"), zfs("ci", "tank")]);
     assertEquals(code, 0);
     assertEquals(calls, ["storage create orbit-instances zfs source=tank/orbit-instances"]);
 });
 
-Deno.test("an existing pool stays as it is", async () => {
+Deno.test("an existing pool stays as it is", { ignore: !hasAnsible }, async () => {
     const { code, calls } = await run([zfs("default", "tank/incus"), zfs("orbit-instances", "fast/orbit-instances")]);
     assertEquals(code, 0);
     assertEquals(calls, []);
 });
 
-Deno.test("no ZFS Incus pool, or two zpools, refuses with instance.host_unavailable and creates nothing", async (t) => {
+Deno.test("no ZFS Incus pool, or two zpools, refuses with instance.host_unavailable and creates nothing", { ignore: !hasAnsible }, async (t) => {
     for (const [name, pools] of [["none", [{ name: "default", driver: "dir", config: {} }]],
         ["two", [zfs("default", "tank/incus"), zfs("fast", "fast/incus")]]] as const) {
         await t.step(name, async () => {
