@@ -28,11 +28,13 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
         ->and($recipe->instances->vitePlus?->part)->toBe('vite-plus')
         ->and($recipe->instances->vitePlus?->vp)->toBe($recipe->tools['vp'])
         ->and($recipe->instances->vitePlus?->node)->toBe($node->version)
-        ->and(array_keys($recipe->instances->agent))->toBe(['t3', 'claude-code', 'codex'])
+        ->and(array_keys($recipe->instances->agent))->toBe(['t3', 'claude-code', 'codex', 'conn-server'])
         ->and($recipe->instances->runtime['node']->artifact)->toBe($node->artifacts['amd64'])
         ->and($recipe->instances->runtime['node']->version)->toBe($node->version)
         ->and($recipe->instances->agent['claude-code']->artifact->algorithm)->toBe('sha512')
-        ->and($recipe->instances->agent['codex']->bin)->toBe(['codex' => 'package/vendor/x86_64-unknown-linux-musl/bin/codex']);
+        ->and($recipe->instances->agent['codex']->bin)->toBe(['codex' => 'package/vendor/x86_64-unknown-linux-musl/bin/codex'])
+        ->and($recipe->instances->agent['conn-server']->artifact->location)->toStartWith('https://github.com/nckrtl/conn/releases/download/conn-server-v'.$recipe->instances->agent['conn-server']->version.'/')
+        ->and($recipe->instances->agent['conn-server']->bin)->toBe(['conn-server' => 'conn-server-'.$recipe->instances->agent['conn-server']->version.'-linux-x64/conn-server']);
 });
 
 it('pins the browser libraries and fonts as Debian packages of the recipe\'s Ubuntu snapshot, which give no program', function (): void {

@@ -1674,6 +1674,18 @@
                 "bin": {
                     "codex": "package/vendor/x86_64-unknown-linux-musl/bin/codex"
                 }
+            },
+            "conn-server": {
+                "version": "0.1.0",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.1.0/conn-server-0.1.0-linux-x64.tar.gz",
+                        "sha256": "e52503cf48fb70e83efff12b969fac4246c0b526f10efccc769a1f5306e82401"
+                    }
+                },
+                "bin": {
+                    "conn-server": "conn-server-0.1.0-linux-x64/conn-server"
+                }
             }
         },
         "php": {
