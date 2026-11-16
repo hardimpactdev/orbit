@@ -3,6 +3,7 @@ title: "Old paths"
 description: "Code that still runs but that a stage of the command development pipeline replaces. Check this page before you build on it."
 covers:
   - apps/gateway/app/Infrastructure/TaskVms/RecipeImageBuilds.php
+  - apps/gateway/database/migrations/2027_03_03_000000_drop_task_vm_tables.php
 ---
 
 # Old paths
@@ -106,11 +107,11 @@ A later release drops what nothing read any more. Its migration `2027_03_01_0000
 - The rows already in `task_group_egress` stay readable through `task:egress`.
 - The fleet reboot intent of a Node has no `task_project`, and the pass has no `task_hosts`. Swamp drains no task guests: the step `Drain the task guests` and its task files `fleet-reboot-drain-tasks.yml` and `fleet-reboot-park.yml` are deleted.
 
-The busy check of the fleet reboot, `FleetReboot::busy`, drops the Operation kind pattern `task_vm.%`, because no `task_vm.*` kind starts. No admission calls the check any more. It goes with `rebootingTaskHosts` and `refuseTaskWork` ([the task VM readers](#the-task-vm-readers)). `capacity_wait_reason` and the task VM tables stay, unread by the API, until a later release drops them.
+The busy check of the fleet reboot, `FleetReboot::busy`, drops the Operation kind pattern `task_vm.%`, because no `task_vm.*` kind starts. No admission calls the check any more. It goes with `rebootingTaskHosts` and `refuseTaskWork` ([the task VM readers](#the-task-vm-readers)). `capacity_wait_reason` stays, unread by the API. A later release dropped [the task VM tables](#the-task-vm-tables).
 
 ### The task VM readers
 
-No task VM is created any more, and `task_vms` has no live row. This release removes the Gateway code that read `task_vms`, `task_vm_image_builds` or `task_vm_image_recipe` only to find a task VM, which none of them finds. The path that ran when no VM existed is now the only path. Instances, Projects and tasks lose these guards:
+No task VM is created any more. When `task_vms` had no live row left, this release removed the Gateway code that read `task_vms`, `task_vm_image_builds` or `task_vm_image_recipe` only to find a task VM, which none of them found. The path that ran when no VM existed is now the only path. Instances, Projects and tasks lose these guards:
 
 - The Instance guards of create, clone and transfer.
 - The Instance save rule `task_vm.foreign_instance` and the access grant rule `task_vm.access_refused`.
@@ -163,9 +164,20 @@ What stays: a task copy is removed through its `instance.destroy`, and any other
 
 `ProblemRecovery` resolves an open `recipe-image:` alert as `resource_gone` and reads neither `task_vm_image_builds` nor `task_vm_image_recipe`. The answers `verified_image_build` and `recipe_generation_superseded` are gone.
 
-Two cleanup deletes stay until the tables go, because the tables keep foreign keys to `nodes` and `tasks`: Node removal deletes the Node's `task_vms` rows and its finished `task_vm_image_builds` rows, and Project removal deletes the `destroyed` `task_vms` rows of its groups.
+### The task VM tables
 
-The next release drops `task_vms`, `task_vm_image_builds` and `task_vm_image_recipe`, with the models `TaskVm` and `TaskVmImageBuild`, their state enums and the cleanup deletes.
+The release after the readers drops what was left. Its migration `2027_03_03_000000_drop_task_vm_tables` drops the tables `task_vms`, `task_vm_image_builds` and `task_vm_image_recipe`. No other table has a foreign key to them. Its rollback creates the three tables again, empty, with the columns, defaults, indexes and foreign keys they had. It cannot bring the rows back: the Gateway SQLite snapshot that the release takes before it migrates holds them.
+
+With the tables go:
+
+- The models `TaskVm` and `TaskVmImageBuild`, and the enums `TaskVmState`, `TaskVmImageBuildState`, `TaskVmImageBuildStep`, `TaskVmSize`, `TaskVmProviderKind`, `TaskVmPublishState` and `TaskVmRuntime`, with `TaskVmResources`.
+- The cleanup deletes. Node removal deletes no `task_vms` or `task_vm_image_builds` rows, and Project removal deletes no `task_vms` rows.
+- The task wait `task_vm`, which nothing produced or read, and the unused class `App\Infrastructure\TaskVms\TaskVmRuntime`.
+- The row error helpers of `TaskVmException`.
+
+`TaskVmError` loses every case that nothing produces any more: `task_vm.invalid_config`, `task_vm.unknown_host`, `task_vm.host_configured`, `task_vm.fleet_unavailable`, `task_vm.setup_failed`, `task_vm.job_failed`, `task_vm.vm_missing`, `task_vm.not_settled` and `task_vm.awaiting_host_sweep`. It keeps `task_vm.git_credential_refused`. `task_vm.workspace_mismatch` went with the SSH task workspace path ([the task VM readers](#the-task-vm-readers)). The Ansible host preparation still fails with its own `task_vm.setup_failed`, and the frozen agent contract keeps `task_vm.vm_missing`.
+
+The contract does not change. The task group field `vm_power` stays and is always `null`. The Node removal input keeps `task_vm_id` as `null` and `task_vm_guest` as `false`, and the Operation inputs of a task copy end and of a cancel keep `task_vm_id: null`. `tasks.provision` stays registered. No other API, agent or Swamp input field changes.
 
 ### What stays
 

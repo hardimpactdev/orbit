@@ -72,6 +72,10 @@ final class ShowDeploymentCommand extends GatewayCommand
             'Request ID' => $deployment->requestId,
         ]));
 
+        foreach (BestEffortStepWarnings::of($deployment->bestEffortSteps) as $warning) {
+            ConsoleWriter::write($this->output, $this->humanRenderer()->warning('Warning: '.$warning));
+        }
+
         $phases = array_values(array_filter($events, static fn (InstanceDeploymentEvent $event): bool => $event->type === 'phase'));
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(

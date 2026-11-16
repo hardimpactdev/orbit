@@ -16,7 +16,6 @@ use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
-use App\Models\TaskVm;
 
 /**
  * The container branch of the `app-dev` role converge (docs/reference/development-containers.md#nodes): the Incus project on the
@@ -156,7 +155,7 @@ final readonly class BaselineNormalInstanceHostIntent
 
     private function applies(Node $node): bool
     {
-        return $this->nodes->includes($node) && ! TaskVm::query()->where('node_id', $node->id)->exists();
+        return $this->nodes->includes($node);
     }
 }
 

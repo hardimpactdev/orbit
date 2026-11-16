@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
@@ -24,6 +25,9 @@ function staleSocket(): WebSocketClient
         public bool $stale = false;
 
         public bool $refuseConnect = false;
+
+        /** Serve answers this many next reads with an error reply. */
+        public int $errorReplies = 0;
 
         private bool $open = false;
 
@@ -53,6 +57,11 @@ function staleSocket(): WebSocketClient
         {
             $frame = $this->frame;
             $this->frame = null;
+            if ($frame !== null && $this->errorReplies > 0) {
+                $this->errorReplies--;
+
+                return [['id' => $frame['id'], 'type' => 'error', 'payload' => ['code' => 'not_found']]];
+            }
 
             return $frame === null ? [] : [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => ['ok' => true]]]];
         }
@@ -163,4 +172,23 @@ it('does not try again when a new connection fails, and names the cause', functi
     expect($failed)->toBeInstanceOf(SwampTerminalReadUnavailable::class)
         ->and($failed->getPrevious())->toBeInstanceOf(WebSocketException::class)
         ->and($socket->sends)->toBe(0);
+});
+
+// Proof 25268 (release 2120): 124 scheduled projections got error replies one after another, each dropped the connection and the
+// next opened a new one, so serve refused the next admission's handshake with 429.
+it('keeps the connection when serve answers a read with an error', function (): void {
+    $socket = staleSocket();
+    $socket->errorReplies = 3;
+    $failed = 0;
+    foreach (range(1, 3) as $read) {
+        try {
+            readHistory();
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('swamp.terminal_result_unavailable');
+            $failed++;
+        }
+    }
+
+    expect($failed)->toBe(3)->and(readHistory()['data'])->toBe(['ok' => true])
+        ->and($socket->connects)->toBe(1)->and($socket->sends)->toBe(4);
 });

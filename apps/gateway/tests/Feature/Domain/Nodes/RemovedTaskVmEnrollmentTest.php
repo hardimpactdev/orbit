@@ -22,7 +22,6 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 
 // Step 5 removed the task VM enrollment arms of `tasks.provision`. The kind stays registered as the request kind of
@@ -39,8 +38,8 @@ function enrollNode(string $name, string $status, string $address): Node
         'architecture' => 'x86_64', 'public_ssh_host' => $address, 'wireguard_ip' => $address, 'user' => 'orbit']));
 }
 
-/** The vpn hub, a guest Node, and the old task VM row of a group on that guest, as a task start left them.
- * @return array{hub:Node,context:Node,group:Task,vm:TaskVm}
+/** The vpn hub, a guest Node, and a group whose old task VM ran on that guest, as a task start left them.
+ * @return array{hub:Node,context:Node,group:Task}
  */
 function enrollHub(): array
 {
@@ -49,18 +48,18 @@ function enrollHub(): array
     $context = enrollNode('guest', 'provisioning', '10.44.0.200');
     $project = Project::query()->create(['name' => 'Trial', 'slug' => 'trial', 'repository_url' => 'https://github.com/example/trial.git', 'default_branch' => 'main']);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Old VM group', 'brief' => 'Old.', 'status' => TaskGroupStatus::Running]);
-    $vm = TaskVm::query()->create(['host_node_id' => $hub->id, 'node_id' => $context->id, 'group_id' => $group->id, 'provider' => 'incus',
-        'name' => 'tvm-1', 'state' => 'ready', 'size' => 'normal', 'wireguard_ip' => '10.44.0.200']);
 
-    return ['hub' => $hub, 'context' => $context, 'group' => $group, 'vm' => $vm];
+    return ['hub' => $hub, 'context' => $context, 'group' => $group];
 }
 
-/** An old task provision of the group with the exact enrollment input that the removed arms accepted.
- * @param  array{hub:Node,context:Node,group:Task,vm:TaskVm}  $fleet
+/** An old task provision of the group with the exact enrollment input that the removed arms accepted. Its `task_vm_id`
+ * names the row of a task VM table that is dropped.
+ *
+ * @param  array{hub:Node,context:Node,group:Task}  $fleet
  */
 function enrollProvision(array $fleet): Operation
 {
-    return enrollWireGuard('tasks.provision', $fleet['hub'], $fleet['context'], 'task_group', $fleet['group']->id, $fleet['vm']->id);
+    return enrollWireGuard('tasks.provision', $fleet['hub'], $fleet['context'], 'task_group', $fleet['group']->id, 1);
 }
 
 /** A hub participant intent of `$kind` whose snapshot, participants and binding are all exact. */

@@ -52,6 +52,5 @@ sequenceDiagram
     %%> - a task that still holds a workspace that is no task copy (a task VM workspace) refuses with HTTP 409 `tasks.workspace_ownership_refused`: nothing can release it any more
     %%> Result:
     %%> - in the admission transaction, the task and its open subtasks are `cancelled` and the Operation is recorded as succeeded; no Swamp run starts (R1)
-    %%> - an old `task_vms` row of the task stays as it is (history until the table goes)
     %%> - the HTTP 202 already carries the succeeded Operation, so `task:show` reads `cancelled` from then on
   end
