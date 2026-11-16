@@ -103,7 +103,11 @@ The unit runs as root with only the capabilities the kernel requires:
 
 It may hold 16,384 open files, two for each of up to 4,096 processes and room for the rest. It also has no new privileges, and a read-only system except its folders and the cgroup tree. Only `/var/lib/orbit/hibernation`, `/dev/shm/orbit/hibernation` and `/sys/fs/cgroup` are writable. Each call opens a new connection to the Incus Unix socket.
 
-**Capabilities.** `capabilities` checks root access to cgroup v2, `/proc/<pid>/maps` and `pagemap`, `pidfd_open`, `process_madvise` and `process_vm_readv`. It runs as the unit `orbit-instance-power-probe`, so it has the same properties and capabilities as every restore. It checks each call the restore makes, the pidfd liveness check included, against a process of another uid: systemd starts `orbit-power-probe-target.service` as `nobody` for it and stops it after, as a container's processes run under another uid. The manifest so states what the unit can really do. It writes `/var/lib/orbit/hibernation/capabilities.json` (root, `0644`): the helper's version, the plan schema version, the result of each primitive, and the helper's SHA-256. The shared install task runs it when the helper changed or the manifest is missing. Missing capability means `prepare` records no plan (`unsupported`); swap, pause and resume work as before. The convergence output lists each probe's result. The Gateway learns nothing new from the agent: the fast wake checks only that the role installed its units.
+**Capabilities.** `capabilities` checks root access to cgroup v2, `/proc/<pid>/maps` and `pagemap`, `pidfd_open`, `process_madvise` and `process_vm_readv`. It runs as the unit `orbit-instance-power-probe`, so it has the same properties and capabilities as every restore. It checks each call the restore makes, the pidfd liveness check included, against a process of another uid: systemd starts `orbit-power-probe-target.service` as `nobody` for it and stops it after, as a container's processes run under another uid. The manifest so states what the unit can really do.
+
+The probe writes `/var/lib/orbit/hibernation/capabilities.json` (root, `0644`): the helper's version, the plan schema version, the result of each primitive, and the helper's SHA-256. The shared install task runs it when the helper changed or the manifest is missing.
+
+Missing capability means `prepare` records no plan (`unsupported`); swap, pause and resume work as before. The convergence output lists each probe's result. The Gateway learns nothing new from the agent: the fast wake checks only that the role installed its units.
 
 ## Files on the Node
 
@@ -246,7 +250,12 @@ A range longer than 1 GiB is advised in pieces of at most 1 GiB, so every record
 
 **Residual risk.** `process_vm_readv` takes a PID, not a pidfd; Linux has no pidfd form of it. The pidfd check runs just before each call. A process that exits in that gap, followed by a full PID wrap-around to a new process, would get one discarded one-byte read per page of that batch: no write, and nothing kept.
 
-A batch holds up to `min(512, IOV_MAX)` pages of one process and may span its ranges. Before each batch, the worker checks that its pidfd is not readable (a pidfd turns readable when its process exits; the poll needs no privilege, unlike a signal, which the kernel refuses to a process of another uid without `CAP_KILL`) and the process's start time, read from a `stat` file that it opened with the pidfd and that stays bound to that process. It stops when the identity changed or the deadline passed. A range that is unmapped or unreadable, a short advice or read, or `ENOMEM` makes the result `partial` and abandons that batch; the worker goes on with safe work.
+A batch holds up to `min(512, IOV_MAX)` pages of one process and may span its ranges. Before each batch, the worker checks the process's identity in two ways:
+
+- its pidfd is not readable, since a pidfd turns readable when its process exits;
+- the start time in a `stat` file that the worker opened with the pidfd, which stays bound to that process.
+
+The poll needs no privilege. A signal would: the kernel refuses even signal 0 to a process of another uid without `CAP_KILL`, which the unit does not hold. The worker stops when the identity changed or the deadline passed. A range that is unmapped or unreadable, a short advice or read, or `ENOMEM` makes the result `partial` and abandons that batch; the worker goes on with safe work.
 
 The worker never retries a range and never follows a replacement process. Advice that failed never counts as done. After the restore the plan is consumed. A later wake without a new sleep finds no plan.
 
