@@ -197,13 +197,27 @@ def read(target, marker, default):
     inherited = held(default, sorted(oid.decode() for oid in lost), default_heads) if kind == "default_now" and lost else set()
     lost -= inherited
     branches = sorted((name, oid) for name, oid in heads if oid.encode() in lost)
-    counted = [{"name": name, "count": len(unreachable(target, [oid], negative) - inherited)} for name, oid in branches[:NAMES]]
+    owned = {}
+
+    def own(oid):
+        if oid not in owned:
+            owned[oid] = len(unreachable(target, [oid], negative) - inherited)
+        return owned[oid]
+
+    counted = [{"name": name, "count": own(oid)} for name, oid in branches[:NAMES]]
     modified = [text(entry) for entry in modified]
     untracked = [text(entry) for entry in untracked]
     dirty = modified or untracked or lost or stashes
-    print(json.dumps({"state": "dirty" if dirty else "clean", "reason": None, "baseline": kind, "head": head(target),
-                      "modified": listed(modified), "untracked": listed(untracked),
-                      "commits": {"count": len(lost), "branch_count": len(branches), "branches": counted},
+    branch = head(target)
+    # The commit of the checked-out branch, from the heads already read: a task copy's content read is of one commit
+    # (docs/reference/tasks.md#published-work-of-a-copy). None on a detached HEAD.
+    current = next((oid for name, oid in heads if name == branch), None)
+    # Of the counted commits, those the checked-out branch holds: only they can be published by content. A commit that only
+    # another branch holds always counts.
+    mine = own(current) if current is not None and current.encode() in lost else 0
+    print(json.dumps({"state": "dirty" if dirty else "clean", "reason": None, "baseline": kind, "head": branch,
+                      "head_commit": current, "modified": listed(modified), "untracked": listed(untracked),
+                      "commits": {"count": len(lost), "branch_count": len(branches), "branches": counted, "head": mine},
                       "stashes": listed(stashes)}))
 
 
