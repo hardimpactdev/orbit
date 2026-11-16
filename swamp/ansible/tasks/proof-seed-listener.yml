@@ -1,0 +1,49 @@
+---
+# The seed listener of a CI Node (docs/reference/node-provisioning.md#the-seed-listener). The default's Node pushes the seed with
+# `incus copy --refresh --mode=push`, so only this Node listens: on its WireGuard address, for one restricted client certificate, root's
+# client certificate of the default's Node, limited to one project. Without a sender the same tasks remove the trust and the listener.
+# Reads `seed` (the runtime's `proof_seed`) and `seed_certificate` (the sender's certificate, PEM, or empty without a sender).
+- name: Read the Incus listener
+  ansible.builtin.command: { argv: [incus, config, get, core.https_address] }
+  register: seed_listener
+  changed_when: false
+- name: Read the trusted certificates
+  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/certificates?recursion=1"] }
+  register: seed_trust
+  changed_when: false
+- name: Name the trust entries of the seed
+  ansible.builtin.set_fact:
+    seed_entries: "{{ seed_trust.stdout | from_json | selectattr('name', 'equalto', seed.trust) | list }}"
+# An entry with another certificate, without the restriction, or with other projects goes; the add below writes the right one.
+- name: Remove a trust entry of the seed that does not match
+  ansible.builtin.command: { argv: [incus, config, trust, remove, "{{ item.fingerprint }}"] }
+  loop: "{{ seed_entries }}"
+  loop_control: { label: "{{ item.fingerprint }}" }
+  when: >-
+    not seed.present or (item.certificate | trim) != (seed_certificate | trim)
+    or not item.restricted or item.projects != [seed.project]
+  changed_when: true
+- name: Add the trust of the default's Node
+  when: >-
+    seed.present and seed_entries | selectattr('restricted') | selectattr('projects', 'equalto', [seed.project])
+    | map(attribute='certificate') | map('trim') | select('equalto', seed_certificate | trim) | list | length == 0
+  block:
+    - name: Write the certificate of the default's Node
+      ansible.builtin.copy: { content: "{{ seed_certificate }}", dest: /run/orbit-proof-seed.crt, owner: root, group: root, mode: "0600" }
+    - name: Trust it for one project
+      ansible.builtin.command:
+        argv: [incus, config, trust, add-certificate, /run/orbit-proof-seed.crt, --name, "{{ seed.trust }}", --restricted,
+               --projects, "{{ seed.project }}"]
+      changed_when: true
+  always:
+    - name: Remove the certificate file
+      ansible.builtin.file: { path: /run/orbit-proof-seed.crt, state: absent }
+- name: Listen on the WireGuard address
+  when: seed.present and seed_listener.stdout | trim != seed.listen
+  ansible.builtin.command: { argv: [incus, config, set, core.https_address, "{{ seed.listen }}"] }
+  changed_when: true
+# Only the listener of the seed goes: an address that someone else set stays.
+- name: Stop the listener
+  when: not seed.present and seed_listener.stdout | trim == seed.listen
+  ansible.builtin.command: { argv: [incus, config, unset, core.https_address] }
+  changed_when: true

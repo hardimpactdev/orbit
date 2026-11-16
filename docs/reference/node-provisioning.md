@@ -284,13 +284,15 @@ A Node that offers proof places, other than the proof default's own Node, receiv
 | --- | --- |
 | Incus listener | `core.https_address` is `<WireGuard address>:8444`. Never a LAN or public address |
 | Trust | One restricted client certificate, named `orbit-proof-seed`: root's Incus client certificate on the proof default's Node, with `restricted` on and the project `orbit-instances-nested` only |
-| Firewall | The UFW rule `orbit:proof-seed` admits TCP port 8444 on the WireGuard address, only from the WireGuard address of the default's Node |
+| Firewall | Two UFW rules on the WireGuard interface for TCP port 8444, both inserted at the top. `orbit:proof-seed` allows the WireGuard address of the default's Node. `orbit:proof-seed-deny` denies every other source |
+
+The rule `orbit:wireguard-members` admits every port from every WireGuard member. So the deny must come before it, and the allow before the deny: UFW uses the first rule that matches. The converge inserts the deny first and the allow last.
 
 The converge reads the default Node's client certificate there. When root has none yet, it makes one with `incus remote generate-certificate`; nothing else changes on that Node. A trust entry of that name with another certificate is replaced. The Gateway sends the default's Node in the intent, so a converge after the default moved to another Node trusts the new one.
 
 The default's Node gets no listener and no change to its Incus daemon. Each seed copy adds a client remote of root there for each CI Node, `proof-node-<id>`, when it is missing.
 
-When a converge finds that the Node offers no proof places, or that the proof Project has no default, the converge removes the trust entry `orbit-proof-seed`, unsets `core.https_address` when it is the listener above, and removes the UFW rule. A removal of the `ci-runner` role does the same. The holder stays, as the other Incus resources of the branch do.
+When a converge finds that the Node offers no proof places, or that the proof Project has no default, the converge removes the trust entry `orbit-proof-seed`, unsets `core.https_address` when it is the listener above, and deletes both UFW rules. It can name the allow rule only while the proof Project has a default. A removal of the `ci-runner` role does the same. The holder stays, as the other Incus resources of the branch do.
 
 The converge makes no seed. When a `ci-runner` add or converge of a Node that offers proof places passes, the Gateway admits a [seed copy](/reference/development-containers#the-seed-on-each-ci-node) to the Node if it is not the default's Node and its seed is not the proof default's current seed.
 

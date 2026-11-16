@@ -7,9 +7,11 @@ namespace App\Domain\Nodes;
 use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Metrics\MetricsContainerPlan;
 use App\Domain\Processes\ProcessLifecycleInput;
 use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
@@ -25,6 +27,22 @@ use App\Support\ValidatedData;
 /** Render the existing role credential types into protected native file resources. */
 final readonly class NativeNodeRoleRuntimeInput
 {
+    /**
+     * The seed listener of a CI Node (docs/reference/node-provisioning.md#the-seed-listener): the Incus listener on the WireGuard
+     * address and one restricted trust of root's Incus client certificate on the default's Node, whose Node the run reads it from. With no
+     * sender the converge removes both; `listen` still names the address it removes.
+     *
+     * @return array<string, mixed>
+     */
+    private static function proofSeed(Node $node): array
+    {
+        $sender = app(ProofSeeds::class)->sender($node);
+
+        return ['present' => $sender !== null, 'listen' => ValidatedData::string($node->wireguard_ip).':'.ProofSeeds::ListenerPort,
+            'trust' => ProofSeeds::TrustName, 'project' => InstancePlacement::NestedProject,
+            'sender' => $sender === null ? null : ['node_id' => $sender->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($sender)]];
+    }
+
     /** @param array<string,mixed> $snapshot
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
      */
@@ -34,6 +52,10 @@ final readonly class NativeNodeRoleRuntimeInput
             'websocket' => null, 'metrics' => null, 'analytics' => null, 'gateway_dns' => null, 'gateway' => null,
             'swamp' => $assignment->role === RoleName::Swamp ? $snapshot['runtime'] : null,
             'ci_host' => $assignment->role === RoleName::CiRunner];
+        // Only a ci-runner intent has the key, so the intent of every other role stays as it was.
+        if ($assignment->role === RoleName::CiRunner) {
+            $runtime['proof_seed'] = self::proofSeed($node);
+        }
         $copies = [];
         if ($assignment->role === RoleName::Gateway) {
             $gateway = app(GatewayRuntimeFiles::class)->render($node);

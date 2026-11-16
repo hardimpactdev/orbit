@@ -23,6 +23,32 @@ final readonly class ProofSeeds
 {
     public function __construct(private ProofSettings $settings) {}
 
+    /** The Incus listener port of a CI Node, on its WireGuard address only (docs/reference/node-provisioning.md#the-seed-listener). */
+    public const int ListenerPort = 8444;
+
+    /** The name of the one restricted trust entry on a CI Node: root's Incus client certificate of the default's Node. */
+    public const string TrustName = 'orbit-proof-seed';
+
+    /** The Node of the proof default's nested container, which sends the seed to every CI Node; null while there is none. */
+    public function defaultNode(): ?Node
+    {
+        $default = Instance::query()->where('project_id', $this->settings->projectId())->where('name', DefaultInstanceName::Name)->first();
+        $runtime = $default?->runtime;
+
+        return $runtime === null || $runtime->incus_project !== InstancePlacement::NestedProject ? null : Node::query()->find($runtime->node_id);
+    }
+
+    /**
+     * The Node that sends the seed to this Node: the default's Node, when this Node offers proof places and is not that Node. Null
+     * otherwise; then the Node has no seed listener, trust or firewall rule (docs/reference/node-provisioning.md#the-seed-listener).
+     */
+    public function sender(Node $node): ?Node
+    {
+        $default = $this->defaultNode();
+
+        return $default === null || $default->id === $node->id || ! ProofCopyHosts::offersPlaces($node) ? null : $default;
+    }
+
     /** The proof default's runtime when the default is active and has a seed, else null. */
     public function source(): ?InstanceRuntime
     {

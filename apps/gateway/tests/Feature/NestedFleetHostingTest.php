@@ -30,7 +30,9 @@ use App\Domain\WireGuard\Ipv4Subnet;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -215,6 +217,7 @@ describe('a CI Node that hosts proof copies', function (): void {
 
         $project = otherProject('orbit', true);
         config(['proof.project' => $project->id]);
+        seedSwampNode();
         recordedNestedInstance($project, nestedSwitch(containerDefaultNode(), true))->runtime()->firstOrFail()->update(['idmap_size' => 1_165_536]);
         expect(ciRunnerRuntime($node)['instances']['ids'])->toBe(13_172_736 + 5 * 1_165_536);
     });
@@ -258,6 +261,14 @@ describe('a CI Node that hosts proof copies', function (): void {
     })->with([false, true]);
 });
 
+/** The run's Swamp Node, whose worker reaches the default's Node over SSH for the seed listener's certificate. */
+function seedSwampNode(): void
+{
+    $swamp = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'swamp', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.15', 'public_ssh_host' => '10.44.0.15', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+    $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+}
+
 /** The proof Project's nested default on the build-list Node, active with a seed taken at the given time. */
 function proofSeedDefault(string $takenAt = '2026-11-16 00:00:00'): Instance
 {
@@ -292,6 +303,57 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and(app(ProofSeeds::class)->holder($current)?->holder)->toBe('proof-seed-7')
             ->and(app(ProofSeeds::class)->holder($retaken))->toBeNull()
             ->and(app(ProofSeeds::class)->holder($behind))->toBeNull();
+    });
+
+    it('gives the ci-runner converge of a Node that offers proof places the seed listener of the default\'s Node, and every other Node its removal', function (): void {
+        $default = proofSeedDefault();
+        $defaultNode = $default->node()->firstOrFail();
+        seedSwampNode();
+        $node = ciNode();
+        app(NodeRoleRuntimeInput::class)->prepare($node, $node->roles()->sole());
+
+        $seed = ciRunnerRuntime($node->refresh())['proof_seed'];
+        expect(collect($seed)->except('sender')->all())->toBe(['present' => true, 'listen' => '10.44.0.30:8444', 'trust' => 'orbit-proof-seed',
+            'project' => 'orbit-instances-nested'])
+            ->and($seed['sender']['node_id'])->toBe($defaultNode->id)
+            ->and($seed['sender']['ssh']['target']['host'])->toBe($defaultNode->wireguard_ip);
+
+        // No places: the converge removes the listener of this address and the trust.
+        $none = ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34');
+        expect(ciRunnerRuntime($none)['proof_seed'])->toBe(['present' => false, 'listen' => '10.44.0.34:8444', 'trust' => 'orbit-proof-seed',
+            'project' => 'orbit-instances-nested', 'sender' => null]);
+
+        // The default's own Node holds the seed and listens for nobody.
+        $defaultNode->update(['settings' => [...$defaultNode->settings, 'ci' => ['places' => 2, 'proof_only' => false]]]);
+        $defaultNode->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+        expect(ciRunnerRuntime($defaultNode->refresh())['proof_seed']['present'])->toBeFalse();
+    });
+
+    it('admits the seed port from the default\'s Node alone, in front of the WireGuard member trust, and removes both rules on a Node without places', function (): void {
+        $default = proofSeedDefault();
+        $source = (string) $default->node()->firstOrFail()->wireguard_ip;
+        $node = ciNode();
+        $firewall = app(NodeRoleFirewallInput::class);
+
+        $desired = $firewall->convergeCommands($node, RoleName::CiRunner)['desired'];
+        $seed = array_values(array_filter($desired, static fn (array $command): bool => str_starts_with((string) end($command), 'orbit:proof-seed')));
+        // Each goes in at the top: the allow last, so it is the first match.
+        expect($seed)->toBe([
+            ['ufw', 'insert', '1', 'deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed-deny'],
+            ['ufw', 'insert', '1', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed'],
+        ])
+            ->and(collect(app(NodeFirewallDesiredRules::class)->forNode($node))->pluck('name')->filter(static fn (string $name): bool => str_starts_with($name, 'orbit:proof-seed'))->values()->all())
+            ->toBe(['orbit:proof-seed', 'orbit:proof-seed-deny']);
+
+        $none = ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34');
+        $commands = $firewall->convergeCommands($none, RoleName::CiRunner);
+        expect(array_filter($commands['desired'], static fn (array $command): bool => str_starts_with((string) end($command), 'orbit:proof-seed')))->toBe([])
+            ->and(array_values(array_filter($commands['remove'], static fn (array $command): bool => str_starts_with((string) end($command), 'orbit:proof-seed'))))->toBe([
+                ['ufw', '--force', 'delete', 'deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.34', 'port', '8444', 'comment', 'orbit:proof-seed-deny'],
+                ['ufw', '--force', 'delete', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', '10.44.0.34', 'port', '8444', 'comment', 'orbit:proof-seed'],
+            ])
+            ->and(collect($firewall->remove($node, RoleName::CiRunner)['remove'])->pluck('comment')->filter(static fn (string $name): bool => str_starts_with($name, 'orbit:proof-seed'))->values()->all())
+            ->toBe(['orbit:proof-seed-deny', 'orbit:proof-seed']);
     });
 
     it('has no targets while the proof default has no seed', function (): void {

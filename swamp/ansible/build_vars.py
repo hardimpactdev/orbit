@@ -144,10 +144,15 @@ def build(folder, kind):
     analytics = intent['runtime']['analytics']
     if analytics:
         host(analytics['clickhouse_node_id'], analytics['clickhouse_ssh'])
+    seed = intent['runtime'].get('proof_seed') or {}
+    sender = seed.get('sender') if seed.get('present') else None
+    if sender:
+        host(sender['node_id'], sender['ssh'])
 
     groups = {
         'role_node': [f'n{intent["node_id"]}'],
         'clickhouse_node': [f'n{analytics["clickhouse_node_id"]}'] if analytics else [],
+        'proof_seed_sender': [f'n{sender["node_id"]}'] if sender else [],
         'publication_nodes': [name for name, entry in hosts.items() if entry['publications']],
         'exporter_nodes': [name for name, entry in hosts.items() if entry['exporters']],
         'prometheus_node': [f'n{intent["prometheus"]["node_id"]}'] if intent['prometheus'] else [],

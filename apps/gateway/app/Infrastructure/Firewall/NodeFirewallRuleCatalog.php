@@ -16,6 +16,7 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceOwnSite;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -480,6 +481,26 @@ final readonly class NodeFirewallRuleCatalog
             new UfwRuleShape($comment, $action, 'in', $source, $destination, $port, 'tcp', 'orbit', null, 'v4'),
             ['sudo', 'ufw', $action, 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', $port, 'comment', $comment],
         );
+    }
+
+    /**
+     * The seed listener of a CI Node (docs/reference/node-provisioning.md#the-seed-listener): the default's Node may reach the Incus
+     * port on the WireGuard address, and every other source may not. Both go in front of `orbit:wireguard-members`, which admits every
+     * port from every member, so the first match decides. A `$sender` of null gives the deny alone, which a removal deletes.
+     *
+     * @return array{allow: UfwManagedRule|null, deny: UfwManagedRule}
+     */
+    public function proofSeedListener(Node $node, ?Node $sender): array
+    {
+        $destination = $this->wireguardIp($node);
+        $port = (string) ProofSeeds::ListenerPort;
+        $rule = static fn (string $comment, string $action, string $source): UfwManagedRule => new UfwManagedRule(
+            new UfwRuleShape($comment, $action, 'in', $source, $destination, $port, 'tcp', 'orbit', null, 'v4'),
+            ['sudo', 'ufw', $action, 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', $port, 'comment', $comment],
+        );
+
+        return ['allow' => $sender === null ? null : $rule('orbit:proof-seed', 'allow', $this->wireguardIp($sender)),
+            'deny' => $rule('orbit:proof-seed-deny', 'deny', 'any')];
     }
 
     public function metricsGrafanaUpstream(Node $metricsNode, string $gatewayAddress): UfwManagedRule
