@@ -24,12 +24,13 @@ final readonly class TaskFinalReview
 {
     public const string FixupProblem = 'final-review';
 
-    public function __construct(private GitHubApi $github, private RepositoryPullRequestAccess $access) {}
+    public function __construct(private GitHubApi $github, private RepositoryPullRequestAccess $access, private TaskCopyWork $work) {}
 
     /**
      * Refuses with `tasks.approved_work_unpublished` and changes nothing while the group holds a workspace and origin's task
      * branch does not reach its latest approved commit. Only when GitHub answers that the branch does not exist and the group's pull
-     * request merged does that pull request's head stand in for it. Every failed GitHub read refuses too.
+     * request merged does that pull request's head stand in for it. For a task copy, the default branch holding the approved commit's
+     * work by content counts too, as the copy's content read finds it (TaskCopyWork). Every failed GitHub read refuses too.
      */
     public function assertOnOrigin(Task $group): void
     {
@@ -39,7 +40,7 @@ final readonly class TaskFinalReview
         }
         $branch = TaskRemoteBranch::for($group);
         $repository = GitHubRepository::fromOrigin($group->project->repository_url ?? '');
-        if ($repository === null || ! $this->reaches($repository, $group, $commit, $branch)) {
+        if (($repository === null || ! $this->reaches($repository, $group, $commit, $branch)) && ! $this->carried($group, $commit)) {
             throw new ResourceOperationException('tasks.approved_work_unpublished',
                 "Approved commit {$commit} is not on origin's {$branch} branch. Run task:publish first.", 409,
                 details: ['commit' => $commit, 'branch' => $branch]);
@@ -55,6 +56,14 @@ final readonly class TaskFinalReview
                 ->whereNotNull('commit_sha')->latest('id')->value('commit_sha');
 
         return is_string($sha) && $sha !== '' ? $sha : null;
+    }
+
+    /** Whether a task copy's content read finds the approved commit's work on the default branch: a squash merge or a hand-carry. */
+    private function carried(Task $group, string $commit): bool
+    {
+        $copy = TaskInstanceWorkspace::forGroup($group);
+
+        return $copy !== null && $this->work->holdsApproved($group, $copy, $commit);
     }
 
     /** Reads refs and comparisons with a `contents: read` token, and the pull request with a `pull_requests: read` one. */

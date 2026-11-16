@@ -47,6 +47,8 @@ use App\Domain\Projects\ProjectAgentInstructionSource;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCommentType;
+use App\Models\TaskComment;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAgentDefaults;
@@ -2335,4 +2337,76 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect(copyRefusal(fn () => app(ReadAgentThreadAction::class)->execute($group, $thread, null)))->toBe('tasks.agent_transcript_unavailable 409');
     });
+});
+
+describe('a complete of a copy group whose work was carried to the default branch', function (): void {
+    /**
+     * A running copy group without a watched pull request, whose copy now reads `$head`, and the content read of its latest sync:
+     * `$work` overrides the read of a hand-carried branch (docs/reference/tasks.md#published-work-of-a-copy).
+     *
+     * @param  array<string, mixed>|null  $work
+     * @return array{Task, Instance}
+     */
+    function carriedCopy(?array $work, string $approved = ''): array
+    {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $head = str_repeat('d', 40);
+        test()->ssh->answer['head'] = $head;
+        if ($work !== null) {
+            Operation::query()->create(['kind' => 'tasks.sync', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+                'input' => ['copy' => ['approved' => $approved]], 'state' => [], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 0,
+                'finished_at' => now(), 'result' => ['work' => [...['state' => 'clean', 'head' => $head, 'default_commit' => str_repeat('e', 40), 'empty' => false,
+                    'paths' => ['count' => 0, 'names' => []], 'uncommitted' => 0, 'untracked' => 0, 'stashes' => 0, 'approved_held' => null], ...$work]]]);
+        }
+
+        return [$group->refresh(), $copy];
+    }
+
+    function completeRefusal(Task $group): ?string
+    {
+        try {
+            app(CompleteTaskGroupAction::class)->execute($group);
+        } catch (ResourceOperationException $error) {
+            return $error->errorCode.' '.($error->details['reason'] ?? '');
+        }
+
+        return null;
+    }
+
+    it('completes a running copy group with no watched pull request whose committed work is on the default branch, and destroys its copy', function (): void {
+        [$group, $copy] = carriedCopy([]);
+
+        $completed = app(CompleteTaskGroupAction::class)->execute($group);
+
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        expect($completed->status)->toBe(TaskGroupStatus::Completed)
+            ->and($completed->settled_at)->not->toBeNull()
+            ->and($completed->tasks()->where('status', TaskStatus::Cancelled)->count())->toBe(1)
+            ->and($destroy->target_id)->toBe($copy->id)->and($destroy->input['force'])->toBeTrue();
+    });
+
+    it('refuses a running copy group whose work is not shown on the default branch with tasks.not_settling and the reason', function (?array $work, string $reason): void {
+        [$group] = carriedCopy($work);
+
+        expect(completeRefusal($group))->toBe('tasks.not_settling '.$reason)
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+    })->with([
+        'never read' => [null, 'work_unread'],
+        'read of an older head' => [['head' => str_repeat('f', 40)], 'work_unread'],
+        'a path that differs' => [['state' => 'dirty', 'paths' => ['count' => 1, 'names' => ['work.txt']]], 'work_not_on_default'],
+        'an empty copy: cancel it' => [['empty' => true], 'work_empty'],
+    ]);
+
+    it('takes the approved commit as kept when the content read holds it on the default branch, though origin\'s branch cannot be read', function (bool $held): void {
+        $approved = str_repeat('a', 40);
+        [$group] = carriedCopy(['approved_held' => $held], $approved);
+        // No GitHub origin: the branch compare refuses without a read, so only the content read can keep the approved work.
+        $group->project->update(['repository_url' => 'https://git.example.test/trial.git']);
+        TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $group->tasks()->value('id'), 'type' => TaskCommentType::Approved,
+            'body' => 'Approved.', 'author' => 'reviewer', 'commit_sha' => $approved, 'posted_at' => now()]);
+
+        expect(completeRefusal($group->refresh()))->toBe($held ? null : 'tasks.approved_work_unpublished ');
+    })->with(['held' => [true], 'not held' => [false]]);
 });

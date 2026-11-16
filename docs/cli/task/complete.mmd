@@ -17,7 +17,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - the group is `settling` or `waiting_for_review`, or `running` or `reviewing` with a watched pull request that merged or closed; a `completed` group retries its removal
   %%> - or a `running` or `reviewing` group with a task copy and no ended watched pull request, whose latest content read (`work`, of a `task:sync` or a cancel run) is of the copy's current head, found every committed path on the default branch, and is not `empty`: its work was carried to the default branch by hand
-  %%> - otherwise HTTP 409 `tasks.not_settling`, whose `reason` detail says why: `pull_request_not_ended`, `work_unread` (run `task:sync` first), `work_not_on_default` or `work_empty` (cancel the group instead)
+  %%> - otherwise HTTP 409 `tasks.not_settling`, whose `reason` detail says why: `status`, `pull_request_not_ended`, `work_unread` (run `task:sync` first), `work_not_on_default` or `work_empty` (cancel the group instead)
   %%> - your Node has an access grant to the Gateway
   GW->>GH: Compare the task branch<br/>approved...task-42
   %%> What it does:

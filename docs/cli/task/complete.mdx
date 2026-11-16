@@ -18,6 +18,7 @@ In a terminal, the task list shows only `settling` tasks. Pass the task id to co
 
 | `reason` | Meaning |
 | --- | --- |
+| `status` | The task is in no ready state, or its state changed while complete ran. |
 | `pull_request_not_ended` | The watched pull request is missing, open, or unreadable, and the task has no task copy. |
 | `work_unread` | No read of the copy's current head. Run `task:sync`, then complete again. |
 | `work_not_on_default` | A committed path of the copy differs from the default branch. |
