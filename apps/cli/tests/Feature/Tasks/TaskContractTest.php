@@ -58,6 +58,10 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks/task-check/not-orchestrated', 'task:check', ['task' => '2', '--phase' => 'baseline'], 1);
     });
 
+    it('renders a refused sync of a group without a task copy', function (): void {
+        run_task_contract('tasks/task-sync/no-workspace', 'task:sync', ['task' => '1'], 1);
+    });
+
     it('renders a refused external turn', function (): void {
         run_task_contract('tasks/task-turn/not-orchestrated', 'task:turn', ['task' => '2', '--role' => 'implementer', '--prompt' => 'Implement exactly this prompt.', '--thread' => 'new'], 1);
     });

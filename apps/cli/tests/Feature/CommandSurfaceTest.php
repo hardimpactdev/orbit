@@ -1113,7 +1113,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'project:document:remove', 'project:document:write', 'project:document:show',
             'project:document:restore', 'project:document:download' => ['project', 'entry'],
             'task:agent:show' => ['task', 'session'],
-            'task:start', 'task:check', 'task:publish', 'task:turn' => ['task'],
+            'task:start', 'task:check', 'task:publish', 'task:sync', 'task:turn' => ['task'],
             'profile' => ['url'],
             'tool:install' => ['package'],
             'metrics:enable' => ['node'],

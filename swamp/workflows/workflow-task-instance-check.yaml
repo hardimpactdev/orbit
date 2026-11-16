@@ -1,9 +1,14 @@
 id: 7f6de06c-8f84-400c-9c26-8273b8b24773
 name: task-instance-check
 autoContinue: false
-description: Run one task check in its container Instance through Ansible phases on the Instance Node; the task check rules judge the evidence.
+description: >-
+  Run one task check in its container Instance through Ansible phases on the Instance Node; the task check rules judge the evidence.
+  A handoff check first brings in the current default head through task-copy-base, as task:sync does, and merges it when clean.
 queueTimeout: 30
 labels: {role: swamp}
+# Only its base child reads the vault: the read token of a copy's handoff check.
+vaults:
+- orbit-control-inputs
 inputs:
   type: object
   properties:
@@ -30,8 +35,26 @@ inputs:
             snapshot_id: {type: string, format: uuid}
           required: [runtime, branch, snapshot_id]
           additionalProperties: false
+        # Only a handoff check names it: the base phase's intent and the vault key of its read token, minted when the run starts.
+        copy_base:
+          type: object
+          properties:
+            default_branch: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._/-]*$'}
+            repository: {type: string, pattern: '^https://'}
+            mirror: {type: string, pattern: '^/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git$'}
+            source_mirror: {type: string, pattern: '^(/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git)?$'}
+            start: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+            git_authorization:
+              type: object
+              properties:
+                vault: {type: string, enum: [orbit-control-inputs]}
+                key: {type: string, pattern: '^task-sync-token-[a-f0-9-]{36}$'}
+              required: [vault, key]
+              additionalProperties: false
+          required: [default_branch, repository, mirror, source_mirror, start, git_authorization]
+          additionalProperties: false
       required: [group_id, workspace]
-    # A container check mints no token: hosted CI is refused at admission.
+    # A container check mints no hosted CI token: hosted CI is refused at admission. The base's read token is in the intent.
     execution_secrets: {type: object, additionalProperties: false}
     run_id: {type: string}
   required: [operation_id, node_id, kind, intent, execution_secrets, run_id]
@@ -52,18 +75,99 @@ jobs:
             intent: '${{ inputs.intent }}'
             node_id: '${{ inputs.node_id }}'
             root: '${{ "/tmp/orbit-task-workspace-" + inputs.intent.workspace.snapshot_id }}'
-      - name: input
+      # The handoff check of a copy (docs/reference/tasks.md#the-handoff-check-merges-main-first): the same base phase as task:sync,
+      # through the same child. A failed base never blocks the check: it runs on the tree as it is, and the result says so.
+      - name: Bring in the base
+        labels: {role: swamp}
+        dependsOn: [{step: prepare, condition: {type: succeeded}}]
+        guard: '${{ !steps.prepare.outputs.valid || !("copy_base" in inputs.intent) }}'
+        allowFailure: true
+        task:
+          type: workflow
+          workflowIdOrName: task-copy-base
+          inputs:
+            node_id: ${{ inputs.node_id }}
+            group_id: ${{ inputs.intent.group_id }}
+            phase: base
+            # Swamp resolves a skipped step's inputs too, so a check without a base reads none of its keys.
+            intent: '${{ "copy_base" in inputs.intent ? {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "snapshot_id": inputs.intent.workspace.snapshot_id, "instance_id": inputs.intent.instance_id, "default_branch": inputs.intent.copy_base.default_branch, "repository": inputs.intent.copy_base.repository, "mirror": inputs.intent.copy_base.mirror, "source_mirror": inputs.intent.copy_base.source_mirror, "start": inputs.intent.copy_base.start, "ssh_execution": inputs.intent.ssh_execution} : {} }}'
+            git_authorization: '${{ "copy_base" in inputs.intent ? inputs.intent.copy_base.git_authorization : {} }}'
+      - name: Discard the base scratch
+        labels: {role: swamp}
+        dependsOn: [{step: Bring in the base, condition: {type: always}}]
+        guard: '${{ !steps.prepare.outputs.valid || !("copy_base" in inputs.intent) }}'
+        allowFailure: true
+        task:
+          type: workflow
+          workflowIdOrName: task-copy-base
+          inputs:
+            node_id: ${{ inputs.node_id }}
+            group_id: ${{ inputs.intent.group_id }}
+            phase: base-cleanup
+            intent: '${{ "copy_base" in inputs.intent ? {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "snapshot_id": inputs.intent.workspace.snapshot_id, "instance_id": inputs.intent.instance_id, "ssh_execution": inputs.intent.ssh_execution} : {} }}'
+            git_authorization: '${{ "copy_base" in inputs.intent ? inputs.intent.copy_base.git_authorization : {} }}'
+      - name: merge input
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: prepare, condition: {type: succeeded}}]
-        guard: '${{ !steps.prepare.outputs.valid }}'
+        dependsOn: [{step: Discard the base scratch, condition: {type: always}}]
+        guard: '${{ !("Bring in the base" in steps) || steps["Bring in the base"].status != "succeeded" }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/ansible-input'
           behaviorName: '${{ "ansible-input" }}'
           methodName: write
           inputs:
-            intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "snapshot_id": inputs.intent.workspace.snapshot_id, "operation_id": inputs.operation_id, "ssh_execution": inputs.intent.ssh_execution, "check": inputs.intent} }}'
+            intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "default_branch": "copy_base" in inputs.intent ? inputs.intent.copy_base.default_branch : "", "message": inputs.intent.message} }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      # Before the long parts: a conflict refuses here and leaves the workspace exactly as it was.
+      - name: Merge the base
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: merge input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ ("task-instance-check-" + string(inputs.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}'
+          methodName: execute
+          inputs:
+            run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags base-merge "$ORBIT_ANSIBLE/task-instance-workspace.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps["merge input"].outputs.assets }}'
+              ANSIBLE_CONFIG: '${{ steps["merge input"].outputs.assets + "/ansible.cfg" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+      - name: merged
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Merge the base, condition: {type: always}}]
+        guard: '${{ !("merge input" in steps) || steps["merge input"].status != "succeeded" }}'
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-instance-workspace'
+          behaviorName: '${{ "task-instance-check-evidence" }}'
+          methodName: result
+          inputs:
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+            phase: base-merge
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: prepare, condition: {type: succeeded}}
+          - {step: merged, condition: {type: always}}
+        # A conflict or a failed merge ends the check before the long parts.
+        guard: '${{ !steps.prepare.outputs.valid || ("merge input" in steps && steps["merge input"].status == "succeeded" && !("merged" in steps && "outputs" in steps.merged && "default_commit" in steps.merged.outputs.evidence && !("error_code" in steps.merged.outputs.evidence))) }}'
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: '${{ "ansible-input" }}'
+          methodName: write
+          inputs:
+            # The default head that HEAD holds after a base-merge without error, whether this run merged it, an earlier check did or
+            # a task:sync and a hand merge did; "" without a base. The check compares deliverables with the start plus that head.
+            intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "snapshot_id": inputs.intent.workspace.snapshot_id, "operation_id": inputs.operation_id, "ssh_execution": inputs.intent.ssh_execution, "check": inputs.intent, "default_commit": "merged" in steps && "outputs" in steps.merged && "default_commit" in steps.merged.outputs.evidence && !("error_code" in steps.merged.outputs.evidence) ? steps.merged.outputs.evidence.default_commit : ""} }}'
             path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
       - name: Run the check
         labels: {role: swamp}
@@ -113,7 +217,7 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
             # An invalid intent keeps its own refusal; a failed phase returns its workspace code.
-            prepared: '${{ !steps.prepare.outputs.valid || ("checked" in steps && "outputs" in steps.checked && "check" in steps.checked.outputs.evidence) ? steps.prepare.outputs : {"error_code": "checked" in steps && "outputs" in steps.checked && "error_code" in steps.checked.outputs.evidence ? steps.checked.outputs.evidence.error_code : "tasks.repository_execution_unknown"} }}'
+            prepared: '${{ !steps.prepare.outputs.valid || ("checked" in steps && "outputs" in steps.checked && "check" in steps.checked.outputs.evidence) ? steps.prepare.outputs : {"error_code": "merged" in steps && "outputs" in steps.merged && "error_code" in steps.merged.outputs.evidence ? steps.merged.outputs.evidence.error_code : ("checked" in steps && "outputs" in steps.checked && "error_code" in steps.checked.outputs.evidence ? steps.checked.outputs.evidence.error_code : "tasks.repository_execution_unknown")} }}'
             steps: '${{ "checked" in steps && "outputs" in steps.checked && "check" in steps.checked.outputs.evidence ? steps.checked.outputs.evidence.check.steps : {} }}'
             outputs: '${{ "/tmp/orbit-ansible-" + run.id + "/output" }}'
       - name: Commit the candidate
@@ -221,12 +325,18 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
             # The receipt: the candidate result, unless a missing step or an unpinned commit leaves the run unknown.
+            # A copy's handoff check states its base: the head it judged against and merged, or why it had none.
+            base: '${{ {"requested": "copy_base" in inputs.intent, "status": "Bring in the base" in steps ? steps["Bring in the base"].status : "", "evidence": "Bring in the base" in steps && "outputs" in steps["Bring in the base"] && "evidence" in steps["Bring in the base"].outputs ? steps["Bring in the base"].outputs.evidence : {}, "merge": "merged" in steps && "outputs" in steps.merged ? steps.merged.outputs.evidence : {} } }}'
             local: '${{ "candidate" in steps && "outputs" in steps.candidate && (!("commit" in steps.candidate.outputs.result) || steps.candidate.outputs.result.commit == null || "error_code" in steps.candidate.outputs.result || ("pinned" in steps && "outputs" in steps.pinned && "ref" in steps.pinned.outputs.evidence)) ? steps.candidate.outputs.result : ("local" in steps && "outputs" in steps.local && !("candidate" in steps && "outputs" in steps.candidate) && "error_code" in steps.local.outputs.result ? steps.local.outputs.result : {"error_code": "tasks.repository_execution_unknown", "check_id": inputs.intent.check_id}) }}'
             steps: {}
       - name: cleanup
         labels: {role: swamp}
         writes: true
         dependsOn:
+          - {step: Discard the base scratch, condition: {type: always}}
+          - {step: merge input, condition: {type: always}}
+          - {step: Merge the base, condition: {type: always}}
+          - {step: merged, condition: {type: always}}
           - {step: input, condition: {type: always}}
           - {step: Run the check, condition: {type: always}}
           - {step: checked, condition: {type: always}}

@@ -19,7 +19,9 @@ use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Requests\Tasks\CheckTaskRequest;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\StartTaskRequest;
+use Orbit\Sdk\Requests\Tasks\SyncTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\TurnTaskRequest;
+use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
@@ -672,6 +674,18 @@ describe('task:publish', function (): void {
         expect($pending->body()->all())->toBe([])->and((string) $pending->body())->toBe('{}');
     });
 
+    it('says why a publish of a check only pushed', function (): void {
+        $seen = [];
+        $identity = ['kind' => 'tasks.publish', 'target_type' => 'task_group'];
+        $why = "Check 31 is not the group's done check 32, so no pull request opened.";
+        $result = ['branch' => 'task-17', 'commit' => str_repeat('a', 40), 'pull_request_number' => null, 'pull_request_url' => null, 'pull_request_withheld' => $why];
+        cli_deploy_gateway([cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result])], $seen, PublishTaskGroupRequest::class, $identity);
+
+        expect(Artisan::call('task:publish', ['task' => '17', '--check' => '31', '--no-interaction' => true]))->toBe(0);
+
+        expect(Artisan::output())->toContain('Branch: task-17', 'No pull request: '.$why)->not->toContain('Pull request: ');
+    });
+
     it('opens the pull request as a draft with --draft', function (): void {
         $seen = [];
         $identity = ['kind' => 'tasks.publish', 'target_type' => 'task_group'];
@@ -683,6 +697,61 @@ describe('task:publish', function (): void {
         $pending = $mock->findResponseByRequest(PublishTaskGroupRequest::class)->getPendingRequest();
         expect($pending->body()->all())->toBe(['check' => 31, 'pull_request' => ['title' => 'Spec', 'body' => 'Chart, page and cases', 'draft' => true]]);
     });
+});
+
+describe('task:sync', function (): void {
+    beforeEach(function (): void {
+        MockClient::global(gateway_fixture_mock());
+        app(GatewayExtensionState::class)->discover();
+        MockClient::destroyGlobal();
+    });
+
+    it('starts the sync that MCP task-sync starts, follows it and prints the default head and how far behind the branch is', function (bool $json): void {
+        $seen = [];
+        $identity = ['kind' => 'tasks.sync', 'target_type' => 'task_group'];
+        $result = ['default_branch' => 'main', 'default_commit' => str_repeat('c', 40), 'branch' => 'task-17', 'branch_commit' => str_repeat('a', 40), 'behind_by' => 3, 'start' => str_repeat('d', 40)];
+        $mock = cli_deploy_gateway([
+            cli_operation([...$identity, 'status' => 'running', 'sequence' => 2, 'current_step' => 'Bring in the base']),
+            cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 5, 'poll_after_seconds' => null, 'result' => $result]),
+        ], $seen, SyncTaskGroupRequest::class, $identity);
+
+        expect(Artisan::call('task:sync', ['task' => '17', '--idempotency-key' => 'sync-17-1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+
+        $output = Artisan::output();
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+        } else {
+            expect($output)->toContain('Sync task group [17]', 'Default commit: '.str_repeat('c', 40), 'Behind by: 3', 'Branch commit: '.str_repeat('a', 40));
+        }
+        $pending = $mock->findResponseByRequest(SyncTaskGroupRequest::class)->getPendingRequest();
+        expect($pending->getMethod())->toBe(Method::POST)
+            ->and($pending->getUrl())->toEndWith('/api/v1/tasks/17/sync')
+            ->and((string) $pending->body())->toBe('')
+            ->and($pending->headers()->get('Idempotency-Key'))->toBe('sync-17-1');
+    })->with([false, true]);
+
+    it('sends a fresh key when none is given', function (): void {
+        $seen = [];
+        $identity = ['kind' => 'tasks.sync', 'target_type' => 'task_group'];
+        $mock = cli_deploy_gateway([cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 5, 'poll_after_seconds' => null, 'result' => ['behind_by' => 0]])],
+            $seen, SyncTaskGroupRequest::class, $identity);
+
+        expect(Artisan::call('task:sync', ['task' => '17', '--json' => true, '--no-interaction' => true]))->toBe(0);
+
+        expect($mock->findResponseByRequest(SyncTaskGroupRequest::class)->getPendingRequest()->headers()->get('Idempotency-Key'))->toStartWith('tasks.sync.');
+    });
+
+    it('refuses a missing or invalid task before Gateway access', function (array $arguments, string $code): void {
+        $mock = MockClient::global([]);
+
+        expect(Artisan::call('task:sync', [...$arguments, '--json' => true, '--no-interaction' => true]))->toBe(1);
+
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
+        $mock->assertNothingSent();
+    })->with([
+        [[], 'task.task_required'],
+        [['task' => 'bad'], 'task.task_invalid'],
+    ]);
 });
 
 it('shows the caller Node name and retains a removed caller ID in human output', function (?string $name, string $label): void {

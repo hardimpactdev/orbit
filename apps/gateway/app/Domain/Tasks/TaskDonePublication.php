@@ -35,12 +35,30 @@ final class TaskDonePublication
     /** How many publishes of one done check may time out on a lock, the first and its retries, before the check shows as refused. */
     public const int LockTimeoutAttempts = 3;
 
+    /** A group that has its pull request pushes the check only: the open pull request shows the new commits and keeps its title and body. */
     public static function for(Task $group, TaskCheck $check): StartTaskPublishData
     {
+        if ($group->pr_url !== null) {
+            return new StartTaskPublishData($check->id);
+        }
         $text = TaskGroupDone::prText($group, $check) ?? throw new ResourceOperationException(self::TextMissingCode,
             'The task group\'s work is done, but its reviewer sent no pull request text. A reviewer turn that approves the commit sends it.', 409);
 
         return new StartTaskPublishData($check->id, ['title' => $text['title'], 'body' => $text['body'], 'draft' => false]);
+    }
+
+    /**
+     * Why the publish of a named check without a pull request text opens no pull request, for a group that has none yet, or null when
+     * it opens one: only the reviewed done check with the reviewer's text does (docs/reference/tasks.md#publish-an-external-group).
+     */
+    public static function withheld(Task $group, int $check, ?TaskCheck $done): ?string
+    {
+        return match (true) {
+            $done === null => 'The group has no done check now, so no pull request opened: it opens when the reviewer approved this check, its subtask is completed and no other work of the group runs.',
+            $done->id !== $check => "Check {$check} is not the group's done check {$done->id}, so no pull request opened.",
+            TaskGroupDone::prText($group, $done) === null => "The reviewer sent no pull request text for check {$check}, so no pull request opened.",
+            default => null,
+        };
     }
 
     /**

@@ -23,6 +23,7 @@ use Orbit\Sdk\Requests\Tasks\ShowTaskRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\StartTaskRequest;
 use Orbit\Sdk\Requests\Tasks\SubtaskInput;
+use Orbit\Sdk\Requests\Tasks\SyncTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\TaskAgentsInput;
 use Orbit\Sdk\Requests\Tasks\TurnTaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskRequest;
@@ -56,6 +57,7 @@ describe('task transport', function (): void {
         'show' => [new ShowTaskRequest(13), Method::GET, '/api/v1/tasks/13'],
         'update' => [new UpdateTaskRequest(13), Method::PATCH, '/api/v1/tasks/13'],
         'publish' => [new PublishTaskGroupRequest(13, 17), Method::POST, '/api/v1/tasks/13/publish'],
+        'sync' => [new SyncTaskGroupRequest(13, 'sync.13'), Method::POST, '/api/v1/tasks/13/sync'],
         'cancel' => [new CancelTaskRequest(13, 'cancel.13'), Method::POST, '/api/v1/tasks/13/cancel'],
         'check' => [new CheckTaskRequest(21, 'baseline'), Method::POST, '/api/v1/tasks/21/check'],
         'turn' => [new TurnTaskRequest(14, 'implementer', 'Prompt', 'new'), Method::POST, '/api/v1/tasks/14/turn'],
@@ -802,6 +804,12 @@ it('sends a publish check, or the empty object for the release of a task copy\'s
     'a check with a pull request' => [17, ['title' => 'T', 'body' => 'B'], '{"check":17,"pull_request":{"title":"T","body":"B"}}'],
     'the release' => [null, null, '{}'],
 ]);
+
+it('starts the sync bodyless with its required key', function (): void {
+    $request = new SyncTaskGroupRequest(13, 'sync.13');
+
+    expect($request->headers()->get('Idempotency-Key'))->toBe('sync.13')->and($request)->not->toBeInstanceOf(HasBody::class);
+});
 
 it('sends pr_mode on create and update only when it is named', function (): void {
     expect(json_decode((string) new CreateTaskRequest(1, 'Group', 'Brief', prMode: 'pr_when_done')->body(), true))->toMatchArray(['pr_mode' => 'pr_when_done'])

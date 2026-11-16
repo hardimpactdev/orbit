@@ -1,19 +1,25 @@
 ---
-title: "task:sync"
+title: "orbit task:sync"
 sidebarTitle: "task:sync"
-description: "Fetch the default branch, and for a task VM the group's branch, from origin into the group's workspace. API and MCP only."
+description: "Fetch the Project's default branch from origin into a task group's copy."
 ---
+
+```bash
+orbit task:sync <task> [--idempotency-key=KEY] [--json]
+```
 
 Bring the Project's default branch into the workspace of an external task group. A task VM or a task copy holds no GitHub credential, so it cannot fetch. When origin moved, because main was merged into the branch or the owner pushed a correction, the author syncs, then merges or rebases, and the push fast-forwards.
 
-There is no `orbit` command yet. Use the API or the MCP tool `task-sync`.
+`orbit task:sync` calls the same route as the MCP tool `task-sync`, `POST /api/v1/tasks/{task}/sync`, and follows the Operation until it ends, as `task:publish` does. Human output prints `Default commit`, `Behind by` and `Branch commit`; `--json` prints the final Operation, with the whole result. Without `--idempotency-key`, the CLI sends a fresh key; send the same key again to replay a start. A terminal prompts for a missing task.
+
+The API call:
 
 ```bash
 curl -X POST "$GATEWAY/api/v1/tasks/42/sync" \
   -H "Idempotency-Key: sync-42-1"
 ```
 
-The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. It takes no body. The reply is `202` with the operation. Follow it with `operation:show` until it ends.
+The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. It takes no body. The reply is `202` with the operation; an API caller follows it with `operation:show` until it ends.
 
 In a task VM, the fetch writes `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-42` in the workspace. It does not touch HEAD, the working tree or the local branches.
 
