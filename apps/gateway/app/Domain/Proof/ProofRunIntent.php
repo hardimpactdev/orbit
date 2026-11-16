@@ -37,8 +37,8 @@ use Throwable;
 
 /**
  * Admits `proof:run`: the request records the proof; the job checks that the commit is trusted, selects the cases from the diff and the
- * selection list of the commit. A proof Project whose tasks run as copies proves in copies of its default: up to `proof.copies` at once,
- * balanced by measured time, each started only after the trust check (docs/cli/proof/run.mdx#the-run). A proof Project whose tasks
+ * selection list of the commit. A proof Project whose tasks run as copies proves in copies of its default: one in each free CI place on
+ * every CI Node, balanced by measured time, each started only after the trust check (docs/cli/proof/run.mdx#the-run). A proof Project whose tasks
  * do not run as copies is refused with the error of the removed task VM runtime. The Gateway reads GitHub and fetches no code; the Swamp
  * parent `operation-proof-run-copy` of each run does the work. See docs/cli/proof/run.mmd.
  */
@@ -191,9 +191,9 @@ final readonly class ProofRunIntent
     }
 
     /**
-     * Admits the runs of a proof in copies, after the trust check: the copy places, the shards balanced over them, and for each shard
-     * its group, the copy start of that group and the run, which the Gateway holds until the copy is active (ProofChildStarts). The
-     * reads of the default and its Node run before the transaction.
+     * Admits the runs of a proof in copies, after the trust check: the free CI places on every Node, the shards balanced over them, and
+     * for each shard its group, the copy start of that group on the Node of its place and the run, which the Gateway holds until the
+     * copy is active (ProofChildStarts). The reads of Prometheus, the default and each Node run before the transaction.
      *
      * @param  array<string,mixed>  $intent
      * @param  list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float}>  $batches
@@ -201,33 +201,36 @@ final readonly class ProofRunIntent
     private function admitCopies(Operation $proof, string $commit, array $intent, array $batches, Project $project, string &$waitStep): void
     {
         $waitStep = ProofCopies::WaitStep;
-        // A proof with no copy place waits without reading the default and its Node; the transaction counts the places again.
-        if (app(ProofCopies::class)->places($project) < 1) {
-            throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for a free copy place: a proof leaves '.ProofCopies::KeptForTasks.' copy places for task groups.');
+        $copies = app(ProofCopies::class);
+        $placeRead = $copies->read();
+        // A proof with no free place waits without reading the default and the Nodes; the transaction counts the places again.
+        if ($copies->places($project, $placeRead) === []) {
+            throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for a free CI place on a CI Node.');
         }
-        $read = app(TaskCopyStart::class)->read($project);
-        DB::transaction(function () use ($proof, $commit, $intent, $batches, $project, $read, &$waitStep): void {
+        $read = app(TaskCopyStart::class)->read($project, array_keys($copies->places($project, $placeRead)));
+        DB::transaction(function () use ($proof, $commit, $intent, $batches, $project, $read, $placeRead, $copies, &$waitStep): void {
             $current = $this->openForAdmission($proof, $waitStep);
             if ($current === null) {
                 return;
             }
-            $copies = app(ProofCopies::class);
-            $places = $copies->places($project);
-            if ($places < 1) {
-                $waitStep = ProofCopies::WaitStep;
-                throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for a free copy place: a proof leaves '.ProofCopies::KeptForTasks.' copy places for task groups.');
+            $waitStep = ProofCopies::WaitStep;
+            // Counted again under the lock, on the Nodes whose ID map was read.
+            $places = array_intersect_key($copies->places($project, $placeRead), $read['hosts']);
+            if ($places === []) {
+                throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for a free CI place on a CI Node.');
             }
-            $shards = ProofBatchPlan::split($batches, $places);
+            $shards = ProofBatchPlan::split($batches, array_sum($places));
             // A shard that cannot finish within the longest shard budget waits for more places while more can come.
-            if ($places < $copies->mostPlaces() && array_any($shards, ProofBatchPlan::overBudget(...))) {
-                $waitStep = ProofCopies::WaitStep;
-                throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for more copy places: on '.count($shards).' copy place(s) a shard would run longer than '.ProofBatchPlan::MaxShardSeconds.' seconds.');
+            if (array_sum($places) < $copies->mostPlaces($project, $placeRead) && array_any($shards, ProofBatchPlan::overBudget(...))) {
+                throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for more free CI places: on '.count($shards).' place(s) a shard would run longer than '.ProofBatchPlan::MaxShardSeconds.' seconds.');
             }
+            $nodes = Node::query()->findMany(array_keys($places))->keyBy('id');
             $runs = [];
-            foreach ($shards as $assignments) {
+            foreach (self::spread($places, count($shards)) as $index => $nodeId) {
+                $assignments = $shards[$index];
                 $case = $assignments[0];
                 $group = $this->group($commit, $case['command']);
-                $copy = Instance::query()->findOrFail(app(TaskCopyStart::class)->admitRead($group, ProofGroup::Trigger, null, $read)->target_id);
+                $copy = Instance::query()->findOrFail(app(TaskCopyStart::class)->admitRead($group, ProofGroup::Trigger, null, $read, $nodes->get($nodeId))->target_id);
                 $stored = ProofBatchPlan::stored($assignments);
                 $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(StartOperationAction::class)->execute('proof.command', 'task_group', $group->id, $copy->node_id, [
                     'proof_operation_id' => $proof->id, 'commit' => $commit, 'command' => $case['command'], 'file' => $case['file'], 'copy' => true,
@@ -241,7 +244,28 @@ final readonly class ProofRunIntent
         });
     }
 
-    /** A held proof reads `waiting` until admission makes it `running`; a proof with no free copy place waits within the total admission budget.
+    /**
+     * The Node of each shard, one shard per free place: the Nodes take turns, so fewer shards than places spread over the Nodes.
+     *
+     * @param  array<int, int>  $places
+     * @return list<int>
+     */
+    private static function spread(array $places, int $shards): array
+    {
+        $nodes = [];
+        while (count($nodes) < $shards) {
+            foreach ($places as $nodeId => $free) {
+                if ($free > 0 && count($nodes) < $shards) {
+                    $nodes[] = $nodeId;
+                    $places[$nodeId] = $free - 1;
+                }
+            }
+        }
+
+        return $nodes;
+    }
+
+    /** A held proof reads `waiting` until admission makes it `running`; a proof with no free CI place waits within the total admission budget.
      * @return bool whether another admission attempt was queued
      */
     private function waitForRoom(Operation $proof, string $reason, string $step): bool

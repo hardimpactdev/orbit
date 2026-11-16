@@ -33,7 +33,7 @@ return new class extends Migration
     private function replace(string $sameNode): void
     {
         DB::statement('DROP TRIGGER instance_runtimes_insert');
-        DB::unprepared(<<<SQL
+        DB::statement(<<<SQL
             CREATE TRIGGER instance_runtimes_insert
             BEFORE INSERT ON instance_runtimes
             WHEN NEW.node_id IS NOT (SELECT node_id FROM instances WHERE id = NEW.instance_id)

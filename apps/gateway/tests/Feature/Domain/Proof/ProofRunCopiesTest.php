@@ -2,12 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Data\Metrics\MetricsCredentialsData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
@@ -42,11 +46,14 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\ProofSeed;
 use App\Models\Route;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\WorkflowStartIntents;
@@ -188,7 +195,21 @@ beforeEach(function (): void {
     app()->instance(ProofCommitSource::class, $this->source);
     $node = containerDefaultNode();
     $node->update(['settings' => [...$node->settings, 'nested_fleet' => true]]);
-    Http::fake(['api.github.com/repos/nckrtl/trial' => Http::response(['full_name' => 'nckrtl/trial', 'private' => false])]);
+    // Prometheus as proof:run reads it: each CI Node's runner state and available memory (docs/cli/proof/run.mdx#the-run).
+    $metrics = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'metrics', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '10.44.0.3', 'user' => 'orbit',
+    ]));
+    $metrics->roles()->create(['role' => RoleName::Metrics, 'status' => 'active']);
+    $this->mock(MetricsCredentialManager::class, fn ($mock) => $mock->shouldReceive('storedCredentials')
+        ->andReturn(new MetricsCredentialsData('https://metrics.orbit', 'admin', 'secret')));
+    $this->ciNodes = [];
+    $this->prometheusUp = true;
+    Http::fake([
+        'api.github.com/repos/nckrtl/trial' => Http::response(['full_name' => 'nckrtl/trial', 'private' => false]),
+        '*/api/datasources' => Http::response([['type' => 'prometheus', 'uid' => 'prom']]),
+        '*/api/datasources/proxy/uid/prom/api/v1/query*' => fn (Request $request) => ! $this->prometheusUp ? Http::response([], 503)
+            : Http::response(['status' => 'success', 'data' => ['resultType' => 'vector', 'result' => copyProofSeries($this->ciNodes, str_contains((string) $request['query'], 'MemAvailable'))]]),
+    ]);
     $this->project = Project::query()->create(['name' => 'trial', 'slug' => 'trial', 'type' => 'node-package', 'repository_url' => 'https://github.com/nckrtl/trial.git',
         'default_branch' => 'main', 'root' => '.', 'is_laravel' => false, 'source_facts_captured_at' => now(), 'nested_fleet' => true]);
     $default = Instance::query()->findOrFail(containerCreate($this->project, $node->refresh())->target_id);
@@ -199,8 +220,53 @@ beforeEach(function (): void {
     Operation::query()->where('kind', 'instance.create')->update(['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null]);
     app(ProjectDevelopmentDeployStepStore::class)->create($this->project, new DevelopmentDeployStep('install-apps-gateway',
         'composer install --no-interaction --working-dir=apps/gateway', 300, true, ['apps/gateway/composer.lock']), null, null);
-    config(['proof.project' => $this->project->id, 'proof.execution' => true, 'proof.copies' => 2, 'orbit.tasks.copies_max' => 8]);
+    config(['proof.project' => $this->project->id, 'proof.execution' => true, 'proof.copy_memory' => 8 * 1024 ** 3, 'orbit.tasks.copies_max' => 8]);
+    // The default's own Node offers three CI places, idle, with memory for many copies.
+    copyProofCiNode($node->refresh(), 3);
 });
+
+/**
+ * Makes the Node a CI Node with its places, and records what Prometheus reads of it: its runners, `$busy` of them busy, its available
+ * memory and how old the runner state is.
+ */
+function copyProofCiNode(Node $node, int $places, int $busy = 0, int $memory = 64 * 1024 ** 3, int $age = 5): Node
+{
+    $node->update(['settings' => [...($node->settings ?? []), 'ci' => ['places' => $places, 'proof_only' => false]]]);
+    if (! $node->roles()->where('role', RoleName::CiRunner)->exists()) {
+        $node->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+    }
+    test()->ciNodes = [...test()->ciNodes, $node->name => ['places' => $places, 'busy' => $busy, 'memory' => $memory, 'age' => $age]];
+    Cache::flush();
+
+    return $node->refresh();
+}
+
+/**
+ * The node exporter series of the CI Nodes: the runner state, or the available memory.
+ *
+ * @param  array<string, array{places: int, busy: int, memory: int, age: int}>  $nodes
+ * @return list<array<string, mixed>>
+ */
+function copyProofSeries(array $nodes, bool $memory): array
+{
+    $series = [];
+    $line = static fn (string $name, string $node, int $value, array $labels = []): array => ['metric' => ['__name__' => $name, 'job' => 'orbit-node-exporter', 'node' => $node, ...$labels], 'value' => [now()->getTimestamp(), (string) $value]];
+    foreach ($nodes as $name => $node) {
+        if ($memory) {
+            $series[] = $line('node_memory_MemAvailable_bytes', $name, $node['memory']);
+
+            continue;
+        }
+        $series[] = $line('orbit_ci_runners_observed_timestamp_seconds', $name, now()->getTimestamp() - $node['age']);
+        $series[] = $line('orbit_ci_runners_read_ok', $name, 1);
+        foreach (range(1, $node['places']) as $index) {
+            $series[] = $line('orbit_ci_runner_info', $name, 1, ['runner' => $name.'-'.$index, 'state' => 'running', 'service' => 'active', 'version' => '2.330.0']);
+            $series[] = $line('orbit_ci_runner_busy', $name, $index <= $node['busy'] ? 1 : 0, ['runner' => $name.'-'.$index]);
+        }
+    }
+
+    return $series;
+}
 
 /** The request, then the queue job: the proof as the admission left it. */
 function copyProofAdmitted(): Operation
@@ -241,7 +307,7 @@ describe('proof:run in copies: admission', function (): void {
             ->and($this->ssh->calls)->toBe(0);
     });
 
-    it('starts one copy per shard, at most two, and a held run for each that names its copy', function (): void {
+    it('starts one copy per shard, one shard per free place and at most one per batch, and a held run for each that names its copy', function (): void {
         $proof = copyProofAdmitted();
         $runs = copyProofRuns();
         $copies = Instance::query()->whereNotNull('task_workspace_owner_id')->get();
@@ -257,23 +323,66 @@ describe('proof:run in copies: admission', function (): void {
             ->and(Task::topLevel()->whereKey($runs->pluck('target_id'))->get()->every(static fn (Task $group): bool => $group->status === TaskGroupStatus::Reserved))->toBeTrue();
     });
 
-    it('leaves two copy places for task groups: one shard with one place, and a wait with none', function (int $max, int $runs, OperationStatus $status): void {
-        config(['orbit.tasks.copies_max' => $max]);
+    it('takes the free CI places of the Node: its places minus busy runners and proof copies, within its available memory', function (int $places, int $busy, int $memoryCopies, int $runs): void {
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), $places, $busy, $memoryCopies * 8 * 1024 ** 3 + 1024);
         $proof = copyProofAdmitted();
 
-        expect($proof->status)->toBe($status)->and(copyProofRuns())->toHaveCount($runs)
-            ->and(Instance::query()->whereNotNull('task_workspace_owner_id')->count())->toBe($runs);
+        expect(copyProofRuns())->toHaveCount($runs)->and(Instance::query()->whereNotNull('task_workspace_owner_id')->count())->toBe($runs)
+            ->and($proof->status)->toBe($runs === 0 ? OperationStatus::Waiting : OperationStatus::Running);
         if ($runs === 0) {
-            expect($proof->current_step)->toBe('Wait for a free copy place');
+            expect($proof->current_step)->toBe('Wait for a free CI place');
         }
     })->with([
-        'eight places: two copies' => [8, 2, OperationStatus::Running],
-        'three places: one copy' => [3, 1, OperationStatus::Running],
-        'two places: none, it waits' => [2, 0, OperationStatus::Waiting],
+        'three idle places: one copy per batch' => [3, 0, 8, 2],
+        'one busy runner of two places: one copy' => [2, 1, 8, 1],
+        'every place busy: it waits' => [2, 2, 8, 0],
+        'memory for one copy peak: one copy' => [3, 0, 1, 1],
+        'memory short of one copy peak: it waits' => [3, 0, 0, 0],
     ]);
+
+    it('counts the proof copies already on the Node, and no task copy, against its places', function (): void {
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 2);
+        copyProofOtherCopies(3);
+        $default = Instance::query()->where('name', 'default')->firstOrFail();
+        $proofCopy = Instance::query()->where('name', 'other-1')->firstOrFail();
+        Operation::query()->create(['kind' => ProofGroup::OwnerKind, 'target_type' => 'task_group', 'target_id' => $proofCopy->task_workspace_owner_id,
+            'node_id' => $default->node_id, 'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+
+        copyProofAdmitted();
+
+        expect(copyProofRuns()->where('input.proof_operation_id', '!=', null)->count())->toBe(1);
+    });
+
+    it('waits while Prometheus does not answer or the runner state is stale', function (Closure $change): void {
+        $change->call($this);
+        $proof = copyProofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Waiting)->and(copyProofRuns())->toHaveCount(0)
+            ->and(Instance::query()->whereNotNull('task_workspace_owner_id')->count())->toBe(0);
+    })->with([
+        'Prometheus down' => [function (): void {
+            $this->prometheusUp = false;
+        }],
+        'a stale runner state' => [fn () => copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 3, age: 600)],
+    ]);
+
+    it('places copies on several CI Nodes, each from its own Node\'s seed, and none on a Node whose seed is behind', function (): void {
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 1);
+        $ci = copyProofCiOnlyNode('ci-a', '10.44.0.21', current: true);
+        copyProofCiOnlyNode('ci-b', '10.44.0.22', current: false);
+        $proof = copyProofAdmitted();
+        $copies = Instance::query()->whereNotNull('task_workspace_owner_id')->with('runtime')->get();
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and(copyProofRuns())->toHaveCount(2)
+            ->and($copies->pluck('node_id')->sort()->values()->all())->toBe(collect([Node::query()->where('name', 'beast')->value('id'), $ci->id])->sort()->values()->all())
+            ->and($copies->every(static fn (Instance $copy): bool => $copy->runtime?->clone_source_instance_id === Instance::query()->where('name', 'default')->value('id')))->toBeTrue();
+        $onCi = $copies->firstWhere('node_id', $ci->id);
+        $clone = app(InstanceContainer::class)->intent($onCi, $onCi->runtime)['clone'] ?? null;
+        expect($clone['source'] ?? null)->toBe('orbit-proof-seed-ci-a')->and($clone['seed_commit'] ?? null)->toBe(str_repeat('c', 40));
+    });
 });
 
-/** Task copies of other groups on the default's Node: each counts as a live copy. */
+/** Task copies of other groups on the default's Node: each counts as a live task copy, and takes no CI place. */
 function copyProofOtherCopies(int $count): void
 {
     $default = Instance::query()->where('name', 'default')->firstOrFail();
@@ -286,9 +395,25 @@ function copyProofOtherCopies(int $count): void
     }
 }
 
-describe('proof:run in copies: the wait for a copy place', function (): void {
+/** A CI-only Node that offers proof places, idle, whose seed of the proof default is current or one seed behind. */
+function copyProofCiOnlyNode(string $name, string $address, bool $current): Node
+{
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'wireguard_ip' => $address, 'public_ssh_host' => $address, 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
+        'settings' => ['nested_fleet' => true]]));
+    app(AllocateInstanceBridgeAction::class)->execute($node);
+    $node = copyProofCiNode($node->refresh(), 2);
+    $default = InstanceRuntime::query()->whereHas('instance', static fn ($instance) => $instance->where('name', 'default'))->firstOrFail();
+    $default->update(['seed_taken_at' => $default->seed_taken_at ?? now()->subHour()]);
+    ProofSeed::query()->create(['node_id' => $node->id, 'holder' => 'orbit-proof-seed-'.$name, 'operation_id' => 1,
+        'commit' => $current ? $default->seed_commit : str_repeat('b', 40), 'taken_at' => $default->seed_taken_at]);
+
+    return $node;
+}
+
+describe('proof:run in copies: the wait for a free CI place', function (): void {
     it('reads waiting with the wait text and no start time while held, and the status filter finds it', function (): void {
-        config(['orbit.tasks.copies_max' => 2]);
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 2, busy: 2);
         $proof = copyProofAdmitted();
 
         expect($proof->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe(ProofCopies::WaitStep)
@@ -299,7 +424,7 @@ describe('proof:run in copies: the wait for a copy place', function (): void {
     });
 
     it('cancels a waiting proof, and its retry job then leaves it cancelled', function (): void {
-        config(['orbit.tasks.copies_max' => 2]);
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 2, busy: 2);
         $proof = copyProofAdmitted();
         expect($proof->status)->toBe(OperationStatus::Waiting);
 
@@ -311,7 +436,7 @@ describe('proof:run in copies: the wait for a copy place', function (): void {
     });
 
     it('expires the admission allowance for operators as well as CI before it records any run or copy', function (bool $ci): void {
-        config(['orbit.tasks.copies_max' => 2]);
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 2, busy: 2);
         $caller = Node::query()->where('name', 'control')->firstOrFail();
         $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
         $proof = app(ProofRunIntent::class)->start(COPY_PROOF_SHA, false, 'test', null, authenticatedCaller: $ci ? $caller : null);
@@ -328,22 +453,21 @@ describe('proof:run in copies: the wait for a copy place', function (): void {
 });
 
 describe('proof:run in copies: the shard budget', function (): void {
-    it('waits for another copy place rather than plan a shard past the longest shard budget, and runs it once it has every place it may take', function (): void {
+    it('waits for another CI place rather than plan a shard past the longest shard budget, and runs it once every place is free', function (): void {
         // Measured seconds: both batches on one copy take (600 + 2 x 180 + 6,000) x 1.5 s, more than one shard may take.
         $default = Instance::query()->where('name', 'default')->firstOrFail();
         Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'node', 'target_id' => $default->node_id, 'node_id' => $default->node_id,
             'status' => OperationStatus::Succeeded, 'input' => [], 'result' => ['cases' => [
                 ['program' => 'swamp/proof/firewall/allow.cases.yaml#allow', 'seconds' => 3000], ['program' => 'swamp/proof/firewall/allow.cases.yaml#refused', 'seconds' => 3000]]]]);
-        config(['orbit.tasks.copies_max' => 5]);
-        copyProofOtherCopies(2);
+        $node = copyProofCiNode(Node::query()->findOrFail($default->node_id), 3, busy: 2);
         $proof = copyProofAdmitted();
 
-        expect($proof->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe('Wait for a free copy place')
-            ->and($proof->state['capacity_wait_reason'])->toContain('Waiting for more copy places')
+        expect($proof->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe('Wait for a free CI place')
+            ->and($proof->state['capacity_wait_reason'])->toContain('Waiting for more free CI places')
             ->and(copyProofRuns())->toHaveCount(0);
 
-        // With as many places as a proof may take, it runs: here both places, one batch each.
-        config(['orbit.tasks.copies_max' => 6]);
+        // With every place free, it runs: one batch on each of two places.
+        copyProofCiNode($node, 3);
         app(ProofRunIntent::class)->admit($proof->id);
         expect($proof->refresh()->status)->toBe(OperationStatus::Running)->and(copyProofRuns())->toHaveCount(2);
     });

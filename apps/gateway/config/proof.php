@@ -12,8 +12,9 @@ return [
     'execution' => filter_var(env('ORBIT_PROOF_RUN_EXECUTION', true), FILTER_VALIDATE_BOOL),
     // The Project whose task groups carry a proof: the nested-fleet Project of the Orbit container. Each run is a copy of its default.
     'project' => 78,
-    // The most copies one proof takes at once (docs/cli/proof/run.mdx#the-run). A proof also leaves two copy places for task groups.
-    'copies' => 2,
+    // One copy's peak memory in bytes, with room above the measured peak. A copy goes on a Node only when the Node's MemAvailable
+    // holds it (docs/cli/proof/run.mdx#the-run); the free CI places of each Node count the rest.
+    'copy_memory' => 8 * 1024 ** 3,
     // The repository whose commits Orbit proves, as owner/name.
     'repository' => 'hardimpactdev/orbit',
     // The branch whose merge base starts a commit's diff.

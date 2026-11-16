@@ -35,6 +35,7 @@ use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ProjectRoot;
@@ -80,7 +81,7 @@ final readonly class StartDevelopmentInstanceCreateAction
 
         // Projects added before source facts existed capture them once, outside the admission transaction.
         $project = Project::query()->findOrFail($data->projectId);
-        InstancePlacement::assert($project, Node::query()->find($data->nodeId));
+        InstancePlacement::assert($project, Node::query()->find($data->nodeId), $taskOwner !== null);
         if ($project->source_facts_captured_at === null && $project->source_access !== ProjectSourceAccess::GhCli) {
             app(CaptureProjectSourceFactsAction::class)->execute($project);
         }
@@ -96,7 +97,7 @@ final readonly class StartDevelopmentInstanceCreateAction
             $project = Project::query()->findOrFail($data->projectId);
             $this->admission->assertSourceAccess($project);
             $node = Node::query()->findOrFail($data->nodeId);
-            $this->admission->assertProject($project, $node);
+            $this->admission->assertProject($project, $node, $taskOwner !== null);
             $root = $data->root === null ? null : ProjectRoot::validate($data->root, $project->type);
             $name = DefaultInstanceName::resolve($project, $data->name);
             $instance = Instance::query()->where('project_id', $project->id)->where('name', $name)->lockForUpdate()->first();
@@ -104,7 +105,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 : app(DevelopmentInstanceBranchAdmission::class)->reserve($project, $observed, $selection, $instance, $caller);
             $created = ! $instance instanceof Instance;
             // A container Instance is the Project's default, or a clone of that default ($source).
-            [$container, $source] = $this->container($project, $node, $name, $instance, $data);
+            [$container, $source] = $this->container($project, $node, $name, $instance, $data, $taskOwner instanceof Task);
             InstancePlacement::place($project, $node, $container);
             if ($taskOwner instanceof Task && ($instance instanceof Instance || ! $source instanceof Instance)) {
                 throw new ResourceOperationException('tasks.copy_name_taken', "A task copy is a new clone of the default; Instance [{$name}] cannot be one.", 409);
@@ -364,7 +365,7 @@ final readonly class StartDevelopmentInstanceCreateAction
      *
      * @return array{0: bool, 1: Instance|null} Whether it is a container, and the default it clones
      */
-    private function container(Project $project, Node $node, string $name, ?Instance $instance, CreateInstanceData $data): array
+    private function container(Project $project, Node $node, string $name, ?Instance $instance, CreateInstanceData $data, bool $taskCopy): array
     {
         if ($instance instanceof Instance) {
             $runtime = $instance->runtime()->first();
@@ -374,7 +375,10 @@ final readonly class StartDevelopmentInstanceCreateAction
         }
         $default = $name === 'default' ? null : Instance::query()->where('project_id', $project->id)->where('name', 'default')->first();
         if ($default instanceof Instance && $default->runtime()->exists()) {
-            if ($default->node_id !== $node->id) {
+            // A clone is made on its default's Node. A proof copy may go to another Node that holds the default's current seed
+            // (TaskCopyStart::seed); the database keeps the same rule.
+            $seeds = app(ProofSeeds::class);
+            if ($default->node_id !== $node->id && ! ($taskCopy && $seeds->source()?->instance_id === $default->id && $seeds->holder($node) !== null)) {
                 throw new ResourceOperationException('instance.default_missing',
                     "The Project's default Instance runs on Node [{$default->node_id}]. Create its other Instances there.", 409);
             }
