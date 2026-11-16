@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes\Storage;
 
+use App\Data\Nodes\NodeCiData;
 use App\Data\Nodes\NodeSettingsData;
 use App\Data\Nodes\NodeStorageAppsData;
 use App\Data\Nodes\NodeTaskVmsData;
+use Spatie\LaravelData\Optional;
 
 final readonly class NodeSettingsNormalizer
 {
@@ -20,6 +22,7 @@ final readonly class NodeSettingsNormalizer
             apps: $this->nested($settings->appsPath()),
             task_vms: $settings->task_vms,
             nested_fleet: $settings->nested_fleet,
+            ci: $settings->ci,
         );
 
         return $normalized->isEmpty() ? null : $normalized;
@@ -38,6 +41,7 @@ final readonly class NodeSettingsNormalizer
             'apps' => $normalized->appsPath() === null ? null : ['path' => $normalized->appsPath()],
             'task_vms' => $normalized->task_vms?->toArray(),
             'nested_fleet' => $normalized->nested_fleet ? true : null,
+            'ci' => $normalized->ci()?->toArray(),
         ], static fn (array|bool|null $member): bool => $member !== null);
     }
 
@@ -73,6 +77,11 @@ final readonly class NodeSettingsNormalizer
             $result['nested_fleet'] = true;
         }
 
+        unset($result['ci']);
+        if ($normalized?->ci() !== null) {
+            $result['ci'] = $normalized->ci()->toArray();
+        }
+
         unset($result['task_vms']);
         if ($normalized?->task_vms !== null) {
             $result['task_vms'] = $normalized->task_vms->toArray();
@@ -91,6 +100,7 @@ final readonly class NodeSettingsNormalizer
             apps: $this->nestedFromStored($value['apps'] ?? null),
             task_vms: is_array($value['task_vms'] ?? null) ? NodeTaskVmsData::from($value['task_vms']) : null,
             nested_fleet: ($value['nested_fleet'] ?? false) === true,
+            ci: is_array($value['ci'] ?? null) ? NodeCiData::from($value['ci']) : new Optional,
         ));
     }
 

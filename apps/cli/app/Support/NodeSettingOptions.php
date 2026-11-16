@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use JsonException;
+use Orbit\Sdk\Requests\Nodes\CiPlacesInput;
 use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeSettings;
 use Orbit\Sdk\Responses\Nodes\TaskVmsSettings;
@@ -108,6 +109,29 @@ final readonly class NodeSettingOptions
         return ['ok' => true, 'value' => $host];
     }
 
+    /**
+     * Reads the CI options of node:update (docs/reference/node-settings.md#ci-places): `--ci-places` from 0 to 64, one of the
+     * proof-only switches, or `--no-ci` alone to clear the setting. `provided` is false when no CI option was given.
+     *
+     * @return array{ok: true, provided: bool, value: CiPlacesInput|null}|array{ok: false, code: string, message: string}
+     */
+    public static function parseCi(mixed $places, bool $proofOnly, bool $notProofOnly, bool $clear): array
+    {
+        if (($clear && (is_string($places) || $proofOnly || $notProofOnly)) || ($proofOnly && $notProofOnly)) {
+            return ['ok' => false, 'code' => 'node.ci_option_conflict',
+                'message' => 'Use --no-ci alone, and only one of --ci-proof-only or --no-ci-proof-only.'];
+        }
+        if (is_string($places) && (preg_match('/^\d{1,2}$/', $places) !== 1 || (int) $places > 64)) {
+            return ['ok' => false, 'code' => 'node.ci_places_invalid', 'message' => 'CI places must be an integer from 0 to 64.'];
+        }
+        if ($clear) {
+            return ['ok' => true, 'provided' => true, 'value' => null];
+        }
+        $input = new CiPlacesInput(is_string($places) ? (int) $places : null, $proofOnly ? true : ($notProofOnly ? false : null));
+
+        return ['ok' => true, 'provided' => $input->toArray() !== [], 'value' => $input];
+    }
+
     public static function taskVms(mixed $value): ?TaskVmsSettings
     {
         return is_array($value) ? TaskVmsSettings::fromGatewayData($value) : null;
@@ -139,19 +163,19 @@ final readonly class NodeSettingOptions
     }
 
     /**
-     * The task container side: places and bridge network, with an optional project and bridge name.
+     * The task container side: task places and bridge network, with an optional project and bridge name. It has no CI places.
      *
      * @param  array<string, mixed>  $value
      */
     private static function validContainers(array $value): bool
     {
-        if (! is_string($value['cidr'] ?? null) || ! is_int($value['task_places'] ?? null) || ! is_int($value['ci_places'] ?? null)) {
+        if (! is_string($value['cidr'] ?? null) || ! is_int($value['task_places'] ?? null)) {
             return false;
         }
 
         return array_all($value, static fn (mixed $item, string $key): bool => match ($key) {
             'cidr', 'project', 'network' => is_string($item),
-            'task_places', 'ci_places' => is_int($item),
+            'task_places' => is_int($item),
             default => false,
         });
     }

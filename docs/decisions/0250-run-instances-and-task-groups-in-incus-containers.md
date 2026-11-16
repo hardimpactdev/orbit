@@ -129,7 +129,7 @@ An update installs a new version and flips the link. Orbit then restarts T3, or 
 
 ### PHP
 
-FrankenPHP serves every container Instance, in classic mode, as an Orbit Process: in development now, and in production once it has proved itself in development, by the criteria of the plan's production gate. The command line runs a static PHP CLI from the same static build, with the same version and extensions. `frankenphp php-cli` behind a `php` shim does not fit yet: it refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run without a script.
+FrankenPHP serves every container Instance, in classic mode, as an Orbit Process: in development now, and in production once it has proved itself in development, by the criteria of the plan's production gate. The command line runs a static PHP CLI from the same static build, with the same version and extensions. `frankenphp php-cli` behind a `php` shim does not fit yet: it refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run without a script. [ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov) adds PCOV to the PHP CLI only, from the same build.
 
 Each Project type has one environment note: a web app with previews, a monorepo, or a package. In the agent's home, `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` link to the note of the Instance's Project type. This is a narrow exception to "the runtime injects no prompts": a note states facts about the environment only, never instructions about the work.
 

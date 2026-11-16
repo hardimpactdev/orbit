@@ -15,7 +15,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-/** Changes a Node's name, platform, LAN address, reboot hold, apps folder, or task VM host settings; only an apps folder change starts a run. */
+/** Changes a Node's name, platform, LAN address, reboot hold, apps folder, task VM host settings, or CI places; only an apps folder change starts a run. */
 final class UpdateNodeRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
@@ -36,6 +36,8 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
         private readonly ?string $lanIp = null,
         private readonly ?bool $rebootHold = null,
         private readonly ?bool $imageRefreshHold = null,
+        private readonly bool $hasCi = false,
+        private readonly ?CiPlacesInput $ci = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -93,6 +95,10 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
 
         if ($this->hasTaskVms) {
             $body['task_vms'] = $this->taskVms?->toArray();
+        }
+
+        if ($this->hasCi) {
+            $body['ci'] = $this->ci?->toArray();
         }
 
         return $body;

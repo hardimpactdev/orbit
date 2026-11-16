@@ -73,7 +73,7 @@ it('gives the container bridge of a host its own DHCP and DNS input rules, apart
         'name' => 'container-host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.3',
         'public_ssh_host' => '10.44.0.3', 'user' => 'orbit',
         'settings' => ['task_vms' => ['cidr' => '10.252.42.0/24', 'task_places' => 2,
-            'containers' => ['cidr' => '10.252.43.0/24', 'task_places' => 1, 'ci_places' => 1]]],
+            'containers' => ['cidr' => '10.252.43.0/24', 'task_places' => 1]]],
     ]));
     $catalog = app(NodeFirewallRuleCatalog::class);
     $input = $catalog->taskHostInput($node);

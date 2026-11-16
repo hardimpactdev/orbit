@@ -16,11 +16,11 @@ sequenceDiagram
   CLI->>GW: node:update NODE<br/>--apps-path=PATH
   %%> Command:
   %%> - `orbit node:update NODE --apps-path=PATH`
-  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--reboot-hold=BOOL] [--image-refresh-hold|--no-image-refresh-hold] [--apps-path=PATH] [--task-vms=JSON] [--json]`
+  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--reboot-hold=BOOL] [--image-refresh-hold|--no-image-refresh-hold] [--apps-path=PATH] [--task-vms=JSON] [--ci-places=N] [--ci-proof-only|--no-ci-proof-only] [--no-ci] [--json]`
   %%> Input:
   %%> - the Node, and at least one setting to change
   %%> - an apps-folder change or withdrawal of existing task-host input rules needs Node work; other changes are records
-  %%> - an empty value unsets a setting: `--lan-ip=` clears the LAN address, `--apps-path=` unsets the folder, `--task-vms=null` removes the task VM host settings
+  %%> - an empty value unsets a setting: `--lan-ip=` clears the LAN address, `--apps-path=` unsets the folder, `--task-vms=null` removes the task VM host settings, `--no-ci` clears the CI places
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   %%> - the API-only boolean `nested_fleet` records the Node hosting switch; absence keeps its value, including a combined asynchronous apps update; the next `app-dev` converge of a build-list Node prepares nested-fleet hosting and builds the nested-fleet image while it is on (node-settings reference)
@@ -28,19 +28,29 @@ sequenceDiagram
   %%> Requirements:
   %%> - the calling Node has an access grant to the target Node
   %%> - `task_vms.task_places` and `task_vms.ci_places` are separate VM counts from 0 to 64; one live VM holds one place until deletion is confirmed
-  %%> - the optional `task_vms.containers` member has its own `task_places` and `ci_places`, counted apart from the VM places, and its own Incus project, bridge and CIDR
+  %%> - the optional `task_vms.containers` member has its own `task_places`, counted apart from the VM places, and its own Incus project, bridge and CIDR; it has no CI places
+  %%> - only a Node with an active `ci-runner` role takes CI places; `ci.places` from 0 to 64 is shared by runner jobs and proof copies, and `ci.proof_only` keeps them for proof copies; an omitted member keeps its value
   %%> - lowering either count removes no claim; task work and operator proofs share FIFO task admission, while authenticated CI proofs and base refresh use CI places
   %%> - every value passes the checks that the Node settings reference lists; a failed check changes nothing
   %%> - a LAN address is IPv4 and no other Node of the same network has it (`cluster.lan_ip_conflict`): every Node on the hub's private network, else the Node's Cluster, or every Node outside a Cluster
   %%> - no other lifecycle change runs for the target; the Gateway holds the Node's name lock, and the new name's lock for a rename
   %%> Decides:
   %%> - whether the apps folder changes and needs Node work, so a run starts
-  alt task VM host settings invalid
+  alt CI places without the role
+    %% path: ci-role-missing
+    GW--xCLI: No active ci-runner role<br/>node.settings_ci_runner_required
+    %%> When:
+    %%> - the request sets CI places on a Node whose `ci-runner` role is absent or not active
+    %%> Result:
+    %%> - HTTP 422; nothing changes and no run starts
+    %%> - clearing the CI places with `--no-ci` is allowed on any Node
+  else settings invalid
     %% path: settings-refused
     GW--xCLI: Settings refused<br/>node.settings_invalid
     %%> When:
     %%> - a field fails its check, or a bridge of the host overlaps the VPN subnet, another bridge of the host, or a bridge of another host
     %%> - `containers` uses the host's VM project or bridge name
+    %%> - a first CI setting has no `places`
     %%> Result:
     %%> - nothing changes and no run starts
   else task containers still live
@@ -57,7 +67,7 @@ sequenceDiagram
     %%> - the new apps folder, and the managed user and group that must own it
     %%> - the target's address and SSH host keys; the SSH identity comes from the `swamp` role
     %%> Not stored yet:
-    %%> - the settings stay unchanged until the run succeeds; a new name, platform, LAN address or either hold in the same request is saved at once
+    %%> - the settings stay unchanged until the run succeeds; a new name, platform, LAN address, either hold or CI places in the same request are saved at once
     %%> Unsetting on a Node with an active `app-dev` role:
     %%> - prepares the default folder, `<managed-user-home>/apps`
     GW-->>CLI: 202 Accepted<br/>task ID
@@ -114,7 +124,7 @@ sequenceDiagram
     %% path: records
     Note over GW: Save the records
     %%> What it does:
-    %%> - saves the name, platform, LAN address, reboot hold, image refresh hold or task VM host settings at once when no apps preparation or task-host input withdrawal is needed; no Node is contacted
+    %%> - saves the name, platform, LAN address, reboot hold, image refresh hold, task VM host settings or CI places at once when no apps preparation or task-host input withdrawal is needed; no Node is contacted
     %%> - `--image-refresh-hold` and `--no-image-refresh-hold` store the image refresh hold; every Node read shows it; nothing reads it since the task VM image refresh was removed
     %%> - `--reboot-hold=true` or `false` saves a boolean column; every Node read shows it; the next fleet reboot admission freezes it
     %%> - a new LAN address takes effect where Orbit next renders it; a Node on the hub's private network moves to the hub's LAN endpoint at its next `node:converge`

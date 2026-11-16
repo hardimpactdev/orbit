@@ -17,6 +17,8 @@ from contextlib import closing
 GUEST_COMMANDS = ("conn-server", "curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 # The Node's clone script hands this helper to the `workspace` and `services` parts in their intent.
 NODE_RUNTIME = "/usr/local/libexec/orbit-instance-node-runtime.py"
+# The CLI-only PHP settings (php-runtime.md#pcov-in-the-cli-only).
+PHP_CLI_INI = "/etc/orbit/php/php-cli.ini"
 # The commands whose own stderr follows the diagnostic line, for the Node's clone script to redact: none of them sees a token that T3
 # issues in the container or a Project's value, which that script could not know (development-containers.md).
 STDERR_COMMANDS = ("git", "mkdir", "systemctl")
@@ -477,6 +479,14 @@ def phase_main(phase, raw):
                 "memory_limit = 1G\n"
                 "auto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n",
             )
+        # The same CLI-only file as the container phase, such as PCOV for the Project's PHP: `php` and `frankenphp php-cli` (SAPI
+        # name `cli`) read php-cli.ini, the FrankenPHP server (SAPI name `frankenphp`) never does. A Project without it has none.
+        cli_ini = c["php_cli_ini"]
+        if cli_ini is not None:
+            write(PHP_CLI_INI, cli_ini)
+        elif root(PHP_CLI_INI).is_file():
+            root(PHP_CLI_INI).unlink()
+            changes.append(PHP_CLI_INI)
         # A running unit read the old settings at its start.
         php_settings_changed = len(changes) > php_settings
         # The existing Processes phase's group-write guarantee and foreign-owner cleanup.

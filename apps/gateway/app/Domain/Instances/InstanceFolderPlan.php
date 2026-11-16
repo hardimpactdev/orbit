@@ -63,9 +63,10 @@ final readonly class InstanceFolderPlan
     }
 
     /**
-     * Each published static PHP build as the part `php/<version>`, which unpacks to `php/<version>/bin/{php,frankenphp}`. Its
-     * programs stay out of the folder's `bin`: an Instance picks its PHP version. The install checks both binaries against
-     * `static_php`. A build whose SHA-256 the recipe does not record yet has no bytes to install.
+     * Each published static PHP build as the part `php/<version>`, which unpacks to `php/<version>/bin/{php,frankenphp}` and
+     * `php/<version>/modules/<name>.so`. Its programs stay out of the folder's `bin`: an Instance picks its PHP version. The
+     * install checks both binaries, and the CLI with each CLI-only extension, against `static_php`. A build whose SHA-256 the
+     * recipe does not record yet has no bytes to install.
      *
      * @return list<array<string, mixed>>
      */
@@ -78,7 +79,7 @@ final readonly class InstanceFolderPlan
             }
             $parts[] = ['name' => "php/{$version}", 'version' => $build->phpVersion, 'url' => $build->artifact->location, 'archive' => 'tar',
                 'sha256' => $build->artifact->digest, 'bin' => [],
-                'static_php' => ['php_version' => $build->phpVersion, 'extensions' => $build->extensions]];
+                'static_php' => ['php_version' => $build->phpVersion, 'extensions' => $build->extensions, 'cli_extensions' => $build->cliExtensions]];
         }
 
         return $parts;

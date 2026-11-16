@@ -1,20 +1,20 @@
 ---
 title: "Node settings"
-description: "Typed Node settings for the apps root and operator-owned task VM hosts, with validation and explicit host configuration."
+description: "Typed Node settings for the apps root, operator-owned task VM hosts and the CI places of a CI Node, with validation and explicit host configuration."
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
   - apps/gateway/app/{Actions/Nodes/UpdateNodeAction,Domain/Nodes/UpdateNodeResult,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
   - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
-  - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_05_000000_add_reboot_hold_to_nodes_table,2027_02_06_000000_add_image_refresh_hold_to_nodes_table}.php
+  - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData,NodeCiData}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_05_000000_add_reboot_hold_to_nodes_table,2027_02_06_000000_add_image_refresh_hold_to_nodes_table,2027_02_24_000000_drop_task_container_ci_places}.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeRequest.php
   - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeCommand}.php
-  - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/TaskVmsSettings,Requests/Nodes/UpdateNodeRequest}.php
+  - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/TaskVmsSettings,Responses/Nodes/CiSettings,Requests/Nodes/UpdateNodeRequest,Requests/Nodes/CiPlacesInput}.php
 ---
 
 # Node settings
 
-A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or [`node:update`](/cli/node/update). The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
+A Node has typed settings for its development apps root (`apps.path`), its task VM host configuration (`task_vms`) and, on a CI Node, its [CI places](#ci-places) (`ci`). Set them with `node:add` or [`node:update`](/cli/node/update); only `node:update` sets `ci`. The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
 
 A settings change that touches the apps root records a `node.update` Operation and returns HTTP 202. Adding task-host settings or changing capacity is stored at once. Removing an existing task host or changing its bridge or CIDR records an Operation that withdraws its owned DHCP/DNS input rules before saving the settings. Clearing `apps.path` on a Node without an active `app-dev` role starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/update.mmd) shows both paths.
 
@@ -69,7 +69,7 @@ orbit node:update app-dev --apps-path=/mnt/apps
 { "apps": { "path": "/mnt/apps" } }
 ```
 
-The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null, and `task_vms` as a typed object or null. The settings object and its nested objects reject unknown fields. The request needs at least one member; the `apps.path` member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path.
+The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null, `task_vms` as a typed object or null, and `ci` as an object or null. The settings object and its nested objects reject unknown fields. The request needs at least one member; the `apps.path` member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path.
 
 A patch changes only the members it names. Other stored keys stay, and the API never returns them. When a patch needs no run and every value equals the stored one, Orbit writes nothing, and the response adds `meta.skipped: node.unchanged`. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
 
@@ -130,7 +130,7 @@ The optional `containers` object gives a host task container places beside its t
     "cidr": "10.251.77.0/24",
     "task_places": 2,
     "ci_places": 2,
-    "containers": { "cidr": "10.251.78.0/24", "task_places": 1, "ci_places": 1 }
+    "containers": { "cidr": "10.251.78.0/24", "task_places": 1 }
   }
 }
 ```
@@ -138,12 +138,11 @@ The optional `containers` object gives a host task container places beside its t
 | Field | Required | Default | Meaning and validation |
 | --- | --- | --- | --- |
 | `task_places` | Yes | | Task places for containers, integer from 0 to 64, apart from the VM `task_places` |
-| `ci_places` | Yes | | CI places for containers, integer from 0 to 64, apart from the VM `ci_places` |
 | `project` | No | `orbit-task-containers` | Incus project of the containers and their base, with the VM `project` rule. It must differ from the host's VM `project` |
 | `network` | No | `orbittaskc0` | Bridge of the containers, with the VM `network` rule. It must differ from the host's VM `network` |
 | `cidr` | Yes | | Bridge network, with the VM `cidr` rule. It must not overlap the VPN subnet, the host's VM bridge, any bridge of another host, or any Node's Instance bridge |
 
-The host's `pool`, `cpus`, `memory`, `disk` and `operator_owned` apply to both runtimes. `image_alias` is a VM field only.
+The host's `pool`, `cpus`, `memory`, `disk` and `operator_owned` apply to both runtimes. `image_alias` is a VM field only. The object has no CI places: the Node's [`ci.places`](#ci-places) replaces its former `ci_places` member, and an object that names `ci_places` is refused with `node.settings_invalid`.
 
 Container places are counted apart from VM places, and normal placement skips them until the operator turns on `task_vms.container_placement`; see [Place task VMs](/reference/compute-drivers#place-task-vms). While the host has a task container that is not destroyed, Orbit refuses to remove `containers` or to change its `project`, `network` or `cidr`, with HTTP 409 `task_vm.runtime_in_use`. Its places can change at any time.
 
@@ -162,6 +161,48 @@ The Gateway reads Node settings only. It does not copy `ORBIT_TASK_VMS_INCUS_HOS
 Verify the stored settings before removing `ORBIT_TASK_VMS_INCUS_HOSTS` from `gateway.env`; use [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change) to apply that removal.
 
 A configured task VM host builds the nested fleet of its VMs in the fleet phase of the common converge, on a base VM that has none (see [Build the nested fleet in the converge](/reference/compute-drivers#build-the-nested-fleet-in-the-converge)).
+
+## CI places
+
+A CI Node has one pool of CI places. One place runs one GitHub Actions runner job or one proof copy. Runner jobs and proof copies share the pool, unless the Node keeps its places for proof copies. The top-level `ci` setting holds the pool:
+
+```bash
+orbit node:update 14 --ci-places=4
+orbit node:update 14 --ci-proof-only
+orbit node:update 14 --no-ci
+```
+
+The API patch takes the object directly, beside the other members:
+
+```json
+{ "ci": { "places": 4, "proof_only": false } }
+```
+
+| Field | Required | Default | Meaning and validation |
+| --- | --- | --- | --- |
+| `places` | Yes, when the Node has no `ci` setting | | The number of places that runner jobs and proof copies share. Integer from 0 to 64 |
+| `proof_only` | No | `false` | `true` keeps every place for proof copies: runner jobs never use the Node's places |
+
+Only a Node with an active [`ci-runner` role](/reference/node-provisioning#ci-runner-role) can set `ci`:
+
+- A role that is still provisioning, failed or being removed is not active.
+- Orbit refuses a non-null `ci` on any other Node with HTTP 422 `node.settings_ci_runner_required`. Nothing changes.
+- The places of a Node count only while its `ci-runner` role is active.
+- A Node with no `ci` setting has no CI places.
+- A stored setting on a Node without that role grants nothing. Clear it with `"ci": null`.
+
+A patch changes the setting by these rules:
+
+- A patch changes only the members it names. `{"ci": {"proof_only": true}}` keeps the stored `places`.
+- The first `ci` patch of a Node must name `places`. Orbit refuses a first patch without it with `node.settings_invalid`.
+- `"ci": null` clears the setting on any Node. An absent `ci` member keeps it. `"ci": {}` names no member, and Orbit refuses it with `node.settings_invalid`.
+- The object rejects unknown members. `places` is a JSON integer, and `proof_only` is a JSON boolean.
+
+A change is a record. Orbit saves it at once and contacts no Node. `node:show` shows it as `CI places`. Node responses return the stored object and leave out `ci` when it is not set.
+
+Set the count from the CPU pressure of the full Node: all its places busy, together with any other work that the Node runs. Do not derive it from container memory limits. A Node with other work keeps its count small. It can set `proof_only` so that its few places serve proof copies only.
+
+`ci.places` replaces the CI places of the task container setting: `task_vms.containers` has no `ci_places` member. A database migration removed that member from every stored setting. The [subordinate-ID demand](#nested-fleet-instance-hosting) counts `ci.places` in their place. The CI places of a task VM host, `task_vms.ci_places`, are a separate count of the task VM settings. They stay until task VMs are removed.
 
 ## Derive the effective root
 
@@ -193,18 +234,21 @@ The CLI refuses a bad option before it sends a request.
 | `node.setting_unknown` | A `node:add` setting path is not supported. |
 | `node.setting_duplicate` | The same `node:add` setting path appears twice. |
 | `node.setting_invalid` | A `node:add` option has no colon or an empty setting path, or the task VM host settings are not a typed JSON object or `null`. |
-| `node.option_required` | `node:update` got none of `--name`, `--platform`, `--apps-path`, or `--task-vms`. |
+| `node.option_required` | `node:update` got no option that changes the Node. [`node:update`](/cli/node/update#errors) lists the options. |
+| `node.ci_option_conflict` | `node:update` got `--no-ci` with `--ci-places` or a CI proof-only option, or got both `--ci-proof-only` and `--no-ci-proof-only`. |
+| `node.ci_places_invalid` | `--ci-places` is not an integer from 0 to 64. |
 
 The Gateway refuses an invalid value without changing the stored setting.
 
 | Code | Condition |
 | --- | --- |
 | `node.settings_platform_unsupported` | Apps preparation and firewall withdrawal require a Linux Node. |
-| `node.settings_invalid` | The `apps` or `task_vms` value has an unknown member, is not an object or null, or fails a field check. An unknown top-level member or an empty body returns `validation.failed`. |
+| `node.settings_invalid` | The `apps`, `task_vms` or `ci` value has an unknown member, is not an object or null, or fails a field check. An unknown top-level member or an empty body returns `validation.failed`. |
 | `node.settings_path_invalid` | The path is empty or not absolute and normalized. |
 | `node.settings_path_protected` | The path overlaps a protected path. |
 | `node.settings_path_managed` | The path equals or lies inside an Instance checkout. |
 | `node.settings_root_failed` | The path failed the check or the preparation on the Node. |
+| `node.settings_ci_runner_required` | HTTP 422. A non-null `ci` value names a Node without an active `ci-runner` role. |
 | `task_vm.runtime_in_use` | HTTP 409. The request removes `task_vms.containers`, or changes its `project`, `network` or `cidr`, while the host has a task container that is not destroyed. |
 
 ## Why it works this way
@@ -249,8 +293,8 @@ The converge checks root's largest subordinate range in both `/etc/subuid` and `
 
 `13,172,736 + task IDs + S + 2 × 101,000,000`
 
-`13,172,736` is the normal Instance demand. Task IDs come from the task container places in `settings.task_vms.containers`, never from the task VM places: `(containers.task_places + containers.ci_places + 1) × 101,000,000`, or 0 when the Node has no `containers` block. `S` is the sum of the [ID map sizes](/reference/development-containers#the-id-map-size) that the Node's nested Instance runtimes record. The two spare maps leave room for a new nested default before the next converge.
+`13,172,736` is the normal Instance demand. Task IDs come from the task container places in `settings.task_vms.containers` and the [CI places](#ci-places) in `settings.ci`, never from the task VM places: `(containers.task_places + ci.places + 1) × 101,000,000`. A missing `containers` block or `ci` setting counts as 0 places. Task IDs are 0 when the Node has neither. One place gets one full-size map, and the `+ 1` is the map of the base. `S` is the sum of the [ID map sizes](/reference/development-containers#the-id-map-size) that the Node's nested Instance runtimes record. The two spare maps leave room for a new nested default before the next converge.
 
-So a Node with no `containers` block needs `13,172,736 + S + 2 × 101,000,000` IDs: 215,172,736 with no nested Instance yet, then 101,000,000 more for each full-size runtime and 1,165,536 for each converted one. Incus reads the ranges when its daemon starts; the converge reads the files.
+So a Node with no `containers` block and no `ci` setting needs `13,172,736 + S + 2 × 101,000,000` IDs: 215,172,736 with no nested Instance yet, then 101,000,000 more for each full-size runtime and 1,165,536 for each converted one. Incus reads the ranges when its daemon starts; the converge reads the files.
 
 Clearing the switch removes nothing: the nested project, its profile and the module file stay. Runtimes that record `orbit-instances-nested` keep their ID maps in the demand and their project in the shared-folder refresh. Only the two spare maps leave the demand.

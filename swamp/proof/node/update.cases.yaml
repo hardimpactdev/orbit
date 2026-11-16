@@ -1,5 +1,5 @@
 # Stage 1 spec. Format and step vocabulary: docs/reference/verification-cases.
-# These cases cover the task VM host settings and their `containers` member. Most changes are records: app-dev has no
+# These cases cover the task VM host settings, their `containers` member and the CI places. Most changes are records: app-dev has no
 # task VM host settings in the base. Removing the `containers` member starts the run that withdraws its bridge's input rules.
 command: node:update
 chart: node/update
@@ -24,6 +24,11 @@ uncovered:
   "code:cluster.lan_ip_conflict": "Need two Node fixtures with the same LAN address, in one Cluster or both outside every Cluster."
   "code:node.settings_platform_unsupported": "Need a non-Linux Node fixture with task VM host settings whose bridge change starts the run."
   "code:task_vm.runtime_in_use": "Same need as path:runtime-in-use."
+  "flag:--ci-places": "Need a Node fixture with an active ci-runner role to prove that the CI places are saved as a record, kept by a later --ci-proof-only, and shown by node:show. Adding the role converges its Incus host side, which the nested fleet does not build yet."
+  "flag:--ci-proof-only": "Same need as flag:--ci-places."
+  "flag:--no-ci-proof-only": "Same need as flag:--ci-places."
+  "code:node.ci_places_invalid": "Local refusal before a request; needs no fleet, and the CLI tests cover it."
+  "code:node.ci_option_conflict": "Local refusal before a request; needs no fleet, and the CLI tests cover it."
 
 cases:
   - id: containers-set
@@ -33,26 +38,24 @@ cases:
     stages:
       - act:
           - cli:
-              run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}']
+              run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1}}']
               expect:
                 exit: 0
                 request: none
                 json:
                   - {path: settings.task_vms.containers.task_places, equals: 1}
-                  - {path: settings.task_vms.containers.ci_places, equals: 1}
                   - {path: settings.task_vms.containers.project, equals: orbit-task-containers}
                   - {path: settings.task_vms.containers.network, equals: orbittaskc0}
                   - {path: settings.task_vms.containers.cidr, equals: 10.251.78.0/24}
                   - {path: settings.task_vms.task_places, equals: 0}
       - act:
           - cli:
-              run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":2,"ci_places":0}}']
+              run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":2}}']
               expect:
                 exit: 0
                 request: none
                 json:
                   - {path: settings.task_vms.containers.task_places, equals: 2}
-                  - {path: settings.task_vms.containers.ci_places, equals: 0}
           - cli:
               run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0}']
               expect:
@@ -74,11 +77,11 @@ cases:
     summary: Repeating stored task VM host settings with a containers member writes nothing and reports the skip.
     setup:
       - cli:
-          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}']
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1}}']
           expect: {exit: 0}
     act:
       - cli:
-          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}']
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1}}']
           forms: [human, json]
           expect: {exit: 0, request: none, skipped: node.unchanged}
     expect:
@@ -94,19 +97,19 @@ cases:
           expect: {exit: 0}
     act:
       - cli:
-          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.79.0/24","task_places":1,"ci_places":1}}']
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.79.0/24","task_places":1}}']
           forms: [human, json]
           expect: {exit: 1, code: node.settings_invalid, request: none}
       - cli:
-          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1,"network":"orbittask0"}}']
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"network":"orbittask0"}}']
           forms: [human, json]
           expect: {exit: 1, code: node.settings_invalid, request: none}
       - cli:
-          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.77.128/25","task_places":1,"ci_places":1}}']
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.77.128/25","task_places":1}}']
           forms: [human, json]
           expect: {exit: 1, code: node.settings_invalid, request: none}
       - cli:
-          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1,"project":"orbit-tasks"}}']
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"project":"orbit-tasks"}}']
           forms: [human, json]
           expect: {exit: 1, code: node.settings_invalid, request: none}
       - cli:
@@ -151,5 +154,25 @@ cases:
           run: [node:update, "${bad.id}", --lan-ip=fd00::1]
           forms: [json]
           expect: {exit: 1, request: none, json: [{path: error.code, equals: validation.failed}]}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records]}
+
+  - id: ci-places-role-required
+    batch: fresh-fleet
+    covers: [ci-role-missing]
+    summary: CI places on a Node without an active ci-runner role are refused, and nothing changes. Clearing them is allowed on any Node and, with nothing stored, writes nothing.
+    act:
+      - cli:
+          run: [node:update, "${app-dev.id}", --ci-places=2]
+          forms: [human, json]
+          expect: {exit: 1, code: node.settings_ci_runner_required, request: none}
+      - cli:
+          run: [node:update, "${app-dev.id}", --ci-places=2, --ci-proof-only]
+          forms: [json]
+          expect: {exit: 1, code: node.settings_ci_runner_required, request: none}
+      - cli:
+          run: [node:update, "${app-dev.id}", --no-ci]
+          forms: [human, json]
+          expect: {exit: 0, request: none, skipped: node.unchanged}
     expect:
       - unchanged: {since: act, what: [operations, node_records]}

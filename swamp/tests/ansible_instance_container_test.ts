@@ -138,6 +138,7 @@ function fixture() {
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
     web_config: { path: "/etc/orbit/frankenphp.Caddyfile", content: ":8080 {\n    php_server\n}\n" },
     php: "/opt/orbit-runtime/current/php/8.5/bin/php" as string | null,
+    php_cli_ini: "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n" as string | null,
     processes: [] as { id: number; name: string; content: string; environment: string | null; desired: string }[],
   };
   const ssh_execution = {
@@ -1817,7 +1818,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes",
+  name: "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, and a Project without PHP loses php-cli.ini",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1850,10 +1851,32 @@ Deno.test({
       assertEquals(setting("memory_limit"), "1G");
       assertEquals(setting("auto_prepend_file"), bridge);
       assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
-      const again = f.run("start");
-      assert(again.ok, again.output);
-      assertEquals(again.changed, 0, again.output);
-      assertEquals(tryRestarts().length, before + 1);
+
+      // The CLI-only file holds the intent's PCOV line. A queue worker is a PHP CLI too: a repair restarts the running units.
+      const cliPath = "/etc/orbit/php/php-cli.ini";
+      const cli = `${rootfs}${cliPath}`;
+      const pcov = "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n";
+      assertEquals(Deno.readTextFileSync(cli), pcov);
+      assertEquals(f.state().files[cliPath], { uid: "0", gid: "0", mode: "0644" });
+      Deno.writeTextFileSync(cli, "extension=/tmp/other.so\n");
+      const cliRepaired = f.run("start");
+      assert(cliRepaired.ok, cliRepaired.output);
+      assertEquals(Deno.readTextFileSync(cli), pcov);
+      assertEquals(tryRestarts().slice(before + 1), ["try-restart --no-block orbit-*.service"]);
+
+      // A Project without PHP loses Orbit's file, and the running units restart; a rerun changes nothing and restarts nothing.
+      // The first build's rerun shows the same for a Project with PHP.
+      f.container.php = null;
+      f.container.php_cli_ini = null;
+      f.write();
+      const removed = f.run("start");
+      assert(removed.ok, removed.output);
+      assertThrows(() => Deno.lstatSync(cli));
+      assertEquals(tryRestarts().slice(before + 2), ["try-restart --no-block orbit-*.service"]);
+      const stable = f.run("start");
+      assert(stable.ok, stable.output);
+      assertEquals(stable.changed, 0, stable.output);
+      assertEquals(tryRestarts().length, before + 3);
     } finally {
       f.cleanup();
     }
