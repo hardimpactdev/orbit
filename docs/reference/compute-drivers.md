@@ -478,13 +478,13 @@ Image builders and smoke VMs use the same `incus.vm` boundary. Their `create_ima
 
 A stopped VM receives the same metadata preparation before it starts. A repeat preserves a VM from the requested image and refuses a different image. `remove_instance` removes an exact VM without changing storage volumes; the Gateway's existing image and orphan sweep decides which names it may remove. An absent VM counts as removed.
 
-Before enrollment, guest commands use the same command runner, delivery manifest, and mismatch handling as managed Nodes. Incus carries them through its host's pinned transport with `incus exec`. The Incus adapter refuses source Git credentials before contacting the host, including for a builder with no task VM record. The transport stages only the pinned agent candidate. A builder has no Node row: an installation refusal fails its build, and never records a failed pin on the Incus host or creates a Node record.
+No agent command reaches a guest before enrollment. Nothing built an agent guest, so S10d removed the guest command runner and its `incus exec` transport, with that transport's refusal `task_vm.git_credential_refused` ([old paths](/reference/old-paths#the-guest-agent-chain)). The command runner reaches only a Node, through the [Node transports](/reference/node-agent#transports).
 
 `incus.instance-images` reads the original image fingerprint of each instance.
 
 The template builder verifies the guest account before it becomes a template. Cloud-init uses the configuration disk on its first boot.
 
-`guest.cloud-init` returns readiness from the guest’s complete cloud-init result and reports bootstrap errors as typed refusals. `guest.fingerprint` reads and validates the ed25519 host fingerprint through the trusted guest transport. Image builders install command mode before their first readiness check. A guest transport that cannot yet return output remains pending within the existing boot deadline; malformed or refused agent results fail the build. Incus smoke checks also prove a host key and one completed boot before promotion.
+`guest.cloud-init` and `guest.fingerprint` stay in the frozen agent contract: `guest.cloud-init` returns readiness from the guest’s complete cloud-init result and reports bootstrap errors as typed refusals, and `guest.fingerprint` reads and validates the ed25519 host fingerprint. No Gateway or Swamp path sends them, because the guest transport is removed ([old paths](/reference/old-paths#the-guest-agent-chain)).
 
 ### From claim to workspace
 
