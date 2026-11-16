@@ -5,6 +5,11 @@
 # `dev_ports` and no `own_site`, so it gets no development port redirect, no own-site rules and no wake of frozen containers. It shares the kernel, Incus and container
 # side with a task container host, then installs the two shared folders and builds the image. It creates no Instance.
 # The Node provides the Incus pool: ZFS, where a copy is a clone, or a directory pool on a nested proof Node, where a copy is a full copy.
+# A CI-only Node's converge creates it first (instance-pool-create.yml).
+- name: Create the Instance pool of a CI-only Node
+  when: instances.create_pool | default(false)
+  ansible.builtin.include_tasks: instance-pool-create.yml
+
 - name: Read the Instance pool
   ansible.builtin.command: { argv: [incus, query, "--", "/1.0/storage-pools/{{ instances.pool }}"] }
   register: instance_pool_read

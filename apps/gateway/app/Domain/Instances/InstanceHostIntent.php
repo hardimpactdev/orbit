@@ -183,6 +183,9 @@ final readonly class InstanceHostIntent
 
         return [
             'project' => self::Project, 'network' => self::Network, 'nic_acl' => self::NicAcl, 'pool' => self::Pool, 'cidr' => $cidr,
+            // A CI-only Node's converge creates the pool; every other Node's operator provides it
+            // (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
+            ...($ci ? ['create_pool' => true] : []),
             'address' => $gateway.'/'.$subnet->prefixLength(),
             // The image build container takes the bridge's last address, which no Instance gets.
             'build_address' => $last,

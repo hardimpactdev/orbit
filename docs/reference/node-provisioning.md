@@ -280,7 +280,9 @@ The branch prepares:
 
 The intent leaves out the parts that serve a Route or a sleep through the Node's Caddy: the own-site rules, the redirect of agent development ports and the wake of frozen containers. The tasks are the same; the intent decides. The admission of the role add or converge allocates the Node's Instance bridge, as for an `app-dev` Node.
 
-The Node provides the ZFS pool `orbit-instances`, as every Node that clones does. Without the pool, the converge refuses with `instance.host_unavailable`. The Instance bridge range must not overlap `orbitci0`. The branch refuses an overlap with `instance.host_unavailable` before it changes anything. The runner side (`orbit-ci`, `orbitci0`, its ACL and its profile) stays as it is. The two sides share Incus and the Node, and nothing else.
+A CI-only Node gets its Incus pool `orbit-instances` from its own converge. When the pool is missing, the converge reads the Node's ZFS Incus pools and the zpool behind each one. With exactly one zpool, it creates the pool on a new dataset of that zpool: `incus storage create orbit-instances zfs source=<zpool>/orbit-instances`. With no ZFS Incus pool, or with more than one zpool to choose from, it refuses with `instance.host_unavailable` and the reason, and creates nothing. An existing pool `orbit-instances` stays as it is. An `app-dev` Node keeps the rule of [Prepare a Node](/reference/development-containers#prepare-a-node): the operator provides the pool.
+
+The Instance bridge range must not overlap `orbitci0`. The branch refuses an overlap with `instance.host_unavailable` before it changes anything. The runner side (`orbit-ci`, `orbitci0`, its ACL and its profile) stays as it is. The two sides share Incus and the Node, and nothing else.
 
 #### The seed listener
 

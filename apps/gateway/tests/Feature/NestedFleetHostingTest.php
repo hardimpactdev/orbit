@@ -218,7 +218,9 @@ describe('a CI Node that hosts proof copies', function (): void {
             ->and($host['nested']['image']['alias'])->toStartWith('orbit-instance-nested-')
             // Three places, the seed holder and the next holder, each of a new nested default's size while the proof Project has none.
             ->and($host['ids'])->toBe(13_172_736 + 5 * 101_000_000)
-            ->and($host)->not->toHaveKeys(['dev_ports', 'own_site']);
+            ->and($host)->not->toHaveKeys(['dev_ports', 'own_site'])
+            // Its converge creates the Instance pool (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
+            ->and($host['create_pool'])->toBeTrue();
 
         $project = otherProject('orbit', true);
         config(['proof.project' => $project->id]);
@@ -248,6 +250,9 @@ describe('a CI Node that hosts proof copies', function (): void {
             ->and($none->refresh()->instance_bridge)->toBeNull()
             ->and(ciRunnerRuntime($both))->not->toHaveKey('instances')
             ->and(app(InstanceHostIntent::class)->role($both))->toBe(RoleName::AppDev);
+        // An app-dev Node's operator provides the pool: its intent never asks the converge to create one.
+        app(InstanceHostIntent::class)->prepare($both);
+        expect(app(InstanceHostIntent::class)->for($both->refresh()))->not->toHaveKey('create_pool');
     });
 
     it('refuses every create there first with instance.node_ci_only, before any record', function (bool $nested): void {
