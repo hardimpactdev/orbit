@@ -3220,6 +3220,51 @@ Deno.test({
   },
 });
 
+Deno.test({
+  name: "the proof default keeps the seed that a CI Node holds as its one base pair while the Gateway names it, and drops it after",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    // A rename keeps a snapshot's place in the stub's list; the names are what count.
+    const pairNames = (g: typeof f) => ({container: [...seedPair(g).container].sort(), volume: [...seedPair(g).volume].sort()});
+    try {
+      innerVolumeCreate(f);
+      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok, phase);
+      const first = git(f.source, "rev-parse", "HEAD");
+      const container = f.container as unknown as Record<string, unknown>;
+      // docs/reference/development-containers.md#a-retake-keeps-the-seed: a CI Node holds the first seed, so the Gateway names it.
+      container.seed_base = first;
+      f.intent.deployment = { variant: "container", steps: [] };
+      f.write();
+      // A retake at the same commit renames the old pair to `base-` instead of deleting it; a rename needs no free ID range.
+      for (const phase of ["start", "seed"]) assert(f.run(phase).ok, phase);
+      assertEquals(pairNames(f), {container: [`base-${first}`, `seed-${first}`], volume: [`base-${first}`, `seed-${first}`]});
+      const calls = incusCalls(f).map((call) => call.join(" "));
+      assert(!calls.some((call) => call.includes(" delete ") && call.includes(`seed-${first}`)), "the held seed is not deleted");
+      // A second retake at the same commit, as the second seed phase of a fleet deployment: the kept base stays, the newer seed goes.
+      for (const phase of ["start", "seed"]) assert(f.run(phase).ok, phase);
+      assertEquals(pairNames(f), {container: [`base-${first}`, `seed-${first}`], volume: [`base-${first}`, `seed-${first}`]});
+      // A new commit while the CI Node still holds that seed: the base stays, the older seed goes, one base only.
+      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "second");
+      const second = git(f.source, "rev-parse", "HEAD");
+      for (const phase of ["start", "fetch", "checkout", "seed"]) assert(f.run(phase).ok, phase);
+      assertEquals(pairNames(f), {container: [`base-${first}`, `seed-${second}`], volume: [`base-${first}`, `seed-${second}`]});
+      // The CI Node now holds the second seed: the next retake keeps that one as the base and drops the older base.
+      container.seed_base = second;
+      f.write();
+      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "third");
+      const third = git(f.source, "rev-parse", "HEAD");
+      for (const phase of ["start", "fetch", "checkout", "seed"]) assert(f.run(phase).ok, phase);
+      assertEquals(pairNames(f), {container: [`base-${second}`, `seed-${third}`], volume: [`base-${second}`, `seed-${third}`]});
+      // No CI Node needs a base: the Gateway names none, and the next seed step drops it.
+      delete container.seed_base;
+      f.write();
+      for (const phase of ["start", "seed"]) assert(f.run(phase).ok, phase);
+      assertEquals(pairNames(f), {container: [`seed-${third}`], volume: [`seed-${third}`]});
+    } finally { f.cleanup(); }
+  },
+});
+
 /** The order of the seed's calls: each container snapshot, flush and volume snapshot, as `c`, `f` and `v`. */
 const seedOrder = (f: ReturnType<typeof fixture>) => incusCalls(f).map((call) => call.join(" ")).flatMap((call) =>
   /(^| )snapshot create instance-7 /.test(call) && !call.includes("storage") ? ["c"]
