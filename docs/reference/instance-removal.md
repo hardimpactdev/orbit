@@ -3,9 +3,10 @@ title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, how to retry an interrupted removal, and how to unregister a host checkout and keep its folder."
 covers:
   - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction,StartInstanceUnregisterAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,InstanceRemovalKind.php,InstanceUnregisterProjection.php,Removal/**}
+  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,InstanceRemovalKind.php,InstanceUnregisterProjection.php,Removal/**,InstanceRemovalReaper.php}
+  - apps/gateway/app/Console/Commands/ReapFailedInstanceRemovalsCommand.php
   - apps/gateway/app/{Http/Requests/Instances/RemoveInstanceRequest,Models/InstanceRemoval,Models/InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_03_01_000000_add_kind_to_instance_removals,2027_03_02_000000_allow_ci_only_proof_copy_removals}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_03_01_000000_add_kind_to_instance_removals,2027_03_02_000000_allow_ci_only_proof_copy_removals,2027_03_04_000000_add_reaper_retries_to_instance_removals}.php
   - apps/cli/app/Commands/Instances/{DestroyInstanceCommand,UnregisterInstanceCommand}.php
   - swamp/{workflows/workflow-operation-instance-destroy.yaml,workflows/workflow-operation-instance-unregister.yaml,ansible/instance-container-destroy.yml}
 ---
@@ -118,9 +119,34 @@ Before it removes the source, the run removes each member's [hibernation](/refer
 
 A retry repeats every step; each converges, and a checkout that is already gone counts as removed. If a step fails after the Route withdrawal, the site stays down until a rerun finishes the removal. A withdrawal that held frees the Route publication hold at once and records `route_withdrawn_at` on the removal ([One Route write per Node](/reference/operations#one-route-write-per-node)). A retry after that skips the withdrawal and takes no hold.
 
+Each container removal step treats a part that is already gone as done. A retry then finishes a removal whose earlier run, or a person, already removed some of it:
+
+- A container or inner volume that Incus still records, but whose ZFS dataset is gone, gets an empty dataset with the record's own name, and one empty snapshot for each snapshot Incus records. Incus then deletes the record its own way. Incus refuses to delete a record without its dataset; Instance 3427 stayed `removing` for 8 hours that way. The step only makes the missing names of this Instance and never runs `zfs destroy`.
+- The inner volume goes by name: each of its snapshots, then the volume. A copy's inner volume can be a clone of a snapshot whose volume went with its own Instance. Incus keeps that origin under `deleted/` for as long as a clone needs it. The removal never names the origin or another Instance's volume.
+- A missing ACL, firewall rule, mail folder, marker or mirror needs no action.
+
+The end check `Check the container and volume are gone` stays strict: it reads the container, its root volume and the inner volume by this Instance's names.
+
+A container removal step that fails writes the failed task, its message and the end of its stderr into its result file. Swamp keeps no stderr for a failed command step, so the Gateway takes this text instead. It records the text in `error.detail` with `error.stderr_recorded: true`, redacted and cut to the last 4 KiB like the stderr of other Operations ([Operations](/reference/operations)).
+
 When the removed Instance is a [task copy](/reference/tasks#task-copy), the successful removal also releases its task before the row goes: a task that still runs is `cancelled` with its open subtasks, and an ended task only lets go of the copy. A failed removal leaves the task bound to the copy.
 
 The Gateway records the member set as Removing in the same admission transaction that captures database ownership. Database saves refuse additions, ownership changes and attachments involving a Removing owner. An owned database targeted by another Instance refuses removal. Only owned resources go with an Instance; unrelated checkouts and database targets remain untouched. Registered external databases lose their records without a backend absence claim.
+
+### The removal reaper
+
+A failed removal does not wait for a person. Every five minutes, without overlap, the Gateway's `orbit:instance-removal-reap` finds each `failed` removal of kind `destroy`. It starts that removal again through the same admission as `instance:destroy`, with the same removal and the same `--force`. The Operation records `triggered_by: orbit:instance-removal-reap` and the idempotency key `removal-reaper:<removal>:<count>`, so two passes never start two runs.
+
+The reaper waits after each failure, counted from the end of the last run: 5 minutes, 15 minutes, 1 hour, then every 6 hours. The removal record keeps the count in `retry_count`. A start that admission refuses, such as `operation.target_busy`, is not counted, and the next pass tries again.
+
+The reaper starts nothing when:
+
+- no removal was ordered, or the Instance is not `removing`;
+- the removal is an unregister, or is `abandoned` or `completed`;
+- the Instance has an open transfer;
+- an Operation of the Instance runs, or one holds the Instance lock, such as a create.
+
+After 3 failed reaper starts, Doctor reports `instance.removal_stuck` on the Instance in the `instance` family, with the failed step and the error code. The Gateway also records one Activity entry `instance.removal_stuck`. The reaper keeps trying every 6 hours. The issue goes when the Instance is gone.
 
 ## Available placements
 
