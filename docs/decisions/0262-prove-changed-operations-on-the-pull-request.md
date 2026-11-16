@@ -64,7 +64,7 @@ The exception covers exactly this code:
 - The proof copy and its fleet: the fleet step of `swamp/workflows/workflow-operation-instance-start.yaml`, `swamp/workflows/workflow-operation-proof-run-copy.yaml`, `swamp/workflows/workflow-proof-copy-fleet-reset.yaml`, `swamp/workflows/workflow-proof-fleet-*.yaml`, `swamp/ansible/proof-gateway.yml`, `swamp/ansible/proof-observers.yml`, `swamp/ansible/proof-observer-facts.php` and `swamp/ansible/tasks/proof-gateway-release.yml`.
 - The task VM's proof fleet: `swamp/ansible/task-vm-*.yml` and `swamp/ansible/tasks/task-vm-*.yml`.
 
-A fixture case that tests only this code stays. A fixture case that tests other code follows the rule above. When a file holds both kinds, only its other cases move. The [classification of the instance-container fixtures](/reference/fixture-retirement/instance-container) names the cases that stay there.
+A fixture case that tests only this code stays. A fixture case that tests other code follows the rule above. When a file holds both kinds, only its other cases move. The [fixture retirement](/reference/fixture-retirement) pages name the cases that stay.
 
 ### Quick checks stay where they run
 
