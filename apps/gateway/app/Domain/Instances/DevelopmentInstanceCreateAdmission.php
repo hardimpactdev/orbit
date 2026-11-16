@@ -8,6 +8,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -41,11 +42,12 @@ final readonly class DevelopmentInstanceCreateAdmission
         }
     }
 
-    public function assertProject(Project $project, Node $node): void
+    public function assertProject(Project $project, Node $node, bool $taskCopy = false): void
     {
-        InstancePlacement::assert($project, $node);
+        InstancePlacement::assert($project, $node, $taskCopy);
         $this->assertDefaults($project);
-        $this->assertPlacement($node);
+        // A CI-only Node that InstancePlacement let through takes a proof copy without `app-dev`: its `ci-runner` role prepares it.
+        ProofCopyHosts::ciOnly($node) ? $this->assertNodeActiveLinux($node) : $this->assertPlacement($node);
         $this->assertSourceProfile($project);
     }
 

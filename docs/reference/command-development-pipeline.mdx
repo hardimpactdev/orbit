@@ -113,7 +113,7 @@ The pool migration converts the existing Beast and Shark hosts to two task and t
 
 A task waits for a task place, starts from the base, and deletes its VM after it publishes its PR. A published PR holds no VM, identity, workspace or place through review. Between two steps the VM stays for the next one, until the [idle release](/reference/tasks#release-an-idle-task-vm) saves the workspace to origin and takes it.
 
-Only one proof run works at a time. Operator and CI parents wait in Operation id order under the [proof admission policy](/cli/proof/run#the-run), with a 120-minute allowance from creation. The place stays held until the children have ended; the 60-minute stale-hold release bounds an unproven end. A proof runs in copies of the proof Project's default: at most two at once, and never the last two copy places of its Node.
+Only one proof run works at a time. Operator and CI parents wait in Operation id order under the [proof admission policy](/cli/proof/run#the-run), with a 120-minute allowance from creation. The place stays held until the children have ended; the 60-minute stale-hold release bounds an unproven end. A proof runs in copies of the proof Project's default: one in each free CI place across the CI Nodes.
 
 Each copy starts from the default's seed and brings in the commit. Whole batches are balanced across copies by measured case times. Each copy resets its inner fleet before each batch and runs its share. Orbit merges every case verdict into one report, and every end of a run destroys its copy.
 

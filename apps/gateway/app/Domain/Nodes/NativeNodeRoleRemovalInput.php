@@ -128,9 +128,10 @@ final readonly class NativeNodeRoleRemovalInput
         }
         if ($assignment->role === RoleName::CiRunner) {
             $units[] = CiRunnerStateFiles::Timer;
-            foreach (['/etc/systemd/system/'.CiRunnerStateFiles::Service, CiRunnerStateFiles::Script, CiRunnerStateFiles::Output] as $path) {
+            foreach (['/etc/systemd/system/'.CiRunnerStateFiles::Service, CiRunnerStateFiles::Script, CiRunnerStateFiles::Hold, CiRunnerStateFiles::Output] as $path) {
                 $files[] = ['ssh' => $ssh, 'path' => $path];
             }
+            $directories[] = ['ssh' => $ssh, 'path' => CiRunnerStateFiles::HoldState];
         }
         $reloads = $units === [] ? [] : [['ssh' => $ssh, 'input' => []]];
         if ($assignment->role === RoleName::Metrics) {

@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#create): every new Instance is a ZFS clone of the Project's default Instance on its Node. A clone's create ends when its thread is usable: the checkout, T3 and its registration (docs/reference/development-containers.md#a-clone-create-is-two-operations); its terminal projection admits `instance.complete` for the database, a nested fleet and the Processes (docs/cli/instance/complete.mmd). The create publishes the address beside the copy when the Route Nodes are free at its admission; else the completion publishes it. Built for the Nodes of the build list. The kind and its step names follow docs/cli/instance/create.mmd; the intent's `container.clone` marks a clone. The Project's first default Instance is container/create-default.mmd; when the charts move into place, it becomes the first-default branch of this chart.
+  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#create): every new Instance is a ZFS clone of the Project's default Instance on its Node. A proof copy may be cloned on another Node that holds the default's current seed: it clones that Node's seed (docs/reference/development-containers.md#the-seed-on-each-ci-node). A clone's create ends when its thread is usable: the checkout, T3 and its registration (docs/reference/development-containers.md#a-clone-create-is-two-operations); its terminal projection admits `instance.complete` for the database, a nested fleet and the Processes (docs/cli/instance/complete.mmd). The create publishes the address beside the copy when the Route Nodes are free at its admission; else the completion publishes it. Built for the Nodes of the build list. The kind and its step names follow docs/cli/instance/create.mmd; the intent's `container.clone` marks a clone. The Project's first default Instance is container/create-default.mmd; when the charts move into place, it becomes the first-default branch of this chart.
   %% Four Swamp dispatches for a ready clone (2026-11-15): the copy step stages the release scripts from the Gateway's stage copy, so a clone runs no `input` or `clone-input` step; `clone-register` builds the create's result, so a ready clone skips `finish`. Each Swamp behavior step costs about 0.9 s of dispatch, an assert none. The step names `clone-container`, `clone-t3` and `clone-register` stay, in this order: Conn's create card reads them.
   %% Decided by the owner (2026-11-14) and the orchestrator (c3): the address is published during the create, beside the copy, in job `publication` (`clone-route-csr-<i>`, `clone-route`). The admission takes the Route Nodes only when it can and never waits for them: a Caddy-only publication shares them with removals and other such creates (at most eight on a Node), any other takes them alone; the Gateway frees them when `clone-route` ends, not at the create's end. Nodes held by another Route write leave the publication to the completion, as before.
   %% status: draft
@@ -25,6 +25,7 @@ sequenceDiagram
   %%> - the calling Node has node access to the target Node, an active `app-dev` Node
   %%> - a Project with `nested_fleet` on is admitted only as a container in the nested Incus project: `instance.nested_fleet_host_unavailable` (409) when the Node has nested-fleet hosting off, `instance.nested_fleet_container_required` (409) when the Node is not on the build list or the result is a host checkout, both before any record; the clone is a copy of its default, in the same Incus project
   %%> - the Project's `default` Instance runs in a container on this Node, is active and has a seed snapshot, else `instance.default_missing`; an asleep or stopped default is a valid source: the clone copies the seed snapshot and never wakes it
+  %%> - a proof copy may go to another Node that offers proof places when that Node's seed is the default's current seed (the same commit and time taken); it clones that seed, and the database refuses any other clone on another Node than its default
   %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
   %%> - the recipe's agent folder pins the program of the Project's `container_server`, else `project.container_server_unavailable` (409) before any record
   %%> - before the admission transaction, the Gateway reads the Project's agent instructions, the `agent/` folder of its Documents (development-containers.md#agent-instructions): at most 32 files and 32 KiB of UTF-8 text (no control character but a tab or a line end) with plain skill names, else `projects.agent_instructions_too_large` or `projects.agent_instructions_invalid` (422) before any record; a store failure refuses with the store's own error
@@ -74,6 +75,16 @@ sequenceDiagram
     %%> - a failed or skipped `clone-route`, or a lost event, keeps the Nodes until the create's terminal state frees them
     %%> - a waiting Route write that rendered its whole Caddyfile at its admission is refused at its start with `route.publication_stale`, because this site changed what its Nodes serve; a waiting create renders again and a removal composes from the live file
     %%> - a Route that another write took meanwhile, such as a retiring one, stays as it is
+  end
+  opt a proof copy
+    SW->>N: Hold the CI place<br/>native clone-ci-hold
+    %%> When:
+    %%> - first in the clone job, before the copy exists; every other clone skips it
+    %%> What it does:
+    %%> - runs the `ci-runner` role's hold script as root: `orbit-ci-runner-hold hold <copy> <places>`, with the Node's `ci_places`
+    %%> - records the copy's hold, then stops idle runner services on the Node down to the places left to runners; a busy runner is never stopped (docs/reference/node-provisioning.md#proof-places-on-a-ci-node)
+    %%> On failure:
+    %%> - the copy does not start; the copy's destroy releases the hold
   end
     SW->>N: Clone default container<br/>native clone-container
     %%> Stage, the step's first part:

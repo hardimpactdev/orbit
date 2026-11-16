@@ -225,7 +225,7 @@ Deno.test({ name: "pinned create: a normal clone ends ready at its registration 
         const history = JSON.stringify(await f.steps());
         assertEquals([history.includes(token), history.includes(modelKey)], [false, false]);
         // Four dispatches in a row: no input step, and clone-register builds the result, so finish and the cleanup step skip.
-        for (const name of ["input", "finish", "clone-club-key", "stop-input", "stop-container", "withdraw-route", "checkout", "container", "cleanup"]) {
+        for (const name of ["input", "finish", "clone-club-key", "clone-ci-hold", "stop-input", "stop-container", "withdraw-route", "checkout", "container", "cleanup"]) {
             assertEquals(status(steps, name), "skipped", name);
         }
         assertEquals("clone-input" in steps, false);

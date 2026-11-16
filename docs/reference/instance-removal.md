@@ -106,6 +106,8 @@ Destroy also deletes the [execution copies](/reference/deployments#execution-cop
 
 Destroy removes the Instance's folder for pending mail activation from the Node, `/var/lib/orbit/instance-mail/<container>`, its [asleep marker](/reference/development-containers#sleep-and-wake), so no later Instance or domain finds it, and, through the power helper's `discard`, its plan, limits record, target descriptor and fast wake files ([Lifecycle](/reference/prepared-restore#lifecycle)). The discard waits for a helper call still at work on the Instance. It also removes a task copy's base scratch, `/var/tmp/orbit-task-base-<id>`, the bundle a cancelled [`task:sync`](/reference/tasks#bring-main-into-a-copy) may leave; it holds no credential. A sleeping container is deleted as it is, without a wake. Its shared bridge endpoint stays for ordinary host reconciliation, as database endpoints do.
 
+A proof copy's destroy then releases its CI place, once the container is gone: when no other hold is left on the Node, the runners that the holds stopped start again ([Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node)).
+
 ## Retry and ownership
 
 The Gateway captures the run budget at admission from the teardown timeouts, the Routes it withdraws and its owned databases; see [Instance setup](/reference/instance-setup#run-setup). Each withdrawn Route adds 330 seconds, so the run outlasts the 300-second [Node transaction](/reference/routes#coordinate-publication) of its withdrawal.

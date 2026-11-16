@@ -11,6 +11,8 @@ covers:
   - apps/gateway/app/Domain/Proof/ProofRunSettlement.php
   - apps/gateway/app/Domain/Proof/ProofRunWatch.php
   - apps/gateway/app/Domain/Proof/ProofCopies.php
+  - apps/gateway/app/Domain/Proof/ProofCopyHosts.php
+  - apps/gateway/app/Infrastructure/Metrics/PrometheusMemAvailable.php
   - apps/gateway/config/proof.php
   - swamp/workflows/workflow-operation-proof-run-copy.yaml
   - swamp/ansible/tasks/instance-proof-checkout.yml
@@ -82,13 +84,30 @@ A child waiting its turn to start stays protected while its parent is open and w
 
 A proof that waits more than 120 minutes fails `proof.capacity_timeout`. This applies to operator and CI parents, including an older parent blocking the queue. Ended or cancelled parents and proofs with nothing to prove leave the queue. Two predecessors of up to two hours each exceed the allowance: a third proof behind them fails by the wait and must be run again.
 
-Each run of a proof gets a copy of the proof Project's default Instance, the Orbit container with its inner fleet. A proof Project without a default container Instance fails its proof with `tasks.vm_runtime_removed`: task VMs are removed ([Task runtime](/reference/tasks#task-runtime)). A proof takes at most two copies at once (`proof.copies`), and it never takes the last two copy places of the default's Node, so task groups can still start: places are `min(proof.copies, orbit.tasks.copies_max - live copies - 2)`. With no place, the proof waits with the step "Wait for a free copy place" and retries every 20 seconds, within the same two-hour allowance. Operator and CI proofs follow the same rule.
+Each run of a proof gets a copy of the proof Project's default Instance, the Orbit container with its inner fleet. A proof Project without a default container Instance fails its proof with `tasks.vm_runtime_removed`: task VMs are removed ([Task runtime](/reference/tasks#task-runtime)).
+
+A proof puts its copies on free [CI places](/reference/node-settings#ci-places) across all CI Nodes ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies)). A place runs one runner job or one proof copy. The proof takes one copy per free place, and at most one copy per batch. Operator and CI proofs follow the same rule. There is no `proof.copies` limit, and a proof does not read `orbit.tasks.copies_max`: task copies do not use CI places.
+
+A Node offers places to a proof when it [offers proof places](/reference/node-provisioning#proof-copies-on-a-ci-node) and holds the default's current seed. The default's own Node holds the seed itself. A Node whose seed is behind offers no place, so one proof never mixes the fleets of two seeds.
+
+The free places of a Node are the smaller of two counts:
+
+- its `ci_places` minus its busy runners and minus the proof copies already on it, of any proof (task copies take no place);
+- the number of whole copy peaks that its available memory holds. One copy's peak is the Gateway setting `proof.copy_memory`.
+
+Before the admission transaction, the Gateway reads each Node's runner state and its available memory (Linux `MemAvailable`) from Prometheus: the series of the [runner state](/reference/node-provisioning#runner-state-for-the-runner-view) and of the node exporter. A Node without a fresh read offers no place now. `ProofCopyHosts` holds this rule.
+
+With no free place on any Node, the proof waits with the step "Wait for a free CI place" and retries every 20 seconds, within the same two-hour allowance. A busy pool makes a proof wait or take fewer copies; it never takes a busy runner's place.
+
+While a proof holds places on a Node, that Node's idle runners stop, so the one count stays true. Each copy's create holds its place before the copy starts its inner fleet: under one lock per Node, it records its hold and stops idle runner services only down to a limit: the running runners must not exceed the Node's `ci_places` minus the proof holds on it. Exactly the stopped runners are recorded. A proof that takes 2 places on a Node with 5 places and no busy runner stops 2 idle runners and leaves 3 running. A runner is busy while a `Runner.Worker` process runs in it. A busy runner finishes its job and is never stopped. Each copy's destroy drops its hold. When the last hold on the Node goes, the destroy starts exactly the recorded runners again. Every run end, a failure and a cancel too, asks for the destroy. The runners start again when that destroy succeeds; a failed destroy keeps them stopped while the watchdog asks again. [Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node) gives the steps on the Node.
+
+A runner can take a job between the read and its stop. It then keeps the job, and the Node runs one more job than its places until that job ends.
 
 Orbit reads the cases at the trusted commit and expands their variant ids. It sums measured case durations from prior reports for each whole batch, then assigns the longest batches to the least loaded copy. A batch never splits. Unseen cases use the median measured duration, or one second when no measurements exist.
 
-Each copy's share gets a run budget from its batches, at most two hours. When a share of more than one batch needs more and a copy place is still taken by another work, the proof waits for another place. With every place free, it runs anyway. Orbit records the verdicts of each batch as the batch ends, so a share that reaches its budget keeps them; only the cases of its unfinished batches are `unrun`.
+Each copy's share gets a run budget from its batches, at most two hours. When a share of more than one batch needs more and a place on a Node is still taken by a busy runner, the proof waits for another place. With every place free, it runs anyway. Orbit records the verdicts of each batch as the batch ends, so a share that reaches its budget keeps them; only the cases of its unfinished batches are `unrun`.
 
-Admission starts every copy in its transaction, after the trust check passed: a copy holds the inner fleet's Club key, so code that Orbit does not trust never reaches one. Each copy is an `instance.create` of the default's seed, owned by the run's task group. The group has one subtask row and no agent thread.
+Admission starts every copy in its transaction, after the trust check passed: a copy holds the inner fleet's Club key, so code that Orbit does not trust never reaches one. Each copy is an `instance.create` on the Node of its place, owned by the run's task group. It starts from that Node's seed: the default's seed pair on the default's Node, the [seed holder](/reference/development-containers#the-seed-on-each-ci-node) on a CI Node. The group has one subtask row and no agent thread.
 
 Orbit starts the children of one proof in order. It queues the first start after all execution copies succeed, then queues each next start 20 seconds after the previous start answers. A refusal or definite start failure still lets the siblings start.
 
@@ -96,11 +115,11 @@ A start with no confirmed answer is never submitted again. Its next child waits 
 
 This leaves room for unrelated Operations to start between children. The [admission clock](/reference/operations#direct-swamp-starts) begins when a child is released. A child is released only when its copy is `active`; Orbit checks again every 20 seconds. A copy whose create or completion failed, or that is gone, fails its child with `proof.run_failed`, and its cases are `unrun`. A held child that has no copy, which only a Gateway before the copy-only proof admitted, fails the same way.
 
-In each copy, the run first brings in the commit: one Ansible phase on the copy's Node fetches the commit by its SHA from the public Orbit repository through the copy's own network route, as `orbit`, and checks it out detached. A fetch that fails or takes more than 60 seconds fails the run by name; nothing retries. The phase then runs each of the Project's development deploy steps whose inputs changed since the seed, as a deployment does, so `vendor/` and the generated files belong to the commit. Orbit checks that the workspace is at the commit, then runs the copy's assigned batches in order. Before each batch the copy's inner fleet goes back to `base`, which restarts the nested Gateway on the checkout and migrates it forward, and the runner applies the checkout's Swamp grants and Ansible collections. So the fleet runs the code of the commit, not of the seed. Each batch runs its declared setup. A setup failure leaves missing cases unrun. Execution retries nothing.
+In each copy, the run first brings in the commit: one Ansible phase on the copy's Node fetches the commit by its SHA from the public Orbit repository through the copy's own network route, as `orbit`, and checks it out detached. A fetch that fails or takes more than 60 seconds fails the run by name; nothing retries. This fetch is the only way the commit comes in. So a proof copy needs no Git mirror of the Project on its Node: its clone brings no branch into a Node mirror, and a CI Node keeps none. The phase then runs each of the Project's development deploy steps whose inputs changed since the seed, as a deployment does, so `vendor/` and the generated files belong to the commit. Orbit checks that the workspace is at the commit, then runs the copy's assigned batches in order. Before each batch the copy's inner fleet goes back to `base`, which restarts the nested Gateway on the checkout and migrates it forward, and the runner applies the checkout's Swamp grants and Ansible collections. So the fleet runs the code of the commit, not of the seed. Each batch runs its declared setup. A setup failure leaves missing cases unrun. Execution retries nothing.
 
 A proof does not replay flagged cases on the merge base (`fails_on_base: true`). Only the removed task VM run sent the replay its inputs; the replay comes back when it is ported to copies.
 
-Every run end removes its copy: Orbit cancels the run's group with discard, which destroys the copy. That holds after a pass, a failure, a cancel, a timeout, an interruption and a run that never started. A copy that an Operation still holds is asked again. After a Gateway restart the queued cancel runs, and the watchdog asks again for every group that still owns a copy.
+Every run end removes its copy: Orbit cancels the run's group with discard, which destroys the copy and drops its hold on the Node's places. That holds after a pass, a failure, a cancel, a timeout, an interruption and a run that never started. A copy that an Operation still holds is asked again. After a Gateway restart the queued cancel runs, and the watchdog asks again for every group that still owns a copy.
 
 Orbit reads the full case reports, checks the expected case identities and merges every copy’s verdicts into one report. A missing, duplicate or unexpected verdict prevents a pass. The line on which a copy's batch reports the reset seconds of its inner fleet is evidence, not a verdict. The proof closes after all runs end and passes only when every selected command has all its cases passed. A selection with no command passes without a copy.
 
@@ -139,6 +158,8 @@ A repeat starts a new run, because a proof checks the commit as it is now. The s
 
 ## How it works
 
+The Gateway counts the free CI places on every CI Node, balances whole batches over them and starts one copy per place from that Node's seed. Each copy's create stops the Node's idle runners; the destroy of the last copy there starts them again. The copies bring in the commit, run their batches, and the Gateway merges one result.
+
 <div className="flow-at" data-chart="proof/run"></div>
 
 ## Errors
@@ -161,7 +182,7 @@ The request answers at once with the proof Operation. The checks of the commit, 
 | `proof.run_failed` | The copy, its commit or its inner fleet did not become ready, or its cases printed no verdict. Every selected case of that command is `unrun`. |
 | `proof.queue_unavailable` | The queue refused the job that admits the proof. No case ran. Run the command again. |
 | `proof.admission_interrupted` | The job that admits the proof was lost before it started the runs. No case ran, and each selected case is `unrun`. Run the command again. |
-| `proof.capacity_timeout` | The proof was not admitted within 120 minutes of creation, while waiting for its turn, the working proof or a copy place. No case ran. |
+| `proof.capacity_timeout` | The proof was not admitted within 120 minutes of creation, while waiting for its turn, the working proof or a free CI place. No case ran. |
 | `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The input of the proof holds the selected cases and the uncovered paths. |
 | `proof.selection_invalid` | The selection list of the commit is malformed. The message names the line. |
 | `proof.github_unavailable` | A GitHub read failed with a transport error or a 5xx answer, also after one more read, so the commit or its cases cannot be checked. The message names the read and the status or error class; a failure outside the read itself, such as a malformed answer or a missing App installation, gives GitHub's or the Gateway's own reason. Run the command again. |

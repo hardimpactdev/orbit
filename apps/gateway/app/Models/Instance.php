@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
@@ -408,6 +409,12 @@ final class Instance extends Model
         $roles = $node->roles->filter(
             static fn (NodeRole $role): bool => in_array($role->role, [RoleName::AppDev, RoleName::AppProd], strict: true),
         );
+
+        // A CI-only Node has no app role and hosts only proof copies, which are development Instances
+        // (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
+        if ($roles->isEmpty() && ProofCopyHosts::ciOnly($node)) {
+            return 'development';
+        }
 
         if ($roles->count() !== 1) {
             return null;

@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
-  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,25_000000_create_proof_seeds,26_000000_add_ci_bridge_to_nodes,26_000001_release_an_unused_instance_bridge,27_000000_add_seed_sender_id_to_nodes}.php
+  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,25_000000_create_proof_seeds,26_000000_add_ci_bridge_to_nodes,26_000001_release_an_unused_instance_bridge,27_000000_add_seed_sender_id_to_nodes,28_000000_allow_a_proof_copy_clone_on_its_seed_node}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
@@ -1045,6 +1045,8 @@ A separate job publishes the Route, certificate and DNS. Swamp runs jobs in leve
 
 The first default Instance and its deployments are built for the Nodes of the [build list](#the-build-list). A Project has one `default` Instance in the whole fleet, and every clone of it is made on its Node. The one exception is a proof copy on a CI Node: it clones that Node's [seed](#the-seed-on-each-ci-node). Deployment admission refreshes the Project’s [source facts at the deployed commit](/reference/deployments#container-source-facts).
 
+A proof copy's runtime still names the default as its clone source, so the default keeps its runtime while the copy exists. The database refuses a clone on another Node than its default, unless that Node's `proof_seeds` row holds the default's current seed: the same commit and the same time taken (`seed_commit`, `seed_taken_at`).
+
 | Part | What Orbit does |
 | --- | --- |
 | Container | `instance-<id>` in the project `orbit-instances`, from the image `orbit-instance`, at the lowest free guest address of the bridge. It has no T3 port |
@@ -1263,6 +1265,12 @@ A clone is fully set up only when its `status` is `active`. Only a succeeded com
 A clone starts at the commit of the default's newest seed snapshot, with its dependencies installed. It copies no development deploy commands to the execution vault and runs no deploy step. Its branch is the matching origin branch, fetched on the Node, or a new branch at the seed's commit.
 
 A branch that the seed already holds needs no network. A new branch at the seed's commit fetches nothing and fills no Node mirror. The guest checks it out from the seed's own repository, with no bundle.
+
+A proof copy's branch is new, and the origin lacks it, so its clone fetches nothing and makes no Node mirror. No clone intent names a mirror of the default. The proof run then fetches the commit under proof by its SHA from the public repository, through the copy's own egress ([proof:run](/cli/proof/run#the-run)). So a proof copy on a CI Node, which has no mirror of the Project, needs none.
+
+The rule is the same on every Node: one way brings the commit in. A carried bundle or a mirror on each CI Node would add a second way and a second copy of the repository, for a commit that the copy fetches anyway.
+
+A proof copy also takes one CI place on its Node. Its create holds that place first, in the step `clone-ci-hold`, before the copy exists: the role's hold script stops idle runners on the Node down to the places left to runners. Every other clone skips the step. The copy's destroy releases the hold ([Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node)).
 
 An [explicit branch choice](/reference/conn#threads-in-an-orbit-project) runs no `ls-remote` in the clone, because its admission read GitHub. Only an existing branch, or a new branch from another commit, is fetched. A create by name only still reads GitHub once, to learn whether the origin has the branch.
 
@@ -2731,7 +2739,7 @@ Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each
 
 #### The seed on each CI Node
 
-This is the target design of ADR 0260, build step 4. Built, not yet proven on the live fleet: the listener of the `ci-runner` role, the `instance.seed_copy` run and its triggers, the record of each Node's seed, and the start of a copy from its own Node's seed. ADR 0260 build step 5 places copies on CI Nodes.
+This is the target design of ADR 0260, build step 4. Built, not yet proven on the live fleet: the listener of the `ci-runner` role, the `instance.seed_copy` run and its triggers, the record of each Node's seed, and the start of a copy from its own Node's seed. ADR 0260 build step 5, in work, places proof copies on CI Nodes ([proof:run](/cli/proof/run#the-run)).
 
 Each Node that [offers proof places](/reference/node-provisioning#proof-copies-on-a-ci-node), other than the default's own Node, keeps its own seed of the proof Project's default: a copy of the default's [seed pair](#the-seed-pair) on the Node. A proof copy on that Node starts from it. The default's Node holds the seed itself, and a copy there clones the default, as before. In this section a CI Node is such a Node. No copy fetches a seed over the network when it starts.
 
@@ -2792,7 +2800,7 @@ The cost is one trust between Nodes: each CI Node trusts the default's Node for 
 
 A proof copy on a CI Node is a clone with the same [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd). Its intent names the holder, its snapshot and its volume as the source, in place of the default's container and volume (`TaskCopyStart::seed`).
 
-A copy on a Node whose seed is not the default's current seed is refused with `tasks.copy_source_unavailable`. Until ADR 0260 build step 5, every copy still goes to the default's Node and clones the default. The fleet start, the Club key and the [reset](#reset) are the same as for a copy on the default's Node. The copy takes the default's [ID map size](#the-id-map-size). The holder does not need to run, as the default does not need to run for a copy on its own Node.
+A copy on a Node whose seed is not the default's current seed is refused with `tasks.copy_source_unavailable`. A task copy still goes to the default's Node and clones the default. A proof copy goes to a free [CI place](/cli/proof/run#the-run) on any Node that offers proof places. The fleet start, the Club key and the [reset](#reset) are the same as for a copy on the default's Node. The copy takes the default's [ID map size](#the-id-map-size). The holder does not need to run, as the default does not need to run for a copy on its own Node.
 
 The copy runs after the release, and nothing in a release or a proof waits for it.
 
