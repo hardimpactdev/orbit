@@ -748,6 +748,7 @@ export function createDemoGateway() {
                     ),
             ],
             ["GET", /^\/api\/v1\/tasks(?:\?.*)?$/, () => ok(taskGroups)],
+            ["GET", /^\/api\/v1\/ci\/runners$/, () => ok(byRoute.get("GET /api/v1/ci/runners#"))],
             [
                 "GET",
                 /^\/api\/v1\/task-insights(?:\?.*)?$/,

@@ -115,8 +115,6 @@ const Evidence = z.union([
                 secret: z.string().min(1),
             }).strict()).max(20),
             secrets_more: z.number().int().min(0),
-            workflows: z.array(z.string()).max(20),
-            workflows_more: z.number().int().min(0),
             sources: z.array(z.string()),
             values: z.number().int().min(0),
             short_skipped: z.record(z.string(), z.number().int().min(0)),

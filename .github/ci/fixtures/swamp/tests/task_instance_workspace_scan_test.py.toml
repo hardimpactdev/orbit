@@ -1,10 +1,10 @@
 file = "swamp/tests/task_instance_workspace_scan_test.py"
 slices = false
-cost = 23
-source_sha256 = "922d6753a10b2c9ae6e205f39ae5b64c779c290cdcfe90195b8d66e0eb38c711"
+cost = 24
+source_sha256 = "d42139a609cfeba5c4c2769df95d108eb9bdbce8d75d62bcbdbb34c64758651f"
 cases = [
   "test_a_secret_of_the_inner_gateway_refuses_by_path_line_and_name",
-  "test_a_workflow_change_refuses_with_its_path",
+  "test_a_workflow_change_is_no_refusal_of_the_copy_check",
   "test_a_clean_change_passes_with_public_facts_only",
   "test_a_nested_copy_without_its_inner_machines_is_unchecked"
 ]
@@ -24,6 +24,6 @@ inputs = [
 # ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
 [case_costs]
 "test_a_secret_of_the_inner_gateway_refuses_by_path_line_and_name" = 5
-"test_a_workflow_change_refuses_with_its_path" = 5
+"test_a_workflow_change_is_no_refusal_of_the_copy_check" = 6
 "test_a_clean_change_passes_with_public_facts_only" = 5
 "test_a_nested_copy_without_its_inner_machines_is_unchecked" = 8

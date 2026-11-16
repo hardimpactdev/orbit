@@ -126,6 +126,12 @@ final readonly class NativeNodeRoleRemovalInput
                 $directories[] = ['ssh' => $ssh, 'path' => '/var/lib/orbit/private-dns/releases'];
             }
         }
+        if ($assignment->role === RoleName::CiRunner) {
+            $units[] = CiRunnerStateFiles::Timer;
+            foreach (['/etc/systemd/system/'.CiRunnerStateFiles::Service, CiRunnerStateFiles::Script, CiRunnerStateFiles::Output] as $path) {
+                $files[] = ['ssh' => $ssh, 'path' => $path];
+            }
+        }
         $reloads = $units === [] ? [] : [['ssh' => $ssh, 'input' => []]];
         if ($assignment->role === RoleName::Metrics) {
             $catalog = app(NodeFirewallRuleCatalog::class);

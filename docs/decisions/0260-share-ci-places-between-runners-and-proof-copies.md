@@ -52,7 +52,7 @@ Incus moves the seed from the default's Node to each CI Node over WireGuard, wit
 
 ### Orbit shows what each place is doing
 
-The web app has a runner view:
+The web app has a [runner view](/reference/ci-runner-view):
 
 - per CI Node: its places, and whether each is free, running a runner job or holding a proof copy; its CPU pressure, memory and disk;
 - per runner: running or stopped, idle or busy, its current job and repository, its runner version;

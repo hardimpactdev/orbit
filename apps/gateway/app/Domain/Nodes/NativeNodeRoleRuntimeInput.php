@@ -57,6 +57,11 @@ final readonly class NativeNodeRoleRuntimeInput
             $runtime['proof_seed'] = self::proofSeed($node);
         }
         $copies = [];
+        if ($assignment->role === RoleName::CiRunner) {
+            $runtime['directories'] = CiRunnerStateFiles::directories();
+            $runtime['files'] = CiRunnerStateFiles::files();
+            $runtime['units'] = CiRunnerStateFiles::units();
+        }
         if ($assignment->role === RoleName::Gateway) {
             $gateway = app(GatewayRuntimeFiles::class)->render($node);
             $runtime['gateway'] = ['pool' => GatewayRuntimeFiles::Pool, 'release_units' => GatewayRuntimeFiles::ReleaseUnits, 'account' => $node->user,
