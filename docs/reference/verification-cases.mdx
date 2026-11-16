@@ -103,12 +103,15 @@ A case from the draft (its `negative` key is shown [below](#prove-a-case-can-fai
 | `expect` | yes | What must be true afterwards. Every step runs, so one verdict lists all failures. |
 | `stages` | no | Replaces `act` and `expect` when a case needs more than one round. A list of `act` and `expect` pairs, run in order. |
 | `variants` | no | A list of variable sets. The case runs once per set, and each run has its own verdict, such as `protocols[both]`. |
+| `refusal` | no | `true` marks a case that changes nothing: it has no `setup` and no `negative`, and each of its `cli` calls expects a nonzero exit. The runner refuses a marked case with any other step. A proof runs the refusal cases of a batch with no setup apart from the batch's other cases, with no reset of their own. Default `false`. |
 | `fails_on_base` | no | `true` opts a new or changed case into CI replay on the merge base. It must fail there with cause `assertion`. Default `false`. |
 | `fails_today` | no | One line saying why the case fails on the current code. The build removes it. |
 | `negative` | no | How to prove that the case can fail. See [Prove a case can fail](#prove-a-case-can-fail). |
 | `timeout` | no | Seconds for the case. Default 180. |
 
 A case writes no cleanup. Each batch starts from a restore of the task's `base` snapshot, and each case creates what it needs on its own resources: free ports, its own listeners, a new Instance. So cases in a batch do not touch each other. A case that did not pass triggers no restore; a case that cannot share the batch with others gets its own.
+
+A proof copy resets its inner fleet once before its first batch. Refusal cases (`refusal: true`) of a batch with no setup leave the fleet at `base`, so the copy runs them first and resets again only after a batch that can change the fleet.
 
 ## Steps
 
