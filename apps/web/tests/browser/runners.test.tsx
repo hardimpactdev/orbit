@@ -1,6 +1,19 @@
-import { expect, it } from "vite-plus/test";
+import { afterEach, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { openApp, pane, row } from "./app";
+
+afterEach(async () => {
+    await page.viewport(1280, 800);
+});
+
+/** The cells of a frame whose text does not fit, by their text. */
+function cutCells(frame: string): string[] {
+    const region = pane(frame).element();
+
+    return [...region.querySelectorAll<HTMLElement>("[role=cell], .row-detail")]
+        .filter((cell) => cell.offsetParent !== null && cell.scrollWidth > cell.clientWidth)
+        .map((cell) => cell.textContent ?? "");
+}
 
 it("opens the runner view from the main nav", async () => {
     const app = await openApp("/");
@@ -36,4 +49,17 @@ it("shows each CI Node's places, resources and runners, then the jobs and the ru
     await expect.element(row("Runners, last 48 h", "beast-ci-1")).toMatchTextContent(/1 \(50%\)/);
     await expect.element(row("Runners, last 48 h", "beast-ci-1")).toMatchTextContent(/7m 30s/);
     await expect.element(row("Recent jobs, last 48 h", "beast-ci-2")).toMatchTextContent(/success/);
+});
+
+it("keeps the runner rows readable on a phone without a sideways scroll", async () => {
+    await page.viewport(390, 800);
+    await openApp("/runners");
+    await expect.element(pane("beast").getByText("acme/shop · CI · php (1) 4m")).toBeVisible();
+
+    expect(cutCells("beast")).toEqual([]);
+    expect(cutCells("Runners, last 48 h")).toEqual([]);
+    expect(cutCells("Running and queued")).toEqual([]);
+    const main = document.querySelector<HTMLElement>("main.page-content");
+    expect(main?.scrollWidth).toBeLessThanOrEqual(main?.clientWidth ?? 0);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
 });

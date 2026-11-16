@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { type CSSProperties, useMemo } from "react";
-import { type CiJob, type CiNode, type CiRunner, ciRunnersQuery } from "../api/ci";
+import {
+    type CiJob,
+    type CiNode,
+    type CiNodeResources,
+    type CiRunner,
+    ciRunnersQuery,
+} from "../api/ci";
 import {
     activeJobs,
     formatGiB,
@@ -122,21 +128,25 @@ function RunnerRows({ node, now }: { node: CiNode; now: number }) {
             <div className="row" role="row" data-head>
                 <span role="columnheader">Runner</span>
                 <span role="columnheader">State</span>
+                <span role="columnheader">Version</span>
                 <span role="columnheader" className="hidden md:block">
-                    Version
+                    Current job
                 </span>
-                <span role="columnheader">Current job</span>
                 <span role="columnheader" className="hidden text-right md:block">
                     Since
                 </span>
             </div>
             {node.runners.map((runner) => {
                 const job = runner.current_job;
+                const since = job === null ? "" : formatSeconds(secondsSince(job.started_at, now));
+                // A phone has no room for the job beside the runner, so it reads on its own line.
+                const detail =
+                    job === null && !runner.busy ? null : `${currentJob(runner)} ${since}`;
 
                 return (
                     <div
                         key={runner.name}
-                        className="row"
+                        className={detail === null ? "row" : "row has-detail"}
                         role="row"
                         data-link={job?.url ? "" : undefined}
                         onClick={job?.url ? () => openInNewTab(job.url ?? "") : undefined}
@@ -145,19 +155,57 @@ function RunnerRows({ node, now }: { node: CiNode; now: number }) {
                         <span role="cell" className={TONE[runnerTone(runner)]}>
                             {runnerStateText(runner)}
                         </span>
-                        <span role="cell" className="hidden text-dim md:block">
+                        <span role="cell" className="text-dim">
                             {runner.version ?? "—"}
                         </span>
-                        <span role="cell" title={currentJob(runner)}>
+                        <span role="cell" className="hidden md:block" title={currentJob(runner)}>
                             {currentJob(runner)}
                         </span>
                         <span role="cell" className="hidden text-right md:block">
-                            {job === null ? "" : formatSeconds(secondsSince(job.started_at, now))}
+                            {since}
                         </span>
+                        {detail !== null && (
+                            <span className="row-detail pl-[2ch] text-dim">{detail.trim()}</span>
+                        )}
                     </div>
                 );
             })}
         </div>
+    );
+}
+
+/** CPU pressure, memory and disk, with their readings at one width so the meters end together. */
+function Resources({ resources }: { resources: CiNodeResources }) {
+    const usage = (used: number, total: number) => `${formatGiB(used)}/${formatGiB(total)} GiB`;
+    const { memory, disk } = resources;
+    const readings = [
+        `${resources.cpu_pressure.toFixed(1)}% pressure`,
+        usage(memory.used_bytes, memory.total_bytes),
+        disk === null ? "" : usage(disk.used_bytes, disk.total_bytes),
+    ];
+    const width = Math.max(...readings.map((reading) => reading.length));
+    const [cpu = "", mem = "", root = ""] = readings.map((reading) => reading.padStart(width));
+
+    return (
+        <>
+            <Line label="CPU">
+                <Bar ratio={resources.cpu_pressure / 100} reading={cpu} />
+            </Line>
+            <Line label="Mem">
+                <Bar ratio={ratio(memory.used_bytes, memory.total_bytes)} reading={mem} />
+            </Line>
+            <Line label="Disk">
+                {disk === null ? (
+                    <span className="text-dim">—</span>
+                ) : (
+                    <Bar
+                        ratio={ratio(disk.used_bytes, disk.total_bytes)}
+                        reading={root}
+                        thresholds={[80, 90]}
+                    />
+                )}
+            </Line>
+        </>
     );
 }
 
@@ -182,31 +230,7 @@ function NodeFrame({ node, now }: { node: CiNode; now: number }) {
             {resources === null ? (
                 <Note>No metrics snapshot yet.</Note>
             ) : (
-                <>
-                    <Line label="CPU">
-                        <Bar
-                            ratio={resources.cpu_pressure / 100}
-                            reading={`${resources.cpu_pressure.toFixed(1).padStart(5)}% pressure`}
-                        />
-                    </Line>
-                    <Line label="Mem">
-                        <Bar
-                            ratio={ratio(resources.memory.used_bytes, resources.memory.total_bytes)}
-                            reading={`${formatGiB(resources.memory.used_bytes)}/${formatGiB(resources.memory.total_bytes)} GiB`}
-                        />
-                    </Line>
-                    <Line label="Disk">
-                        {resources.disk === null ? (
-                            <span className="text-dim">—</span>
-                        ) : (
-                            <Bar
-                                ratio={ratio(resources.disk.used_bytes, resources.disk.total_bytes)}
-                                reading={`${formatGiB(resources.disk.used_bytes)}/${formatGiB(resources.disk.total_bytes)} GiB`}
-                                thresholds={[80, 90]}
-                            />
-                        )}
-                    </Line>
-                </>
+                <Resources resources={resources} />
             )}
             {node.proof_copies.length > 0 && (
                 <Line label="Proof">
@@ -226,7 +250,7 @@ const jobColumns = (now: number, recent: boolean): Column<CiJob>[] => [
     { header: "Repository", width: 18, value: (job) => job.repository, hideOnMobile: true },
     { header: "Workflow", width: 14, value: (job) => job.workflow, hideOnMobile: true },
     { header: "Job", width: 22, value: (job) => job.job },
-    { header: "Runner", width: 14, value: (job) => job.runner_name ?? "—" },
+    { header: "Runner", width: 14, fit: true, value: (job) => job.runner_name ?? "—" },
     { header: recent ? "Result" : "State", width: 12, fit: true, value: jobResult, cell: toned },
     recent
         ? {
@@ -271,8 +295,8 @@ const failedText = (row: RunnerStatsRow): string =>
     row.jobs === 0 ? "—" : `${row.failed} (${formatShare(row.failureShare)})`;
 
 const STATS_COLUMNS: Column<RunnerStatsRow>[] = [
+    { header: "Runner", width: 16, fit: true, value: (row) => row.runner },
     { header: "Node", width: 12, value: (row) => row.node, hideOnMobile: true },
-    { header: "Runner", width: 16, value: (row) => row.runner },
     {
         header: "Jobs",
         width: 6,
