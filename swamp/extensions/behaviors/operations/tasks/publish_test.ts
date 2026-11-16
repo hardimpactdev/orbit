@@ -274,6 +274,57 @@ Deno.test("a workflow change the default head lacks refuses with its paths, befo
     assertEquals(baseFacts(0, files({ workflows, head: "" })).error_code, "tasks.publish_failed");
 });
 
+Deno.test("a merge at publish names the default head in the facts and passes its commit to the push", () => {
+    const merged = "e".repeat(40);
+    assertEquals(baseFacts(0, files({ merged: merged + "\n" })), {
+        facts: {
+            base_commit: "a".repeat(40),
+            default_commit: "c".repeat(40),
+            behind_by: 2,
+            overlapping_paths: [],
+            overlapping_more: 0,
+            merged_default: "c".repeat(40),
+        },
+        merged,
+        error_code: "",
+    });
+    // No merge: the push sends the candidate, and no head is named.
+    assertEquals([baseFacts(0, files()).merged, baseFacts(0, files()).facts?.merged_default], ["", null]);
+    // A merge file the read did not write, or one that holds no commit, is an error, never a push of the candidate.
+    assertEquals(baseFacts(0, files({ merged: null })).error_code, "tasks.publish_failed");
+    assertEquals(baseFacts(0, files({ merged: "not a commit\n" })).error_code, "tasks.publish_failed");
+    // An own workflow change still refuses first.
+    const workflows = ".github/workflows/x.yml\0";
+    assertEquals(baseFacts(0, files({ workflows, merged })).error_code, 'tasks.publish_workflow_change: ".github/workflows/x.yml"');
+});
+
+Deno.test("the Base section names a merge at publish with the default branch and its head", () => {
+    const facts = baseFacts(0, files({ merged: "e".repeat(40) + "\n" })).facts;
+    const once = withBase("Adds the export.", facts, "trunk");
+    assertEquals(
+        once,
+        [
+            "Adds the export.",
+            "",
+            BASE_MARK,
+            "## Base",
+            "",
+            "- Checked base: `" + "a".repeat(40) + "`",
+            "- Default branch head: `" + "c".repeat(40) + "`",
+            "- Behind by: 2 commits",
+            "- Merged trunk `" + "c".repeat(40) + "` at publish",
+            "- Overlapping paths: none",
+            "",
+        ].join("\n"),
+    );
+    // A re-publish replaces the section, the merge line with it; one without a merge drops the line.
+    assertEquals(withBase(once, facts, "trunk"), once);
+    assertEquals(withBase(once, baseFacts(0, files()).facts, "trunk"), withBase("Adds the export.", baseFacts(0, files()).facts, "trunk"));
+    // The planned pull request names the admitted default branch.
+    const plan = pullPlan({ input: publishInput(), steps: { read_pull: out(0, "[]") }, base: JSON.stringify(facts) });
+    assertEquals(JSON.parse(plan.body).body.includes("- Merged " + publishInput().base + " `" + "c".repeat(40) + "` at publish\n"), true);
+});
+
 Deno.test("the base path lists stop at their bound and count the rest", () => {
     const many = Array.from(
         { length: BASE_PATHS + 5 },
