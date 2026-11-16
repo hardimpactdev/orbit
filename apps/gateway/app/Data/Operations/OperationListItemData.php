@@ -10,10 +10,7 @@ use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
-/**
- * One row of operation:list: the record without input, result and steps (docs/reference/operations.md#page-the-list). `ready_at` is
- * the one result field a row repeats: a wake's readiness time, so one history request returns every wake's time.
- */
+/** One row of operation:list: the record without input, result and steps (docs/reference/operations.md#page-the-list). */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class OperationListItemData extends Data
 {
@@ -78,7 +75,7 @@ final class OperationListItemData extends Data
             capacityWait: $record->capacityWait,
             overdueSince: $record->overdueSince,
             holdWaitReason: $record->holdWaitReason,
-            readyAt: is_string($operation->result['ready_at'] ?? null) ? $operation->result['ready_at'] : null,
+            readyAt: $record->readyAt,
         );
     }
 }
