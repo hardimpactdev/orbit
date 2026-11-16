@@ -1,0 +1,113 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-16, the inverse of instance:register; Orbit forgets a host checkout Instance and the folder stays. The destroy chart's steps that run without a source effect; ADR 0244 task, R1-R4. docs/reference/instance-removal.md#unregister-a-host-checkout.
+  %% Decided: Nick 2026-11-16, an Instance that owns a server database refuses; there is no keep-database flag, so no database is left without an owner.
+  %% status: draft
+  %% command: instance:unregister
+  %% kind: instance.unregister
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: instance:unregister 42
+  %%> Command:
+  %%> - `orbit instance:unregister 42`
+  %%> - syntax: `<instance> [--yes] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Instance's id, as `instance:list` shows it
+  Note over CLI: Confirm unregister
+  %%> What it does:
+  %%> - asks for default-No consent, naming the Instance and the effect: Orbit forgets it; the checkout folder and its files stay
+  %%> - `--yes` supplies that consent; noninteractive and JSON calls require it
+  Note over GW: Validate, capture the set<br/>Instance 42 · task TASK
+  %%> Requirements:
+  %%> - the calling Node has an access grant to the Node that runs Instance 42
+  %%> - Instance 42 is an active host checkout development Instance
+  %%> - no other lifecycle Operation, transfer or migration holds it
+  %%> Captures:
+  %%> - what Instance 42 owns: Processes, Schedules, Route, database records
+  %%> - the Route publication to withdraw, as destroy captures it
+  %%> Not sent to the run:
+  %%> - the source and SQLite paths stay in the task's recorded input only; no teardown step or server database is captured: nothing on disk goes
+  alt a check fails
+    %% path: refused
+    GW--xCLI: Refused<br/>instance.unregister_*
+    %%> Refuses:
+    %%> - a container Instance: `instance.unregister_container`; use instance:destroy
+    %%> - an Instance that owns a server database: `instance.unregister_owned_database`
+    %%> - a production Instance: `operation.kind_unavailable`
+    %%> Result:
+    %%> - before any change: no Schedule trigger is removed and no task is recorded
+  else the Instance can go
+    %% path: main
+    GW->>SW: Remove Schedule triggers<br/>workflow trigger removal
+    %%> What it does:
+    %%> - removes the native Swamp schedule trigger of each Schedule of Instance 42, as destroy does
+    %%> Why first:
+    %%> - no new fire starts against an Instance that Orbit is forgetting
+    Note over GW: Record removal intent<br/>mark removing
+    %%> Result:
+    %%> - records the task and a removal marked as an unregister, from fresh admission facts
+    %%> - marks Instance 42 removing and its Route retiring
+    %%> - holds each Node that serves the Route, as destroy does
+    GW->>SW: Start run, full intent<br/>operation-instance-unregister
+    %%> Inputs:
+    %%> - the Node's address and SSH host keys, the Route withdrawal, the Processes and the hibernation paths
+    %%> - no source path, teardown step, database, git credential or token
+    GW-->>CLI: 202 Accepted<br/>task TASK
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    opt Instance has a Route
+      %% path: route
+      SW->>N: Withdraw the Route<br/>route-withdraw · forward
+      %%> What it does:
+      %%> - the destroy withdrawal: removes the Caddy site, PHP pool, certificate and private DNS records of Instance 42
+      %%> If it does not hold:
+      %%> - every later step is skipped and the task fails with `route.withdrawal_failed`
+      SW->>GW: Release the Route Nodes<br/>route-release · run ID
+      %%> When:
+      %%> - only after the withdrawal held, as destroy does; a retry then skips the withdrawal
+    end
+    SW->>N: Stop, remove Processes<br/>operation-process-destroy
+    %%> What it does:
+    %%> - stops each Process of Instance 42 and removes its unit, through the child that `process:destroy` uses
+    SW->>N: Remove hibernation files<br/>@swamp/cfgmgmt/file absent
+    %%> Why:
+    %%> - the awake and cold markers and the Caddy access log outlive the Instance otherwise
+    SW->>N: Check units gone<br/>@swamp/ssh exec · test ! -e
+    %%> What it does:
+    %%> - checks that each removed unit file and hibernation file is absent
+    %%> Not checked:
+    %%> - the checkout: it stays, with its Git data and `.env`
+    alt all steps pass
+      %% path: unregistered
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Delete Instance, records<br/>task succeeded
+      %%> Result:
+      %%> - deletes Instance 42 with its Route, Processes, Schedules, auto-deploy, environment and database records, as destroy does
+      %%> - the checkout folder and every file in it stay on the Node
+    else a step fails
+      %% path: failed
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed, mapped to `error_code`
+      Note over GW: Keep Instance, mark failed<br/>rerun the same unregister
+      %%> Result:
+      %%> - Instance 42 and its records stay, marked removal failed; no rollback
+      %%> - run `instance:unregister 42` again; it converges and skips a held withdrawal
+    end
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

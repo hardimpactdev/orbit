@@ -17,6 +17,8 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Instances\CompleteInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RestoreInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Requests\Instances\UnregisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceMailRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
@@ -163,6 +165,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:teardown-step:list',
         'instance:teardown-step:update',
         'instance:transfer',
+        'instance:unregister',
         'instance:update',
         'instance:wake',
         'instance:websocket:add',
@@ -775,6 +778,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:list' => [[], ['json' => false]],
         'instance:mail:update' => [['instance'], ['json' => false]],
         'instance:sleep' => [['instance'], ['idempotency-key' => null, 'json' => false]],
+        'instance:unregister' => [['instance'], ['yes' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:wake' => [['instance'], ['idempotency-key' => null, 'json' => false]],
         'instance:logs' => [['instance'], ['lines' => '100', 'follow' => false, 'json' => false]],
         'instance:migrate' => [['instance'], ['force' => false, 'idempotency-key' => null, 'json' => false]],
@@ -1096,7 +1100,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'node:wireguard-key' => ['node', 'public-key'],
             'node:update', 'node:converge', 'node:metrics', 'node:show', 'node:role:list' => ['node'],
             'node:role:add' => ['node', 'role'],
-            'instance:node-service:attach', 'instance:node-service:list' => ['instance'],
+            'instance:node-service:attach', 'instance:node-service:list', 'instance:unregister' => ['instance'],
             'instance:node-service:detach' => ['instance', 'target'],
             'firewall:allow' => ['port'],
             'proof' => ['orbit-command'],
@@ -1331,6 +1335,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         ],
         'instance:rename' => [['instance' => '1', '--branch' => 't3code/login'], ...$profileMissing],
         'instance:restore' => [['instance' => '1'], ...$profileMissing],
+        'instance:unregister' => [['instance' => '1'], ...$profileMissing],
         'instance:complete' => [['instance' => '1'], ...$profileMissing],
         'instance:setup' => [['instance' => '1'], ...$profileMissing],
         'instance:setup-step:create' => [['name' => 'install-php', '--project' => '1', '--command' => 'true'], ...$profileMissing],
@@ -1698,6 +1703,50 @@ it('renders the final restore Operation in JSON and preserves the retry key', fu
         new Filesystem()->deleteDirectory($home);
     }
 });
+
+it('unregisters with --yes, follows the Operation and preserves the retry key', function (): void {
+    $home = sys_get_temp_dir().'/orbit-unregister-operation-'.bin2hex(random_bytes(8));
+    config(['orbit.home' => $home]);
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(name: 'test', url: 'https://gateway.test', caPath: '/unused/root.pem'));
+    $final = ['data' => [
+        'id' => 44, 'kind' => 'instance.unregister', 'target_type' => 'instance', 'target_id' => 17,
+        'input' => ['instance_id' => 17], 'status' => 'succeeded', 'sequence' => 5,
+        'current_step' => null, 'failed_step' => null, 'error_code' => null,
+        'result' => ['removed' => true],
+        'cancel_requested' => false, 'attempts' => 1, 'triggered_by' => 'operator',
+        'created_at' => '2026-11-16T10:00:00+00:00', 'started_at' => '2026-11-16T10:00:01+00:00',
+        'finished_at' => '2026-11-16T10:00:02+00:00', 'poll_after_seconds' => null,
+    ], 'meta' => []];
+    $mock = MockClient::global([
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['url' => null, 'key' => null, 'channel' => 'orbit'], 'meta' => []]),
+        UnregisterInstanceRequest::class => MockResponse::make($final, 202),
+        ShowOperationRequest::class => MockResponse::make($final),
+    ]);
+    try {
+        $exit = Artisan::call('instance:unregister', ['instance' => '17', '--yes' => true, '--json' => true, '--idempotency-key' => 'unregister-proof']);
+        $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($exit)->toBe(0)->and($output['kind'])->toBe('instance.unregister')
+            ->and($output['status'])->toBe('succeeded')->and($output['result']['removed'])->toBeTrue();
+        $mock->assertSent(fn (Request $request): bool => $request instanceof UnregisterInstanceRequest && $request->headers()->get('Idempotency-Key') === 'unregister-proof'
+            && $request->resolveEndpoint() === '/api/v1/instances/17/unregister');
+        $mock->assertNotSent(ShowInstanceRequest::class);
+    } finally {
+        MockClient::destroyGlobal();
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('refuses missing and invalid unregister IDs as structured errors without transport', function (array $input): void {
+    $mock = MockClient::global([]);
+    try {
+        $exit = Artisan::call('instance:unregister', [...$input, '--yes' => true, '--json' => true]);
+        $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($exit)->toBe(1)->and($output['error']['code'])->toBe('instance.id_invalid');
+        $mock->assertNothingSent();
+    } finally {
+        MockClient::destroyGlobal();
+    }
+})->with([[[]], [['instance' => '0']], [['instance' => 'garbage']]]);
 
 it('renders the final complete Operation in JSON and preserves the retry key', function (): void {
     $home = sys_get_temp_dir().'/orbit-complete-operation-'.bin2hex(random_bytes(8));

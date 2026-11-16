@@ -17,6 +17,7 @@
             "cli/instance/show",
             "cli/instance/logs",
             "cli/instance/destroy",
+            "cli/instance/unregister",
             "cli/instance/setup",
             "cli/instance/setup-step-create",
             "cli/instance/setup-step-list",

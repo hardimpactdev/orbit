@@ -7,6 +7,7 @@ namespace App\Domain\Operations;
 use App\Actions\Instances\StartInstanceRestoreAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Instances\ClonePublication;
+use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Routes\NativeRouteCreatePlan;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSite;
@@ -39,7 +40,7 @@ use Throwable;
 final class RoutePublicationHolds
 {
     /** @var list<string> */
-    private const array Kinds = ['instance.create', 'instance.complete', 'instance.destroy', 'instance.clone', 'instance.transfer', 'instance.migrate',
+    private const array Kinds = ['instance.create', 'instance.complete', 'instance.destroy', 'instance.unregister', 'instance.clone', 'instance.transfer', 'instance.migrate',
         'instance.restore', 'route.create', 'route.update', 'route.destroy', 'route.target_set'];
 
     /** Kinds that render their whole publication again from the current catalog when a promotion starts them. */
@@ -114,13 +115,13 @@ final class RoutePublicationHolds
      */
     public static function releasesAfterWithdraw(string $kind): bool
     {
-        return $kind === 'instance.destroy';
+        return InstanceDestroyKind::removes($kind);
     }
 
     /** A removal withdraws, and a Caddy-only clone create merges, only its own sections under the Node lock, so they share their Nodes. */
     private static function sharesNodes(Operation $operation): bool
     {
-        return $operation->kind === 'instance.destroy' || ClonePublication::sharesNodes($operation);
+        return InstanceDestroyKind::removes($operation->kind) || ClonePublication::sharesNodes($operation);
     }
 
     /** Whether the terminal state of the kind has holds to free. */
@@ -285,7 +286,7 @@ final class RoutePublicationHolds
             + DB::table('route_withdrawal_holds')->where('operation_id', $operationId)->delete();
         // A write that starts after this Operation may start now, even when this one held no Node; so may a removal of its slot.
         $follower = Operation::query()->whereIn('kind', self::Kinds)->where('status', OperationStatus::Waiting)
-            ->where(static fn ($query) => $query->where('input->after_operation_id', $operationId)->orWhere('kind', 'instance.destroy'))->exists();
+            ->where(static fn ($query) => $query->where('input->after_operation_id', $operationId)->orWhereIn('kind', InstanceDestroyKind::Removals))->exists();
         if ($freed > 0 || $wasWaiting || $follower) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
@@ -378,10 +379,10 @@ final class RoutePublicationHolds
         });
     }
 
-    /** The slot of a removal's container step names: its Instance's ID modulo `DestroySlots`. Null for any other kind. */
+    /** The slot of a removal's step names: its Instance's ID modulo `DestroySlots`, for destroy and unregister alike. Null for any other kind. */
     public static function destroySlot(Operation $operation): ?int
     {
-        $instance = $operation->kind === 'instance.destroy' ? ($operation->input['instance_id'] ?? null) : null;
+        $instance = InstanceDestroyKind::removes($operation->kind) ? ($operation->input['instance_id'] ?? null) : null;
 
         return is_int($instance) ? $instance % self::DestroySlots : null;
     }
@@ -398,7 +399,7 @@ final class RoutePublicationHolds
             return false;
         }
 
-        return Operation::query()->where('kind', 'instance.destroy')->where('node_id', $operation->node_id)->where('id', '<', $operation->id)
+        return Operation::query()->whereIn('kind', InstanceDestroyKind::Removals)->where('node_id', $operation->node_id)->where('id', '<', $operation->id)
             ->where(static fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())->orWhereNotNull('lock_key')
                 ->orWhere('finished_at', '>', now()->subMinutes(self::UnconfirmedMinutes)))
             ->get()->contains(static fn (Operation $other): bool => self::destroySlot($other) === $slot
@@ -482,7 +483,7 @@ final class RoutePublicationHolds
     /** A write whose Caddy input is fresh when it starts: a create that renders again at promotion, or a removal that composes from the live file. */
     private static function rendersAtStart(Operation $operation): bool
     {
-        return $operation->kind === 'instance.destroy'
+        return InstanceDestroyKind::removes($operation->kind)
             || (in_array($operation->kind, self::RefreshedKinds, true) && isset($operation->input['route_create']));
     }
 
@@ -522,7 +523,7 @@ final class RoutePublicationHolds
     private function take(Operation $operation, array $nodes): ?string
     {
         if (self::sharesNodes($operation)) {
-            return $this->share($operation->id, $nodes, $operation->kind === 'instance.destroy');
+            return $this->share($operation->id, $nodes, InstanceDestroyKind::removes($operation->kind));
         }
 
         return $this->acquire($operation->id, $nodes) ? null : ClonePublication::NodesHeld;
@@ -567,7 +568,7 @@ final class RoutePublicationHolds
             }
             $removals = $removal && DB::table('route_withdrawal_holds')->join('operations', 'operations.id', '=', 'route_withdrawal_holds.operation_id')
                 ->whereIn('route_withdrawal_holds.node_id', $nodes)->where('route_withdrawal_holds.operation_id', '!=', $operationId)
-                ->where('operations.kind', 'instance.destroy')->groupBy('route_withdrawal_holds.node_id')->havingRaw('count(*) >= ?', [self::SharedRemovals])->exists();
+                ->whereIn('operations.kind', InstanceDestroyKind::Removals)->groupBy('route_withdrawal_holds.node_id')->havingRaw('count(*) >= ?', [self::SharedRemovals])->exists();
             if ($removals) {
                 return self::RemovalCap;
             }
@@ -595,7 +596,7 @@ final class RoutePublicationHolds
         }
         $others = DB::table('route_withdrawal_holds')->join('operations', 'operations.id', '=', 'route_withdrawal_holds.operation_id')
             ->whereIn('route_withdrawal_holds.node_id', $nodes)->where('route_withdrawal_holds.operation_id', '!=', $operationId)
-            ->where('operations.kind', 'instance.destroy')->distinct()->pluck('route_withdrawal_holds.operation_id')->all();
+            ->whereIn('operations.kind', InstanceDestroyKind::Removals)->distinct()->pluck('route_withdrawal_holds.operation_id')->all();
 
         return Operation::query()->whereKey($others)->get()->contains(static fn (Operation $other): bool => self::withdrawalSlot($other->input) === $slot);
     }

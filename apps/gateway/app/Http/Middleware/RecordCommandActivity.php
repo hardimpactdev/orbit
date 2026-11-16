@@ -334,7 +334,8 @@ final readonly class RecordCommandActivity
             return ValidatedData::object($attribute);
         }
 
-        if ($request->route()?->getName() !== 'instance:destroy' || $response->getStatusCode() >= 400) {
+        // Both removal commands record the removal they admitted (docs/reference/instance-removal.md).
+        if (! $request->routeIs('instance:destroy', 'instance:unregister') || $response->getStatusCode() >= 400) {
             return null;
         }
 

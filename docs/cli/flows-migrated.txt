@@ -29,6 +29,7 @@ instance.rollback
 instance.run_steps
 instance.sync_environment
 instance.transfer
+instance.unregister
 metrics.disable
 metrics.enable
 metrics.exporter_disable

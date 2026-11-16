@@ -13,6 +13,7 @@ use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Instances\InstanceDestroyReplicationSlots;
 use App\Domain\Instances\InstanceDestroyWorktrees;
 use App\Domain\Instances\InstanceLifecycleInput;
+use App\Domain\Instances\InstanceRemovalKind;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
@@ -85,6 +86,19 @@ final readonly class StartInstanceDestroyAction
         if ($completion !== null) {
             $snapshot['after_operation_id'] = $completion;
         }
+
+        return $this->admit($instance, $snapshot, $kind, $caller, $requestId, $completion, $within);
+    }
+
+    /**
+     * The admission that destroy and unregister share once their own checks passed: the dry run, the Schedule triggers, then the
+     * fresh intent and the Operation in one transaction (docs/reference/instance-removal.md).
+     *
+     * @param  array<string, mixed>  $snapshot
+     * @param  (Closure(Closure(): Operation): Operation)|null  $within
+     */
+    public function admit(Instance $instance, array $snapshot, string $kind, ?string $caller, ?string $requestId, ?int $completion = null, ?Closure $within = null): Operation
+    {
         [$prepared] = app(DirectInstanceDestroyIntent::class)->prepare($snapshot);
         // A replication slot makes the drop fail after the fence closed the database; refuse before any effect, also with --force.
         app(InstanceDestroyReplicationSlots::class)->assertNone($prepared);
@@ -145,7 +159,7 @@ final readonly class StartInstanceDestroyAction
     }
 
     /** @return array<string, mixed> */
-    public function snapshot(Instance $instance, bool $force): array
+    public function snapshot(Instance $instance, bool $force, InstanceRemovalKind $removalKind = InstanceRemovalKind::Destroy): array
     {
         if (! $instance->placedOnAppDev()) {
             throw new ResourceOperationException('operation.kind_unavailable', 'This removal placement has no native destroy DAG.', 503);
@@ -157,6 +171,10 @@ final readonly class StartInstanceDestroyAction
                 $this->conflict($instance);
             }
             $removal = $retained->removal;
+            // A removal keeps its kind: a failed unregister is never finished by destroy, nor a failed destroy by unregister.
+            if ($removal->kind !== $removalKind) {
+                $this->conflict($instance);
+            }
             if ($removal->force !== $force && (! $force || $removal->force || $removal->status !== InstanceRemovalStatus::Failed)) {
                 $this->conflict($instance);
             }
@@ -191,7 +209,7 @@ final readonly class StartInstanceDestroyAction
                 'runtime_published' => $member->status === InstanceState::Active,
                 'source_root' => $member->runtime()->exists() ? null : $this->boundaries->instanceGroupingDirectory($member)->parent()?->value,
                 'user' => $member->node->user, 'group' => null,
-                'run_teardown' => ! $member->runtime()->exists() && ! $this->failedCreation($member),
+                'run_teardown' => $removalKind === InstanceRemovalKind::Destroy && ! $member->runtime()->exists() && ! $this->failedCreation($member),
                 'teardown_digest' => $this->teardownDigest($member->project),
                 'worktree_inventory' => null, 'origin' => null,
                 'source_prepare_id' => $member->source_prepare_id, 'registration_request_id' => $member->registration_request_id,
@@ -204,6 +222,7 @@ final readonly class StartInstanceDestroyAction
         $container = app(ContainerInstanceDestroy::class)->capture($instance);
 
         return ['container_destroy' => $container,
+            ...($removalKind === InstanceRemovalKind::Unregister ? ['unregister' => true] : []),
             ...($instance->retained_git_path === null ? [] : [
                 'retained_git_path' => $instance->retained_git_path, 'retained_git_at' => $instance->retained_git_at?->toIso8601String(),
             ]),

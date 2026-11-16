@@ -45,6 +45,7 @@ A failed run changes no record: the Instance stays `removing` and the Route `ret
 | `instance.restore_state_invalid` | The Instance is not `removing` with a failed removal, a removal run has not ended, or a run has no record that it skipped a step that deletes data. |
 | `instance.restore_already_removed` | The removal ran a step that deletes data, the owned databases changed, or the Route or its target changed. |
 | `instance.restore_source_changed` | The Node agent does not report the checkout with its recorded path and repository, or has not reported it recently. |
+| `instance.removal_conflict` | The failed removal is an [`instance:unregister`](/cli/instance/unregister). Run `instance:unregister` again. |
 | `instance.restore_busy` | Another Operation holds the Instance or its Route. |
 | `instance.restore_database_closed` | A planned database does not accept connections. The message names it. |
 | `instance.restore_database_missing` | A planned database is gone. The message names it. |

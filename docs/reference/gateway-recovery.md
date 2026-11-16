@@ -176,6 +176,7 @@ A kind needs this guard when its execution input is built or its execution code 
 | `instance.migrate` | Rebuilds container Process input against admitted units; a changed renderer can refuse those units. |
 | `instance.clone` | Builds the clone's environment, Process and Schedule input at submission. |
 | `instance.destroy` | Reads teardown programs and builds removal input after admission. |
+| `instance.unregister` | Builds its run input from the admitted removal at start, through the same projection code as `instance.destroy`. |
 | `instance.restore` | Renders its database batches at submission and records the restored Instance after its run. |
 | `conn.*` | Preserves the existing guard for checkout and session setup across a switch. |
 | `process.*` | Preserves the existing guard for Process unit, definition and control work, excluding read-only journal and state requests. |

@@ -353,6 +353,9 @@
   "operation-instance-restore": {
    "Check the databases": "read-only"
   },
+  "operation-instance-unregister": {
+   "Check units gone": "read-only"
+  },
   "operation-instance-rollback": {
    "Read current back": "read-only"
   },

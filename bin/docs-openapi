@@ -717,6 +717,9 @@ DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@scheduleUpdate': 'Replace a Schedule definition',
     'ProjectRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
 }
+# Routes whose POST removes a resource: MCP marks them destructive, as it marks every DELETE.
+DESTRUCTIVE_POSTS = {'instance:unregister'}
+
 SUMMARIES = {
     'instance:node-service:list': 'List an Instance\'s Node service attachments',
     'proof:run': 'Prove the cases of a commit',
@@ -724,6 +727,7 @@ SUMMARIES = {
     'proof': 'Prove a command on the task VM',
     'instance:transfer': 'Transfer an Instance',
     'instance:migrate': 'Move a checkout Instance into a container',
+    'instance:unregister': 'Unregister an Instance and keep its folder',
     'gateway:auto-release:status': 'Show automatic Gateway release status', 'gateway:auto-release:enable': 'Enable automatic Gateway releases', 'gateway:auto-release:disable': 'Disable automatic Gateway releases', 'gateway:auto-release:resume': 'Resume automatic Gateway releases',
     'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:update': 'Update a Node',
@@ -809,6 +813,7 @@ SUMMARIES = {
     'task:start': 'Provision a Task group workspace', 'task:complete': 'Complete a Task group',
 }
 DESCRIPTIONS = {
+    'instance:unregister': 'Requires node access to the Instance\'s Node. Orbit forgets a host checkout development Instance and keeps its folder: no source, Git, `.env`, teardown, SQLite file or database is touched. Returns HTTP 202 with instance.unregister: Swamp withdraws the Route, stops and removes the Processes and removes the hibernation files; on success the Gateway deletes the Instance with its Route, Processes, Schedules, auto-deploy, environment and database records. Refuses a container Instance with `instance.unregister_container` (409) and an Instance that owns a server database with `instance.unregister_owned_database` (409), before any change. A failed removal of another kind returns `instance.removal_conflict`. Follow operation:show. See /cli/instance/unregister.',
     'instance:sleep': 'Requires node access to the Instance\'s Node. Only for a development container, a default and a nested-fleet Instance included; another Instance returns `instance.sleep_unsupported` (409). Returns HTTP 202 with instance.sleep: Swamp writes the asleep marker, so the Route shows the wake page, then freezes the container with its memory in swap (`sleep: frozen`), or stops it when swap is full (`sleep: stopped`); a nested-fleet Instance is never stopped and fails `instance.container_freeze_failed` instead. `swap_subtree` counts the inner cgroups the freeze opened. It does not check T3: a running agent turn is held and may lose its provider connection, and the result says `t3_turn: not_checked`, or `no_server` for an Instance without a T3 server. The Operation fails with `instance.sleep_route_unready`, and changes nothing, while the Node\'s loaded Caddy site lacks the asleep check. Follow operation:show.',
     'instance:wake': 'Requires node access to the Instance\'s Node. Only for a development container. Returns HTTP 202 with instance.wake; an open wake of the same Instance is returned instead of a second. A nested-fleet Instance takes the wake only while its last sleep froze it: then Swamp resumes it with its inner fleet, and a stopped one fails `instance.nested_fleet_stopped`. Otherwise a nested-fleet default returns `instance.sleep_unsupported` (409), and a nested-fleet clone returns instance.start instead: Swamp starts the container, delivers its Club key and starts its inner fleet, then waits for Doctor; the result names `fleet_seconds`. Every other Instance: Swamp resumes a frozen container, or starts a stopped one, waits until the app answers, removes the asleep marker, then waits for T3 in an Instance with a T3 server. The result names the path in `wake`. A failed wake keeps the marker. Follow operation:show.',
     'instance:node-service:attach': 'Records an explicit standalone Node Process target for an Instance checkout. Does not provision network access or change environment values or runtime. See /reference/processes-and-schedules#node-service-target-records.',
@@ -1944,6 +1949,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     op = {'operationId': op_id, 'summary': summary_for(route), 'tags': [tag], 'parameters': []}
     if route['extension'] is not None:
         op['x-orbit-extension'] = route['extension']
+    if method == 'delete' or route['name'] in DESTRUCTIVE_POSTS:
+        op['x-orbit-destructive'] = True
     description = description_for(route)
     if description:
         op['description'] = description

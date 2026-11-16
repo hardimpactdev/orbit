@@ -105,17 +105,18 @@ final readonly class DirectInstanceDestroyIntent
         $routeIds = $attached->modelKeys();
         $direct = ValidatedData::object($input['direct_destroy']);
         $database = Arr::except(ValidatedData::object($direct['database']), ['owner_instance_id']);
-        $receipt = app(RecordDatabaseOperationAction::class)->prepare('instance.destroy', 'instance',
+        $kind = InstanceRemovalKind::ofInput($input);
+        $receipt = app(RecordDatabaseOperationAction::class)->prepare($kind->operationKind(), 'instance',
             ValidatedData::integer($input['instance_id']), ValidatedData::integer($input['node_id']), $database, []);
         $input['direct_destroy'] = [...$direct, 'database' => [
             'owner_instance_id' => $input['instance_id'], 'intent_id' => ValidatedData::integer($receipt->input['intent_id']), ...$database,
         ]];
         $removal = InstanceRemoval::query()->firstOrCreate(['id' => $input['removal_id']], [
-            'requested_instance_id' => $input['instance_id'], 'requested_name' => $input['name'],
+            'requested_instance_id' => $input['instance_id'], 'requested_name' => $input['name'], 'kind' => $kind,
             'force' => $input['force'], 'inventory_digest' => $input['inventory_digest'], 'total' => count($members),
             'status' => InstanceRemovalStatus::Removing, 'current_step' => InstanceRemovalStep::SourcePreparation,
         ]);
-        if ($removal->requested_instance_id !== $input['instance_id'] || $removal->inventory_digest !== $input['inventory_digest']) {
+        if ($removal->requested_instance_id !== $input['instance_id'] || $removal->inventory_digest !== $input['inventory_digest'] || $removal->kind !== $kind) {
             throw new ResourceOperationException('instance.removal_conflict', 'The admitted removal set changed.', 409);
         }
         $node = $this->node($input);
@@ -193,7 +194,7 @@ final readonly class DirectInstanceDestroyIntent
     {
         app(ContainerInstanceDestroy::class)->assertAvailable(Instance::query()->lockForUpdate()->findOrFail(ValidatedData::integer($input['instance_id'])), $input['force'] === true);
         $members = InstanceLifecycleInput::members($input);
-        if (Operation::query()->whereIn('kind', ['instance.destroy'])
+        if (Operation::query()->whereIn('kind', InstanceDestroyKind::Removals)
             ->where('target_type', 'instance')->whereIn('target_id', array_column($members, 'instance_id'))
             ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
             throw new ResourceOperationException('operation.target_busy', 'A removal root already owns this Instance.', 409);
@@ -326,7 +327,7 @@ final readonly class DirectInstanceDestroyIntent
     private function assertReplayAvailable(InstanceRemoval $removal, array $input): array
     {
         $saved = $removal->native_intent;
-        if ($saved === null || $removal->requested_instance_id !== $input['instance_id']
+        if ($saved === null || $removal->requested_instance_id !== $input['instance_id'] || $removal->kind !== InstanceRemovalKind::ofInput($input)
             || $removal->inventory_digest !== $input['inventory_digest']
             || $saved['node_id'] !== $input['node_id'] || $saved['project_id'] !== $input['project_id']
             || ($saved['force'] !== $input['force'] && ($input['force'] !== true || $removal->status !== InstanceRemovalStatus::Failed))) {

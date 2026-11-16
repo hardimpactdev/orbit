@@ -16,7 +16,7 @@ final class InstanceDestroyRouteWithdrawal
 {
     public function record(Operation $operation): void
     {
-        if ($operation->kind !== 'instance.destroy' || $operation->status->terminal() || ! is_string($operation->input['removal_id'] ?? null)) {
+        if (! InstanceDestroyKind::removes($operation->kind) || $operation->status->terminal() || ! is_string($operation->input['removal_id'] ?? null)) {
             return;
         }
         $removal = InstanceRemoval::query()->lockForUpdate()->find(ValidatedData::string($operation->input['removal_id']));

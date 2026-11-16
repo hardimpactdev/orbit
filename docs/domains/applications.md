@@ -31,6 +31,7 @@ This page follows an Instance from creation to removal. Each step links to the p
 | Bring back a failed host removal | `instance:restore` | [`instance:restore`](/cli/instance/restore) |
 | Move to another Node | `instance:transfer` | [Instance transfer](/reference/instance-transfer) |
 | Remove | `instance:destroy` | [Instance removal](/reference/instance-removal) |
+| Forget a host checkout and keep its folder | `instance:unregister` | [Unregister a host checkout](/reference/instance-removal#unregister-a-host-checkout) |
 
 ## Create a development Instance
 
