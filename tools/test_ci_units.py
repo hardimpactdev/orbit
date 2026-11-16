@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=8, default_cost=30)
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=10, default_cost=30)
 
 
 def fixture(file, cost=30, inputs=(), **options):

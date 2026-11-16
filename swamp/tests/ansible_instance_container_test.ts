@@ -568,7 +568,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a deployment checks out the branch's new commit, seeds it and deletes the older seed; a failed phase names itself and stops its play",
+  name: "a deployment checks out the branch's new commit, seeds it and deletes the older seed",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -603,19 +603,6 @@ Deno.test({
       assertEquals(f.state().bundles.at(-1).prerequisites, [first]);
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${second}`]);
 
-      // A failure that is no refusal names its phase.
-      const state = f.state();
-      state.inactive = ["orbit-frankenphp.service"];
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-      assert(!f.run("check").ok);
-      assertEquals(f.result(), { error_code: "deployment.processes_inactive" });
-      // In one play of several phases a failed phase stops the play, and the result names it.
-      delete state.containers["instance-7"];
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-      const bundles = (f.state().bundles ?? []).length;
-      assert(!f.phases(["start", "fetch"]).ok);
-      assertEquals(f.result(), { error_code: "instance.container_start_failed", failed_phase: "start", phases_passed: [] });
-      assertEquals((f.state().bundles ?? []).length, bundles, "a failed phase stops the play: no fetch after a failed start");
     } finally {
       f.cleanup();
     }
@@ -1146,7 +1133,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a new Process that does not start fails the deployment's processes phase, which names its unit",
+  name: "a new Process that does not start fails the deployment's processes phase, which names its unit; any failed phase names itself and stops its play",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1167,6 +1154,22 @@ Deno.test({
       const processes = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
       assert(!processes.ok, processes.output);
       assertEquals(f.result(), { error_code: "instance.container_processes_failed", detail: `Not active: ${broken.name}`, units_inactive: [broken.name] });
+
+      // A failure of the deployment's check, which is no refusal, names its phase.
+      f.container.processes = [worker];
+      f.write();
+      state.failing = [];
+      state.inactive = ["orbit-frankenphp.service"];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      assert(!f.run("check").ok);
+      assertEquals(f.result(), { error_code: "deployment.processes_inactive" });
+      // In one play of several phases a failed phase stops the play, and the result names it.
+      delete state.containers["instance-7"];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const bundles = (f.state().bundles ?? []).length;
+      assert(!f.phases(["start", "fetch"]).ok);
+      assertEquals(f.result(), { error_code: "instance.container_start_failed", failed_phase: "start", phases_passed: [] });
+      assertEquals((f.state().bundles ?? []).length, bundles, "a failed phase stops the play: no fetch after a failed start");
     } finally {
       f.cleanup();
     }
