@@ -634,11 +634,9 @@ The rollout visits a Node when all of these hold:
 - it holds at least one active role other than `gateway`;
 - it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host;
 
-Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. A [CLI convergence](/cli/fleet#how-it-works) names why it leaves a Node out: `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `cli_not_required`.
+Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. A [CLI convergence](/cli/fleet#how-it-works) names why it leaves a Node out: `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `cli_not_required`.
 
-A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) owns, on an Incus host. The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. The Gateway creates a task VM for one task group and destroys it when the group ends. Provisioning links its Node to the task VM before any convergence, so the Node never gets the Orbit CLI.
-
-The rollout never visits a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. The `sandbox` reason comes first, so a sandbox shows it in every state.
+No Node is a task sandbox any more, so the rollout has no `sandbox` reason and reads no task VM row ([old paths](/reference/old-paths#the-task-vm-readers)).
 
 The order goes lowest risk first. Each role has a group. A Node with several roles goes in the latest group of its roles, so it waits until every lower-risk Node is done. Inside a group, the Node ID decides.
 

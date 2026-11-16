@@ -23,7 +23,7 @@ orbit node:access:add 4 7
 
 In a terminal, an omitted Node is chosen from an interactive list: the consumer first, then the serving Node. A noninteractive or `--json` call that omits one is refused with `node_access.consumer_id_invalid` or `node_access.serving_id_invalid`, and so is an ID that is not a positive integer. A refused call sends no request.
 
-The command only records the grant. It contacts no Node, so it works while a Node is unreachable. Both Nodes must be active; an inactive or unknown Node is refused as not found. A [task VM](/reference/compute-drivers#placement-invariant) Node never consumes a grant: the command fails with `task_vm.access_refused`. The caller must be the Gateway Node, the machine that the Gateway bootstrap recorded as its serving host, or hold a grant to the Gateway Node.
+The command only records the grant. It contacts no Node, so it works while a Node is unreachable. Both Nodes must be active; an inactive or unknown Node is refused as not found. The caller must be the Gateway Node, the machine that the Gateway bootstrap recorded as its serving host, or hold a grant to the Gateway Node.
 
 Repeating a grant that exists succeeds with `Skipped — already granted (node_access.exists)` and writes nothing.
 
@@ -34,6 +34,5 @@ A grant to the active `gateway` Node lets the consumer act on every Node. The `g
 | Code | Meaning |
 | --- | --- |
 | `node_access.consumer_id_invalid`, `node_access.serving_id_invalid` | A Node is missing or is not a positive integer, and the CLI cannot prompt. |
-| `task_vm.access_refused` | The consumer is a task VM Node. |
 | `http.404` | A Node is unknown or not active. |
 | `node_access.required` | The caller is not the Gateway Node or its serving host and has no grant to the Gateway Node. |

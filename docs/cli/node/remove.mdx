@@ -47,9 +47,8 @@ A failed removal keeps the Node, marked `failed`, with the failed step, and mark
 | `node.has_instances`, `node.has_database_servers`, `node.has_routes`, `node.has_firewall_rules` | Resources still depend on the Node, offline or online. Remove them first. |
 | `schedule.target_in_use` | A Schedule still targets the Node. Remove it first. |
 | `node.has_processes`, `node.has_role_dependents` | An online removal still has Processes or role dependents. |
-| `node.has_task_vms` | A task VM row of the Node is not destroyed yet. |
 | `node.role_busy`, `websocket.runtime_shutdown_required` | A role operation runs on the Node, or its WebSocket runtime must be shut down first. |
-| `node.removal_owner_required`, `node.removal_owner_mismatch` | The Node is a task VM guest, or its record changed after admission. |
+| `node.removal_owner_required`, `node.removal_owner_mismatch` | The Node's machine is already deleted and its owning workflow must remove it, or its record changed after admission. |
 | `node.removal_busy` | An admitted removal already exists for the Node. |
 | `node.removal_incomplete` | The Node is unreachable and `--offline` was not given, or the final check failed. |
 | `swamp.ssh_target_unavailable` | A required SSH target is unavailable (503). Retry later. |

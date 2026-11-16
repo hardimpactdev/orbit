@@ -106,7 +106,45 @@ A later release drops what nothing read any more. Its migration `2027_03_01_0000
 - The rows already in `task_group_egress` stay readable through `task:egress`.
 - The fleet reboot intent of a Node has no `task_project`, and the pass has no `task_hosts`. Swamp drains no task guests: the step `Drain the task guests` and its task files `fleet-reboot-drain-tasks.yml` and `fleet-reboot-park.yml` are deleted.
 
-The busy check of the fleet reboot, `FleetReboot::busy`, drops the Operation kind pattern `task_vm.%`, because no `task_vm.*` kind starts. No admission calls the check any more. It reads `TaskVm` rows, as `rebootingTaskHosts` and `refuseTaskWork` do, and they go with the task VM tables. `capacity_wait_reason` and the task VM tables stay, unread by the API, until a later release drops them.
+The busy check of the fleet reboot, `FleetReboot::busy`, drops the Operation kind pattern `task_vm.%`, because no `task_vm.*` kind starts. No admission calls the check any more. It goes with `rebootingTaskHosts` and `refuseTaskWork` ([the task VM readers](#the-task-vm-readers)). `capacity_wait_reason` and the task VM tables stay, unread by the API, until a later release drops them.
+
+### The task VM readers
+
+No task VM is created any more, and `task_vms` has no live row. This release removes the Gateway code that read `task_vms`, `task_vm_image_builds` or `task_vm_image_recipe` only to find a task VM, which none of them finds. The path that ran when no VM existed is now the only path. Instances, Projects and tasks lose these guards:
+
+- The Instance guards of create, clone and transfer.
+- The Instance save rule `task_vm.foreign_instance` and the access grant rule `task_vm.access_refused`.
+- The Conn check `native_create` with its code `instance.task_vm_node`.
+- The Project removal refusal `project.task_vm_not_destroyed`.
+- The task VM preflight of `project:update`, in the action and in its source preflight.
+- The task VM term of `task:cancel` and of the final review.
+
+Nodes and the fleet lose these:
+
+- The Node removal refusal `node.has_task_vms` and the task VM guest check of its admission.
+- The `task_vm_id` checks of the Node removal records. The snapshot keeps `task_vm_id` as `null`, and the intent keeps `task_vm_guest` as `false`.
+- The task VM skips of enrollment, the Instance host intent and the metrics exporter.
+- The fleet rollout reason `sandbox`, and the task VM filters of the fleet reboot members and the Swamp worker known hosts.
+- The fleet reboot's `busy` check and its task host refusal `tasks.host_rebooting`.
+- The `parked` update of the fleet reboot projection, and Doctor's `node.task_vm_parked`.
+
+The code that served only those readers goes too:
+
+- The SSH credential guard `TaskVmCredentialGuard`. The `incus` transport keeps its refusal `task_vm.git_credential_refused`.
+- The relations `Node::liveTaskVm`, `Node::taskVms` and `Task::latestVm`.
+- `TaskVmStepClock`, `TaskVmFailedException` and the check runner's task VM setup branches.
+- The slot lookup and slot update of `TaskProvisionProjection`.
+
+The task group field `vm_power` stays and is always `null` ([VM power](/reference/compute-drivers#vm-power)). No other API, agent or Swamp input field changes.
+
+Two readers stay, because they do not guard an empty row:
+
+- `TaskVmWorkspaceGuard::assertOwnedWorkspace` asks for the group's ready task VM before a task workspace command over SSH. No group has one, so it always refuses with `task_vm.workspace_mismatch`.
+- `ProblemRecovery` closes an open `recipe-image:` alert from its `task_vm_image_builds` row (`verified_image_build`, `recipe_generation_superseded` or `resource_gone`).
+
+Two cleanup deletes stay until the tables go, because the tables keep foreign keys to `nodes` and `tasks`: Node removal deletes the Node's `task_vms` rows and its finished `task_vm_image_builds` rows, and Project removal deletes the `destroyed` `task_vms` rows of its groups.
+
+The next release drops `task_vms`, `task_vm_image_builds` and `task_vm_image_recipe`, with the models `TaskVm` and `TaskVmImageBuild`, their state enums and the cleanup deletes.
 
 ### What stays
 

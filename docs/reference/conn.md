@@ -447,7 +447,6 @@ The keys below are a stable contract, in this order. New keys may be appended. C
 | `php_readiness` | Supported Project PHP | `project.source_defaults_incomplete` or `instance.host_unavailable` |
 | `runtime_contributions` | Conn can record the clone's server | `operation.kind_unavailable` |
 | `model_route` | Model router and guard are ready | `operation.kind_unavailable`, `ai_router.disabled` or `ai_router.guard_missing` |
-| `native_create` | Node is not a live task VM | `instance.task_vm_node` |
 
 The first four checks share one error code and give different fixes: create the default, migrate it into a container, finish its create, or deploy its seed snapshot. These readiness checks precede Node access for both create and the name check. If readiness and access both fail, they answer `instance.default_missing` (409). The Project name remains visible in the list, but a hidden default's Node fields and suffix stay null. Check messages and refusals contain no Node names or IDs.
 
