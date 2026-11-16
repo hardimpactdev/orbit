@@ -29,11 +29,14 @@ uncovered:
   "path:metrics": "Need exporter scrape and Prometheus membership assertions on recorded Metrics participants to prove conditional enrollment."
   "path:analytics-cleanup": "Need prepared Analytics storage and init-container lifecycle assertions to prove best-effort cleanup after either terminal result, before private run files are removed."
 
+waits:
+  idmap: "app-dev --converge runs nested-app-dev's roles phase, which builds the Instance host's stock image. That needs the default's 2,000,000 ID map; below it the phase fails with too few uid/gid. The owner schedules the ID map window; until then the plan skips this case."
+
 cases:
   - id: required-only
     batch: fresh-fleet
     covers: [main, add, succeeded, role-refused, converge-requested, converge-mode, converge, converge-succeeded]
-    summary: Repair a stopped Docker service when adding database, verify its package and active assignment, refuse an ordinary repeat, then prove convergence changes nothing.
+    summary: Repair a stopped Docker service when adding database, verify its package and active assignment, refuse an ordinary repeat, then prove that a convergence after the install succeeds and changes nothing.
     timeout: 1200
     setup:
       - service: {on: app-dev, name: docker.socket, state: stop}
@@ -49,8 +52,8 @@ cases:
           - cli: {run: [node:role:add, "${app-dev.id}", database], expect: {exit: 1, code: validation.failed, request: none}}
         expect:
           - unchanged: {since: act, what: [ufw, operations]}
-      - act:
-          - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], expect: {exit: 0, status: succeeded}}
+      # The install converged the role, so the first --converge is already the repeat that must change nothing (measured in a copy:
+      # both converges after the install changed 0 in every phase). One Operation checks both.
       - act:
           - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], save: {id: database-repeat}, expect: {exit: 0, status: succeeded}}
         expect:
@@ -60,6 +63,7 @@ cases:
 
   - id: application-repeat
     batch: fresh-fleet
+    waits: idmap
     covers: [main, tools, converge-requested, converge-mode, converge, converge-succeeded]
     summary: Converge app-dev and its Tool Managers, then prove an unchanged repeat changes no role resources or manager installation.
     timeout: 1800

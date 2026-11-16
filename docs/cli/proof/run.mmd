@@ -15,7 +15,7 @@ sequenceDiagram
   GW->>GH: Select commands<br/>check trust
   %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a copy. Trust passes before any copy exists: a copy holds the nested Club key, so untrusted code never reaches one.
   %%> Retry:
-  %%> - A GitHub read that fails with a transport error or a 5xx answer is read once more after 2 s, once for each admission attempt (a proof that waits for room is attempted again). A rate limit, 401, 403, 404 or 422 is not read again.
+  %%> - A GitHub read that fails with a transport error or a 5xx answer is read once more after 2 s, once in the first admission attempt (a later attempt keeps that attempt's selection and reads GitHub no more). A rate limit, 401, 403, 404 or 422 is not read again.
   %%> On failure:
   %%> - The refusal names the read, the HTTP status or the transport error class, and the reset of a rate limit: proof.github_unavailable (run again), proof.github_rate_limited (run after the reset), proof.github_refused (an operator checks the GitHub App), proof.github_not_found (do not retry).
   opt --base supplied
@@ -60,10 +60,15 @@ sequenceDiagram
   %%> - Read the runner state and MemAvailable of each Node from Prometheus before the admission transaction. A Node without a fresh read offers no place.
   %%> When:
   %%> - With no free place on any Node, the proof waits with the step "Wait for a free CI place" and tries again every 20 seconds.
-  GW->>GW: Balance whole batches<br/>by measured time
-  %%> One shard per free place, at most one per batch. The read-only cases (`read_only: true`) of a batch with no setup form their own batch. The weight of a batch is its measured case seconds, plus 180 s for its reset and setup when it is not a read-only batch. Longest weight first; assign each to the least loaded copy. Selected cases of a batch stay together. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each batch that is not read-only (at least one) and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
+  %%> - The first attempt records the selected cases and the batch plan on the proof. A later attempt keeps them: it does not check the commit, read GitHub or select again.
+  GW->>GW: Balance batches<br/>by measured time
+  %%> One shard per free place, at most one per part. The read-only cases (`read_only: true`) of a batch with no setup form their own batch. The weight of a part is its measured case seconds, plus 180 s for its reset and setup when it is not read-only. Longest weight first; assign each part to the least loaded copy. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each part that is not read-only (at least one) and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
+  %%> Split:
+  %%> - A batch is one part until a split pays. While a place is free, take the heaviest part that is not read-only and has two or more cases, and split it by case into two parts: its cases in file order, cut where the two case-second sums are closest. Keep the split only when it lowers the heaviest copy's weight; then try again. A case never splits; its stages stay together.
+  %%> - Each part of a split batch is a batch run of its own on its own copy: its own reset, the batch's setup, then only its cases. A read-only batch never splits: it has no reset to pay for.
   %%> Why:
   %%> - Each reset and setup costs as much as many short cases. A weight of case seconds alone puts many short batches on one copy, and that copy becomes the tail of the proof.
+  %%> - One converge or role-add batch alone took longer than the proof's 5 minutes. Its cases change the fleet but each uses its own resources, so they need the same starting state, not the same copy. A part pays 180 s for its reset; a split pays only when it shortens the longest copy.
   GW->>GW: Start one copy per shard
   %%> In the admission transaction, each shard takes one free place on a Node. Its task group starts an `instance.create` of a copy there, the same start as a task copy, and records its run child.
   %%> Seed:
@@ -92,15 +97,16 @@ sequenceDiagram
   %%> - A proof copy needs no Git mirror of the Project on its Node, so a CI Node keeps none. Its clone brings no branch into a Node mirror; this fetch is the only way the commit comes in, on every Node.
   SW->>SW: Check the workspace commit
   %%> The workspace is at the commit under proof, or the run fails with proof.workspace_commit_mismatch before any case. Each batch's reset restarts and migrates the nested Gateway on this checkout, and the runner applies its grants and collections, so the fleet runs the tested code.
-  loop each assigned batch, read-only batches first
+  loop each assigned part, read-only batches first
     SW->>CP: Read the command batches
-    SW->>SW: Select the assigned batch
-    opt first batch, or the batch before it could change the fleet
+    SW->>SW: Select the assigned part<br/>batch and case ids
+    opt first part, or the part before it could change the fleet
       SW->>CP: Reset the inner fleet
-      %%> A read-only batch leaves the fleet at `base`, so the batch after it needs no reset. The runner refuses a case marked `read_only: true` that has a setup or a step that can change the fleet.
+      %%> A read-only batch leaves the fleet at `base`, so the part after it needs no reset. The runner refuses a case marked `read_only: true` that has a setup or a step that can change the fleet.
+      %%> `base` is the seed's fleet converged with the default scope at the seed's commit (the refresh's default converge). So a converge or role-add case finds nothing to change unless the commit under proof or the case's own setup changed an input.
     end
     SW->>CP: Run batch setup
-    SW->>CP: Run selected cases
+    SW->>CP: Run selected cases<br/>of the part
     %%> A copy runs no replay of flagged cases (`fails_on_base: true`) on the merge base: the head's verdicts are the run's.
     CP-->>SW: Verdict lines
     %%> The Gateway records the verdict lines of each batch on its shard as the batch ends. A shard that ends at its run budget keeps them; only the cases of the batches that did not end are unrun.

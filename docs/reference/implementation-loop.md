@@ -47,7 +47,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, task handoff pushes and manual runs use the same fast checks. Main can [reuse a green PR tree](#reuse-a-green-pr-tree-on-main).
 
-Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards, or in [self-hosted fixture shards](#self-hosted-fixture-shards) when they need runner tools.
+Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units on the shared Sabre and Shark runner pool. [Tool-dependent fixture shards](#self-hosted-fixture-shards) keep their own two-worker packing; ordinary shards keep four workers. Fork pull requests run ordinary shards on GitHub-hosted runners. Self-hosted fixture jobs use the managed Deno and Python installations and persistent local fixture-tools cache; hosted jobs install and cache their tools in Actions.
 
 Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees. The expression-end fixture reads every workflow file and fails when an expression holds a `}}` before its end, because Swamp ends a `${{ … }}` expression at the first `}}`. Any change under `swamp/workflows` selects it.
 
@@ -173,13 +173,15 @@ No registry entry keeps a fixture or a case out of pull requests: the metadata k
 
 ### Self-hosted fixture shards
 
-A fixture file whose metadata sets `self_hosted = true` runs only on the self-hosted CI pool. These are the files that came from the after-merge set: the registry kept them out of pull requests before ADR 0262. The planner puts their units in their own shard jobs, `Self-hosted fixtures (N)`. These jobs use only the shared runner labels `self-hosted`, `hardimpact` and `orbit-shard`, as every CI runner does. A hosted shard never runs such a unit, and a self-hosted shard runs no other unit. The quick checks of the public repository stay on hosted runners.
+A fixture file whose metadata sets `self_hosted = true` runs only on the self-hosted CI pool. These are the files that came from the after-merge set: the registry kept them out of pull requests before ADR 0262. The planner puts their units in their own shard jobs, `Self-hosted fixtures (N)`. These jobs use only the shared runner labels `self-hosted`, `hardimpact` and `orbit-shard`, as every CI runner does. An ordinary shard never runs such a unit, and a tool-dependent shard runs no other unit. Other quick checks of the public repository stay on GitHub-hosted runners.
+
+Ordinary `Fixtures (N)` jobs use the same shared runner labels on repository branches, handoffs and main; forks keep the hosted image. The pool has five Sabre runners and four Shark runners. Beast has no general runner containers and keeps its two proof-only places.
 
 The self-hosted shard jobs run only for a pull request whose head repository is the base repository: a branch of `hardimpactdev/orbit`. The job condition states this in full: the event is `pull_request` and `github.event.pull_request.head.repo.full_name == github.repository`. No other event and no fork starts them.
 
 When a fork pull request selects a self-hosted unit, the plan names the unit and `Required checks` fails. The message says that the change selects fixtures that run only on Orbit's runners, and that a maintainer must push the branch to the repository. The fork's code never reaches a self-hosted runner.
 
-The units follow the hosted lane budget: each unit costs at most 150 declared seconds with startup, and each shard job has a four-minute limit, so every job ends within five minutes. A self-hosted shard holds two lanes, not four: `self_hosted_workers` in the `[budget]` of `checks.toml`. Its runner container shares the Node's memory with proof copies, and four Ansible units at once make it reclaim memory until the heaviest units run past the unit ceiling. The planner packs and the runner runs each shard with the lanes of its pool. A shard holds the units of one pool only.
+The units follow the hosted lane budget: each unit costs at most 150 declared seconds with startup, and each shard job has a four-minute limit, so every job ends within five minutes. A self-hosted shard holds two lanes, not four: `self_hosted_workers` in the `[budget]` of `checks.toml`. Four heavy Ansible units at once made the runner reclaim memory until the heaviest units ran past the unit ceiling. The planner packs and the runner runs each shard with the lanes of its pool. A shard holds the units of one pool only.
 
 Each registry entry of a `self_hosted` file names the source of its cost:
 
@@ -189,7 +191,7 @@ Each registry entry of a `self_hosted` file names the source of its cost:
 - When the unit ceiling cut such a case, it costs the larger of its cut time and the scaled cost.
 - A file or case that no pool run has reached keeps its hosted cost until a pool run measures it.
 
-Self-hosted shards have their own limit, `self_hosted_shards` in the `[budget]` of `checks.toml`, set from the CI places of the pool; they do not count against the ten hosted shards. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
+Tool-dependent shards retain their limit, `self_hosted_shards` in `[budget]`. Both shard classes also share `runner_shards = 9`, matching the pool, so one run cannot schedule a second wave behind its own fixture jobs. Mandatory cases reserve capacity first; named capacity gaps stay last. This admission bound does not reserve runners against other workflows: push-to-Required measurements include any queue delay. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
 
 `capacity_gap` in the `[budget]` of `checks.toml` lists the self-hosted files that cannot fit the self-hosted shards when selected; [ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) names each one with its reason. The planner admits a gap file after all other work. Its units that fit run. The plan summary names the rest: `Not run: <file>, N units, reason: capacity gap per ADR 0262`. They do not fail `Required checks`.
 
@@ -238,9 +240,9 @@ Such a change selects the fixtures whose own code it touches, plus the machinery
 
 A canary file must be a registered hosted fixture; `bin/ci-units plan` refuses a list that names an unregistered or `self_hosted` file, or that needs more than one shard.
 
-`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most ten shards per pull request.
+`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most nine fixture jobs across both shard classes per run.
 
-Runs with six shards peaked at 16 to 17 concurrent hosted jobs, so ten shards reach about 21, one above the organisation's 20 concurrent hosted jobs: the last shard can wait for a free job, and a second run at the same time queues. Each shard's own time limit starts when its job starts, so a wait does not cut its units. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
+Ordinary fixture jobs run on the shared Sabre and Shark pool, with nine runners total. Each ordinary shard runs up to four units at once; tool-dependent shards run two. Both classes count against the planner's nine-job bound, so a run fits one wave when the pool is idle. Other jobs and proof holds can still occupy places; measure queue delay as part of the five-minute push-to-Required limit. A file can declare a larger slice count when its cases need finer slices.
 
 For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per case, so a long refresh cannot share its unit with another refresh.
 
@@ -328,7 +330,7 @@ A new push cancels the previous proof. The runner rechecks eligibility immediate
 
 A fork keeps its separate trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner. That workflow publishes `Orbit outside proof` on the exact head. While proof admission is on, Required checks reads its latest trusted status and fails if it is missing, pending or failed. After the outside proof succeeds, rerun the failed Required job.
 
-CI proofs join one FIFO admission queue. Its front takes one copy of the Orbit container in each free CI place across the CI Nodes. Orbit balances whole batches by measured case time, runs them in the copies' inner fleets, merges the verdicts and destroys the copies. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
+CI proofs join one FIFO admission queue. Its front takes one copy of the Orbit container in each free CI place across the CI Nodes. Orbit balances batches by measured case time, splits a long batch that changes the fleet by case, runs them in the copies' inner fleets, merges the verdicts and destroys the copies. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
 
 A clean CLI exit is insufficient: the job requires a passing result with case verdicts for every selected command. A failed case, an unrun case, a missing result or a selected command with no verdict fails. A result with no selected command passes. A capacity message with no cases always fails; it has no successful skip classification.
 

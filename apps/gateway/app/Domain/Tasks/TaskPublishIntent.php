@@ -29,17 +29,18 @@ final readonly class TaskPublishIntent
     /**
      * @param  int|null  $doneCheck  the done check a release or the tick read before the lock; it must still be the done check under the row lock
      * @param  bool  $byItself  the tick's admission, which also needs the group and that check in `pr_when_done` under the row lock
+     * @param  string|null  $withheld  why a publish of a named check opens no pull request; the Operation records it beside the intent
      */
-    public function start(Task $group, StartTaskPublishData $input, string $caller, ?string $request, ?int $doneCheck = null, bool $byItself = false): Operation
+    public function start(Task $group, StartTaskPublishData $input, string $caller, ?string $request, ?int $doneCheck = null, bool $byItself = false, ?string $withheld = null): Operation
     {
         if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
             return $existing;
         }
 
-        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Operation => $this->admit($group, $input, $caller, $request, $doneCheck, $byItself));
+        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Operation => $this->admit($group, $input, $caller, $request, $doneCheck, $byItself, $withheld));
     }
 
-    private function admit(Task $group, StartTaskPublishData $input, string $caller, ?string $request, ?int $doneCheck, bool $byItself): Operation
+    private function admit(Task $group, StartTaskPublishData $input, string $caller, ?string $request, ?int $doneCheck, bool $byItself, ?string $withheld): Operation
     {
         if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
             return $existing;
@@ -70,7 +71,7 @@ final readonly class TaskPublishIntent
         $token = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
         $authorization = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
 
-        return DB::transaction(function () use ($group, $instance, $check, $repository, $base, $token, $authorization, $workspace, $input, $caller, $request, $doneCheck, $byItself): Operation {
+        return DB::transaction(function () use ($group, $instance, $check, $repository, $base, $token, $authorization, $workspace, $input, $caller, $request, $doneCheck, $byItself, $withheld): Operation {
             Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
             if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
                 return $existing;
@@ -91,7 +92,7 @@ final readonly class TaskPublishIntent
                 'object_format' => strlen($commit) === 64 ? 'sha256' : 'sha1',
                 'pull_head' => $repository->owner.':'.$branch, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
                 'execution_secrets' => ['github_token' => $token, 'git_authorization' => $authorization],
-                'workspace' => $workspace,
+                'workspace' => $workspace, ...($withheld === null ? [] : [TaskPublishProjection::Withheld => $withheld]),
             ], $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
             // A publish that is admitted ends a refused automatic publish (docs/reference/tasks.md#a-refused-automatic-publish).
             Task::topLevel()->whereKey($group->id)->whereNotNull('publish_refusal')->update(['publish_refusal' => null]);
@@ -121,7 +122,7 @@ final readonly class TaskPublishIntent
     private function assertStillDone(int $groupId, int $doneCheck, bool $byItself): void
     {
         $locked = Task::topLevel()->with('project', 'taskable', 'tasks')->findOrFail($groupId);
-        $check = $this->done->check($locked);
+        $check = $this->done->check($locked, republish: ! $byItself);
         if ($check?->id !== $doneCheck) {
             throw new ResourceOperationException('tasks.not_done', 'The task group\'s work is no longer done with this check.', 409);
         }

@@ -2,6 +2,9 @@ import { assertEquals, assertMatch } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { fileURLToPath } from "node:url";
 
+/** The digest fields a converge intent carries (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
+const digestFixture = { recorded_digests: [] };
+
 // Exercise real Ansible tasks locally, without an installer or a Node connection.
 // Use the shape-gate Ansible environment to run this suite.
 const taskPath = (name: string) => fileURLToPath(new URL(`../ansible/tasks/${name}.yml`, import.meta.url));
@@ -22,9 +25,9 @@ Deno.test("generated converge vars preserve shell arguments, scalar strings and 
             enabled: true, empty: null, count: 7,
         };
         const ssh = { identity_file: "/unused", target: { host: "localhost", port: 22, user: "unused", host_keys: ["ssh-ed25519 fixture"] } };
-        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [], fixture }));
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ ...digestFixture, node_id: 7, ssh, roles: [], fixture }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
-        await convergeInput(folder, "/unused", "/unused");
+        await convergeInput(folder, 1, "/unused", "/unused", []);
         await Deno.writeTextFile(`${folder}/roundtrip.json`, JSON.stringify([{
             hosts: "localhost", connection: "local", gather_facts: false,
             tasks: [{ name: "Read generated literal values", "ansible.builtin.copy": {
@@ -173,9 +176,9 @@ Deno.test("role phases accept generated extra vars without shadowing each role's
             files: [{ path: `${folder}/role-${id}.txt`, content: `role ${id}\n`, owner: Deno.env.get("USER"), group: "", mode: "0600" }] }));
         const group = new TextDecoder().decode((await new Deno.Command("id", { args: ["-gn"] }).output()).stdout).trim();
         for (const role of roles) role.files[0].group = group;
-        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, network: null, user: "unused", recipe: "{}", roles }));
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ ...digestFixture, node_id: 7, ssh, network: null, user: "unused", recipe: "{}", roles }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
-        await convergeInput(folder, fileURLToPath(new URL("../ansible/build_vars.py", import.meta.url)), "/unused");
+        await convergeInput(folder, 1, fileURLToPath(new URL("../ansible/build_vars.py", import.meta.url)), "/unused", []);
         const production = await targetPlay();
         const tasks = (production.tasks as Array<Record<string, unknown>>).filter((task) => ["Reconcile selected recorded roles", "Check the selected role runtime"].includes(task.name as string));
         // Run the production includes and play vars through the same -e @vars.yml precedence as Swamp.
@@ -212,9 +215,9 @@ Deno.test("a node.converge of a CI Node reads the certificate of the default's N
             groups: [], users: [], directories: [], files: [], secret_files: [], units: [], probes: [], proof_seed: seed };
         const role = { assignment_id: 1, role: "ci-runner", node_id: 7, ssh, publications: [], exporters: [], prometheus: null, runtime,
             php: [], directories: [], services: [], files: [] };
-        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, network: null, user: "unused", recipe: "{}", roles: [role] }));
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ ...digestFixture, node_id: 7, ssh, network: null, user: "unused", recipe: "{}", roles: [role] }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
-        await convergeInput(folder, fileURLToPath(new URL("../ansible/build_vars.py", import.meta.url)), "/unused");
+        await convergeInput(folder, 1, fileURLToPath(new URL("../ansible/build_vars.py", import.meta.url)), "/unused", []);
         const inventory = JSON.parse(await Deno.readTextFile(`${folder}/inventory.json`));
         assertEquals(inventory.all.children, { proof_seed_sender: { hosts: { n9: {} } } });
         assertMatch(await Deno.readTextFile(`${folder}/known_hosts`), /^10\.44\.0\.9 ssh-ed25519 sender$/m);
@@ -409,11 +412,11 @@ Deno.test("the Tool helper runs with the pinned Deno of the Swamp Node, not with
     try {
         const swamp = await compiledSwamp(folder);
         const ssh = { identity_file: "/unused", target: { host: "localhost", port: 22, user: "unused", host_keys: ["ssh-ed25519 fixture"] } };
-        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [] }));
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ ...digestFixture, node_id: 7, ssh, roles: [] }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
         Deno.execPath = () => swamp;
         const { convergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
-        await convergeInput(folder, "/unused", toolHelper);
+        await convergeInput(folder, 1, "/unused", toolHelper, []);
         const vars = parse(await Deno.readTextFile(`${folder}/vars.yml`)) as { converge_deno: string; converge_tool_helper: string };
         const install = parse(await Deno.readTextFile(taskPath("task-vm-deno"))) as Array<{ block?: Array<Record<string, unknown>> }>;
         const launcher = install.flatMap((task) => task.block ?? []).find((task) => task.name === "Publish Deno")!["ansible.builtin.file"] as { dest: string };

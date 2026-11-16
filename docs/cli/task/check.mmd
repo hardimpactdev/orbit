@@ -45,7 +45,17 @@ sequenceDiagram
     %%> - the task VM steps below are skipped; the same TypeScript rules judge the evidence, so outcomes match
     %%> - a scoped Project check such as `bin/task-check` prints one summary line per part; its `ci-policy` part runs the CI policy tests (`python3 -m unittest discover -s tools -p 'test_ci_*.py'`) when the change touches what those tests read: the CI registry and its fixture tomls, the workflows, the CI scripts or a Swamp test file, before Pest and the fixtures, within the check's budget
     %%> - see [task Instance workspace](/reference/task-instance-workspace#check-phases)
-    %%> - the check, commit and commit-ref phases run as the behavior `task-instance-check-NODE-GROUP`, for up to 10,800 s, 600 s and 600 s, so the check of another group's copy on this Node never waits for its lock; its short steps keep their Node names
+    %%> Base first (handoff only):
+    %%> - its child first runs `task-copy-base`, phase `base`, the same one `task:sync` runs ([Bring main into a copy](/reference/tasks#bring-main-into-a-copy)): the Node fetches the current default branch head into the copy's mirror and the copy gets it in `refs/remotes/origin/<default>`
+    %%> - the read token follows the sync's rules: the Gateway mints it as the run starts, the Node's one fetch reads it as a Git header through stdin, and it never reaches the copy
+    %%> - a failed base (mirror or GitHub down) does not block the check: the check runs on the tree as it is, and the result says `base: unavailable` with `base_reason`; the base's scratch cleanup runs after it, whatever it did
+    %%> - then the `base-merge` phase, as `agent` in the copy: `git merge-tree --write-tree HEAD refs/remotes/origin/<default>`; HEAD already holds the head: nothing, `merged_default` is null
+    %%> - a clean merge: any uncommitted work is committed first with the check's message, then one merge commit, parents HEAD then the head, message `Merge main <full sha> before the check`, author and committer `Orbit <orbit@users.noreply.github.com>`
+    %%> - only the copy's own workflow changes refuse at publish (`git diff <merge-base>...<commit>`): the default branch's workflow changes that the merge brings in are never the copy's
+    %%> - a conflict refuses with `tasks.check_conflict` and `conflicting_paths`, at most 100 in at most 3,000 bytes, and `conflicting_more`, before the long parts run; the workspace is left exactly as it was
+    %%> - every refusal comes before the copy changes: the work and merge commits are objects no ref names; a merge that would add a file over an untracked or ignored one fails with `tasks.workspace_phase_failed`; only then the working tree, the index and the branch move
+    %%> - after the merge step succeeds, HEAD holds the default head, whether this check merged it or an earlier check, or a sync and a hand merge, did; file deliverables and `fails_on_base` runs compare with the subtask's start plus that head, so main's changes are never the subtask's work
+    %%> - the base-merge, check, commit and commit-ref phases run as the behavior `task-instance-check-NODE-GROUP`, for up to 900 s, 10,800 s, 600 s and 600 s, so the check of another group's copy on this Node never waits for its lock; its short steps keep their Node names
     %%> Refuses:
     %%> - a changed checkout identity or branch: `tasks.workspace_identity_changed`
   end
@@ -118,6 +128,8 @@ sequenceDiagram
   end
   alt every step passes
     SW-->>GW: Run succeeded<br/>outcome · commit · ci
+    %%> Result:
+    %%> - a copy's handoff check also names `default_commit`, the default head it judged against, `merged_default`, the head it merged or null, and `base`: `current`, or `unavailable` with `base_reason`
     Note over GW: Record check 17<br/>passed, failed or changed
     %%> Rules:
     %%> - a check preserves its admitted subtask base as the start commit; the candidate HEAD is never a new base for a retry

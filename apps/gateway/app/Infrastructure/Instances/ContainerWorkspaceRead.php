@@ -33,7 +33,7 @@ final readonly class ContainerWorkspaceRead
 {
     public const array Reasons = ['stopped', 'asleep', 'timeout', 'not_a_repository', 'unreachable'];
 
-    /** The reader's own budget on the Node; SSH adds its connect time inside the 4 s command bound. */
+    /** The normal read's budget on the Node; SSH adds its connect time inside the 4 s command bound. */
     public const float BudgetSeconds = 2.0;
 
     /** A read answers in a few KiB; a record carries the untracked set, up to 2,000 names. */
@@ -42,10 +42,21 @@ final readonly class ContainerWorkspaceRead
     private const int RecordBytes = 1_048_576;
 
     /**
-     * The pauses before the second and third baseline read. A clone's create fails when its baseline cannot be read, and Horizon
-     * reads it on a connection of its own: one lost connect, such as a dropped SYN on the WireGuard path, must not fail the create.
+     * The baseline read's bounds: the reader's budget, the outer `timeout` and the SSH command bound. A clone's create fails when its
+     * baseline cannot be read, and that read runs while the host may be under load, where a read took up to 2.2 s: the normal read's
+     * 2 s budget is too short for it. With its one retry, a stuck read ends in about 21 s (docs/reference/development-containers.md#workspace-work-state).
      */
-    public const array BaselineRetrySeconds = [1, 3];
+    public const float BaselineBudgetSeconds = 6.0;
+
+    public const int BaselineTimeoutSeconds = 8;
+
+    public const int BaselineCommandSeconds = 10;
+
+    /**
+     * The pause before the second and last baseline read. Horizon reads it on a connection of its own: one lost connect, such as a
+     * dropped SYN on the WireGuard path, must not fail the create.
+     */
+    public const array BaselineRetrySeconds = [1];
 
     public function __construct(private SshExecutor $ssh, private SshKeyProvider $keys, private KnownHostsStore $hosts) {}
 
@@ -92,7 +103,8 @@ final readonly class ContainerWorkspaceRead
             if ($pause > 0) {
                 Sleep::for($pause)->seconds();
             }
-            $result = $this->execute($instance, ['record', $runtime->incus_project, $runtime->container_name], null, self::RecordBytes);
+            $result = $this->execute($instance, ['record', $runtime->incus_project, $runtime->container_name], null, self::RecordBytes,
+                budget: self::BaselineBudgetSeconds, timeout: self::BaselineTimeoutSeconds, command: self::BaselineCommandSeconds);
             $answer = $this->decode($result);
             if ($answer !== null && is_array($answer['heads'] ?? null)) {
                 break;
@@ -138,7 +150,8 @@ final readonly class ContainerWorkspaceRead
      * @param  array<string, mixed>|null  $baseline
      * @param  list<string>  $published
      */
-    private function execute(Instance $instance, array $arguments, ?array $baseline, int $bytes = self::ReadBytes, array $published = []): CommandResult|string|null
+    private function execute(Instance $instance, array $arguments, ?array $baseline, int $bytes = self::ReadBytes, array $published = [],
+        float $budget = self::BudgetSeconds, int $timeout = 3, int $command = 4): CommandResult|string|null
     {
         $node = $instance->node;
         if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
@@ -147,16 +160,16 @@ final readonly class ContainerWorkspaceRead
         // Base64 keeps every byte of a stored name intact on its way into the reader's Python source.
         $literal = static fn (mixed $value): string => 'json.loads(base64.b64decode("'.base64_encode(json_encode($value, JSON_THROW_ON_ERROR)).'"))';
         $prelude = "import base64\nimport json\nINSTANCE_PROJECTS = ".$literal(InstancePlacement::projects())."\nBASELINE = ".$literal($baseline)
-            ."\nPUBLISHED = ".$literal($published)."\nBUDGET = ".self::BudgetSeconds."\n";
+            ."\nPUBLISHED = ".$literal($published)."\nBUDGET = ".$budget."\n";
         try {
             return $this->ssh->execute(new SshConnection(
                 host: $node->wireguard_ip, user: $node->user, port: 22,
                 identityFile: $this->keys->privateKeyPath(), knownHostsFile: $this->hosts->path(),
-                connectTimeout: 2, commandTimeout: 4,
+                connectTimeout: 2, commandTimeout: $command,
             ), new RemoteCommand(
-                ['timeout', '3', 'python3', '-', ...$arguments],
+                ['timeout', (string) $timeout, 'python3', '-', ...$arguments],
                 input: $prelude.File::get(resource_path('instances/workspace-git-read.py')),
-                maxOutputBytes: $bytes, timeout: 4,
+                maxOutputBytes: $bytes, timeout: $command,
             ));
         } catch (Throwable $error) {
             return $error instanceof ProcessTimedOutException || $error->getPrevious() instanceof ProcessTimedOutException

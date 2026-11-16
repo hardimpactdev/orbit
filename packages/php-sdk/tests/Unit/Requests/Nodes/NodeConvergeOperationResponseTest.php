@@ -52,6 +52,14 @@ describe('converge scope transport', function (): void {
         'explicit empty selection' => [[], ['base' => false, 'roles' => []]],
         'Gateway owns role validation' => [['unknown'], ['base' => false, 'roles' => ['unknown']]],
     ]);
+
+    it('sends full only when the caller asks for every phase', function (): void {
+        $mock = new MockClient([ConvergeNodeRequest::class => MockResponse::make([], 202)]);
+        $connector = new GatewayConnector('https://gateway.example.test');
+        $connector->withMockClient($mock)->send(new ConvergeNodeRequest(7, full: true));
+
+        $mock->assertSent(fn (ConvergeNodeRequest $request, Response $response): bool => $response->getPendingRequest()->body()->all() === ['base' => false, 'full' => true]);
+    });
 });
 
 it('refuses a retired synchronous footprint response', function (): void {

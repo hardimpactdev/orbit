@@ -97,8 +97,11 @@ beforeEach(function (): void {
             str_ends_with($url, '/api/datasources') => Http::response([['type' => 'prometheus', 'uid' => 'prom']]),
             str_contains($url, '/api/datasources/proxy/uid/prom/api/v1/query') => ($this->prometheus)(),
             str_ends_with($url, '/installation') => Http::response(['id' => 7]),
-            str_ends_with($url, '/access_tokens') => Http::response(['token' => 'actions-token', 'permissions' => ['actions' => 'read']], 201),
-            str_contains($url, '/actions/runs?') => Http::response(['total_count' => 2, 'workflow_runs' => [
+            str_ends_with($url, '/access_tokens') => Http::response(['token' => 'read-token', 'permissions' => $request->data()['permissions']], 201),
+            str_contains($url, '/actions/workflows?') => Http::response(['total_count' => 1, 'workflows' => [['id' => 3, 'path' => '.github/workflows/ci.yml']]]),
+            str_contains($url, '/contents/.github/workflows/ci.yml') => Http::response(['encoding' => 'base64',
+                'content' => base64_encode("jobs:\n  fixtures:\n    runs-on: [self-hosted, hardimpact]\n")]),
+            str_contains($url, '/actions/workflows/3/runs?') => Http::response(['total_count' => 2, 'workflow_runs' => [
                 ['id' => 50, 'name' => 'CI', 'status' => 'in_progress', 'conclusion' => null, 'run_attempt' => 1],
                 ['id' => 40, 'name' => 'CI', 'status' => 'completed', 'conclusion' => 'failure', 'run_attempt' => 1],
             ]]),

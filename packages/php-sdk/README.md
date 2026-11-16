@@ -95,7 +95,9 @@ The SDK exposes typed enable, disable, status, list, show, create, update, cance
 
 `CheckTaskRequest($groupId, $subtask, $phase, idempotencyKey: $key)` starts `tasks.check` and returns `OperationResponse`. Follow the operation with `ShowOperationRequest`; a failed check is `succeeded` with `result.outcome=failed`. A passed handoff records its checked commit.
 
-`PublishTaskGroupRequest($groupId, $check, $pullRequest, idempotencyKey: $key)` starts `tasks.publish`. Omit `$pullRequest` to push only, or pass title and body together. The result names the branch, commit, and optional pull request number and URL.
+`PublishTaskGroupRequest($groupId, $check, $pullRequest, idempotencyKey: $key)` starts `tasks.publish`. Omit `$pullRequest` to push only, or pass title and body together. In a task copy, a check without `$pullRequest` that is the group's reviewed done check opens the pull request with the reviewer's text; any other check pushes only, and the result's `pull_request_withheld` says why. Without a check, a task copy's group publishes its done check. The result names the branch, commit, and optional pull request number and URL.
+
+`SyncTaskGroupRequest($groupId, $idempotencyKey)` starts `tasks.sync`, the same route as the MCP tool `task-sync`. It sends no body. The result names `default_commit`, `branch_commit`, `behind_by` and `start`.
 
 ## Logs
 
