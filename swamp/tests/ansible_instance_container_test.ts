@@ -3286,16 +3286,29 @@ Deno.test({
 });
 
 Deno.test({
-  name: "the proof default's seed step drops the kept base pair once the Gateway names no base",
+  name: "the proof default's retake at a new commit keeps the base it holds while the Gateway names it, and drops it once the Gateway names none",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
       const first = seededProofDefault(f);
+      // An earlier retake at the first commit kept its pair as the base, and the CI Node still holds it: the Gateway names it again.
       keptBase(f, first);
-      // No CI Node needs a base: the Gateway names none, and the next seed step drops it.
+      const container = f.container as unknown as Record<string, unknown>;
+      container.seed_base = first;
+      f.intent.deployment = { variant: "container", steps: [] };
+      f.write();
+      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "second");
+      const second = git(f.source, "rev-parse", "HEAD");
+      for (const phases of [["start", "fetch"], ["checkout"], ["seed"]]) assert(f.phases(phases).ok, phases.join(","));
+      // The base is kept already, so the older seed goes instead of taking its name: one base only.
+      assertEquals(seedPairNames(f), {container: [`base-${first}`, `seed-${second}`], volume: [`base-${first}`, `seed-${second}`]});
+      // No CI Node needs a base: the Gateway names none, and the next seed step drops it, also one that keeps its seed.
+      delete container.seed_base;
+      delete f.intent.deployment;
+      f.write();
       assert(f.run("seed").ok);
-      assertEquals(seedPairNames(f), {container: [`seed-${first}`], volume: [`seed-${first}`]});
+      assertEquals(seedPairNames(f), {container: [`seed-${second}`], volume: [`seed-${second}`]});
     } finally { f.cleanup(); }
   },
 });

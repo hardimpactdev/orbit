@@ -102,8 +102,14 @@ final readonly class ProofSeeds
         $default = Instance::query()->where('project_id', $this->settings->projectId())->where('name', DefaultInstanceName::Name)->first();
         $runtime = $default?->runtime;
 
-        return $default?->status === InstanceState::Active && $runtime?->seed_commit !== null && $runtime->seed_taken_at !== null
-            && $runtime->incus_project === InstancePlacement::NestedProject ? $runtime : null;
+        return $default?->status === InstanceState::Active && $this->seededDefault($default, $runtime) ? $runtime : null;
+    }
+
+    /** Whether the Instance is the proof Project's default in the nested project with a seed: read from the loaded models, with no query. */
+    private function seededDefault(Instance $instance, ?InstanceRuntime $runtime): bool
+    {
+        return $instance->project_id === $this->settings->projectId() && $instance->name === DefaultInstanceName::Name
+            && $runtime?->incus_project === InstancePlacement::NestedProject && $runtime->seed_commit !== null && $runtime->seed_taken_at !== null;
     }
 
     /**
@@ -142,8 +148,7 @@ final readonly class ProofSeeds
      */
     public function base(Instance $instance, InstanceRuntime $runtime): ?string
     {
-        if ($instance->project_id !== $this->settings->projectId() || $instance->name !== DefaultInstanceName::Name
-            || $runtime->incus_project !== InstancePlacement::NestedProject || $runtime->seed_commit === null) {
+        if (! $this->seededDefault($instance, $runtime)) {
             return null;
         }
         $source = $this->source();
