@@ -115,13 +115,16 @@ final readonly class ProofSeeds
 
     /**
      * Admits one seed copy to the Nodes that are behind. Best effort: nothing waits for it, so a refusal or an error is a log line, never
-     * an exception. An open copy refuses by its lock (`operation.target_busy`); its end admits the next one.
+     * an exception. An open copy refuses by its lock (`operation.target_busy`); its end admits the next one ({@see self::admitAfter()}).
+     * `$except` names Nodes that this admission leaves out.
+     *
+     * @param  list<int>  $except
      */
-    public function admit(string $trigger): ?Operation
+    public function admit(string $trigger, array $except = []): ?Operation
     {
         try {
             $source = $this->source();
-            $targets = $this->targets();
+            $targets = array_values(array_filter($this->targets(), static fn (Node $node): bool => ! in_array($node->id, $except, true)));
             if ($source === null || $targets === []) {
                 return null;
             }
@@ -138,6 +141,21 @@ final readonly class ProofSeeds
         }
 
         return null;
+    }
+
+    /**
+     * The admission at the end of a seed copy (docs/cli/instance/seed-copy.mmd): for every Node behind the default's seed when the seed
+     * moved during the copy, else only for Nodes that were not its targets, which a trigger refused while the copy held the lock. A Node
+     * that failed at the same seed is not tried again: it waits for the next seed or its own ci-runner converge, so a lasting failure
+     * does not repeat.
+     */
+    public function admitAfter(Operation $ended): ?Operation
+    {
+        $source = $this->source();
+        $moved = $source === null || $source->seed_commit !== $ended->input['commit']
+            || $source->seed_taken_at?->toIso8601String() !== $ended->input['taken_at'];
+
+        return $this->admit('seed_copy', $moved ? [] : ValidatedData::integerList($ended->input['targets']));
     }
 
     /**

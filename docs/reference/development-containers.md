@@ -2728,9 +2728,10 @@ The Gateway copies the seed with one Operation, `instance.seed_copy`. Its target
 
 - when the default records a new seed: after the [refresh after a release](#refresh-after-a-release), or after an `instance:deploy` of the default;
 - when a `ci-runner` add or converge of a CI Node passes, so a new CI Node does not wait for the next release;
-- when a seed copy ends, for the Nodes that it did not bring to the default's current seed.
+- at the end of a seed copy during which the default's seed moved: for every Node behind the new seed;
+- at the end of a seed copy at the same seed: for the Nodes that were not its targets.
 
-So a seed that moved during a copy reaches every Node. A Node that failed waits for the next trigger.
+So a seed that moved during a copy reaches every Node. A Node that failed at the current seed is not tried again by the end of its copy: it waits for the next seed or for its own `ci-runner` converge. So a lasting failure, such as no listener or no free ID range, does not repeat with a new Operation each time.
 
 A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The default's runtime records both (`seed_commit`, `seed_taken_at`). The Gateway records the seed of each CI Node in `proof_seeds`: its holder, its commit and that time (`ProofSeeds`).
 
@@ -2779,7 +2780,7 @@ The copy runs after the release, and nothing in a release or a proof waits for i
 | No listener yet | A CI Node whose converge has not added the listener and the trust fails its target. A `ci-runner` converge of the Node adds them, and its end admits the next copy |
 | ID ranges on a CI Node | The holder and the snapshot it receives need a free range of the default's size. The [CI Node's demand](/reference/node-settings#a-ci-node) counts them. Without one, that target fails |
 | A failure shows | Nothing waits for the copy. So each failed target also writes the Activity row `instance.seed_copy_failed` with the Node, the Operation and the detail, as a failed refresh writes `instance.refresh_failed` |
-| A rerun is safe | The next trigger copies again. `--refresh` makes the holder equal to the default, whatever an earlier run left |
+| A rerun is safe | The next seed, or the Node's own `ci-runner` converge, copies again. `--refresh` makes the holder equal to the default, whatever an earlier run left |
 
 ### A clone starts its fleet
 

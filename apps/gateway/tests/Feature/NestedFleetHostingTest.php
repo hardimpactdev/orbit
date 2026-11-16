@@ -535,7 +535,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and($intent['targets'][0]['ssh_execution']['target']['host'])->toBe('10.44.0.30');
     });
 
-    it('records the seed of each passed Node, an Activity problem for each failed one, and admits the next copy for the Nodes still behind', function (): void {
+    it('records the seed of each passed Node and an Activity problem for each failed one, and tries no failed Node again at the same seed', function (): void {
         $default = proofSeedDefault();
         seedSwampNode();
         $passed = ciNode();
@@ -558,10 +558,36 @@ describe('the seed of the proof default on each Node that offers proof places', 
         $problem = Activity::query()->where('description', 'instance.seed_copy_failed')->sole();
         expect($problem->subject_id)->toBe($failed->id)
             ->and($problem->properties['operation_id'])->toBe($operation->id);
-        // The end of the copy admits the next one, for the failed Node alone.
-        $next = Operation::query()->where('kind', 'instance.seed_copy')->whereKeyNot($operation->id)->sole();
-        expect($next->input['targets'])->toBe([$failed->id])
+        // A Node that failed at the same seed waits for the next seed or its own converge: a lasting failure does not repeat.
+        expect(Operation::query()->where('kind', 'instance.seed_copy')->count())->toBe(1);
+    });
+
+    it('admits the next copy at its end for every Node behind a seed that moved, and else only for Nodes that were not its targets', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $first = ciNode();
+        Node::withoutEvents(fn (): bool => $first->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        $end = function (Operation $copy): void {
+            $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-'.$copy->id]])->save();
+            app(ProofSeedCopyProjection::class)->apply($copy, ['status' => 'failed', 'run_id' => 'run-'.$copy->id, 'started_at' => now()->toIso8601String(),
+                'finished_at' => now()->toIso8601String(), 'result' => ['targets' => array_map(static fn (int $node): array => ['node_id' => $node,
+                    'status' => 'failed', 'detail' => 'no listener'], $copy->input['targets'])]]);
+        };
+        $copy = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        // A Node that became a target while the copy held the lock: its own converge was refused as busy.
+        $second = ciNode(2, LifecycleStatus::Active, 'ci-two', '10.44.0.31');
+        Node::withoutEvents(fn (): bool => $second->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        $end($copy);
+        $next = Operation::query()->where('kind', 'instance.seed_copy')->whereKeyNot($copy->id)->sole();
+        expect($next->input['targets'])->toBe([$second->id])
             ->and($next->triggered_by)->toBe('seed_copy');
+
+        // The default retakes its seed while the next copy runs: its end tries every Node behind the new seed.
+        $default->runtime()->firstOrFail()->update(['seed_taken_at' => '2026-11-16 02:00:00']);
+        $end($next);
+        $moved = Operation::query()->where('kind', 'instance.seed_copy')->whereKeyNot([$copy->id, $next->id])->sole();
+        expect($moved->input['targets'])->toBe([$first->id, $second->id])
+            ->and($moved->input['taken_at'])->toBe($default->runtime()->firstOrFail()->seed_taken_at?->toIso8601String());
     });
 
     it('admits the seed copy when a deployment of the proof default records a new seed', function (): void {

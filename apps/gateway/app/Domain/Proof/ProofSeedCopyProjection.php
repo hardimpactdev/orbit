@@ -20,7 +20,7 @@ use Throwable;
 /**
  * Projects the end of `instance.seed_copy` once (docs/cli/instance/seed-copy.mmd): each Node whose target passed records the new holder
  * as its seed; each failed Node keeps its recorded holder and gets the Activity row `instance.seed_copy_failed`. Then the next copy is
- * admitted for the Nodes that this run did not bring to the default's current seed.
+ * admitted only for a seed that moved, or for Nodes that were not targets of this run (ProofSeeds::admitAfter).
  */
 final readonly class ProofSeedCopyProjection implements DirectOperationProjection
 {
@@ -69,7 +69,7 @@ final readonly class ProofSeedCopyProjection implements DirectOperationProjectio
                 foreach ($failed as $nodeId => $detail) {
                     $this->failedActivity($operation, $nodeId, $detail);
                 }
-                app(ProofSeeds::class)->admit('seed_copy');
+                app(ProofSeeds::class)->admitAfter($operation);
             });
 
             return $projected;
