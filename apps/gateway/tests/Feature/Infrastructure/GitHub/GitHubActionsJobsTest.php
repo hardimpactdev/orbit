@@ -264,13 +264,13 @@ describe('the CI runner view job read', function (): void {
     it('reads every job of a run with more than one page of jobs', function (): void {
         ciJobsApp();
         ciJobsRepository('acme/shop');
-        ciJobsGitHub(['acme/shop' => ciJobsRuns(9, 1, 1, '2026-11-16T10:00:00Z')], [9 => array_map(static fn (int $id): array => ciJobsJob($id), range(1, 161))]);
+        ciJobsGitHub(['acme/shop' => ciJobsRuns(9, 1, 1, '2026-11-16T10:00:00Z')], [9 => array_map(static fn (int $id): array => ciJobsJob($id), range(1, 301))]);
 
         $answer = app(GitHubActionsJobs::class)->read()->toArray();
 
-        expect($answer['jobs'])->toHaveCount(161)
+        expect($answer['jobs'])->toHaveCount(301)
             ->and($answer['repositories'])->toBe([['repository' => 'acme/shop', 'error_code' => null, 'truncated' => false]]);
-        Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/actions/runs/9/jobs?') && $request['page'] === '2');
+        Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/actions/runs/9/jobs?') && $request['page'] === '4');
     });
 
     it('asks for no jobs of a workflow whose file runs only on GitHub-hosted runners', function (): void {

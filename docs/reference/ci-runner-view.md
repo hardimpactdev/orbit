@@ -61,7 +61,7 @@ The Gateway keeps this list, and the verdict on each file, for an hour. A workfl
 
 ### Paging
 
-For each kept workflow, the Gateway lists the runs created in the last 48 hours and the latest attempt's jobs of each run. It reads each list in pages of 100 until it holds GitHub's `total_count`, so a run with 161 jobs gives all 161. GitHub gives at most 1,000 runs for one run list query, so a window with more runs of one workflow is read in halves until each half fits.
+For each kept workflow, the Gateway lists the runs created in the last 48 hours and the latest attempt's jobs of each run. It reads each list in pages of 100 until it holds GitHub's `total_count`, so a run with 301 jobs gives all 301. GitHub gives at most 1,000 runs for one run list query, so a window with more runs of one workflow is read in halves until each half fits.
 
 The jobs of a completed run do not change, so the Gateway keeps them until they leave the window and reads again only the runs that have not completed. A workflow that runs only on GitHub-hosted runners costs no run list and no job list.
 
@@ -86,7 +86,7 @@ In steady state, each kept workflow costs one run list page per 100 runs of the 
 
 A window with more than 1,000 runs of one workflow costs one more page at each split. The Gateway reads the first page of the whole window, sees the count, drops the page, and reads the halves.
 
-Take `hardimpactdev/orbit` with about 1,000 runs of its kept workflows in the window and five runs in progress. Its steady state is 2 token requests, about 10 run list pages and 5 job list pages. That is about 17 requests an answer, and about 1,000 an hour while someone watches the view. Repositories without self-hosted workflows add nothing.
+Take `hardimpactdev/orbit` with about 1,000 runs of its kept workflows in the window and five runs in progress. Its steady state is 2 token requests, about 10 run list pages and 5 job list pages. That is about 17 requests an answer, and about 1,000 an hour while someone watches the view. A repository without self-hosted workflows adds no run list or job list read to an answer. It still costs the hourly token, workflow list and file reads of the table.
 
 The worst case is a start without kept runs, for example after the cache was cleared: each run of a kept workflow needs one job list read. The run lists are read in full, and the 20-second budget bounds the file and job list reads; at GitHub's usual 0.2 to 0.5 seconds a request, that is 40 to 100 requests an answer. The answers of the next minutes go on from the kept runs, until they cover the window.
 
