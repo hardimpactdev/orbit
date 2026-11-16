@@ -37,6 +37,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -109,33 +110,14 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->root);
 });
 
-/** The inputs of `operation-instance-unregister`, as its chart (docs/cli/instance/unregister.mmd) gives them. */
+/**
+ * The inputs schema of `operation-instance-unregister`, read from the workflow the Gateway starts.
+ *
+ * @return array<string, mixed>
+ */
 function unregisterWorkflowSchema(): array
 {
-    $reference = ['type' => 'object', 'properties' => ['vault' => ['type' => 'string'], 'key' => ['type' => 'string']], 'required' => ['vault', 'key'], 'additionalProperties' => false];
-
-    return ['type' => 'object', 'additionalProperties' => false,
-        'required' => ['operation_id', 'node_id', 'kind', 'intent', 'execution_secrets'],
-        'properties' => [
-            'operation_id' => ['type' => 'integer'], 'node_id' => ['type' => 'integer'], 'kind' => ['type' => 'string', 'const' => 'instance.unregister'],
-            'execution_secrets' => ['type' => 'object', 'additionalProperties' => $reference],
-            'intent' => ['type' => 'object', 'additionalProperties' => false,
-                'required' => ['removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'members', 'additional_route_ids', 'ssh_execution', 'route_mutations', 'processes', 'hibernation', 'check_paths'],
-                'properties' => [
-                    'removal_id' => ['type' => 'string'], 'node_id' => ['type' => 'integer'], 'instance_id' => ['type' => 'integer'], 'project_id' => ['type' => 'integer'],
-                    'name' => ['type' => 'string'], 'route_withdrawn' => ['type' => 'boolean'],
-                    'members' => ['type' => 'array', 'items' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['instance_id', 'route_id'],
-                        'properties' => ['instance_id' => ['type' => 'integer'], 'route_id' => ['type' => ['integer', 'null']]]]],
-                    'additional_route_ids' => ['type' => 'array', 'items' => ['type' => 'integer']],
-                    'ssh_execution' => ['type' => 'object'], 'route_mutations' => ['type' => 'object'],
-                    'processes' => ['type' => 'array', 'items' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['process_id', 'runtime', 'name'],
-                        'properties' => ['process_id' => ['type' => 'integer'], 'runtime' => ['type' => 'string'], 'name' => ['type' => 'string'],
-                            'on_demand' => ['type' => 'boolean'], 'vite' => ['type' => ['object', 'null']]]]],
-                    'hibernation' => ['type' => 'array', 'items' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['instance_id', 'path'],
-                        'properties' => ['instance_id' => ['type' => 'integer'], 'path' => ['type' => 'string']]]],
-                    'check_paths' => ['type' => 'array', 'items' => ['type' => 'string']],
-                ]],
-        ]];
+    return Yaml::parseFile(base_path('../../swamp/workflows/workflow-operation-instance-unregister.yaml'))['inputs'];
 }
 
 function assertFitsUnregisterSchema(mixed $value, array $schema, string $path = 'inputs'): void
