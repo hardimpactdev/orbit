@@ -23,7 +23,7 @@ Each case gets one class.
 | --- | --- |
 | **New** | A new [proof case](/reference/verification-cases) takes the case over. The row names the command and the case id. |
 | **Covered** | A proof case that another row of this page adds also checks this effect. |
-| **Copy path** | A nested-fleet or proof-copy behaviour. It stays a fixture case under the [exception of ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#exception-the-code-that-makes-the-proof-copy). |
+| **Copy path** | A realistic nested-fleet or proof-copy behaviour. It stays a fixture case under the [exception of ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#exception-the-code-that-makes-the-proof-copy). A rare one is designed away or dropped, as any other rare case. |
 | **Designed away** | A rare situation that the design makes impossible. The row says how. |
 | **Dropped** | A rare situation that a proof copy cannot make on demand, such as a fault or a crash between two calls. The row says why. |
 | **Pure-code** | Code with no playbook, workflow run or Node behind it. It stays as a quick check until the owner decides ADR 0262's open question. |

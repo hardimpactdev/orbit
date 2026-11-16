@@ -66,7 +66,7 @@ The exception covers exactly this code:
 - The proof copy and its fleet: the fleet step of `swamp/workflows/workflow-operation-instance-start.yaml`, `swamp/workflows/workflow-operation-proof-run-copy.yaml`, `swamp/workflows/workflow-proof-copy-fleet-reset.yaml`, `swamp/workflows/workflow-proof-fleet-*.yaml`, `swamp/ansible/proof-gateway.yml`, `swamp/ansible/proof-observers.yml`, `swamp/ansible/proof-observer-facts.php` and `swamp/ansible/tasks/proof-gateway-release.yml`.
 - The task host and its proof fleet: `swamp/ansible/task-vm-*.yml`, `swamp/ansible/tasks/task-vm-*.yml`, `swamp/ansible/tasks/task-container-host-*.yml`, `swamp/ansible/task-host-firewall-remove.yml` and `swamp/ansible/tasks/task-host-firewall-remove.yml`. An Instance host runs the `task-container-host-*` tasks too; its use of them follows the rule above.
 
-A fixture case that tests only this code stays. A fixture case that tests other code follows the rule above. When a file holds both kinds, only its other cases move. The [fixture retirement](/reference/fixture-retirement) pages name the cases that stay.
+A fixture case that tests only this code stays when it is reasonably expected in normal use. A case for a rare situation of this code follows the rare-case rule above too: it is designed away or dropped. A fixture case that tests other code follows the rule above. When a file holds both kinds, only its other cases move. The [fixture retirement](/reference/fixture-retirement) pages name the cases that stay.
 
 ### Quick checks stay where they run
 
