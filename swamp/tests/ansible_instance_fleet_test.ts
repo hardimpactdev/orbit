@@ -1781,7 +1781,9 @@ Deno.test({
           "orbit-worker-b-access", "orbit-worker-c-access"].map((token) => [token, token === "orbit-gateway-read" ? old : young]));
         state.intentDigests = { "app-dev": "9".repeat(64) };
       });
+      const refreshStarted = tokenMark(Date.now());
       const refreshed = f.run("refresh");
+      const refreshEnded = tokenMark(Date.now());
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
       const at = (call: string) => calls.indexOf(call);
@@ -1795,7 +1797,8 @@ Deno.test({
       assertEquals(f.state().reminted, 1);
       assert(!tokenShaped.test(refreshed.output), "a token-shaped string is in the output");
       // The record now holds the remint's time, so the next refresh reads no list.
-      assert(JSON.parse(f.state().outer.files[record]).tokens >= tokenMark(Date.now() - 60_000));
+      const remintedAt = JSON.parse(f.state().outer.files[record]).tokens;
+      assert(remintedAt >= refreshStarted && remintedAt <= refreshEnded, JSON.stringify({ remintedAt, refreshStarted, refreshEnded }));
       assert(f.run("refresh").ok);
       assertEquals([f.calls().includes(tokenRead), f.refreshed()?.tokens_reason], [false, "recorded"]);
     } finally {

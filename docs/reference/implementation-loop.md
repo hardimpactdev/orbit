@@ -195,7 +195,9 @@ Each registry entry of a `self_hosted` file names the source of its cost:
 - When the unit ceiling cut such a case, it costs the larger of its cut time and the scaled cost.
 - A file or case that no pool run has reached keeps its hosted cost until a pool run measures it.
 
-Tool-dependent shards retain their limit, `self_hosted_shards` in `[budget]`. Both shard classes also share `runner_shards = 18`, matching the pool, so one run cannot schedule a second wave behind its own fixture jobs. Mandatory cases reserve capacity first; named capacity gaps stay last. This admission bound does not reserve runners against other workflows: push-to-Required measurements include any queue delay. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
+Tool-dependent shards retain their limit, `self_hosted_shards` in `[budget]`. Both shard classes also share `runner_shards = 18`, the maximum number of planned fixture jobs in one run. Mandatory cases reserve capacity first; named capacity gaps stay last.
+
+After admission, a plan with more than one shard uses spare planned shards to spread its admitted units into shorter lanes. This keeps the small machinery canary in one job and does not admit extra gap cases or change costs. This admission bound does not reserve runners against other workflows: push-to-Required measurements include any queue delay. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
 
 `capacity_gap` in the `[budget]` of `checks.toml` lists the self-hosted files that cannot fit the self-hosted shards when selected; [ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) names each one with its reason. The planner admits a gap file after all other work. Its units that fit run. The plan summary names the rest: `Not run: <file>, N units, reason: capacity gap per ADR 0262`. They do not fail `Required checks`.
 
@@ -246,7 +248,9 @@ A canary file must be a registered hosted fixture; `bin/ci-units plan` refuses a
 
 `bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill two lanes per shard, each with at most 150 declared seconds, with at most eighteen fixture jobs across both shard classes per run.
 
-Ordinary fixture jobs run on the shared Sabre and Shark pool, with eighteen runners total: seven on Sabre and eleven on Shark. Each shard runs up to two units at once. Four concurrent Ansible units on a shared runner can exceed the unit ceiling even when each case passes alone. Both classes count against the planner's eighteen-job bound, so a run fits one wave when the pool is idle. The complete fleet fixture names the CI workflow as an input, so workflow changes exercise every fleet case.
+Ordinary fixture jobs run on the shared Sabre and Shark pool. Each host has twelve CPUs and at most six active runners; two workers per runner keep the worker count within that CPU count. Extra runner containers stay stopped with their listener and autostart disabled. Both classes count against the planner's eighteen-job bound; jobs beyond the twelve active runners wait for a place.
+
+Four concurrent Ansible units on a shared runner can exceed the unit ceiling even when each case passes alone. The complete fleet fixture names the CI workflow as an input, so workflow changes exercise every fleet case.
 
 Fork shards use the same two-lane plan on GitHub-hosted runners. Other jobs and proof holds can still occupy places; measure queue delay as part of the five-minute push-to-Required limit. A file can declare a larger slice count when its cases need finer slices.
 

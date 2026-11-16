@@ -1,5 +1,6 @@
-"""Fixture matrices share eighteen runner places without admitting fork code or a second wave."""
+"""Fixture matrices share eighteen planned shards without admitting fork code or losing units."""
 from pathlib import Path
+import heapq
 import sys
 import unittest
 
@@ -74,9 +75,14 @@ class FixturePoolTest(unittest.TestCase):
         expected = [name for name, _ in units.units_for(fixtures[file], budget)]
         self.assertEqual(76, len(expected))
         self.assertEqual(set(expected), {name for name in selected if name.split('#')[0] == file})
-        self.assertLessEqual(len(plan['shards']) + len(plan['self_hosted_shards']), 18)
+        self.assertEqual(18, len(plan['shards']) + len(plan['self_hosted_shards']))
+        costs = {name: cost for fixture in fixtures.values() for name, cost in units.units_for(fixture, budget)}
         for shard in plan['shards'] + plan['self_hosted_shards']:
             self.assertEqual(2, units.shard_workers(shard['units'], budget, fixtures))
+            lanes = [0, 0]
+            for name in shard['units']:
+                heapq.heappush(lanes, heapq.heappop(lanes) + costs[name])
+            self.assertLessEqual(max(lanes), budget['shard_seconds'])
 
 
     def test_host_input_places_all_updates_units_without_capacity_failure(self):
@@ -89,6 +95,18 @@ class FixturePoolTest(unittest.TestCase):
         self.assertNotIn('capacity', plan)
         self.assertEqual([], units.unplaced_units(plan))
         self.assertLessEqual(len(plan['shards']) + len(plan['self_hosted_shards']), budget['runner_shards'])
+
+
+    def test_spare_places_shorten_lanes_without_changing_admitted_units(self):
+        budget = {**BUDGET, 'runner_shards': 3, 'pr_shards': 3, 'shard_workers': 2}
+        rows = [(f'unit{i}', 50, 0) for i in range(12)]
+        self.assertEqual(2, len(units.pack(rows, budget)))
+        result = units.spread({False: rows, True: []}, budget)
+        self.assertEqual(3, len(result[False]))
+        self.assertEqual(sorted(name for name, _, _ in rows),
+                         sorted(name for shard in result[False] for name in shard['units']))
+        self.assertTrue(all(len(shard['units']) == 4 for shard in result[False]))
+        self.assertEqual([], result[True])
 
 
 if __name__ == '__main__':
