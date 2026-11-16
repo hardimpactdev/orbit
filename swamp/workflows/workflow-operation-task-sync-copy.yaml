@@ -52,6 +52,12 @@ inputs:
             mirror: {type: string, pattern: '^/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git$'}
             # Empty when the default is gone: then only a copy whose mirror exists can sync.
             source_mirror: {type: string, pattern: '^(/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git)?$'}
+            # The content read of the base: the commits the group's publishes pushed, and its latest approved commit or empty. An intent
+            # recorded before they existed has neither: the base then counts none published and checks no approved commit.
+            published:
+              type: array
+              items: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+            approved: {type: string, pattern: '^([0-9a-f]{40}([0-9a-f]{24})?)?$'}
           required: [runtime, branch, snapshot_id, start, mirror, source_mirror]
           additionalProperties: false
         # The sync's read token as a Git header, minted when the run starts.
@@ -88,7 +94,7 @@ jobs:
         node_id: ${{ inputs.intent.node_id }}
         group_id: ${{ inputs.intent.group_id }}
         phase: base
-        intent: '${{ {"runtime": inputs.intent.copy.runtime, "branch": inputs.intent.copy.branch, "snapshot_id": inputs.intent.copy.snapshot_id, "instance_id": inputs.intent.instance_id, "default_branch": inputs.intent.workspace.default_branch, "repository": inputs.intent.workspace.repository, "mirror": inputs.intent.copy.mirror, "source_mirror": inputs.intent.copy.source_mirror, "start": inputs.intent.copy.start, "ssh_execution": inputs.intent.ssh_execution} }}'
+        intent: '${{ {"runtime": inputs.intent.copy.runtime, "branch": inputs.intent.copy.branch, "snapshot_id": inputs.intent.copy.snapshot_id, "instance_id": inputs.intent.instance_id, "default_branch": inputs.intent.workspace.default_branch, "repository": inputs.intent.workspace.repository, "mirror": inputs.intent.copy.mirror, "source_mirror": inputs.intent.copy.source_mirror, "start": inputs.intent.copy.start, "published": has(inputs.intent.copy.published) ? inputs.intent.copy.published : [], "approved": has(inputs.intent.copy.approved) ? inputs.intent.copy.approved : "", "ssh_execution": inputs.intent.ssh_execution} }}'
         git_authorization: ${{ inputs.intent.git_authorization }}
 - name: cleanup
   labels: {role: swamp}

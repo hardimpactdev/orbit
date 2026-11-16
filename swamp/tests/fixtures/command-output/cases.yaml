@@ -2653,7 +2653,15 @@ non_command_output:
   reason: Validates the admitted start commit of the copy, not command output.
 - file: tasks/task-instance-workspace-phase.yml
   task: Validate the recorded workspace target
+  field: ansible.builtin.assert.that[15]
+  reason: Validates the admitted commit ids that the group's publishes pushed, for the content read of a copy's base, not command output.
+- file: tasks/task-instance-workspace-phase.yml
+  task: Validate the recorded workspace target
   field: ansible.builtin.assert.that[16]
+  reason: Validates the admitted approved commit, or empty, for the content read of a copy's base, not command output.
+- file: tasks/task-instance-workspace-phase.yml
+  task: Validate the recorded workspace target
+  field: ansible.builtin.assert.that[18]
   reason: Validates the admitted start commit of a publication's copy check, not command output.
 - file: tasks/task-instance-workspace-phase.yml
   task: Count the commits the copy lacks

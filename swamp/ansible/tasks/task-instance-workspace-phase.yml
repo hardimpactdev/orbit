@@ -27,6 +27,9 @@
         and intent.source_mirror | default('') is match('^(/[^ ]+/[1-9][0-9]*[.]git)?$')
         and '..' not in (intent.mirror ~ '/' ~ intent.source_mirror | default('')).split('/'))
       - intent.start is not defined or intent.start is match('^[0-9a-f]{40}([0-9a-f]{24})?$')
+      # The content read of a copy's base: the commits the group's publishes pushed, and its latest approved commit.
+      - intent.published | default([]) | reject('match', '^[0-9a-f]{40}([0-9a-f]{24})?$') | list | length == 0
+      - intent.approved | default('') is match('^([0-9a-f]{40}([0-9a-f]{24})?)?$')
       # The copy's scratch is named by its Instance, so the next sync of the copy finds what a cancelled one left.
       - workspace_phase not in workspace_base_phases or (intent.instance_id | default(0) is integer and intent.instance_id | default(0) > 0)
       # The copy check of a publication reads the range from the copy's recorded start.
@@ -284,6 +287,42 @@
                   'bundled': request['bundled'], 'changed': before != target}
 
 
+      def work_phase(head):
+          # The one content rule (docs/reference/tasks.md#published-work-of-a-copy), on the default head the base just brought in:
+          # every path HEAD changed since its merge base with it must hold the same content on it, or in a commit a publish pushed.
+          # Trees are compared, never commit ids, so a squash merge, a hand-carry or an empty commit adds nothing.
+          default = text('rev-parse', '--verify', 'refs/remotes/origin/' + request['default_branch'] + '^{commit}')
+
+          def paths(source):
+              return set(git('diff-tree', '-r', '--no-renames', '--name-only', '-z', source, head).split(b'\0')) - {b''}
+
+          changed = paths(text('merge-base', head, default))
+          differ = changed & paths(default)
+          for commit in request.get('published', []):
+              if differ and subprocess.run(git_argv + ['cat-file', '-e', commit + '^{commit}'], capture_output=True, env=env,
+                                           check=False, timeout=60).returncode == 0:
+                  differ &= paths(commit)
+          # Uncommitted, untracked and stashed work is never published. No optional lock: the read writes no index.
+          entries, modified, untracked = iter(git('--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all')
+                                              .split(b'\0')), 0, 0
+          for entry in entries:
+              if entry[:2] == b'??':
+                  untracked += 1
+              elif entry:
+                  modified += 1
+                  if entry[:1] in b'RC':
+                      next(entries, None)
+          stashes = len(text('reflog', 'show', '--format=%H', 'refs/stash').split()) if text(
+              'for-each-ref', '--format=%(refname)', 'refs/stash') else 0
+          approved = request.get('approved') or None
+          held = None if approved is None else subprocess.run(git_argv + ['merge-base', '--is-ancestor', approved, head],
+                                                               capture_output=True, env=env, check=False, timeout=60).returncode == 0
+          names = sorted(name.decode(errors='replace') for name in differ)[:5]
+          return {'state': 'dirty' if differ or modified or untracked or stashes else 'clean', 'head': head, 'default_commit': default,
+                  'empty': not changed, 'paths': {'count': len(differ), 'names': names}, 'uncommitted': modified,
+                  'untracked': untracked, 'stashes': stashes, 'approved_held': held}
+
+
       def merge_phase(head):
           # The handoff check of a copy judges the tree that publish pushes: the default head it brought in, merged when clean.
           ref = 'refs/remotes/origin/' + request['default_branch']
@@ -363,6 +402,8 @@
           head = text('rev-parse', 'HEAD')
           if phase in ['base-read', 'base-import']:
               return base_phase(head)
+          if phase == 'base-work':
+              return work_phase(head)
           if phase == 'base-merge':
               return merge_phase(head)
           # Check phases are bound by the fixed root and recorded branch; the admitted checkout_path is never used.
@@ -798,9 +839,24 @@
       ansible.builtin.assert:
         that: base_import.rc == 0
         fail_msg: "{{ (base_import.stdout | from_json).error_code | default('tasks.workspace_phase_failed') }}"
+    # The content read decides whether the copy's work is published; task:cancel and task:complete read it from this result.
+    - name: Read the copy's work as agent
+      ansible.builtin.command:
+        argv: "{{ workspace_exec + [workspace_guest_program, 'base-work', intent | to_json] }}"
+        expand_argument_vars: false
+        stdin: ''
+        stdin_add_newline: false
+      register: base_work
+      changed_when: false
+      failed_when: false
+      no_log: true
+    - name: Check the work read
+      ansible.builtin.assert:
+        that: base_work.rc == 0
+        fail_msg: "{{ (base_work.stdout | from_json).error_code | default('tasks.workspace_phase_failed') }}"
     - name: Keep the base
       ansible.builtin.set_fact:
-        workspace_result: "{{ base_import.stdout | from_json }}"
+        workspace_result: "{{ base_import.stdout | from_json | combine({'work': base_work.stdout | from_json}) }}"
   always:
     - name: Remove the copy's Node scratch
       ansible.builtin.file: { path: "{{ base_node }}", state: absent }

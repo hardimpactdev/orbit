@@ -3049,30 +3049,38 @@ Deno.test({
 /** The `fleet` of a nested-fleet default's deployment intent (NestedFleetIntent). */
 const fleetIntent = () => ({
   guests: { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" },
-  layout: { gateway: { address: "10.232.2.11" }, "app-dev": { address: "10.232.2.12" }, "app-prod": { address: "10.232.2.13" } },
+  layout: { gateway: { address: "10.232.2.11", memory: "4GiB" }, "app-dev": { address: "10.232.2.12", memory: "5GiB" }, "app-prod": { address: "10.232.2.13", memory: "2GiB" } },
+  host: false,
   operator: { address: "10.45.0.10", hub: "10.45.0.1", network: "10.45.0.0/24" },
   checkout: { path: "/home/orbit/orbit" },
   proxy: { HTTP_PROXY: "http://10.253.0.1:3128", HTTPS_PROXY: "http://10.253.0.1:3128", http_proxy: "http://10.253.0.1:3128",
     https_proxy: "http://10.253.0.1:3128", NO_PROXY: "localhost", no_proxy: "localhost" },
 });
 
+/** Caller diagnostics need only intent; seed and finish cases prepare their container through the real phases. */
+function withFleetFixture(check: (f: ReturnType<typeof fixture>, commit: string) => void, seeded = false) {
+  const f = fixture();
+  try {
+    if (seeded) for (const phase of ["container", "workspace", "processes", "seed"]) {
+      const prepared = f.run(phase);
+      assert(prepared.ok, prepared.output);
+    }
+    f.intent.deployment = { variant: "container", steps: [] };
+    f.intent.fleet = fleetIntent();
+    f.write();
+    check(f, git(f.source, "rev-parse", "HEAD"));
+  } finally { f.cleanup(); }
+}
+
 Deno.test({
-  name: "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk",
+  name: "a nested-fleet default dispatches each fleet tag and preserves drift and room refusals",
   ignore: !hasAnsible,
-  fn() {
-    const f = fixture();
-    try {
-      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
-      const commit = git(f.source, "rev-parse", "HEAD");
+  fn() { withFleetFixture((f) => {
       // The phase files of the fleet have their own fixture (ansible_instance_fleet_test.ts); here each tag reaches its own file.
       for (const name of ["check", "start", "refresh", "resume"]) {
         Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-${name}.yml`,
           `- name: Mark the phase\n  ansible.builtin.debug: { msg: "fleet phase ${name} ran" }\n`);
       }
-      // Only a deployment has `fleet`, so its intent has `deployment` too.
-      f.intent.deployment = { variant: "container" };
-      f.intent.fleet = fleetIntent();
-      f.write();
       for (const name of ["check", "start", "refresh", "resume"]) {
         const ran = f.run(`fleet_${name}`);
         assert(ran.ok, ran.output);
@@ -3091,6 +3099,13 @@ Deno.test({
         "- ansible.builtin.assert: { that: false, fail_msg: instance.container_fleet_no_room, quiet: true }", ""].join("\n"));
       assert(!f.run("fleet_start").ok);
       assertEquals(f.result(), { error_code: "instance.container_fleet_no_room", detail: "The disk of the nested Nodes has 2.75 GiB free of 25.00 GiB." });
+  }); },
+});
+
+Deno.test({
+  name: "a failed nested-fleet refresh names its phase and prevents the finish seed",
+  ignore: !hasAnsible,
+  fn() { withFleetFixture((f) => {
       // A failed fleet phase names its tag, and says why: the failed task and its message (a swamp step that exits nonzero keeps no output).
       Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-refresh.yml`,
         `- name: Check the base converge\n  ansible.builtin.assert: { that: false, fail_msg: "The base converge of the nested Node app-dev ended failed", quiet: true }\n`);
@@ -3103,6 +3118,13 @@ Deno.test({
       assertEquals(f.result(), { error_code: "instance.container_fleet_refresh_failed",
         detail: "Check the base converge: The base converge of the nested Node app-dev ended failed", failed_phase: "fleet_refresh", phases_passed: ["processes"] });
       assertEquals(f.state().containers["instance-7"].snapshots, snapshots);
+  }, true); },
+});
+
+Deno.test({
+  name: "nested-fleet failures retain Doctor, command, restore and reset diagnostics",
+  ignore: !hasAnsible,
+  fn() { withFleetFixture((f) => {
       // The Doctor wait of a start names its check and the trimmed Doctor body.
       Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-start.yml`,
         `- name: Check Doctor\n  ansible.builtin.assert: { that: false, fail_msg: "Readiness check 'doctor' failed after 300 s: {\\"data\\":{\\"healthy\\":false}}", quiet: true }\n`);
@@ -3145,6 +3167,13 @@ Deno.test({
       assertEquals(f.result(), { error_code: "instance.container_fleet_reset_failed",
         detail: "Check the restores: nested-gateway did not restore base: Snapshot not found" });
 
+  }); },
+});
+
+Deno.test({
+  name: "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk",
+  ignore: !hasAnsible,
+  fn() { withFleetFixture((f, commit) => {
       // The refresh names what each part did; every later phase of the run keeps it in the result file, a failed one too.
       const refreshed = { migrate: "nothing", restart: "yes", converge: "ran", changed: 0, base: "kept", record: "present",
         seconds: { gateway: 14, converge: 70, ready: 3, base: 1 } };
@@ -3156,7 +3185,8 @@ Deno.test({
       // The refresh retook the fleet's base, so the seed is taken again at the same commit.
       const stops = () => ((f.state().systemctl ?? []) as string[][]).filter((call) => call[0] === "stop").length;
       const before = stops();
-      assert(f.run("seed").ok);
+      const seeded = f.run("seed");
+      assert(seeded.ok, seeded.output);
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${commit}`]);
       assertEquals(stops(), before + 1, "the Processes stop for a new snapshot");
       assertEquals(f.result(), { commit, fleet_refresh: refreshed });
@@ -3183,10 +3213,7 @@ Deno.test({
       assertEquals(stops(), normal);
       // A nested-fleet default without an inner volume (Instance 2454's shape) flushes nothing before any of its seeds.
       assertEquals(f.state().syncs, undefined);
-    } finally {
-      f.cleanup();
-    }
-  },
+  }, true); },
 });
 
 /** The seed snapshots of the container and of its inner volume. */
