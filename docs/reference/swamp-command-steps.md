@@ -25,7 +25,7 @@ Call `executionCopy(string $vault, string $key, string $value): array{vault:stri
 
 Serve rate-limits requests and WebSocket handshakes per client and answers `429` with `Retry-After`. Its source admits at most 50 new WebSocket connections from one IP address in a fixed minute, for every token together, and names the rest of that minute as `Retry-After`; no serve setting changes it. Every Gateway process shares that budget.
 
-The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its `operation-starts` queue and answers admission without waiting for them. Children of a proof use the [spaced start sequence](/reference/operations#direct-swamp-starts).
+The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its `operation-starts` queue and answers admission without waiting for them. Children of a proof are [held until all their copies succeed](/reference/operations#direct-swamp-starts), then queued together.
 
 Each start job opens one connection. Its run-time execution copies and its `workflow.run` share it, and it closes when the start ends: serve streams every event of the run to the socket that started it, and `workflow.run` has no detach. So one start costs one handshake, plus one for each read on the read token that building its inputs makes. A start is a priority caller of the [handshake ledger](#handshake-ledger), so screen reads never take its place in serve's window.
 
@@ -143,7 +143,11 @@ The development auto-deploy precheck uses the shared native start transport for 
 
 A family can declare `scheduled_result` with a fixed native workflow name and UUID, a fixed `terminal_result` job/step, and a fixed list key in that output. The original admission workflow can end while the Operation remains running. Its original `swamp_run_id` stays unchanged. The family validates its immutable check and candidate identity and decides whether an explicit pending observation remains running or ends the Operation.
 
-The existing shared observer keeps its run-authorized connection for bound-root attachments. Scheduled results are not attached or pushed. A Gateway job runs every minute and asks Swamp which root runs finished, with one `workflow.run.search` over the existing read-only `ORBIT_SWAMP_READ_TOKEN`: the terminal statuses, started within the last hour, in pages of 200. The existing shared history helper then reads exact run metadata for each new run. Official e459 requires `run` for active `run.attach`, so scheduled results never attach and require no added run authority.
+The existing shared observer keeps its run-authorized connection for bound-root attachments. Scheduled results are not attached or pushed. A Gateway job runs every minute and asks Swamp which root runs finished, with one `workflow.run.search` over the existing read-only `ORBIT_SWAMP_READ_TOKEN`: the terminal statuses, started within the last hour, in pages of 200.
+
+The hour counts back from the time of the read, never from the last saved read: Swamp cannot give back the result of an older run, and the Gateway forgets after two hours which runs it projected. A Gateway that starts again from an older state, such as a nested fleet that a proof resets, therefore reads only the last hour and does not queue a projection for each run since its saved read.
+
+The existing shared history helper reads exact run metadata for each new run. Official e459 requires `run` for active `run.attach`, so scheduled results never attach and require no added run authority.
 
 > Decided by the orchestrator, for Nick's review: polling replaces the commit feed until a v3 datastore is planned. The feed (`commits.subscribe`) needs a v3 commit log. The Swamp node uses the filesystem datastore, so Swamp refused the feed. A v3 datastore needs a new empty path and does not migrate existing data, so it would also drop the schedule pause state.
 
@@ -198,7 +202,9 @@ The rule lives in `SwampConnection`; it applies to every queue, including the op
 
 Serve can close a connection while it sits idle, and PHP cannot see this before the connection is used. A kept connection that sat idle for about a minute is always found closed. The 10-second age drops such a connection before a job uses it, so the job does not wait out the reply deadline first.
 
-Jobs in a burst follow each other within seconds. A burst of jobs that project scheduled results therefore shares one connection and makes about one handshake. Serve admits 50 handshakes per IP per fixed minute. Each release needs 10 idle seconds first, so the age adds at most 6 handshakes per PHP process per minute, and only while that process is mostly idle. A failed read still drops the connection as before. There is no new throttle.
+Jobs in a burst follow each other within seconds. A burst of jobs that project scheduled results therefore shares one connection and makes about one handshake. Serve admits 50 handshakes per IP per fixed minute. Each release needs 10 idle seconds first, so the age adds at most 6 handshakes per PHP process per minute, and only while that process is mostly idle.
+
+A read that serve answers with an error, such as a run whose result serve does not hold, keeps the connection: the socket still works, and the next job of the burst uses it. Only a read that gets no reply or fails on the socket drops the connection. There is no new throttle.
 
 This rule does not change the 15-second connect budget, 30-second reply budget or retry rule below. Short PHP HTTP requests and one-shot commands release their sockets when they end. The long-running native event observer uses its own connection and keeps receiving events and answering pings.
 

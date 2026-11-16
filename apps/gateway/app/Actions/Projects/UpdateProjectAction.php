@@ -34,7 +34,6 @@ use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\Instance;
 use App\Models\Project;
 use App\Models\ProjectUpdate;
-use App\Models\TaskVm;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -488,7 +487,6 @@ final readonly class UpdateProjectAction
                 || GitRepositoryIdentity::derive($update->requested_repository_url) !== $project->repository_identity
             ) {
                 $this->repositories->assertWorktreesOwned($plan['checkouts'], $plan['worktrees']);
-                $this->preflightTaskWorkspaces($project, $plan['checkouts'], $update->requested_repository_url, $update->requested_default_branch);
                 $this->sources->preflightRepository(
                     $plan['checkouts'],
                     $project->repository_url,
@@ -516,24 +514,6 @@ final readonly class UpdateProjectAction
             'status' => ProjectUpdateStatus::Preflighted,
             'inventory' => $inventory,
         ]);
-    }
-
-    /**
-     * A task workspace's preflight cannot read the proposed repository, because a task VM gets no token. The
-     * Gateway checks the default branch there once instead. No task VM resumes any more (docs/reference/old-paths.md).
-     *
-     * @param  list<Instance>  $checkouts
-     */
-    private function preflightTaskWorkspaces(Project $project, array $checkouts, string $repositoryUrl, ?string $requestedDefaultBranch): void
-    {
-        $vms = array_filter(array_map(static fn (Instance $checkout): ?TaskVm => TaskVm::forNode($checkout->node_id), $checkouts));
-        if ($vms === []) {
-            return;
-        }
-        // A requested default branch is already verified there.
-        if ($requestedDefaultBranch === null) {
-            $this->branches->verify($repositoryUrl, (string) $project->default_branch, $project->source_access);
-        }
     }
 
     /**

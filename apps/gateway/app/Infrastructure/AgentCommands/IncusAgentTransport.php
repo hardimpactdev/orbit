@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AgentCommands;
 
+use App\Domain\TaskVms\TaskVmError;
+use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\TaskVms\TaskVmCredentialGuard;
 use RuntimeException;
 
 /** Carries the agent envelope through a managed host. Only candidate binaries use file push. */
@@ -27,7 +28,7 @@ final readonly class IncusAgentTransport implements AgentTransport
     public function run(array $arguments, ProtectedInput $envelope, float $timeout, ?\Closure $output = null): CommandResult
     {
         if ($envelope->carriesGitCredential()) {
-            throw TaskVmCredentialGuard::refused();
+            throw new TaskVmException(TaskVmError::GitCredentialRefused, 'A command that carries a GitHub credential cannot run through incus.');
         }
         $root = array_slice($arguments, 0, 2) === ['sudo', '-n'];
         // Incus supplies root directly. Name the fixed guest account for account-level supervision,

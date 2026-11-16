@@ -70,7 +70,8 @@ jobs:
       workflowIdOrName: proof-fleet-restore
       inputs:
         ssh_execution: ${{ inputs.ssh_execution }}
-  # In a task copy every batch, the first included, starts from `base`: the reset of the copy's inner fleet, from its Node. A reset that fails stops the batch.
+  # In a task copy a batch whose intent sets `restore_first` starts from `base`: the reset of the copy's inner fleet, from its Node. The
+  # Gateway sets it for the first batch and after each batch that can change the fleet (docs/cli/proof/run.mmd). A reset that fails stops the batch.
   - name: reset
     labels: {role: swamp}
     guard: '${{ !(has(inputs.restore) && inputs.restore) || size(inputs.reset) == 0 }}'

@@ -24,15 +24,10 @@ use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
-use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -180,18 +175,9 @@ function gateSpecDone(Task $group): void
         'status' => OperationStatus::Succeeded, 'input' => ['command' => 'firewall:deny']]);
 }
 
-/** The spec a prep run leaves, and the task VM that it parked. */
+/** The spec a prep run leaves. */
 function gatePrepped(Task $group): void
 {
-    $node = static fn (string $name, string $address): Node => Node::withoutEvents(fn (): Node => Node::query()->create([
-        'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => $address, 'public_ssh_port' => 22,
-        'wireguard_ip' => $address, 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
-    ]));
-    $host = $node('gate-host', '10.44.0.21');
-    $guest = $node('gate-vm', '10.44.0.22');
-    TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'gate-vm',
-        'state' => TaskVmState::Parked, 'address' => '10.251.78.34', 'wireguard_ip' => '10.44.0.22', 'size' => TaskVmSize::Normal, 'image_fingerprint' => 'fingerprint', 'recipe_identity' => 'recipe']);
-
     gateSpecDone($group);
 }
 

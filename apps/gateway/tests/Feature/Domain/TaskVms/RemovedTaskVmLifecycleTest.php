@@ -33,15 +33,11 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\TaskVms\TaskVmImageBuildState;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmState;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampDispatch;
-use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -49,8 +45,6 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
-use App\Models\TaskVm;
-use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -64,11 +58,11 @@ uses(LazilyRefreshDatabase::class);
 
 /*
  * The task VM lifecycle is removed (docs/reference/old-paths.md): no slot pool, claim, resume or release is left, and every task runs in a
- * task copy. What the VM era left behind still reads and ends: the rows of `task_vms` and the task groups that point at them.
+ * task copy. What the VM era left behind still reads and ends: the task groups that ran on a task VM. The task VM tables are dropped.
  */
 
-/** A host of the removed task VMs with `$taskPlaces` places, as Node settings still describe it, and a base build row. */
-function vmEraHost(int $taskPlaces = 2, bool $snapshot = true, int $ciPlaces = 2): array
+/** A host of the removed task VMs with `$taskPlaces` places, as Node settings still describe it. */
+function vmEraHost(int $taskPlaces = 2, int $ciPlaces = 2): array
 {
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
     $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux',
@@ -76,12 +70,8 @@ function vmEraHost(int $taskPlaces = 2, bool $snapshot = true, int $ciPlaces = 2
         'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
     config(['proof.project' => $project->id]);
-    $base = $snapshot ? ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107120000']
-        : ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)];
-    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
-        'promoted_at' => now(), 'images' => ['base' => $base]]);
 
-    return [$host, $project, $build];
+    return [$host, $project];
 }
 
 /** A todo task group of the Project. */
@@ -217,37 +207,32 @@ function vmEraCiProofWorld(int $places, bool $casesOnly = false): Node
     return $host;
 }
 
-/** An old `task_vms` row of the group in `$state`, with its guest Node, as the removed slot pool left it. */
-function vmEraRow(Task $group, TaskVmState $state): TaskVm
+/** The guest Node of a group's old task VM, as the removed slot pool left it. */
+function vmEraGuest(): Node
 {
-    $host = Node::query()->where('name', 'beast')->sole();
-    $guest = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast-tvm-1', 'status' => 'active', 'platform' => 'linux',
+    return Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast-tvm-1', 'status' => 'active', 'platform' => 'linux',
         'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.133', 'wireguard_ip' => '10.44.0.133', 'user' => 'orbit']));
-
-    return TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus,
-        'name' => 'beast-tvm-1', 'slot_number' => 1, 'slot_project_id' => $group->project_id, 'state' => $state, 'wireguard_ip' => '10.44.0.133',
-        'stop_confirmed_at' => $state === TaskVmState::Parked ? now() : null]);
 }
 
-/** A group of the VM era that still holds its workspace Instance on the guest Node of its old VM row: it has no task copy. */
+/** A group of the VM era that still holds its workspace Instance on the guest Node of its old VM: it has no task copy. */
 function vmEraWorkspaceGroup(TaskGroupStatus $status = TaskGroupStatus::Running): array
 {
-    [, $project] = vmEraHost();
+    [$host, $project] = vmEraHost();
     vmEraControlNodes();
     app(TaskExtensionState::class)->enable();
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => $status]);
     Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Step', 'brief' => 'Brief', 'status' => TaskStatus::Running]);
-    $vm = vmEraRow($group, TaskVmState::Ready);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $vm->node_id, 'name' => 'task-'.$group->id, 'source_layout' => InstanceSourceLayout::Checkout,
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => vmEraGuest()->id, 'name' => 'task-'.$group->id, 'source_layout' => InstanceSourceLayout::Checkout,
         'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id,
         'branch' => 'task-'.$group->id, 'status' => InstanceState::SourceResolved, 'first_setup_pending' => false]);
     $group->taskable()->associate($instance)->save();
 
-    return [$group, $vm, $instance, Node::query()->where('name', 'gateway')->sole()];
+    return [$group, $host, $instance, Node::query()->where('name', 'gateway')->sole()];
 }
 
 /**
- * A group of the task VM era: its old VM row is still `parked` and it holds no workspace, as a stuck group does after the VMs were removed.
+ * A group of the task VM era that still owns its workspace Instance on the host but has no task copy, as a stuck group does after the VMs
+ * were removed.
  * It has subtask approvals of `$approved` in order, and a GitHub where `$origin['branch']`
  * lists the commits the group's task branch reaches, its head first; without that key the branch does not exist, and `unreadable` fails
  * the read. Any other key is a commit and the commits it reaches. The test may change `$origin` later. The group's pull request has the head
@@ -256,7 +241,7 @@ function vmEraWorkspaceGroup(TaskGroupStatus $status = TaskGroupStatus::Running)
  * @param  list<string>  $approved
  * @param  array<string,list<string>|string>  $origin
  * @param  list<string>  $reads
- * @return array{0:Task,1:TaskVm,2:Node}
+ * @return array{0:Task,1:Instance,2:Node}
  */
 function originWorld(array $approved, array &$origin, ?string $merged = null, TaskGroupStatus $status = TaskGroupStatus::Settling,
     GitHubPullRequestState $state = GitHubPullRequestState::Merged, array &$reads = []): array
@@ -299,9 +284,11 @@ function originWorld(array $approved, array &$origin, ?string $merged = null, Ta
         TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $subtask->id, 'type' => TaskCommentType::Approved, 'body' => 'Approved.',
             'author' => 'reviewer', 'commit_sha' => $sha, 'posted_at' => now()]);
     }
-    $slot = vmEraRow($group, TaskVmState::Parked);
+    $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => Node::query()->where('name', 'beast')->sole()->id, 'name' => 'task-'.$group->id,
+        'source_layout' => InstanceSourceLayout::Checkout, 'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/task-'.$group->id,
+        'task_workspace_owner_id' => $group->id, 'branch' => 'task-'.$group->id, 'status' => InstanceState::SourceResolved, 'first_setup_pending' => false]);
 
-    return [$group, $slot, Node::query()->where('name', 'gateway')->sole()];
+    return [$group, $workspace, Node::query()->where('name', 'gateway')->sole()];
 }
 
 /** One `task:complete` or `task:cancel` call from the Gateway Node. */
@@ -345,27 +332,14 @@ it('keeps tasks.provision registered with the workflow its start runs, no vault 
         ->and($definition)->not->toHaveKey('github_token_issuer');
 });
 
-it('leaves task VM Nodes out of the workers\' known hosts and keeps every other pinned Node', function (): void {
-    [$host, $project] = vmEraHost();
-    vmEraControlNodes();
-    $vm = vmEraRow(vmEraGroup($project), TaskVmState::Ready);
-    $vm->node->forceFill(['ssh_host_fingerprint' => 'SHA256:guest', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'guest-public-key'])->save();
-
-    $content = app(SwampWorkerKnownHostsInput::class)->capture()['known_hosts_content'];
-
-    expect(SwampWorkerKnownHostsInput::covers($vm->node))->toBeFalse()->and(SwampWorkerKnownHostsInput::covers($host))->toBeTrue()
-        ->and($content)->toContain('10.44.0.7 ssh-ed25519 fixture-public-key')->not->toContain('guest-public-key');
-});
-
 describe('a stuck group of the VM era', function (): void {
-    // Group 4121 of Project 46: todo, no workspace, its old VM row destroyed long ago.
-    it('reads, lists and cancels a todo group whose old VM row is destroyed, with no run and no job', function (): void {
+    // Group 4121 of Project 46: todo, no workspace, its old VM destroyed long ago.
+    it('reads, lists and cancels a todo group whose old VM is destroyed, with no run and no job', function (): void {
         Queue::fake();
         [, $project] = vmEraHost();
         vmEraControlNodes();
         app(TaskExtensionState::class)->enable();
         $group = vmEraGroup($project);
-        vmEraRow($group, TaskVmState::Destroyed);
         $gateway = Node::query()->where('name', 'gateway')->sole();
         $api = test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
 
@@ -380,15 +354,15 @@ describe('a stuck group of the VM era', function (): void {
         Queue::assertNothingPushed();
     });
 
-    // A group whose old VM row was never released (expected none live): its cancel ends it with no run, and the row stays as history.
-    it('cancels a group whose old VM row is still live without a release run, and leaves the row as it is', function (): void {
+    // A group that owns a workspace but no task copy: its cancel ends it with no run.
+    it('cancels a group that owns a workspace but no task copy without a run', function (): void {
         Queue::fake();
         $origin = [];
-        [$group, $vm, $gateway] = originWorld([], $origin);
+        [$group, , $gateway] = originWorld([], $origin);
 
         groupCall($gateway, $group, 'cancel')->assertSuccessful();
 
-        expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled)->and($vm->refresh()->state)->toBe(TaskVmState::Parked)
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled)
             ->and(Operation::query()->where('kind', 'tasks.cancel')->sole()->status)->toBe(OperationStatus::Succeeded)
             ->and(Operation::query()->where('kind', '!=', 'tasks.cancel')->exists())->toBeFalse();
         Queue::assertNothingPushed();
@@ -421,29 +395,29 @@ describe('a stuck group of the VM era', function (): void {
 
     it('completes a settling group that holds a VM workspace, starts no release and asks for removal assistance', function (): void {
         Queue::fake();
-        [$group, $vm, $instance, $gateway] = vmEraWorkspaceGroup(TaskGroupStatus::Settling);
+        [$group, , $instance, $gateway] = vmEraWorkspaceGroup(TaskGroupStatus::Settling);
         $group->tasks()->update(['status' => TaskStatus::Completed]);
 
         groupCall($gateway, $group, 'complete')->assertOk();
 
         expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($group->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
             ->and($group->assistance_reason)->toBe('Workspace removal failed: This workspace is no task copy. Task VMs and their release are removed, so Orbit cannot remove it.')
-            ->and($group->taskable_id)->toBe($instance->id)->and($vm->refresh()->state)->toBe(TaskVmState::Ready)
+            ->and($group->taskable_id)->toBe($instance->id)
             ->and(Operation::query()->exists())->toBeFalse();
         Queue::assertNothingPushed();
     });
 
     it('refuses the cancel of a group that holds a VM workspace by name before it stops running work, and records nothing', function (): void {
         Queue::fake();
-        [$group, $vm, , $gateway] = vmEraWorkspaceGroup();
-        $turn = Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $vm->host_node_id,
+        [$group, $host, , $gateway] = vmEraWorkspaceGroup();
+        $turn = Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $host->id,
             'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
 
         groupCall($gateway, $group, 'cancel')->assertStatus(409)->assertJsonPath('error.code', 'tasks.workspace_ownership_refused');
 
         // The refusal comes before the cancel stops running work.
         expect(Operation::query()->whereKeyNot($turn->id)->exists())->toBeFalse()->and($turn->refresh()->cancel_requested_at)->toBeNull()
-            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($vm->refresh()->state)->toBe(TaskVmState::Ready);
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
         Queue::assertNothingPushed();
     });
 });
@@ -452,18 +426,17 @@ it('refuses task:complete while origin lacks the latest approval, and completes 
     [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
     // A merged and GitHub deleted the branch; B was approved later.
     $origin = [$a => [$a]];
-    [$group, $vm, $gateway] = originWorld([$a, $b], $origin, merged: $a, status: TaskGroupStatus::Running);
+    [$group, , $gateway] = originWorld([$a, $b], $origin, merged: $a, status: TaskGroupStatus::Running);
 
     groupCall($gateway, $group, 'complete')->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished')
         ->assertJsonPath('error.details.commit', $b)->assertJsonPath('error.details.branch', 'task-'.$group->id);
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->watched_pr_completion)->toBeNull();
 
-    // task:publish pushed B; now the group completes. Its old VM row stays as it is.
+    // task:publish pushed B; now the group completes.
     $origin['branch'] = [$b, $a];
     groupCall($gateway, $group, 'complete')->assertOk();
 
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($vm->refresh()->state)->toBe(TaskVmState::Parked)
-        ->and(Operation::query()->exists())->toBeFalse();
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and(Operation::query()->exists())->toBeFalse();
 });
 
 // Group 4474 of Project 46: waiting for review, its pull request merged.
@@ -535,8 +508,8 @@ it('refuses when the task branch is gone and its pull request closed without a m
 it('leaves the group\'s open operations untouched when a complete or a cancel refuses', function (string $command): void {
     [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
     $origin = ['branch' => [$a]];
-    [$group, $vm, $gateway] = originWorld([$a, $b], $origin);
-    $turn = Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $vm->host_node_id,
+    [$group, $workspace, $gateway] = originWorld([$a, $b], $origin);
+    $turn = Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $workspace->node_id,
         'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
 
     groupCall($gateway, $group, $command)->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished');
@@ -564,7 +537,7 @@ it('schedules no task VM host sweep, idle release or parked VM observation', fun
  */
 describe('nested-fleet Projects', function (): void {
     /** @return array<string, int> */
-    $rows = static fn (): array => ['task_vms' => TaskVm::query()->count(), 'instances' => Instance::query()->count(), 'nodes' => Node::query()->count(),
+    $rows = static fn (): array => ['instances' => Instance::query()->count(), 'nodes' => Node::query()->count(),
         'operations' => Operation::query()->count(), 'tasks' => Task::query()->count(), 'waiting' => Task::query()->whereNotNull('capacity_wait_reason')->count()];
     $refused = static function (Closure $admit): void {
         expect($admit)->toThrow(function (ResourceOperationException $error): void {

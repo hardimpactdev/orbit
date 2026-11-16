@@ -42,7 +42,6 @@ final readonly class ListTaskGroupsAction
                 'project',
                 'tasks' => static fn ($query) => $query->select(TaskData::ListColumns),
                 'tasks.latestCheck' => static fn ($query) => $query->select(self::qualified('task_checks', TaskCheckData::ListColumns)),
-                'latestVm' => static fn ($query) => $query->select(self::qualified('task_vms', ['id', 'group_id', 'state', 'stop_confirmed_at'])),
                 'reviewedCommits',
                 'taskable' => static fn (MorphTo $morph) => $morph
                     ->constrain([Instance::class => static fn ($query) => $query->select(['id', 'project_id', 'node_id', 'task_workspace_owner_id'])])

@@ -15,11 +15,9 @@ use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskPrModeChoice;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Route;
 use App\Models\Task;
-use App\Models\TaskVm;
 use Illuminate\Database\Eloquent\Collection;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -74,6 +72,7 @@ final class TaskGroupData extends Data
         public int $escalations,
         public array $subtasks,
         public ?string $capacityWaitReason = null,
+        /** Always null: no task VM exists. The field stays for older clients (docs/reference/compute-drivers.md#vm-power). */
         public ?VmPower $vmPower = null,
         public bool $preview = false,
         public bool $currentRecipe = false,
@@ -119,7 +118,7 @@ final class TaskGroupData extends Data
     }
 
     /** What a group's data reads beyond its own columns. A list loads these first, with the columns a row shows. */
-    public const array Relations = ['project', 'tasks.latestCheck', 'latestVm', 'reviewedCommits', 'taskable'];
+    public const array Relations = ['project', 'tasks.latestCheck', 'reviewedCommits', 'taskable'];
 
     public static function fromModel(Task $group): self
     {
@@ -159,7 +158,6 @@ final class TaskGroupData extends Data
             previewUrl: self::previewUrl($group, $taskable),
             orchestration: $group->groupOrchestration(),
             capacityWaitReason: $group->capacity_wait_reason,
-            vmPower: self::vmPower($group),
             preview: $group->preview ?? false,
             currentRecipe: $group->current_recipe ?? false,
             review: $group->review_mode,
@@ -219,24 +217,5 @@ final class TaskGroupData extends Data
         $route = $taskable->authoritativeRoute();
 
         return $route instanceof Route ? "https://{$route->domain}" : null;
-    }
-
-    private static function vmPower(Task $group): ?VmPower
-    {
-        if ($group->parent_id !== null) {
-            return null;
-        }
-        // A task VM reports running while ready and destroyed once gone. The capacity wait reason names other states.
-        $vm = $group->latestVm;
-        if ($vm instanceof TaskVm) {
-            return match ($vm->state) {
-                TaskVmState::Ready => VmPower::Running,
-                TaskVmState::Parked => $vm->stop_confirmed_at === null ? null : VmPower::Stopped,
-                TaskVmState::Destroyed => VmPower::Destroyed,
-                default => null,
-            };
-        }
-
-        return null;
     }
 }

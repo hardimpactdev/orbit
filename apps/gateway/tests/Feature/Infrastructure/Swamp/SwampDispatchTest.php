@@ -230,7 +230,7 @@ it('keeps the target held when cancellation arrives while native start confirmat
         ->and($operation->lock_key)->toBe('instance:'.$operation->target_id);
 });
 
-it('queues only the first proof child after all copies while unrelated Operations start immediately', function (): void {
+it('queues every proof child at once after all copies while unrelated Operations start immediately', function (): void {
     $this->freezeSecond();
     Queue::fake([StartAdmittedSwampRun::class]);
     $node = SwampNodeFixture::ensure();
@@ -257,11 +257,13 @@ it('queues only the first proof child after all copies while unrelated Operation
     });
 
     expect($copied)->toBe($children->pluck('id')->all());
-    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
-    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $children->first()->id && $job->delay === null);
-    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $other->id && $job->delay === null);
+    // No start waits for the answer of another: a gap between starts adds to the wall time of the proof.
+    Queue::assertPushed(StartAdmittedSwampRun::class, 4);
+    foreach ([...$children, $other] as $operation) {
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $operation->id && $job->delay === null);
+    }
     expect($children->last()->refresh()->state['proof_child_start'])->toBe([
-        'not_before' => null, 'released_at' => null, 'advanced_at' => null,
+        'not_before' => now()->toISOString(), 'released_at' => null,
     ])->and($children->last()->state)->toHaveKey('swamp_start');
 });
 

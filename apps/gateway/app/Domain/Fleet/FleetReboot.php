@@ -12,8 +12,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -23,9 +21,6 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
-use App\Models\Task;
-use App\Models\TaskVm;
-use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Config;
 use Throwable;
@@ -59,26 +54,6 @@ final readonly class FleetReboot
     }
 
     /**
-     * The task hosts of the open pass. Task work refuses on them until the pass ends, so the drain
-     * finds no turn or check that started after admission.
-     *
-     * @return list<int>
-     */
-    public static function rebootingTaskHosts(): array
-    {
-        return ValidatedData::integerList(self::open()?->input['task_hosts'] ?? []);
-    }
-
-    /** Refuses task work on a group whose task VM host the open pass drains: its reboot would cut the work. */
-    public static function refuseTaskWork(Task $group): void
-    {
-        $host = TaskVm::forGroup($group)?->host_node_id;
-        if ($host !== null && in_array($host, self::rebootingTaskHosts(), true)) {
-            throw new ResourceOperationException('tasks.host_rebooting', 'The task VM host is in a fleet reboot pass. Repeat the call when the pass ends.', 409);
-        }
-    }
-
-    /**
      * The managed Linux Nodes in pass order.
      *
      * @return list<Node>
@@ -86,7 +61,7 @@ final readonly class FleetReboot
     public function members(): array
     {
         $members = Node::query()->with('roles')->where('status', LifecycleStatus::Active)->where('platform', 'linux')->orderBy('id')->get()
-            ->filter(fn (Node $node): bool => ! TaskVm::forNode($node) instanceof TaskVm && $this->eligibility->allows($node))->values()->all();
+            ->filter(fn (Node $node): bool => $this->eligibility->allows($node))->values()->all();
         usort($members, fn (Node $left, Node $right): int => [$this->group($left), $left->id] <=> [$this->group($right), $right->id]);
 
         return $members;
@@ -130,21 +105,6 @@ final readonly class FleetReboot
         }
 
         return $group;
-    }
-
-    /** Whether an open task Operation runs on one of the Node's task VMs: `tasks_busy`, or null. No admission asks any more; it goes with `TaskVm`. */
-    public function busy(Node $node): ?string
-    {
-        $vms = TaskVm::query()->where('host_node_id', $node->id)->whereNot('state', TaskVmState::Destroyed)->get(['id', 'group_id']);
-        $groups = $vms->pluck('group_id')->filter()->values()->all();
-        $busy = Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
-            ->where(static fn ($query) => $query->where(static fn ($vm) => $vm->where('target_type', 'task_vm')->whereIn('target_id', $vms->pluck('id')->all()))
-                ->orWhere(static fn ($group) => $group->where('target_type', 'task_group')->whereIn('target_id', $groups))
-                ->orWhere(static fn ($host) => $host->where('node_id', $node->id)->where(static fn ($kind) => $kind->where('kind', 'like', 'tasks.%')
-                    ->orWhere('kind', 'like', 'proof.%'))))
-            ->exists();
-
-        return $busy ? 'tasks_busy' : null;
     }
 
     /**

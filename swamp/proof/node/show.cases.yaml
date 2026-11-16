@@ -8,6 +8,7 @@ baseline: [operations, node_records]
 cases:
   - id: required-id
     batch: fresh-fleet
+    read_only: true
     covers: [main, node-found, allowed]
     summary: Required arguments alone return the recorded Node detail without creating an Operation.
     act:
@@ -20,6 +21,7 @@ cases:
 
   - id: json-read
     batch: fresh-fleet
+    read_only: true
     covers: [main, node-found, allowed]
     summary: The JSON read succeeds without creating an Operation.
     act:
@@ -32,6 +34,7 @@ cases:
 
   - id: repeat
     batch: fresh-fleet
+    read_only: true
     covers: [main, node-found, allowed]
     summary: Reading the same Node twice succeeds both times without creating Operations.
     stages:
@@ -101,6 +104,7 @@ cases:
 
   - id: apps-folder-label
     batch: fresh-fleet
+    read_only: true
     covers: [main, node-found, allowed]
     summary: The Node detail labels its apps root as Apps folder.
     fails_today: ShowNodeCommand labels settings.apps.path as Projects path instead of Apps folder.
@@ -114,6 +118,7 @@ cases:
 
   - id: invalid-id
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: A nonpositive, noninteger or out-of-range ID is refused locally.
     variants:
@@ -131,6 +136,7 @@ cases:
 
   - id: negative-or-option-like-id
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: A negative or option-like ID passed after the option terminator is refused as an invalid Node ID.
     variants:
@@ -146,6 +152,7 @@ cases:
 
   - id: unknown-node
     batch: fresh-fleet
+    read_only: true
     covers: [main, unknown-node]
     summary: An unknown positive Node ID is refused without creating an Operation.
     act:

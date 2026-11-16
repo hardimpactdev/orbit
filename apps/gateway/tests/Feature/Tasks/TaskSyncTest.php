@@ -12,9 +12,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskSyncProjection;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -25,7 +22,6 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -123,7 +119,6 @@ it('admits a task copy sync with its copy intent and no task VM', function (): v
         ->and($target['source_mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$default->id.'.git')
         ->and($intent['git_authorization']['vault'])->toBe('orbit-control-inputs')
         ->and($intent['git_authorization']['key'])->toMatch('/\\Atask-sync-token-[a-f0-9-]{36}\\z/')
-        ->and(TaskVm::query()->count())->toBe(0)
         ->and(Operation::query()->where('kind', 'task_vm.resume')->count())->toBe(0);
 });
 
@@ -250,9 +245,9 @@ it('records no base field for a copy run whose base phase left no evidence', fun
 });
 
 /**
- * An external group on a ready task VM, as the task VM sync admits it: its Instance owns the workspace on the VM's Node.
+ * An external group whose workspace sat on a task VM, as the task VM sync admitted it: its Instance owns the workspace on the VM's Node.
  *
- * @return array{Task, TaskVm}
+ * @return array{Task}
  */
 function syncVmWorld(): array
 {
@@ -263,17 +258,14 @@ function syncVmWorld(): array
         'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => $address, 'public_ssh_port' => 22,
         'wireguard_ip' => $address, 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
     ]));
-    $host = $node('shark', '10.44.0.11');
     $guest = $node('tvm-598', '10.44.0.137');
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main']);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'orchestration' => 'external', 'status' => TaskGroupStatus::Running]);
-    $vm = TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-598',
-        'state' => TaskVmState::Ready, 'address' => '10.251.78.33', 'wireguard_ip' => '10.44.0.137', 'size' => TaskVmSize::Normal, 'pi_token' => str_repeat('p', 64)]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
         'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Active]);
     $group->update(['taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id]);
 
-    return [$group->refresh(), $vm];
+    return [$group->refresh()];
 }
 
 // The task VM sync is removed with the task VMs (docs/reference/old-paths.md): a group whose workspace sat on a task VM has no task copy.

@@ -13,7 +13,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 
 /** Admission records intent; the209 native root owns every effect and returns one terminal result. */
@@ -26,8 +25,8 @@ final readonly class AdmitNodeRemovalOperationAction
         if (($existing = app(OperationIdempotency::class)->replay('node.remove')) !== null) {
             return $existing;
         }
-        if ($deleted || TaskVm::query()->where('node_id', $node->id)->exists()) {
-            throw new ResourceOperationException('node.removal_owner_required', 'Remove a TaskVM Node inside its owning native TaskVM workflow.', 422);
+        if ($deleted) {
+            throw new ResourceOperationException('node.removal_owner_required', 'Remove a deleted Node inside its owning native workflow.', 422);
         }
         $this->consent($node, $offline, $force);
         $this->policy->protected($node, $caller);

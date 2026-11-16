@@ -20,12 +20,10 @@ use App\Domain\NodeFacts\NodeAgentState;
 use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeFact;
-use App\Models\TaskVm;
 use Carbon\CarbonImmutable;
 use UnexpectedValueException;
 
@@ -75,8 +73,7 @@ final readonly class FactDoctor
             ->whereIn('kind', [NodeFactKind::Host, NodeFactKind::Units, NodeFactKind::Ufw])->get()
             ->mapWithKeys(static fn (NodeFact $fact): array => [$fact->kind->value => $fact->data])->all();
         $managed = $this->eligibility->isManagedForObservation($node);
-        $parked = TaskVm::query()->where('node_id', $node->id)->where('state', TaskVmState::Parked)->exists();
-        $inspect = static fn (DoctorFamily $family): DoctorFamilyInspection => new DoctorFamilyInspection($family, $node, $agent, $facts, $managed, $parked);
+        $inspect = static fn (DoctorFamily $family): DoctorFamilyInspection => new DoctorFamilyInspection($family, $node, $agent, $facts, $managed);
 
         return DoctorNodeReportData::fromFamilies($node->id, $node->name, array_map(fn (DoctorFamily $family): DoctorFamilyReportData => match ($family) {
             DoctorFamily::Node => $this->nodeFamily($inspect($family)),
@@ -90,10 +87,7 @@ final readonly class FactDoctor
     private function nodeFamily(DoctorFamilyInspection $check): DoctorFamilyReportData
     {
         $node = $check->node;
-        if ($check->parked) {
-            $check->issue('node.task_vm_parked', $node->id, $node->name, 'The task VM is parked.', null, 'parked', DoctorIssueKind::Informational);
-        }
-        if (! $check->managed || $check->parked) {
+        if (! $check->managed) {
             return $check->report();
         }
         if ($node->status !== LifecycleStatus::Active) {
@@ -188,7 +182,7 @@ final readonly class FactDoctor
     private function roleFamily(DoctorFamilyInspection $check): DoctorFamilyReportData
     {
         $node = $check->node;
-        if (! $check->managed || $check->parked) {
+        if (! $check->managed) {
             return $check->report();
         }
         $roles = $node->roles()->orderBy('id')->get();
@@ -219,7 +213,7 @@ final readonly class FactDoctor
 
     private function processFamily(DoctorFamilyInspection $check): DoctorFamilyReportData
     {
-        if (! $check->managed || $check->parked || $check->agent === null || $check->node->platform !== 'linux') {
+        if (! $check->managed || $check->agent === null || $check->node->platform !== 'linux') {
             return $check->report();
         }
         foreach ($this->runtime->execute($check->node)['processes'] as $process) {
@@ -265,7 +259,7 @@ final readonly class FactDoctor
     private function firewallFamily(DoctorFamilyInspection $check): DoctorFamilyReportData
     {
         $node = $check->node;
-        if (! $check->managed || $check->parked) {
+        if (! $check->managed) {
             return $check->report();
         }
         $rules = $node->firewallRules()->orderBy('id')->get();

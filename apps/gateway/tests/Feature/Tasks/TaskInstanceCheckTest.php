@@ -15,9 +15,6 @@ use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrMode;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -27,7 +24,6 @@ use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -99,7 +95,6 @@ it('admits a check in the recorded container Instance without a task VM', functi
         // The Swamp regression runs exactly this intent shape through the production phases.
         ->and(array_keys($intent))->toEqualCanonicalizing(array_keys(instanceCheckIntent()))
         ->and(array_keys($workspace))->toEqualCanonicalizing(array_keys(ValidatedData::object(instanceCheckIntent()['workspace'])))
-        ->and(TaskVm::query()->count())->toBe(0)
         ->and(Operation::query()->where('kind', 'task_vm.resume')->count())->toBe(0)
         ->and(TaskCheck::query()->sole()->status->value)->toBe('running');
 });
@@ -150,8 +145,6 @@ it('refuses a check of a group whose workspace is on a task VM by name, and reco
         'name' => 'tvm-598', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.137', 'public_ssh_port' => 22,
         'wireguard_ip' => '10.44.0.137', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
     ]));
-    TaskVm::query()->create(['host_node_id' => $guest->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-598',
-        'state' => TaskVmState::Ready, 'address' => '10.251.78.33', 'wireguard_ip' => '10.44.0.137', 'size' => TaskVmSize::Normal, 'pi_token' => str_repeat('p', 40)]);
     $instance->update(['task_workspace_owner_id' => null]);
     $workspace = Instance::query()->create(['project_id' => $group->project_id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
         'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/proof/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Active]);

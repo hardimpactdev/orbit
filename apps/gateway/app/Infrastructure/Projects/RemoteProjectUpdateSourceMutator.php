@@ -11,7 +11,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentStep;
 use App\Models\Instance;
-use App\Models\TaskVm;
 use Closure;
 use Illuminate\Support\Facades\Config;
 
@@ -31,17 +30,13 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         $read = null;
 
         foreach ($this->uniqueCheckouts($checkouts) as $checkout) {
-            // A task VM gets no token. UpdateProjectAction reads the proposed repository on the Gateway instead.
-            $network = ! TaskVm::forNode($checkout->node_id) instanceof TaskVm;
-            if ($network) {
-                $read ??= $this->access->for($proposedUrl, $checkout->loadMissing('project')->project->source_access);
-            }
+            $read ??= $this->access->for($proposedUrl, $checkout->loadMissing('project')->project->source_access);
             $this->run($checkout, [
                 'operation' => 'preflight_repository',
                 'path' => $checkout->checkout_path,
                 'current' => $currentUrl,
                 'proposed' => $proposedUrl,
-                'git_read' => $network ? $read : null,
+                'git_read' => $read,
             ], 'app-update-repository-preflight', 'project.repository_preflight_failed');
         }
     }

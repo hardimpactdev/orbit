@@ -8,7 +8,7 @@ use RuntimeException;
 
 /**
  * The group must wait: `wait` says why, and the message is the reason the group shows. This is a wait, not a
- * failure. A failed task VM throws `TaskVmFailedException` instead.
+ * failure.
  */
 final class TaskCapacityException extends RuntimeException
 {

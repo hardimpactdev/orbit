@@ -32,7 +32,7 @@ The generated API schema includes `GET /api/v1/tasks/{task}/agents/{session}` an
 
 The generated Node settings schema has no `task_vms` member and the Node schema no `image_refresh_hold`: both are removed ([Node settings](/reference/node-settings)).
 
-The task group schema includes nullable `vm_power`: `running`, `stopped`, or `destroyed`, separately from task status. The Tasks page keeps its status-based grouping and detail view when power is present, null, or omitted. [VM power](/reference/compute-drivers#vm-power) defines the state mapping.
+The task group schema includes nullable `vm_power`: `running`, `stopped`, or `destroyed`, separately from task status. The Gateway always reports `null`. The Tasks page keeps its status-based grouping and detail view when power is present, null, or omitted. [VM power](/reference/compute-drivers#vm-power) defines the state mapping.
 
 The generated API schema also includes the Project development deploy step operations and their `required` boolean. These types describe the [API contract](/reference/deployments#development-deploy-steps); they do not add web controls or start deployments.
 
@@ -425,6 +425,8 @@ The view shows locked versions with their repository commit and observation time
 ## Deploy an Instance
 
 The Instance overview shows the latest 25 deployments, in the order returned by the Gateway.
+
+A deployment's page lists its properties as `instance:deployment:show` names them. Best-effort steps names each [best-effort step](/reference/deployments#development-deploy-steps) that did not exit 0, in yellow as a warning: the deployment still passed.
 
 Its Deploy action starts an `instance.deploy` [operation](/reference/operations) with the same request as `instance:deploy`. A Deploy pane then shows each step's status. It receives no live output lines now: the agent command that published them was removed.
 

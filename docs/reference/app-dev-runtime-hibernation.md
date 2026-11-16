@@ -26,7 +26,7 @@ Hibernation applies to a Process that meets every condition:
 
 Processes in [Instance containers](/reference/development-containers#processes) are excluded from this Node-level policy. A container sleeps as a whole, through the same sweep: see [Sleep and wake](/reference/development-containers#sleep-and-wake). Its Route uses the same activation endpoint and pages as below.
 
-Restart policy does not matter. Hibernation never touches Node Processes, production Instances, Schedules, PHP-FPM services or pools, or Caddy socket paths.
+Restart policy does not matter. This Process policy never touches Node Processes, production Instances, Schedules, PHP-FPM services or pools, or Caddy socket paths. Planned: a production Instance's live release container sleeps as a whole by the container rule ([ADR 0265](/decisions/0265-sleep-idle-production-containers)); see [Production containers](/reference/production-containers#sleep-and-wake).
 
 The Gateway's [Project Document cleanup gate](/reference/project-documents#local-state-and-startup-ordering) is separate from Instance hibernation. Its local runtime directory, `documents.cleanup_runtime`, changes no hibernation threshold or wake behavior. Restarting a Gateway consumer invalidates document-body cleanup authorization; waking an Instance does not grant it.
 
@@ -57,8 +57,8 @@ Set these values in the Gateway's environment, not an Instance's `.env`. They co
 | Sweep interval | 600 seconds | `orbit.hibernation.sweep_seconds` | `ORBIT_HIBERNATION_SWEEP_SECONDS` |
 | Wake timeout | 60 seconds | `orbit.hibernation.wake_timeout_seconds` | `ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS` |
 | Cold wake timeout | 1,800 seconds | `orbit.hibernation.cold_wake_timeout_seconds` | `ORBIT_HIBERNATION_COLD_WAKE_TIMEOUT_SECONDS` |
-| Container idle sleep | Off | `orbit.hibernation.container_sleep`, the environment value as written | `ORBIT_HIBERNATION_CONTAINER_SLEEP`: `false`, `without_t3` (only Instances without a T3 server, such as defaults) or `true` |
-| Containers that never sleep | None | `orbit.hibernation.container_never_sleep` | `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`, comma-separated Instance ids |
+| Container idle sleep | Off | `orbit.hibernation.container_sleep`, the environment value as written | `ORBIT_HIBERNATION_CONTAINER_SLEEP`: `false`, `without_t3` (only Instances without a T3 server, such as defaults) or `true`. Planned: `without_t3` and `true` also act on each production live, which has no T3 server |
+| Containers that never sleep | None | `orbit.hibernation.container_never_sleep` | `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`, comma-separated Instance ids. Planned: the Instance's `never_sleep` field replaces it, and its ids move into the field ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) |
 
 `ORBIT_HIBERNATION_CONTAINER_SLEEP` is one setting with three values. `false`, or no value, puts no container to sleep by itself. `true` lets the idle sleep act on every development container. `without_t3` lets it act only on Instances whose runtime records no T3 server, which today are the Projects' defaults; a clone stays awake with the reason `t3_server`.
 
@@ -91,7 +91,9 @@ The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-A
 
 A container Instance's site calls the same endpoint behind its asleep marker. The Gateway admits or joins the wake and answers the progress page at once; it never holds the visitor's request for the wake. A frozen container's resume through its Node ([the Node resumes a frozen container](/reference/development-containers#the-node-resumes-a-frozen-container)) starts after that answer. The Node first reads the container's recorded pages back from swap, still frozen, then resumes it ([Prepared restore](/reference/prepared-restore)), and the page's poll loads the app once the marker is gone.
 
-> **Target design, not built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) the endpoint holds a container Instance's visit for a short bound, starting at 500 ms, while the Node's executor wakes it. When the wake ends in time, the endpoint answers 200 and Caddy passes the original request to the app. Otherwise it answers the progress page, as above.
+> **Target design, not built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) the endpoint holds a development container Instance's visit for a short bound, starting at 500 ms, while the Node's executor wakes it. When the wake ends in time, the endpoint answers 200 and Caddy passes the original request to the app. Otherwise it answers the progress page, as above.
+
+Planned: a production live gets no progress page. The Gateway still answers at once; then the Node's Caddy holds the visitor's request until the asleep marker is gone, up to 10 s, and proxies it to live ([Production containers](/reference/production-containers#sleep-and-wake)).
 
 The restore makes the app's first answer faster. It does not change this page, its 250 ms poll, or when the Gateway answers. The page polls the visitor's own path and query: control characters are dropped, and a path that starts with `//` or `/\` becomes `/`.
 

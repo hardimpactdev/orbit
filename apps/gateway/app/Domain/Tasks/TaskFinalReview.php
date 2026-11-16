@@ -14,7 +14,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskReviewedCommit;
-use App\Models\TaskVm;
 
 /**
  * The precondition that keeps approved work when a group ends (docs/cli/task/complete.mmd, docs/cli/task/cancel.mmd): complete and
@@ -28,21 +27,21 @@ final readonly class TaskFinalReview
     public function __construct(private GitHubApi $github, private RepositoryPullRequestAccess $access) {}
 
     /**
-     * Refuses with `tasks.approved_work_unpublished` and changes nothing while the group holds a workspace or a task VM and origin's task
+     * Refuses with `tasks.approved_work_unpublished` and changes nothing while the group holds a workspace and origin's task
      * branch does not reach its latest approved commit. Only when GitHub answers that the branch does not exist and the group's pull
      * request merged does that pull request's head stand in for it. Every failed GitHub read refuses too.
      */
     public function assertOnOrigin(Task $group): void
     {
         $commit = self::approvedCommit($group);
-        if ($commit === null || (! $group->workspace()->exists() && ! TaskVm::forGroup($group) instanceof TaskVm)) {
+        if ($commit === null || ! $group->workspace()->exists()) {
             return;
         }
         $branch = TaskRemoteBranch::for($group);
         $repository = GitHubRepository::fromOrigin($group->project->repository_url ?? '');
         if ($repository === null || ! $this->reaches($repository, $group, $commit, $branch)) {
             throw new ResourceOperationException('tasks.approved_work_unpublished',
-                "Approved commit {$commit} is not on origin's {$branch} branch. Run task:publish first; it resumes a parked task VM.", 409,
+                "Approved commit {$commit} is not on origin's {$branch} branch. Run task:publish first.", 409,
                 details: ['commit' => $commit, 'branch' => $branch]);
         }
     }

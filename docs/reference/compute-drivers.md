@@ -3,7 +3,6 @@ title: "Compute drivers"
 description: "Incus task VMs for every Project."
 covers:
   - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**}
-  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - "{bin/{php-build,git-build-watch}}"
@@ -396,7 +395,7 @@ Internal source commits and digests remain in the identity; relocating identical
 
 Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, external artifact URL, `artifact_mirror`, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit.
 
-A [refresh](#refresh-the-base-snapshot) records the same identity on the build row of the base snapshot. Schema version `1` and a short display hash are not substitutes. No code writes the `task_vm_image_recipe` row any more; only the recovery of an old `recipe-image:` problem reads it.
+A [refresh](#refresh-the-base-snapshot) recorded the same identity on the build row of the base snapshot; the refresh is removed and the build rows went with the table `task_vm_image_builds`. Schema version `1` and a short display hash are not substitutes. The table `task_vm_image_recipe` that held the current recipe is dropped ([old paths](/reference/old-paths#the-task-vm-tables)).
 
 ### Show and validate the recipe
 
@@ -459,7 +458,7 @@ Tracking a live PPA would make it a second owner of Git, and an exact APT versio
 
 ## Task VMs
 
-The task VM lifecycle is removed: no claim, resume or release runs, and every task runs in a [task copy](/reference/tasks#task-copy) ([old paths](/reference/old-paths#the-pi-task-loop)). This section describes what old `task_vms` rows and the Swamp workflows still hold until they go. The Node setting `task_vms` and the task VM settings are removed ([old paths](/reference/old-paths#task-vm-settings)).
+The task VM lifecycle is removed: no claim, resume or release runs, and every task runs in a [task copy](/reference/tasks#task-copy) ([old paths](/reference/old-paths#the-pi-task-loop)). The tables `task_vms`, `task_vm_image_builds` and `task_vm_image_recipe` are dropped ([old paths](/reference/old-paths#the-task-vm-tables)). This section describes what a task VM was, and what the Swamp workflows still hold until they go. The Node setting `task_vms` and the task VM settings are removed ([old paths](/reference/old-paths#task-vm-settings)).
 
 A host had a `containers` setting with separate container places and a placement switch. They were built for a separate task container runtime, which ADR 0250 dropped: tasks move into [Instance containers](/reference/development-containers#tasks-in-an-instance-container), and the setting is removed with `task_vms`. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). Before that, every task group ran on a task VM.
 
@@ -629,11 +628,11 @@ The native action uses an empty temporary bare Git repository with the workspace
 
 From the VM, the Gateway takes only commit IDs and pack data. A commit ID must be 40 or 64 lowercase hex characters. Git in the mirror never reads a file from the VM. It runs with these settings: `core.hooksPath=/dev/null`, `core.fsmonitor=false`, an empty `credential.helper`, `http.followRedirects=false`, `protocol.allow=never`, and `protocol.https.allow=always`. A pack from the VM goes through `git index-pack --strict`, which runs the object checks that `transfer.fsckObjects` runs for a fetch. Fetches from GitHub skip them, because an old commit in a real repository can fail them.
 
-The remaining Gateway source adapters refuse to send a command that carries a source Git credential to a task VM. Native Swamp publication consumes its repository token through the shared private reader on the admitted worker. The separate Composer setup token described above is a narrow exception for dependency downloads.
+Native Swamp publication consumes its repository token through the shared private reader on the admitted worker. The separate Composer setup token described above is a narrow exception for dependency downloads.
 
-A source command fails with `task_vm.git_credential_refused` before SSH starts. An `incus` command on a task VM host refuses one too. So an Instance or Project operation that would fetch on a task VM with a token fails there and passes no token. Examples are `instance:destroy` of a task VM workspace and `instance:clone` from one. `project:update` with a new repository URL sends no token: it reads the proposed repository on the Gateway and only sets `origin` on the VM. A task VM workspace goes with its group; see [Release a task VM](#release-a-task-vm).
+An `incus` command refuses a command that carries a source Git credential with `task_vm.git_credential_refused` before it runs. The Gateway's SSH executor sends a command without asking whether its target is a task VM, because no task VM exists ([old paths](/reference/old-paths#the-task-vm-readers)). `project:update` reads no task VM either: it sends each checkout's preflight the token of the Project's source access.
 
-The guard knows a credential by the mark that `GitReadScript` puts on its input. A test fails when other code builds the credential header. It also fails when a new file sends remote commands with GitHub access in reach, so each such path gets a review.
+The refusal knows a credential by the mark that `GitReadScript` puts on its input. A test fails when other code builds the credential header. It also fails when a new file sends remote commands with GitHub access in reach, so each such path gets a review.
 
 The checkout keeps the Project repository URL as `origin`. After setup ends, the agent can run Git there, but its environment holds no setup credential. So it cannot fetch from or push to a private repository.
 
@@ -675,20 +674,20 @@ A VM that dies on an Incus host stays in its row until its group ends; no sweep 
 
 [Doctor](/cli/doctor) does not inspect task VM hosts: it has no code for an orphaned, missing or stray VM. The operator lists a host with `incus list --all-projects` instead.
 
-Doctor does not inspect the Node of a `parked` task VM, because the VM is stopped on purpose. Its `node` family reports one informational `node.task_vm_parked`, and the other families check nothing. So no problem is filed for a parked VM.
+Doctor reads no task VM row. It reports no `node.task_vm_parked` and inspects every Node by its families ([old paths](/reference/old-paths#the-task-vm-readers)).
 
 ### States
 
-The `TaskVmState` enum has six cases.
+A task VM row had six states. The table and its states are dropped ([old paths](/reference/old-paths#the-task-vm-tables)).
 
 | State | Meaning |
 | --- | --- |
 | `provisioning` | Orbit is creating, enrolling, or preparing the VM |
 | `ready` | Pi runs, and Orbit can create the workspace |
 | `parked` | Orbit stopped the VM, or is starting it again. The disk stays. See [Park and resume](#park-and-resume) |
-| `failed` | A job failed. The row keeps `error_code` and `error_message`. The group shows the error as its reason and asks for assistance |
+| `failed` | A job failed. The row kept `error_code` and `error_message`. The group shows the error as its reason and asks for assistance |
 | `destroying` | Cleanup has started |
-| `destroyed` | The VM and the Node are gone. The row stays for audit |
+| `destroyed` | The VM and the Node were gone. The row stayed for audit until the table was dropped |
 
 Orbit derives progress inside `provisioning` from facts: the VM exists, the row has a Node, the Node is active, and the Pi Process exists. A group has at most one task VM that is not `destroyed`. `failed` is final for the row. Cancel the group to destroy the VM.
 
@@ -739,7 +738,7 @@ Incus 7.0 requires Linux 6.12, cgroup v2, QEMU 8.2, nftables 1.0, dnsmasq 2.90, 
 Orbit uses complete CLI command names and explicit archive destinations, compatible with 7.0's stricter argument parsing. Its regular image archives do not use the changed file-copy behavior. Existing Ubuntu VMs retain their NVRAM filenames. On hosts only, the installer adds firmware aliases in Zabbly's bundled firmware directory. Incus 7.0.1 searches `INCUS_EDK2_PATH` then `/usr/share/OVMF`, while its AppArmor profile permits only `INCUS_EDK2_PATH` when set ([firmware selection](https://github.com/lxc/incus/blob/v7.0.1/internal/server/device/edk2/driver_edk2.go), [AppArmor](https://github.com/lxc/incus/blob/v7.0.1/internal/server/apparmor/instance.go)). Remove the aliases after an upstream release fixes selection and confinement and a VM created on Ubuntu Incus boots without them. Rebuilt images and new VMs do not need these aliases.
 
 1. Drain Shark with the admission procedure below. Inventory every project with `incus list --all-projects`.
-2. Finish live task VM rows through normal lifecycle operations. Save and disable instance autostart with the drain script below, then stop all remaining instances. Take the stopped-state backup below.
+2. Save and disable instance autostart with the drain script below, then stop all remaining instances. Take the stopped-state backup below.
 4. Verify client and server 7.0.1. Compare project, VM, ZFS, custom volume, and seed inventories with the backup.
 5. Boot an old-image guest and a new disposable guest. Check agent exec, stop/start, bridge isolation, and ACL egress.
 6. Not possible any more: the refresh that proves and promotes the snapshot has no trigger (see [Refresh the base snapshot](#refresh-the-base-snapshot)).
@@ -1106,7 +1105,9 @@ Until a snapshot is proved and recorded, each refresh discards any unpromoted ba
 
 The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
-The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs. The base is identified by the recipe identity that its refresh converged to, recorded on the build row. Image freshness counts a path when it belongs to a carried folder or matches any carried lock-file pattern.
+The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs.
+
+The base was identified by the recipe identity that its refresh converged to, recorded on its build row, which went with the table `task_vm_image_builds` ([old paths](/reference/old-paths#the-task-vm-tables)). Image freshness counts a path when it belongs to a carried folder or matches any carried lock-file pattern.
 
 The converge of a refresh installs the recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and installs with the `apt` module with `APT_CONFIG` pointing at it, and `allow_downgrade` because the pins are exact. The index read goes over plain http through the `apt-cacher-ng` of the VM (`localhost:3142`, no request pipelining, signatures still checked), which the first software task installs; the packages stay a direct download over https. The cache stays in the base VM, and the nested Nodes of a task VM read the snapshot indexes from it. The `check` phase asserts every package at its pin.
 
@@ -1216,7 +1217,9 @@ The WireGuard address allocator still skips the reserved range `10.44.0.128/25`,
 
 ### Placement invariant
 
-A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be the workspace its group [owns](/reference/tasks#workspace-ownership), in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Any other Instance fails with HTTP 409 `task_vm.foreign_instance`. Orbit also refuses an access grant from a task VM Node with HTTP 409 `task_vm.access_refused`. The fleet rollout skips task VM Nodes with the reason `sandbox`.
+No task VM exists, so no Node is a task VM Node. An Instance save, an access grant, the fleet rollout, a metrics exporter and a Node removal do not check for one. The refusals `task_vm.foreign_instance`, `task_vm.access_refused` and `instance.task_vm_node` and the rollout reason `sandbox` are removed ([old paths](/reference/old-paths#the-task-vm-readers)).
+
+Every task workspace command over SSH fails with `task_vm.workspace_mismatch`, because task VMs are removed. The guard reads no task VM row ([old paths](/reference/old-paths#the-task-vm-readers)).
 
 ### Configure task VMs
 
@@ -1232,20 +1235,12 @@ Every task VM error code starts with `task_vm.`. The setup commands print the co
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `task_vm.invalid_config` | 500 | A `task_vms` value is invalid. See [Configure task VMs](#configure-task-vms) |
-| `task_vm.unknown_host` | 409 | The Node is not active or has no valid `settings.task_vms` |
-| `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
-| `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
-| `task_vm.access_refused` | 409 | An access grant names a task VM Node as its consumer |
-| `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
-| `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
-| `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
+| `task_vm.workspace_mismatch` | 409 | A task workspace command over SSH was refused. Task VMs are removed, so every such command fails with it |
+| `task_vm.setup_failed` | 409 | The Ansible host preparation refused the host |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
-The build row records the step and error |
-| `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
-| `task_vm.vm_missing` | 502 | The sweep found a `ready` or `parked` task VM gone from its host |
-| `task_vm.git_credential_refused` | 409 | A command that carries a GitHub credential was about to reach a task VM or an `incus` command. See [Git on a task VM](#git-on-a-task-vm) |
+| `task_vm.vm_missing` | 502 | A frozen `incus` agent command found the task VM gone from its host |
+| `task_vm.git_credential_refused` | 409 | A command that carries a GitHub credential was about to run through an `incus` command. See [Git on a task VM](#git-on-a-task-vm) |
 
 ### Limits
 
@@ -1305,11 +1300,11 @@ The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` s
 
 A subtask declares no topology. The API ignores an empty `topology` list and refuses any other list with `422 tasks.orchestration_unsupported`. A value that is not a list, such as a string or `null`, fails validation with `422 validation.failed`. This holds when a request creates a group, creates a subtask, or updates a subtask. Task responses have no `topology` field, and the CLI has no `--topology` option.
 
-Nothing reads a declaration that a group saved before this rule. The column `tasks.topology` is dropped ([old paths](/reference/old-paths#task-vm-settings)). The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` stay in the schema, and the Gateway neither reads nor writes them. A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
+Nothing reads a declaration that a group saved before this rule. The column `tasks.topology` is dropped ([old paths](/reference/old-paths#task-vm-settings)). The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` went with the table `task_vms` ([old paths](/reference/old-paths#the-task-vm-tables)). A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
 
 ## VM power
 
-Task group responses report `vm_power` separately from task status. For a [task VM](#task-vms), it is `running` while the VM is `ready`, `stopped` while it is [`parked`](#park-and-resume), and `destroyed` once it is `destroyed`. In the other states it is `null`, and the group's wait reason names the state. The CLI shows this value as **VM power** when it is not `null`.
+Task group responses keep the field `vm_power`, and it is always `null`. No task VM exists, and the Gateway reads no task VM row for it ([old paths](/reference/old-paths#the-task-vm-readers)). The field stays so that older clients keep their shape. The CLI shows **VM power** only when the value is not `null`, so it shows none.
 
 ## Request a preview
 

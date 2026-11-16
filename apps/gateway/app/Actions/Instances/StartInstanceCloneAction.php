@@ -54,7 +54,7 @@ final readonly class StartInstanceCloneAction
         return DB::transaction(function () use ($candidate, $data, $caller, $requestId): Operation {
             $candidate->refresh()->loadMissing(['project', 'node']);
             $node = Node::query()->findOrFail($data->nodeId);
-            app(NativeInstanceProvisioningIntent::class)->assertCloneSupported($candidate, $node, $data->sqliteSourcePath);
+            app(NativeInstanceProvisioningIntent::class)->assertCloneSupported($candidate, $data->sqliteSourcePath);
             if ($candidate->status !== InstanceState::Active || $candidate->provisioning_step !== 'active'
                 || $candidate->node->status !== LifecycleStatus::Active || $candidate->node->platform !== 'linux') {
                 throw $this->conflict('instance.clone_candidate_inactive', 'The candidate must be active.');
