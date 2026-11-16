@@ -68,6 +68,8 @@ class PlanningTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         file = 'swamp/tests/ansible_instance_mail_test.py'
         self.assertEqual(set(units.collect(file)['cases']), set(fixtures[file]['cases']))
+        # The collector prints the stored population and nothing that pins the file's bytes.
+        self.assertEqual(tuple(units.collect(file)), units.registry.POPULATION)
         step = units.unit_step(file, fixtures, {}, Path('/tmp/fixture-collections'))
         self.assertEqual(step.argv, ['python3', '-I', 'tests/ansible_instance_mail_test.py'])
         result = units.plan([file], budget, fixtures, defaults)
