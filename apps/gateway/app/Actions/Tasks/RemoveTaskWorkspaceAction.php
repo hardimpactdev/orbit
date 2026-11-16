@@ -15,8 +15,6 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
-use App\Domain\TaskVms\TaskVmError;
-use App\Domain\TaskVms\TaskVmException;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
@@ -37,8 +35,6 @@ use Throwable;
  */
 final readonly class RemoveTaskWorkspaceAction
 {
-    public const string OwnershipRefusedPrefix = 'Workspace ownership refused: ';
-
     public const string RemovalFailedPrefix = 'Workspace removal failed: ';
 
     public const string MergeCleanupFailedPrefix = 'Merged pull request cleanup failed: ';
@@ -112,12 +108,6 @@ final readonly class RemoveTaskWorkspaceAction
     {
         if ($exception instanceof TaskWorkspaceWaiting) {
             return;
-        }
-        for ($cause = $exception; $cause instanceof Throwable; $cause = $cause->getPrevious()) {
-            if ($cause instanceof TaskVmException && $cause->errorCode === TaskVmError::WorkspaceMismatch->value) {
-                $prefix = self::OwnershipRefusedPrefix;
-                break;
-            }
         }
         TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, ($prefix ?? self::RemovalFailedPrefix).$exception->getMessage(), replaceFailure: true, replaceDirection: $replaceDirection);
     }

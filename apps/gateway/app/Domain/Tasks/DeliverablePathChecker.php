@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\Instance;
 use App\Models\Project;
 use App\Rules\CommandPaths;
 
@@ -17,7 +16,7 @@ final readonly class DeliverablePathChecker
      * @param  list<array<string, mixed>>  $deliverables
      * @return array<string, string> Errors relative to the deliverables field.
      */
-    public function check(Project $project, array $deliverables, string $commit, string $baseKind = 'resolved', ?Instance $workspace = null): array
+    public function check(Project $project, array $deliverables, string $commit, string $baseKind = 'resolved'): array
     {
         $needsFiles = false;
         foreach ($deliverables as $deliverable) {
@@ -25,7 +24,7 @@ final readonly class DeliverablePathChecker
                 $needsFiles = true;
             }
         }
-        $files = $needsFiles ? $this->repository->files($project, $commit, $workspace) : [];
+        $files = $needsFiles ? $this->repository->files($project, $commit) : [];
         $created = [];
         foreach ($deliverables as $deliverable) {
             if (($deliverable['type'] ?? null) === 'file' && ($deliverable['change'] ?? null) === 'created' && is_string($deliverable['path'] ?? null)) {

@@ -13,7 +13,6 @@ use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\SwampRunReader;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskBroadcasts;
-use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskPullRequestCheckOutput;
 use App\Domain\Tasks\TaskPullRequestMerger;
@@ -22,11 +21,8 @@ use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
-use App\Domain\Tasks\TaskWorkspaceDiffReader;
-use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
-use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestCheckOutput;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
@@ -35,8 +31,6 @@ use App\Infrastructure\Tasks\JevBriefCoverageLabeler;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
-use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
-use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\WebSocketSwampRunReader;
 use App\Models\Task;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -48,9 +42,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
-        TaskWorkspaceDiffReader::class => AgentViewTaskWorkspaceDiffReader::class,
-        TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
-        TaskCheckRunner::class => RemoteTaskCheckRunner::class,
         DeliverablePathRepository::class => NativeDeliverablePathRepository::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
         BriefCoverageLabeler::class => JevBriefCoverageLabeler::class,

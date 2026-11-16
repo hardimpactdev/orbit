@@ -1219,7 +1219,7 @@ The WireGuard address allocator still skips the reserved range `10.44.0.128/25`,
 
 No task VM exists, so no Node is a task VM Node. An Instance save, an access grant, the fleet rollout, a metrics exporter and a Node removal do not check for one. The refusals `task_vm.foreign_instance`, `task_vm.access_refused` and `instance.task_vm_node` and the rollout reason `sandbox` are removed ([old paths](/reference/old-paths#the-task-vm-readers)).
 
-Every task workspace command over SSH fails with `task_vm.workspace_mismatch`, because task VMs are removed. The guard reads no task VM row ([old paths](/reference/old-paths#the-task-vm-readers)).
+No task workspace command runs over SSH. The SSH task workspace path and its refusal `task_vm.workspace_mismatch` are removed ([old paths](/reference/old-paths#the-task-vm-readers)).
 
 ### Configure task VMs
 
@@ -1235,7 +1235,6 @@ Every task VM error code starts with `task_vm.`. The setup commands print the co
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `task_vm.workspace_mismatch` | 409 | A task workspace command over SSH was refused. Task VMs are removed, so every such command fails with it |
 | `task_vm.setup_failed` | 409 | The Ansible host preparation refused the host |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |

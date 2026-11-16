@@ -17,10 +17,12 @@ it('holds no task VM error code that nothing produces', function (string $code):
     // Only the dropped task VM model produced these (docs/reference/old-paths.md#the-task-vm-tables).
     'invalid_config', 'unknown_host', 'host_configured', 'fleet_unavailable', 'setup_failed', 'job_failed', 'vm_missing', 'not_settled',
     'awaiting_host_sweep',
+    // Only the removed SSH task workspace guard produced this (docs/reference/old-paths.md#the-task-vm-readers).
+    'workspace_mismatch',
 ]));
 
 it('keeps the task VM error codes that a refusal still produces', function (): void {
-    expect(array_column(TaskVmError::cases(), 'value'))->toBe(['task_vm.git_credential_refused', 'task_vm.workspace_mismatch']);
+    expect(array_column(TaskVmError::cases(), 'value'))->toBe(['task_vm.git_credential_refused']);
 });
 
 it('has no task wait for a task VM, which nothing produces or reads', function (): void {

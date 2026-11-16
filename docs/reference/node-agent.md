@@ -345,7 +345,7 @@ The Gateway runs every Node action through one runner, `AgentCommandRunner`. The
 [sudo -n] /usr/local/bin/orbit-agent command <name>
 ```
 
-A Gateway architecture check scans core and extension PHP for process, SSH, and agent transport dependencies. Only the command transports, Gateway control-plane processes, command rendering, and the excluded Tasks and private DNS paths may use those dependencies. New Node behavior must call `AgentCommandRunner`; adding another executor fails the check.
+A Gateway architecture check scans core and extension PHP for process, SSH, and agent transport dependencies. Only the command transports, Gateway control-plane processes, command rendering, and the excluded private DNS path may use those dependencies. New Node behavior must call `AgentCommandRunner`; adding another executor fails the check.
 
 For containers, the Gateway reads three sources directly over pinned SSH: a container Process's journal tail and unit state, and the [workspace work state](/reference/development-containers#workspace-work-state) of a container Instance. The separate [Git check at admission](/reference/remote-programs) covers new host-checkout destroy and transfer requests. It uses the Node’s existing SSH account, with fixed argv built from the resolved Instance and Process’s validated ids and names; this grants no new identity or container access. A list groups all container Process states into one bounded call per Node. Every action stays a Swamp workflow.
 
@@ -439,7 +439,7 @@ Only binary staging may change a Node outside a named command. First admission u
 
 The Gateway owns validation, authorization, records, operations, placement, and error mapping. Rust commands own Node execution and its tests. [Extensions](/reference/extensions#add-a-plug-in-point) own their Rust command modules, startup hooks, and compiled services; one agent binary dispatches them. There is no dynamic loader or second command runner.
 
-Tasks workspace scripts retain their [existing runner](/reference/remote-programs). The private DNS listener and its publication scripts remain for the separate [DNS migration](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
+The Tasks workspace scripts that went over SSH are removed ([old paths](/reference/old-paths#the-task-vm-readers)). The private DNS listener and its publication scripts remain for the separate [DNS migration](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
 
 Operations own recovery. Mutations accept an `effect_key` as `op-<operation id>.<step key>`. Executor transports always supply it after contract authorization. After acquiring command target and resource locks, the shared command layer writes a private intent on the target before the effect and a durable receipt before returning. A repeated key with the same command, input and Operation nonce returns the saved result. A different command or input is refused with `agent.effect_conflict`. An interrupted intent has unknown outcome and is never executed again under that key.
 
