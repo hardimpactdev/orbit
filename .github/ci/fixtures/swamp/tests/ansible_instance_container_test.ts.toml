@@ -101,6 +101,10 @@ file = "swamp/tests/ansible_instance_container_test.ts"
 cost = 4092
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # The run after a fast wake of its Operation (41s locally, run in full before the PR): a 72nd slice would push the file to 9 hosted
+  # shards. The PR keeps the safety-net race and the late outcome in InstanceSleepWakeTest.php and the worker's outcome files in
+  # instance_container_wake_test.ts.
+  "a wake that follows the Node's fast wake of its Operation reports that wake's ready file, and no other Operation's",
   # The proof checkout of a copy (21s locally, run in full before the PR): the file sits at the 8-shard PR limit. The PR keeps the
   # workflow's expressions in workflow_start_resolution_test.ts and the Gateway's input in ProofRunCopiesTest.php.
   "a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name",

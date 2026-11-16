@@ -265,7 +265,9 @@ The worker never retries a range and never follows a replacement process. Advice
 
 The receipt counts each process's outcome (`complete`, `partial`, `skipped`, `failed`) and the pages read. It does not keep the errno of a short call.
 
-**Readiness.** After `restore`, the caller checks readiness with the existing rule: an answer below 500 from the container's web port. The fast worker's check goes from the Node straight to the address in the target descriptor, not through `incus exec` and `curl`. The run still asks the web port from inside the container, as before this feature; moving its check to the Node is open work. A container without a web unit gets no HTTP check. The fast worker sends one bounded request. The run keeps its retries and its stop-and-boot fallback, which a nested-fleet Instance never takes. Only after the check passes does the caller remove the asleep marker. `ready_at` is that moment.
+**Readiness.** After `restore`, the caller checks readiness with the existing rule: an answer below 500 from the container's web port. The fast worker's check goes from the Node straight to the address in the target descriptor, not through `incus exec` and `curl`. The run still asks the web port from inside the container, as before this feature; moving its check to the Node is open work.
+
+A container without a web unit gets no HTTP check. The fast worker sends one bounded request. The run keeps its retries and its stop-and-boot fallback, which a nested-fleet Instance never takes. Only after the check passes does the caller remove the asleep marker. `ready_at` is that moment.
 
 ## The fast wake
 
