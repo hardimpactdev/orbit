@@ -140,7 +140,8 @@ class Fixture(unittest.TestCase):
         self.incus = FakeIncus(self.children[0].pid)
         self.kernel = CountingKernel()
         self.host = ProbeHost(state=self.state, requests=os.path.join(self.root, "shm"), cgroups=self.cgroups, proc=self.proc,
-                               incus=self.incus, kernel=self.kernel, helper=HELPER)
+                               incus=self.incus, kernel=self.kernel, helper=HELPER,
+                               fleet_node=os.path.join(self.root, "instance-fleet-node"))
         self.supported(True)
 
     def child(self):
@@ -253,6 +254,12 @@ class CaptureTest(Fixture):
         relative = f"lxc.payload.orbit-instances-nested_{NAME}"
         os.rename(self.container, os.path.join(self.cgroups, relative))
         result = power.prepare(self.host, ID, 11, intent)
+        self.assertEqual(result["prepared_restore"]["reason"], "placement_unproven")
+        self.assertFalse(os.path.exists(self.plan()))
+
+    def test_an_instance_of_an_instance_fleet_node_records_no_plan(self):
+        self.write(self.host.fleet_node, "")
+        result = self.prepare()
         self.assertEqual(result["prepared_restore"]["reason"], "placement_unproven")
         self.assertFalse(os.path.exists(self.plan()))
 

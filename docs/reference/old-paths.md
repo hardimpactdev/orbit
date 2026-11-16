@@ -138,9 +138,29 @@ The code that served only those readers goes too:
 
 The task group field `vm_power` stays and is always `null` ([VM power](/reference/compute-drivers#vm-power)). No other API, agent or Swamp input field changes.
 
-`TaskVmWorkspaceGuard` reads no table. It refuses every task workspace command over SSH with `task_vm.workspace_mismatch`, because task VMs are removed and no task workspace lives on one. The refusal `task_vm.parked` is gone.
+The refusal `task_vm.parked` is gone.
 
-The SSH task workspace path still remains, and a later slice removes it: `TaskWorkspaceExecutor` and its callers, which are the check runner (`RemoteTaskCheckRunner`), the workspace diff and state readers, and the workspace file read of the deliverable paths. Each of them fails at the guard.
+The SSH task workspace path is removed too (S10c). Since the task VM readers went, its guard refused every command, so none reached SSH. These go:
+
+- The guard `TaskVmWorkspaceGuard`, its refusal `task_vm.workspace_mismatch`, and `TaskWorkspaceExecutor`.
+- The `Workspace ownership refused:` prefix of a removal failure.
+
+The check runner goes with these:
+
+- The check runner `RemoteTaskCheckRunner` and the interface `TaskCheckRunner`.
+- The scripts the runner installed: `tasks/check`, `tasks/composer`, `tasks/metadata` and `tasks/unit-state.py`.
+- The composer credential the runner passed on file descriptor 3, `orbit_setup_composer_auth`.
+- The runner's helpers `TaskUnitProgram`, `TaskWorkspaceMetadata`, `TaskCheckProcess`, `TaskCheckReading` and `TaskWorkspaceSnapshot`.
+- The check cancel of a subtask stop. A stop still refuses a running check that has no process identity. Every check that a Swamp workflow runs has none.
+
+The workspace readers go too:
+
+- The workspace diff readers `RemoteTaskWorkspaceDiffReader` and `AgentViewTaskWorkspaceDiffReader` and the interface `TaskWorkspaceDiffReader`, which nothing read.
+- The workspace state reader `RemoteTaskWorkspaceStateReader` and the interface `TaskWorkspaceStateReader`.
+- The evidence writers `TaskCheckEvidence::recordSubtaskStart` and `recordReading`. Nothing has called them since checks moved to Swamp. The check's projection records the subtask start and the result.
+- The workspace file read of the deliverable paths. Deliverable path validation reads the origin, with or without a task copy.
+
+What stays: a task copy is removed through its `instance.destroy`, and any other workspace a group owns is refused with `operation.kind_unavailable` (503) and stays. The `incus` transport keeps `task_vm.git_credential_refused`.
 
 `ProblemRecovery` resolves an open `recipe-image:` alert as `resource_gone` and reads neither `task_vm_image_builds` nor `task_vm_image_recipe`. The answers `verified_image_build` and `recipe_generation_superseded` are gone.
 
@@ -155,7 +175,7 @@ With the tables go:
 - The task wait `task_vm`, which nothing produced or read, and the unused class `App\Infrastructure\TaskVms\TaskVmRuntime`.
 - The row error helpers of `TaskVmException`.
 
-`TaskVmError` loses every case that nothing produces any more: `task_vm.invalid_config`, `task_vm.unknown_host`, `task_vm.host_configured`, `task_vm.fleet_unavailable`, `task_vm.setup_failed`, `task_vm.job_failed`, `task_vm.vm_missing`, `task_vm.not_settled` and `task_vm.awaiting_host_sweep`. It keeps `task_vm.git_credential_refused` and `task_vm.workspace_mismatch`. The Ansible host preparation still fails with its own `task_vm.setup_failed`, and the frozen agent contract keeps `task_vm.vm_missing`.
+`TaskVmError` loses every case that nothing produces any more: `task_vm.invalid_config`, `task_vm.unknown_host`, `task_vm.host_configured`, `task_vm.fleet_unavailable`, `task_vm.setup_failed`, `task_vm.job_failed`, `task_vm.vm_missing`, `task_vm.not_settled` and `task_vm.awaiting_host_sweep`. It keeps `task_vm.git_credential_refused`. `task_vm.workspace_mismatch` went with the SSH task workspace path ([the task VM readers](#the-task-vm-readers)). The Ansible host preparation still fails with its own `task_vm.setup_failed`, and the frozen agent contract keeps `task_vm.vm_missing`.
 
 The contract does not change. The task group field `vm_power` stays and is always `null`. The Node removal input keeps `task_vm_id` as `null` and `task_vm_guest` as `false`, and the Operation inputs of a task copy end and of a cancel keep `task_vm_id: null`. `tasks.provision` stays registered. No other API, agent or Swamp input field changes.
 

@@ -51,6 +51,7 @@ cases = [
   "a path callback retains the failure while withholding the name and private markers",
   "value-like names are withheld without changing the failure class",
   "only hosts with fatal statistics compete in play and task order, with hub winning ties",
+  "the roles phase takes the intent's roles_seconds, 900 to 1800, as its timeout, 900 without it, and refuses any other bound before the command",
 ]
 file = "swamp/tests/node_converge_test.ts"
 cost = 4

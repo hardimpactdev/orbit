@@ -32,6 +32,7 @@ return [
 
     // The marker file of the nested Gateway of an Instance container's fleet (InstanceFleetGateway). Tests point it at a file of their own.
     'fleet_marker' => InstanceFleetGateway::Marker,
+    'fleet_environment' => InstanceFleetGateway::Environment,
 
     'container_nodes' => json_decode((string) (env('ORBIT_INSTANCES_CONTAINER_NODES') ?: '[]'), true),
 ];

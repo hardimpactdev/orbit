@@ -1034,7 +1034,7 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 
 | | Task container host | Instance container host |
 | --- | --- | --- |
-| Pool | The VM side's ZFS pool | The Node's pool `orbit-instances`: ZFS, or a directory pool |
+| Pool | The VM side's ZFS pool | The Node's pool `orbit-instances`: ZFS, or a directory pool, as on [`nested-app-dev`](/reference/development-containers#instance-host-in-the-fleet) |
 | Project, bridge | `containers.project`, `containers.network` | `orbit-instances`, `orbitinst0` at the first address of the Node's bridge |
 | Kernel modules, sysctl files | `orbit-task-containers` | None, or `wireguard` and `overlay` in `orbit-instances` with the [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting); `60-orbit-instances.conf` |
 | Subordinate IDs | 101,000,000 per place and the base | 65,536 for each of 201 containers, plus the task container need on a host that has both |
@@ -1219,7 +1219,7 @@ The WireGuard address allocator still skips the reserved range `10.44.0.128/25`,
 
 No task VM exists, so no Node is a task VM Node. An Instance save, an access grant, the fleet rollout, a metrics exporter and a Node removal do not check for one. The refusals `task_vm.foreign_instance`, `task_vm.access_refused` and `instance.task_vm_node` and the rollout reason `sandbox` are removed ([old paths](/reference/old-paths#the-task-vm-readers)).
 
-Every task workspace command over SSH fails with `task_vm.workspace_mismatch`, because task VMs are removed. The guard reads no task VM row ([old paths](/reference/old-paths#the-task-vm-readers)).
+No task workspace command runs over SSH. The SSH task workspace path and its refusal `task_vm.workspace_mismatch` are removed ([old paths](/reference/old-paths#the-task-vm-readers)).
 
 ### Configure task VMs
 
@@ -1235,7 +1235,6 @@ Every task VM error code starts with `task_vm.`. The setup commands print the co
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `task_vm.workspace_mismatch` | 409 | A task workspace command over SSH was refused. Task VMs are removed, so every such command fails with it |
 | `task_vm.setup_failed` | 409 | The Ansible host preparation refused the host |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |

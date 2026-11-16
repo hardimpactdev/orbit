@@ -1013,13 +1013,21 @@ it('gives only a nested-fleet default on a switched-on Node the fleet of its dep
     if ($fleet) {
         expect($snapshot['fleet'])->toBe([
             'guests' => ['gateway' => 'nested-gateway', 'app-dev' => 'nested-app-dev', 'app-prod' => 'nested-app-prod'],
-            'layout' => ['gateway' => ['address' => '10.232.2.11'], 'app-dev' => ['address' => '10.232.2.12'], 'app-prod' => ['address' => '10.232.2.13']],
+            'layout' => ['gateway' => ['address' => '10.232.2.11', 'memory' => '4GiB'], 'app-dev' => ['address' => '10.232.2.12', 'memory' => '5GiB'],
+                'app-prod' => ['address' => '10.232.2.13', 'memory' => '2GiB']],
+            'host' => true,
             'operator' => ['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24'],
             'checkout' => ['path' => '/home/orbit/orbit'],
             'proxy' => ['HTTP_PROXY' => 'http://10.253.0.1:3128', 'HTTPS_PROXY' => 'http://10.253.0.1:3128', 'http_proxy' => 'http://10.253.0.1:3128',
                 'https_proxy' => 'http://10.253.0.1:3128', 'NO_PROXY' => 'localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24',
                 'no_proxy' => 'localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24'],
         ]);
+        // A full-size default leaves room for the Instance host; below 2,000,000 the refresh builds none
+        // (docs/reference/development-containers.md#instance-host-in-the-fleet).
+        foreach ([1_165_536 => false, 2_000_000 => true, 101_000_000 => true] as $size => $host) {
+            $instance->runtime()->update(['idmap_size' => $size]);
+            expect(app(InstanceDeploymentIntent::class)->snapshot($instance->refresh())['fleet']['host'])->toBe($host);
+        }
     }
 })->with([
     'nested-fleet default' => [true, true, InstancePlacement::NestedProject, true],
@@ -1035,7 +1043,9 @@ it('gives only a clone of a nested-fleet default on a switched-on Node the fleet
         'checkout_path' => '/srv/tool/seedcopy1', 'status' => InstanceState::Reserved]);
     $runtime = InstanceRuntime::query()->create(['instance_id' => $clone->id, 'node_id' => $default->node_id, 'incus_project' => $incusProject,
         'container_name' => 'instance-'.$clone->id, 'bridge_address' => '10.253.0.3', 't3_port' => 3800, 'container_server' => 't3', 'clone_source_instance_id' => $default->id,
-        'runtime_version' => 'r', 'agent_version' => 'a', 'power_state' => InstanceRuntimePowerState::Stopped]);
+        'runtime_version' => 'r', 'agent_version' => 'a', 'power_state' => InstanceRuntimePowerState::Stopped,
+        // A copy takes its default's ID map size at its reservation (InstanceContainer).
+        'idmap_size' => $default->runtime()->value('idmap_size')]);
     $intents = app(NestedFleetIntent::class);
 
     // The clone's create gets the same fleet as its default's deployment; a deployment never treats a clone as a default.

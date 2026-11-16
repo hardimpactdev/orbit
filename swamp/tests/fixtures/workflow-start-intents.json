@@ -830,15 +830,19 @@
                         },
                         "layout": {
                             "gateway": {
-                                "address": "10.232.2.11"
+                                "address": "10.232.2.11",
+                                "memory": "4GiB"
                             },
                             "app-dev": {
-                                "address": "10.232.2.12"
+                                "address": "10.232.2.12",
+                                "memory": "5GiB"
                             },
                             "app-prod": {
-                                "address": "10.232.2.13"
+                                "address": "10.232.2.13",
+                                "memory": "2GiB"
                             }
                         },
+                        "host": true,
                         "operator": {
                             "address": "10.45.0.10",
                             "hub": "10.45.0.1",

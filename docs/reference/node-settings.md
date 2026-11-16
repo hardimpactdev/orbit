@@ -202,7 +202,7 @@ The converge checks root's largest subordinate range in both `/etc/subuid` and `
 
 `13,172,736` is the normal Instance demand. Task IDs come from the [CI places](#ci-places) in `settings.ci`: `(ci.places + 1) × 101,000,000`. Task IDs are 0 when the Node has no `ci` setting. One place gets one full-size map, and the `+ 1` is the map of the base. `S` is the sum of the [ID map sizes](/reference/development-containers#the-id-map-size) that the Node's nested Instance runtimes record. The two spare maps leave room for a new nested default before the next converge.
 
-So a Node with no `ci` setting needs `13,172,736 + S + 2 × 101,000,000` IDs: 215,172,736 with no nested Instance yet, then 101,000,000 more for each full-size runtime and 1,165,536 for each converted one. Incus reads the ranges when its daemon starts; the converge reads the files.
+So a Node with no `ci` setting needs `13,172,736 + S + 2 × 101,000,000` IDs: 215,172,736 with no nested Instance yet, then 101,000,000 more for each full-size runtime, 1,165,536 for each converted one and 2,000,000 for each [raised one](/reference/development-containers#raise-a-default-to-2000000). Incus reads the ranges when its daemon starts; the converge reads the files.
 
 Clearing the switch removes nothing: the nested project, its profile and the module file stay. Runtimes that record `orbit-instances-nested` keep their ID maps in the demand and their project in the shared-folder refresh. Only the two spare maps leave the demand.
 

@@ -145,7 +145,7 @@ if (command[0] === "git" && command.includes("rev-parse")) {
   if (state.digestsFail) fail("fatal: not a git repository");
   const digests: Record<string, string> = { "apps/agent/contract": "d4", ...(state.digests ?? { "apps/gateway": "a1" }) };
   done(command.slice(command.indexOf("rev-parse") + 1).map((object) => object.slice("HEAD:".length))
-    .map((path) => digests[path] ?? (path === "swamp" || path.startsWith("swamp/") ? "c3" : "")).join("\n"));
+    .map((path) => digests[path] ?? (path === "swamp" || path.startsWith("swamp/") ? "c3" : path === "apps/gateway/resources/machine-software" ? "e5" : "")).join("\n"));
 }
 
 if (command[0] === "incus") {
@@ -370,7 +370,9 @@ if (command[0] === "incus") {
       if (state.intentDigestFail) fail("The base intent of app-dev cannot be built: RuntimeException");
       const own: Record<string, string> = { gateway: "1", "app-dev": "2", "app-prod": "3" };
       const nodes = rest.slice(rest.indexOf("--base") + 1);
-      done(JSON.stringify(Object.fromEntries(nodes.map((node) => [node, state.intentDigests?.[node] ?? own[node].repeat(64)]))));
+      // `--host app-dev`: nested-app-dev's Instance host intent digest (`hostIntentDigest`), or empty before it has its bridge.
+      const host = rest.includes("--host") ? { host: state.hostIntentDigest ?? "4".repeat(64) } : {};
+      done(JSON.stringify({ ...Object.fromEntries(nodes.map((node) => [node, state.intentDigests?.[node] ?? own[node].repeat(64)])), ...host }));
     }
     if (rest[0] === "php" && rest.includes("migrate")) {
       state.migrated = true;
@@ -484,15 +486,24 @@ if (command[0] === "curl") {
   }
   const converge = /^\/nodes\/(\d+)\/converge$/.exec(path);
   if (method === "POST" && converge) {
-    if (command.at(-1) !== '{"base":true}') fail("A refresh converges the base");
+    // A refresh converges the base, or nested-app-dev's base and `app-dev` role when its `host` part is due (`state.roleConverges`).
+    const roles = command.at(-1) === '{"roles":["app-dev"]}' && converge[1] === "2";
+    if (!roles && command.at(-1) !== '{"base":true}') fail("A refresh converges the base");
     state.operations ??= [];
     const node = Number(converge[1]);
+    // NodeNetworkReservation: every converge goes through the hub. A converge with roles is refused while any other converge is open,
+    // and a base converge while one with roles is open. An Operation is open until a read has returned its end.
+    const open = state.operations.filter((op: { ended?: boolean }) => !op.ended);
+    if (open.some((op: { node: number; roles?: boolean }) => op.node === node || roles || op.roles)) {
+      fail("curl: (22) The requested URL returned error: 409", 22);
+    }
+    if (roles) (state.roleConverges ??= []).push(2);
     // `convergeRefused`: the Nodes whose admission the nested Gateway refuses, as curl --fail reports a 409.
     if (state.convergeRefused?.includes(node)) fail("curl: (22) The requested URL returned error: 409", 22);
     // `egressNeeded`: a base converge runs apt and downloads the agent, so it fails on a Node without the egress files.
     const guest = containers[["nested-gateway", "nested-app-dev", "nested-app-prod"][node - 1]];
     const egress = !state.egressNeeded || state.egressNeeded.every((path: string) => (guest.files ?? {})[path]?.includes("10.253.0.1:3128"));
-    state.operations.push({ node, status: state.convergeStatus?.[node] ?? (egress ? "succeeded" : "failed") });
+    state.operations.push({ node, roles, status: state.convergeStatus?.[node] ?? (egress ? "succeeded" : "failed") });
     done({ data: { id: 900 + state.operations.length, status: "pending" } });
   }
   const operation = /^\/operations\/(\d+)$/.exec(path);
@@ -503,6 +514,7 @@ if (command[0] === "curl") {
       state.convergeRunning[found.node] -= 1;
       done({ data: { id: Number(operation[1]), status: "running", error_code: null, result: null } });
     }
+    found.ended = true;
     // `convergeChanged`: the tasks each Node's base converge changed, as the Operation's `result.changed`; 0 by default.
     // `convergeNoCount`: a result without a count.
     done({ data: { id: Number(operation[1]), status: found.status, error_code: found.status === "failed" ? "node.converge_failed" : null,

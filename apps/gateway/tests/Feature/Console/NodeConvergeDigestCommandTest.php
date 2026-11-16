@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\SwampRoleUnits;
@@ -133,4 +134,19 @@ it('carries the units of the Node roles in the base intent, never the serve unit
     expect(app(NodeDesiredConvergeInput::class)->baseDigest($gateway))->toBe($before);
     config(['orbit.websocket.port' => (int) config('orbit.websocket.port') + 1]);
     expect(app(NodeDesiredConvergeInput::class)->baseDigest($gateway))->not->toBe($before);
+});
+
+it('also prints the named Node\'s Instance host intent digest as host, empty while the Node has none, and refuses an unknown Node', function (): void {
+    // docs/reference/development-containers.md#instance-host-in-the-fleet: the nested-fleet refresh reads it with the base digests.
+    $base = app(NodeDesiredConvergeInput::class)->baseDigest($this->node);
+    $this->artisan('orbit:node-converge-digest', ['nodes' => ['app-dev'], '--base' => true, '--host' => 'app-dev'])
+        ->expectsOutput(json_encode(['app-dev' => $base, 'host' => ''], JSON_THROW_ON_ERROR))->assertSuccessful();
+    config(['instances.container_nodes' => [$this->node->id]]);
+    app(InstanceHostIntent::class)->prepare($this->node);
+    $host = app(InstanceHostIntent::class)->digest($this->node->refresh());
+    expect($host)->toMatch('/^[0-9a-f]{64}$/');
+    $this->artisan('orbit:node-converge-digest', ['nodes' => ['app-dev'], '--base' => true, '--host' => 'app-dev'])
+        ->expectsOutput(json_encode(['app-dev' => app(NodeDesiredConvergeInput::class)->baseDigest($this->node), 'host' => $host], JSON_THROW_ON_ERROR))->assertSuccessful();
+    $this->artisan('orbit:node-converge-digest', ['nodes' => ['app-dev'], '--base' => true, '--host' => 'nowhere'])
+        ->expectsOutputToContain('The Node nowhere is unknown.')->assertFailed();
 });
