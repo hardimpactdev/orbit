@@ -208,6 +208,14 @@ sequenceDiagram
     %%> - runs beside the database step; neither needs the other
   end
   end
+  opt container clone
+    SW->>N: Stop the container<br/>Ansible · tags stop
+    %%> What it does:
+    %%> - stops the container with `incus stop --force`, so its workers and every other client in it close their database sessions before the drop
+    %%> - a stopped or missing container counts as stopped and changes nothing
+    %%> Why:
+    %%> - a session on a planned database refuses the drop with `database.in_use` (Operation 25427, Instance 3472)
+  end
   opt owned databases
     SW->>N: Drop owned databases<br/>docker exec -i · SQL on stdin
     %%> What it does:

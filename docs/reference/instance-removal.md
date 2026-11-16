@@ -123,15 +123,19 @@ Each container removal step treats a part that is already gone as done. A retry 
 
 - Incus refuses to delete a container or inner volume record whose ZFS dataset is gone. Instance 3427 stayed `removing` for 8 hours that way.
 - The step then makes an empty dataset with the record's own name, and one empty snapshot for each snapshot Incus records. Incus then deletes the record its own way.
-- It only makes the missing names of this Instance, and it never runs `zfs destroy`.
-- The inner volume goes by name: each of its snapshots, then the volume.
-- A copy's inner volume can be a clone of a snapshot of a volume that Incus already deleted. Incus keeps that origin under `deleted/` for the clone.
-- The removal never names the origin or another Instance's volume.
-- A missing ACL, firewall rule, mail folder, marker or mirror needs no action.
+- It builds each name only from the removal's recorded pool, Incus project and container or volume name. It never runs `zfs destroy`.
+- Right before it makes them, it reads each missing name again with its children.
+- A dataset that holds the name by then refuses the removal with `instance.removal_dataset_taken`. Nothing is made or deleted, so the step never adopts another dataset.
+
+The inner volume goes by name: each of its snapshots, then the volume. A copy's inner volume can be a clone of a snapshot of a volume that Incus already deleted. Incus keeps that origin under `deleted/` for the clone. The removal never names the origin or another Instance's volume. A missing ACL, firewall rule, mail folder, marker or mirror needs no action.
 
 The end check `Check the container and volume are gone` stays strict: it reads the container, its root volume and the inner volume by this Instance's names.
 
-A session or lock on an owned server database makes its drop refuse before any `DROP`, so the end check `Check they are gone` still finds every name. The removal then fails with the database child's own code, `database.in_use`, not `instance.removal_incomplete`, at the child's step. The same holds for `database.server_admin_failed` and `database.destroy_incomplete`. Orbit never disconnects the clients. A container copy's own workers are still connected while its databases drop, because its container goes after them. The [removal reaper](#the-removal-reaper) runs the removal again once the clients are gone.
+A container removal stops the container before its databases drop: `Stop the container` runs `incus stop --force` before `Drop owned databases`. Its workers and every other client in it then hold no session on a planned database. A container that is stopped or gone already counts as stopped. The step takes the deletion's slot name, so a Node keeps its 512 names.
+
+A session or lock on an owned server database still makes its drop refuse before any `DROP`, so the end check `Check they are gone` finds every name. Such a client is outside the container, such as a person's database tool. The removal then fails with the database child's own code at the child's step: `database.in_use`, `database.server_admin_failed` or `database.destroy_incomplete`, not `instance.removal_incomplete`. Orbit never disconnects the clients. The [removal reaper](#the-removal-reaper) runs the removal again once they are gone.
+
+Known limit: an Instance with databases on several servers runs one database child per server, and the run data keys their steps by name only. The removal's code then comes from the last server's child, so a refusal on one server can be reported as `database.destroy_incomplete` of another.
 
 A container removal step that fails writes the failed task, its message and the end of its stderr into its result file. Swamp keeps no stderr for a failed command step, so the Gateway takes this text instead. It records the text in `error.detail` with `error.stderr_recorded: true`, redacted and cut to the last 4 KiB like the stderr of other Operations ([Operations](/reference/operations)).
 
@@ -144,6 +148,8 @@ The Gateway records the member set as Removing in the same admission transaction
 A failed removal does not wait for a person. Every five minutes, without overlap, the Gateway's `orbit:instance-removal-reap` finds each `failed` removal of kind `destroy`. It starts that removal again through the same admission as `instance:destroy`, with the same removal and the same `--force`. The Operation records `triggered_by: orbit:instance-removal-reap` and the idempotency key `removal-reaper:<removal>:<count>`, so two passes never start two runs.
 
 The reaper waits after each failure, counted from the end of the last run: 5 minutes, 15 minutes, 1 hour, then every 6 hours. The removal record keeps the count in `retry_count`. A start that admission refuses, such as `operation.target_busy`, is not counted, and the next pass tries again.
+
+The operator turns the reaper off with `ORBIT_INSTANCE_REMOVAL_REAPER=false` in the Gateway's environment; its scheduled pass then does nothing. It is on by default. A HOLD on Operations is a convention between people, not a Gateway setting: use this switch to stop new reaper starts during one.
 
 The reaper starts nothing when:
 
