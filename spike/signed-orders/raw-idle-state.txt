@@ -1,0 +1,5 @@
+● orbit-spike-exec@0-4611-985_136719402-0.service loaded failed failed    Orbit spike executor (one order)
+● orbit-spike-exec@1-4612-985_136719402-0.service loaded failed failed    Orbit spike executor (one order)
+  orbit-spike-exec-open.socket                    loaded active listening Orbit spike executor socket
+  orbit-spike-exec.socket                         loaded active listening Orbit spike executor socket
+no executor process

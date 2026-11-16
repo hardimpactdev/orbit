@@ -1,0 +1,11 @@
+## other user (nobody), product socket 0600
+connect refused by the kernel: Permission denied
+## other user (nobody), open test socket 0666
+{"reason":"caller","status":"refused"}
+## root, interactive shell (incus exec)
+0::/.lxc
+{"reason":"caller","status":"refused"}
+## root, own systemd unit (systemd-run)
+{"reason":"caller","status":"refused"}
+## root, unit named orbit-agent-x.service
+{"reason":"caller","status":"refused"}

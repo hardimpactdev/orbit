@@ -1,0 +1,10 @@
+# SPIKE(signed-orders): timing variant only — the same unit with no sandbox options.
+[Unit]
+Description=Orbit spike executor (one order)
+
+[Service]
+ExecStart=/usr/local/libexec/orbit-spike-executor
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+SyslogIdentifier=orbit-spike-executor

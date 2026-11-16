@@ -1,0 +1,14 @@
+# SPIKE(signed-orders): only root may open the socket; the executor then checks the caller's cgroup.
+[Unit]
+Description=Orbit spike executor socket
+
+[Socket]
+ListenStream=/run/orbit-spike-exec.sock
+SocketUser=root
+SocketGroup=root
+SocketMode=0600
+Accept=yes
+MaxConnections=16
+
+[Install]
+WantedBy=sockets.target

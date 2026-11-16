@@ -1,0 +1,4 @@
+Nov 16 13:52:39.071946 nested-app-dev orbit-spike-executor[3100]: refused caller pid=3099 uid=65534: peer uid 65534 is not the observer's user
+Nov 16 13:52:39.430476 nested-app-dev orbit-spike-executor[3108]: refused caller pid=3107 uid=0: peer pid 3107 runs in 0::/.lxc not orbit-agent.service
+Nov 16 13:52:48.402989 nested-app-dev orbit-spike-executor[3122]: refused caller pid=3121 uid=0: peer pid 3121 runs in 0::/system.slice/orbit-spike-impostor.service not orbit-agent.service
+Nov 16 13:52:48.788918 nested-app-dev orbit-spike-executor[3133]: refused caller pid=3132 uid=0: peer pid 3132 runs in 0::/system.slice/orbit-agent-x.service not orbit-agent.service

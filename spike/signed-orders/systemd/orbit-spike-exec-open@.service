@@ -1,0 +1,15 @@
+# SPIKE(signed-orders): one short process per connection; nothing runs between orders.
+[Unit]
+Description=Orbit spike executor (one order, open test socket)
+
+[Service]
+ExecStart=/usr/local/libexec/orbit-spike-executor
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+SyslogIdentifier=orbit-spike-executor
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+ReadWritePaths=/var/lib/orbit-spike
