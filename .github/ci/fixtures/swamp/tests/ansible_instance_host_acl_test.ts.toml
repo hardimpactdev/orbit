@@ -1,13 +1,15 @@
 order = 100
 cases = [
-  "bridge remains reject after late unsafe attachments, and profile NICs use only the proxy ACL",
+  "bridge remains reject after a late unsafe running attachment, and profile NICs use only the proxy ACL",
+  "bridge remains reject after a late unsafe stopped attachment, and profile NICs use only the proxy ACL",
   "host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate",
+  "a legacy allow bridge with an unsafe stopped second NIC is closed before the failed audit",
 ]
 file = "swamp/tests/ansible_instance_host_acl_test.ts"
 self_hosted = true
-cost = 342
+cost = 612
 # 180.026s, hosted four-worker run 43002948719 (unit cutoff; case unfinished).
-slices = 2
+slices = 4
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -40,5 +42,7 @@ inputs = [
 ]
 
 [case_costs]
-  "host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate" = 171 # completed body 170.117s, run 43011901748; above the PR lane budget, not excluded
-"bridge remains reject after late unsafe attachments, and profile NICs use only the proxy ACL" = 171 # ESTIMATE: unmeasured; the endpoint-union case of this file (171s)
+"bridge remains reject after a late unsafe running attachment, and profile NICs use only the proxy ACL" = 187 # ESTIMATE: local 100s x 1.62 (hosted/local converge time of the endpoint-union case, run 43011901748) x 1.15; one stage
+"bridge remains reject after a late unsafe stopped attachment, and profile NICs use only the proxy ACL" = 159 # ESTIMATE: local 85s x 1.62 (hosted/local converge time of the endpoint-union case, run 43011901748) x 1.15; one stage
+"host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate" = 131 # ESTIMATE: local 70s x 1.62 (hosted/local converge time of the endpoint-union case, run 43011901748) x 1.15; one stage
+"a legacy allow bridge with an unsafe stopped second NIC is closed before the failed audit" = 135 # ESTIMATE: local 72s x 1.62 (hosted/local converge time of the endpoint-union case, run 43011901748) x 1.15; one stage
