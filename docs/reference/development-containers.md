@@ -2982,7 +2982,7 @@ Step 10 of ADR 0250 moves production Instances into containers on `app-prod` Nod
 - A production container gets no `php-cli.ini`, so its PHP never loads PCOV ([ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov)).
 - FrankenPHP serves it once it has proved itself in development, by the criteria of the plan's [production gate](/solutions/development-container-runtime#production-gate).
 - Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
-- Planned ([ADR 0265](/decisions/0265-sleep-idle-production-containers)): an idle live sleeps and wakes fully ready by the rule of [Sleep and wake](#sleep-and-wake). Hot never sleeps, old stays stopped, a sleep never stops live, and a visitor waits behind Caddy for the wake instead of a progress page. [Production containers](/reference/production-containers#sleep-and-wake) has the details.
+- Planned ([ADR 0265](/decisions/0265-sleep-idle-production-containers)): an idle live sleeps and wakes fully ready by the rule of [Sleep and wake](#sleep-and-wake). [Production containers](/reference/production-containers#sleep-and-wake) has the details.
 - Existing production checkouts are migrated, as development checkouts are.
 
 The release flow is planned in [Production containers](/reference/production-containers) ([ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers)): hot builds each new commit as a clone of live's release snapshot, live serves, and old stays stopped for rollback.

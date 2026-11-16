@@ -42,7 +42,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Host disk paths | The Incus project `orbit-instances` has no `restricted.devices.disk.paths` limit beside its idmapped runtime and agent folders. This permits those mounts; the project does not restrict host disk source paths ([#3311](https://github.com/hardimpactdev/orbit/pull/3311)) |
 | Container contents | Containers install as little as possible |
 | Production | Production Instances move into containers too, after development containers work |
-| Sleep | A development container sleeps after one hour idle, never while a task runs in it. Development Instances have no Schedules. Planned: an idle production live sleeps too, and hot and old never do ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) |
+| Sleep | A development container sleeps after one hour idle, never while a task runs in it. Development Instances have no Schedules. Planned: an idle production live sleeps too ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) |
 | Setup | There are no development setup steps. Only a Project's first default Instance is built from scratch |
 | Default Instance | Intended: deploy every merge. Delivered: clones use the [last successfully deployed seed](/reference/deployments#automatic-development-defaults); each clone installs its own dependency changes. There is no separate source container |
 | One default per Project | A Project has one `default` Instance in the whole fleet. The Node that holds it is where every clone of the Project is made |

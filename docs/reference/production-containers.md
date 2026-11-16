@@ -156,12 +156,15 @@ A rollback has no capacity check. No deploy runs beside it, so old runs in the p
 **Schedules and workers.**
 
 - A due native cron Schedule wakes live, waits for the wake and runs. This wake does not count as activity.
-- The per-minute container timer pauses with live. Missed minutes are skipped, not caught up.
-- Queue workers pause with live, and queued jobs wait for the next wake. A job that ran at the freeze can run twice after the wake, because its reservation expires.
+- A container timer of a per-minute scheduler pauses with live. Missed minutes are skipped, not caught up.
+- Queue workers pause with live, and queued jobs wait for the next wake.
+- A job that ran at the freeze can run twice after the wake. Its queue reservation expires, and another worker takes it.
 - A Project whose jobs or scheduler must run without visitors sets the Instance's `never_sleep` field with `instance:update`, or gives a Process `keep_alive`. Either keeps the whole container awake.
 - An Instance with an attached Node service, such as PowerSync, stays awake (`node_service`). A sleep never touches a Process on the Services Node.
 
-**Deploy and rollback.** A deploy does not wake a sleeping live: hot clones live's `release` snapshot. A visit during the deploy wakes live as at any other time. The [switch](#switch) removes the asleep marker in the same step as it replaces the upstream file and the live link, and a failed switch puts it back. The new live starts its own watch of one idle window. The [handover](#handover) resumes a frozen previous live before it stops its units, because a clean stop of a frozen container times out; then [retire](#retire) stops it as old. A rollback does the same with the rolled-away live.
+**Deploy and rollback.** A deploy does not wake a sleeping live: hot clones live's `release` snapshot. A visit during the deploy wakes live as at any other time.
+
+The [switch](#switch) removes the asleep marker in the same step as it replaces the upstream file and the live link, and a failed switch puts it back. The new live starts its own watch of one idle window. The [handover](#handover) resumes a frozen previous live before it stops its units, because a clean stop of a frozen container times out; then [retire](#retire) stops it as old. A rollback does the same with the rolled-away live.
 
 ## Database
 

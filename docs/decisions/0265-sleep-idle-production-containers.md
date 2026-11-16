@@ -28,11 +28,13 @@ Production differs from development in these ways that drive the design:
 
 - An Instance has up to three release containers. Only live serves.
 - A visitor can be a person, an API client or a webhook. A progress page with status 401 breaks an API client and a webhook.
-- Workers and Schedules run in live, and some must not run twice.
+- Workers and Schedules run in live. A job or a Schedule fire must not run twice.
 - A deploy and a rollback move the Routes between containers with one Caddy reload.
 - There is no T3 in production.
 
 ## Decision
+
+The numbered parts below settle which release container sleeps, how a deploy and a rollback meet a sleeping live, what counts as traffic, what a visitor sees, what happens to Schedules and workers, how an Instance opts out, and the rollout.
 
 ### 1. Only live sleeps
 
@@ -87,13 +89,13 @@ A request with `X-Orbit-Probe: 1` does not count, such as the readiness check an
 
 A production visitor never gets the development progress page with status 401. When a request meets the asleep marker, Caddy holds it, starts or joins the Instance's `instance.wake`, and passes the request to live once the wake ended. A person, an API client or a webhook only sees a slower first answer. The budget is about 1.5 s for a warm wake and about 2.4 s for a cold wake.
 
-The hold has a bound of 10 s. After it, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance. The wake goes on, and a later request finds live awake. A failed wake answers the same `503` and stores the failure as in development. The next request is a new try, as Try again is in development.
+The hold has a bound of 10 s. After it, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance. The wake goes on, and the next request after it finds live awake. A failed wake answers the same `503` and stores the failure as in development. The next request is a new try, as Try again is in development.
 
 The `app-prod` role installs the power helper and the fast wake's worker, as the `app-dev` role does.
 
 ### 9. Schedules and workers
 
-- **Native cron Schedules.** A due fire that finds the asleep marker starts or joins the wake and waits for it. Then it runs in live. The wake that a fire starts does not count as activity, so live sleeps again at a later sweep when nothing else keeps it awake. The sweep never sleeps live while a fire runs in it (`busy`).
+- **Native cron Schedules.** A due fire that finds the asleep marker starts or joins the wake and waits for it. Then it runs in live. The wake that a fire starts does not count as activity, so live sleeps again at the next sweep when nothing else keeps it awake. The sweep never sleeps live while a fire runs in it (`busy`).
 - **Per-minute schedulers.** The container timer pauses with the container. Missed minutes are skipped, not caught up: at the resume the timer fires once, then each minute.
 - **Queue workers.** The worker Processes pause with the container. Queued jobs wait for the next wake.
 
@@ -118,7 +120,7 @@ The live proof of ADR 0263 changes:
 
 - **Production containers never sleep.** Every idle production Instance would hold its whole memory on the Node.
 - **Sleep only the web server, and keep workers running.** The owner decided that the whole container sleeps. A partial sleep is a second rule beside the container rule.
-- **The development progress page for production.** Status 401 and an HTML page break an API client and a webhook. A held request only answers later.
+- **The development progress page for production.** Status 401 and an HTML page break an API client and a webhook. A held request only answers more slowly.
 - **Stop live when swap is full.** The next visit would wait for a cold boot of every unit. A live that stays awake costs only memory.
 - **Freeze old instead of a stop.** A frozen old holds swap. A stopped old holds nothing, and a rollback boots it in seconds.
 - **A deploy that wakes live first.** Hot clones the snapshot, not the running live, so a wake gains nothing and costs memory during the build.
@@ -127,7 +129,7 @@ The live proof of ADR 0263 changes:
 
 ## Consequences
 
-- An idle production Instance frees its memory. The first request after a sleep answers about 1.5 s to 2.4 s later, or `503` after 10 s.
+- An idle production Instance frees its memory. The first request after a sleep waits about 1.5 s to 2.4 s for the wake, or gets `503` after 10 s.
 - A job that runs at the freeze can run twice after the wake: its queue reservation expires during the sleep, and another worker takes it. A Project that cannot accept this sets `never_sleep` or a `keep_alive` Process.
 - A per-minute scheduler skips the minutes while live sleeps. A Project that needs every minute sets `never_sleep` or a `keep_alive` Process.
 - An uptime check without the probe header keeps live awake.
