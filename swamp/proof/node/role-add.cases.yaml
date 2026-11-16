@@ -76,6 +76,7 @@ cases:
 
   - id: invalid-node-id
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: Supplied zero and negative Node IDs are local refusals, not charted Gateway paths.
     variants:
@@ -88,6 +89,7 @@ cases:
 
   - id: node-name-is-not-id
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: A recorded name is not an explicit numeric record selector.
     fails_today: The CLI resolves Node names and sends the role request instead of refusing a nonnumeric selector with node.id_invalid.
@@ -98,6 +100,7 @@ cases:
 
   - id: unknown-node
     batch: fresh-fleet
+    read_only: true
     covers: [main, node-not-found]
     summary: An unrecorded positive Node ID is refused before any Operation or role change.
     act:
@@ -107,6 +110,7 @@ cases:
 
   - id: unknown-role
     batch: fresh-fleet
+    read_only: true
     covers: [main, role-refused]
     summary: A role outside the registry is refused before admission.
     act:
@@ -116,6 +120,7 @@ cases:
 
   - id: protected-role
     batch: fresh-fleet
+    read_only: true
     covers: [main, role-refused]
     summary: VPN and Router cannot be assigned by generic role mutation.
     variants:
@@ -128,6 +133,7 @@ cases:
 
   - id: conflicting-role
     batch: fresh-fleet
+    read_only: true
     covers: [main, role-refused]
     summary: app-prod cannot share the fleet's app-dev Node.
     act:
@@ -137,6 +143,7 @@ cases:
 
   - id: converge-unassigned-role
     batch: fresh-fleet
+    read_only: true
     covers: [main, converge-requested, converge-mode, converge-refused]
     summary: Convergence cannot create an absent ci-runner assignment on app-prod.
     act:
@@ -146,6 +153,7 @@ cases:
 
   - id: invalid-analytics-process-id
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: Each supplied Analytics storage ID must be a positive integer before admission.
     variants:
@@ -158,6 +166,7 @@ cases:
 
   - id: analytics-option-on-other-role
     batch: fresh-fleet
+    read_only: true
     covers: [main, role-refused]
     summary: Analytics-only storage options cannot be silently ignored on an otherwise valid app-dev convergence.
     fails_on_base: true

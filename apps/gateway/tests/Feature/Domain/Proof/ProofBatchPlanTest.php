@@ -32,8 +32,48 @@ it('balances whole batches using the latest measured case times and expands vari
 
     expect(array_column($batches, 'seconds'))->toBe([20.0, 13.0, 5.0, 6.5])
         ->and($batches[1]['cases'])->toBe(['b[v4]', 'b[v6]'])
-        ->and(array_column($shards[0], 'batch'))->toBe(['first'])
-        ->and(array_column($shards[1], 'batch'))->toBe(['second', 'fourth', 'third']);
+        // Each batch weighs its reset and setup beside its cases, so the four batches go two to a copy.
+        ->and(array_column($shards[0], 'batch'))->toBe(['first', 'third'])
+        ->and(array_column($shards[1], 'batch'))->toBe(['second', 'fourth']);
+});
+
+it('weighs the reset of each batch, so short batches do not pile up on one copy', function (): void {
+    $batch = static fn (string $name, float $seconds): array => ['command' => 'node:converge', 'file' => 'converge.cases.yaml', 'batch' => $name,
+        'cases' => ['a'], 'seconds' => $seconds, 'read_only' => false];
+    $shards = ProofBatchPlan::split([$batch('long-1', 100.0), $batch('long-2', 100.0), $batch('a', 1.0), $batch('b', 1.0), $batch('c', 1.0), $batch('d', 1.0)], 3);
+
+    // With case seconds alone the copy of the first short batch stays least loaded and takes all four short batches, with four resets.
+    expect(array_map('count', $shards))->toBe([2, 2, 2]);
+});
+
+it('runs the read-only cases of a batch without setup as a batch of their own, first on its copy and without a reset', function (): void {
+    $source = Mockery::mock(ProofCommitSource::class);
+    $source->shouldReceive('file')->with('head', 'swamp/proof/batches.yaml')->andReturn("batches:\n  fresh: {}\n  no-grant:\n    setup:\n      - node_access_remove: {consumer: app-prod, serving: app-dev}\n");
+    $source->shouldReceive('file')->with('head', 'converge.cases.yaml')->andReturn("command: node:converge\ncases:\n"
+        ."  - {id: apply, batch: fresh}\n  - {id: unknown, batch: fresh, read_only: true, variants: [{name: one}, {name: two}]}\n"
+        ."  - {id: refused, batch: no-grant, read_only: true}\n");
+
+    $batches = (new ProofBatchPlan($source))->read('head', [['command' => 'node:converge', 'file' => 'converge.cases.yaml']]);
+    $shards = ProofBatchPlan::split($batches, 1);
+
+    expect(array_map(static fn (array $batch): array => [$batch['batch'], $batch['cases'], $batch['read_only']], $batches))->toBe([
+        ['fresh', ['apply'], false], ['fresh', ['unknown[one]', 'unknown[two]'], true],
+        // A batch with setup changes the fleet before its cases, so its read-only cases stay in it.
+        ['no-grant', ['refused'], false],
+    ])
+        ->and(array_column($shards[0], 'read_only'))->toBe([true, false, false])
+        // The read-only batch needs no reset: two resets with setup and the case seconds.
+        ->and(ProofBatchPlan::work($shards[0]))->toBe(2 * ProofBatchPlan::BatchSeconds + 4.0)
+        ->and(ProofBatchPlan::work([$batches[1]]))->toBe(ProofBatchPlan::BatchSeconds + 2.0);
+});
+
+it('merges the verdicts of a read-only batch and the rest of its batch on one copy', function (): void {
+    $assignments = [['command' => 'node:show', 'file' => 'show.cases.yaml', 'batch' => 'fresh', 'cases' => ['refused'], 'read_only' => true],
+        ['command' => 'node:show', 'file' => 'show.cases.yaml', 'batch' => 'fresh', 'cases' => ['read'], 'read_only' => false]];
+    $row = "node:show\tshow.cases.yaml\tfresh\t";
+    $rows = ProofShardVerdicts::rows($assignments, $row.'{"id":"refused","verdict":"passed","secs":1}'."\n".$row.'{"id":"read","verdict":"passed","secs":1}');
+
+    expect(ProofVerdicts::passed($rows['cases']))->toBeTrue()->and(array_column($rows['cases'], 'case'))->toBe(['refused', 'read']);
 });
 
 it('refuses a selected command with no cases instead of planning a green zero-case run', function (?string $yaml): void {
