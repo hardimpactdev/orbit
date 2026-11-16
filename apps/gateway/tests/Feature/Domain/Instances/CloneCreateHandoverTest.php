@@ -216,25 +216,39 @@ it('admits a plain clone of a nested-fleet default with an inner volume: the cop
         ->and($clone['snapshot'])->toBe('seed-'.str_repeat('c', 40));
 });
 
-it('reads the baseline again after a lost connection, so one lost connect does not fail the create', function (): void {
+it('reads the baseline again once after a lost connection, so one lost connect does not fail the create', function (): void {
     Sleep::fake();
     Log::spy();
     $node = containerDefaultNode();
     $operation = handoverCreate(handoverDefault($node));
-    $this->reader->lost = 2;
+    $this->reader->lost = 1;
 
     app(DevelopmentInstanceCreateProjection::class)->apply($operation, handoverSucceeded($operation));
 
     $operation->refresh();
     expect($operation->status)->toBe(OperationStatus::Succeeded)
-        ->and($this->reader->calls)->toHaveCount(3)
+        ->and($this->reader->calls)->toHaveCount(2)
         // No try and no pause runs inside a transaction.
         ->and(array_unique(array_column($this->reader->calls, 'level')))->toBe([DB::transactionLevel()])
         ->and(InstanceRuntime::query()->where('instance_id', $operation->target_id)->firstOrFail()->workspace_baseline['heads'])->toBe([str_repeat('a', 40)]);
-    Sleep::assertSequence([Sleep::for(1)->seconds(), Sleep::for(3)->seconds()]);
+    Sleep::assertSequence([Sleep::for(1)->seconds()]);
     // Each failed try names what SSH said, so a lost connection shows in the Gateway log.
-    Log::shouldHaveReceived('warning')->twice()->withArgs(fn (string $message, array $context): bool => $message === 'A workspace baseline read failed.'
-        && $context['exit_code'] === 255 && str_contains($context['stderr'], 'Connection timed out') && $context['tries'] === 3);
+    Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message, array $context): bool => $message === 'A workspace baseline read failed.'
+        && $context['exit_code'] === 255 && str_contains($context['stderr'], 'Connection timed out') && $context['tries'] === 2);
+});
+
+it('gives the baseline read its own bounds for a loaded host: a 6 s reader budget, an outer 8 s timeout and a 10 s SSH bound', function (): void {
+    Sleep::fake();
+    $node = containerDefaultNode();
+    $operation = handoverCreate(handoverDefault($node));
+
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, handoverSucceeded($operation));
+
+    $call = $this->reader->calls[0];
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and(array_slice($call['arguments'], 0, 5))->toBe(['timeout', '8', 'python3', '-', 'record'])
+        ->and($call['budget'])->toBe('6')
+        ->and([$call['command_timeout'], $call['timeout']])->toBe([10.0, 10.0]);
 });
 
 it('fails the create with instance.workspace_baseline_unavailable when the read fails, and keeps the clone for a retry', function (): void {
@@ -261,8 +275,8 @@ it('fails the create with instance.workspace_baseline_unavailable when the read 
         // The run ended without its container stop: the copy runs until a retry or a destroy.
         ->and($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running)
         ->and($instance->runtime()->firstOrFail()->workspace_baseline)->toBeNull()
-        // Only the third failed read fails the create.
-        ->and($this->reader->calls)->toHaveCount(3);
+        // Only the second failed read fails the create: a stuck read ends in about 20 s.
+        ->and($this->reader->calls)->toHaveCount(2);
 });
 
 /**

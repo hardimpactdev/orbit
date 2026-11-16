@@ -106,6 +106,7 @@ use LogicException;
  * @property TaskPrMode|null $pr_mode
  * @property int|null $issue_number the GitHub issue of the Project's repository that the group's pull request closes (docs/reference/tasks.md#closes-the-issue)
  * @property array{code: string, check_id: int, at: string}|null $publish_refusal
+ * @property array{operation_id: int, failed_step: string, error_code: string}|null $copy_create_failure
  * @property string $implementer_model the task VM path's model; a task copy reads implementer_agent_model
  * @property string $reviewer_model
  * @property string|null $implementer_agent_provider the copy turn agent values the group names (TaskCopyAgent); null takes the Project's or the Gateway's
@@ -169,6 +170,7 @@ final class Task extends Model
         'review_mode',
         'pr_mode',
         'publish_refusal',
+        'copy_create_failure',
         'issue_number',
         'implementer_model',
         'reviewer_model',
@@ -311,6 +313,7 @@ final class Task extends Model
         'review_mode',
         'pr_mode',
         'publish_refusal',
+        'copy_create_failure',
         'issue_number',
         'implementer_model',
         'reviewer_model',
@@ -636,6 +639,7 @@ final class Task extends Model
             'pr_mode' => TaskPrMode::class,
             'issue_number' => 'integer',
             'publish_refusal' => 'array',
+            'copy_create_failure' => 'array',
             'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',

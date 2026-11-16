@@ -942,7 +942,7 @@ The copy's `.env` holds its secrets. Git never takes it: every container create 
 | Publish | Only for a nested-fleet Project or a Project on `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`. Otherwise `tasks.copy_publish_held` (409), before any Operation. The [mode](#task-group-modes) decides whether Orbit publishes by itself once the work is done |
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
 | Ready | The task runs when its copy is `active`: after the copy's [completion](/reference/development-containers#complete-a-clone) succeeded. A create that succeeds leaves the task `reserved` until then |
-| Failed create | The task is `failed`. A refused start or a cancel before the run counts too. Orbit removes the copy as [Removal by Orbit](#removal-by-orbit) describes |
+| Failed create | The task goes back to `todo`, Orbit [removes the copy](#removal-by-orbit) and starts the create once more; see [a failed create](#a-failed-create) |
 | Failed completion | The copy stays and the task stays `reserved`, with an assistance request and the retry. See [a failed completion](#a-failed-completion) |
 | Kept copy | After an expired run budget, a failed completion, a failed destroy or a copy that Orbit would not remove, the task keeps the copy until `task:cancel`, `task:complete` or `instance:destroy --force` |
 | End | When the copy's destroy succeeds, a running task is `cancelled`, a failed task stays `failed` and a completed task stays `completed`. All let go of the copy |
@@ -955,13 +955,25 @@ The task asks for assistance with kind `failure`, unless a direction request is 
 
 Until a completion succeeds, a turn, a check, a publish and a proof answer `tasks.copy_completion_failed` (409). The details name `operation_id`, `failed_step`, `error_code` and `retry`, and `requires` when the retry needs a changed Process definition first. The copy's Processes and inner fleet did not start, and a retry may run at the same time. While a retry runs, a turn, a check, a publish and a proof answer `tasks.copy_not_ready`. A retry that succeeds runs the task and clears that assistance request, and only that one.
 
+#### A failed create
+
+A failed `instance.create` of a copy does not end its task: a slow baseline read or a full Swamp worker pool on a loaded host must not cost the task. Every end counts but success, an expired run budget and a cancel: a failed run, a failed register or [baseline read](/reference/development-containers#workspace-work-state), a start that Swamp refuses.
+
+The task goes back to `todo` and keeps the copy until Orbit [removes it](#removal-by-orbit). It records the first failure in `copy_create_failure`: the Operation, its failed step and its error code. When the copy's destroy succeeds, Orbit starts the create once more for the same task, through the normal start and as its first caller. Orbit destroys the copy rather than run the create again over it: a task copy is always a new clone, and the destroy keeps any work by its own rules.
+
+When the retry fails too, or its start refuses, the task stays in `todo` and records no further retry. It asks for assistance with kind `failure`; the reason names both Operations, their failed steps and their error codes, and `orbit task:start <task-id>`. `task:show` and `task:status` show it. Orbit removes the second copy the same way. `task:start` of the task works again once the copy is gone; while it is still bound, the start answers `tasks.copy_removing` (409). A later copy that comes up `active` clears that request, and only that one.
+
+`task:cancel` of the task while it holds the failed copy cancels the task when the copy's destroy succeeds, and nothing starts again. A task moved to `backlog` before the copy is gone owes no retry either.
+
+A cancel of the create is a stop that someone asked for: the task is `failed`, and nothing starts again. The copy of a proof belongs to its run, which fails with it, so its create never starts again either.
+
 #### Removal by Orbit
 
 Orbit removes a task copy by itself only after a failed create, through one queued job that admits the copy's `instance:destroy` with force. A failed completion never removes the copy: its create succeeded, so its thread was usable and an agent may have worked in it.
 
 The job destroys the copy at once only when the records prove that no agent could have worked in it: the create did not succeed and no T3 server is registered for the copy. Otherwise it first reads the copy's work, as [`task:cancel`](/cli/task/cancel) does. It destroys a copy that holds no work origin lacks.
 
-A copy with such work, or a read that does not answer, stays. The failed task then asks for assistance with kind `removal_failure`, the kind that an ended task keeps. The reason names the unpushed commits, the uncommitted files, how many of them are untracked and the stashes, or why the read did not answer. It ends with `orbit task:cancel <task-id>`, with `--discard` if the work is not wanted.
+A copy with such work, or a read that does not answer, stays. The task then asks for assistance with kind `removal_failure`, the kind that an ended task keeps. The reason names the unpushed commits, the uncommitted files, how many of them are untracked and the stashes, or why the read did not answer. It ends with `orbit task:cancel <task-id>`, with `--discard` if the work is not wanted.
 
 `task:cancel` and `task:complete` are a person's removals and keep their own rules.
 
