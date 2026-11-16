@@ -149,7 +149,7 @@ class RegistryTest(unittest.TestCase):
         path.write_text(path.read_text().replace('order = 20', 'order = 0'))
         head = self.commit()
         self.assertEqual(self.changes(self.new, head), (([], True), []))
-        self.write(registry.TABLE, self.shared.replace('pr_shards = 8', 'pr_shards = 7'))
+        self.write(registry.TABLE, self.shared.replace(f"pr_shards = {BUDGET['pr_shards']}", f"pr_shards = {BUDGET['pr_shards'] - 1}"))
         head = self.commit()
         self.assertTrue(self.changes(self.new, head)[0][1])
 

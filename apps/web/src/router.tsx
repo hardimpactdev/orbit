@@ -10,6 +10,7 @@ import { TasksBoard, TaskDetail, SubtaskDetail } from "./pages/Tasks";
 import { Dashboard } from "./pages/Dashboard";
 import { NodeCreate } from "./pages/NodeCreate";
 import { NodeRecordPage } from "./pages/NodeRecord";
+import { RunnersPage } from "./pages/Runners";
 import { DeploymentPage, RecordPage, ProjectDependenciesRecordPage } from "./pages/RecordPage";
 import { SectionList } from "./pages/SectionList";
 import { Shell } from "./ui/Shell";
@@ -50,6 +51,7 @@ const routeTree = rootRoute.addChildren([
         validateSearch: (search: Record<string, unknown>) => readActivitySearch(search),
     }),
     createRoute({ getParentRoute: () => rootRoute, path: "/nodes/create", component: NodeCreate }),
+    createRoute({ getParentRoute: () => rootRoute, path: "/runners", component: RunnersPage }),
     nodeRoute.addChildren([
         createRoute({ getParentRoute: () => nodeRoute, path: "tools", component: () => null }),
         createRoute({

@@ -254,7 +254,7 @@ it('names a refused environment file, its content and an unchecked content with 
     'typed read of an error' => ['Read the .env check', 'tasks.publish_secret_unchecked', 'tasks.publish_secret_unchecked'],
 ]);
 
-it('names the copy check\'s refusal with its code and its paths, lines and secret names, and nothing is pushed', function (string $step, ?string $detail, array $result): void {
+it('names the copy check\'s and the base check\'s refusal with its code and its paths, lines and secret names, and nothing is pushed', function (string $step, ?string $detail, array $result): void {
     [$group, $check] = copyPublishWorld();
     $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id]), 'test', null);
     $run = '6b69badf-4f06-4f2e-82d7-21b62c1f587a';
@@ -268,7 +268,10 @@ it('names the copy check\'s refusal with its code and its paths, lines and secre
 })->with([
     'a secret value' => ['Read the copy check', 'tasks.publish_secret_value: "notes/leak.txt:2 nested-gateway:env:/var/lib/orbit-checkout-state/apps/gateway/.env:APP_KEY", "commit '.str_repeat('a', 40).' club-key:/run/orbit-club/swamp-club-api-key" and 3 more',
         ['error_code' => 'tasks.publish_secret_value', 'refused' => ['notes/leak.txt:2 nested-gateway:env:/var/lib/orbit-checkout-state/apps/gateway/.env:APP_KEY', 'commit '.str_repeat('a', 40).' club-key:/run/orbit-club/swamp-club-api-key'], 'refused_more' => 3]],
-    'a workflow change' => ['Read the copy check', 'tasks.publish_workflow_change: ".github/workflows/x.yml"', ['error_code' => 'tasks.publish_workflow_change', 'refused' => ['.github/workflows/x.yml'], 'refused_more' => 0]],
+    // The base check judges workflow changes against the real default head (docs/reference/tasks.md#the-base-of-a-copy-publish).
+    'a workflow change' => ['Check the base', 'tasks.publish_workflow_change: ".github/workflows/x.yml"', ['error_code' => 'tasks.publish_workflow_change', 'refused' => ['.github/workflows/x.yml'], 'refused_more' => 0]],
+    'many workflow changes' => ['Check the base', "Error: x\n".'tasks.publish_workflow_change: ".github/workflows/x.yml", ".github/workflows/y.yml" and 7 more', ['error_code' => 'tasks.publish_workflow_change', 'refused' => ['.github/workflows/x.yml', '.github/workflows/y.yml'], 'refused_more' => 7]],
+    'a workflow line of the copy check' => ['Read the copy check', 'tasks.publish_workflow_change: ".github/workflows/x.yml"', ['error_code' => 'tasks.publish_secret_unchecked']],
     'an error of the check' => ['Read the copy check', 'tasks.publish_secret_unchecked', ['error_code' => 'tasks.publish_secret_unchecked']],
     'a failed check run' => ['Check the copy', 'tasks.workspace_phase_failed', ['error_code' => 'tasks.publish_secret_unchecked']],
     'no detail' => ['Read the copy check', null, ['error_code' => 'tasks.publish_secret_unchecked']],

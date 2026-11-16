@@ -28,6 +28,12 @@ final readonly class ShowNodeMetricsAction
             );
         }
 
+        return $this->fromFact($node, $fact);
+    }
+
+    /** The metrics of a recorded snapshot; they are possibly outdated while the Node's agent is not online. */
+    public function fromFact(Node $node, NodeFact $fact): NodeMetricsData
+    {
         $agent = $this->liveness->for($node);
 
         return NodeMetricsData::fromRaw(

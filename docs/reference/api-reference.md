@@ -23,6 +23,8 @@ Task agent JSON and SSE reads return recorded Gateway snapshots. `kind` is `snap
 
 The task page reads Swamp history through `GET /api/v1/tasks/{task}/swamp-runs`. Its response uses typed run and step schemas; [Swamp run output](/reference/tasks#swamp-run-output) defines availability, bounds, and group matching.
 
+`GET /api/v1/ci/runners` returns the [CI runner view](/reference/ci-runner-view#read-the-view): each CI Node's places, resources and runners, and the self-hosted jobs of the last 48 hours. It needs Gateway authority. A source that cannot answer sets an error code in its part of the response and does not fail the read. The page owns the fields and the error codes.
+
 `bin/docs-openapi` writes `docs/openapi.json`, the OpenAPI document for the Gateway API. The documentation site renders that document on the [API tab](/api/overview). The same run rewrites the generated API groups in `docs/docs.json` so the sidebar lists those operations.
 
 The Node show response adds only `access` to `NodeData`; the Project show response is `ProjectData` alone. A Node's `updating` value has one kind, `gateway_release`.

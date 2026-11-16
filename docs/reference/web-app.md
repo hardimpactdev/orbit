@@ -89,6 +89,16 @@ The app connects to Reverb at the URL that `GET /api/v1/realtime` returns. Its p
 
 The dashboard and Nodes page group Nodes by the existing Metrics status. Tracked nodes have an exporter with `desired: true` and `actual: active`; their pane shows CPU, memory, disk and uptime. Every other Node appears under Other nodes, including task VMs without a tracked exporter. Roles, platform and managed state do not decide the group. Missing readings show `—`, and old Prometheus samples do not make an untracked Node tracked. Instance lists show whether each Instance's placement is development or production, from its Node's `app-dev` or `app-prod` role. [Concepts](/concepts) defines both terms.
 
+## CI runner view
+
+The runner view is `/runners` in the main navigation, after Activity. It reads `GET /api/v1/ci/runners`. [CI runner view](/reference/ci-runner-view) owns its content, sources and freshness.
+
+The page draws one frame for each CI Node. The places bar has one cell for each place: a runner job, then a proof copy, then a free place.
+
+A Node without a count shows only its used places. The reading of a proof-only Node ends with "proof copies only". The frame also shows CPU pressure, memory and disk, and a table of its runners with their state, version, current job and how long that job has run. On a phone, the current job and its time read on their own line under the runner. The frame border names a missing or stale runner state, or an outdated metrics snapshot.
+
+Below the frames are three panes: the running and queued jobs, each runner's jobs, failures, median queue wait, median run time and busy share over the window, and the recent completed jobs. A job row opens the job on GitHub. A repository that GitHub did not answer for, or that the Gateway read only in part, is named in the bottom border of these panes.
+
 ## Node detail pages
 
 A Node detail page has the same section menu pattern as an Instance: Overview, Tools, and Firewall where supported. Overview holds identity, roles, metrics when supported, Instances, and Node Processes. Firewall has its own page section on Linux. It reads [`firewall:list`](/cli/firewall/list) with Orbit's rules and the live comparison, `GET /api/v1/firewall-rules?node=<id>&managed=1&live=1`, in one request. The section lists the operator rules, Orbit's own rules as locked rows, and live rules that nothing explains. Rules the Node lacks come last, below a divider. macOS tool support does not enable firewall management.
@@ -199,6 +209,7 @@ These views have no event. A view with an interval polls while the tab is visibl
 | Live UFW rules, on a Linux Node's Firewall section | 15 seconds |
 | Process logs, Instance logs, queue, and analytics | 10 seconds |
 | Node metrics from Grafana | 10 seconds |
+| CI runner view | 15 seconds |
 | Quota (`ai-router`) status and provider pools | 60 seconds |
 
 The fleet firewall list reads every Node's rules with one request, `GET /api/v1/firewall-rules`, the same read as `firewall:list`. It returns only the Nodes that the browser's Node can reach.

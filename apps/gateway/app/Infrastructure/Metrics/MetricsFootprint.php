@@ -23,6 +23,9 @@ final readonly class MetricsFootprint
     /** The port the exporter listens on, and the port its UFW rule opens. */
     public const string ExporterPort = '9100';
 
+    /** The folder whose `.prom` files the exporter's textfile collector reads. The `ci-runner` role writes its runner state there. */
+    public const string ExporterTextfileDirectory = '/var/lib/prometheus/node-exporter';
+
     /** The port Grafana listens on, and the port the Gateway upstream rule opens. */
     public const string PublicationPort = '3000';
 

@@ -11,7 +11,7 @@ shard_workers = 4
 unit_ceiling_seconds = 180
 slice_seconds = 60
 slice_startup_seconds = 6
-pr_shards = 8
+pr_shards = 10
 default_cost = 30
 
 [fixtures]
