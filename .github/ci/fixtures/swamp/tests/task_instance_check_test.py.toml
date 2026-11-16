@@ -1,8 +1,9 @@
 file = "swamp/tests/task_instance_check_test.py"
 slices = false
-cost = 83
+cost = 95
 cases = [
   "test_check_runs_in_the_guest_and_commits_the_exact_candidate",
+  "test_after_a_merge_of_main_the_deliverable_diff_is_the_subtasks_own",
   "test_only_a_clean_recorded_candidate_makes_no_commit",
   "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing",
   "test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch",
@@ -26,6 +27,7 @@ inputs = [
 # ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
 [case_costs]
 "test_check_runs_in_the_guest_and_commits_the_exact_candidate" = 25
+"test_after_a_merge_of_main_the_deliverable_diff_is_the_subtasks_own" = 12
 "test_only_a_clean_recorded_candidate_makes_no_commit" = 35
 "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing" = 12
 "test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch" = 5

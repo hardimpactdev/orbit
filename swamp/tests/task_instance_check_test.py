@@ -56,6 +56,20 @@ class TaskInstanceCheckTest(SUPPORT["CheckHarness"]):
         self.assertEqual(json.loads(finish['result_json']), candidate)
         self.assertEqual(self.git('status', '--porcelain=v1'), '')
 
+    def test_after_a_merge_of_main_the_deliverable_diff_is_the_subtasks_own(self):
+        import subprocess
+        # The handoff merged a main that added a file of its own; the working tree holds it as the merge left it.
+        (self.root / 'main-only.txt').write_text('main\n')
+        blob = self.git('hash-object', '-w', str(self.root / 'main-only.txt'))
+        listing = self.git('ls-tree', self.base) + f'\n100644 blob {blob}\tmain-only.txt\n'
+        tree = subprocess.run(['git', 'mktree'], cwd=self.checkout, input=listing, capture_output=True, text=True, check=True).stdout.strip()
+        main = self.git('commit-tree', tree, '-p', self.base, '-m', 'main moved')
+        (self.checkout / 'main-only.txt').write_text('main\n')
+        self.run_phase('check', self.ansible_intent(merged_default=main))
+        diff = self.evidence('check')['check']['steps']['diff']['outputs']['stdout']
+        self.assertIn('app.txt', diff)
+        self.assertNotIn('main-only.txt', diff)
+
     def test_only_a_clean_recorded_candidate_makes_no_commit(self):
         # The implementer committed the work. Its head is clean but no check recorded it: it gets a fresh Orbit commit with the
         # Gateway's cleaned message, so the implementer's skip directive never heads the candidate.
