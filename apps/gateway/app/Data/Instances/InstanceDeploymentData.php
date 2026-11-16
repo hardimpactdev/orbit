@@ -30,6 +30,8 @@ final class InstanceDeploymentData extends Data
         public ?string $triggeredBy,
         public ?int $callerNodeId,
         public ?string $callerNodeName,
+        /** @var list<array{name:string,exit_code:?int}>|null The exit code of each best-effort development deploy step that ran; null is a code that was not a number. */
+        public ?array $bestEffortSteps = null,
     ) {}
 
     public static function fromModel(InstanceDeployment $deployment): self
@@ -51,6 +53,7 @@ final class InstanceDeploymentData extends Data
             triggeredBy: $deployment->triggered_by,
             callerNodeId: $deployment->caller_node_id,
             callerNodeName: $deployment->callerNode?->name,
+            bestEffortSteps: $deployment->best_effort_steps,
         );
     }
 }

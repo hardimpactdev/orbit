@@ -75,7 +75,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $native = $data;
                 $variant = ValidatedData::string(ValidatedData::object($locked->input['deployment'])['variant']);
                 [$data, $payload] = match (true) {
-                    $variant === 'container' => ContainerDeployOutcome::from($data, $this->secrets($instance)),
+                    $variant === 'container' => ContainerDeployOutcome::from($data, $this->secrets($instance), ValidatedData::object($locked->input['deployment'])['steps'] ?? []),
                     $this->development($locked) => DevelopmentDeployOutcome::from($data),
                     default => ProductionDeployOutcome::from($data, $locked),
                 };
@@ -106,6 +106,10 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             }
             if (isset($payload['fleet_refresh'])) {
                 $facts['fleet_refresh'] = $payload['fleet_refresh'];
+            }
+            // The exit code of each best-effort step that ran; a nonzero one does not fail the deployment.
+            if (isset($payload['best_effort_steps'])) {
+                $facts['best_effort_steps'] = $payload['best_effort_steps'];
             }
             $club = ValidatedData::object($locked->input['deployment'])['container'] ?? null;
             if ($status !== 'running' && is_array($club) && isset($club['club_key'])) {
