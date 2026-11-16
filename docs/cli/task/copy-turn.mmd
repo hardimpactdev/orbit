@@ -94,7 +94,7 @@ sequenceDiagram
     %%> - the thread's state and error, T3's thread id as its external id, and the transcript in the Gateway's archive: `task:agent:show` reads it after the copy is gone
     %%> - a turn that asked keeps its question on the thread: `task:agent:list` shows it until the thread's next turn. The answer is the next `task:turn` of the role, or a message to the thread from a T3 client
     %%> - the result names the provider instance, the model and the effort the thread started with, from its record
-    %%> - the result names `agent_id`, the agent thread's row that `task:agent:show GROUP AGENT_ID` reads, and `reply`: the text of the transcript's last entry that the user did not write, its first 16,384 characters, then ` [cut: N more characters; read task:agent:show GROUP AGENT_ID]` when it is longer. No transcript, or one of user entries only: `reply` is null. The transcript stays out of the result
+    %%> - the result names `agent_id`, the agent thread's row that `task:agent:show GROUP AGENT_ID` reads, and `reply`: the text of the transcript's last `assistant` entry, its first 16,384 characters, then ` [cut: N more characters; read task:agent:show GROUP AGENT_ID]` when it is longer. No assistant entry, such as a transcript of user entries and Orbit's truncation notice only: `reply` is null. The transcript stays out of the result
     %%> - token metrics stay null
   else the turn failed or ran past its bound
     SW--xGW: Native failed result<br/>error code

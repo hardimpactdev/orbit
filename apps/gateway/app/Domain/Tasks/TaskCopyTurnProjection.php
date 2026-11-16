@@ -61,14 +61,14 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
     }
 
     /**
-     * The text of the transcript's last entry that the user did not write, cut at the end past ReplyLimit with a marker that names the
-     * rest and where to read it; null without such an entry (docs/cli/task/turn.mdx#a-task-that-runs-in-a-copy).
+     * The text of the transcript's last entry that the agent wrote, labelled `assistant`, cut at the end past ReplyLimit with a marker that names the
+     * rest and where to read it; null without one, also when Swamp's truncation notice, labelled `system`, is the only other entry (docs/cli/task/turn.mdx#a-task-that-runs-in-a-copy).
      */
     private static function reply(int $group, int $agent, mixed $transcript): ?string
     {
         $text = null;
         foreach (is_array($transcript) ? $transcript : [] as $entry) {
-            if (is_array($entry) && ($entry['label'] ?? null) !== 'user' && is_string($entry['text'] ?? null)) {
+            if (is_array($entry) && ($entry['label'] ?? null) === 'assistant' && is_string($entry['text'] ?? null)) {
                 $text = $entry['text'];
             }
         }

@@ -1976,7 +1976,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($whole->result['reply'])->toBe($exact);
     });
 
-    it('names no reply for a turn with no transcript or with user entries only', function (array $shaped): void {
+    it('names no reply for a turn with no assistant entry', function (array $shaped): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
@@ -1990,6 +1990,10 @@ describe('a turn of a group that owns a copy', function (): void {
         'no transcript' => [[]],
         'an empty transcript' => [['transcript' => []]],
         'user entries only' => [['transcript' => [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'user', 'text' => 'Run Doctor.', 'at' => '']]]],
+        // Swamp's notice that it cut older entries is Orbit's text, not the agent's.
+        'the truncation notice and a user entry' => [['transcript' => [
+            ['id' => 'orbit-truncated', 'kind' => 'message', 'label' => 'system', 'text' => '[Transcript truncated: older entries omitted from the recorded turn.]', 'at' => ''],
+            ['id' => 'run:1:0', 'kind' => 'message', 'label' => 'user', 'text' => 'Run Doctor.', 'at' => '']]]],
     ]);
 
     it('names the agent thread and its last reply for a failed turn too', function (): void {
