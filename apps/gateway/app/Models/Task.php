@@ -77,6 +77,7 @@ use LogicException;
  * @property string|null $pi_restart_reservation
  * @property string|null $pi_restart_session_revision
  * @property int|null $deliverable_correction_check_id
+ * @property int|null $copy_correction_check_id the failed handoff check a correction in a task copy answered
  * @property array{comment_id: int, thread_id: int|null, key: string, message: string, state: string, caller_node_id?: int|null, caller_ip?: string|null, request_id?: string}|null $deliverable_correction_resume
  * @property string|null $pending_resolution_message
  * @property string|null $pending_resolution_reason
@@ -225,6 +226,7 @@ final class Task extends Model
         'review_workspace_lease_id',
         'deliverables',
         'deliverable_correction_check_id',
+        'copy_correction_check_id',
         'deliverable_correction_resume',
         'fixup_problem',
         'fixup_head_sha',
@@ -279,6 +281,7 @@ final class Task extends Model
         'fixup_head_sha',
         'deliverables',
         'deliverable_correction_check_id',
+        'copy_correction_check_id',
         'deliverable_correction_resume',
         'settled_at',
         'completion_attempt',
@@ -682,6 +685,7 @@ final class Task extends Model
             'pi_restart_thread_id' => 'integer',
             'ended_pr_notice_thread_id' => 'integer',
             'deliverable_correction_check_id' => 'integer',
+            'copy_correction_check_id' => 'integer',
             'deliverable_correction_resume' => 'array',
             'pending_resolution_comment_id' => 'integer',
             'resolution_delivered_comment_id' => 'integer',
