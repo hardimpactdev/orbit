@@ -7,6 +7,7 @@ use App\Commands\Instances\DestroyDeployStepCommand;
 use App\Commands\Instances\DestroyInstanceCommand;
 use App\Commands\Instances\RegisterInstanceCommand;
 use App\Commands\Instances\TransferInstanceCommand;
+use App\Commands\Instances\UnregisterInstanceCommand;
 use App\Commands\Nodes\RemoveNodeAccessCommand;
 use App\Commands\Nodes\RemoveNodeCommand;
 use App\Commands\Nodes\RemoveNodeRoleCommand;
@@ -31,6 +32,7 @@ if ($configuration['isolate_command'] ?? false) {
         'instance:deploy-step:destroy' => DestroyDeployStepCommand::class,
         'instance:register' => RegisterInstanceCommand::class,
         'instance:transfer' => TransferInstanceCommand::class,
+        'instance:unregister' => UnregisterInstanceCommand::class,
         'node:remove' => RemoveNodeCommand::class,
         'node:access:remove' => RemoveNodeAccessCommand::class,
         'node:role:remove' => RemoveNodeRoleCommand::class,

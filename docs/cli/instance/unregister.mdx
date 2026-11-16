@@ -25,7 +25,7 @@ orbit instance:unregister 12 --yes --json
 
 `instance:unregister` is the inverse of [`instance:register`](/cli/instance/register). Register adopts a checkout in place; unregister lets it go in place. Orbit deletes its records of a host checkout Instance and removes what Orbit put on the Node for it. The checkout folder and every file in it stay: the source, its Git data, `.env`, SQLite files and dependencies. Use [`instance:destroy`](/cli/instance/destroy) to delete the source as well.
 
-In a terminal the CLI asks to confirm, with No selected. The prompt names the Instance's name and ID and the effect: Orbit forgets it; the folder stays. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts nothing. A noninteractive or `--json` call without `--yes` is refused with `input.confirmation_required`. Without `--yes` the CLI first reads the Instance, so an unknown Instance or a missing grant is reported before the prompt.
+In a terminal the CLI asks to confirm, with No selected: `Unregister Instance [NAME] (#ID)? Orbit forgets it; the checkout folder and its files stay.` Declining, Ctrl-C or end of input ends with `input.cancelled` and starts nothing. A noninteractive or `--json` call without the Instance is refused with `instance.id_invalid`, and one without `--yes` with `input.confirmation_required`; neither starts anything. Without `--yes` the CLI first reads the Instance, so an unknown Instance or a missing grant is reported before the prompt.
 
 The command works only on a host checkout development Instance. The Gateway refuses before any change:
 

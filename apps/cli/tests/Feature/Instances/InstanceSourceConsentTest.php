@@ -14,6 +14,7 @@ use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
+use Orbit\Sdk\Requests\Instances\UnregisterInstanceRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
@@ -41,6 +42,14 @@ function instance_source_consent_case(string $family): array
                 instance_source_reply(DestroyInstanceRequest::class, instance_operation_payload('instance.destroy', overrides: ['target_id' => 11]), 202)],
             'mutation' => DestroyInstanceRequest::class, 'body' => [],
         ],
+        'unregister' => [
+            'arguments' => ['instance:unregister', '11'],
+            'prompt' => 'Unregister Instance [source] (#11)? Orbit forgets it; the checkout folder and its files stay.',
+            'reads' => 1, 'option' => '--yes', 'code' => 'input.confirmation_required',
+            'replies' => [instance_source_reply(ShowInstanceRequest::class, $instance),
+                instance_source_reply(UnregisterInstanceRequest::class, instance_operation_payload('instance.unregister', overrides: ['target_id' => 11]), 202)],
+            'mutation' => UnregisterInstanceRequest::class, 'body' => [],
+        ],
         'step' => [
             'arguments' => ['instance:deploy-step:destroy', '11', 'migrate'],
             'prompt' => 'Remove deploy step [migrate] from Instance [source] (#11)?',
@@ -67,7 +76,7 @@ function instance_source_consent_case(string $family): array
         ],
     };
 
-    $case['follow_reads'] = in_array($family, ['remove', 'transfer'], true) ? 1 : 0;
+    $case['follow_reads'] = in_array($family, ['remove', 'unregister', 'transfer'], true) ? 1 : 0;
     if ($case['follow_reads'] > 0) {
         $operation = $case['replies'][$case['reads']]['body']['data'];
         $case['replies'][] = ['class' => ShowRealtimeRequest::class, 'status' => 503, 'body' => []];
@@ -136,7 +145,7 @@ it('requires default-No native consent and restores the terminal before returnin
     } else {
         expect($result['output'])->toContain('cancelled.');
     }
-})->with(['remove', 'step', 'transfer', 'register'])->with([
+})->with(['remove', 'unregister', 'step', 'transfer', 'register'])->with([
     'default No' => [["\r"], false], 'Yes' => [['y', "\r"], true],
     'Ctrl-C' => [["\x03"], false], 'EOF' => [["\x04"], false],
 ]);
@@ -209,7 +218,7 @@ it('keeps JSON and noninteractive mode separate from explicit consent', function
     if ($consent) {
         expect($result['requests'][0]['class'])->toBe($case['mutation'])->and($result['requests'][0]['body'])->toBe($case['body']);
     }
-})->with(['remove', 'step', 'transfer', 'register'])->with([false, true])->with([false, true]);
+})->with(['remove', 'unregister', 'step', 'transfer', 'register'])->with([false, true])->with([false, true]);
 
 it('does not treat the removal source-safety override as consent', function (): void {
     $case = instance_source_consent_case('remove');
@@ -268,4 +277,4 @@ it('never takes consent from JSON even when stdin is a real terminal', function 
     expect($result['status'])->toBe(1)->and($result['prompt_seen'])->toBeFalse()->and($result['restored'])->toBeTrue()
         ->and($result['requests'])->toHaveCount($case['reads'])->and($result['output'])->not->toContain("\e[");
     expect(json_decode($result['output'], true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($case['code']);
-})->with(['remove', 'step', 'transfer', 'register']);
+})->with(['remove', 'unregister', 'step', 'transfer', 'register']);
