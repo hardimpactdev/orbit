@@ -37,10 +37,10 @@ This file runs the shipped `instance-container.yml` and the Instance host prepar
 | Line | Case: what it proves | Class | Proof case or reason |
 | --- | --- | --- | --- |
 | 219 | First build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing | New | `instance:create` `create-default` |
-| 282 | A converted default store refreshes its same-commit seed once | Designed away | A one-time conversion. Its branch goes, as an [old path](/reference/old-paths), when the last Node is converted |
+| 282 | A converted default store refreshes its same-commit seed once | Designed away | A one-time conversion: only a default made before the private Node store converts its old shared store, once. No default made today takes this branch |
 | 315 | A deployment at the seed's commit retakes the seed | New | `instance:deploy` `deploy-same-commit` |
 | 359 | A retake with no free isolated ID range keeps the old seed and names the cause | Dropped | Needs a Node with every isolated ID range in use. The old seed stays until a new one exists |
-| 411 | A retake stopped between the delete and the rename is finished first | Designed away | Proposal: every retake takes its new seed under `next-` first, as the pair retake (line 3401) does. Then no state lacks a whole seed |
+| 411 | A retake stopped between the delete and the rename is finished first | Designed away | Proposed (not built): every retake would take its new seed under `next-` first, as the pair retake (line 3401) does. Then no state lacks a whole seed. Until it is built, the case stays a fixture case |
 | 438 | A deployment sends only what the workspace lacks, also after a force-moved branch | New | `instance:deploy` `deploy-force-pushed`. Local commits in a default: designed away, a default has no T3 and no user writes |
 | 486 | A deploy step with inputs is skipped at the same inputs, and runs when one moves | New | `instance:deploy` `deploy-step-skip` |
 | 533 | A proof checkout fetches the commit by SHA and checks it out detached | Copy path | A missing commit: dropped |
@@ -113,7 +113,7 @@ This file runs the shipped `instance-container.yml` and the Instance host prepar
 | 3401 | A same-commit pair retake takes both halves under `next-` first | Copy path | |
 | 3444 | A `next-` pair left by an earlier run takes the seed's name; a half is dropped | Dropped | A crash between two snapshot calls. The [blocking rule](/reference/tasks#reviewer-outcomes) asks no guard |
 | 3485 | A failed deployment of a default with an inner volume restores both halves | Copy path | |
-| 3516 | A default converted in place starts only with both records | Designed away | As line 282 |
+| 3516 | A default converted in place starts only with both records | Designed away | A one-time hand conversion of a default made before the inner volume ([Convert a default](/reference/development-containers#convert-a-default)). No default made today takes this branch |
 | 3570 | A normal default seeds, retakes and restores with no volume call | New | `instance:deploy` `deploy-fails-restores`. The shape without an inner volume: designed away, as line 2588 |
 | 3599 | A failed nested-fleet deployment restores the newest seed, stopped | Copy path | |
 
