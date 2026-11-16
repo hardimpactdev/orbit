@@ -268,7 +268,7 @@ The Instance host probe has a small required caller-contract fixture. It renders
 
 A file that cannot fit even an otherwise empty ten-shard plan, or contains a unit above the lane budget, makes Required checks fail. Unmapped paths select the table’s default checks.
 
-Migration runs in self-hosted fixture shards, split by phase into files whose units each fit a lane. The host ACL and host build-list files and the FrankenPHP proxy fixture run there too.
+Migration runs in self-hosted fixture shards, split by phase into three files over the harness `swamp/tests/_support/instance_migrate.ts`: static checks, the phases short of a full move, and the full move. Every unit fits a lane. The host ACL and host build-list files and the FrankenPHP proxy fixture run there too.
 
 The native migration fixture also forces advisory mail failure and malformed receipts for defaults and clones, proving that Route cutover and retirement succeed without rollback. Its account gate uses Swamp's upstream [throwaway credential fixture](https://github.com/swamp-club/swamp/blob/537e03d1/integration/auth_gate_fixture.ts), with no real credential or fleet call. Native create, complete and migration fixtures create their run folders directly under `/tmp`, as the production folder schema requires. Verify them through `bin/ci-units run`: its per-unit `TMPDIR` must not move those folders below another directory.
 

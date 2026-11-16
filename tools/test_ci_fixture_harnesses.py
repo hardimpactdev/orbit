@@ -73,11 +73,11 @@ class InputClosureTest(unittest.TestCase):
     def test_copied_helpers_select_their_fixture(self):
         api = runpy.run_path(str(ROOT / 'bin/ci-units'))
         budget, fixtures, defaults = api['configuration']()
-        for helper, file in [('swamp/ansible/instance_node_services.py', 'swamp/tests/ansible_instance_migrate_test.ts'),
-                             ('swamp/ansible/tasks/instance-private-names.yml', 'swamp/tests/ansible_instance_migrate_test.ts'),
-                             ('swamp/ansible/library/orbit_migrate_env.py', 'swamp/tests/ansible_instance_migrate_test.ts'),
-                             ('swamp/ansible/templates/instance-migrate-schedule.j2', 'swamp/tests/ansible_instance_migrate_test.ts'),
-                             ('swamp/extensions/behaviors/operations/processes-schedules/unit-templates.json', 'swamp/tests/ansible_instance_migrate_test.ts'),
+        for helper, file in [('swamp/ansible/instance_node_services.py', 'swamp/tests/ansible_instance_migrate_move_test.ts'),
+                             ('swamp/ansible/tasks/instance-private-names.yml', 'swamp/tests/ansible_instance_migrate_move_test.ts'),
+                             ('swamp/ansible/library/orbit_migrate_env.py', 'swamp/tests/ansible_instance_migrate_move_test.ts'),
+                             ('swamp/ansible/templates/instance-migrate-schedule.j2', 'swamp/tests/ansible_instance_migrate_move_test.ts'),
+                             ('swamp/extensions/behaviors/operations/processes-schedules/unit-templates.json', 'swamp/tests/ansible_instance_migrate_move_test.ts'),
                              ('swamp/tests/fixtures/fleet-reboot-ssh.py', 'swamp/tests/fleet_reboot_unreachable_test.ts')]:
             with self.subTest(helper=helper):
                 plan = api['plan']([helper], budget, fixtures, defaults)

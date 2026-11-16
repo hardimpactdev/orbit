@@ -160,8 +160,8 @@ class PlanningTest(unittest.TestCase):
     def test_a_capacity_gap_must_name_registered_self_hosted_files(self):
         original, inventory = units.registry.load(ROOT)
         hosted = next(f['file'] for f in original['fixture'] if not f.get('self_hosted'))
-        for gaps in (['swamp/tests/missing_test.ts'], [hosted], 'swamp/tests/ansible_instance_migrate_test.ts',
-                     ['swamp/tests/ansible_instance_migrate_test.ts'] * 2):
+        for gaps in (['swamp/tests/missing_test.ts'], [hosted], 'swamp/tests/ansible_instance_migrate_move_test.ts',
+                     ['swamp/tests/ansible_instance_migrate_move_test.ts'] * 2):
             config = json.loads(json.dumps(original))
             config['budget']['capacity_gap'] = gaps
             with self.subTest(gaps=gaps), patch.object(units.registry, 'load', return_value=(config, inventory)):
@@ -517,7 +517,7 @@ class TableTest(unittest.TestCase):
             ('swamp/ansible/schedule-logs.yml', 'swamp/tests/ansible_schedule_logs_test.ts'),
             ('swamp/ansible/library/orbit_schedule_journal.py', 'swamp/tests/ansible_schedule_logs_test.ts'),
             ('apps/gateway/app/Infrastructure/AgentView/StreamWebSocketClient.php', 'swamp/tests/ansible_schedule_logs_test.ts'),
-            ('swamp/ansible/tasks/instance-migrate-retire.yml', 'swamp/tests/ansible_instance_migrate_test.ts'),
+            ('swamp/ansible/tasks/instance-migrate-retire.yml', 'swamp/tests/ansible_instance_migrate_preflight_test.ts'),
             ('swamp/ansible/instance_bridge.py', 'swamp/tests/ansible_instance_container_test.ts'),
             ('swamp/tests/_support/instance_host.ts', 'swamp/tests/ansible_instance_host_image_test.ts'),
             ('swamp/ansible/tasks/task-container-host-system.yml', 'swamp/tests/ansible_container_host_system_test.py'),
@@ -821,7 +821,7 @@ class PopulationTest(unittest.TestCase):
 
     def test_docs_select_no_fixture_and_a_fixture_selects_itself(self):
         budget, fixtures, defaults = units.configuration()
-        file = 'swamp/tests/ansible_instance_migrate_test.ts'
+        file = 'swamp/tests/ansible_instance_migrate_move_test.ts'
         self.assertEqual(units.plan(['docs/mission.md'], budget, fixtures, defaults)['shards'], [])
         selected = units.plan(['swamp/tests/ansible_instance_container_test.ts'], budget, fixtures, defaults)
         self.assertIn('swamp/tests/ansible_instance_container_test.ts', {u.split('#')[0] for s in selected['self_hosted_shards'] for u in s['units']})

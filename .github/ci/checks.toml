@@ -25,7 +25,8 @@ machinery_canary = [
 # ADR 0262 step 2 names each file here: it cannot fit the self-hosted shards when selected. Units that fit run;
 # the rest are named "not run" in the plan and do not block the merge. Overflow of any other file fails Required.
 capacity_gap = [
-  "swamp/tests/ansible_instance_migrate_test.ts",
+  "swamp/tests/ansible_instance_migrate_preflight_test.ts",
+  "swamp/tests/ansible_instance_migrate_move_test.ts",
   "swamp/tests/ansible_instance_container_test.ts",
 ]
 

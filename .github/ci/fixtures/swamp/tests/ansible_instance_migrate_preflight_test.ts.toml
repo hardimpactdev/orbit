@@ -1,0 +1,162 @@
+order = 11
+cases = [
+  "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
+  "broken symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
+  "a link introduced after preparation refuses quiesce with zero downtime and removes only the prepared container",
+  "file targets with directory suffixes refuse before downtime and in the copied tree without repairing links",
+  "the exact archive tree handles absolute link changes after preflight and preserves rollback",
+  "the exact archive tree handles relative link changes after preflight and preserves rollback",
+  "the exact archive tree handles outside link changes after preflight and preserves rollback",
+  "the exact archive tree handles broken link changes after preflight and preserves rollback",
+  "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it",
+  "linked worktree quiesce carries tracked changes made after the container preflight",
+  "a checkout on another branch than the recorded one is refused before anything changes",
+  "a database server that the container cannot reach refuses the move, and the copy leaves nothing behind",
+  "preflight names linked and detached worktrees and every tracked change before any Node change",
+  "retirement error lists stop at 20 entries with total counts",
+  "Schedule preflight refuses missing-service before stopping any timer or Process",
+  "Schedule preflight refuses missing-timer before stopping any timer or Process",
+  "Schedule preflight refuses foreign-service before stopping any timer or Process",
+  "Schedule preflight refuses changed-calendar before stopping any timer or Process",
+  "Schedule preflight refuses masked-timer before stopping any timer or Process",
+  "Schedule preflight refuses activating-service before stopping any timer or Process",
+  "Schedule preflight refuses service-dropin before stopping any timer or Process",
+  "Schedule preflight refuses timer-dropin before stopping any timer or Process",
+  "Schedule preflight refuses foreign-script before stopping any timer or Process",
+  "Schedule preflight refuses foreign-callback before stopping any timer or Process",
+  "Schedule preflight refuses legacy-script-drift before stopping any timer or Process",
+  "Schedule preflight refuses legacy-context-drift before stopping any timer or Process",
+  "Schedule preflight refuses legacy-missing-script before stopping any timer or Process",
+  "Schedule preflight refuses legacy-callback-drift before stopping any timer or Process",
+  "Schedule preflight checks every Schedule before stopping the first timer",
+  "Schedule preflight refuses a absolute-command-symlink that cannot move before downtime",
+  "Schedule preflight refuses a relative-command-symlink that cannot move before downtime",
+  "Schedule preflight refuses a directory-symlink that cannot move before downtime",
+  "Schedule preflight refuses a missing-directory that cannot move before downtime",
+  "Schedule preflight refuses a internal-command-symlink that cannot move before downtime",
+  "Schedule preflight refuses a internal-directory-symlink that cannot move before downtime",
+  "Schedule preflight refuses a extensionless-command-symlink that cannot move before downtime",
+  "Schedule rollback restores all timers after only some source timers stopped",
+  "a copied tracked-file mismatch fails before cutover and rollback preserves the source Git state",
+  "direct bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime",
+  "direct bridge endpoint add with persistent missing-veth failure stays before the migration probe and downtime",
+  "Docker bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime",
+  "Docker bridge endpoint add with persistent missing-veth failure stays before the migration probe and downtime",
+  "0 local Docker DNAT mappings refuse migration before a probe or downtime with the named error",
+  "2 local Docker DNAT mappings refuse migration before a probe or downtime with the named error",
+  "a forced quiesce failure after quiesce restores host ownership and removes every container reservation effect",
+  "a forced workspace failure after quiesce restores host ownership and removes every container reservation effect",
+  "a forced files failure after quiesce restores host ownership and removes every container reservation effect",
+  "a forced processes failure after quiesce restores host ownership and removes every container reservation effect",
+  "a forced seed failure after quiesce restores host ownership and removes every container reservation effect",
+  "an unavailable moved Process executable /opt/custom/tool refuses container preparation before stopping any host writer",
+  "an unavailable moved Process executable /opt/custom/vp refuses container preparation before stopping any host writer",
+  "an unavailable moved Process executable removed runtime refuses quiesce before stopping any host writer",
+  "the binary preflight names every unavailable Process and executable in one refusal",
+  "an unsafe copied app service refuses before downtime and restore changes nothing",
+  "an unreadable copied environment refuses before downtime and restore preserves the source",
+  "stock selector preflight: stock Laravel",
+  "stock selector preflight: real53",
+  "stock selector preflight: selected Redis",
+  "stock selector preflight: attached Redis",
+  "stock selector preflight: wrong Redis port",
+]
+file = "swamp/tests/ansible_instance_migrate_preflight_test.ts"
+self_hosted = true
+# This part of the move fixture runs the container, quiesce, workspace, files, restore or retire phase, but no full move.
+# Case costs keep the measured or estimated values of the single move file; startup is added per slice.
+cost = 3307
+slices = 60
+inputs = [
+  "swamp/tests/_support/instance_migrate.ts",
+  "swamp/ansible/library/orbit_migrate_env.py",
+  "swamp/ansible/templates/instance-migrate-schedule.j2",
+  "swamp/extensions/behaviors/operations/processes-schedules/unit-templates.json",
+  "swamp/ansible/instance_node_services.py",
+  "swamp/ansible/tasks/instance-private-names.yml",
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance-container.yml",
+  "swamp/ansible/instance-migrate.yml",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_migrate_files.py",
+  "swamp/ansible/instance_migrate_links.py",
+  "swamp/ansible/instance_migrate_git.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/tasks/instance-bridge-rules.yml",
+  "swamp/ansible/tasks/instance-container-*.yml",
+  "swamp/ansible/tasks/instance-migrate-*.yml",
+  "swamp/ansible/tasks/instance-network-nic-check.yml",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/instance-migrate*",
+]
+[case_costs]
+"outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 8
+"broken symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 6
+"a link introduced after preparation refuses quiesce with zero downtime and removes only the prepared container" = 31
+"file targets with directory suffixes refuse before downtime and in the copied tree without repairing links" = 67
+"the exact archive tree handles absolute link changes after preflight and preserves rollback" = 66
+"the exact archive tree handles relative link changes after preflight and preserves rollback" = 66
+"the exact archive tree handles outside link changes after preflight and preserves rollback" = 74
+"the exact archive tree handles broken link changes after preflight and preserves rollback" = 74
+"untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it" = 7
+"linked worktree quiesce carries tracked changes made after the container preflight" = 52
+"a checkout on another branch than the recorded one is refused before anything changes" = 10
+"a database server that the container cannot reach refuses the move, and the copy leaves nothing behind" = 40
+"preflight names linked and detached worktrees and every tracked change before any Node change" = 23
+"retirement error lists stop at 20 entries with total counts" = 7
+"Schedule preflight refuses missing-service before stopping any timer or Process" = 18
+"Schedule preflight refuses missing-timer before stopping any timer or Process" = 18
+"Schedule preflight refuses foreign-service before stopping any timer or Process" = 120
+"Schedule preflight refuses changed-calendar before stopping any timer or Process" = 120
+"Schedule preflight refuses masked-timer before stopping any timer or Process" = 120
+"Schedule preflight refuses activating-service before stopping any timer or Process" = 120
+"Schedule preflight refuses service-dropin before stopping any timer or Process" = 120
+"Schedule preflight refuses timer-dropin before stopping any timer or Process" = 120
+"Schedule preflight refuses foreign-script before stopping any timer or Process" = 19
+"Schedule preflight refuses foreign-callback before stopping any timer or Process" = 19
+"Schedule preflight refuses legacy-script-drift before stopping any timer or Process" = 19
+"Schedule preflight refuses legacy-context-drift before stopping any timer or Process" = 19
+"Schedule preflight refuses legacy-missing-script before stopping any timer or Process" = 19
+"Schedule preflight refuses legacy-callback-drift before stopping any timer or Process" = 19
+"Schedule preflight checks every Schedule before stopping the first timer" = 16
+"Schedule preflight refuses a absolute-command-symlink that cannot move before downtime" = 16
+"Schedule preflight refuses a relative-command-symlink that cannot move before downtime" = 16
+"Schedule preflight refuses a directory-symlink that cannot move before downtime" = 15
+"Schedule preflight refuses a missing-directory that cannot move before downtime" = 17
+"Schedule preflight refuses a internal-command-symlink that cannot move before downtime" = 16
+"Schedule preflight refuses a internal-directory-symlink that cannot move before downtime" = 14
+"Schedule preflight refuses a extensionless-command-symlink that cannot move before downtime" = 15
+"Schedule rollback restores all timers after only some source timers stopped" = 27
+"a copied tracked-file mismatch fails before cutover and rollback preserves the source Git state" = 44
+"direct bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime" = 27
+"direct bridge endpoint add with persistent missing-veth failure stays before the migration probe and downtime" = 20
+"Docker bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime" = 27
+"Docker bridge endpoint add with persistent missing-veth failure stays before the migration probe and downtime" = 22
+"0 local Docker DNAT mappings refuse migration before a probe or downtime with the named error" = 13
+"2 local Docker DNAT mappings refuse migration before a probe or downtime with the named error" = 13
+"a forced quiesce failure after quiesce restores host ownership and removes every container reservation effect" = 56
+"a forced workspace failure after quiesce restores host ownership and removes every container reservation effect" = 80
+"a forced files failure after quiesce restores host ownership and removes every container reservation effect" = 81
+"a forced processes failure after quiesce restores host ownership and removes every container reservation effect" = 98
+"a forced seed failure after quiesce restores host ownership and removes every container reservation effect" = 120
+"an unavailable moved Process executable /opt/custom/tool refuses container preparation before stopping any host writer" = 120
+"an unavailable moved Process executable /opt/custom/vp refuses container preparation before stopping any host writer" = 120
+"an unavailable moved Process executable removed runtime refuses quiesce before stopping any host writer" = 120
+"the binary preflight names every unavailable Process and executable in one refusal" = 120
+"an unsafe copied app service refuses before downtime and restore changes nothing" = 59
+"an unreadable copied environment refuses before downtime and restore preserves the source" = 14
+"stock selector preflight: stock Laravel" = 120
+"stock selector preflight: real53" = 120
+"stock selector preflight: selected Redis" = 120
+"stock selector preflight: attached Redis" = 120
+"stock selector preflight: wrong Redis port" = 120

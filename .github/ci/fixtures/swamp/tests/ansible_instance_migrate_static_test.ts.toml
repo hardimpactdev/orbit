@@ -1,0 +1,22 @@
+order = 10
+cases = [
+  "retention keeps real Git edge cases intact",
+  "the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step",
+  "directory modes stay in the protected result and restore through the workspace owner",
+]
+file = "swamp/tests/ansible_instance_migrate_static_test.ts"
+self_hosted = true
+# This part of the move fixture reads the shipped task files only; runs no phase.
+# Case costs keep the measured or estimated values of the single move file; startup is added per slice.
+cost = 7
+slices = 3
+inputs = [
+  "swamp/tests/_support/instance_migrate.ts",
+  "swamp/ansible/tasks/instance-migrate-phase.yml",
+  "swamp/ansible/tasks/instance-migrate-env-check.yml",
+  "bin/swamp-shape-gate",
+]
+[case_costs]
+"retention keeps real Git edge cases intact" = 3
+"the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step" = 2
+"directory modes stay in the protected result and restore through the workspace owner" = 2
