@@ -427,6 +427,23 @@ class RestoreTest(Fixture):
         self.assertEqual(self.kernel.calls, [])
         self.assertEqual(self.incus.actions, ["freeze", "unfreeze"])
 
+    def test_a_run_that_finds_a_recreated_stopped_container_drops_the_old_files_and_a_frozen_one_stays_untouched(self):
+        self.prepare(11)
+        base = os.path.join(self.state, "instances", str(ID))
+        self.incus.status, self.incus.incarnation = "frozen", "uuid-2"
+        self.assertEqual(self.restore(12)["outcome"], "missing", "another frozen incarnation is never touched")
+        self.assertTrue(os.path.isdir(self.plan()))
+        self.assertEqual(self.restore(12, intent=False)["outcome"], "missing", "the fast worker never trusts a stale descriptor")
+        self.incus.status = "stopped"
+        self.assertEqual(self.restore(12, intent=False)["outcome"], "missing", "without the run's intent nothing is rewritten")
+        result = self.restore(13)
+        self.assertEqual((result["outcome"], result["prepared_restore"]["status"]), ("stopped", "not_applicable"))
+        for name in ("plan", "limits.json", "sleep.json"):
+            self.assertFalse(os.path.exists(os.path.join(base, name)), name)
+        with open(os.path.join(base, "target.json")) as handle:
+            self.assertEqual(json.load(handle)["incarnation"], "uuid-2")
+        self.assertEqual(self.kernel.calls, [])
+
     def test_a_changed_boot_id_init_or_incarnation_makes_the_plan_stale_without_memory_calls(self):
         for change in ("boot", "init", "incarnation"):
             with self.subTest(change):

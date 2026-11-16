@@ -39,6 +39,9 @@ final readonly class InstanceWake extends InstancePower
     /** When the wake's run starts anyway if the Gateway never finished the Node's resume (ContainerResume's worst case is about 5 s). */
     public const int SafetyNetSeconds = 15;
 
+    /** The closed reason codes of a wake's `skipped` or `timed_out` restore (docs/reference/prepared-restore.md#wake). */
+    public const array PreparedReasons = ['no_plan', 'plan_invalid', 'plan_stale', 'unsupported', 'placement_unproven', 'deadline'];
+
     /** The run found a nested-fleet container stopped: it boots none, since only a start or a deployment brings back its fleet. */
     public const string NestedStopped = 'instance.nested_fleet_stopped';
 
@@ -123,7 +126,7 @@ final readonly class InstanceWake extends InstancePower
         $status = is_array($prepared) ? ($prepared['status'] ?? null) : null;
         if (in_array($status, [...array_values(ContainerResume::ReadyStatuses), 'not_applicable'], true)) {
             $reason = $prepared['reason'] ?? null;
-            $kept['prepared_restore'] = ['status' => $status, ...(in_array($reason, InstanceSleep::PreparedReasons, true) ? ['reason' => $reason] : [])];
+            $kept['prepared_restore'] = ['status' => $status, ...(in_array($reason, self::PreparedReasons, true) ? ['reason' => $reason] : [])];
             $kept['restore_mode'] = in_array($status, ContainerResume::PreparedStatuses, true) ? 'prepared' : 'ordinary';
         }
         $readyAt = $phase['ready_at'] ?? null;

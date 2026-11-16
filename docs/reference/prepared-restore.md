@@ -232,7 +232,7 @@ A capture that is unsupported, too large or too slow leaves no plan. The sleep c
 | Frozen; plan missing (also after `discard --plan-only`), invalid, stale or unsupported | No memory syscall; unfreezes and closes the limits | `skipped` with a reason |
 | Running | No restore and no resume; closes any recorded limits | `not_applicable` |
 | Stopped | Discards the plan and the limits record; the caller's existing start path and nested-fleet rule decide | `not_applicable` |
-| Missing, or a different incarnation | Touches nothing; the existing not-found or lifecycle error | none |
+| Missing, or a different incarnation | Touches nothing; the existing not-found or lifecycle error. One exception: a run's `restore` that finds a stopped container of another incarnation removes the old plan, limits record, `sleep.json` and descriptor, writes a new descriptor, and goes on as for Stopped, so a recreated container is never blocked | none |
 | Any other state, such as `error` or `freezing` | Touches nothing; `outcome: failed`, `instance.container_start_failed`, with the state it found | none |
 
 **Restore.** The helper opens a pidfd for each process and checks the process's identity again. For each process with work, a worker thread does two passes over the process's ranges, in batches of contiguous iovecs:

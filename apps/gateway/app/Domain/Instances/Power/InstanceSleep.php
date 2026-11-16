@@ -25,7 +25,7 @@ final readonly class InstanceSleep extends InstancePower
 
     /** The closed reason codes of a `skipped` or `unsupported` plan (docs/reference/prepared-restore.md#wake). */
     public const array PreparedReasons = ['no_plan', 'plan_invalid', 'plan_stale', 'unsupported', 'placement_unproven', 'bound_processes',
-        'bound_ranges', 'bound_metadata', 'bound_residency', 'prepare_timeout', 'capture_failed', 'stopped', 'deadline'];
+        'bound_ranges', 'bound_metadata', 'bound_residency', 'prepare_timeout', 'capture_failed', 'stopped'];
 
     protected function kind(): string
     {

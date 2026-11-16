@@ -1073,8 +1073,15 @@ def restore(host, instance_id, operation_id, intent):
     relative = host.container_cgroup(project, name)
     live = host.incus.instance(project, name)
     result["state_before"] = live["status"] if live else "missing"
-    if live is None or (target is not None and target["incarnation"] != live["incarnation"]) or \
-            (target is not None and (target["incus_project"], target["incus_name"]) != (project, name)):
+    other = target is not None and (live is None or target["incarnation"] != live["incarnation"]
+                                    or (target["incus_project"], target["incus_name"]) != (project, name))
+    # A stopped container that a run names holds no memory to protect: files of an earlier incarnation go, so a recreated container is
+    # never blocked. A live process tree of another incarnation is never touched.
+    if live is not None and other and intent is not None and live["status"] == "stopped":
+        for file in ("plan", "limits.json", "sleep.json", "target.json"):
+            remove(os.path.join(base, file))
+        target, other = None, False
+    if live is None or other:
         return dict(result, outcome="missing", state_after=result["state_before"])
     if intent is not None:
         ensure_dir(base)

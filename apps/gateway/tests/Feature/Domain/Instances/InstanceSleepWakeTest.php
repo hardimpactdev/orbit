@@ -214,6 +214,7 @@ it('projects a skipped, unsupported or not applicable plan with its closed reaso
     'no capability' => [['version' => 1, 'status' => 'unsupported', 'reason' => 'unsupported'], ['version' => 1, 'status' => 'unsupported', 'reason' => 'unsupported']],
     'stopped container' => [['version' => 1, 'status' => 'not_applicable'], ['version' => 1, 'status' => 'not_applicable']],
     'unknown reason' => [['version' => 1, 'status' => 'skipped', 'reason' => 'trained_route'], null],
+    'a wake reason' => [['version' => 1, 'status' => 'skipped', 'reason' => 'deadline'], null],
     'ready without its numbers' => [['version' => 1, 'status' => 'ready', 'generation' => 'not-a-uuid'], null],
     'wake status' => [['version' => 1, 'status' => 'complete'], null],
 ]);
@@ -678,6 +679,8 @@ it('keeps the run\'s prepared restore, restore_mode and ready_at, and drops valu
         ['prepared_restore' => ['status' => 'ready', 'reason' => 'whatever'], 'restore_mode' => 'prepared', 'ready_at' => 'yesterday',
             'ready_at_resolution_seconds' => 1],
         []],
+    'a sleep reason is no wake reason' => [['prepared_restore' => ['status' => 'skipped', 'reason' => 'prepare_timeout']],
+        ['prepared_restore' => ['status' => 'skipped'], 'restore_mode' => 'ordinary']],
     'a reason outside the contract' => [['prepared_restore' => ['status' => 'skipped', 'reason' => '/proc/4/maps']],
         ['prepared_restore' => ['status' => 'skipped'], 'restore_mode' => 'ordinary']],
 ]);
