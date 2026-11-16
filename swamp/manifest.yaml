@@ -32,6 +32,7 @@ additionalFiles:
   - ansible/tasks/node-role-runtime.yml
   - ansible/tasks/proof-seed-listener.yml
   - ansible/tasks/proof-seed-listen.yml
+  - ansible/tasks/proof-seed-certificate.yml
   - ansible/tasks/instance-pool-create.yml
   - ansible/tasks/ci-bridge-read.yml
   - ansible/proof-seed-copy.yml
