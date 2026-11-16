@@ -52,7 +52,7 @@ Deno.test("every workflow step that runs instance-container.yml names its Operat
 });
 
 Deno.test("a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet", () => {
-    const context = { inputs: { node_id: 9, intent: {}, execution_secrets: { club_key: { vault: "orbit-control-inputs", key: "nested-fleet-club-api-key" } } },
+    const context = { inputs: { node_id: 9, operation_id: 31, intent: {}, execution_secrets: { club_key: { vault: "orbit-control-inputs", key: "nested-fleet-club-api-key" } } },
         steps: { input: { status: "succeeded", outputs: { assets: shipped } } }, run: { id: runId } };
     const vault = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false })
         .registerFunction("vaultget(dyn, dyn): string", (v: unknown, k: unknown) => `${v}/${k}`);
@@ -74,7 +74,7 @@ Deno.test("a nested-fleet clone's start runs the deployment's start with the Clu
     assertEquals(fleet.dependsOn?.[0].step, "Start the container");
     for (const step of [container, fleet]) {
         const env = Object.fromEntries(Object.entries(step.task.inputs.env!).map(([key, value]) => [key, evaluate(value)]));
-        assertEquals([env.ANSIBLE_CONFIG, env.ORBIT_ANSIBLE, env.ORBIT_RUN_ID], [`${shipped}/ansible.cfg`, shipped, runId]);
+        assertEquals([env.ANSIBLE_CONFIG, env.ORBIT_ANSIBLE, env.ORBIT_RUN_ID, env.ORBIT_OPERATION_ID], [`${shipped}/ansible.cfg`, shipped, runId, "31"]);
         assert(evaluate(step.task.behaviorName!).endsWith("-9"), step.name);
     }
 });

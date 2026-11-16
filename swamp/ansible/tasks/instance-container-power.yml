@@ -12,6 +12,12 @@
     fail_msg: The sleep intent names no `route`; the Gateway always sends it.
     quiet: true
 
+# The helper of this commit, so the run never depends on when the role last converged (docs/reference/prepared-restore.md). It comes
+# before the Caddy check and the marker: a failed install or probe changes nothing that a visitor sees.
+- name: Install the power helper
+  when: power == 'prepared_sleep'
+  ansible.builtin.include_tasks: { file: instance-power-helper.yml, apply: {tags: [always]} }
+
 - name: Read Caddy's loaded configuration
   when: power == 'prepared_sleep' and intent.route
   ansible.builtin.uri:
@@ -41,11 +47,6 @@
     group: "{{ marker_group }}"
     mode: "0644"
 
-# The helper of this commit, so the run never depends on when the role last converged (docs/reference/prepared-restore.md).
-- name: Install the power helper
-  when: power == 'prepared_sleep'
-  ansible.builtin.include_tasks: { file: instance-power-helper.yml, apply: {tags: [always]} }
-
 # The helper reads the container's state first. Running: it opens swap on each cgroup of the subtree that holds 0 and records it, pauses,
 # records the plan of every process's resident pages, and reclaims once. Frozen by an earlier sleep: it changes nothing and returns that
 # sleep's result. Stopped: it stays stopped. A failed swap write or pause closes what it opened: the container serves as before.
@@ -70,36 +71,27 @@
   ansible.builtin.fail: { msg: "{{ sleep_prepared.error_code | default('instance.container_freeze_failed', true) }}" }
 
 # Each call reads memory.stat once and stores the anonymous and file bytes in the sleep's result; the kernel's counters settle across
-# CPUs a moment after the reclaim, so the phase reads them until both are 0, at most 20 times (`retries` counts the reads after the first). The last read is what stays in RAM.
+# CPUs a moment after the reclaim, so the phase reads them through the one call task until both are 0, at most 20 times, 0.1 s apart.
+# The last read is what stays in RAM. A lock that stays busy fails `instance.power_helper_busy` and a crash `instance.power_helper_failed`,
+# with the container frozen behind its marker.
 - name: Settle the frozen container's counters
   when: power == 'prepared_sleep' and sleep_prepared.outcome == 'frozen'
-  ansible.builtin.command:
-    argv: >-
-      {{ ['systemd-run', '--unit=orbit-instance-power-' ~ container.instance_id, '--wait', '--pipe', '--collect', '--quiet',
-          '/usr/local/libexec/orbit-instance-power', 'residual', '--instance', container.instance_id | string, '--operation', operation_id] }}
-  register: sleep_residual
-  until: >-
-    sleep_residual.rc == 0 and (sleep_residual.stdout | from_json).outcome == 'recorded'
-    and (sleep_residual.stdout | from_json).prepared_restore.residual_anon_bytes == 0
-    and (sleep_residual.stdout | from_json).prepared_restore.residual_file_bytes == 0
-  retries: 19
-  delay: 0.1
-  changed_when: false
-  failed_when: false
+  ansible.builtin.include_tasks: { file: instance-power-call.yml, apply: {tags: [always]} }
+  vars:
+    power_call: ['residual', '--instance', '{{ container.instance_id }}', '--operation', '{{ operation_id }}']
+    power_call_retries: 19
+    power_call_delay: 0.1
+    power_call_settled: >-
+      {{ (power_call_run.stdout | from_json).outcome != 'recorded'
+         or ((power_call_run.stdout | from_json).prepared_restore.residual_anon_bytes == 0
+             and (power_call_run.stdout | from_json).prepared_restore.residual_file_bytes == 0) }}
 
-- name: Refuse a sleep whose counter read crashed
-  when: >-
-    power == 'prepared_sleep' and sleep_prepared.outcome == 'frozen' and sleep_residual.rc != 0
-    and (sleep_residual.stdout != '' or 'already loaded or has a fragment file' not in sleep_residual.stderr)
-  ansible.builtin.fail: { msg: instance.power_helper_failed }
-
-# A read the lock kept busy each time leaves the residual unknown: the container stays frozen, as when the count was unreadable.
 - name: Note what stayed in RAM
   when: power == 'prepared_sleep'
   ansible.builtin.set_fact:
     sleep_prepared_restore: >-
-      {{ (sleep_residual.stdout | from_json).prepared_restore
-         if sleep_residual is not skipped and sleep_residual.rc == 0 and (sleep_residual.stdout | from_json).outcome == 'recorded'
+      {{ power_called.prepared_restore
+         if sleep_prepared.outcome == 'frozen' and power_called.outcome == 'recorded'
          else sleep_prepared.prepared_restore }}
 
 # Swap that cannot take the memory (it is full) leaves the app in RAM. A frozen container would then hold that RAM, which a sleep

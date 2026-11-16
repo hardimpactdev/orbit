@@ -5,7 +5,9 @@
 # The Operation is the run's ORBIT_OPERATION_ID. A busy lock is only systemd's UnitExists refusal with nothing on stdout: it is tried 40 times in
 # all, 0.25 s apart (`retries` counts the tries after the first), then fails `instance.power_helper_busy`. Any other nonzero end is
 # a crash: it fails `instance.power_helper_failed` and is never tried again. Each failure leaves the asleep marker as it is.
-# `power_called` is the helper's one JSON result.
+# A caller that reads until a condition holds passes `power_call_settled` (an expression on `power_call_run`), `power_call_retries`
+# and `power_call_delay`: the same task then also tries again while the helper answers but the condition does not hold yet, and the
+# last answer stands. `power_called` is the helper's one JSON result.
 - name: Call the power helper
   ansible.builtin.command:
     argv: >-
@@ -14,9 +16,11 @@
     stdin: "{{ (power_intent | to_json) if power_call_intent | default(false) else '' }}"
     stdin_add_newline: false
   register: power_call_run
-  until: power_call_run.rc == 0 or power_call_run.stdout != '' or power_busy not in power_call_run.stderr
-  retries: 39
-  delay: 0.25
+  until: >-
+    (power_call_run.rc == 0 or power_call_run.stdout != '' or power_busy not in power_call_run.stderr)
+    and (power_call_run.rc != 0 or power_call_settled | default(true) | bool)
+  retries: "{{ power_call_retries | default(39) }}"
+  delay: "{{ power_call_delay | default(0.25) }}"
   # Every command changes the container's state except a `discard` that found nothing.
   changed_when: power_call_run.rc != 0 or (power_call_run.stdout | from_json).removed | default(true)
   failed_when: false
