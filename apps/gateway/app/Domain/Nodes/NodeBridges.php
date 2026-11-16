@@ -9,8 +9,7 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 
 /**
- * The bridge networks the fleet records: each task VM host's task bridges in Node `settings.task_vms`, each Node's
- * Instance bridge, and each Node's CI bridge `orbitci0` as its ci-runner converge read it. No Instance bridge overlaps another of them
+ * The bridge networks the fleet records: each Node's Instance bridge and each Node's CI bridge `orbitci0` as its ci-runner converge read it. No Instance bridge overlaps another of them
  * (docs/reference/development-containers.md#nodes).
  */
 final readonly class NodeBridges
@@ -19,31 +18,15 @@ final readonly class NodeBridges
     public const string CiBridgeStep = 'Read the CI bridge';
 
     /**
-     * The task bridges of stored task VM host settings: `cidr` and `containers.cidr`.
-     *
-     * @param  array<array-key, mixed>  $host
-     * @return list<string>
-     */
-    public static function taskBridges(array $host): array
-    {
-        $containers = is_array($host['containers'] ?? null) ? $host['containers'] : [];
-
-        return array_values(array_filter([$host['cidr'] ?? null, $containers['cidr'] ?? null], is_string(...)));
-    }
-
-    /**
-     * Every recorded bridge: each Node's Instance bridge and CI bridge and each host's task bridges, without the task bridges of
-     * `$replacing`, a Node whose task VM host settings are being replaced.
+     * Every recorded bridge: each Node's Instance bridge and CI bridge.
      *
      * @return list<string>
      */
-    public static function recorded(?int $replacing = null): array
+    public static function recorded(): array
     {
         $bridges = [];
-        foreach (Node::query()->get(['id', 'settings', 'instance_bridge', 'ci_bridge']) as $node) {
-            $stored = $node->settings;
-            $host = $node->id !== $replacing && is_array($stored) && is_array($stored['task_vms'] ?? null) ? $stored['task_vms'] : [];
-            $bridges = [...$bridges, ...self::taskBridges($host), ...array_values(array_filter([$node->instance_bridge, $node->ci_bridge], is_string(...)))];
+        foreach (Node::query()->get(['instance_bridge', 'ci_bridge']) as $node) {
+            $bridges = [...$bridges, ...array_values(array_filter([$node->instance_bridge, $node->ci_bridge], is_string(...)))];
         }
 
         return $bridges;

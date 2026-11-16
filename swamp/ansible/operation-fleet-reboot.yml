@@ -124,13 +124,9 @@
           ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
           vars:
             record_update: { drain_started: true }
-        # CI first: a busy runner defers the Node before any task guest stops.
         - name: Drain the CI runners
           ansible.builtin.import_tasks: tasks/fleet-reboot-drain-ci.yml
           when: target.ci_project is not none
-        - name: Drain the task guests
-          ansible.builtin.import_tasks: tasks/fleet-reboot-drain-tasks.yml
-          when: target.task_project is not none
         - name: Drain the Gateway
           ansible.builtin.import_tasks: tasks/fleet-reboot-drain-gateway.yml
           when: target.gateway is not none
