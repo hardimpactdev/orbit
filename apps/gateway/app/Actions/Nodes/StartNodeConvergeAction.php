@@ -7,6 +7,7 @@ namespace App\Actions\Nodes;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Nodes\NodeConvergeScope;
 use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeNetworkReservation;
@@ -16,13 +17,13 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
 
-/** Admission and immutable intent only. Every new attempt runs every phase. */
+/** Admission and immutable intent only. Each phase runs unless its digest equals the Node's record (NodeConvergePhaseDigest). */
 final readonly class StartNodeConvergeAction
 {
     public function __construct(private ManagedNodeEligibility $eligibility, private StartOperationAction $operations) {}
 
     /** @param list<string>|null $roles */
-    public function execute(Node $node, bool $base = false, ?array $roles = null, ?string $requestId = null): Operation
+    public function execute(Node $node, bool $base = false, ?array $roles = null, ?string $requestId = null, bool $full = false): Operation
     {
         $verifier = $node->agent_secret_hash;
         if (! $this->eligibility->allows($node) || ! is_string($verifier) || preg_match('/\A[0-9a-f]{64}\z/D', $verifier) !== 1) {
@@ -33,7 +34,9 @@ final readonly class StartNodeConvergeAction
             return $existing;
         }
 
-        return app(NodeNetworkReservation::class)->hold($node, $base, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId): Operation {
+        return app(NodeNetworkReservation::class)->hold($node, $base, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId, $full): Operation {
+            // Read before the admission clears the record; a holder refuses this admission, so nothing writes it in between.
+            $recorded = app(NodeConvergePhaseDigest::class)->recorded($node->fresh() ?? $node, $full);
             $operation = $this->operations->execute('node.converge', 'node', $node->id, $node->id,
                 ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base]],
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
@@ -46,6 +49,7 @@ final readonly class StartNodeConvergeAction
                     app(InstanceHostIntent::class)->prepare($node);
                 }
                 $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $hub);
+                $snapshot['intent'] = app(NodeConvergePhaseDigest::class)->stamp($snapshot['intent'], $recorded);
                 // Dispatch is deferred until this reservation transaction commits.
                 $operation->input = [...$operation->input, '_converge' => [
                     ...$snapshot, 'network' => ['hub_id' => $hub?->id, 'base' => $base],

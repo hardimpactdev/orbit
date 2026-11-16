@@ -257,6 +257,10 @@ The copy rules are one fixed text, the same for the implementer and the reviewer
 
 For a group with a task copy, `task:publish <group>` without `--check` publishes the group's done check, as [Release a waiting group](#release-a-waiting-group) describes. The JSON input is then `{}`.
 
+For a group with a task copy and no pull request, `--check` without `pull_request` opens the pull request in the same Operation when the check is the group's [done check](#when-the-work-is-done) and the reviewer sent its [text](#the-reviewers-pull-request-text). The Gateway then publishes exactly what the release publishes: the reviewer's title and body, a ready pull request, and the done check read again under the group lock. So one `task:publish <group> --check=<id>` after the approval opens the pull request of a `review_before_pr` group.
+
+Any other check only pushes: one that is not the done check, such as a newer check the reviewer has not approved, and the done check while the reviewer's newest turn sent no text. The Operation's input and its result then name why in `pull_request_withheld`; the run's intent never carries it. A group that has its pull request only pushes, as before.
+
 The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
 
 A step of the run asks the Gateway for the token right before the push (`operation:direct:github-token`, with the run id), so the token is fresh whenever the run reaches that step. The Gateway checks the Operation, the run and the repository. It mints a token for that one repository with `contents: write` and `pull_requests: write`, and writes the two values. The token has no `workflows` permission, so it cannot push a change under `.github/workflows/`. Its Activity row names the repository and these two permissions. The reply holds vault descriptors only.
@@ -327,7 +331,7 @@ The program prints one line of evidence. It names paths, line numbers and secret
 | Private keys | A `-----BEGIN … PRIVATE KEY-----` block with 100 or more base64 characters. A short test stub passes |
 | Same objects | The worker's content check refuses unless its object digest equals the copy check's |
 
-A plain copy has no outer or inner secrets, so it checks only for private keys. The check does not judge workflow changes: a copy's remote branches show the last main it synced, not the default branch head on GitHub. [The base of a copy publish](#the-base-of-a-copy-publish) judges them from the merge base with that head.
+A plain copy has no outer or inner secrets, so it checks only for private keys. The check does not judge workflow changes: a copy's remote branches show the main that its last sync or [handoff check](#the-handoff-check-merges-main-first) brought in, not the default branch head on GitHub at publish. [The base of a copy publish](#the-base-of-a-copy-publish) judges them from the merge base with that head.
 
 A secret refuses with `tasks.publish_secret_value`. The publish result lists the items in `refused`: `path:line secret-name`. `refused_more` counts the rest. An error refuses with `tasks.publish_secret_unchecked`. So does a nested-fleet copy that shows no inner machine. In each case nothing is pushed. A hit in a file name names the folder that holds it, and a path that holds a value is never printed.
 
@@ -361,6 +365,8 @@ These fields join the result. With `--title` and `--body`, the pull request body
 
 The body stays within its 65,536-character limit: when the path list does not fit, the section names only their count, and when the section does not fit at all, the body has none; the result states the base either way.
 
+A copy's handoff check already [merged the head it judged against](#the-handoff-check-merges-main-first). So when the default branch did not move since that check, the publish reads `behind_by` 0 and pushes the checked merge commit itself. A conflict that a busy main brings shows up at the check, before review, not at publish.
+
 A task VM publish states no base. A run that started on the workflow before this step has none of the fields and no `## Base` section.
 
 The base read also judges workflow changes. It lists the copy's own: the paths under `.github/workflows/` that the checked commit changed since the merge base, `git diff --name-only <base> <commit>`, which is `git diff <default>...<commit>`. A commit that the default branch already holds is never a change of the copy, whether [`task:sync`](#bring-main-into-a-copy) brought it, even from a main newer than the last release, or it was carried in by hand. A workflow change of the copy that a later commit undoes is no change either. A merge that keeps the copy's own version of a workflow that the default branch changed is a change of the copy.
@@ -379,6 +385,8 @@ When the own list is empty, the trees under `.github/workflows/` of the fetched 
 - its author and committer are `Orbit <orbit@users.noreply.github.com>`.
 
 The push sends that merge instead of the checked commit, so the branch's workflows equal the default branch's. `merged_default` names the head. The publication record keeps `commit`, the checked commit. A copy whose workflows already equal the default branch's pushes the checked commit itself, as before.
+
+The handoff check merges the head of its time first, so this merge stays only for a default branch that moved after the check.
 
 ###### A republish
 
@@ -966,10 +974,10 @@ Copies of several groups can share a Node, and their checks, publishes and syncs
 | Step | Behavior | Runs up to |
 | --- | --- | --- |
 | The workspace phase of a publish: preflight, export, discard | `task-workspace-<node>-<group>` | 1,800 s |
-| The check, commit and commit-ref phases of a copy's check | `task-instance-check-<node>-<group>` | 10,800 s, 600 s, 600 s |
+| The base-merge, check, commit and commit-ref phases of a copy's check | `task-instance-check-<node>-<group>` | 900 s, 10,800 s, 600 s, 600 s |
 | The `.env` content check, the import and the push of a publish on 209 | `task-publish-content-<node>-<group>`, `task-publish-import-<node>-<group>`, `task-publish-push-<node>-<group>` | 240 s, 60 s, 60 s |
 | The clone and bundle of a sync on 209 | `task-sync-clone-<group>`, `task-sync-bundle-<group>` | 180 s, 60 s |
-| The base phase of a copy's sync, on its Node | `task-copy-base-<node>-<group>` | 600 s |
+| The base phase of a copy's sync or handoff check, on its Node | `task-copy-base-<node>-<group>` | 600 s |
 
 One group never runs two of these at once, because the Gateway admits one task Operation of a group at a time. Every other step keeps its name by Node or one shared name. It runs 30 seconds or less, such as `ansible-input` and the evidence and cleanup steps, or only on a task VM, whose Node holds one group at a time. Swamp keeps each name as a definition for good, so only these steps get one per group. A publish that still fails on a behavior lock is retried, as [A refused automatic publish](#a-refused-automatic-publish) describes.
 
@@ -997,6 +1005,28 @@ The source is the Project's repository, for every Project. When that is Orbit's 
 | Container | Refused with `tasks.instance_not_running` when the copy's container does not run |
 | Credential | Minted per run; it is the environment of the Node's one fetch and is never written, so a killed run leaves none |
 | Workflow | The Gateway starts `operation-task-sync-copy`. `operation-task-sync` served the removed task VMs; the Gateway starts it no more. Swamp resolves every step's inputs at run start, so each reads only its intent's keys |
+
+#### The handoff check merges main first
+
+The handoff check of a copy judges the tree that publish will push. Its run first runs the same `base` phase as the sync, through the same child workflow, `task-copy-base`. It has its own read token under the same rules. The Gateway mints it as the run starts, and the Node's one fetch reads it as a Git header through stdin. The copy never holds it. Then, as `agent` in the copy, the run merges with `git merge-tree --write-tree HEAD refs/remotes/origin/<default branch>`:
+
+| Case | What happens |
+| --- | --- |
+| HEAD holds the head | Nothing. `merged_default` is null |
+| Clean merge | Any uncommitted work is committed first, so nothing is lost. Then one merge commit, described below. The check runs on that tree |
+| Conflict | The check fails at once with `tasks.check_conflict` and the conflicting paths. The long parts do not run, and the workspace is left exactly as it was |
+| Base unavailable | A failed base phase does not block the check. It runs on the tree as it is, and the result says `base: unavailable` |
+| Merge refused | The check fails with `tasks.workspace_phase_failed` and changes nothing |
+
+The merge commit has the parents HEAD, then the head. Its message is `Merge main <full sha> before the check`, and its author and committer are `Orbit <orbit@users.noreply.github.com>`, as at publish. A conflict lists at most 100 paths in at most 3,000 bytes in `conflicting_paths`, and `conflicting_more` counts the rest. The implementer merges by hand in the next turn, while the subtask is still open. A base fails when the mirror or GitHub is down; `base_reason` then names the reason.
+
+The run checks every refusal before it changes the copy. It builds the work commit and the merge commit as objects that no ref names. It refuses when the merge would add a file where an untracked or ignored file lies, because Git would overwrite that file. Only then does it update the working tree, the index and the branch. A hand merge that is resolved but not committed reads as the work alone, so it conflicts again: commit the merge, then check.
+
+After the merge step succeeds, HEAD holds the default head. The check then compares file deliverables and `fails_on_base` runs with the subtask's start plus that head, not with the bare start. It does so whether this check merged the head or HEAD held it already, from an earlier check or a sync and a hand merge. So the default branch's own changes never count as the subtask's work. A conflict, or a check without a base, keeps the bare start.
+
+A Project without a GitHub repository or a valid default branch brings in no base, and its result names none of these fields.
+
+The result names `default_commit`, the head the check judged against, and `merged_default`, the head it merged or null, so the driver and the reviewer see the base. `base` is `current` when the head was brought in. Only the copy's own workflow changes refuse at publish: the default branch's workflow changes that this merge brings in are never the copy's ([The base of a copy publish](#the-base-of-a-copy-publish)). A baseline check and a task VM check bring in no base.
 
 A task VM keeps its own path, which fetches both branches on 209 and copies one bundle over SSH. Task VMs get no new work.
 
@@ -1356,6 +1386,8 @@ A group can name the GitHub issue it works on: [`task:create --issue=<number>`](
 ### Release a waiting group
 
 `task:publish <group>` without `--check`, `--title` and `--body` publishes what the automatic publish would: the done check, the reviewer's title and body, and a ready pull request. It refuses with `tasks.not_done` (409) when the group's work is not done, and with `tasks.pr_text_missing` (409) when the group waits for its text. It also releases a group in `refused` after the cause is fixed. The form with `--check` stays as [Publish an external group](#publish-an-external-group) describes. A group without a task copy has no done check: without `--check`, its publish keeps the validation error (422) on `check`.
+
+On a group that has its pull request, the same call publishes the done check again: a republish. The work must be done by every other rule of [When the work is done](#when-the-work-is-done): the newest handoff check is the last subtask's, and the reviewer approved its commit. The publish pushes that check to the pull request's branch with no pull request text, so the open pull request keeps its title and body and shows the new commits. The tick never republishes: it publishes only a group without a pull request.
 
 The admission reads done again inside its transaction, after it locks the group's row. A subtask added or a turn started since the first read refuses with `tasks.not_done`. For the automatic publish it also reads the mode again there: a group or done check outside `pr_when_done` refuses the same way.
 

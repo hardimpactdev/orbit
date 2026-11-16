@@ -288,7 +288,7 @@ class CheckHarness(unittest.TestCase):
         check = check or self.check
         workspace = check['workspace']
         return {'runtime': workspace['runtime'], 'branch': workspace['branch'], 'snapshot_id': workspace['snapshot_id'],
-                'operation_id': CHECK['operation_id'], 'ssh_execution': check['ssh_execution'], 'check': check, **extra}
+                'operation_id': CHECK['operation_id'], 'ssh_execution': check['ssh_execution'], 'check': check, 'default_commit': '', **extra}
 
     def behavior(self, module, method, args):
         file = self.root / ('args-' + method + '.json')

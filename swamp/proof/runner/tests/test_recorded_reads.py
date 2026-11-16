@@ -57,10 +57,11 @@ class RecordedReadsTest(unittest.TestCase):
     def test_repeat_case_requires_a_bounded_no_op_only_on_the_second_operation(self):
         root = Path(__file__).resolve().parents[4]
         converge = spec.load(root / 'swamp/proof/node/converge.cases.yaml', runner.BATCHES)
-        repeat = converge.case('repeat')
+        # The repeat is the second stage of the default-scope case, which waits for the ID map window.
+        repeat = converge.waiting['default-scope']
         operation = {'id': 17, 'status': 'succeeded', 'steps': [{'name': 'Check the Node', 'status': 'succeeded'}]}
         self.run.cli = Mock(return_value={'rc': 0, 'json': operation})
-        first, second = [stage.act[0].args['expect'] for stage in repeat.stages]
+        first, second = [stage.act[0].args['expect'] for stage in repeat.stages[:2]]
 
         def check(expect, result):
             return steps.check_result(self.run, 'cli node:converge', 'json', ['json'],

@@ -19,8 +19,8 @@ use SensitiveParameter;
 use Throwable;
 
 /**
- * Reads GitHub Actions runs, jobs and artifacts of one repository with an installation token of the
- * Gateway GitHub App that holds only Actions read.
+ * Reads GitHub Actions workflows, runs, jobs and artifacts of one repository with an installation token of the
+ * Gateway GitHub App that holds only Actions read, and workflow files with one that holds only Contents read.
  * Artifact archives are downloaded from the
  * storage URL GitHub redirects to, without the token. Every failure is a
  * {@see GitHubActionsUnavailable} without detail, so no token or signed URL reaches an error.
@@ -46,8 +46,8 @@ final readonly class GitHubActionsReader
         return '/repos/'.rawurlencode($repository->owner).'/'.rawurlencode($repository->name);
     }
 
-    /** A separate token that holds only Actions read. */
-    public function token(GitHubRepository $repository): string
+    /** A separate token that holds only one read permission, Actions read unless another is named. */
+    public function token(GitHubRepository $repository, string $permission = 'actions'): string
     {
         $credentials = $this->apps->credentials();
 
@@ -69,13 +69,13 @@ final readonly class GitHubActionsReader
         }
 
         $access = $this->json('/app/installations/'.$id.'/access_tokens', $jwt, [
-            'repositories' => [$repository->name], 'permissions' => ['actions' => 'read'],
+            'repositories' => [$repository->name], 'permissions' => [$permission => 'read'],
         ]);
         $token = $access['token'] ?? null;
         $permissions = $access['permissions'] ?? null;
 
         if (! is_string($token) || $token === '' || ! is_array($permissions)
-            || ($permissions['actions'] ?? null) !== 'read') {
+            || ($permissions[$permission] ?? null) !== 'read') {
             throw new GitHubActionsUnavailable;
         }
 
@@ -101,49 +101,110 @@ final readonly class GitHubActionsReader
         return $data;
     }
 
-    /**
-     * The workflow runs created since `$since`, newest first, from at most `$pages` pages. `truncated` is true when the window holds
-     * more runs than those pages.
-     *
-     * @return array{runs: list<array<array-key, mixed>>, truncated: bool}
-     *
-     * @throws GitHubActionsUnavailable
-     */
-    public function workflowRuns(GitHubRepository $repository, #[SensitiveParameter] string $token, DateTimeInterface $since, int $pages): array
-    {
-        $from = DateTimeImmutable::createFromInterface($since)->setTimezone(new DateTimeZone('UTC'));
-        $query = ['created' => '>='.$from->format('Y-m-d\TH:i:s\Z'), 'exclude_pull_requests' => 'true'];
-        [$runs, $total] = $this->pages(self::repositoryPath($repository).'/actions/runs', $query, 'workflow_runs', $token, $pages);
-
-        return ['runs' => $runs, 'truncated' => $total > count($runs)];
-    }
+    /** GitHub gives at most this many runs for one run list query that filters by `created`. */
+    public const int RunQueryLimit = 1000;
 
     /**
-     * The jobs of a run's latest attempt, from at most `$pages` pages.
+     * The workflows of the repository: each one's `id` and `path`.
      *
      * @return list<array<array-key, mixed>>
      *
      * @throws GitHubActionsUnavailable
      */
-    public function runJobs(GitHubRepository $repository, #[SensitiveParameter] string $token, int $runId, int $pages = 3): array
+    public function workflows(GitHubRepository $repository, #[SensitiveParameter] string $token): array
     {
-        return $this->pages(self::repositoryPath($repository).'/actions/runs/'.$runId.'/jobs', ['filter' => 'latest'], 'jobs', $token, $pages)[0];
+        return $this->pages(self::repositoryPath($repository).'/actions/workflows', [], 'workflows', $token)[0];
     }
 
     /**
-     * The entries of a paged list until a short page, the last page GitHub counts, or `$pages` pages.
+     * The text of a file on the default branch, read with a `contents: read` token, or null when the branch has no such file or
+     * GitHub does not give its content, as for a file over 1 MB.
+     *
+     * @throws GitHubActionsUnavailable
+     */
+    public function file(GitHubRepository $repository, #[SensitiveParameter] string $token, string $path): ?string
+    {
+        try {
+            $data = $this->json(self::repositoryPath($repository).'/contents/'.implode('/', array_map(rawurlencode(...), explode('/', $path))), $token);
+        } catch (GitHubActionsUnavailable $exception) {
+            if ($exception->status === 404) {
+                return null;
+            }
+
+            throw $exception;
+        }
+
+        if (($data['encoding'] ?? null) !== 'base64') {
+            return null;
+        }
+
+        $text = is_string($data['content'] ?? null) ? base64_decode($data['content'], true) : false;
+
+        if (! is_string($text)) {
+            throw new GitHubActionsUnavailable(invalid: true);
+        }
+
+        return $text;
+    }
+
+    /**
+     * Every run of one workflow created from `$since` to `$until`, newest first. GitHub answers a query that filters by `created`
+     * with at most {@see self::RunQueryLimit} runs, so a longer window is read in halves until each half fits.
+     *
+     * @return list<array<array-key, mixed>>
+     *
+     * @throws GitHubActionsUnavailable
+     */
+    public function workflowRuns(GitHubRepository $repository, #[SensitiveParameter] string $token, int $workflowId, DateTimeInterface $since, DateTimeInterface $until): array
+    {
+        $utc = new DateTimeZone('UTC');
+        $from = DateTimeImmutable::createFromInterface($since)->setTimezone($utc);
+        $to = DateTimeImmutable::createFromInterface($until)->setTimezone($utc);
+        $query = ['created' => $from->format('Y-m-d\TH:i:s\Z').'..'.$to->format('Y-m-d\TH:i:s\Z'), 'exclude_pull_requests' => 'true'];
+        $path = self::repositoryPath($repository).'/actions/workflows/'.$workflowId.'/runs';
+        [$runs, $total] = $this->pages($path, $query, 'workflow_runs', $token, self::RunQueryLimit);
+
+        if ($total <= self::RunQueryLimit) {
+            return $runs;
+        }
+
+        $seconds = $to->getTimestamp() - $from->getTimestamp();
+        if ($seconds < 2) {
+            throw new GitHubActionsUnavailable(invalid: true);
+        }
+        $middle = $from->modify('+'.intdiv($seconds, 2).' seconds');
+
+        return [...$this->workflowRuns($repository, $token, $workflowId, $middle->modify('+1 second'), $to),
+            ...$this->workflowRuns($repository, $token, $workflowId, $from, $middle)];
+    }
+
+    /**
+     * Every job of a run's latest attempt.
+     *
+     * @return list<array<array-key, mixed>>
+     *
+     * @throws GitHubActionsUnavailable
+     */
+    public function runJobs(GitHubRepository $repository, #[SensitiveParameter] string $token, int $runId): array
+    {
+        return $this->pages(self::repositoryPath($repository).'/actions/runs/'.$runId.'/jobs', ['filter' => 'latest'], 'jobs', $token)[0];
+    }
+
+    /**
+     * The entries of a paged list until GitHub's `total_count` is reached or a short page. It stops after the first page when the
+     * `total_count` passes `$most`.
      *
      * @param  array<string, string>  $query
      * @return array{0: list<array<array-key, mixed>>, 1: int} the entries and GitHub's `total_count`
      *
      * @throws GitHubActionsUnavailable
      */
-    private function pages(string $path, array $query, string $field, #[SensitiveParameter] string $token, int $pages): array
+    private function pages(string $path, array $query, string $field, #[SensitiveParameter] string $token, int $most = PHP_INT_MAX): array
     {
         $entries = [];
         $total = 0;
 
-        for ($page = 1; $page <= $pages; $page++) {
+        for ($page = 1; ; $page++) {
             $data = $this->json($path.'?'.http_build_query([...$query, 'per_page' => self::PerPage, 'page' => $page]), $token, limit: self::ListBytes);
             $rows = $data[$field] ?? null;
             $total = $data['total_count'] ?? null;
@@ -159,7 +220,7 @@ final readonly class GitHubActionsReader
                 $entries[] = $row;
             }
 
-            if (count($rows) < self::PerPage || count($entries) >= $total) {
+            if (count($rows) < self::PerPage || count($entries) >= $total || $total > $most) {
                 break;
             }
         }

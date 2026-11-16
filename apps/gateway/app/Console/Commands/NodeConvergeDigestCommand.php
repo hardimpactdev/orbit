@@ -11,9 +11,10 @@ use App\Support\ValidatedData;
 use Illuminate\Console\Command;
 
 /**
- * Prints the digest of each named Node's base converge intent as one JSON object, `{"<name>": "<sha256>"}`. It builds the intent
- * as `node.converge` with `base: true` does, but makes no execution copy, admits no Operation and writes nothing. The nested-fleet
- * refresh runs it in the nested Gateway: an unchanged digest is one input of its skipped converge
+ * Prints the digest of each named Node's converge intent as one JSON object, `{"<name>": "<sha256>"}`. Without `--base` it is the digest of
+ * the default converge intent (NodeDesiredConvergeInput::defaultDigest); with `--base`, the digest of the base intent. It makes no
+ * execution copy, admits no Operation and writes nothing. The nested-fleet refresh runs it in the nested Gateway: an unchanged digest is
+ * one input of its skipped converge
  * (docs/reference/development-containers.md#what-a-refresh-skips). With `--host=<name>` it also prints, as `host`, the digest of that Node's
  * Instance host intent (InstanceHostIntent::digest), or an empty string when the Node has none yet.
  */
@@ -22,19 +23,14 @@ final class NodeConvergeDigestCommand extends Command
     #[\Override]
     protected $signature = 'orbit:node-converge-digest
         {nodes* : Node names}
-        {--base : The base converge, the only scope it prints}
+        {--base : The base converge instead of the default one}
         {--host= : The Node whose Instance host intent digest it also prints, as host}';
 
     #[\Override]
-    protected $description = 'Print the digest of the base converge intent of each named Node, without admitting anything.';
+    protected $description = 'Print the digest of the default or base converge intent of each named Node, without admitting anything.';
 
     public function handle(NodeDesiredConvergeInput $input): int
     {
-        if (! $this->option('base')) {
-            $this->error('Only the base converge has a digest: pass --base.');
-
-            return self::FAILURE;
-        }
         $digests = [];
         foreach (ValidatedData::stringList($this->argument('nodes')) as $name) {
             $node = Node::query()->where('name', $name)->first();
@@ -44,9 +40,9 @@ final class NodeConvergeDigestCommand extends Command
                 return self::FAILURE;
             }
             try {
-                $digests[$name] = $input->baseDigest($node);
+                $digests[$name] = $this->option('base') ? $input->baseDigest($node) : $input->defaultDigest($node);
             } catch (\Throwable $exception) {
-                $this->error("The base intent of {$name} cannot be built: ".$exception::class);
+                $this->error("The converge intent of {$name} cannot be built: ".$exception::class);
 
                 return self::FAILURE;
             }

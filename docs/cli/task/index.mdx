@@ -42,7 +42,7 @@ To inspect resource use on the task's Node, use [`node:metrics`](/cli/node/metri
 | [`task:turn`](/cli/task/turn) | Run one agent turn on an external task group. |
 | [`task:check`](/cli/task/check) | Run a baseline or handoff check in an external task workspace. |
 | [`task:publish`](/cli/task/publish) | Push a checked commit and optionally open or update its pull request. |
-| [`task:sync`](/cli/task/sync) | Fetch the default branch and the task branch from origin into the VM workspace. API and MCP only. |
+| [`task:sync`](/cli/task/sync) | Bring the Project's default branch into the task copy as `refs/remotes/origin/<default branch>`, and print how far behind the branch is. |
 
 Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `questions`, `agents`, or `hosts`. The [PHP SDK](/api/php-sdk) task responses return those same records, including `assistance_kind` and `assistance_question` on a task and a subtask.
 

@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/{Domain/Nodes/{NodeNetworkReservation,NodeRemovalInput,NativeNodeRoleRemovalInput,NativeNodeRoleRelocateInput,NodeRoleRelocateInput,NodeRoleRelocateProjection,NativeNodeEnrollmentInput,NativeNodeEnrollmentProjection,NodeEnrollmentPolicy,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction,AdmitNodeEnrollmentOperationAction}.php}}
   - apps/gateway/app/Infrastructure/{WireGuard/NativeGatewayPeerProjectionManager.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/{Console/Commands/{ProvisionNodeCommand,BootstrapPlanCommand,BootstrapControlPlanCommand,RoleAddCommand,NodeAddCommand,NodeConvergeCommand},Domain/Gateway/{GatewayBootstrapPlan,GatewayControlPlan}}.php
-  - apps/gateway/{database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_08_000000_add_node_untouched_to_node_roles_table,2027_03_01_000000_add_ci_hold_digest_to_nodes,2027_03_01_000001_add_ci_nested_hosting_to_nodes}.php,app/{Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php,Models/NodeRole.php}}
+  - apps/gateway/{database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_08_000000_add_node_untouched_to_node_roles_table,2027_03_01_000000_add_ci_hold_digest_to_nodes,2027_03_01_000001_add_ci_nested_hosting_to_nodes,2027_03_04_000000_add_converge_digests_to_nodes}.php,app/{Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php,Models/NodeRole.php}}
   - apps/gateway/app/Infrastructure/{Swamp/SwampSshExecutionInput,Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/CliConverge*.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php,Actions/Nodes/StartNodePhpPackagesAction.php,Domain/Nodes/NodePhpPackages*.php,Domain/Nodes/operation-kinds.php}
   - apps/agent/src/commands/{ci_runner.rs,recipe.rs,recipe/**,php_build.rs,php_build/**}
@@ -583,7 +583,7 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 
 `orbit node:converge <node> [--base | --roles=a,b] [--idempotency-key=KEY] [--json]` repairs one active, managed Linux Node against the release. It never runs `node:add`, changes an Instance, or adds or removes a role assignment, so a Node that owns Instances can converge. Fleet release rollout remains a separate CLI and observer publication path.
 
-With no scope flag, the attempt includes Orbit's base and every recorded role. `--base` selects only the agent, the Node’s CLI state and Orbit-owned files and units. `--roles=a,b` selects the base plus the named existing assignments, and refuses an empty, unknown or unassigned role. The two flags are mutually exclusive. There is no `--force` or `--full` option.
+With no scope flag, the attempt includes Orbit's base and every recorded role. `--base` selects only the agent, the Node’s CLI state and Orbit-owned files and units. `--roles=a,b` selects the base plus the named existing assignments, and refuses an empty, unknown or unassigned role. The two scope flags are mutually exclusive. `--full` runs every phase of the scope, whatever its [digest](#skip-a-phase-whose-input-did-not-change) says.
 
 The Gateway validates recorded state without a live preflight, reserves the target and its first recorded VPN hub until settlement, and captures an immutable intent. Unreachable machines fail during execution, not admission. The CLI validates inputs, calls the SDK and renders the Operation; the Gateway admits, records and projects; Swamp executes.
 
@@ -601,9 +601,39 @@ The native Swamp workflow runs these phases in order. Input preparation writes p
 | `network` | Apply the recorded hub before the Node and wait for the handshake. A target hub is applied once; without peers it needs no handshake. |
 | `check` | Read back selected software, units, role configuration and recorded tunnel state. |
 
-No recorded network in scope means no network mutation. DNS routing domains stay literal, including a domain such as `~orbit` that also names a local account. Every new attempt starts at input and runs all seven phases again, even when recorded intent matches. Matching tasks report zero target changes and the attempt must complete within 120 seconds; hub changes are excluded from that target count. A repeat is not a digest-based admission skip. Reusing an idempotency key follows the [keyed-start contract](/reference/operations#retry-a-start-with-a-key), rather than starting a second attempt.
+No recorded network in scope means no network mutation. DNS routing domains stay literal, including a domain such as `~orbit` that also names a local account. Every new attempt starts at input and runs `input` and `check`. Each other phase runs or skips by the [phase digest rule](#skip-a-phase-whose-input-did-not-change). A phase that runs with matching intent reports zero target changes, and the attempt must complete within 120 seconds; hub changes are excluded from that target count. A repeat is admitted as a new Operation; admission never skips it. Reusing an idempotency key follows the [keyed-start contract](/reference/operations#retry-a-start-with-a-key), rather than starting a second attempt.
 
 A failed phase stops later phases and fails the Operation with its failed step and error code. Completed and partial machine changes remain; there is no rollback. Fix the cause and start a new attempt from input. An individual Tool failure is different: it marks only that Tool failed, lets other Tools continue, and does not alone fail an otherwise successful parent. Temporary private run files are removed after work stops on success or failure. Incomplete cleanup is exposed without replacing the original failure, and interruption proves no cleanup.
+
+### Skip a phase whose input did not change
+
+This is the one rule for a skipped converge phase. The phases `agent`, `software`, `roles`, `tools` and `network` can skip. `input` and `check` always run.
+
+A phase digest is the SHA-256 of the phase name and of what the phases read. Swamp computes it when it prepares the input, after it writes every file for the phases. What the phases read is:
+
+- the files written for the phases: the converge variables, `plans.json`, the inventory, the known hosts and each role's variables;
+- the Ansible bundle, which also builds each role's variables;
+- the Tool helper and the shipped Tool files that it imports.
+
+The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies. Swamp replaces the attempt's Operation ID with a fixed mark before it hashes a file, so two attempts with the same recorded state have the same digest. The digests the Node records are not in the variables, so a digest does not read its own record.
+
+Every phase reads the same variables, so all phase digests move together. A change of any recorded input, secret value, plan or shipped converge code runs every phase again.
+
+Swamp compares each digest with the digest that the Node records for that phase, and skips the phase only when they are equal. A skipped phase does not connect to the Node and does not read its state.
+
+A succeeded `node:converge` records the digest of each phase on the Node (`nodes.converge_digests`), whether the phase ran or skipped. Nothing else writes the record. The admission of any Operation that takes the Node's Operation admission lock clears it: a converge, a role addition, convergence or removal, an enrollment or an agent rekey. So these run a phase in full:
+
+- a changed digest: a changed intent, secret value or release;
+- no record: the first converge, or a converge after a failed or interrupted converge;
+- no record: a converge after any other Operation on the Node;
+- no record: a converge while the Node records a failed agent pin;
+- `--full`, which compares with no record.
+
+An agent command can record a failed agent pin outside any Operation, so admission does not clear the record for it. The converge must install the agent again, so it compares with no record.
+
+Drift is not an input. A skipped phase does not see a change that someone made on the Node by hand. The `check` phase always reads the selected software, units, role configuration and tunnel. When it finds drift, the converge fails, the record stays clear, and the next converge runs every phase. Run `node:converge --full` to repair drift that the check does not read.
+
+The Operation steps show a skipped phase as a skipped step. The Operation's `result.phases` and the `node:converge` output show it as `unchanged`, with no changes and no time.
 
 The Tool helper is the TypeScript policy that judges each Tool. It runs on the Swamp Node, with the Deno at `/usr/local/bin/deno`; on its first run for a worker, Deno downloads the helper's two pinned npm imports. A helper that cannot run is not a Tool failure: the `tools` phase fails before it judges a Tool, and no Tool is marked failed. Converge the Swamp Node to install its Deno, then converge the Node again.
 

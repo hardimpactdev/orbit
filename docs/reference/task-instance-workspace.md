@@ -65,10 +65,11 @@ A baseline in a container workspace runs no setup steps: its intent holds an emp
 
 The intent is the task VM check intent with two differences: `checkout_path` is `/srv/workspace`, and `workspace` holds the recorded Incus project and container, the Instance branch and a new scratch ID. The SSH target is the Instance Node. The parent workflow runs `Check in the Instance` and skips the task VM steps.
 
-The child runs three Ansible phases through this playbook. Each runs as `agent` in the container with closed stdin. The phases check the checkout root and branch, but need no expected head.
+The child runs up to four Ansible phases through this playbook. Each runs as `agent` in the container with closed stdin. The phases check the checkout root and branch, but need no expected head. A handoff check first brings in the default branch through `task-copy-base`, as a sync does, then runs `base-merge` ([The handoff check merges main first](/reference/tasks#the-handoff-check-merges-main-first)).
 
 | Phase | What it does |
 | --- | --- |
+| `base-merge` | Merges `refs/remotes/origin/<default>` when clean, after it commits uncommitted work. A conflict names its paths and changes nothing |
 | `check` | Runs the Project check, the snapshot, each command deliverable and its start-commit run, and the final snapshot |
 | `commit` | Stages everything and commits as Orbit with hooks off, unless `HEAD` is a clean recorded candidate. Reads back `HEAD`, its tree and a new commit's parent |
 | `commit-ref` | Records the accepted candidate under `refs/orbit/check-operations/{operation}` |
@@ -109,4 +110,4 @@ A failed phase returns one of these codes.
 
 Native [workflow dependencies](https://swamp-club.com/manual/reference/workflows) own phase order and worker cleanup. The shared Ansible input behavior ships the playbook and pins the recorded Node. Ansible uses its file modules for Node scratch and its stat module to verify transfers. Git has no Ansible module for temporary-index snapshots or a byte-bounded receipt envelope, so the phase contains a visible Python program for that gap. It runs through Incus only as `agent`; no helper is copied to the Node or guest. The small behavior reads and validates the private result as typed child evidence. No custom transport or external API client is added.
 
-The caller also names the task group. The workspace phase runs as the behavior `task-workspace-<node>-<group>`, and the check, commit and commit-ref phases as `task-instance-check-<node>-<group>`. Swamp locks a behavior for the whole step, so copies of two groups on one Node never wait for each other ([Two groups on one Node](/reference/tasks#two-groups-on-one-node)). The short prepare, input, evidence, local, candidate, finish and cleanup steps keep their names by Node or one shared name.
+The caller also names the task group. The workspace phase runs as the behavior `task-workspace-<node>-<group>`, and the base-merge, check, commit and commit-ref phases as `task-instance-check-<node>-<group>`. Swamp locks a behavior for the whole step, so copies of two groups on one Node never wait for each other ([Two groups on one Node](/reference/tasks#two-groups-on-one-node)). The short prepare, input, evidence, local, candidate, finish and cleanup steps keep their names by Node or one shared name.

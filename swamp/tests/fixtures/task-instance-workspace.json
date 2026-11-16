@@ -48,7 +48,7 @@
   },
   "check": {
     "provenance": {
-      "source": "Disposable local Git checkout on Beast; Gateway intent keys from TaskCheckProjection::workflowInput of a container check admission. No Incus, Node, SSH or Orbit Operation.",
+      "source": "Disposable local Git checkout on Beast; Gateway intent keys from TaskCheckProjection::inputOf of a container check admission. No Incus, Node, SSH or Orbit Operation.",
       "intent_keys_pinned_by": "apps/gateway/tests/Feature/Tasks/TaskInstanceCheckTest.php",
       "ansible_intent": "workflow-task-instance-check.yaml step input: runtime, branch and snapshot_id from intent.workspace, operation_id, ssh_execution, check = the whole intent",
       "capture_script": "/fast/scratch/task-lane/capture-t2.py",

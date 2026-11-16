@@ -22,7 +22,7 @@ final class ConvergeNodeFootprintRequest extends FormRequest
             'roles' => ['sometimes', 'required', 'array', 'list', 'min:1', 'prohibited_if:base,true'],
             'roles.*' => ['required', 'string', 'distinct'],
             'force' => ['prohibited'],
-            'full' => ['prohibited'],
+            'full' => ['sometimes', 'boolean'],
             'worker_credentials' => ['prohibited'],
         ];
     }

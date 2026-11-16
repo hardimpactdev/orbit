@@ -66,6 +66,7 @@
         "test_a_republish_after_a_merge_at_publish_is_a_fast_forward_over_that_merge": 2.0,
         "test_a_tip_that_is_no_earlier_publish_merge_is_not_a_fast_forward": 3.548,
         "test_the_same_branch_after_it_merged_the_default_head_publishes": 0.256,
+        "test_a_checked_merge_of_main_publishes_level_with_main_and_merges_again_only_after_main_moved": 3.885,
         "test_a_default_commit_that_changed_a_workflow_carried_in_by_hand_is_no_change_of_the_copy": 0.268,
         "test_a_workflow_change_of_the_copy_that_a_later_commit_undoes_is_no_change": 0.231,
         "test_a_copy_commit_of_its_own_that_changes_a_workflow_is_refused_with_its_path": 0.339,
@@ -88,6 +89,22 @@
         "test_a_workflow_change_is_no_refusal_of_the_copy_check": 2.04,
         "test_a_clean_change_passes_with_public_facts_only": 1.761,
         "test_a_nested_copy_without_its_inner_machines_is_unchecked": 3.127
+      }
+    },
+    "swamp/tests/task_instance_workspace_merge_test.py": {
+      "case_seconds": {
+        "test_a_clean_merge_commits_the_uncommitted_work_first_then_merges_the_head": 3.103,
+        "test_a_branch_that_holds_the_head_merges_nothing": 6.103,
+        "test_a_conflict_names_the_paths_and_leaves_the_workspace_exactly_as_it_was": 3.633,
+        "test_a_merge_that_would_overwrite_an_ignored_file_refuses_and_changes_nothing": 1.657,
+        "test_a_main_only_workflow_change_merges_and_is_never_the_copys_own": 3.603,
+        "test_only_a_copy_handoff_check_brings_in_the_base": 1.586
+      }
+    },
+    "swamp/tests/task_instance_check_merge_base_test.py": {
+      "case_seconds": {
+        "test_after_a_merge_of_main_the_deliverable_diff_is_the_subtasks_own": 6.377,
+        "test_a_recheck_whose_head_already_holds_main_compares_with_the_start_plus_that_head": 11.866
       }
     }
   }
