@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\FactDoctor;
 use App\Domain\Fleet\FleetRolloutMembership;
@@ -13,11 +14,12 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmState;
-use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
@@ -101,24 +103,34 @@ it('plans a Node removal with no task VM, though an old row names the Node', fun
         ->and(data_get($intent, 'intent.task_vm_guest'))->toBeFalse();
 });
 
-it('refuses every owned task workspace with task_vm.workspace_mismatch and reads no task VM row', function (): void {
+it('refuses the removal of an owned workspace that is no task copy with the one 503 operation.kind_unavailable, and records it as a removal failure', function (): void {
     $node = readerNode('guest', '10.44.0.147');
     $project = Project::query()->create(['name' => 'site', 'slug' => 'site', 'repository_url' => 'https://github.com/acme/site.git', 'default_branch' => 'main', 'root' => 'public']);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
     $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
         'source_layout' => InstanceSourceLayout::Checkout, 'checkout_path' => '/home/orbit/apps/site/workspace', 'task_workspace_owner_id' => $group->id,
         'status' => InstanceState::SourceResolved]);
-    $refusal = static fn () => TaskVmWorkspaceGuard::assertOwnedWorkspace($workspace);
-    $refused = static fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.workspace_mismatch')
-        ->and($exception->getMessage())->toContain('Task VMs are removed');
-
-    expect($refusal)->toThrow($refused);
-
-    // An old ready row of the group on the workspace Node changes nothing: the guard reads no task VM row.
+    // An old ready row of the group on the workspace Node changes nothing: the removal reads no task VM row.
     TaskVm::query()->create(['host_node_id' => $node->id, 'node_id' => $node->id, 'group_id' => $group->id, 'provider' => 'incus', 'name' => 'tvm-'.$group->id,
         'state' => TaskVmState::Ready, 'wireguard_ip' => $node->wireguard_ip]);
+    $removal = app(RemoveTaskWorkspaceAction::class);
 
-    expect($refusal)->toThrow($refused);
+    $refusal = null;
+    try {
+        $removal->remove($group);
+    } catch (ResourceOperationException $exception) {
+        $refusal = $exception;
+    }
+    expect($refusal)->not->toBeNull()->errorCode->toBe('operation.kind_unavailable')->status->toBe(503)
+        ->and($refusal->getMessage())->toBe('This workspace is no task copy. Task VMs and their release are removed, so Orbit cannot remove it.');
+
+    $removal->recordFailure($group, $refusal);
+
+    expect($group->refresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
+        ->and($group->assistance_reason)->toBe('Workspace removal failed: This workspace is no task copy. Task VMs and their release are removed, so Orbit cannot remove it.')
+        ->and(Instance::query()->find($workspace->id))->not->toBeNull()
+        // The refusal of the removed SSH guard is gone from the task VM error codes.
+        ->and(TaskVmError::tryFrom('task_vm.workspace_mismatch'))->toBeNull();
 });
 
 it('recovers an old open recipe-image alert as resource_gone, also while its failed build row remains', function (): void {
