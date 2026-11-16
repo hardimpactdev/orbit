@@ -276,6 +276,22 @@ The intent leaves out the parts that serve a Route or a sleep through the Node's
 
 The Node provides the ZFS pool `orbit-instances`, as every Node that clones does. Without the pool, the converge refuses with `instance.host_unavailable`. The Instance bridge range must not overlap `orbitci0`. The branch refuses an overlap with `instance.host_unavailable` before it changes anything. The runner side (`orbit-ci`, `orbitci0`, its ACL and its profile) stays as it is. The two sides share Incus and the Node, and nothing else.
 
+#### The seed listener
+
+A Node that offers proof places, other than the proof default's own Node, receives its [seed](/reference/development-containers#the-seed-on-each-ci-node) from the default's Node with `incus copy --refresh --mode=push`. In push mode only the target listens. So its `ci-runner` add and converge also prepare the Incus side of that copy:
+
+| On the CI Node | Value |
+| --- | --- |
+| Incus listener | `core.https_address` is `<WireGuard address>:8444`. Never a LAN or public address |
+| Trust | One restricted client certificate, named `orbit-proof-seed`: root's Incus client certificate on the proof default's Node, with `restricted` on and the project `orbit-instances-nested` only |
+| Firewall | The UFW rule `orbit:proof-seed` admits TCP port 8444 on the WireGuard address, only from the WireGuard address of the default's Node |
+
+The converge reads the default Node's client certificate there. When root has none yet, it makes one with `incus remote generate-certificate`; nothing else changes on that Node. A trust entry of that name with another certificate is replaced. The Gateway sends the default's Node in the intent, so a converge after the default moved to another Node trusts the new one.
+
+The default's Node gets no listener and no change to its Incus daemon. Each seed copy adds a client remote of root there for each CI Node, `proof-node-<id>`, when it is missing.
+
+When a converge finds that the Node offers no proof places, or that the proof Project has no default, the converge removes the trust entry `orbit-proof-seed`, unsets `core.https_address` when it is the listener above, and removes the UFW rule. A removal of the `ci-runner` role does the same. The holder stays, as the other Incus resources of the branch do.
+
 The converge makes no seed. When a `ci-runner` add or converge of a Node that offers proof places passes, the Gateway admits a [seed copy](/reference/development-containers#the-seed-on-each-ci-node) to the Node if it is not the default's Node and its seed is not the proof default's current seed.
 
 A CI-only Node takes no other Instance. `instance:create` refuses it with `instance.node_ci_only` (409) before any record. Only a proof copy is made there. A proof copy there gets no Route: the Node runs no Caddy and has no TLD.

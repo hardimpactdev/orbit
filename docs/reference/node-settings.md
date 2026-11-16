@@ -249,7 +249,7 @@ The converge checks root's largest subordinate range in both `/etc/subuid` and `
 
 `13,172,736 + task IDs + S + 2 × 101,000,000`
 
-`13,172,736` is the normal Instance demand. Task IDs come from the task container places in `settings.task_vms.containers`, never from the task VM places: `(containers.task_places + containers.ci_places + 1) × 101,000,000`, or 0 when the Node has no `containers` block. `S` is the sum of the [ID map sizes](/reference/development-containers#the-id-map-size) that the Node's nested Instance runtimes record. The two spare maps leave room for a new nested default before the next converge, and for the pinned pair of a [seed copy](/reference/development-containers#the-seed-on-each-ci-node) on the proof default's Node.
+`13,172,736` is the normal Instance demand. Task IDs come from the task container places in `settings.task_vms.containers`, never from the task VM places: `(containers.task_places + containers.ci_places + 1) × 101,000,000`, or 0 when the Node has no `containers` block. `S` is the sum of the [ID map sizes](/reference/development-containers#the-id-map-size) that the Node's nested Instance runtimes record. The two spare maps leave room for a new nested default before the next converge.
 
 So a Node with no `containers` block needs `13,172,736 + S + 2 × 101,000,000` IDs: 215,172,736 with no nested Instance yet, then 101,000,000 more for each full-size runtime and 1,165,536 for each converted one. Incus reads the ranges when its daemon starts; the converge reads the files.
 
@@ -266,6 +266,6 @@ A [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) has nes
 | `13,172,736` | The normal Instance demand, as above: the branch is the same |
 | `P` | The Node's CI places. Each place holds at most one proof copy |
 | `D` | The recorded [ID map size](/reference/development-containers#the-id-map-size) of the proof Project's default, which every copy and every seed holder on the Node takes. 101,000,000 while that Project has no default |
-| `2` | The [seed holder](/reference/development-containers#the-seed-on-each-ci-node) and the next holder during a seed copy. The holder keeps the snapshot it received, so Incus maps no new snapshot |
+| `2` | The [seed holder](/reference/development-containers#the-seed-on-each-ci-node), and a snapshot that a seed copy adds to it, which Incus maps for a moment as it maps a new container |
 
 Task IDs, `S` and the two spare maps do not apply: a CI Node has no task container places and no nested default. The converge checks and refuses as above, and it never enlarges a range.

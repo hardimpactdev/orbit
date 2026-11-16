@@ -1,5 +1,6 @@
 sequenceDiagram
-  %% Target design, ADR 0260 build step 4 (docs/reference/development-containers.md#the-seed-on-each-ci-node): each Node that offers proof places, other than the default's own Node, keeps its own seed of the proof Project's default. One run per seed of the default pins the seed once on the default's Node and sends it to every CI Node whose seed is behind; each target may fail alone. Decided by the owner (2026-11-16): the send is incremental. The stream passes the Swamp worker, which is remote from the CI Nodes and short of CPU, and a full seed pair is large; so each CI Node keeps its last seed as the base of the next one, and a full send happens only when a Node has no common seed. Rejected: one seed that every copy fetches over the network at its start (ADR 0260), a seed Instance per CI Node that refreshes its own fleet, and an Incus copy between Nodes, which needs Incus API trust between them.
+  %% Target design, ADR 0260 build step 4 (docs/reference/development-containers.md#the-seed-on-each-ci-node): each Node that offers proof places, other than the default's own Node, keeps its own seed of the proof Project's default. One run per seed of the default sends the seed to every CI Node whose seed is behind; each target may fail alone.
+  %% Decided by the main orchestrator (2026-11-16): Incus moves the seed, `incus copy --refresh --mode=push` from the default's Node to each CI Node over WireGuard. Push mode needs a listener on the target only, so the default's Node gets a client remote and no daemon change. Each CI Node listens on its WireGuard address and trusts the default Node's client certificate for `orbit-instances-nested` only (docs/reference/node-provisioning.md#the-seed-listener). `--refresh` sends only the snapshots that changed. Rejected: one seed that every copy fetches over the network at its start (ADR 0260), a seed Instance per CI Node that refreshes its own fleet, and a ZFS stream through the Swamp worker with bookmarks of Orbit's own.
   %% status: draft
   %% command: none · after the proof default records a seed, or a CI Node's ci-runner add or converge passes
   %% kind: instance.seed_copy
@@ -16,71 +17,53 @@ sequenceDiagram
   %%> Started by:
   %%> - the proof default records a new seed: the refresh after a release, or an `instance:deploy` of the default
   %%> - a `ci-runner` add or converge of a Node that offers proof places passes
-  %%> - a seed copy ends: for the Nodes it did not try at the default's current seed
+  %%> - a seed copy ends: for the Nodes it did not bring to the default's current seed
   %%> Requirements:
   %%> - the proof Project's default is active and has a seed; a seed is its commit and the time the default took it
   %%> - targets: every Node that offers proof places (`ci-runner`, CI places, with or without `app-dev`), other than the default's Node, whose recorded seed is not that seed (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node); with none, nothing is admitted
   %%> - one copy at a time: an open copy holds the default's seed-copy lock, `operation.target_busy`
   %%> Result:
-  %%> - a task is recorded with the full intent: the default's Node and seed pair, the recorded holder of every target, and per target the new holder `proof-seed-OPERATION`
+  %%> - a task is recorded with the full intent: the default's Node, container and inner volume, and per target its Node and WireGuard address
   GW->>SW: Start run, full intent<br/>instance-seed-copy
-  SW->>N: Pin the seed<br/>ZFS clones of the seed pair
-  %%> What it does:
-  %%> - copies the container snapshot `seed-COMMIT` and the volume snapshot of the same name into the stopped pair `seed-copy-OPERATION`, as ZFS clones
-  %%> - takes the default's seed lock on the Node, the one the seed step holds during a retake, so it never reads a pair that a retake is replacing
-  %%> - marks both snapshots of the seed pair with the ZFS bookmark `proof-seed-OPERATION`: the default's half of the next base; a bookmark holds no data and never stops a retake from deleting an old seed
-  %%> - first deletes a pinned pair that an earlier run left
-  %%> Why:
-  %%> - a later retake of the default cannot change what the copy reads; one pin serves every target, so it takes one ID range on the default's Node
-  %%> On failure:
-  %%> - no free ID range, or the seed is gone: `instance.seed_copy_failed`; no target is tried
   loop each CI Node, side by side
-    SW->>C: Choose the base<br/>recorded holder · bookmark
+    SW->>C: Read its Incus certificate<br/>Ansible · tags certificate
     %%> What it does:
-    %%> - first deletes each holder on the Node that is neither recorded nor this run's, so an old holder goes only after the Gateway checked and recorded the new one
-    %%> - the base is the recorded holder `proof-seed-X` when its snapshot `seed-COMMIT` and its volume's snapshot are on the Node and the bookmark `proof-seed-X` is on both datasets of the default's Node
-    %%> Why:
-    %%> - the last seed the Node received is the base of the next one; the bookmark is the same snapshot on the default's side, so `zfs send -i` can start from it
-    %%> Result:
-    %%> - with no base (the Node's first seed, or a failure lost it): this target gets a full send; the other targets are not changed
-    SW->>C: Send the seed<br/>zfs send -i · SSH stream
-    %%> What it does:
-    %%> - with a base: makes the new holder `proof-seed-OPERATION` and its volume `proof-seed-OPERATION-inner` in `orbit-instances-nested` as clones of the base, beside the recorded holder; sends the change from the bookmark to the seed, for the container and for its volume (`zfs send -i`)
-    %%> - without a base: sends the full seed pair into the new holder and its volume
-    %%> - streams from `zfs send` on the default's Node through the worker's two SSH connections straight into `zfs receive` on the CI Node; nothing stays on the worker or in a file
-    %%> - the received snapshot is the holder's snapshot `seed-COMMIT`; Incus takes no new one, so the snapshot keeps the identity the next change needs
-    %%> - the holder never starts
-    %%> Why:
-    %%> - the worker is remote from the CI Nodes and short of CPU, and a full seed pair is large; a release changes a small part of it
-    %%> - the worker already reaches both Nodes over SSH; no Node trusts another
+    %%> - reads the Incus server certificate of the CI Node and checks that the Node listens on its WireGuard address
     %%> On failure:
-    %%> - no free ID range for the new holder: the detail says `No free ID range for the new seed`
-    SW->>C: Check the holder<br/>start guard rules
+    %%> - no listener yet: this target fails; a `ci-runner` converge of the Node adds the listener and the trust
+    SW->>N: Copy the seed<br/>Ansible · tags copy
     %%> What it does:
+    %%> - adds the client remote `proof-node-ID` of root when it is missing, and refuses when the certificate that root's client stored for it is not the one read on the CI Node
+    %%> - `incus copy DEFAULT proof-node-ID:proof-seed --refresh --mode=push` in `orbit-instances-nested`, then `incus storage volume copy` of the inner volume to `proof-seed-inner` with the same flags
+    %%> Why push:
+    %%> - the source server sends the data and only the target listens, so the default's Node needs no listener and no daemon change
+    %%> Why refresh:
+    %%> - Incus compares the snapshots on both sides and sends only the newer ones; the holder gets `seed-COMMIT` natively; the first copy to a Node sends the whole pair
+    %%> Why the whole instance:
+    %%> - a snapshot source carries no snapshots, so a refresh from it could not find a common one
+    %%> On failure:
+    %%> - this target fails with `instance.seed_copy_failed`; the other targets go on
+    SW->>C: Check the holder<br/>Ansible · tags check
+    %%> What it does:
+    %%> - the holder `proof-seed` has the snapshot `seed-COMMIT` that the run was admitted for, and its volume has the snapshot of the same name
     %%> - the holder's config and devices match the default's, as the start guard checks them; the volume has exactly the inner volume's keys
-    %%> On failure:
-    %%> - this target fails with `instance.seed_copy_failed` and deletes what it made on its Node; its recorded holder stays, and it is the base of the next copy; the other targets go on
   end
-  SW->>N: Unpin the seed<br/>condition: always
-  %%> What it does:
-  %%> - deletes the pinned pair, also after a failed target or a failed pin
-  %%> - deletes each bookmark `proof-seed-*` that is neither this run's nor named by a CI Node's recorded holder
   SW-->>GW: Run ended<br/>result per target
   %%> How the Gateway learns it:
   %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
   Note over GW: Record each new seed
   %%> Result:
-  %%> - each Node whose target passed records the new holder, its commit and its time as its seed; it offers proof places again
-  %%> - a proof copy on that Node clones the recorded holder with the clone step of every copy
-  opt a target or the pin failed
+  %%> - each Node whose target passed records the seed it was admitted for: its commit and its time; it offers proof places again
+  %%> - a proof copy on that Node clones `proof-seed/seed-COMMIT` with the clone step of every copy
+  opt a target failed
     Note over GW: Keep the old seed<br/>Activity per failed Node
     %%> Result:
-    %%> - the failed Node keeps its recorded holder and offers no proof places until a copy passes; copies made earlier keep running
+    %%> - the failed Node keeps its recorded seed and offers no proof places until a copy passes; copies made earlier keep running
     %%> - the Activity row `instance.seed_copy_failed` names the Node, the Operation and the detail
     %%> - the release and the default are unchanged; the next trigger copies again, and a rerun is safe
   end
   opt the default's seed moved
-    Note over GW: Admit the next copy<br/>Nodes not tried at it
+    Note over GW: Admit the next copy<br/>Nodes not at the seed
     %%> When:
     %%> - the default took a newer seed while the copy ran, or a Node became a target while the copy held the lock
   end
