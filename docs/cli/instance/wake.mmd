@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, ADR 0261, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): read a sleeping development container's recorded pages back while it is still frozen, then resume it, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake.
+  %% Container runtime (ADR 0250 step 8, ADR 0261, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): read a sleeping development container's recorded pages back while it is still frozen, then resume it, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake. Planned (ADR 0265, docs/reference/production-containers.md#sleep-and-wake): a production Instance's live release container wakes by the same rule, and Caddy holds its visitor instead of the progress page.
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
@@ -20,6 +20,7 @@ sequenceDiagram
   %%> - the command
   %%> - Caddy on the Instance's Node, when a request finds the asleep marker: `GET runtime-activations/app-instance/ID`
   %%> - planned: a Conn device that opens the T3 server, and the task flow before a turn on an attached Instance
+  %%> - planned: a due native cron Schedule of a production Instance whose live sleeps; the fire waits for the wake, and this wake does not count as activity
   %%> - not needed by a copy: a clone or task copy of an asleep default copies its seed snapshot
   %%> - a deployment of a sleeping Instance resumes or starts it in its own run, and removes the marker there
   %%> Requirements:
@@ -27,13 +28,14 @@ sequenceDiagram
   Note over GW: Start or join the wake<br/>one per Instance
   %%> When:
   %%> - an active development container, a default and a nested-fleet Instance included
+  %%> - planned: a production Instance's live release container; the wake is admitted beside an open deploy or rollback, which changes live only after its switch; the switch and the wake take the Instance's power lock
   %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd) and a nested-fleet default refuses: only its deployment starts it
   %%> Result:
   %%> - an open wake of the Instance is joined: a second caller gets the same Operation, Caddy the same progress page
   %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
   %%> On failure:
   %%> - no container, a non-development Instance, a nested-fleet default whose last sleep did not freeze it, or other lifecycle work starts no run
-  opt the caller is Caddy, for a visit
+  opt Caddy, for a development visit
     GW-->>CL: 401 progress page, at once<br/>spinner only
     %%> Result:
     %%> - the visitor never waits for the wake: the Gateway admits or joins it and answers before any Node call or run start
@@ -76,6 +78,17 @@ sequenceDiagram
     %%> - `.failed`, an agent call that failed or the bound: the Gateway removes the request, and the same Operation starts the run below; the run takes the same lock, so it waits for a worker still at work and goes on from the state the Node reached
     %%> - a Gateway worker that dies here: a delayed start runs the same Operation's run 15 s later
     %%> - a cancel between Caddy's answer and the Node calls: the Gateway makes no Node call; a cancel during the resume keeps the Operation cancelled, and a late outcome never overwrites it
+  end
+  opt Caddy, for a production visit, planned
+    GW-->>CL: Pass on after the wake<br/>bound 10 s · else 503
+    %%> What it does:
+    %%> - Caddy holds the visitor's request; the Gateway answers its activation call once the marker is gone, and Caddy passes the request to live
+    %%> - a person, an API client or a webhook sees only a slower first answer: about 1.5 s warm, 2.4 s cold
+    %%> Why:
+    %%> - a progress page with status 401 breaks an API client and a webhook (ADR 0265)
+    %%> On failure:
+    %%> - after 10 s, or after a failed wake, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance; the wake goes on, and a failure is stored as in development
+    %%> - when the fast wake fell back to the run below, the hold goes on until the run ends or the bound
   end
   GW->>SW: Start run, full intent<br/>operation-instance-wake
   GW-->>CL: 202 Accepted<br/>Operation ID
