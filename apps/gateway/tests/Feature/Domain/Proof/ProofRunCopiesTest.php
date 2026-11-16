@@ -370,12 +370,14 @@ describe('proof:run in copies: admission', function (): void {
 
     it('places copies on several CI Nodes, each from its own Node\'s seed, and none on a Node whose seed is behind', function (): void {
         copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 1);
+        // The Node whose seed is behind comes first in the Nodes' order, so only the seed rule keeps a copy off it.
+        $behind = copyProofCiOnlyNode('ci-b', '10.44.0.22', current: false);
         $ci = copyProofCiOnlyNode('ci-a', '10.44.0.21', current: true);
-        copyProofCiOnlyNode('ci-b', '10.44.0.22', current: false);
         $proof = copyProofAdmitted();
         $copies = Instance::query()->whereNotNull('task_workspace_owner_id')->with('runtime')->get();
 
-        expect($proof->status)->toBe(OperationStatus::Running)->and(copyProofRuns())->toHaveCount(2)
+        expect($behind->id)->toBeLessThan($ci->id)->and($copies->pluck('node_id'))->not->toContain($behind->id)
+            ->and($proof->status)->toBe(OperationStatus::Running)->and(copyProofRuns())->toHaveCount(2)
             ->and($copies->pluck('node_id')->sort()->values()->all())->toBe(collect([Node::query()->where('name', 'beast')->value('id'), $ci->id])->sort()->values()->all())
             ->and($copies->every(static fn (Instance $copy): bool => $copy->runtime?->clone_source_instance_id === Instance::query()->where('name', 'default')->value('id')))->toBeTrue();
         $onCi = $copies->firstWhere('node_id', $ci->id);
