@@ -170,11 +170,14 @@
                   ~ '/snapshots?project=' ~ seed_intent.project ~ '&recursion=1'] }}
           register: seed_volume
           changed_when: false
+        # Incus names a volume snapshot `<volume>/<snapshot>`; the seed name is the last part.
         - name: Require the seed snapshot in both halves
           ansible.builtin.assert:
             that:
               - seed_intent.snapshot in (seed_holder.stdout | from_json | map(attribute='name') | list)
-              - seed_intent.source.inner_volume is none or seed_intent.snapshot in (seed_volume.stdout | from_json | map(attribute='name') | list)
+              - >-
+                seed_intent.source.inner_volume is none
+                or seed_intent.snapshot in (seed_volume.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | list)
             fail_msg: "The holder does not hold {{ seed_intent.snapshot }}"
             quiet: true
         - name: Record the passed target

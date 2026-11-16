@@ -660,6 +660,24 @@ contexts:
     restore_seed: seed-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     restore_volume_snapshots:
       stdout: '[{"name":"seed-ffffffffffffffffffffffffffffffffffffffff","created_at":"2026-11-13T09:53:00Z"}]'
+  # `incus query /1.0/storage-pools/<pool>/volumes/custom/<volume>/snapshots?recursion=1` names each snapshot `<volume>/<snapshot>`.
+  seed-copy-volume-holds:
+    seed_intent:
+      snapshot: seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac
+      source: { inner_volume: inner-41 }
+    seed_volume:
+      stdout: '[{"name":"proof-seed-inner/seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"proof-seed-inner/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-16T05:02:17.84470215Z","expires_at":"0001-01-01T00:00:00Z"}]'
+  seed-copy-volume-half-missing:
+    seed_intent:
+      snapshot: seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac
+      source: { inner_volume: inner-41 }
+    seed_volume:
+      stdout: '[{"name":"proof-seed-inner/seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
+  seed-copy-no-volume:
+    seed_intent:
+      snapshot: seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac
+      source: { inner_volume: null }
+    seed_volume: { skipped: true, changed: false }
   restore-seeds:
     restore_snapshots:
       stdout: '[{"name":"seed-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","created_at":"2026-11-13T12:40:00.123456789Z"},{"name":"before-migrate","created_at":"2026-11-13T13:00:00Z"},{"name":"seed-ffffffffffffffffffffffffffffffffffffffff","created_at":"2026-11-13T09:53:00.5Z"}]'
@@ -2117,6 +2135,21 @@ cases:
   field: ansible.builtin.assert.that
   context: restore-volume-half-missing
   expected: false
+- file: proof-seed-copy.yml
+  task: Require the seed snapshot in both halves
+  field: ansible.builtin.assert.that[1]
+  context: seed-copy-volume-holds
+  expected: true
+- file: proof-seed-copy.yml
+  task: Require the seed snapshot in both halves
+  field: ansible.builtin.assert.that[1]
+  context: seed-copy-volume-half-missing
+  expected: false
+- file: proof-seed-copy.yml
+  task: Require the seed snapshot in both halves
+  field: ansible.builtin.assert.that[1]
+  context: seed-copy-no-volume
+  expected: true
 - file: tasks/instance-container-phase.yml
   task: Name the newest seed
   field: ansible.builtin.set_fact.restore_seed
