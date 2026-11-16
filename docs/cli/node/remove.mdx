@@ -26,7 +26,7 @@ orbit node:remove 7 --offline --force
 
 In a terminal, an omitted Node is chosen from an interactive list, and the CLI asks to confirm with the Node's name and the effect, with No selected. This is the consent for a Node with roles and for `--offline` too. Declining, Ctrl-C or end of input exits 1 with `input.cancelled`. Without `--force`, a call that cannot prompt is refused with `node.confirmation_required`. Without the Node, it is refused with `node.id_invalid`. A declined or refused call sends no request.
 
-Remove a Node's Instances, Database servers, Schedules, Routes and user firewall rules first, including before an offline removal. An online removal also needs no Processes and no role dependents. Drain a task VM host and clear its task VM settings first. The caller cannot be removed, and neither can the Gateway Node, the VPN Node or the control Node. A Node whose resources remain gets the matching `node.has_*` code, or `schedule.target_in_use` for a Schedule.
+Remove a Node's Instances, Database servers, Schedules, Routes and user firewall rules first, including before an offline removal. An online removal also needs no Processes and no role dependents. The caller cannot be removed, and neither can the Gateway Node, the VPN Node or the control Node. A Node whose resources remain gets the matching `node.has_*` code, or `schedule.target_in_use` for a Schedule.
 
 Removal sheds the Node's mutable roles, then removes what Orbit created on the machine, checks it, and revokes its management keys last. It retains packages, users, user data, package managers and unrelated SSH keys. It then withdraws the Node from the hub, the Router, Metrics and private DNS. Only after the final check passes is the Node record deleted. Just before that, the Node's [held Conn sessions](/reference/conn#held-sessions) are withdrawn, and the Gateway revokes each on its T3 server by `pairing_id`. With no active Gateway Node, they are not revoked and stay valid on T3 until they end, at most 30 days; the Gateway logs `conn.held_handover_skipped`. An unreachable Node is refused with `node.removal_incomplete` unless you pass `--offline --force`.
 
@@ -47,7 +47,7 @@ A failed removal keeps the Node, marked `failed`, with the failed step, and mark
 | `node.has_instances`, `node.has_database_servers`, `node.has_routes`, `node.has_firewall_rules` | Resources still depend on the Node, offline or online. Remove them first. |
 | `schedule.target_in_use` | A Schedule still targets the Node. Remove it first. |
 | `node.has_processes`, `node.has_role_dependents` | An online removal still has Processes or role dependents. |
-| `node.has_task_vms`, `node.task_vm_host_configured` | The Node hosts task VMs, or still has task VM host settings. Drain and clear them first. |
+| `node.has_task_vms` | A task VM row of the Node is not destroyed yet. |
 | `node.role_busy`, `websocket.runtime_shutdown_required` | A role operation runs on the Node, or its WebSocket runtime must be shut down first. |
 | `node.removal_owner_required`, `node.removal_owner_mismatch` | The Node is a task VM guest, or its record changed after admission. |
 | `node.removal_busy` | An admitted removal already exists for the Node. |

@@ -7,7 +7,7 @@ covers:
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - "{bin/{php-build,git-build-watch}}"
-  - apps/gateway/{config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
+  - apps/gateway/{resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/database/migrations/{2027_01_29_000001_drop_upcloud_task_vm_support,2027_02_01_000001_migrate_task_vm_host_pools,2027_02_02_000000_add_task_vm_runtime}.php
   - swamp/workflows/{workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml
 ---
@@ -18,7 +18,7 @@ Schedule log viewers use the owning Node and the fixed Schedule journal unit. Op
 
 Every task group runs in its own [task VM](#task-vms), which is a normal `app-dev` Node of the dev Cluster. This holds for every Project, `orbit` included. See [Orbit Project](#orbit-project).
 
-Task VMs are off until you [configure them](#configure-task-vms). Until then no task group can start.
+Task VMs are off: nothing [configures them](#configure-task-vms), and no task group starts one.
 
 Task VM enrollment and Node convergence share the public hub peer renderer. Enrollment writes only its guest peer; converging the VPN hub publishes the complete recorded list.
 
@@ -459,9 +459,9 @@ Tracking a live PPA would make it a second owner of Git, and an exact APT versio
 
 ## Task VMs
 
-The task VM lifecycle is removed: no claim, resume or release runs, and every task runs in a [task copy](/reference/tasks#task-copy) ([old paths](/reference/old-paths#the-pi-task-loop)). This section describes what old `task_vms` rows, the Node settings and the Swamp workflows still hold until they go.
+The task VM lifecycle is removed: no claim, resume or release runs, and every task runs in a [task copy](/reference/tasks#task-copy) ([old paths](/reference/old-paths#the-pi-task-loop)). This section describes what old `task_vms` rows and the Swamp workflows still hold until they go. The Node setting `task_vms` and the task VM settings are removed ([old paths](/reference/old-paths#task-vm-settings)).
 
-A host may have a [`containers` setting](/reference/node-settings#task-container-fields) with separate container places and a placement switch. They were built for a separate task container runtime, which ADR 0250 dropped: tasks move into [Instance containers](/reference/development-containers#tasks-in-an-instance-container), and [the plan](/solutions/development-container-runtime#pr-17-remove-task-vms-the-pi-server-and-the-task-container-setting) removes the setting. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). Before that, every task group ran on a task VM.
+A host had a `containers` setting with separate container places and a placement switch. They were built for a separate task container runtime, which ADR 0250 dropped: tasks move into [Instance containers](/reference/development-containers#tasks-in-an-instance-container), and the setting is removed with `task_vms`. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). Before that, every task group ran on a task VM.
 
 A task VM is an Ubuntu 26.04 VM on an Incus host. It is a copy of the [base snapshot](#the-base-vm-and-its-snapshot) of its host, which the removed base refresh converged to the recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Task VMs run only on the Incus hosts Beast and Shark. When neither host has capacity, the group waits.
 
@@ -540,11 +540,11 @@ Every host has two independent fixed pools, configured with `task_places` and `c
 
 The capacity migration sets existing Beast and Shark hosts to two task and two CI places, and Sabre to zero task and two CI places. It removes `max_vms`, `task_max_vms` and `ci_only` while preserving other Node settings.
 
-No entry admits a task VM any more: each answers `tasks.vm_runtime_removed` ([Task runtime](/reference/tasks#task-runtime)), and nothing waits for a place. Every task VM copied the base, which carried only the proof Project's checkout, `task:status` still shows each host's places and their holders ([Task places](/reference/tasks#task-places)). Lowering a pool size deletes no VM.
+No entry admits a task VM any more: each answers `tasks.vm_runtime_removed` ([Task runtime](/reference/tasks#task-runtime)), and nothing waits for a place. Every task VM copied the base, which carried only the proof Project's checkout. No read shows the places any more: the task places view of `task:status` is removed. Lowering a pool size deletes no VM.
 
 A task publishes its PR and releases its VM, workspace, keys and peer. An [idle](/reference/tasks#release-an-idle-task-vm) group releases its VM too. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
-A host with a [`containers` setting](/reference/node-settings#task-container-fields) also has container task places. Each live row records its runtime, `vm` or `container`, and holds a place of that runtime only, so container places never count against VM places. Normal placement takes container places only while `task_vms.container_placement` is on, and then only on a host with a recorded container base. The setting is off by default, so a host's task VMs keep their task groups. A base refresh takes a VM CI place. The host keeps one recorded base per runtime.
+Each old row records its runtime, `vm` or `container`. The host keeps one recorded base per runtime.
 
 Every new VM copies the base and has the Large profile: 6 vCPU, 12 GiB of memory and a 60 GiB disk. VM size does not multiply its capacity charge.
 
@@ -671,15 +671,11 @@ No VM parks or resumes any more: `task_vm.resume` and the Artisan command `task-
 
 No sweep runs any more. The Gateway job `SweepTaskVmHosts`, its 30-minute schedule, the 5-minute [idle release](/reference/tasks#release-an-idle-task-vm) schedule and the per-minute observation of parked VMs are removed with the task VM runtime ([Task runtime](/reference/tasks#task-runtime)). A VM row that a failed start or release left stays until an operator removes the leftovers by hand.
 
-A VM that dies on an Incus host stays in its row until its group ends. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`; the row is not failed by a sweep. Cancel or complete the group of a missing VM to release it, as for [a release](#release-a-task-vm).
+A VM that dies on an Incus host stays in its row until its group ends; no sweep fails the row. Cancel or complete the group of a missing VM to release it, as for [a release](#release-a-task-vm).
 
-[Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it has `settings.task_vms` and is reachable over SSH. The fleet rollout ignores these codes.
+[Doctor](/cli/doctor) does not inspect task VM hosts: it has no code for an orphaned, missing or stray VM. The operator lists a host with `incus list --all-projects` instead.
 
 Doctor does not inspect the Node of a `parked` task VM, because the VM is stopped on purpose. Its `node` family reports one informational `node.task_vm_parked`, and the other families check nothing. So no problem is filed for a parked VM.
-
-### Report strays
-
-Doctor reports no strays on a task VM host. Its host audit had no caller after the task VM runtime was removed, and it is deleted. The codes `node.task_vm_stray_instance`, `node.task_vm_stray_volume`, `node.task_vm_stray_record` and `node.task_vm_stray_node` are never reported; the operator lists a host with `incus list --all-projects` instead.
 
 ### States
 
@@ -753,7 +749,7 @@ The Shark topology group is the **go/no-go point**. The full host 7.0.1 → task
 
 The drain includes every `orbit-ci` container on the host, task VMs, builders, and parked task VMs. Inventory names at rollout time; do not rely on a fixed runner list. Preserve parked guest data and configurations before finishing their rows; retain an offline representative old-image guest for compatibility checks. Do not delete unrelated workloads. Beast's drain also includes every operator-owned VM in every project, including any remaining `adr0223-memory-20261019` VMs. Never clear Beast's task VM settings for this upgrade.
 
-The existing admission control is global: set `ORBIT_TASK_VMS_ENABLED=false` (`task_vms.enabled`) on the Gateway and reload its configuration and workers. Keep it false through convergence and rollback; there is no per-host maintenance switch. New claims are blocked while existing rows can finish and be destroyed. Wait for all rows on this host to end, including parked rows, and for image builds to finish. Stop CI dispatch before shutting down runner containers.
+No task VM starts any more, so no admission switch is needed; the task VM settings are removed. Wait for all rows on this host to end, including parked rows, and for image builds to finish. Stop CI dispatch before shutting down runner containers.
 
 Save and disable instance autostart across every project before stopping guests; daemon restarts during package installation must leave them stopped. Keep these per-instance overrides through upgrade verification or rollback verification. Do not edit profiles: Doctor compares the runner profile exactly. Do not start a manual build, instance, or resume during this window.
 
@@ -939,7 +935,7 @@ On a host whose pool source is a regular file, this phase caps the host-wide ZFS
 
 Task VMs need nothing that the restrictions forbid, except low-level config: medium and large VMs set `raw.qemu.conf` for free page reporting. Only the Gateway sets instance config in the project.
 
-The phase takes these values from the host Node's typed `settings.task_vms`. See [Configure task VMs](#configure-task-vms). The bridge and ACL live in the Incus project `default`. The phase preserves unrelated projects, pools and networks.
+The phase took these values from the host Node's `settings.task_vms`, which is removed ([Configure task VMs](#configure-task-vms)). The bridge and ACL live in the Incus project `default`. The phase preserves unrelated projects, pools and networks.
 
 Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only the shared host preparation phase creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
 
@@ -949,7 +945,7 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 ### Prepare a container host
 
-A host whose [`settings.task_vms`](/reference/node-settings#task-container-fields) has a `containers` member also gets the container host preparation below, which [Instance containers](/reference/development-containers#nodes) reuse. The same `host-prepare` phase prepares that side, in two task files that run only on such a host:
+A host whose `settings.task_vms` had a `containers` member also got the container host preparation below, which [Instance containers](/reference/development-containers#nodes) reuse. The same `host-prepare` phase prepares that side, in two task files that run only on such a host:
 
 - `tasks/task-container-host-system.yml` runs before the VM part, because the VM part needs Incus.
 - `tasks/task-container-host-prepare.yml` runs after it, because it needs the pool.
@@ -1130,8 +1126,6 @@ No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`,
 
 The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`, and later its task start and release parts `start` and `delete`. The parts `host-prepare` and `base-*` stay while tests of shared files load them; nothing runs them. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
 
-The Node column `image_refresh_hold` and `orbit node:update NODE --image-refresh-hold` / `--no-image-refresh-hold` remain until the task VM settings leave. Nothing reads the hold.
-
 ##### Build the nested fleet in the converge
 
 The `fleet` phase of the common converge (`swamp/ansible/tasks/task-vm-fleet.yml`) reads the containers of the VM first. A fleet is complete when its three containers exist and the operator stamp is recorded. The operator join writes that stamp as its last task, after the build, and every promoted base has it.
@@ -1212,36 +1206,13 @@ An active work turn keeps its VM across recipe changes. Publishing the PR delete
 
 There is no fallback image. A claim copies the recorded base snapshot of its host, or waits. Another host with a base snapshot can serve it.
 
-### Add a task VM host
-
-A new host needs Incus and ufw, and its managed user needs passwordless `sudo`. Then:
-
-1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:update --task-vms` or the Node update API. Use a unique `cidr`. Set a new `zfs_dataset` for native storage, or omit it and set `pool_size` for an Incus-managed loop file.
-2. Not possible any more: nothing makes a base snapshot (see [Refresh the base snapshot](#refresh-the-base-snapshot)).
-
-Host preparation allows DHCP requests from the task bridge and DNS to its host address through UFW, as well as forwarded VM traffic. The input rules use the catalog names `orbit:task-vms-dhcp`, `orbit:task-vms-dns-tcp` and `orbit:task-vms-dns-udp`, visible with `firewall:list --managed`. A [container host](#prepare-a-container-host) has the same three rules for its container bridge, as `orbit:task-containers-dhcp`, `orbit:task-containers-dns-tcp` and `orbit:task-containers-dns-udp`. Incus's own firewall allowances do not override UFW's input policy. Without these input rules, a host with default-deny input cannot give the base VM a DHCP lease, and cloud-init fails to install its SSH server.
-
-To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. The settings operation withdraws the owned input rules and proves their absence before saving the removal. Changing the bridge or CIDR withdraws the old rules too; the next base refresh prepares the new bridge.
-
-Removing `containers`, or changing its `network` or `cidr`, withdraws only the three container rules. Each bridge has its own names, because the withdrawal deletes rules by comment. A reachable Node removal also withdraws these rules, including duplicate or residual rows. Its Incus project, images, topology seeds, bridge, ACL, and pool remain for manual removal.
-
 ### Limit fleet traffic on the hub
 
-Nothing converges the hub filter any more. The artisan command `task-vms:prepare-hub` and the kind `task_vm.hub_converge` are removed. A filter that an earlier run loaded (`inet orbit_task_vms` and its systemd unit on the VPN Node) stays until the task VM settings leave; it filters only the reserved range `task_vms.wireguard_range`, so traffic between other Nodes does not change. The VPN Node's managed UFW rules for that range still come from the firewall catalog (`firewall:list --managed`).
+Nothing converges the hub filter any more, and nothing configures a task VM host. The artisan command `task-vms:prepare-hub`, the kind `task_vm.hub_converge`, the Node setting `task_vms` and the task VM settings of the Gateway are removed ([old paths](/reference/old-paths#task-vm-settings)). The firewall catalog names neither the VPN Node's UFW rules for the reserved range nor a host's task bridge input rules (`orbit:task-vms-*`, `orbit:task-containers-*`). The next converge of the VPN Node deletes the route rules whose comment starts with `orbit:task-vm-`.
 
-The WireGuard address allocator skips the reserved range for other Nodes. A task VM Node has no access grants to other Nodes.
+A filter that an earlier run loaded (`inet orbit_task_vms` and its systemd unit on the VPN Node) goes with the next converge of the VPN Node ([Converge the hub](/reference/wireguard-endpoints#converge-the-hub)). It filtered only the reserved range, so traffic between other Nodes does not change.
 
-### Refuse task VMs in Caddy
-
-TCP 443 on the Gateway Node and on the `websocket` Node is one Caddy listener for every private site on that Node, so the hub table cannot tell `reverb.orbit` from `executor.orbit` or `analytics.orbit`. Caddy closes that gap. On every Node, every site except `gateway.orbit`, `reverb.orbit`, and the optional Swamp site named by `task_vms.swamp_host` aborts a client in `task_vms.wireguard_range`. [Caddy configuration](/reference/caddy-configuration#listener-addresses) shows the guard.
-
-Set `ORBIT_TASK_VMS_SWAMP_HOST=swamp.orbit` for the managed private Swamp Route on the `swamp` Node. The setting adds no hub rule, so a task VM reaches the site only when the hub admits TCP 443 on that Node, as it does on the Gateway and `websocket` Nodes. The exception matches exactly one hostname on port 443 and never a public Ingress site or a block with extra hostnames. The other client-range guard still applies. It admits no sibling site, subdomain, or alternate port. An unset or empty value admits no Swamp site.
-
-Caddy renders the guard only after you configure task VMs: you enable them, or you set `dev_cluster_id`, `swamp_host`, or a host. Until then, every Caddyfile stays as it was. The guard reads only that condition, `task_vms.wireguard_range`, and `task_vms.swamp_host`. Another invalid task VM value never changes a Caddyfile or blocks a build.
-
-The next Gateway release rebuilds only the Gateway Node's Caddyfile. After you set these values, run `php artisan orbit:caddy-build NODE` for every other Node that serves sites, before the first task VM enrolls. Until then, Doctor reports `role.caddy_build_drift` on each of those Nodes. Changing or clearing `swamp_host` also reports this drift on the Node that serves the hostname until its next build. Unset these values only after every task VM is destroyed, because the next build of each Node then drops the guard.
-
-While task VMs are configured and the range or Swamp hostname is invalid, every Node Caddy build refuses at stage `render` and names the problem. Live Caddyfiles stay unchanged. After [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change), run the Node Caddy build to apply a corrected range. Gateway releases do not converge Caddy sites.
+The WireGuard address allocator still skips the reserved range `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24`: it never hands an address of it to a Node. A task VM Node has no access grants to other Nodes. No Caddy site refuses the range any more: the `@orbit_task_vms` matcher and its `abort` are gone from every route block ([Caddy configuration](/reference/caddy-configuration#listener-addresses)).
 
 ### Placement invariant
 
@@ -1249,60 +1220,26 @@ A task VM workspace is a normal Instance on a normal Node, so generic Instance o
 
 ### Configure task VMs
 
-Configure each host's pools from measured peak memory, leaving room for the host, QEMU and ZFS ARC. The approved allocation is two task places and two CI places each on Beast and Shark, and zero task places and two CI places on Sabre. A place is one VM, not a resource unit. Pool sizes are explicit Node settings; shipping this model changes no live sizes.
-
-Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway's environment. Per-host configuration lives in the operator-owned [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) on each host Node, not in the environment and not in its roles.
-
-| Key | Variable | Meaning |
-| --- | --- | --- |
-| `task_vms.enabled` | `ORBIT_TASK_VMS_ENABLED` | Allows new task VMs. Default `false` |
-| `task_vms.container_placement` | `ORBIT_TASK_VMS_CONTAINER_PLACEMENT` | Lets normal placement take [container places](#place-task-vms). Default `false`. It applies to every host; nothing turns it on, and [the plan](/solutions/development-container-runtime#pr-17-remove-task-vms-the-pi-server-and-the-task-container-setting) removes it |
-| `task_vms.dev_cluster_id` | `ORBIT_TASK_VMS_DEV_CLUSTER_ID` | The ID of the Cluster that task VM Nodes join |
-| `task_vms.wireguard_range` | `ORBIT_TASK_VMS_WIREGUARD_RANGE` | The reserved WireGuard range. Default `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24` |
-| `task_vms.swamp_host` | `ORBIT_TASK_VMS_SWAMP_HOST` | One DNS hostname for the private Swamp Route, such as `swamp.orbit`, served on TCP 443 by the `swamp` Node. No scheme, port, path, wildcard, or list. Unset or empty admits no Swamp site |
-| `task_vms.pi.artifact_path` | `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` | The absolute path of the pinned Pi executable on the Gateway |
-| `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |
-| `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
-| `task_vms.medium_projects` | `ORBIT_TASK_VMS_MEDIUM_PROJECTS` | Unused: the settings still validate it, but no path acts on it since the topology sizing went. Default `[]` |
-| `task_vms.large_projects` | `ORBIT_TASK_VMS_LARGE_PROJECTS` | Unused: the settings still validate it, but no path acts on it since the topology sizing went. Default `[]` |
+There is nothing to configure. `config/task_vms.php`, `TaskVmSettings` and every `ORBIT_TASK_VMS_*` variable are removed, with `ORBIT_PI_PORT` and `ORBIT_SWAMP_PROOF_CLUB_API_KEY`. The `gateway` role's convergence removes them from the Gateway's environment file ([Gateway environment](/reference/gateway-environment)).
 
 Task VM code reaches the model router only through the core interface `App\Domain\TaskVms\TaskVmModelRoute`: `assertReady()`, `origin()`, and `key()`. The [ai-router extension](/reference/ai-router) binds it. `origin()` is the [task VM guard](/reference/ai-router#task-vm-guard) on the router's Node, such as `http://10.44.0.3:8318`, and `key()` is the one fixed placeholder key that every task VM holds. The Gateway keeps the key as a secret setting and changes it only on an incident, with no scheduled refresh. A task start writes the origin and the key into the Pi models file of the VM, inside the claim. No start and no release calls the model router, and no per-VM key exists.
 
 The `tasks` extension depends on `ai-router`, and enabling `tasks` calls `assertReady()`, which refuses with `ai_router.disabled` (409) until the ai-router is set up and has its Node. `ai-router:destroy` refuses only while `tasks` is enabled. See [Teardown](/reference/ai-router#teardown).
 
-The [Node settings field table](/reference/node-settings#task-vm-fields) owns the host configuration. The containing Node supplies host identity. `operator_owned` keeps listed resources out of the [stray report](#report-strays).
-
-Placement selects active Nodes with this setting and capacity reads their place budget. Host preparation uses its pool, network, and image alias. The `app-dev` role is not a host marker.
-
-To replace `ORBIT_TASK_VMS_INCUS_HOSTS`, [configure and verify Node settings](/reference/node-settings#migrate-the-environment-host-list) before removing the variable from `gateway.env`. The Gateway does not read the environment list.
-
-`TaskVmSettings` validates the configuration once, when it is first used. It checks every value that is set, also while task VMs are off, so you can prepare hosts and the hub before you enable task VMs. An unset or empty value stays absent, and malformed JSON is an error. Enabling task VMs also requires `dev_cluster_id` and at least one host.
-
-The reserved range must always be a private network. As soon as task VMs are enabled, or the Cluster, the origin, the Swamp hostname, or a host is set, the range must also be a smaller network inside the Gateway's VPN subnet, and no host's `cidr` may overlap that subnet. While none of them is set, Orbit does not compare the range with the subnet, so a fleet on another subnet keeps working. Invalid configuration fails with `task_vm.invalid_config` (HTTP 500).
-
 ### Errors
 
-`IncusTaskVmProvider` reads the host's output: the instance state and its one IPv4 address inside the bridge range. Invalid output fails with `task_vm.invalid_host_output`, and a failed guest command with `task_vm.host_command_failed`. Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
+Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
 | `task_vm.invalid_config` | 500 | A `task_vms` value is invalid. See [Configure task VMs](#configure-task-vms) |
 | `task_vm.unknown_host` | 409 | The Node is not active or has no valid `settings.task_vms` |
-| `task_vm.invalid_gateway_key` | 500 | The Gateway's SSH public key is not one OpenSSH public key line |
 | `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
 | `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
 | `task_vm.access_refused` | 409 | An access grant names a task VM Node as its consumer |
-| `task_vm.project_unsupported` | 409 | A group of a Project other than the proof Project needs a new task VM. The base carries only the proof Project's checkout |
-| `task_vm.range_in_use` | 409 | A Node that is not the Node of a live task VM holds an address in the reserved range |
 | `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
-| `task_vm.setup_unavailable` | 409 | The setup script is missing, or the target Node has no WireGuard address |
 | `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
-| `task_vm.invalid_host_output` | 502 | Incus or a task VM guest returned output that fails these checks |
-| `task_vm.host_command_failed` | 502 | An `incus` command on the host, or a guest command in a task VM, failed |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
-| `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. No refresh can rebuild it any more |
-| `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. No refresh can rebuild it any more |
-| `task_vm.topology_seed_failed` | 502 | The topology seed build was refused. The error includes its bounded diagnostic |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
 The build row records the step and error |

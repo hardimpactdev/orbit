@@ -83,28 +83,6 @@ it('sends the apps folder, including a colon in the path', function (): void {
         ]);
 });
 
-it('sends task VM host settings and their removal without changing apps', function (?array $host): void {
-    node_update_profile();
-    $mockClient = MockClient::global([
-        '*/api/v1/nodes/9' => MockResponse::make([
-            'data' => ['id' => 9, 'name' => 'beast', 'status' => 'active', 'public_ssh_host' => '192.0.2.9', 'settings' => $host === null ? null : ['task_vms' => $host]],
-            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-        ]),
-    ]);
-    $this->artisan('node:update', ['node' => '9', '--task-vms' => json_encode($host), '--json' => true])->assertExitCode(0);
-    expect($mockClient->getLastRequest()?->body()->all())->toEqual(['task_vms' => $host]);
-})->with([
-    'configured host' => [['cidr' => '10.251.77.0/24', 'task_places' => 4, 'ci_places' => 2, 'image_alias' => 'custom-base']],
-    'CI-only loop pool' => [['cidr' => '10.252.10.0/24', 'task_places' => 0, 'ci_places' => 2, 'pool_size' => '512GiB']],
-    'host with operator-owned resources' => [['cidr' => '10.251.77.0/24', 'task_places' => 4, 'ci_places' => 2, 'operator_owned' => ['orbit-ci/*', 'orbit-tasks/retained']]],
-    'CI-only host' => [['cidr' => '10.251.77.0/24', 'task_places' => 6, 'ci_places' => 2]],
-    'task-limited host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
-    'proof-only host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
-    'shared host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
-    'host with task containers' => [['cidr' => '10.251.77.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.251.78.0/24', 'task_places' => 1, 'network' => 'orbittaskc0']]],
-    'removed host' => [null],
-]);
-
 it('sends only the CI members given, or null to clear them, beside the other fields', function (array $options, array $body): void {
     node_update_profile();
     $mockClient = MockClient::global([
@@ -144,19 +122,18 @@ it('renders the Gateway refusal of CI places on a Node without an active ci-runn
 
 it('reports a skip when the Gateway wrote nothing, in human and JSON output', function (): void {
     node_update_profile();
-    $host = ['cidr' => '10.251.77.0/24', 'task_places' => 2, 'ci_places' => 2];
     MockClient::global([
         '*/api/v1/nodes/9' => MockResponse::make([
-            'data' => ['id' => 9, 'name' => 'beast', 'status' => 'active', 'public_ssh_host' => '192.0.2.9', 'settings' => ['task_vms' => $host]],
+            'data' => ['id' => 9, 'name' => 'beast', 'status' => 'active', 'public_ssh_host' => '192.0.2.9'],
             'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844', 'skipped' => 'node.unchanged'],
         ]),
     ]);
 
-    $this->artisan('node:update', ['node' => '9', '--task-vms' => json_encode($host)])
+    $this->artisan('node:update', ['node' => '9', '--name' => 'beast'])
         ->expectsOutputToContain('Skipped — already set (node.unchanged)')
         ->doesntExpectOutputToContain('updated.')
         ->assertExitCode(0);
-    $this->artisan('node:update', ['node' => '9', '--task-vms' => json_encode($host), '--json' => true])
+    $this->artisan('node:update', ['node' => '9', '--name' => 'beast', '--json' => true])
         ->expectsOutputToContain('"skipped":"node.unchanged"')
         ->assertExitCode(0);
 });
@@ -206,17 +183,6 @@ it('refuses missing and malformed input before making a request', function (arra
     'no option' => [['node' => '2'], 'node.option_required'],
     'empty name' => [['node' => '2', '--name' => ''], 'node.name_required'],
     'empty platform' => [['node' => '2', '--platform' => ''], 'node.platform_required'],
-    'invalid host JSON' => [['node' => '2', '--task-vms' => '{'], 'node.setting_invalid'],
-    'host is a list' => [['node' => '2', '--task-vms' => '[]'], 'node.setting_invalid'],
-    'host unknown field' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":4,"unknown":true}'], 'node.setting_invalid'],
-    'string task count' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":12,"task_max_vms":"2"}'], 'node.setting_invalid'],
-    'string capacity' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":"4"}'], 'node.setting_invalid'],
-    'non-string pool size' => [['node' => '2', '--task-vms' => '{"cidr":"10.252.10.0/24","max_vms":3,"pool_size":512}'], 'node.setting_invalid'],
-    'non-string operator-owned resource' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":4,"operator_owned":["orbit-ci/*",7]}'], 'node.setting_invalid'],
-    'operator-owned object instead of list' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":4,"operator_owned":{"resource":"orbit-ci/*"}}'], 'node.setting_invalid'],
-    'containers without places' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24"}}'], 'node.setting_invalid'],
-    'containers unknown field' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"image_alias":"base"}}'], 'node.setting_invalid'],
-    'containers with CI places' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}'], 'node.setting_invalid'],
     'CI places not a number' => [['node' => '14', '--ci-places' => 'four'], 'node.ci_places_invalid'],
     'empty CI places' => [['node' => '14', '--ci-places' => ''], 'node.ci_places_invalid'],
     'negative CI places' => [['node' => '14', '--ci-places' => '-1'], 'node.ci_places_invalid'],
@@ -225,7 +191,6 @@ it('refuses missing and malformed input before making a request', function (arra
     'clear with proof only' => [['node' => '14', '--no-ci' => true, '--ci-proof-only' => true], 'node.ci_option_conflict'],
     'clear with shared places' => [['node' => '14', '--no-ci' => true, '--no-ci-proof-only' => true], 'node.ci_option_conflict'],
     'both proof-only switches' => [['node' => '14', '--ci-proof-only' => true, '--no-ci-proof-only' => true], 'node.ci_option_conflict'],
-    'containers as a list' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":[]}'], 'node.setting_invalid'],
 ]);
 
 it('renders a Gateway refusal through the shared boundary', function (): void {
@@ -278,18 +243,10 @@ it('refuses malformed reboot hold options before sending a request', function (s
         ->expectsOutputToContain('node.reboot_hold_invalid')->assertExitCode(1);
 })->with(['', '1', 'yes', 'null']);
 
-it('sets and clears an image refresh hold through Node update', function (bool $hold): void {
+it('refuses the removed task VM and image refresh hold options by name and sends no request', function (string $option): void {
     node_update_profile();
-    $mock = MockClient::global(['*/api/v1/nodes/12' => MockResponse::make([
-        'data' => ['id' => 12, 'name' => 'sabre', 'status' => 'active', 'image_refresh_hold' => $hold],
-        'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-    ])]);
-    expect(Artisan::call('node:update', ['node' => '12', $hold ? '--image-refresh-hold' : '--no-image-refresh-hold' => true, '--json' => true]))->toBe(0);
-    expect(Artisan::output())->toContain('"image_refresh_hold":'.($hold ? 'true' : 'false'));
-    $mock->assertSent(fn ($request): bool => $request instanceof UpdateNodeRequest && $request->body()->all() === ['image_refresh_hold' => $hold]);
-})->with([true, false]);
-
-it('refuses conflicting image refresh hold switches before sending a request', function (): void {
-    expect(Artisan::call('node:update', ['node' => '12', '--image-refresh-hold' => true, '--no-image-refresh-hold' => true, '--json' => true]))->toBe(1);
-    expect(Artisan::output())->toContain('node.image_refresh_hold_invalid');
-});
+    $mock = MockClient::global();
+    expect(Artisan::call('node:update', ['node' => '12', $option => $option === '--task-vms' ? '{}' : true, '--json' => true]))->toBe(1)
+        ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error'])->toMatchArray(['code' => 'input.invalid', 'message' => "The \"{$option}\" option does not exist."]);
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with(['--task-vms', '--image-refresh-hold', '--no-image-refresh-hold']);

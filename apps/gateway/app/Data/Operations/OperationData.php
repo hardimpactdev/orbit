@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Operations;
 
-use App\Data\Tasks\TaskPlaceWaitData;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Tasks\TaskPlaces;
 use App\Models\Operation;
 use DateTimeInterface;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -49,7 +47,6 @@ final class OperationData extends Data
         public ?string $currentStepStartedAt = null,
         public ?string $currentStepObservedAt = null,
         public array|Optional $steps = new Optional,
-        public ?TaskPlaceWaitData $capacityWait = null,
         public ?string $overdueSince = null,
         public ?string $holdWaitReason = null,
         public ?string $readyAt = null,
@@ -60,10 +57,6 @@ final class OperationData extends Data
     {
         $data = self::fromModel($operation, $callerNodeName);
         $data->input = self::scalars($operation->input);
-        // A waiting admission's input is only the caller's request; it keeps the same shape until admission replaces it.
-        if (is_array($operation->input['capacity_request'] ?? null)) {
-            $data->input['capacity_request'] = self::scalars($operation->input['capacity_request']);
-        }
         $data->steps = self::recordedSteps($operation);
 
         return $data;
@@ -155,7 +148,6 @@ final class OperationData extends Data
             error: is_array($failure) && is_string($failure['detail'] ?? null)
                 ? ['code' => $operation->error_code, 'detail' => $failure['detail'],
                     ...($operation->error_code !== 'operation.timed_out' ? ['stderr_recorded' => ($failure['stderr_recorded'] ?? false) === true] : [])] : null,
-            capacityWait: app(TaskPlaces::class)->waitOf($operation),
             overdueSince: is_string($operation->state['overdue_since'] ?? null) ? $operation->state['overdue_since'] : null,
             holdWaitReason: self::holdWaitReason($operation),
             readyAt: is_string($operation->result['ready_at'] ?? null) ? $operation->result['ready_at'] : null,

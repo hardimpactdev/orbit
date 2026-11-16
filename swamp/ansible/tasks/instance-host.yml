@@ -85,10 +85,9 @@
       kernel.keys.maxbytes: 2000000
       vm.max_map_count: 262144
 
-# The cap the system part sized from memory, never above the cap the Node already runs. A task VM host keeps the ARC its task side
-# sets (`instances.arc` is false there), so the Instance side never changes a cap that the host's task VMs run with.
+# The cap the system part sized from memory, never above the cap the Node already runs.
 - name: Keep the ZFS ARC within the Node's budget
-  when: (instance_pool_read.stdout | from_json).driver == 'zfs' and instances.arc | default(true) | bool
+  when: (instance_pool_read.stdout | from_json).driver == 'zfs'
   block:
     - name: Keep the ARC cap after reboot
       ansible.builtin.copy:

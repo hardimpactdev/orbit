@@ -10,8 +10,6 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
-use App\Data\Nodes\NodeTaskVmContainersData;
-use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
@@ -99,10 +97,8 @@ final readonly class BaselineNormalInstanceHostIntent
         if (! is_string($cidr)) {
             throw new ResourceOperationException('instance.host_unavailable', 'The Node has no Instance bridge yet: the admission of a role add or converge allocates it.', 409);
         }
-        // Instance containers and the task containers of the same host take their isolated ID maps from root's one range.
-        $taskHost = app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->task_vms;
-        $taskContainers = $taskHost?->containers;
-        $taskIds = $taskContainers instanceof NodeTaskVmContainersData ? ($taskContainers->task_places + 1) * self::TaskPlaceIds : 0;
+        // A normal Node has no task container places, so the base takes no extra ID maps.
+        $taskIds = 0;
         $subnet = Ipv4Subnet::from($cidr);
         [$gateway, $last] = $subnet->usableRange();
 
@@ -122,9 +118,6 @@ final readonly class BaselineNormalInstanceHostIntent
             'bridge_endpoints' => app(InstanceContainer::class)->nodeEndpoints($node),
             'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains()),
             'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds,
-            // A task VM host sizes the ARC for its task side, or keeps the Node's own (task-vm-host-prepare.yml): the Instance side
-            // never changes it there.
-            'arc' => $taskHost === null,
             'incus' => $incus,
             'image' => InstanceImage::for($gateway),
             'folders' => InstanceFolderPlan::for($folders),
@@ -175,7 +168,6 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
-use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
@@ -490,7 +482,7 @@ final readonly class BaselineNormalInstanceContainer
     }
 
     /**
-     * T3's published port: WireGuard peers reach it through the proxy device, but the task VM range does not, so its deny comes first.
+     * T3's published port: WireGuard peers reach it through the proxy device.
      *
      * @return list<array<string, string>>
      */
@@ -500,8 +492,6 @@ final readonly class BaselineNormalInstanceContainer
             'to_ip' => $runtime->bridge_address, 'to_port' => (string) InstanceHostIntent::T3Port, 'proto' => 'tcp'];
 
         return [
-            [...$rule, 'rule' => 'deny', 'from_ip' => TaskVmConfig::wireguardRange(config('task_vms.wireguard_range'))->value(),
-                'comment' => self::firewallPrefix($instance).'t3-task-vms'],
             [...$rule, 'rule' => 'allow', 'from_ip' => 'any', 'comment' => self::firewallPrefix($instance).'t3'],
         ];
     }

@@ -681,30 +681,6 @@ Deno.test({
 
 Deno.test({
     name:
-        "a task VM host keeps the ZFS ARC its task side sets: the Instance side writes no cap",
-    ignore: !hasAnsible,
-    async fn() {
-        const f = await fixture();
-        try {
-            f.write({ ...f.instances, arc: false });
-            const result = await f.run();
-            assert(result.ok, result.output);
-            assertEquals(Deno.readTextFileSync(`${f.folder}/arc`).trim(), "0");
-            assert(!f.has("arc.conf"));
-            // The rest of the Instance side is there.
-            assert(
-                f.state().networks.some((n: { name: string }) =>
-                    n.name === "orbitinst0"
-                ),
-            );
-        } finally {
-            f.cleanup();
-        }
-    },
-});
-
-Deno.test({
-    name:
         "an Instance bridge range that another interface of the Node holds refuses before any change",
     ignore: !hasAnsible,
     async fn() {

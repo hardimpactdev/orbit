@@ -184,14 +184,14 @@ it('fails a kind that reads its result as JSON when its result step was skipped,
 
 it('names the alternative end check that ran', function (): void {
     $operation = unreadablePublish(startedMinutesAgo: 2);
-    $operation->update(['kind' => 'node.update', 'input' => []]);
-    unreadableSocket($operation, 'succeeded', 'skipped', completedMinutesAgo: 1, workflow: 'operation-node-update', job: 'settings', step: 'Check owner and mode',
-        more: [['name' => 'Withdraw task host input', 'status' => 'failed']]);
+    $operation->update(['kind' => 'analytics.enable', 'input' => []]);
+    unreadableSocket($operation, 'succeeded', 'skipped', completedMinutesAgo: 1, workflow: 'operation-analytics-enable-direct', job: 'analytics', step: 'Probe the tracking host-0',
+        more: [['name' => 'Publish Caddy, reload-0', 'status' => 'failed']]);
 
     unreadablePass();
 
     expect($operation->refresh()->error_code)->toBe('operation.result_unreadable')
-        ->and($operation->failed_step)->toBe('Withdraw task host input');
+        ->and($operation->failed_step)->toBe('Publish Caddy, reload-0');
 });
 
 it('settles a cancel of a run that has already ended in the next pass, and sends Swamp no cancel', function (): void {

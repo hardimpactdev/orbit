@@ -59,7 +59,7 @@ final readonly class FleetReboot
     }
 
     /**
-     * The task hosts of the open pass. Task work refuses on them and placement skips them until the pass ends, so the drain
+     * The task hosts of the open pass. Task work refuses on them until the pass ends, so the drain
      * finds no turn or check that started after admission.
      *
      * @return list<int>

@@ -33,7 +33,7 @@ A [Project removal](/reference/projects#remove-a-project) deletes its task group
 
 Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `task:status` and the `task-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
 
-`task:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), `merges`, and `capacity`. `merges` lists each open task whose pull request Orbit reviews and merges: a task with a `pr_url` in a review-and-merge Project, or a task that reviews an incoming pull request. An open task without a pull request, such as one in `backlog`, is absent. `capacity` is described in [Task places](#task-places).
+`task:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), and `merges`. `merges` lists each open task whose pull request Orbit reviews and merges: a task with a `pr_url` in a review-and-merge Project, or a task that reviews an incoming pull request. An open task without a pull request, such as one in `backlog`, is absent.
 
 `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A subtask's assistance flag does not add its parent task to the list unless the parent also requests assistance. The view remains available while tasks is disabled.
 
@@ -133,7 +133,7 @@ Each read and command on the VM is one official `@swamp/ssh exec` argument list;
 
 Early in the workspace run, beside the clone credential, a step asks the Gateway for a read token (`purpose: dependencies`). Two parallel steps write the Composer and npm configuration of the task account from it, right before the first setup command. After the last setup command, on success or failure, two parallel steps remove both files and revoke the token. The revoke step reports the outcome in the receipt as `dependency_token`. A revoke that could not run says so: `The revoke step could not run.` Any other failed revoke says `The revoke request did not complete.`
 
-Each captured Project setup command runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the [proof club credential](/reference/gateway-environment) reaches the VM on SSH stdin of one more exec; no script runs there either.
+Each captured Project setup command runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the proof club credential reached the VM; the Gateway reads that key no more on SSH stdin of one more exec; no script runs there either.
 
 No refresh candidate proof takes a task VM CI place: the refresh is removed. A [`proof:run`](/cli/proof/run#the-run) never takes a VM place: it runs in copies. Task starts never take it, even when it is idle. See [Place task VMs](/reference/compute-drivers#place-task-vms) for the budget units and place numbers.
 
@@ -147,22 +147,9 @@ Success leaves the group `running` and its workspace `source_resolved`. The task
 
 `image` is `{ recipe_identity, fingerprint, build_id, fallback }`, copied from the VM row. `fallback` is `true` when the VM started from the host's last promoted image instead of the current recipe's; `recipe_identity` then names that older recipe.
 
-#### Task places
+#### Last activity
 
-No admission waits for a task place any more: the task VM admission and its queue are removed. The view still reads every `waiting` Operation on a group that a release before the removal recorded, in Operation ID order; nothing admits it, and it ends at its run budget. Every host shows 0 places.
-
-`task:status` returns `capacity` with two lists:
-
-| Field | Contract |
-| --- | --- |
-| `hosts` | Each active task VM host, in configuration order: `node_id`, `node`, `task_places`, `task_used`, `task_free`, `ci_places`, `ci_used`, `ci_free`, and `holders` |
-| `queue` | Each waiting admission, front first: `position` (from 1), `operation_id`, `kind`, `group_id`, `title`, and `waiting_since` |
-
-A holder is one live task VM: `vm`, `pool` (`task` or `ci`), and the group it serves as `group_id`, `title`, `status`, `last_activity_at` and `active_operation_id`. The group fields are null for a VM that serves no group, such as a CI proof VM. Each live VM holds its place until its deletion is confirmed, so a failed or parked VM counts.
-
-A group's `last_activity_at` is the newest time any Operation on the group was created, started or ended, or null when it has none. `active_operation_id` is the Operation on the group that has not ended, or null. A holder with no active Operation is idle.
-
-A waiting Operation on a group, and `task:show` of its group, return `capacity_wait`: `operation_id`, `position`, and `holders`, the holders of the task pool on every host. `capacity_wait` is null when the group or Operation is not waiting for a task place.
+A group's `last_activity_at` is the newest time any Operation on the group was created, started or ended, or null when it has none.
 
 #### Release an idle task VM
 
@@ -462,7 +449,7 @@ A task moves to `todo`, by create or update, only when it has subtasks and every
 
 A list row has every field of `task:show` except the group's [`publication`](#publication-state) and, on each subtask, `completion_summary`, `fixup_problem` and the latest check's `output`. A summary is stored in full and a check keeps 16 KiB of output, so a page of full rows grows without bound. Publication reads the group's publish Operations and done check, several reads per group. Read one group with `task:show` to get them.
 
-The list reads each row's columns, subtasks, latest checks, task VM, reviewed commits, workspace route and runtime, task group mode, thread tokens, activity and capacity wait in a fixed number of queries per page, whatever the number of groups. `compact` still applies on top of a list row.
+The list reads each row's columns, subtasks, latest checks, task VM, reviewed commits, workspace route and runtime, task group mode, thread tokens and activity in a fixed number of queries per page, whatever the number of groups. `compact` still applies on top of a list row.
 
 ### Change subtasks
 
@@ -879,7 +866,7 @@ A guard proxy runs outside the VM, on the Node that holds the real key. It answe
 | Anything else from an admitted source | 401 |
 | Anything from any other source | 403 |
 
-The admitted sources are the task VM WireGuard network (`task_vms.wireguard_range`) and each agent Node that runs a [container model forwarder](/reference/ai-router#container-model-forwarder), where only containers on its bridge reach the guard. So the real key never leaves its Node and the Gateway, and a leaked placeholder is useless outside those sources. Each further key is one more placeholder-to-real pair in a guard.
+The admitted sources are the reserved WireGuard range `10.44.0.128/25`, which the WireGuard address allocator never hands to a Node, and each agent Node that runs a [container model forwarder](/reference/ai-router#container-model-forwarder), where only containers on its bridge reach the guard. So the real key never leaves its Node and the Gateway, and a leaked placeholder is useless outside those sources. Each further key is one more placeholder-to-real pair in a guard.
 
 The one exception is a short-lived minted token that never stays on the VM, such as a GitHub App token that a step mints for one push.
 
@@ -1678,7 +1665,6 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |
 | `ORBIT_TASKS_PR_MODE` | The [mode](#task-group-modes) of a group whose group and Project set none: `review_before_pr` (default) or `pr_when_done`. Any other value is `tasks.pr_mode_setting_invalid` |
-| `ORBIT_PI_PORT` | The port of the removed [Pi server](/reference/old-paths#the-pi-agent-server), default `3774`. No Node service may use it, and the task VM hub rules name it, until the task VM settings go |
 | `TYPESAFE_API_KEY` | The key for Jev calls |
 | `TYPESAFE_URL`, `TYPESAFE_MODEL` | The TypeSafe endpoint, default `https://api.typesafe.ai/v1`, and the classification model, default `jev-latest` |
 

@@ -6,17 +6,13 @@ namespace App\Domain\Nodes\Storage;
 
 use App\Data\Nodes\NodeSettingsData;
 use App\Data\Nodes\NodeStorageAppsData;
-use App\Data\Nodes\NodeTaskVmsData;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmException;
-use App\Domain\WireGuard\Ipv4Subnet;
-use App\Domain\WireGuard\VpnSettings;
 use stdClass;
 
 final readonly class NodeSettingsParser
 {
     /** @var list<string> */
-    private const array TOP_LEVEL_KEYS = ['apps', 'task_vms', 'nested_fleet'];
+    private const array TOP_LEVEL_KEYS = ['apps', 'nested_fleet'];
 
     /**
      * Only node:update sets a CI Node's `ci`; node:add takes the other members.
@@ -52,8 +48,6 @@ final readonly class NodeSettingsParser
         return new NodeSettingsPatch(
             hasApps: array_key_exists('apps', $object),
             apps: array_key_exists('apps', $object) ? $this->nestedApps($object['apps']) : null,
-            hasTaskVms: array_key_exists('task_vms', $object),
-            taskVms: array_key_exists('task_vms', $object) ? $this->nestedTaskVms($object['task_vms']) : null,
             hasNestedFleet: array_key_exists('nested_fleet', $object),
             nestedFleet: $this->nestedFleet(array_key_exists('nested_fleet', $object) ? $object['nested_fleet'] : false),
             hasCi: array_key_exists('ci', $object),
@@ -72,7 +66,6 @@ final readonly class NodeSettingsParser
 
         return new NodeSettingsData(
             apps: array_key_exists('apps', $object) ? $this->nestedApps($object['apps']) : null,
-            task_vms: array_key_exists('task_vms', $object) ? $this->nestedTaskVms($object['task_vms']) : null,
             nested_fleet: $this->nestedFleet(array_key_exists('nested_fleet', $object) ? $object['nested_fleet'] : false),
         );
     }
@@ -103,26 +96,6 @@ final readonly class NodeSettingsParser
         };
 
         return new NodeCiPatch(is_int($places) ? $places : null, is_bool($proofOnly) ? $proofOnly : null);
-    }
-
-    private function nestedTaskVms(mixed $value): ?NodeTaskVmsData
-    {
-        if ($value === null) {
-            return null;
-        }
-        $object = $this->jsonObject($value, 'task_vms must be an object or null.');
-        if (array_key_exists('node_id', $object)) {
-            $this->reject('task_vms must not contain node_id.');
-        }
-        // The task container side is a JSON object too; its own validation rejects any other value.
-        if (($object['containers'] ?? null) instanceof stdClass) {
-            $object['containers'] = get_object_vars($object['containers']);
-        }
-        try {
-            return NodeTaskVmsData::validated($object, Ipv4Subnet::from(resolve(VpnSettings::class)->subnet()));
-        } catch (TaskVmException $exception) {
-            $this->reject(str_replace('incus.hosts.0', 'task_vms', $exception->getMessage()));
-        }
     }
 
     private function nestedApps(mixed $value): ?NodeStorageAppsData

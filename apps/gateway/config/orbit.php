@@ -85,9 +85,6 @@ return [
         // Transports a credentialed development checkout fetch may use. Tests add `file` for local origins.
         'checkout_protocols' => ['https'],
     ],
-    'pi' => [
-        'port' => max(1, (int) env('ORBIT_PI_PORT', 3774)),
-    ],
     'tasks' => [
         // Operator-owned repair trust: github.com owner/repository and positive integer account IDs, as
         // `owner/repo:id,id;owner/repo:id`. Empty disables review feedback. No logins, wildcards, roles, or

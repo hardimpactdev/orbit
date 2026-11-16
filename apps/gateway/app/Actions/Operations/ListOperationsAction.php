@@ -35,7 +35,7 @@ final readonly class ListOperationsAction
     {
         $rows = Operation::query()
             ->select(self::ListColumns)
-            ->addSelect(['input->caller_node_id as listed_caller_node_id', 'input->capacity_request as listed_capacity_request', 'result->ready_at as listed_ready_at'])
+            ->addSelect(['input->caller_node_id as listed_caller_node_id', 'result->ready_at as listed_ready_at'])
             ->withCallerNodeName()
             ->when(
                 ! $this->access->hasGatewayAuthority($consumer),
@@ -54,15 +54,11 @@ final readonly class ListOperationsAction
         return ['operations' => $page, 'next_cursor' => $rows->count() > $limit ? (string) $page->last()?->id : null];
     }
 
-    /** A row reads two members of the input, the caller Node and whether the operation waits for a task place, and a wake's `ready_at`. */
+    /** A row reads one member of the input, the caller Node, and a wake's `ready_at`. */
     private static function listedMembers(Operation $operation): void
     {
         $caller = $operation->getAttribute('listed_caller_node_id');
-        $request = $operation->getAttribute('listed_capacity_request');
-        $operation->input = array_filter([
-            'caller_node_id' => is_numeric($caller) ? (int) $caller : null,
-            'capacity_request' => is_string($request) ? json_decode($request, true) : $request,
-        ], static fn (mixed $value): bool => $value !== null);
+        $operation->input = is_numeric($caller) ? ['caller_node_id' => (int) $caller] : [];
         $readyAt = $operation->getAttribute('listed_ready_at');
         $operation->result = is_string($readyAt) ? ['ready_at' => $readyAt] : null;
     }

@@ -15,7 +15,6 @@ use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Shared\ResourceOperationException;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
-use App\Models\Task;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -54,9 +53,6 @@ final readonly class CancelOperationAction
         });
 
         $operation->refresh();
-        if ($operation->status === OperationStatus::Cancelled && isset($operation->input['capacity_request']) && $operation->target_type === 'task_group') {
-            Task::topLevel()->whereKey($operation->target_id)->update(['capacity_wait_reason' => null]);
-        }
         // A kind that left the registry has no run to stop and no reconciler read: the request ends it here.
         if (! $operation->status->terminal() && RetiredOperationSettlement::retired($operation)) {
             return app(RetiredOperationSettlement::class)->settle($operation);

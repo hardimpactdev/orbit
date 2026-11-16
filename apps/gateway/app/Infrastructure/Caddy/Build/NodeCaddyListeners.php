@@ -21,9 +21,6 @@ final readonly class NodeCaddyListeners
     /** The client ranges beside the VPN subnet that a private site on an Ingress Node admits: private and shared address space. */
     public const string PrivateClients = 'private_ranges 100.64.0.0/10';
 
-    /** The site sources a task VM needs: the Gateway API on `gateway.orbit` and Reverb on `reverb.orbit`. */
-    private const array TaskVmSources = ['gateway', 'websocket'];
-
     /**
      * @param  list<string>  $explicit  The WireGuard address, then the LAN address when the Node has one.
      * @param  ?string  $bridge  The Instance bridge's gateway address, when the Node has an Instance bridge.
@@ -33,16 +30,13 @@ final readonly class NodeCaddyListeners
         public ?string $wireGuard,
         public array $explicit,
         private string $vpnSubnet,
-        private ?string $taskVmRange,
-        private ?string $swampHost,
         public ?string $bridge,
     ) {}
 
     /**
      * @param  list<CaddySite>  $sites  Every site on the Node. The listeners do not depend on them.
-     * @param  ?string  $taskVmRange  The reserved task VM range once task VMs are configured, otherwise null.
      */
-    public static function forSites(Node $node, array $sites = [], string $vpnSubnet = '10.44.0.0/24', ?string $taskVmRange = null, ?string $swampHost = null): self
+    public static function forSites(Node $node, array $sites = [], string $vpnSubnet = '10.44.0.0/24'): self
     {
         $wireGuard = self::address(app(RouteRenderContext::class)->wireguardIp($node));
 
@@ -51,8 +45,6 @@ final readonly class NodeCaddyListeners
             wireGuard: $wireGuard,
             explicit: array_values(array_unique(array_filter([$wireGuard, self::address(app(RouteRenderContext::class)->lanIp($node))]))),
             vpnSubnet: $vpnSubnet,
-            taskVmRange: $taskVmRange,
-            swampHost: $swampHost,
             bridge: InstanceHostIntent::gateway($node),
         );
     }
@@ -91,23 +83,6 @@ final readonly class NodeCaddyListeners
             CaddyListenerRule::WireGuard, CaddyListenerRule::Shared => $this->vpnSubnet,
             CaddyListenerRule::Bridge => ($site->client ?? throw new \LogicException("The {$site->describe()} names no client.")).'/32',
         };
-    }
-
-    /**
-     * The task VM range a site refuses, or null. A task VM runs agent code as root, and the hub lets it reach
-     * the shared WireGuard listener of the Gateway and `websocket` Nodes. So once task VMs are configured, every
-     * site except the Gateway API, Reverb and the configured Swamp site refuses the range, inside the VPN subnet
-     * it otherwise admits. A container's own site admits one bridge address, never a task VM, so it needs no refusal.
-     */
-    public function refused(CaddySite $site): ?string
-    {
-        if ($site->listener === CaddyListenerRule::Bridge || in_array($site->source, self::TaskVmSources, true)
-            || ($this->swampHost !== null && $site->port === 443 && $site->listener !== CaddyListenerRule::Public
-                && array_map(strtolower(...), $site->hosts) === [$this->swampHost])) {
-            return null;
-        }
-
-        return $this->taskVmRange;
     }
 
     private static function address(?string $address): ?string

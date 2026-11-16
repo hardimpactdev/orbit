@@ -324,7 +324,7 @@ An inspection reads GitHub with `curl` on Node 209, with a GitHub App token that
 
 `project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, and update records.
 
-A Project has no per-Node exclusions. The development Node exclusion feature was removed on 2026-11-03, and its table was dropped. `instance:create` names its Node, and task VM placement uses only hosts with a `task_vms` setting, so nothing places a Project on an `app-dev` Node by itself.
+A Project has no per-Node exclusions. The development Node exclusion feature was removed on 2026-11-03, and its table was dropped. `instance:create` names its Node, so nothing places a Project on an `app-dev` Node by itself.
 
 A Project can be removed when all its task groups are `cancelled` or `completed`, and every associated task VM row is `destroyed`. The Gateway deletes those groups, their subtasks, comments, questions, agent thread rows, check records, review records, old workspace lease rows and their operations, Jev decisions, linked problem records, and task VM records in the same transaction as the Project.
 

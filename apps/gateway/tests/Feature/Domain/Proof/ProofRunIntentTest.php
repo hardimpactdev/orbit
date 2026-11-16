@@ -523,7 +523,7 @@ describe('proof:run admission', function (): void {
         config(['proof.execution' => true]);
         app(TaskExtensionState::class)->enable();
         $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
-        config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+        config(['proof.project' => $project->id]);
         $source = proofSource();
         $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
         proofWorld($source);

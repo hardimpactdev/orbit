@@ -8,14 +8,13 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeUpdateResponse;
-use Orbit\Sdk\Responses\Nodes\TaskVmsSettings;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-/** Changes a Node's name, platform, LAN address, reboot hold, apps folder, task VM host settings, or CI places; only an apps folder change starts a run. */
+/** Changes a Node's name, platform, LAN address, reboot hold, apps folder, or CI places; only an apps folder change starts a run. */
 final class UpdateNodeRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
@@ -29,13 +28,10 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
         private readonly ?string $platform = null,
         private readonly bool $hasApps = false,
         private readonly ?AppsSettings $apps = null,
-        private readonly bool $hasTaskVms = false,
-        private readonly ?TaskVmsSettings $taskVms = null,
         private readonly ?string $idempotencyKey = null,
         private readonly bool $hasLanIp = false,
         private readonly ?string $lanIp = null,
         private readonly ?bool $rebootHold = null,
-        private readonly ?bool $imageRefreshHold = null,
         private readonly bool $hasCi = false,
         private readonly ?CiPlacesInput $ci = null,
     ) {}
@@ -85,16 +81,8 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
             $body['reboot_hold'] = $this->rebootHold;
         }
 
-        if ($this->imageRefreshHold !== null) {
-            $body['image_refresh_hold'] = $this->imageRefreshHold;
-        }
-
         if ($this->hasApps) {
             $body['apps'] = $this->apps?->toArray();
-        }
-
-        if ($this->hasTaskVms) {
-            $body['task_vms'] = $this->taskVms?->toArray();
         }
 
         if ($this->hasCi) {

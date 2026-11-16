@@ -170,17 +170,6 @@
                         "to_ip": "10.253.0.3",
                         "to_port": "3773",
                         "proto": "tcp",
-                        "rule": "deny",
-                        "from_ip": "10.44.0.128/25",
-                        "comment": "orbit:instance-2-t3-task-vms"
-                    },
-                    {
-                        "route": "yes",
-                        "interface_in": "orbit",
-                        "interface_out": "orbitinst0",
-                        "to_ip": "10.253.0.3",
-                        "to_port": "3773",
-                        "proto": "tcp",
                         "rule": "allow",
                         "from_ip": "any",
                         "comment": "orbit:instance-2-t3"
@@ -603,17 +592,6 @@
                     ]
                 },
                 "firewall": [
-                    {
-                        "route": "yes",
-                        "interface_in": "orbit",
-                        "interface_out": "orbitinst0",
-                        "to_ip": "10.253.0.3",
-                        "to_port": "3773",
-                        "proto": "tcp",
-                        "rule": "deny",
-                        "from_ip": "10.44.0.128/25",
-                        "comment": "orbit:instance-2-t3-task-vms"
-                    },
                     {
                         "route": "yes",
                         "interface_in": "orbit",

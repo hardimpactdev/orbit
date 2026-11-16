@@ -13,7 +13,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\Tasks\TaskCopyKey;
 use App\Domain\Tasks\TaskCopyStart;
-use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
 use App\Infrastructure\MachineSoftware\StaticPhpBuild;
@@ -574,7 +573,7 @@ final readonly class InstanceContainer
     }
 
     /**
-     * T3's published port: WireGuard peers reach it through the proxy device, but the task VM range does not, so its deny comes first.
+     * T3's published port: WireGuard peers reach it through the proxy device.
      *
      * @return list<array<string, string>>
      */
@@ -584,8 +583,6 @@ final readonly class InstanceContainer
             'to_ip' => $runtime->bridge_address, 'to_port' => (string) InstanceHostIntent::T3Port, 'proto' => 'tcp'];
 
         return [
-            [...$rule, 'rule' => 'deny', 'from_ip' => TaskVmConfig::wireguardRange(config('task_vms.wireguard_range'))->value(),
-                'comment' => self::firewallPrefix($instance).'t3-task-vms'],
             [...$rule, 'rule' => 'allow', 'from_ip' => 'any', 'comment' => self::firewallPrefix($instance).'t3'],
         ];
     }

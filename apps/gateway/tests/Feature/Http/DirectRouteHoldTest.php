@@ -50,7 +50,7 @@ beforeEach(fn () => config(['operations.route_hold_wait_seconds' => 0]));
 
 it('holds the Nodes of a provision for the Swamp Node and gives them back on release', function (): void {
     [$swamp, $root] = hold_nodes();
-    $operation = hold_operation($root, 'tasks.provision', [5, 6]);
+    $operation = hold_operation($root, 'instance.register', [5, 6]);
 
     hold_call($swamp, $operation, 'hold')->assertOk()->assertJsonPath('data.held', [5, 6]);
     expect(DB::table('route_publication_holds')->where('operation_id', $operation->id)->count())->toBe(2);
@@ -61,7 +61,7 @@ it('holds the Nodes of a provision for the Swamp Node and gives them back on rel
 
 it('answers 423 route_hold.busy while another Operation holds a Node of the step', function (): void {
     [$swamp, $root] = hold_nodes();
-    [$first, $second] = [hold_operation($root, 'tasks.provision', [5]), hold_operation($root, 'tasks.cancel', [5, 6])];
+    [$first, $second] = [hold_operation($root, 'instance.register', [5]), hold_operation($root, 'cluster.router_set', [5, 6])];
 
     hold_call($swamp, $first, 'hold')->assertOk();
     hold_call($swamp, $second, 'hold')->assertStatus(423)->assertJsonPath('error.code', 'route_hold.busy');
@@ -73,13 +73,13 @@ it('refuses a kind that holds per Operation, a stranger Node and a run that is n
     $stranger = hold_node('stranger', '10.44.0.99');
 
     hold_call($swamp, hold_operation($root, 'route.create', [5]), 'hold')->assertForbidden()->assertJsonPath('error.code', 'operation.route_hold_forbidden');
-    hold_call($stranger, hold_operation($root, 'tasks.provision', [5]), 'hold')->assertForbidden();
-    hold_call($swamp, hold_operation($root, 'tasks.provision', [5]), 'hold', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')->assertStatus(409);
+    hold_call($stranger, hold_operation($root, 'instance.register', [5]), 'hold')->assertForbidden();
+    hold_call($swamp, hold_operation($root, 'instance.register', [5]), 'hold', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')->assertStatus(409);
 });
 
 it('refuses a hold for an Operation that has ended', function (): void {
     [$swamp, $root] = hold_nodes();
-    $operation = hold_operation($root, 'tasks.maintenance_finish', [5]);
+    $operation = hold_operation($root, 'cluster.router_unset', [5]);
     $operation->forceFill(['status' => OperationStatus::Succeeded, 'finished_at' => now()])->save();
 
     hold_call($swamp, $operation, 'hold')->assertStatus(409)->assertJsonPath('error.code', 'operation.finished');

@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -35,9 +33,6 @@ it('passes only a POST of the task key from the range to the inference routes, w
         'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.3', 'wireguard_ip' => '10.44.0.3', 'user' => 'orbit']));
     $upstream = guardFreePort();
     $guard = guardFreePort();
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25',
-        [new TaskVmHost(9, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB')],
-        '/pi', str_repeat('a', 64), ['gpt-6']));
     app(AiRouterState::class)->enable($node->id, 'cache', "http://10.44.0.3:{$upstream}", 'management', 'read', 'control');
     $directory = sys_get_temp_dir().'/orbit-guard-'.bin2hex(random_bytes(4));
     mkdir($directory);

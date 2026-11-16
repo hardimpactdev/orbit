@@ -89,7 +89,7 @@ it('lists every field of the record except input, result and steps', function ()
         ->toEqualCanonicalizing(array_values(array_diff($record, ['input', 'result', 'steps'])));
 });
 
-it('reads no stored input or result, and keeps the caller and the capacity wait of a row', function (): void {
+it('reads no stored input or result, and keeps the caller of a row', function (): void {
     $gateway = Node::query()->firstOrFail();
     $waiting = Operation::query()->create(['kind' => 'tasks.provision', 'target_type' => 'task_group', 'target_id' => 9, 'node_id' => $gateway->id,
         'input' => ['caller_node_id' => $gateway->id, 'capacity_request' => ['commit' => str_repeat('c', 40)], 'plan' => str_repeat('x', 4096)],
@@ -106,7 +106,7 @@ it('reads no stored input or result, and keeps the caller and the capacity wait 
     $row = operation_page('?limit=1')->assertOk()->json('data.0');
 
     expect($row)->toBe(OperationListItemData::fromModel($full, $full->caller_node_name)->toArray())
-        ->and($row['caller_node_name'])->toBe('gateway')->and($row['capacity_wait'])->not->toBeNull()->and($row['poll_after_seconds'])->not->toBeNull()
+        ->and($row['caller_node_name'])->toBe('gateway')->and($row)->not->toHaveKey('capacity_wait')->and($row['poll_after_seconds'])->not->toBeNull()
         ->and($selects)->toHaveCount(1);
     foreach ($selects as $selected) {
         expect($selected)->not->toMatch('/(^|, )("\w+"\.)?\*/')->not->toMatch('/(^|, )("operations"\.)?"result"(,|$)/')->not->toMatch('/(^|, )("operations"\.)?"input"(,|$)/');

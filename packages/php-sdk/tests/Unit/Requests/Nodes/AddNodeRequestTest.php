@@ -143,7 +143,6 @@ it('sends an explicit settings object when supplied and omits it otherwise', fun
     expect($withSettings->body()->all())
         ->toHaveKey('settings', [
             'apps' => ['path' => '/srv/orbit/apps'],
-            'task_vms' => null,
         ])
         ->and($withoutSettings->body()->all())
         ->not->toHaveKey('settings');

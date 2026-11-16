@@ -29,7 +29,6 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $tld
  * @property string|null $wireguard_ip
  * @property bool $reboot_hold
- * @property bool $image_refresh_hold
  * @property string|null $lan_ip
  * @property string|null $wireguard_public_key
  * @property string|null $dns_server_override
@@ -67,7 +66,6 @@ final class Node extends Model
     protected $attributes = [
         'public_ssh_port' => 22,
         'reboot_hold' => false,
-        'image_refresh_hold' => false,
     ];
 
     /** @var list<string> */
@@ -91,7 +89,6 @@ final class Node extends Model
         'wireguard_ip',
         'lan_ip',
         'reboot_hold',
-        'image_refresh_hold',
         'wireguard_public_key',
         'dns_server_override',
         'ssh_host_key_type',
@@ -228,7 +225,6 @@ final class Node extends Model
             'settings' => 'array',
             'id_ranges' => 'array',
             'reboot_hold' => 'boolean',
-            'image_refresh_hold' => 'boolean',
             'ci_nested_hosting' => 'boolean',
             'agent_secret_hash' => NodeAgentSecretHash::class,
         ];
