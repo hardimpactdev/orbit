@@ -53,7 +53,7 @@ sequenceDiagram
     %%> - a clean merge: any uncommitted work is committed first with the check's message, then one merge commit, parents HEAD then the head, message `Merge main <full sha> before the check`, author and committer `Orbit <orbit@users.noreply.github.com>`
     %%> - only the copy's own workflow changes refuse at publish (`git diff <merge-base>...<commit>`): the default branch's workflow changes that the merge brings in are never the copy's
     %%> - a conflict refuses with `tasks.check_conflict` and `conflicting_paths`, at most 100 in at most 3,000 bytes, and `conflicting_more`, before the long parts run; the workspace is left exactly as it was
-    %%> - the check, commit and commit-ref phases run as the behavior `task-instance-check-NODE-GROUP`, for up to 10,800 s, 600 s and 600 s, so the check of another group's copy on this Node never waits for its lock; its short steps keep their Node names
+    %%> - the base-merge, check, commit and commit-ref phases run as the behavior `task-instance-check-NODE-GROUP`, for up to 900 s, 10,800 s, 600 s and 600 s, so the check of another group's copy on this Node never waits for its lock; its short steps keep their Node names
     %%> Refuses:
     %%> - a changed checkout identity or branch: `tasks.workspace_identity_changed`
   end

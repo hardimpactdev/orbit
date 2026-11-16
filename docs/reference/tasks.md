@@ -970,10 +970,10 @@ Copies of several groups can share a Node, and their checks, publishes and syncs
 | Step | Behavior | Runs up to |
 | --- | --- | --- |
 | The workspace phase of a publish: preflight, export, discard | `task-workspace-<node>-<group>` | 1,800 s |
-| The check, commit and commit-ref phases of a copy's check | `task-instance-check-<node>-<group>` | 10,800 s, 600 s, 600 s |
+| The base-merge, check, commit and commit-ref phases of a copy's check | `task-instance-check-<node>-<group>` | 900 s, 10,800 s, 600 s, 600 s |
 | The `.env` content check, the import and the push of a publish on 209 | `task-publish-content-<node>-<group>`, `task-publish-import-<node>-<group>`, `task-publish-push-<node>-<group>` | 240 s, 60 s, 60 s |
 | The clone and bundle of a sync on 209 | `task-sync-clone-<group>`, `task-sync-bundle-<group>` | 180 s, 60 s |
-| The base phase of a copy's sync, on its Node | `task-copy-base-<node>-<group>` | 600 s |
+| The base phase of a copy's sync or handoff check, on its Node | `task-copy-base-<node>-<group>` | 600 s |
 
 One group never runs two of these at once, because the Gateway admits one task Operation of a group at a time. Every other step keeps its name by Node or one shared name. It runs 30 seconds or less, such as `ansible-input` and the evidence and cleanup steps, or only on a task VM, whose Node holds one group at a time. Swamp keeps each name as a definition for good, so only these steps get one per group. A publish that still fails on a behavior lock is retried, as [A refused automatic publish](#a-refused-automatic-publish) describes.
 
