@@ -3,27 +3,18 @@
 declare(strict_types=1);
 
 use App\Actions\NodeFacts\AgentWatchListAction;
-use App\Actions\NodeFacts\RecordTaskGroupEgressAction;
 use App\Actions\Tasks\ShowTaskGroupEgressAction;
 use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
 use App\Http\Controllers\Api\TaskEgressController;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskGroupEgress;
-use App\Models\TaskVm;
-use Carbon\CarbonImmutable;
-use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Validator;
 
 uses(LazilyRefreshDatabase::class);
@@ -43,39 +34,30 @@ function egress_fact(array ...$rows): array
     return ['network' => 'orbittask0', 'mac' => '10:66:6a:f0:65:d4', 'rows' => $rows === [] ? [egress_row()] : $rows, 'overflow' => 0];
 }
 
+/** One row that the Gateway recorded for a group before it refused every egress fact. */
+function stored_egress_row(Task $group, array $row): TaskGroupEgress
+{
+    return TaskGroupEgress::query()->forceCreate($row + ['task_id' => $group->id, 'vm_name' => 'shark-tvm-1', 'kind' => 'name', 'port' => 0, 'protocol' => '',
+        'addresses' => [], 'sources' => ['dns'], 'flags' => [], 'first_seen_at' => '2026-11-07T19:00:05Z']);
+}
+
 /**
- * A task VM host, and a VM `shark-tvm-1` on it that a task group holds since 19:00.
+ * A former task VM host and a running task group.
  *
- * @return array{Node, Task, TaskVm}
+ * @return array{Node, Task}
  */
-function egress_world(TaskVmState $state = TaskVmState::Ready, bool $grouped = true): array
+function egress_world(): array
 {
     $node = static fn (string $name, string $address, array $settings = []): Node => Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => $address, 'public_ssh_port' => 22,
         'wireguard_ip' => $address, 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519',
         'ssh_host_key' => 'fixture-public-key', 'settings' => $settings ?: null,
     ]));
-    $host = $node('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2]]);
-    $guest = $node('shark-tvm-1', '10.44.0.133');
+    $host = $node('shark', '10.44.0.11');
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
-    $vm = TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $grouped ? $group->id : null, 'provider' => TaskVmProviderKind::Incus,
-        'name' => 'shark-tvm-1', 'slot_number' => 1, 'slot_project_id' => $project->id, 'state' => $state, 'wireguard_ip' => '10.44.0.133', 'size' => TaskVmSize::Large,
-        'claimed_at' => CarbonImmutable::parse('2026-11-07T19:00:00Z')]);
 
-    return [$host, $group, $vm];
-}
-
-/** Store the full production row limit in batches that fit SQLite's parameter limit. */
-function fill_egress_group(Task $group): void
-{
-    $now = now()->toDateTimeString();
-    foreach (array_chunk(range(1, RecordTaskGroupEgressAction::MaxRows), 500) as $batch) {
-        TaskGroupEgress::query()->insert(array_map(static fn (int $i): array => [
-            'task_id' => $group->id, 'vm_name' => 'shark-tvm-1', 'destination' => "h{$i}.example", 'kind' => 'name', 'port' => 443, 'protocol' => 'tcp',
-            'addresses' => '[]', 'sources' => '["dns"]', 'flags' => '[]', 'first_seen_at' => $now,
-        ], $batch));
-    }
+    return [$host, $group];
 }
 
 it('accepts the egress fact the agent reports', function (): void {
@@ -112,78 +94,11 @@ it('caps a report at 1,500 rows', function (): void {
     expect(NodeFactKind::Egress->rules()['rows'])->toContain('max:1500');
 });
 
-it('adds the rows of a VM to the group that holds it, once', function (): void {
-    [$host, $group] = egress_world();
-    $record = app(RecordTaskGroupEgressAction::class);
-
-    expect($record->execute($host, 'shark-tvm-1', egress_fact(egress_row(), egress_row(['destination' => 'example.com', 'port' => null, 'protocol' => null, 'addresses' => [], 'sources' => ['dns']]))))->toBe(2)
-        ->and($record->execute($host, 'shark-tvm-1', egress_fact(egress_row())))->toBe(0);
-
-    $rows = TaskGroupEgress::query()->where('task_id', $group->id)->orderBy('destination')->get();
-    expect($rows)->toHaveCount(2)
-        ->and($rows[0]->destination)->toBe('example.com')->and($rows[0]->port)->toBe(0)->and($rows[0]->protocol)->toBe('')
-        ->and($rows[1]->destination)->toBe('registry.npmjs.org')->and($rows[1]->port)->toBe(443)->and($rows[1]->vm_name)->toBe('shark-tvm-1');
-});
-
-it('merges addresses, sources and flags of a later report and never removes a row', function (): void {
-    [$host, $group] = egress_world();
-    $record = app(RecordTaskGroupEgressAction::class);
-    $record->execute($host, 'shark-tvm-1', egress_fact(egress_row(['sources' => ['conn']])));
-
-    expect($record->execute($host, 'shark-tvm-1', egress_fact(egress_row(['addresses' => ['104.16.2.34'], 'sources' => ['dns'], 'flags' => ['doh']]))))->toBe(1)
-        // A report without the row leaves it in place.
-        ->and($record->execute($host, 'shark-tvm-1', egress_fact(egress_row(['destination' => 'github.com']))))->toBe(1);
-
-    $row = TaskGroupEgress::query()->where('task_id', $group->id)->where('destination', 'registry.npmjs.org')->sole();
-    expect($row->addresses)->toBe(['104.16.1.34', '104.16.2.34'])->and($row->sources)->toBe(['conn', 'dns'])->and($row->flags)->toBe(['doh'])
-        ->and(TaskGroupEgress::query()->where('task_id', $group->id)->count())->toBe(2);
-});
-
-it('adds nothing for a VM that no group holds, a destroyed VM or a row seen before the claim', function (): void {
-    [$host] = egress_world(grouped: false);
-    $record = app(RecordTaskGroupEgressAction::class);
-
-    expect($record->execute($host, 'shark-tvm-1', egress_fact()))->toBe(0)
-        ->and($record->execute($host, 'unknown-vm', egress_fact()))->toBe(0);
-
-    TaskVm::query()->where('name', 'shark-tvm-1')->update(['group_id' => Task::query()->value('id'), 'state' => TaskVmState::Destroyed]);
-    expect($record->execute($host, 'shark-tvm-1', egress_fact()))->toBe(0);
-
-    TaskVm::query()->where('name', 'shark-tvm-1')->update(['state' => TaskVmState::Ready]);
-    expect($record->execute($host, 'shark-tvm-1', egress_fact(egress_row(['first_seen' => '2026-11-07T18:59:59Z']))))->toBe(0)
-        ->and(TaskGroupEgress::query()->count())->toBe(0);
-});
-
-it('keeps the rows of a group after its VM is destroyed and gives a reused VM name to the new group only', function (): void {
-    [$host, $first, $vm] = egress_world();
-    $record = app(RecordTaskGroupEgressAction::class);
-    $record->execute($host, 'shark-tvm-1', egress_fact());
-
-    $second = Task::query()->create(['project_id' => $first->project_id, 'title' => 'Second', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
-    $vm->update(['state' => TaskVmState::Destroyed]);
-    $guest = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'shark-tvm-1b', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.134',
-        'public_ssh_host' => '10.44.0.134', 'user' => 'orbit']));
-    TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $second->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'shark-tvm-1',
-        'slot_number' => 1, 'slot_project_id' => $first->project_id, 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.134', 'size' => TaskVmSize::Large,
-        'claimed_at' => CarbonImmutable::parse('2026-11-07T20:00:00Z')]);
-    $record->execute($host, 'shark-tvm-1', egress_fact(egress_row(['destination' => 'github.com', 'first_seen' => '2026-11-07T20:01:00Z'])));
-
-    expect(TaskGroupEgress::query()->where('task_id', $first->id)->pluck('destination')->all())->toBe(['registry.npmjs.org'])
-        ->and(TaskGroupEgress::query()->where('task_id', $second->id)->pluck('destination')->all())->toBe(['github.com']);
-});
-
-it('stops a group at the row limit', function (): void {
-    [$host, $group] = egress_world();
-    fill_egress_group($group);
-
-    expect(app(RecordTaskGroupEgressAction::class)->execute($host, 'shark-tvm-1', egress_fact()))->toBe(0)
-        ->and(TaskGroupEgress::query()->where('task_id', $group->id)->count())->toBe(RecordTaskGroupEgressAction::MaxRows);
-});
-
 it('lists the rows of a group through the API controller, with null for a name nothing connected to', function (): void {
-    [$host, $group] = egress_world();
+    [, $group] = egress_world();
     app(TaskExtensionState::class)->enable();
-    app(RecordTaskGroupEgressAction::class)->execute($host, 'shark-tvm-1', egress_fact(egress_row(), egress_row(['destination' => 'example.com', 'port' => null, 'protocol' => null, 'sources' => ['dns']])));
+    stored_egress_row($group, ['destination' => 'registry.npmjs.org', 'port' => 443, 'protocol' => 'tcp', 'addresses' => ['104.16.1.34']]);
+    stored_egress_row($group, ['destination' => 'example.com']);
     $request = Request::create("/api/v1/tasks/{$group->id}/egress");
     $request->attributes->set('orbit.request_id', 'request-1');
 
@@ -201,75 +116,26 @@ it('refuses the egress list while the tasks extension is off', function (): void
     expect(fn () => app(ShowTaskGroupEgressAction::class)->execute($group))->toThrow(ResourceOperationException::class);
 });
 
-it('names the bridge in the watch list of a task VM host only', function (): void {
+it('sends no egress bridge in the watch list, also to a Node whose settings still hold a task_vms key', function (): void {
     [$host] = egress_world();
-    $other = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'apps', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.5',
-        'public_ssh_host' => '10.44.0.5', 'user' => 'orbit']));
+    $host->update(['settings' => ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2, 'network' => 'orbittaskb',
+        'containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1]]]]);
 
-    expect(app(AgentWatchListAction::class)->execute($host)['egress'])->toBe(['network' => 'orbittask0', 'container_network' => null])
-        ->and(app(AgentWatchListAction::class)->execute($other)['egress'])->toBeNull();
-
-    $host->update(['settings' => ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2, 'network' => 'orbittaskb']]]);
-    expect(app(AgentWatchListAction::class)->execute($host->refresh())['egress'])->toBe(['network' => 'orbittaskb', 'container_network' => null]);
-});
-
-it('names the container bridge beside the VM bridge on a host with task containers', function (): void {
-    [$host] = egress_world();
-    $vms = ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2];
-
-    $host->update(['settings' => ['task_vms' => $vms + ['containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1]]]]);
-    expect(app(AgentWatchListAction::class)->execute($host->refresh())['egress'])->toBe(['network' => 'orbittask0', 'container_network' => 'orbittaskc0'])
-        ->and(AgentWatchListAction::egressNetworks($host))->toBe(['orbittask0', 'orbittaskc0']);
-
-    $host->update(['settings' => ['task_vms' => $vms + ['containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1, 'network' => 'orbittaskd']]]]);
-    expect(app(AgentWatchListAction::class)->execute($host->refresh())['egress'])->toBe(['network' => 'orbittask0', 'container_network' => 'orbittaskd']);
-});
-
-it('writes nothing for a report that adds nothing, and merges two rows with one key', function (): void {
-    [$host, $group] = egress_world();
-    $record = app(RecordTaskGroupEgressAction::class);
-    $twice = egress_fact(egress_row(['addresses' => ['9.9.9.9', '1.1.1.1'], 'sources' => ['dns', 'conn']]), egress_row(['addresses' => ['5.5.5.5'], 'flags' => ['doh']]));
-
-    expect($record->execute($host, 'shark-tvm-1', $twice))->toBe(1)
-        ->and(TaskGroupEgress::query()->where('task_id', $group->id)->sole()->addresses)->toBe(['1.1.1.1', '5.5.5.5', '9.9.9.9']);
-
-    $queries = 0;
-    DB::listen(static function ($query) use (&$queries): void {
-        if (! str_starts_with(strtolower($query->sql), 'select')) {
-            $queries++;
-        }
-    });
-    // SQLite starts a transaction with PDO::exec, which fires this event and not a query event.
-    Event::listen(TransactionBeginning::class, static function () use (&$queries): void {
-        $queries++;
-    });
-
-    expect($record->execute($host, 'shark-tvm-1', $twice))->toBe(0)->and($queries)->toBe(0);
+    expect(app(AgentWatchListAction::class)->execute($host->refresh()))->toHaveKey('egress')
+        ->and(app(AgentWatchListAction::class)->execute($host)['egress'])->toBeNull();
 });
 
 it('lists a name without a port only until the VM connected to it', function (): void {
-    [$host, $group] = egress_world();
+    [, $group] = egress_world();
     app(TaskExtensionState::class)->enable();
-    $record = app(RecordTaskGroupEgressAction::class);
-    $dnsOnly = egress_row(['port' => null, 'protocol' => null, 'sources' => ['dns']]);
-    $record->execute($host, 'shark-tvm-1', egress_fact($dnsOnly, egress_row(['destination' => 'github.com', 'port' => null, 'protocol' => null, 'sources' => ['dns']])));
+    stored_egress_row($group, ['destination' => 'registry.npmjs.org']);
+    stored_egress_row($group, ['destination' => 'github.com']);
 
     expect(app(ShowTaskGroupEgressAction::class)->execute($group)->pluck('destination')->all())->toBe(['github.com', 'registry.npmjs.org']);
 
-    $record->execute($host, 'shark-tvm-1', egress_fact(egress_row()));
+    stored_egress_row($group, ['destination' => 'registry.npmjs.org', 'port' => 443, 'protocol' => 'tcp', 'sources' => ['conn']]);
 
     expect(app(ShowTaskGroupEgressAction::class)->execute($group)->map(fn (TaskGroupEgress $row): string => $row->destination.':'.$row->port)->all())
         ->toBe(['github.com:0', 'registry.npmjs.org:443'])
         ->and(TaskGroupEgress::query()->where('task_id', $group->id)->count())->toBe(3);
-});
-
-it('takes no write lock for a report of a group at its row limit', function (): void {
-    [$host, $group] = egress_world();
-    fill_egress_group($group);
-    $transactions = 0;
-    Event::listen(TransactionBeginning::class, static function () use (&$transactions): void {
-        $transactions++;
-    });
-
-    expect(app(RecordTaskGroupEgressAction::class)->execute($host, 'shark-tvm-1', egress_fact()))->toBe(0)->and($transactions)->toBe(0);
 });

@@ -28,15 +28,21 @@ final class ProofShardVerdicts
             $key = implode("\t", array_slice($parts, 0, 3));
             $reports[$key][] = $parts[3];
         }
+        // The read-only cases of a batch can run as a batch of their own beside its other cases; both report under the batch's name.
+        $groups = [];
+        foreach ($assignments as $assignment) {
+            $key = $assignment['command']."\t".$assignment['file']."\t".$assignment['batch'];
+            $groups[$key] = ['command' => $assignment['command'], 'file' => $assignment['file'],
+                'cases' => [...($groups[$key]['cases'] ?? []), ...$assignment['cases']]];
+        }
         $cases = [];
         $ran = false;
-        foreach ($assignments as $assignment) {
-            $command = $assignment['command'];
-            $file = $assignment['file'];
-            $key = $command."\t".$file."\t".$assignment['batch'];
+        foreach ($groups as $key => $group) {
+            $command = $group['command'];
+            $file = $group['file'];
             $lines = $reports[$key] ?? [];
             unset($reports[$key]);
-            $expected = $assignment['cases'];
+            $expected = $group['cases'];
             $seen = [];
             foreach ($lines as $line) {
                 $parsed = ProofVerdictLines::parse($line);

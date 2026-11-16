@@ -128,8 +128,9 @@ function unregisterWorkflowSchema(): array
 
 function assertFitsUnregisterSchema(mixed $value, array $schema, string $path = 'inputs'): void
 {
+    // Swamp refuses null for every property it declares, whatever the schema form, unless the property has a default.
+    expect($value !== null || array_key_exists('default', $schema))->toBeTrue("{$path} cannot be null");
     $types = (array) ($schema['type'] ?? []);
-    // A property without a type accepts any value, as Swamp's schema does.
     if ($types === [] && ! isset($schema['properties']) && ! isset($schema['items'])) {
         return;
     }
@@ -144,8 +145,6 @@ function assertFitsUnregisterSchema(mixed $value, array $schema, string $path = 
         expect(in_array('string', $types, true))->toBeTrue("{$path} is a string");
     } elseif (is_bool($value)) {
         expect(in_array('boolean', $types, true))->toBeTrue("{$path} is a boolean");
-    } elseif ($value === null) {
-        expect(in_array('null', $types, true))->toBeTrue("{$path} may be null");
     }
     if (isset($schema['const'])) {
         expect($value)->toBe($schema['const'], "{$path} is {$schema['const']}");
@@ -297,6 +296,19 @@ describe('the run intent', function (): void {
 
         expect(array_keys($inputs))->toEqualCanonicalizing(['intent', 'execution_secrets', 'operation_id', 'kind', 'node_id'])
             ->and(json_encode($inputs, JSON_THROW_ON_ERROR))->toContain('"execution_secrets":{}');
+        assertFitsUnregisterSchema(json_decode(json_encode($inputs, JSON_THROW_ON_ERROR)), unregisterWorkflowSchema());
+    });
+
+    it('fits the workflow inputs schema for an Instance without a Route or a Process', function (): void {
+        $this->route->targets()->delete();
+        $this->route->delete();
+        $this->process->delete();
+        $operation = ($this->unregister)();
+        $inputs = app(DirectOperation::class)->workflowInputs($operation);
+
+        expect($inputs['intent']['members'])->toBe([['instance_id' => $this->instance->id, 'route_id' => null]])
+            ->and($inputs['intent']['processes'])->toBe([])
+            ->and($inputs['intent']['additional_route_ids'])->toBe([]);
         assertFitsUnregisterSchema(json_decode(json_encode($inputs, JSON_THROW_ON_ERROR)), unregisterWorkflowSchema());
     });
 });

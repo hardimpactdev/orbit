@@ -287,6 +287,8 @@ Three rules decide what a Node with the `ci-runner` role does for [proof](/cli/p
 | The Node offers proof places (`offersPlaces`) | `ci-runner` and at least one CI place, with or without `app-dev` | It keeps a seed of the proof default and can hold proof copies |
 | The Node takes proof copies (`takesCopies`) | It offers proof places, records the hold script of this release, and [hosts nested fleets](/reference/projects#nested-fleet-setting) | [proof:run](/cli/proof/run#the-run) counts its free places ([Proof places on a CI Node](#proof-places-on-a-ci-node)) |
 
+A proof copy on a CI-only Node is a development Instance. Its destroy and a cancel of its group take the normal [removal](/reference/instance-removal#available-placements), as on an `app-dev` Node.
+
 A Node that also has `app-dev`, such as the Node of the proof default, already hosts containers through its `app-dev` role. So it offers proof places, but it is not a CI-only Node: its `app-dev` converge prepares it, and it takes normal Instances. The default's own Node needs no seed copy, because it holds the seed. [proof:run](/cli/proof/run#the-run) decides which Node takes each proof copy: one copy per free place, on every Node that offers proof places. Orbit never adds `app-dev` to a CI Node to host proof copies.
 
 On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. The Node gets no `nested_fleet` switch for this. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent, with its `nested` part, for two kinds of Node: an `app-dev` Node on the build list, and a CI-only Node. The role runtime runs the branch for either one. The CI Node gets no `app-dev` role for this.
@@ -382,6 +384,10 @@ With P = 5, B = 0 and two holds, two idle runners stop and three run. When the b
 The test for busy is the one that the runner state script uses: the runner is busy while a `Runner.Worker` process runs in its container. The script reads it in the same command that stops the service. A runner that takes a job in that short moment between the two keeps its job. The Node then runs one more job than its places until that job ends.
 
 The release is the last step of a proof copy's destroy, after the container is gone. So the stopped runners start again only when the destroy of the last copy on the Node succeeds. A run end of any kind, a pass, a failure, a cancel or a timeout, cancels the group with discard, which destroys the copy.
+
+A copy create that fails after the hold destroys the copy too. A create that fails or is cancelled fails the copy's group and queues the copy's destroy ([removal by Orbit](/reference/tasks#removal-by-orbit)). The run reads such a copy as failed and ends, and its group's cancel destroys the copy if that destroy did not.
+
+A create that ends by its expired budget leaves the group reserved. The run reads its copy as pending until the expiry is settled: Swamp can still reopen it when the create's run ended within its real budget. Once Swamp proves the run's end, or the hold of the expired create ends without that proof, the run reads its copy as failed, so the same cancel destroys it.
 
 A destroy that fails keeps the copy and its hold, and the runners stay stopped. The watchdog asks again for the cancel of each group that still owns a copy, until `ProofRunWatch::CopyGiveUpHours` after the run's end. After that, the copy shows in the Instance list, and its runners start again only when an operator destroys it. A runner that is gone by the release is skipped. The [runner view](/reference/ci-runner-view) shows a stopped runner as stopped.
 
@@ -1028,7 +1034,7 @@ The parent sheds admitted roles through native workflow children, restores publi
 
 Network and serving publications use their shared native children from Node 209. A child failure prevents later retirement steps and keeps the Node record with failed status. An expired budget (`operation.timed_out`) or a run that ends without a readable result (`operation.result_unreadable`) does the same. Cleanup does not roll back completed effects; the terminal result reports only completed work.
 
-Task VM guest Nodes skip Node removal's Swamp token list and revoke phases. Admission records `task_vm_guest` only for a Node referenced by a TaskVM row with no selected Swamp worker; callers cannot set it. Real Node removals retain token cleanup.
+The removal intent keeps the field `task_vm_guest`, and admission always records `false`: no Node is a task VM guest any more ([old paths](/reference/old-paths#the-task-vm-readers)). Every Node removal runs the Swamp token list and revoke phases.
 
 `--offline --force` permits removal of an unreachable Node's registry membership while leaving its machine untouched. The native workflow checks reachability first. A reachable target runs ordinary cleanup. The result names the artifacts retained on an unreachable machine; offline confirmation does not fabricate their removal.
 

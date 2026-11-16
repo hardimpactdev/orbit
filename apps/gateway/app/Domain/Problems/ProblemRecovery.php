@@ -13,7 +13,6 @@ use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Releases\ReleaseAlertKind;
-use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
@@ -28,12 +27,10 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
-use App\Models\TaskVmImageBuild;
 use App\Models\Tool;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 
 /** Positive recovery evidence belongs to the incident, independent of its filing episode. */
 final readonly class ProblemRecovery
@@ -103,22 +100,9 @@ final readonly class ProblemRecovery
         if ($resource === 'gateway') {
             return $this->gateway($attempt, $kind, $row);
         }
-        $imageBuildId = RecipeMaintenanceAlerts::parseImageIncident($resource);
-        if ($imageBuildId !== null) {
-            $build = TaskVmImageBuild::query()->find($imageBuildId);
-            if (! $build instanceof TaskVmImageBuild) {
-                return 'resource_gone';
-            }
-            $desired = DB::table('task_vm_image_recipe')->where('id', 1)->value('identity');
-            if (is_string($desired) && $desired !== $build->recipe_identity) {
-                return 'recipe_generation_superseded';
-            }
-            if (TaskVmImageBuild::query()->where('host_node_id', $build->host_node_id)->where('recipe_identity', $build->recipe_identity)
-                ->where('id', '>', $build->id)->where('state', TaskVmImageBuildState::Succeeded)->whereNotNull('promoted_at')->exists()) {
-                return 'verified_image_build';
-            }
-
-            return $build->state === TaskVmImageBuildState::Succeeded && $build->attempt > (int) $attempt ? 'verified_image_build' : null;
+        // The recipe image build is retired, so an alert about one has nothing left to recover.
+        if (RecipeMaintenanceAlerts::parseImageIncident($resource) !== null) {
+            return 'resource_gone';
         }
         if (str_starts_with($resource, 'fleet-node:')) {
             $nodeId = (int) substr($resource, 11);

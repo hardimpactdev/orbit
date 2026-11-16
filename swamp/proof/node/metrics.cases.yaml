@@ -161,6 +161,7 @@ cases:
 
   - id: invalid-numeric-id
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: Zero, negative and overflowing IDs are refused locally as invalid Node IDs.
     variants:
@@ -177,6 +178,7 @@ cases:
 
   - id: nonnumeric-id
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: Text, fractional and option-like IDs are invalid selectors rather than Node names.
     fails_today: NodeCommand resolves nonnumeric inputs as names instead of refusing them with node.id_invalid.
@@ -194,6 +196,7 @@ cases:
 
   - id: missing-node-id
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: Omitting the required Node ID without a terminal returns node.id_invalid.
     fails_today: The required framework argument is rejected before the command can return node.id_invalid.

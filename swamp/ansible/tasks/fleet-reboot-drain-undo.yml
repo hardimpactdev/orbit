@@ -1,6 +1,6 @@
 ---
 # The rescue of a failed drain: start what the drain stopped, so a Node that fails before its reboot keeps its CI runners and,
-# on the Gateway, its scheduler and Horizon. A stopped task guest stays parked; the next task call wakes it.
+# on the Gateway, its scheduler and Horizon.
 - name: Start the stopped runners again
   ansible.builtin.import_tasks: fleet-reboot-ci-start.yml
   when: target.ci_project is not none and runners is defined and runners.stdout is defined

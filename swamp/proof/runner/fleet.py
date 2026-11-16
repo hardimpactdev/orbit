@@ -35,7 +35,14 @@ ROLES = ('gateway', 'app-dev', 'app-prod')
 SKIPPED_INTERFACES = ('lo', 'orbit', 'docker0')
 GUEST_PREFIX = 'nested-'
 CLI_SECONDS = 240
-COPY_CONVERGE_SECONDS = 600
+COPY_OPERATION_SECONDS = 600
+# The commands whose CLI waits for an Operation that installs software on a Node. In a copy the fleet's host shares its disk and its package
+# downloads with other copies, so they get COPY_OPERATION_SECONDS. A timeout stops the batch: the Operation may still hold the Node.
+NODE_OPERATIONS = ('node:converge', 'node:role:add')
+
+
+def node_operation(args):
+    return bool(args) and args[0] in NODE_OPERATIONS
 
 
 class FleetError(Exception):
@@ -90,7 +97,7 @@ class Fleet:
         return self._checkout_shift
 
     def cli_timeout(self, args):
-        return COPY_CONVERGE_SECONDS if args and args[0] == 'node:converge' and self.checkout_shift() == 'false' else CLI_SECONDS
+        return COPY_OPERATION_SECONDS if node_operation(args) and self.checkout_shift() == 'false' else CLI_SECONDS
 
     def cli(self, args, timeout=None, form='json', node=None):
         """Run the CLI without a terminal. The human form leaves out `--json`. With `node` the call uses the prepared checkout on that

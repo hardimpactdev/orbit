@@ -41,11 +41,11 @@ Deno.test("each Node runs drain, reboot and check in order, each phase bounded a
     const steps = all.slice(0, 3);
     assertEquals(steps.map((step) => step.task.inputs.run.match(/^timeout (\d+) .* --tags (\w+) /).slice(1)), [["2400", "drain"], ["900", "reboot"], ["600", "check"]]);
     assertEquals(steps.slice(1).map((step) => step.dependsOn), [[{ step: "drain", condition: { type: "succeeded" } }], [{ step: "reboot", condition: { type: "succeeded" } }]]);
-    // The drain waits up to the 900 s budget for CI jobs and Horizon, then stops up to six task guests (75 s each), plus the reads.
-    assertEquals(Number(steps[0].task.inputs.run.split(" ")[1]) > 900 + 6 * 75 + 300, true);
+    // The drain waits up to the 900 s budget for CI jobs and Horizon, plus the reads.
+    assertEquals(Number(steps[0].task.inputs.run.split(" ")[1]) > 900 + 300, true);
 });
 
-Deno.test("a Node waits outside the window or when admission found its task work busy, and an operator's pass ignores the window", async () => {
+Deno.test("a Node waits outside the window or when admission deferred it, and an operator's pass ignores the window", async () => {
     const decide = drainBlock.find((t) => t.name === "Decide whether the Node waits")!;
     const folder = await Deno.makeTempDir();
     try {
@@ -58,11 +58,11 @@ Deno.test("a Node waits outside the window or when admission found its task work
         };
         assertEquals(await reason("03:10", true), "");
         assertEquals(await reason("02:59", true), "window");
-        // 05:15 leaves 45 minutes: the 15-minute drain plus 30 minutes for the guest stops, the reboot and the check.
+        // 05:15 leaves 45 minutes: the 15-minute drain plus 30 minutes for the reboot and the check.
         assertEquals(await reason("05:16", true), "window");
         assertEquals(await reason("05:15", true), "");
         assertEquals(await reason("14:00", false), "");
-        assertEquals(await reason("03:10", true, "tasks_busy"), "tasks_busy");
+        assertEquals(await reason("03:10", true, "operator_hold"), "operator_hold");
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
@@ -196,14 +196,15 @@ Deno.test("only the swamp Node schedules its own reboot, behind a path unit that
     assertEquals(cleanup.task.inputs.run, 'timeout 30 rm -rf -- "$ORBIT_RUN"\nif timeout 10 systemctl is-active --quiet orbit-planned-reboot.path; then timeout 10 touch -- "$ORBIT_RUN.reboot"; fi');
 });
 
-Deno.test("a failed drain starts what it stopped, and each task guest is recorded as soon as it stops", async () => {
+Deno.test("a failed drain starts what it stopped, and the drain stops no task guest", async () => {
     const rescue = plays.find((p) => p.name === "Drain the Node")!.tasks.find((t) => t.name === "Drain the Node")!.rescue as Task[];
     assertEquals(rescue.map((t) => t["ansible.builtin.import_tasks"]), ["tasks/fleet-reboot-drain-undo.yml", "tasks/fleet-reboot-failed.yml"]);
     const undo = parse(await Deno.readTextFile(`${ansible}tasks/fleet-reboot-drain-undo.yml`)) as Task[];
     assertEquals(undo.map((t) => t.name), ["Start the stopped runners again", "Start the Gateway scheduler and Horizon again"]);
-    const park = parse(await Deno.readTextFile(`${ansible}tasks/fleet-reboot-park.yml`)) as Task[];
-    assertEquals(park.map((t) => t.name), ["Stop the task guest", "Record the parked task guest"]);
-    assertEquals((park[1].vars as Record<string, Record<string, string>>).record_update.parked, "{{ (record.parked | default([])) + [guest] }}");
+    // No Node is a task host any more (docs/reference/gateway-recovery.md#fleet-reboot): the intent names no task project.
+    assertEquals(drainBlock.map((t) => t["ansible.builtin.import_tasks"]).filter(Boolean),
+        ["tasks/fleet-reboot-read.yml", "tasks/fleet-reboot-drain-ci.yml", "tasks/fleet-reboot-drain-gateway.yml"]);
+    assertEquals(JSON.stringify(plays).includes("task_project"), false);
 });
 
 const rerunTasks = parse(await Deno.readTextFile(`${ansible}tasks/fleet-reboot-rerun.yml`)) as Task[];
@@ -344,7 +345,7 @@ for (const due of [true, false]) {
             });
             const vars = { run: folder, record_path: record,
                 record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}",
-                halted: false, target: { node_id: 9, name: "held", defer: "operator_hold", ci_project: "orbit-ci", task_project: "orbit-tasks", gateway: {} },
+                halted: false, target: { node_id: 9, name: "held", defer: "operator_hold", ci_project: "orbit-ci", gateway: {} },
                 intent: { window: { timezone: "Europe/Amsterdam", start: "03:00", end: "06:00", enforced: false }, drain_seconds: 900 } };
             const drained = await play(folder, vars, tasks);
             assertEquals(drained.code, 0, drained.output);
@@ -432,7 +433,7 @@ for (const scenario of ["held observation", "held record", "marker record", "Gat
             const result = await play(folder, { run: folder, record_path: record, phase: "drain", halted: false,
                 record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}",
                 target: { node_id: 9, name: "fixture", defer: scenario.startsWith("held") ? "operator_hold" : null,
-                    task_project: null, ci_project: scenario.startsWith("CI") ? "orbit-ci" : null,
+                    ci_project: scenario.startsWith("CI") ? "orbit-ci" : null,
                     gateway: scenario.startsWith("CI") ? null : { scheduler: "schedule.service", horizon: "horizon.service" } },
                 intent: { window: { timezone: "Europe/Amsterdam", start: "03:00", end: "06:00", enforced: false }, drain_seconds: 20 },
             }, [phase], { REBOOT_FIXTURE: folder, ANSIBLE_LIBRARY: `${folder}/library`,

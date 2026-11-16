@@ -191,7 +191,8 @@ class CloneTest(unittest.TestCase):
             # The nested guard reads the volumes of its disks with `incus query`: this fake answers from `volumes`, by
             # `<kind>/<name>`, and gives any other volume no keys.
             (Path(folder) / "bin").mkdir()
-            (Path(folder) / "volumes.json").write_text(json.dumps(volumes or {}))
+            held_volumes = dict(volumes or {})
+            (Path(folder) / "volumes.json").write_text(json.dumps(held_volumes))
             (Path(folder) / "bin" / "incus").write_text(
                 "#!/usr/bin/env python3\nimport json, sys\n"
                 f"volumes = json.load(open({str(Path(folder) / 'volumes.json')!r}))\n"
@@ -320,6 +321,15 @@ class CloneTest(unittest.TestCase):
                         return subprocess.CompletedProcess(argv, 0, json.dumps([{"name": name} for name in container.get("fixture_volume_seeds", ["seed-abc"])]), "")
                     return subprocess.CompletedProcess(argv, 0 if container.get("fixture_volume_left") else 1, "{}" if container.get("fixture_volume_left") else "",
                                                        "" if container.get("fixture_volume_left") else "Error: Storage pool volume not found")
+                if argv[3:6] == ["storage", "volume", "copy"]:
+                    # As Incus 7.0.2: a volume copied from a snapshot takes the snapshot's config. A seed snapshot that a seed copy
+                    # moved to a CI Node records `size: 0`.
+                    held_volumes["custom/" + argv[-1].split("/")[-1]] = dict(container.get("fixture_volume_seed_config", {}))
+                    (Path(folder) / "volumes.json").write_text(json.dumps(held_volumes))
+                if argv[3:6] == ["storage", "volume", "set"]:
+                    key, value = argv[-1].split("=", 1)
+                    held_volumes.setdefault("custom/" + argv[-2], {})[key] = value
+                    (Path(folder) / "volumes.json").write_text(json.dumps(held_volumes))
                 if argv[3:4] == ["copy"] and container.get("fixture_copy_fails"):
                     return subprocess.CompletedProcess(argv, 1, "", "Error: Failed creating instance from snapshot")
                 if argv[:2] == ["incus", "query"] and "/1.0/network-acls/" in argv[2]:
@@ -1268,8 +1278,9 @@ class CloneTest(unittest.TestCase):
         inner = {"name": "inner-7", "pool": "orbit-instances", "size": "30GiB", "config": INNER_CONFIG, "device": "inner-pool",
                  "path": "/srv/inner-pool", "inner_pool": {"name": "inner", "source": "/srv/inner-pool/pool"}}
         overrides = {"project": "orbit-instances-nested", "allowed_devices": allowed, "config": config, "inner_volume": inner,
-                     "clone": {"source": "instance-1", "snapshot": "seed-abc", "inner_volume": "inner-1", "t3": {"device": "t3"}}, **fixture}
-        return self.clone(effective, overrides=overrides, volumes={"custom/inner-7": {**INNER_CONFIG, "size": "30GiB", "volatile.uuid": "v"}})
+                     "clone": {"source": "instance-1", "snapshot": "seed-abc", "inner_volume": "inner-1", "t3": {"device": "t3"}},
+                     "fixture_volume_seed_config": {**INNER_CONFIG, "size": "30GiB", "volatile.uuid": "v"}, **fixture}
+        return self.clone(effective, overrides=overrides)
 
     def test_a_copy_with_an_inner_volume_copies_the_volume_seed_then_the_container_on_its_own_volume_before_the_start(self):
         calls, _, error = self.inner_clone()
@@ -1285,6 +1296,19 @@ class CloneTest(unittest.TestCase):
         guard = next(call for call in calls if call[:2] == ["python3", "-c"] and len(call) == 8)
         self.assertEqual(json.loads(guard[7]), {"inner-pool": {**INNER_CONFIG, "size": "30GiB"}})
         self.assertFalse(any(call[3:6] == ["storage", "volume", "delete"] for call in calls))
+
+    def test_a_copy_from_a_seed_snapshot_that_records_size_0_sets_the_intents_size_before_the_container_and_starts(self):
+        # A seed that a seed copy moved to a CI Node: Incus 7.0.2 records `size: 0` in each snapshot it sends of a volume with a
+        # file system (docs/reference/development-containers.md#the-inner-volume).
+        calls, _, error = self.inner_clone(fixture_volume_seed_config={**INNER_CONFIG, "size": "0", "volatile.uuid": "v"})
+        self.assertEqual(error, "")
+        project = ["incus", "--project", "orbit-instances-nested"]
+        volume_copy = calls.index(project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed-abc", "orbit-instances/inner-7"])
+        size = calls.index(project + ["storage", "volume", "set", "orbit-instances", "inner-7", "size=30GiB"])
+        container_copy = next(index for index, call in enumerate(calls) if call[3:4] == ["copy"])
+        self.assertEqual(size, volume_copy + 1)
+        self.assertLess(size, container_copy)
+        self.assertIn(project + ["start", "instance-7"], calls)
 
     def test_a_copy_with_an_inner_volume_refuses_a_seed_whose_volume_half_is_gone_before_any_change(self):
         calls, _, error = self.inner_clone(fixture_volume_seeds=["seed-older"])

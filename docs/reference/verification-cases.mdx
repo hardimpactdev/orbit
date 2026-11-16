@@ -103,12 +103,15 @@ A case from the draft (its `negative` key is shown [below](#prove-a-case-can-fai
 | `expect` | yes | What must be true afterwards. Every step runs, so one verdict lists all failures. |
 | `stages` | no | Replaces `act` and `expect` when a case needs more than one round. A list of `act` and `expect` pairs, run in order. |
 | `variants` | no | A list of variable sets. The case runs once per set, and each run has its own verdict, such as `protocols[both]`. |
+| `read_only` | no | `true` marks a case that changes nothing, such as a refusal or a read. It has no `setup` and no `negative`, each `cli` call expects `request: none`, and its other steps are reads (`probe`, `ufw`, `record`, `doctor`, `unchanged`, `package`). The runner refuses a marked case with any other step. Default `false`. |
 | `fails_on_base` | no | `true` opts a new or changed case into CI replay on the merge base. It must fail there with cause `assertion`. Default `false`. |
 | `fails_today` | no | One line saying why the case fails on the current code. The build removes it. |
 | `negative` | no | How to prove that the case can fail. See [Prove a case can fail](#prove-a-case-can-fail). |
 | `timeout` | no | Seconds for the case. Default 180. |
 
 A case writes no cleanup. Each batch starts from a restore of the task's `base` snapshot, and each case creates what it needs on its own resources: free ports, its own listeners, a new Instance. So cases in a batch do not touch each other. A case that did not pass triggers no restore; a case that cannot share the batch with others gets its own.
+
+A proof copy resets its inner fleet once before its first batch. The read-only cases (`read_only: true`) of a batch with no setup leave the fleet at `base`. So the proof runs them as a batch of their own, first on its copy, and the copy resets again only after a batch that can change the fleet.
 
 ## Steps
 
@@ -277,7 +280,7 @@ The nested fleet has three Nodes. The runner spreads cases across them and allow
   - Every other case is a **writer** (`alone on its Node`), including `fault`, `busy_node`, `service`, listener setup and any CLI call that can create an Operation. A writer runs beside no reader or writer on its own Node, including during setup and cleanup. It may run beside cases on other Nodes.
 - **Parallel.** `runner batch BATCH --file F` reads the fleet once, starts as many cases as `--parallel` (or `parallel` in the file) allows under these locks, and prints the verdict lines at the end, those that did not pass first. `--only \"ID ID\"` runs some cases of the batch. Every verdict stays in the full result artifact; the separate 4 KiB history tail is not the report. The exit status is the worst verdict: 1 when a case failed, else 2 when one was unrun, else 0.
 - **CLI callers.** Before scheduling, the runner prepares each Node required by `cli.as` once: checkout mount, CLI home, CA and profile. Case execution does no caller preparation. A preparation failure starts no case and reports infrastructure failures. `runner case` prepares its caller before execution too.
-- **Converge wait.** A noninteractive `node:converge` call on a copy has a 600-second CLI limit, for both outer and nested callers. The fleet’s unshifted Gateway checkout identifies this mode. Its elapsed CLI wait does not consume the case budget for setup and assertions; each call, including setup, repeat stages and output forms, keeps its own 600-second limit. Task VMs keep the 240-second CLI limit and existing case budget. Product timing assertions, including repeat’s 120-second limit, do not change. A converge CLI timeout fails the active case as `infrastructure` and stops the batch from starting more cases. Every waiting case gets an `unrun` infrastructure receipt naming the timed-out case; already active cases finish. The Operation is not claimed cancelled or settled. The next batch resets the fleet. The enclosing batch limit remains unchanged.
+- **Node Operation wait.** A noninteractive `node:converge` or `node:role:add` call on a copy has a 600-second CLI limit, for both outer and nested callers. Both wait for an Operation that installs software, and the copies on one Node share its disk and its package downloads. The fleet’s unshifted Gateway checkout identifies this mode. Its elapsed CLI wait does not consume the case budget for setup and assertions; each call, including setup, repeat stages and output forms, keeps its own 600-second limit. Task VMs keep the 240-second CLI limit and existing case budget. Product timing assertions, including repeat’s 120-second limit, do not change. A timeout of either CLI fails the active case as `infrastructure` and stops the batch from starting more cases. Every waiting case gets an `unrun` infrastructure receipt naming the timed-out case; already active cases finish. The Operation is not claimed cancelled or settled, and it may still change the Node, so no later case of the batch may run beside it. The next batch resets the fleet. The enclosing batch limit remains unchanged.
 
 - **Shared facts.** `runner batch` reads the fleet once, the guests, their addresses and the Node IDs of the nested Gateway, and every case of the batch uses that. `runner case` reads it for its one case.
 
@@ -306,6 +309,8 @@ Each case ends with one JSON line of at most 1 KB. Long failure messages are sho
 Neither `failed` nor `unrun` is a pass. The full receipt of a case, with every step, command output, the firewall before and after and the timings, stays in the evidence directory of the task VM. There is no receipt store. In CI the proof VM is destroyed, so only the verdict lines stay; the author reruns the proof in their own task VM for the full receipt.
 
 A failed CLI check includes the Operation's public `failed_step` and `error_code`, when present, in its failure message. This also applies to a failed setup command. Named-step checks read those fields from `operation:show`; human output uses its printed Operation ID. Private error details stay out of the verdict line.
+
+A case that did not pass also keeps its failed CLI calls in `calls`: one entry for each call whose check failed, the first three. An entry gives the command (`run`), its exit code (`exit`), its error code (`code`: the Operation's `error_code` or the refusal's `error.code`, else `null`) and the last 160 characters of its stderr on one line (`stderr`). A call that the Gateway refused before admission has no Operation, so `calls` is what names its cause. When the line is too long, the runner shortens the failure messages first and drops the last calls last.
 
 A case marked `fails_today` runs like any other and reports its real verdict. The build PR removes the mark when the command passes.
 

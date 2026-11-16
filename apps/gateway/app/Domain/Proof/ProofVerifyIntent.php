@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Proof;
 
-use App\Domain\Fleet\FleetReboot;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationKinds;
@@ -43,8 +42,6 @@ final readonly class ProofVerifyIntent
         $group = Task::topLevel()->find($groupId)
             ?? throw new ResourceOperationException('tasks.group_missing', "Task group [{$groupId}] does not exist.", 404);
 
-        FleetReboot::refuseTaskWork($group);
-
         return $this->operations->start($group, OperationKinds::ProofVerify, [], static function (): void {}, $triggeredBy, $requestId,
             fn (Task $group): array => $this->capture($group, $command));
     }
@@ -61,8 +58,8 @@ final readonly class ProofVerifyIntent
 
     /**
      * A task copy: Swamp reaches the runner through the copy's Node, `incus exec` and `runuser -u agent` (docs/cli/proof/proof.mdx#the-run).
-     * Every batch, the first included, starts with the reset of the copy's inner fleet (`restore_first`, with `container` and `fleet`
-     * for the play), and no restore follows the last: the next proof resets first. Only a clone that keeps its fleet has one to reset;
+     * A batch starts with the reset of the copy's inner fleet (`restore_first`, with `container` and `fleet` for the play); only a batch
+     * after a read-only batch skips it ({@see ProofCopies::input}). No restore follows the last: the next proof resets first. Only a clone that keeps its fleet has one to reset;
      * a Project's default Instance, whose fleet is the seed of every copy, is refused.
      *
      * @return array<string,mixed>

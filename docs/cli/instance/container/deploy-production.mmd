@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, production containers (ADR 0263, docs/reference/production-containers.md#deploy): the deploy of a production Instance. Hot builds and migrates the next commit while live serves; one Caddy reload switches the Routes; the work moves to the new live; the previous live becomes old. The automatic tick starts the same deploy, pinned (docs/cli/instance/auto-deploy.mmd). When the charts move into place, this becomes the production branch of the deploy chart.
+  %% Target design, production containers (ADR 0263, docs/reference/production-containers.md#deploy): the deploy of a production Instance. Hot builds and migrates the next commit while live serves; one Caddy reload switches the Routes; the work moves to the new live; the previous live becomes old. The automatic tick starts the same deploy, pinned (docs/cli/instance/auto-deploy.mmd). A sleeping live stays asleep: hot clones its snapshot, and the switch removes the asleep marker (planned, ADR 0265). When the charts move into place, this becomes the production branch of the deploy chart.
   %% status: draft
   %% command: instance:deploy
   %% kind: instance.deploy
@@ -27,6 +27,8 @@ sequenceDiagram
   %%> - live, its `release` snapshot and its image; the Node's image and pinned runtime folder version
   %%> - the commit, the release name, the steps, the shared paths, the memory limit when one is set
   %%> - the Process and Schedule definitions, the health path and the domain of each Route
+  %%> Not included:
+  %%> - no wake: a sleeping live stays asleep, because hot clones its `release` snapshot (planned, ADR 0265); a visit during the deploy wakes live as at any other time
   %%> Result:
   %%> - a running deployment row; a manual deploy pauses automatic deploys, as today
   GW->>SW: Push token and .env<br/>vault: token-TASK, env-TASK
@@ -42,6 +44,7 @@ sequenceDiagram
   %%> What it does:
   %%> - the live link must name the frozen live container, else `deployment.selection_invalid`
   %%> - the capacity check: available memory covers hot's need plus 1 GiB: the Instance's memory limit, or live's memory use without one, and the pool has 10 GiB free
+  %%> - planned: for a sleeping live, its memory use is the one its last sleep recorded before the freeze, and the available memory also covers it, because a visit or the handover can resume live
   %%> Why on the Node:
   %%> - free memory and pool space change between admission and the run
   %%> On failure:
@@ -86,8 +89,17 @@ sequenceDiagram
   %%> What it does:
   %%> - writes the new upstream file and live link beside the current ones, validates Caddy, renames both into place and reloads Caddy once
   %%> - requests in progress on the previous live finish there; a Cluster Route needs no Router change
+  %%> - planned: in the same step, once the reload succeeded, removes the Instance's asleep marker under the Instance's power lock, so a request never waits for a wake; the new live just passed readiness and starts its own watch of one idle window
   %%> On failure:
   %%> - Orbit renames the previous files back, so live serves unchanged; `deployment.switch_failed`
+  %%> - planned: the marker stays, or is put back, with them
+  opt the previous live is frozen, planned
+    Note over N: Resume the previous live<br/>no restore · close swap
+    %%> Why:
+    %%> - a sleeping live slept on (ADR 0265); the handover must stop its units, and a clean stop of a frozen container times out (development-containers.md#sleep-and-wake)
+    %%> What it does:
+    %%> - under the Instance's power lock: `incus resume` with no prepared restore, then `memory.swap.max` back to 0; no request reaches it, because the switch already moved the Routes
+  end
   SW->>N: Hand over the work<br/>Ansible · tags handover
   %%> What it does:
   %%> - disables and stops the previous live's container timers, then enables and starts the new live's

@@ -16,14 +16,12 @@ use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Proof\ProofVerifyIntent;
 use App\Domain\Releases\ReleaseAlert;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertReceipt;
 use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Jobs\Fleet\CheckFleetRebootConfirmation;
@@ -32,7 +30,6 @@ use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Models\TaskVm;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -96,24 +93,22 @@ it('orders the pass by risk and puts the control path, then the swamp Node, last
     expect($names)->toBe(['usexit', 'beast', 'app-prod', 'gateway', 'vpn', 'swamp-fixture']);
 });
 
-it('leaves out macOS, unmanaged and task VM Nodes', function (): void {
+it('leaves out macOS and unmanaged Nodes', function (): void {
     rebootNode('mac', [], ['platform' => 'macos']);
     rebootNode('unpinned', [RoleName::AppDev], ['ssh_host_fingerprint' => null]);
-    $guest = rebootNode('beast-tvm-1', [RoleName::AppDev]);
-    TaskVm::query()->create(['host_node_id' => $this->beast->id, 'node_id' => $guest->id, 'name' => 'beast-tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.151',
-        'provider' => 'incus', 'capacity_pool' => 'task']);
 
-    expect(array_map(static fn (Node $node): string => $node->name, app(FleetReboot::class)->members()))->not->toContain('mac', 'unpinned', 'beast-tvm-1');
+    expect(array_map(static fn (Node $node): string => $node->name, app(FleetReboot::class)->members()))->not->toContain('mac', 'unpinned');
 });
 
-it('gives Swamp what each Node needs to drain: task project, CI project and the Gateway units', function (): void {
+it('gives Swamp what each Node needs to drain: CI project and the Gateway units, and no task project for a task_vms key in its settings', function (): void {
     $reboot = app(FleetReboot::class);
 
-    expect($reboot->node($this->beast))->toMatchArray(['kind' => 'node', 'task_project' => 'orbit-tasks', 'ci_project' => 'orbit-ci', 'gateway' => null,
+    expect($reboot->node($this->beast))->toMatchArray(['kind' => 'node', 'ci_project' => 'orbit-ci', 'gateway' => null,
         'host' => $this->beast->wireguard_ip, 'host_keys' => ['ssh-ed25519 beast-key']])
+        ->and($reboot->node($this->beast))->not->toHaveKey('task_project')
         ->and($reboot->node($this->gateway)['gateway'])->toMatchArray(['scheduler' => 'orbit-gateway-schedule.service'])
         ->and($reboot->node($this->swamp)['kind'])->toBe('swamp')
-        ->and($reboot->node($this->prod))->toMatchArray(['task_project' => null, 'ci_project' => null]);
+        ->and($reboot->node($this->prod))->toMatchArray(['ci_project' => null]);
 });
 
 it('requires the agent everywhere, the Gateway scheduler and Horizon, and the hub tunnel with its source unit after the boot', function (): void {
@@ -125,11 +120,9 @@ it('requires the agent everywhere, the Gateway scheduler and Horizon, and the hu
         ->and($reboot->node($this->vpn)['services'])->toBe(['orbit-agent.service', 'wg-quick@orbit.service', NodeWireGuardHubInput::SourceUnit]);
 });
 
-it('only reads a task host with open task work, without holding its work, and admits the others with the window', function (): void {
+it('defers no Node for task work, holds no task host and admits every Node with the window', function (): void {
     Queue::fake([StartAdmittedSwampRun::class]);
     $group = Task::query()->create(['project_id' => null, 'title' => 'g', 'brief' => 'b', 'status' => 'running']);
-    $vm = TaskVm::query()->create(['host_node_id' => $this->beast->id, 'group_id' => $group->id, 'name' => 'beast-tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.152',
-        'provider' => 'incus', 'capacity_pool' => 'task']);
     Operation::query()->create(['kind' => 'tasks.turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => null,
         'status' => 'running', 'input' => []]);
     config(['swamp.run_token' => 'test-token', 'swamp.read_token' => 'read-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
@@ -153,10 +146,9 @@ it('only reads a task host with open task work, without holding its work, and ad
         ->and($operation->input['intent']['drain_seconds'])->toBe(900)
         ->and($operation->input['intent']['ci_repositories'])->toBe(FleetReboot::ciRepositories())
         ->and($operation->input['intent']['order'])->toContain($this->beast->id)
-        ->and($operation->input['intent']['nodes'][(string) $this->beast->id]['defer'])->toBe('tasks_busy')
+        ->and($operation->input['intent']['nodes'][(string) $this->beast->id]['defer'])->toBeNull()
         ->and($operation->input['intent']['nodes'][(string) $this->prod->id]['defer'])->toBeNull()
-        ->and($operation->input['task_hosts'])->toBe([])
-        ->and($vm->refresh()->state)->toBe(TaskVmState::Ready)
+        ->and($operation->input)->not->toHaveKey('task_hosts')
         ->and($frames)->toBe([]);
     Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $operation->id);
     Queue::assertPushed(StartAdmittedSwampRun::class, 1);
@@ -183,27 +175,14 @@ it('never overlaps a rollout or a Gateway release, and the rollout waits for the
         ->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_in_progress'));
 });
 
-it('holds task work off a host while its pass runs', function (): void {
-    $group = Task::query()->create(['project_id' => null, 'title' => 'g', 'brief' => 'b', 'status' => 'running']);
-    TaskVm::query()->create(['host_node_id' => $this->beast->id, 'group_id' => $group->id, 'name' => 'beast-tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.153',
-        'provider' => 'incus', 'capacity_pool' => 'task']);
-    Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1, 'node_id' => null, 'status' => 'running',
-        'input' => ['task_hosts' => [$this->beast->id]]]);
-
-    expect(fn () => FleetReboot::refuseTaskWork($group))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('tasks.host_rebooting'));
-});
-
-it('records each Node in pass order, parks the stopped task VMs and alerts on the failed Node', function (): void {
-    $vm = TaskVm::query()->create(['host_node_id' => $this->beast->id, 'name' => 'beast-tvm-2', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.154',
-        'provider' => 'incus', 'capacity_pool' => 'task']);
+it('records each Node in pass order and alerts on the failed Node', function (): void {
     $operation = Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1, 'node_id' => $this->swamp->id,
         'status' => 'running', 'state' => ['swamp_run_id' => 'run-1'], 'input' => ['intent' => ['order' => [$this->beast->id, $this->prod->id, $this->vpn->id]],
             'task_hosts' => [$this->beast->id]]]);
 
     $projected = app(FleetRebootProjection::class)->apply($operation, ['run_id' => 'run-1', 'status' => 'failed', 'started_at' => now()->toIso8601String(),
         'finished_at' => now()->toIso8601String(), 'error_code' => 'fleet.reboot_check_failed', 'failure' => null, 'result' => ['nodes' => [
-            ['node_id' => $this->beast->id, 'name' => 'beast', 'outcome' => 'rebooted', 'parked' => ['beast-tvm-2'], 'kernel_after' => '7.0.0-43-generic'],
+            ['node_id' => $this->beast->id, 'name' => 'beast', 'outcome' => 'rebooted', 'kernel_after' => '7.0.0-43-generic'],
             ['node_id' => $this->prod->id, 'name' => 'app-prod', 'outcome' => 'failed', 'step' => 'check', 'error_code' => 'fleet.reboot_units_failed',
                 'boot_id_before' => 'boot-a', 'failed_units' => ['caddy.service']],
         ]]]);
@@ -211,7 +190,6 @@ it('records each Node in pass order, parks the stopped task VMs and alerts on th
     expect(array_column($projected->result['nodes'], 'outcome', 'node_id'))->toBe([$this->beast->id => 'rebooted', $this->prod->id => 'failed',
         $this->vpn->id => 'skipped'])
         ->and($projected->result['error_code'])->toBe('fleet.reboot_units_failed')
-        ->and($vm->refresh()->state)->toBe(TaskVmState::Parked)
         ->and(array_map(static fn (ReleaseAlert $alert): string => $alert->incident->key($alert->kind), $this->sent))
         ->toBe(['reboot_halted|fleet-node:'.$this->prod->id.'|boot-a|fleet.reboot_units_failed']);
 });
@@ -359,17 +337,6 @@ it('finds a task host deferred every night overdue, looking past records without
         ->toBe(['reboot_overdue|fleet-node:'.$this->beast->id.'|due-'.CarbonImmutable::parse($since)->getTimestamp().'|fleet.reboot_overdue']);
 });
 
-it('refuses a proof on a task VM host that the pass drains', function (): void {
-    $group = Task::query()->create(['project_id' => null, 'title' => 'g', 'brief' => 'b', 'status' => 'running']);
-    TaskVm::query()->create(['host_node_id' => $this->beast->id, 'group_id' => $group->id, 'name' => 'beast-tvm-3', 'state' => TaskVmState::Ready,
-        'wireguard_ip' => '10.44.0.170', 'provider' => 'incus', 'capacity_pool' => 'task']);
-    Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1, 'node_id' => null, 'status' => 'running',
-        'input' => ['task_hosts' => [$this->beast->id]]]);
-
-    expect(fn () => app(ProofVerifyIntent::class)->start($this->gateway, 'firewall:allow', $group->id, 'test', null))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('tasks.host_rebooting'));
-});
-
 it('reports a Node due for more than three days to Doctor and alerts once', function (): void {
     $since = now()->subDays(4)->toIso8601String();
     rebootPass([['node_id' => $this->prod->id, 'name' => 'app-prod', 'outcome' => 'rebooted']], finished: now()->subDays(6));
@@ -397,23 +364,20 @@ it('confirms the swamp Node reboot from its uptime and alerts when no new boot a
     expect(CheckFleetRebootConfirmation::bootedSince($this->swamp->id, CarbonImmutable::parse($pass->finished_at)))->toBeTrue();
 });
 
-it('admits a held task host read-only in nightly and selected operator passes and leaves its work unlocked', function (bool $nightly): void {
+it('admits a held Node with task work read-only in nightly and selected operator passes', function (bool $nightly): void {
     Queue::fake([StartAdmittedSwampRun::class]);
     $this->beast->update(['reboot_hold' => true]);
     $group = Task::query()->create(['title' => 'held work', 'brief' => 'b', 'status' => 'running']);
-    TaskVm::query()->create(['host_node_id' => $this->beast->id, 'group_id' => $group->id, 'name' => 'held-tvm',
-        'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.155', 'provider' => 'incus', 'capacity_pool' => 'task']);
     Operation::query()->create(['kind' => 'tasks.turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'status' => 'running', 'input' => []]);
     $operation = $nightly ? app(AdmitFleetRebootAction::class)->execute(window: true)
         : Operation::query()->findOrFail($this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])
             ->postJson('/api/v1/fleet/reboot', ['node_ids' => [$this->beast->id]])->assertAccepted()->json('data.id'));
     expect($operation->input['intent']['nodes'][(string) $this->beast->id]['defer'])->toBe('operator_hold')
         ->and($operation->input['intent']['order'])->toContain($this->beast->id)
-        ->and($operation->input['task_hosts'])->not->toContain($this->beast->id);
-    FleetReboot::refuseTaskWork($group);
+        ->and($operation->input)->not->toHaveKey('task_hosts');
     $this->beast->update(['reboot_hold' => false]);
     expect($operation->fresh()->input['intent']['nodes'][(string) $this->beast->id]['defer'])->toBe('operator_hold')
-        ->and(app(FleetReboot::class)->node($this->beast)['defer'])->toBe('tasks_busy');
+        ->and(app(FleetReboot::class)->node($this->beast)['defer'])->toBeNull();
 })->with(['nightly' => [true], 'operator node_ids' => [false]]);
 
 it('projects the admitted reboot hold for due, not-due and unknown Nodes and keeps held overdue alerts', function (): void {
@@ -445,6 +409,6 @@ it('keeps an idle held task host out of the pass task-work lock', function (): v
     Queue::fake([StartAdmittedSwampRun::class]);
     $this->beast->update(['reboot_hold' => true]);
     $operation = app(AdmitFleetRebootAction::class)->execute(nodeIds: [$this->beast->id]);
-    expect($operation->input['task_hosts'])->toBe([])
+    expect($operation->input)->not->toHaveKey('task_hosts')
         ->and($operation->input['intent']['nodes'][(string) $this->beast->id]['defer'])->toBe('operator_hold');
 });

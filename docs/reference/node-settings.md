@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/{Actions/Nodes/UpdateNodeAction,Domain/Nodes/UpdateNodeResult,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection}.php
   - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeCiData}.php
-  - apps/gateway/database/migrations/{2027_02_05_000000_add_reboot_hold_to_nodes_table,2027_02_24_000000_drop_task_container_ci_places}.php
+  - apps/gateway/database/migrations/{2027_02_05_000000_add_reboot_hold_to_nodes_table,2027_02_24_000000_drop_task_container_ci_places,2027_03_01_000000_drop_vm_era_columns_and_task_vms_setting}.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeRequest.php
   - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeCommand}.php
   - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/CiSettings,Requests/Nodes/UpdateNodeRequest,Requests/Nodes/CiPlacesInput}.php
@@ -16,7 +16,7 @@ covers:
 
 A Node has typed settings for its development apps root (`apps.path`) and, on a CI Node, its [CI places](#ci-places) (`ci`). Set them with `node:add` or [`node:update`](/cli/node/update); only `node:update` sets `ci`.
 
-The Node setting `task_vms` and the `image_refresh_hold` field are removed ([old paths](/reference/old-paths#task-vm-settings)). The API refuses either member like any other unknown member, and the CLI has no option for them. Their stored values stay in the database until a later release drops them. Three readers of a stored `task_vms` value stay until then; [old paths](/reference/old-paths#task-vm-settings) names them.
+The Node setting `task_vms` and the `image_refresh_hold` field are removed ([old paths](/reference/old-paths#task-vm-settings)). The API refuses either member like any other unknown member, and the CLI has no option for them. A later release removed their stored values: its migration deletes the key `task_vms` from every Node's `settings` and drops the column `image_refresh_hold` ([old paths](/reference/old-paths#task-vm-settings)). Nothing reads either any more.
 
 A settings change that touches the apps root records a `node.update` Operation and returns HTTP 202. Clearing `apps.path` on a Node without an active `app-dev` role starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/update.mmd) shows both paths.
 

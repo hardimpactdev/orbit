@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\TaskVms\TaskVmNestedFleet;
-use App\Domain\TaskVms\TaskVmSize;
 
 it('gives every nested container an address inside the subnet of the nested network and a MAC of its own', function (): void {
     $layout = TaskVmNestedFleet::Layout;
@@ -12,14 +11,6 @@ it('gives every nested container an address inside the subnet of the nested netw
         ->and(array_unique(array_column($layout, 'hwaddr')))->toHaveCount(3)
         ->and(array_column($layout, 'address'))->each->toStartWith('10.232.2.')
         ->and(array_column($layout, 'wireguard'))->each->toStartWith('10.45.0.');
-});
-
-it('holds the nested containers only in a large VM, because they hold more memory than a medium VM has', function (): void {
-    $memory = static fn (string $gib): int => (int) $gib;
-    $nested = array_sum(array_map(static fn (array $node): int => $memory($node['memory']), TaskVmNestedFleet::Layout));
-
-    expect($memory(TaskVmSize::Large->resources()->memory))->toBeGreaterThan($nested)
-        ->and($memory(TaskVmSize::Medium->resources()->memory))->toBeLessThanOrEqual($nested);
 });
 
 it('renders the checkout as a disk device and the state mounts under the names the nested apply step checks', function (): void {

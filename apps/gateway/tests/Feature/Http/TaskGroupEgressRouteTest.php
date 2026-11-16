@@ -6,6 +6,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Node;
+use App\Models\NodeFact;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskGroupEgress;
@@ -82,29 +83,16 @@ describe('POST /api/v1/agent/facts for the egress kind', function (): void {
             'sources' => ['conn'], 'flags' => [], 'first_seen' => '2026-11-07T19:00:05Z']],
     ];
 
-    it('accepts the report of a task VM host for its own bridge', function () use ($fact): void {
-        $host = egress_http_node('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2]]);
-
-        egress_http_report($host, $fact)->assertNoContent();
-    });
-
-    it('refuses a report from a Node that is no task VM host', function () use ($fact): void {
-        egress_http_report(egress_http_node('apps', '10.44.0.5'), $fact)->assertStatus(422)->assertJsonPath('error.code', 'agent.fact_not_expected');
-    });
-
-    it('refuses a report for another bridge than the host\'s', function () use ($fact): void {
-        $host = egress_http_node('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2]]);
-
-        egress_http_report($host, ['network' => 'orbittaskb'] + $fact)->assertStatus(422)->assertJsonPath('error.code', 'agent.fact_not_expected');
-    });
-
-    it('accepts a report for the container bridge only from a host with task containers', function () use ($fact): void {
+    it('refuses every report, also from a Node whose settings still hold a task_vms key, and records nothing', function () use ($fact): void {
         $vms = ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2];
         $host = egress_http_node('shark', '10.44.0.11', ['task_vms' => $vms + ['containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1]]]);
-        $plain = egress_http_node('beast', '10.44.0.9', ['task_vms' => ['cidr' => '10.251.80.0/24'] + $vms]);
+        egress_http_group();
 
-        egress_http_report($host, ['network' => 'orbittaskc0'] + $fact)->assertNoContent();
-        egress_http_report($host, $fact)->assertNoContent();
-        egress_http_report($plain, ['network' => 'orbittaskc0'] + $fact)->assertStatus(422)->assertJsonPath('error.code', 'agent.fact_not_expected');
+        egress_http_report($host, $fact)->assertStatus(422)->assertJsonPath('error.code', 'agent.fact_not_expected');
+        egress_http_report($host, ['network' => 'orbittaskc0'] + $fact)->assertStatus(422)->assertJsonPath('error.code', 'agent.fact_not_expected');
+        egress_http_report(egress_http_node('apps', '10.44.0.5'), $fact)->assertStatus(422)->assertJsonPath('error.code', 'agent.fact_not_expected');
+
+        expect(NodeFact::query()->where('kind', 'egress')->count())->toBe(0)
+            ->and(TaskGroupEgress::query()->count())->toBe(0);
     });
 });

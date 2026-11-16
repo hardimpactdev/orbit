@@ -5,7 +5,7 @@
   "case_seconds": {
     "the pass visits one Node at a time and the Gateway reads its report step": 0.0019154570000000034,
     "each Node runs drain, reboot and check in order, each phase bounded and the drain longer than its budget": 0.0035888570000000043,
-    "a Node waits outside the window or when admission found its task work busy, and an operator's pass ignores the window": 8.790134809,
+    "a Node waits outside the window or when admission deferred it, and an operator's pass ignores the window": 8.790134809,
     "a Node after a failed one halts from the records in the run folder": 3.169430872000001,
     "a Node's play reads the clock and writes its record on the Swamp Node without SSH to localhost": 2.073806129999999,
     "the check waits for the boot to finish before it reads the failed units": 0.0001492710000002262,
@@ -13,7 +13,7 @@
     "a failed phase records the assert's error code or the phase's own code, keeps the earlier record, and fails": 3.8967240089999997,
     "the report lists every Node record in pass order and reports a cut Node failed": 2.6931278390000006,
     "only the swamp Node schedules its own reboot, behind a path unit that the pass's cleanup releases": 0.0021487860000015645,
-    "a failed drain starts what it stopped, and each task guest is recorded as soon as it stops": 0.0012672959999981686,
+    "a failed drain starts what it stopped, and the drain stops no task guest": 0.0012672959999981686,
     "the rerun picks only failed jobs still running on a stopped runner at its freeze, in runs still at that attempt": 5.401688241,
     "the rerun records each accepted call on its own and the refused ones apart": 1.6587698400000008,
     "the waits and calls of the rerun never fail the phase, and the tokens are always revoked": 0.0002247929999975895,

@@ -7,25 +7,21 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionProjection;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
 /**
- * An old claim as the Gateway admitted it before the task VMs were removed: its group reserved, its slot `provisioning` with the group,
- * and the slot's workspace bound to it. No claim starts any more; an open one still ends through the projection.
+ * An old claim as the Gateway admitted it before the task VMs were removed: its group reserved, and the workspace on its slot bound to
+ * it. Its `task_vm_id` names a row of the dropped task VM table. No claim starts any more; an open one still ends through the projection.
  *
- * @return array{Operation, Task, TaskVm, Instance}
+ * @return array{Operation, Task, Instance}
  */
 function claimedProvision(): array
 {
@@ -37,49 +33,47 @@ function claimedProvision(): array
     $guest = $node('shark-tvm-1', '10.44.0.133');
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Task', 'brief' => 'Brief', 'status' => TaskGroupStatus::Reserved]);
-    $slot = TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'shark-tvm-1',
-        'slot_number' => 1, 'slot_project_id' => $project->id, 'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.133', 'size' => TaskVmSize::Large]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'task-1', 'source_layout' => InstanceSourceLayout::Checkout,
         'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id,
         'status' => InstanceState::Reserved, 'first_setup_pending' => false]);
     $group->taskable()->associate($instance)->save();
     $operation = Operation::query()->create(['kind' => 'tasks.provision', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Running, 'input' => ['task_vm_id' => $slot->id, 'node_id' => $host->id, 'group_id' => $group->id, 'instance_id' => $instance->id,
+        'status' => OperationStatus::Running, 'input' => ['task_vm_id' => 1, 'node_id' => $host->id, 'group_id' => $group->id, 'instance_id' => $instance->id,
             'workspace' => ['branch' => 'task-'.$group->id, 'start_commit' => str_repeat('a', 40)]]]);
 
-    return [$operation, $group, $slot, $instance];
+    return [$operation, $group, $instance];
 }
 
-it('runs the group on its slot after a claim that passed', function (): void {
+it('runs the group after a claim that passed', function (): void {
     Queue::fake();
-    [$operation, $group, $slot, $instance] = claimedProvision();
+    [$operation, $group, $instance] = claimedProvision();
 
     app(TaskProvisionProjection::class)->record($operation, 'succeeded', null, fn (): Operation => $operation);
 
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($slot->refresh()->state)->toBe(TaskVmState::Ready)
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)
         ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)->and($instance->starting_commit)->toBe(str_repeat('a', 40));
     Queue::assertNothingPushed();
 });
 
 it('ends the group of a claim that ended cancelled or failed and starts no release, as no task VM release is left', function (string $status, TaskGroupStatus $ended): void {
     Queue::fake();
-    [$operation, $group, $slot] = claimedProvision();
+    [$operation, $group] = claimedProvision();
 
     app(TaskProvisionProjection::class)->record($operation, $status, $status === 'failed' ? 'tasks.provision_failed' : null, fn (): Operation => $operation);
 
-    expect($group->refresh()->status)->toBe($ended)->and($slot->refresh()->state)->toBe(TaskVmState::Provisioning)
+    expect($group->refresh()->status)->toBe($ended)
         ->and(Operation::query()->whereKeyNot($operation->id)->exists())->toBeFalse();
     Queue::assertNothingPushed();
 })->with([['cancelled', TaskGroupStatus::Cancelled], ['failed', TaskGroupStatus::Failed]]);
 
 it('fails the group when the Gateway refused the start, so the group does not stay reserved', function (): void {
     Queue::fake();
-    [$operation, $group, $slot, $instance] = claimedProvision();
+    [$operation, $group, $instance] = claimedProvision();
     $operation->update(['status' => OperationStatus::Failed, 'error_code' => 'operation.execution_secrets_invalid']);
 
     app(TaskProvisionProjection::class)->refused($operation);
 
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
-        ->and($instance->refresh()->error_code)->toBe('operation.execution_secrets_invalid')->and($slot->refresh()->state)->toBe(TaskVmState::Provisioning);
+        ->and($instance->refresh()->error_code)->toBe('operation.execution_secrets_invalid');
     Queue::assertNothingPushed();
 });

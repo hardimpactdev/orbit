@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, ADR 0261, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): freeze a development container, record the pages its processes had resident, move its memory to swap and leave its Route on the wake page. Defaults and nested-fleet Instances sleep under the same rule as clones (owner decision 2026-11-14). The hibernation sweep admits the same kind after an idle hour; the command admits it at once.
+  %% Container runtime (ADR 0250 step 8, ADR 0261, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): freeze a development container, record the pages its processes had resident, move its memory to swap and leave its Route on the wake page. Defaults and nested-fleet Instances sleep under the same rule as clones (owner decision 2026-11-14). The hibernation sweep admits the same kind after an idle hour; the command admits it at once. Planned (ADR 0265, docs/reference/production-containers.md#sleep-and-wake): a production Instance's live release container sleeps by the same rule on its app-prod Node, and never takes the stop.
   %% status: draft
   %% command: instance:sleep
   %% kind: instance.sleep
@@ -19,6 +19,7 @@ sequenceDiagram
   %%> Callers:
   %%> - the command, at once
   %%> - the idle sleep of the runtime hibernator, every 10 min, after it read no HTTP, wake or deployment activity for an hour and, for an Instance with a T3 server, no T3 activity and no running turn (docs/reference/development-containers.md#sleep-and-wake)
+  %%> - planned: the same sweep and command for a production Instance; they act on its live release container, which has no T3 server
   opt the Instance has a T3 server
     Note over GW: Last read of T3 threads<br/>Conn thread index
     %%> When:
@@ -33,8 +34,10 @@ sequenceDiagram
   Note over GW: Admit the sleep
   %%> When:
   %%> - an active development container, a default and a nested-fleet Instance included; take the Instance lock
+  %%> - planned: a production Instance's live release container; hot and old are never admitted, and the sweep reports `not_live` for them; an open deploy or rollback keeps the Instance awake (`busy`)
   %%> On failure:
   %%> - no container, a non-development Instance, an active task or lifecycle work starts no run
+  %%> - planned: the reason `not_development` goes; a production Instance is admitted for its live only
   GW->>SW: Start run, full intent<br/>operation-instance-sleep
   GW-->>CLI: 202 Accepted<br/>Operation ID
   SW->>N: Sleep the container<br/>Ansible · tags prepared_sleep
@@ -67,6 +70,13 @@ sequenceDiagram
       %%> Result:
       %%> - the container runs again, swap closes on each cgroup the freeze opened, the marker goes; the run fails `instance.container_freeze_failed`
       %%> - the Instance serves as before; free swap and run the command again
+    else a production live, planned
+      Note over N: Resume, never stop<br/>drop plan, restore, close swap
+      %%> Why:
+      %%> - a stopped live would cold-boot its Processes and timers at the next visit (ADR 0265)
+      %%> Result:
+      %%> - live runs again, swap closes on each cgroup the freeze opened, the marker goes; the run fails `instance.container_freeze_failed`
+      %%> - the sweep keeps live awake for one idle window with `swap_full`
     else any other Instance
       Note over N: Stop the container<br/>drop plan, restore, incus stop
       %%> Why:
@@ -86,6 +96,7 @@ sequenceDiagram
     %%> - `prepared_restore`: `ready` with the plan's processes, bytes and `prepare_seconds`, or `unsupported`, `skipped` or `not_applicable` with a reason; `residual_anon_bytes` and `residual_file_bytes` from the last read
     %%> - `t3_turn` is `idle` when the idle sleep read T3 first, `no_server` for an Instance without a T3 server, whoever started the sleep, and `not_checked` for the command
     %%> - the Conn layer shows its T3 server asleep; the hourly renewal skips it
+    %%> - planned, a production live: Caddy holds each request that meets the marker while the wake runs (wake.mmd); live's swap opened for the sleep, and a running live never swaps
   else a step fails
     %% path: failed
     SW--xGW: Run failed<br/>error_code

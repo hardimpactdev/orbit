@@ -37,7 +37,6 @@ final class DoctorFamilyInspection
         public readonly ?NodeAgentData $agent,
         private readonly array $facts,
         public readonly bool $managed,
-        public readonly bool $parked,
     ) {}
 
     /**

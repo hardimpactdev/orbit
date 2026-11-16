@@ -17,12 +17,12 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\LinuxUserName;
-use App\Domain\Nodes\NodeLanAddress;
 use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
+use App\Domain\Nodes\NodeLanAddress;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
@@ -42,7 +42,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
-use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -333,7 +332,6 @@ final readonly class ProvisionNodeAction
             );
         }
 
-        $clock = app(TaskVmStepClock::class);
         $recordObservation = fn (NodeObservation $observation) => $this->recordArchitecture($node, $observation);
         try {
             if ($priorActiveState !== null && $this->converger instanceof RecoverableNodeConverger) {
@@ -356,10 +354,8 @@ final readonly class ProvisionNodeAction
                     $rolelessOperator,
                     $recordObservation,
                 );
-                $clock->step('node-converge');
                 $node->user = $managedUser;
                 $this->convergeRoles($node, $data);
-                $clock->step('roles');
             }
         } catch (NodeProvisioningException $exception) {
             $this->handleFailure($node, $exception, $priorActiveState);
@@ -402,14 +398,12 @@ final readonly class ProvisionNodeAction
         } catch (Throwable $exception) {
             $this->failRouterLanIngress($node, $exception, $priorActiveState, $lanClusterIds);
         }
-        $clock->step('router-lan-ingress');
 
         try {
             $this->expandDnsSelection($node, $lanClusterIds);
         } catch (Throwable $exception) {
             $this->failDnsSelection($node, $exception, $priorActiveState, $lanClusterIds);
         }
-        $clock->step('dns-selection');
 
         try {
             DB::transaction(function () use ($node, $managedUser): void {
@@ -434,7 +428,6 @@ final readonly class ProvisionNodeAction
 
         $this->dnsSelection()->prune(clusterIds: $lanClusterIds);
         $this->lanIngress()->prune(clusterIds: $lanClusterIds);
-        $clock->step('activate');
 
         if ($data->settingsProvided) {
             try {
@@ -477,7 +470,6 @@ final readonly class ProvisionNodeAction
                 throw $failure;
             }
 
-            $clock->step('agent');
         }
 
         $result = $node->refresh()->load('roles');

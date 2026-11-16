@@ -8,11 +8,9 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Support\Facades\DB;
@@ -60,21 +58,19 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
     }
 
     /**
-     * Records the slot, the workspace Instance and the group from the end of an old claim. `$record` writes the Operation between the
-     * lookups and the writes. No claim starts any more, and nothing releases a slot: the task VMs and their release are removed
-     * (docs/reference/old-paths.md). An Operation of this kind that is still open ends here and leaves its slot row as it is.
+     * Records the workspace Instance and the group from the end of an old claim. `$record` writes the Operation between the
+     * lookups and the writes. No claim starts any more, and the Gateway reads no slot row: the task VMs and their release are removed
+     * (docs/reference/old-paths.md). An Operation of this kind that is still open ends here.
      *
      * @param  Closure(): Operation  $record
      */
     public function record(Operation $operation, string $status, ?string $errorCode, Closure $record): Operation
     {
-        $slot = TaskVm::query()->lockForUpdate()->findOrFail(ValidatedData::integer($operation->input['task_vm_id']));
         $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
         $instance = Instance::query()->where('task_workspace_owner_id', $group->id)->findOrFail(ValidatedData::integer($operation->input['instance_id']));
         $projected = $record();
         if ($status === 'succeeded') {
             $workspace = ValidatedData::object($operation->input['workspace']);
-            $slot->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'stop_confirmed_at' => null, 'error_code' => null, 'error_message' => null]);
             $instance->update(['branch' => $workspace['branch'], 'starting_commit' => $workspace['start_commit'],
                 'status' => InstanceState::SourceResolved, 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null]);
             $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);

@@ -26,7 +26,7 @@ The engine is generic. Your agentic development environment (ADE) plans and stee
 
 Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`task` CLI family](/cli/task) runs the same operations from a terminal. There is no web UI to create or change a task. The API, the CLI, and the web app call a child task a subtask.
 
-A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. Every associated task VM row must also be `destroyed`. A VM in `provisioning`, `ready`, `parked`, `destroying`, or `failed` returns HTTP 409 and `project.task_vm_not_destroyed`, with its name and state in the message. Wait until destruction finishes before retrying. Both refusals leave all records unchanged; only `destroyed` VM rows are deleted with the Project.
+A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. The refusal leaves all records unchanged. Removal reads and deletes no task VM row: the task VM tables are dropped ([old paths](/reference/old-paths#the-task-vm-tables)).
 
 
 ## Extension switch and status
@@ -73,7 +73,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `ended_pr_notice_key` | subtask | Stable send key for the one ended-pull-request notice. Null when that subtask has no notice |
 | `ended_pr_notice_thread_id` | subtask | The implementer or reviewer thread that notice belongs to |
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
-| `vm_power` | task | [VM power](/reference/compute-drivers#vm-power), separate from task status: `running`, `stopped`, `destroyed`, or `null` |
+| `vm_power` | task | [VM power](/reference/compute-drivers#vm-power): always `null`, because no task VM exists |
 | `ready_at`, `ended_at`, `merged_at` | task | [Lifecycle times](#lifecycle-times): when the task first entered `todo`, when it ended, and when GitHub merged its pull request |
 | `tokens`, `line_diff`, `lines_added`, `lines_deleted`, `duration_ms` | both | [Settle metrics](#settle-metrics): distinct-thread tokens, per-subtask usage deltas, recorded whole-branch line counts, and duration |
 
@@ -145,7 +145,7 @@ Task VMs reuse WireGuard addresses. Official `@swamp/ssh` pins the observed host
 
 Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the pinned start commit. The workspace step refuses a checkout on any other commit. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, image }`, naming the workspace Instance, guest Node, start commit and the image the VM got. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
 
-`image` is `{ recipe_identity, fingerprint, build_id, fallback }`, copied from the VM row. `fallback` is `true` when the VM started from the host's last promoted image instead of the current recipe's; `recipe_identity` then names that older recipe.
+`image` is `{ recipe_identity, fingerprint, build_id, fallback }`, copied from the VM row while task VMs ran; the table `task_vms` is dropped ([old paths](/reference/old-paths#the-task-vm-tables)). `fallback` is `true` when the VM started from the host's last promoted image instead of the current recipe's; `recipe_identity` then names that older recipe.
 
 #### Last activity
 
@@ -153,7 +153,7 @@ A group's `last_activity_at` is the newest time any Operation on the group was c
 
 #### Release an idle task VM
 
-The idle release and its save, `tasks.idle_save`, are removed with the task VMs. A task copy stays until its group ends, so its work needs no save. The columns `idle_saved_commit` and `idle_saved_at` stay on old groups; nothing reads them. A save branch `task-<id>-idle` that an old save pushed stays on origin until a person deletes it.
+The idle release and its save, `tasks.idle_save`, are removed with the task VMs. A task copy stays until its group ends, so its work needs no save. The columns `idle_saved_commit` and `idle_saved_at` are dropped ([old paths](/reference/old-paths#task-vm-settings)). A save branch `task-<id>-idle` that an old save pushed stays on origin until a person deletes it.
 
 #### Keep command output out of run history
 
@@ -1616,7 +1616,7 @@ Cancel is admitted under the group execution lock. A busy group returns HTTP 409
 
 An admitted cancel answers HTTP 202 with its `tasks.cancel` Operation. A task with a [task copy](#task-copy) ends through the copy's destroy, as [Task copy cleanup](#task-copy-cleanup) describes. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations.
 
-A task without a task copy holds nothing to release: the task VMs and their release are removed. Admission marks it and its open subtasks `cancelled` and records the Operation as succeeded at once, with no run (R1). So the 202 already carries a succeeded Operation, and `task:show` reads `cancelled` from then on. An old `task_vms` row of the task stays as it is. The same holds for `tasks.maintenance_finish`. A task that still holds a workspace that is no task copy (a task VM workspace) refuses with HTTP 409 `tasks.workspace_ownership_refused`; complete it instead.
+A task without a task copy holds nothing to release: the task VMs and their release are removed. Admission marks it and its open subtasks `cancelled` and records the Operation as succeeded at once, with no run (R1). So the 202 already carries a succeeded Operation, and `task:show` reads `cancelled` from then on. The same holds for `tasks.maintenance_finish`. A task that still holds a workspace that is no task copy (a task VM workspace) refuses with HTTP 409 `tasks.workspace_ownership_refused`; complete it instead.
 
 Cancel asks a running group Operation to stop. If it is still running, the call returns HTTP 409 `operation.target_busy` with its id and confirms the stop request. Run `task:cancel` again once that Operation has ended. A timed-out Operation whose run nothing has proven ended still holds the group, for up to an hour; the cancel then returns the same 409 before it admits the destroy of the task's copy.
 

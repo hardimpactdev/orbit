@@ -7,8 +7,8 @@ namespace App\Domain\Fleet;
 use App\Domain\Problems\ProblemRecovery;
 
 /**
- * The resource name of an open alert about a recipe image build. The build is retired, so nothing raises one now; an alert raised before
- * stays open until {@see ProblemRecovery} closes it.
+ * The resource name of an open alert about a recipe image build. The build is retired, so nothing raises one now; {@see ProblemRecovery}
+ * closes an alert raised before as `resource_gone`.
  */
 final readonly class RecipeMaintenanceAlerts
 {

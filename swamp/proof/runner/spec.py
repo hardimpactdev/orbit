@@ -42,7 +42,7 @@ STEPS = {
     'recorded_request': (('act',), {'node', 'caller', 'expect'}, {'agent', 'age'}),
 }
 FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'cases', 'spread', 'parallel'}
-CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'fails_on_base', 'negative', 'timeout', 'node', 'exclusive'}
+CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'fails_on_base', 'negative', 'timeout', 'node', 'exclusive', 'read_only'}
 DEFAULT_PARALLEL = 4
 GLOBAL_STEPS = {'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request'}
 READ_STEPS = {'probe', 'ufw', 'record', 'doctor', 'unchanged', 'package'}
@@ -87,6 +87,7 @@ class Case:
     lock: str = 'node'        # `all` holds the fleet, `node` writes its Node, `read` shares its Node with readers
     exclusive: bool = False   # the case asked to run alone
     fails_on_base: bool = False
+    read_only: bool = False   # the case changes nothing; checked by `check_read_only`
 
 
 @dataclass
@@ -330,8 +331,26 @@ def build_case(raw, file_vars, fixtures, static, batches):
         raise SpecError(f'{where}: exclusive is true or false')
     if not isinstance(raw.get('fails_on_base', False), bool):
         raise SpecError(f'{where}: fails_on_base is true or false')
+    read_only = raw.get('read_only', False)
+    if not isinstance(read_only, bool):
+        raise SpecError(f'{where}: read_only is true or false')
+    if read_only:
+        check_read_only(where, setup, stages, negative)
     return Case(case_id, raw['batch'], raw['covers'], raw['summary'], setup, stages, negative, int(raw.get('timeout', 180)), raw.get('fails_today'),
-                raw.get('node'), exclusive=raw.get('exclusive', False), fails_on_base=raw.get('fails_on_base', False))
+                raw.get('node'), exclusive=raw.get('exclusive', False), fails_on_base=raw.get('fails_on_base', False), read_only=read_only)
+
+
+def check_read_only(where, setup, stages, negative):
+    """A case marked `read_only` changes nothing, so the proof runs it in a batch without a reset of its own (docs/cli/proof/run.mmd).
+    It has no setup and no negative run, each CLI call proves that it created no Operation, and every other step is a read."""
+    if setup or negative:
+        raise SpecError(f'{where}: a read_only case has no setup and no negative')
+    for step in (step for stage in stages for step in stage.act + stage.expect):
+        if step.name == 'cli' and (step.args.get('expect') or {}).get('request') == 'none':
+            continue
+        if step.name not in READ_STEPS:
+            raise SpecError(f'{where}: a read_only case can change the fleet with its {step.name} step; '
+                            'each cli call expects request: none and every other step is a read')
 
 
 def case_steps(case):

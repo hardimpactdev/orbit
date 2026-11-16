@@ -20,6 +20,7 @@ uncovered:
 cases:
   - id: recorded-roles
     batch: fresh-fleet
+    read_only: true
     covers: [main, roles]
     summary: Required arguments alone return the recorded app-dev role and state; both output forms succeed without an Operation.
     act:
@@ -32,6 +33,7 @@ cases:
 
   - id: repeat-read
     batch: fresh-fleet
+    read_only: true
     covers: [main, roles]
     summary: A repeat is another successful read, not an already-applied skip or a new Operation.
     stages:
@@ -49,6 +51,7 @@ cases:
   - id: node-id-zero
     expect: []
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: Zero is refused locally as an invalid Node ID.
     act:
@@ -60,6 +63,7 @@ cases:
   - id: node-id-negative
     expect: []
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: A negative ID is passed as an argument, not parsed as an option, and is refused locally.
     act:
@@ -71,6 +75,7 @@ cases:
   - id: node-name-refused
     expect: []
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: Even a registered Node name is not a numeric Node ID.
     fails_today: The CLI resolves app-dev by name through NodeCommand instead of refusing it with node.id_invalid.
@@ -83,6 +88,7 @@ cases:
   - id: node-id-option-like
     expect: []
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: An option-like value after the argument separator is refused as an invalid Node ID.
     fails_today: NodeCommand attempts a name lookup and returns node.not_found instead of node.id_invalid.
@@ -95,6 +101,7 @@ cases:
   - id: node-id-missing
     expect: []
     batch: fresh-fleet
+    read_only: true
     covers: []
     summary: Noninteractive missing input uses the command's invalid-ID refusal.
     fails_today: The required Symfony argument currently produces input.invalid, not node.id_invalid.
@@ -107,6 +114,7 @@ cases:
   - id: node-not-found
     expect: []
     batch: fresh-fleet
+    read_only: true
     covers: [node-not-found]
     summary: An unknown positive numeric Node ID is refused without creating an Operation.
     act:
