@@ -892,6 +892,16 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("fixture_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_shards }}", source)
         self.assertIn('bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT"', source)
 
+    def test_tools_are_prepared_in_a_bounded_step_between_the_cache_and_the_units(self):
+        import yaml
+        steps = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']['fixtures']['steps']
+        names = [step.get('name') for step in steps]
+        cache, prepare, run = (names.index(name) for name in
+                               ('Cache pinned fixture tools and collections', 'Prepare fixture tools', 'Run fixture units'))
+        self.assertEqual((prepare, run), (cache + 1, cache + 2))
+        self.assertEqual(steps[prepare]['run'], 'bin/ci-units prepare-tools')
+        self.assertEqual(steps[prepare]['timeout-minutes'], 1)
+
     def test_required_stays_red_when_whole_file_capacity_is_exceeded(self):
         from test_ci_delivery import delivery, needs_for
         needs = needs_for('required')
