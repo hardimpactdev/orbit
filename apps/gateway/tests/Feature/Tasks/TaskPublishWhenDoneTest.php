@@ -17,6 +17,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskPublishIntent;
+use App\Domain\Tasks\TaskPublishProjection;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
@@ -191,6 +192,49 @@ it('replays a repeated release once the group is published', function (): void {
     $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7']);
 
     expect($release()->id)->toBe($first->id)->and(whenDonePublishes($world->group))->toBe(1);
+});
+
+it('opens the pull request in the one publish of a named check that is the reviewed done check, with the reviewer\'s text, as the release does', function (): void {
+    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world->group->update(['pr_mode' => TaskPrMode::ReviewBeforePr]);
+
+    $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData($world->check->id), 'person', null);
+
+    expect($operation->input['check'])->toBe($world->check->id)
+        ->and($operation->input['pull_request'])->toBe(['title' => TaskCopyDoneFixture::Title, 'body' => TaskCopyDoneFixture::Body, 'draft' => false])
+        ->and($operation->input)->not->toHaveKey(TaskPublishProjection::Withheld)
+        ->and(whenDonePublishes($world->group))->toBe(1);
+});
+
+it('only pushes a named check that is not the reviewed done check, and the Operation says why no pull request opened', function (string $case, string $reason): void {
+    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr, text: $case !== 'no text');
+    $check = $case === 'newer check' ? TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), TaskPrMode::ReviewBeforePr) : $world->check;
+
+    $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData($check->id), 'person', null);
+    $run = '6b69badf-4f06-4f2e-82d7-21b62c1f587a';
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run]]);
+    $projected = app(TaskPublishProjection::class)->apply($operation->refresh(), ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => []]);
+
+    expect($operation->input['pull_request'])->toBeNull()
+        ->and($operation->input[TaskPublishProjection::Withheld])->toBe(str_replace('{check}', (string) $check->id, $reason))
+        ->and(app(TaskPublishProjection::class)->input($operation)['intent'])->not->toHaveKey(TaskPublishProjection::Withheld)
+        ->and($projected->result)->toMatchArray(['pull_request_url' => null, TaskPublishProjection::Withheld => $operation->input[TaskPublishProjection::Withheld]]);
+})->with([
+    'a newer check, so the work is not done' => ['newer check', "The group's work is not done, so no pull request opened: it opens when the reviewer approved this check and its subtask is completed."],
+    'the done check without the reviewer\'s text' => ['no text', 'The reviewer sent no pull request text for check {check}, so no pull request opened.'],
+]);
+
+it('republishes the done check of a group that has its pull request on a bare publish, as a push to its branch', function (): void {
+    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7']);
+
+    $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
+
+    expect($operation->input['check'])->toBe($world->check->id)
+        ->and($operation->input['pull_request'])->toBeNull()
+        ->and($operation->input)->not->toHaveKey(TaskPublishProjection::Withheld)
+        ->and(whenDoneTick())->toBe([]);
 });
 
 it('stores a stopped copy as a refusal the group shows, and does not try that check again', function (): void {

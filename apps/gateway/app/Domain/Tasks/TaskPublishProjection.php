@@ -22,9 +22,12 @@ use Illuminate\Support\Facades\DB;
 /** Projects native publication metadata onto the board. No GitHub calls or execution. */
 final readonly class TaskPublishProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
+    /** The input key of why a publish of a named check opens no pull request: the Gateway's answer, never part of the run's intent. */
+    public const string Withheld = 'pull_request_withheld';
+
     public function input(Operation $operation): array
     {
-        return ['intent' => array_diff_key($operation->input, ['execution_secrets' => true]),
+        return ['intent' => array_diff_key($operation->input, ['execution_secrets' => true, self::Withheld => true]),
             'execution_secrets' => $operation->input['execution_secrets']];
     }
 
@@ -128,7 +131,8 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
             if ($status === OperationStatus::Succeeded) {
                 $pull = isset($native['pull_receipt']) ? ValidatedData::object(json_decode(ValidatedData::string($native['pull_receipt']), true, flags: JSON_THROW_ON_ERROR)) : [];
                 $result = ['branch' => $operation->input['branch'], 'commit' => $operation->input['commit'],
-                    'pull_request_number' => $pull['pull_request_number'] ?? null, 'pull_request_url' => $pull['pull_request_url'] ?? null, ...self::base($native['base'] ?? null)];
+                    'pull_request_number' => $pull['pull_request_number'] ?? null, 'pull_request_url' => $pull['pull_request_url'] ?? null, ...self::base($native['base'] ?? null),
+                    ...(isset($operation->input[self::Withheld]) ? [self::Withheld => $operation->input[self::Withheld]] : [])];
             } elseif (in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true)) {
                 $failure = ValidatedData::object($data['failure'] ?? []);
                 $detail = $failure['detail'] ?? null;

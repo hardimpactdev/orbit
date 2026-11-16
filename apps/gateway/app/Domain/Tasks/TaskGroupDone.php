@@ -19,11 +19,14 @@ final readonly class TaskGroupDone
 {
     public function __construct(private TaskCheckedCandidate $candidates) {}
 
-    /** The done check, or null while the work is not done. */
-    public function check(Task $group): ?TaskCheck
+    /**
+     * The done check, or null while the work is not done. With `$republish`, a person's publish also finds the done check of a group
+     * that has its pull request: the publish pushes that check to the pull request's branch (docs/reference/tasks.md#release-a-waiting-group).
+     */
+    public function check(Task $group, bool $republish = false): ?TaskCheck
     {
         $group->loadMissing('project', 'taskable', 'tasks');
-        if ($group->parent_id !== null || $group->orchestration !== TaskOrchestration::External || $group->pr_url !== null
+        if ($group->parent_id !== null || $group->orchestration !== TaskOrchestration::External || ($group->pr_url !== null && ! $republish)
             || in_array($group->status, TaskGroupStatus::endedStatuses(), true) || TaskInstanceWorkspace::forGroup($group) === null) {
             return null;
         }
