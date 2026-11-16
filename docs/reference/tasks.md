@@ -266,7 +266,7 @@ For a group with a task copy, `task:publish <group>` without `--check` publishes
 
 The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
 
-A step of the run asks the Gateway for the token right before the push (`operation:direct:github-token`, with the run id), so the token is fresh whenever the run reaches that step. The Gateway checks the Operation, the run and the repository. It mints a token for that one repository with `contents: write` and `pull_requests: write`, and writes the two values. The token has no `workflows` permission, so it cannot push a change under `.github/workflows/` ([the copy check](#the-copy-check)). Its Activity row names the repository and these two permissions. The reply holds vault descriptors only.
+A step of the run asks the Gateway for the token right before the push (`operation:direct:github-token`, with the run id), so the token is fresh whenever the run reaches that step. The Gateway checks the Operation, the run and the repository. It mints a token for that one repository with `contents: write` and `pull_requests: write`, and writes the two values. The token has no `workflows` permission, so it cannot push a change under `.github/workflows/`; a copy's [base read](#the-base-of-a-copy-publish) refuses a branch whose workflows differ from the default branch before the push. Its Activity row names the repository and these two permissions. The reply holds vault descriptors only.
 
 A worker on Node 209 uses official SSH to verify HEAD and the whole working tree against the checked candidate. Each VM read and command is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Four reads take `git read-tree HEAD`, `git add --all` and `git write-tree` on a per-run index file, and `git rev-parse HEAD`. A moved candidate fails with `tasks.head_moved` before a push.
 
@@ -274,7 +274,7 @@ A worker on Node 209 uses official SSH to verify HEAD and the whole working tree
 
 The chart names every native command and data step. Separate operations stay visible; ordering-only child workflows and result programs are removed.
 
-Swamp pushes the exact candidate to `task-{id}` without force. Git pushes nothing for an identical remote tip and refuses a divergent one, so no tip read runs first. A divergent remote tip fails with `tasks.not_fast_forward`; a GitHub workflow-permission refusal fails with `tasks.workflows_permission`. Other transport failures use `tasks.push_failed`. A lost push reply is reconciled by the next push, which finds the identical tip.
+Swamp pushes the exact candidate to `task-{id}` without force. Git pushes nothing for an identical remote tip and refuses a divergent one, so no tip read runs first. A divergent remote tip fails with `tasks.not_fast_forward`; a GitHub workflow-permission refusal fails with `tasks.workflows_permission`. For a task copy, the base read refuses such a push first, so that code is only a fallback for a reason the read did not see. Other transport failures use `tasks.push_failed`. A lost push reply is reconciled by the next push, which finds the identical tip.
 
 Without `pull_request`, publication only pushes. With it, a `gh api` step looks for an open pull request from the admitted branch. TypeScript on 209 plans one update of its title and body when found, or one creation against the admitted default branch, and a second `gh api` step sends it from a private JSON input file. A lost reply fails the operation.
 
@@ -328,12 +328,11 @@ The program prints one line of evidence. It names paths, line numbers and secret
 | Skipped | A value under 16 bytes, which matches by chance, and a value that the start tree holds. Both are counted per name |
 | Range | Every object new from the copy's start to the candidate, and the proposed pull request body |
 | Private keys | A `-----BEGIN … PRIVATE KEY-----` block with 100 or more base64 characters. A short test stub passes |
-| Workflows | A commit that no remote branch of the copy holds and that changes `.github/workflows/` |
 | Same objects | The worker's content check refuses unless its object digest equals the copy check's |
 
-A plain copy has no outer or inner secrets, so it checks only for private keys and workflows. A merge counts a workflow path only when the path differs from every parent. So a sync of the default branch is no change of the copy.
+A plain copy has no outer or inner secrets, so it checks only for private keys. The check does not judge workflow changes: a copy's remote branches show the last main it synced, not the default branch head on GitHub. [The base of a copy publish](#the-base-of-a-copy-publish) judges them against that head.
 
-A secret refuses with `tasks.publish_secret_value`, then a workflow change with `tasks.publish_workflow_change`. The publish result lists the items in `refused`: `path:line secret-name`, or the path of a workflow. `refused_more` counts the rest. An error refuses with `tasks.publish_secret_unchecked`. So does a nested-fleet copy that shows no inner machine. In each case nothing is pushed. A hit in a file name names the folder that holds it, and a path that holds a value is never printed.
+A secret refuses with `tasks.publish_secret_value`. The publish result lists the items in `refused`: `path:line secret-name`. `refused_more` counts the rest. An error refuses with `tasks.publish_secret_unchecked`. So does a nested-fleet copy that shows no inner machine. In each case nothing is pushed. A hit in a file name names the folder that holds it, and a path that holds a value is never printed.
 
 On Orbit's own tree the program took 0.25 seconds for 80 values and 196 objects. The phase around it, one more Ansible run on the Node, adds an estimated 5 to 10 seconds to a publish. The program is bounded at 300 seconds.
 
@@ -345,8 +344,6 @@ It catches copies of a value, not transformed text. It misses:
 - a value in the caller's own pull request title or body, which the content check reads for the `.env` only.
 
 The private-key rule has no waiver, and the range holds the commits that a sync of the default branch brought in. So a real-looking test key that the default branch changed after the copy's start, such as `apps/gateway/tests/Fixtures/gateway-bootstrap-root.key`, refuses too. A person publishes such a change by hand.
-
-A task cannot change a workflow from a copy. A change under `.github/workflows/` belongs to a person. GitHub may also refuse, with `tasks.workflows_permission`, the push of a copy that merged a default branch whose workflows changed since the branch's last push. The check does not foresee that case. The agent says what to change, and a person makes that pull request by hand with their own GitHub account. The pipeline lane does the same.
 
 ##### The base of a copy publish
 
@@ -360,13 +357,21 @@ A copy's publish states the base it publishes against. After the token is minted
 | `overlapping_paths` | The paths that both the checked commit and the default branch changed since the base |
 | `overlapping_more` | How many overlapping paths lie beyond the listed ones: at most 100 paths in at most 3,000 bytes |
 
-`git merge-tree --write-tree` then merges the two inside the scratch repository; no workspace is touched. Only a real conflict refuses: `tasks.publish_conflict` names the conflicting paths in `conflicting_paths`, at most 100 in at most 3,000 bytes so the refusal fits the step detail Orbit keeps, with `conflicting_more` counting the rest, and nothing is pushed. Bring main into the copy with [`task:sync`](#bring-main-into-a-copy), merge or rebase, check again and publish. Being behind, with or without overlapping paths, never refuses.
+`git merge-tree --write-tree` then merges the two inside the scratch repository; no workspace is touched. Of the merge, only a real conflict refuses: `tasks.publish_conflict` names the conflicting paths in `conflicting_paths`, at most 100 in at most 3,000 bytes so the refusal fits the step detail Orbit keeps, with `conflicting_more` counting the rest, and nothing is pushed. Bring main into the copy with [`task:sync`](#bring-main-into-a-copy), merge or rebase, check again and publish. Being behind, with or without overlapping paths, never refuses.
 
 These fields join the result. With `--title` and `--body`, the pull request body gets a fixed `## Base` section after the caller's text and the [waiver lines](#docs-impact-waivers-in-a-copy) the publish adds: the base commit, the default head, how far behind, and the overlapping paths, or none. An Orbit marker opens the section, so a body that carries an earlier one gets it replaced and a re-publish states it once, with any waiver line that followed it kept before the new section.
 
 The body stays within its 65,536-character limit: when the path list does not fit, the section names only their count, and when the section does not fit at all, the body has none; the result states the base either way.
 
 A task VM publish states no base. A run that started on the workflow before this step has none of the fields and no `## Base` section.
+
+The base read also judges workflow changes, the way GitHub does. GitHub refuses a push without the `workflows` permission when the pushed branch's tree under `.github/workflows/` differs from the default branch, not only when a new commit changes it (Operation 24460).
+
+So the read lists the paths under `.github/workflows/` that differ between the fetched default head and the checked commit: `git diff --name-only`, the net difference of the two trees. A commit that the default branch already holds is never a change of the copy, whether [`task:sync`](#bring-main-into-a-copy) brought it, even from a main newer than the last release, or it was carried in by hand. A workflow change of the copy that a later commit undoes is no change either.
+
+Two kinds of copy refuse. A copy that is behind a workflow change of the default branch refuses with that path, although none of its commits changes a workflow: bring main into the copy with [`task:sync`](#bring-main-into-a-copy), merge it, check again and publish. A copy whose own commits change a workflow refuses until that change is gone from the branch.
+
+Any listed path refuses with `tasks.publish_workflow_change`, before a conflict refuses. The publish result lists the paths in `refused`, at most 100 in at most 3,000 bytes, and `refused_more` counts the rest. Nothing is pushed. The publish token has no `workflows` permission, so GitHub would refuse such a push too. A task cannot change a workflow from a copy: a change of its own under `.github/workflows/` belongs to a person. The agent says what to change, and a person makes that pull request by hand with their own GitHub account. The pipeline lane does the same.
 
 The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone, and adds the five base fields for a copy: `base_commit`, `default_commit`, `behind_by`, `overlapping_paths` and `overlapping_more`. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 

@@ -81,7 +81,7 @@ class CopyScanTest(unittest.TestCase):
     def test_a_clean_change_passes_and_names_what_it_read(self):
         result = self.run_check(commit(self.work, {'docs/a.md': 'one line\n'}))
 
-        self.assertEqual((result['secrets'], result['workflows']), ([], []))
+        self.assertEqual(result['secrets'], [])
         self.assertEqual(result['sources'], ['club-key', 'nested-gateway:env', 'nested-gateway:orbit-token', 'nested-gateway:swamp-token', 'operator-wireguard'])
         self.assertEqual(result['short_skipped'], {'nested-gateway:env': 2})
         self.assertNoValue(result)
@@ -130,17 +130,16 @@ class CopyScanTest(unittest.TestCase):
 
         self.assertEqual([(hit['path'], hit['line'], hit['secret']) for hit in result['secrets']], [('the proposed pull request body', 2, 'club-key:/run/orbit-club/swamp-club-api-key')])
 
-    def test_workflow_changes_of_the_copy_are_named_and_a_sync_of_the_default_branch_is_not(self):
+    def test_the_scan_judges_no_workflow_change_not_even_of_a_main_the_copy_got_by_hand(self):
+        # Operation 24405: main changed a workflow, the copy got it by hand, and its origin/main stayed the released main. The publish's
+        # base read judges workflow changes against the real default head (task_copy_publish_base_test.py); the copy's refs cannot.
         git(self.work, 'checkout', '-q', 'main')
         commit(self.work, {'.github/workflows/ci.yml': 'on: push\n'}, 'main changes a workflow')
-        git(self.work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
         git(self.work, 'checkout', '-q', 'task-7')
-        git(self.work, 'merge', '-q', '--no-edit', 'origin/main')
-        synced = git(self.work, 'rev-parse', 'HEAD')
-        self.assertEqual(self.run_check(synced)['workflows'], [])
-
-        head = commit(self.work, {'.github/workflows/x.yml': 'on: push\n', '.github/workflow-notes.md': 'x\n'})
-        self.assertEqual(self.run_check(head)['workflows'], ['.github/workflows/x.yml'])
+        git(self.work, 'merge', '-q', '--no-edit', 'main')
+        result = self.run_check(commit(self.work, {'.github/workflows/x.yml': 'on: push\n'}))
+        self.assertEqual(sorted(result), ['objects', 'objects_sha256', 'seconds', 'secrets', 'secrets_more', 'short_skipped', 'sources', 'values'])
+        self.assertEqual(result['secrets'], [])
 
     def test_the_object_digest_is_the_one_of_the_publish_range(self):
         head = commit(self.work, {'a.txt': 'x\n'})
@@ -179,7 +178,6 @@ class CopyScanTest(unittest.TestCase):
 
         self.assertEqual(sorted((hit['path'], hit['secret']) for hit in result['secrets']), [
             ('commit ' + head, 'private-key-block'), ('d\u00e9j\u00e0 vu/a\rb.txt', 'club-key:/run/orbit-club/swamp-club-api-key')])
-        self.assertEqual(result['workflows'], ['.github/workflows/caf\u00e9.yml'])
 
     def test_a_link_in_place_of_a_source_is_not_followed(self):
         target = Path(str(self.root) + '/etc/wireguard/wg-nested.conf')

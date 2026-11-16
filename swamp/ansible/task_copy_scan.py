@@ -8,7 +8,6 @@ pushes, and the publish compares the object set it read against the bundle.
 Usage: python3 -I -c <this file> <request JSON>. The request holds `head`, `start`, `branch`, `nested` and `proposed_body_path`.
 """
 
-import fnmatch
 import glob
 import hashlib
 import json
@@ -22,10 +21,9 @@ import time
 
 # Values shorter than this match by chance; they are skipped and counted.
 MINIMUM = 16
-# At most this many hits and paths go into the result; the count says how many more there were.
+# At most this many hits go into the result; the count says how many more there were.
 LIMIT = 20
 WORKSPACE = '/srv/workspace'
-WORKFLOWS = '.github/workflows/'
 # A private key block with a real body: a fake marker or a short test stub is no key.
 PRIVATE_KEY = re.compile(
     rb'-----BEGIN ((?:[A-Z0-9]+ )*)PRIVATE KEY-----\r?\n'
@@ -246,20 +244,6 @@ def scan(git, start, head, values, body=None):
     return hits, digest, len(ids)
 
 
-def workflow_changes(git, start, head):
-    """The workflow paths that commits new to the repository change: not in start, not on any remote branch the copy holds.
-
-    A merge counts a path only when it differs from every parent, so a sync of the default branch brings no hit of its own. This check
-    serves the person: GitHub refuses such a push of a token without `workflows`, whatever the copy's refs say.
-    """
-    commits = git.run('rev-list', head, '--not', start, '--remotes', '--').decode().split()
-    paths = set()
-    for commit in commits:
-        listed = git.run('diff-tree', '-z', '-r', '-c', '--root', '--no-commit-id', '--name-only', commit, '--', WORKFLOWS)
-        paths.update(path for path in listed.decode('utf-8', 'surrogateescape').split('\0') if fnmatch.fnmatch(path, WORKFLOWS + '*'))
-    return sorted(paths)
-
-
 def proposed_body(git_prefix, path, workspace=WORKSPACE):
     """The copy's proposed body, read as agent: a link the agent planted reads nothing of root's."""
     if not path:
@@ -275,10 +259,8 @@ def check(request, root='/', prefix=None, workspace=WORKSPACE):
     git = Git(prefix, workspace)
     values, read, short = collect(root, bool(request.get('nested')))
     hits, digest, count = scan(git, request['start'], request['head'], values, proposed_body(prefix, request.get('proposed_body_path'), workspace))
-    workflows = workflow_changes(git, request['start'], request['head'])
     return {'scan': {
         'secrets': hits[:LIMIT], 'secrets_more': max(0, len(hits) - LIMIT),
-        'workflows': workflows[:LIMIT], 'workflows_more': max(0, len(workflows) - LIMIT),
         'sources': read, 'values': len(values), 'short_skipped': dict(sorted(short.items())),
         'objects': count, 'objects_sha256': digest, 'seconds': round(time.monotonic() - started, 2),
     }, 'changed': False}
