@@ -8,6 +8,7 @@ use App\Data\Metrics\MetricsCredentialsData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
+use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -25,6 +26,7 @@ use App\Domain\Proof\ProofCommandProjection;
 use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofCopies;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofGroup;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Proof\ProofRunWatch;
@@ -381,6 +383,17 @@ describe('proof:run in copies: admission', function (): void {
         // The copy needs no Git mirror of the Project on its Node: its run fetches the commit by its SHA.
         expect($clone['source'] ?? null)->toBe('orbit-proof-seed-ci-a')->and($clone['seed_commit'] ?? null)->toBe(str_repeat('c', 40))
             ->and($clone)->not->toHaveKey('source_mirror');
+        // Each copy's create holds its CI place with its Node's ci_places, and its destroy releases it
+        // (docs/reference/node-provisioning.md#proof-places-on-a-ci-node). A task copy holds none.
+        foreach ($copies as $copy) {
+            $create = Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)->sole();
+            expect($create->input['direct_provisioning']['container']['clone']['ci_hold'] ?? null)
+                ->toBe(['places' => ProofCopyHosts::places(Node::query()->findOrFail($copy->node_id))])
+                ->and(app(ContainerInstanceDestroy::class)->capture($copy)['ci_hold'] ?? null)->toBeTrue();
+        }
+        copyProofOtherCopies(1);
+        $task = Instance::query()->where('name', 'other-1')->firstOrFail();
+        expect(app(ContainerInstanceDestroy::class)->capture($task))->not->toHaveKey('ci_hold');
     });
 });
 

@@ -121,7 +121,7 @@ final readonly class TaskCopyStart
         self::seed($runtime, $node);
         $this->assertIdRanges($node, $runtime, $read['hosts'][$node->id] ?? null);
         $operation = app(StartDevelopmentInstanceCreateAction::class)->execute(
-            new CreateInstanceData($project->id, $node->id, $name, null, null, $name), $caller, $request, $group, $read['agent_files']);
+            new CreateInstanceData($project->id, $node->id, $name, null, null, $name), $caller, $request, $group, $read['agent_files'], $place !== null);
         $group->taskable()->associate(Instance::query()->findOrFail($operation->target_id));
         $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
 

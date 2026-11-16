@@ -167,7 +167,7 @@ Deno.test("a clone's create delivers a nested clone's Club key and has no fleet 
   };
   const clone = workflow.jobs.find((job) => job.name === "clone")!.steps;
   // The copy stages the release scripts itself; the registration is in the create job, after the publication.
-  assertEquals(clone.map((step) => step.name), ["clone-container", "clone-club-key", "clone-t3", "clone-session-copy"]);
+  assertEquals(clone.map((step) => step.name), ["clone-ci-hold", "clone-container", "clone-club-key", "clone-t3", "clone-session-copy"]);
   // Its Route is the job `publication`, which only a clone whose admission took the Route Nodes runs.
   assertEquals(workflow.jobs.map((job) => job.name), ["input", "legacy", "clone", "publication", "create"]);
   const step = (name: string) => clone.find((s) => s.name === name)!;
@@ -183,7 +183,17 @@ Deno.test("a clone's create delivers a nested clone's Club key and has no fleet 
   assertEquals(register.dependsOn, []);
   assert(register.guard.includes('steps["clone-session-copy"].status == "succeeded"'));
   assertEquals(create.find((s) => s.name === "finish")!.dependsOn, [{ step: "clone-register", condition: { type: "always" } }]);
-  assertEquals(step("clone-container").dependsOn, []);
+  // A proof copy holds its CI place before the copy exists; every other clone skips the hold and copies at once.
+  assertEquals(step("clone-ci-hold").dependsOn, []);
+  assertEquals(step("clone-container").dependsOn,
+    [{ step: "clone-ci-hold", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } }]);
+  const held = { already_active: false, container: { name: "instance-8", clone: { source: "instance-7", ci_hold: { places: 5 } } } };
+  const holds = (intent: Record<string, unknown>) => environment.evaluate(swampExpression(step("clone-ci-hold").guard), { inputs: { intent } });
+  const holdArgv = (intent: Record<string, unknown>) => environment.evaluate(swampExpression(step("clone-ci-hold").task.inputs.argv), { inputs: { intent } });
+  assertEquals([holds(held), holds({ ...held, container: { name: "instance-8", clone: { source: "instance-7" } } }), holds({ ...held, container: null })],
+    [false, true, true]);
+  assertEquals(holdArgv(held), ["timeout", "240", "/usr/local/libexec/orbit-ci-runner-hold", "hold", "instance-8", "5"]);
+  assertEquals(holdArgv({ ...held, container: null }), ["true"]);
   // The T3 step runs the checkout part only; the services part is the completion's. Its stdin is the workspace's private JSON.
   assert(step("clone-t3").task.inputs.argv.endsWith(', "t3"] }}'));
   assert(step("clone-t3").task.inputs.stdin.includes("process_environments"));
@@ -297,7 +307,7 @@ Deno.test("a clone's create ends at the registration: four dispatches, one T3 st
   const publicationJob = (parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as { jobs: { name: string; steps: { name: string; allowFailure?: boolean }[] }[] })
     .jobs.find((job) => job.name === "publication")!;
   assertEquals(publicationJob.steps.map((step) => [step.name, step.allowFailure]), [["clone-route-input", true], ["clone-route-csr", true], ["clone-route", true]]);
-  assertEquals(sorted(steps.clone), [["clone-container"], ["clone-club-key"], ["clone-t3"], ["clone-session-copy"]]);
+  assertEquals(sorted(steps.clone), [["clone-ci-hold"], ["clone-container"], ["clone-club-key"], ["clone-t3"], ["clone-session-copy"]]);
   // A ready clone runs the first level (the registration beside the private folder's removal) and skips the rest at no cost.
   assertEquals(sorted(steps.create), [["clone-private-cleanup", "clone-register"], ["finish"], ["stop-input", "withdraw-route"], ["stop-container"], ["accepted", "cleanup"]]);
 });
@@ -327,6 +337,17 @@ Deno.test("a normal clone succeeds at the registration in about 17 s: no input s
   // create succeeds about 17 s after the click: the input, stage and finish levels (4.6 s) are gone.
   assertEquals(Math.round(ran["clone-register"].end * 10) / 10, 12.5);
   assertEquals(Math.round((3.8 + ran.accepted.end) * 10) / 10, 17.3);
+});
+
+Deno.test("a proof copy's create holds its CI place before the copy; a failed hold copies nothing", () => {
+  const proofIntent = { ...cloneIntent, container: { ...cloneIntent.container, name: "instance-8", clone: { source: "instance-7", ci_hold: { places: 5 } } } };
+  const ran = runCreate(proofIntent, { ...cloneOutcomes(), "clone-ci-hold": { duration: 2 } });
+  assertEquals([ran["clone-ci-hold"].status, ran["clone-ci-hold"].start], ["succeeded", 0]);
+  assertEquals(ran["clone-container"].start, ran["clone-ci-hold"].end);
+  // Another clone skips the hold at no cost.
+  assertEquals(runCreate(cloneIntent, cloneOutcomes())["clone-ci-hold"].status, "skipped");
+  const refused = runCreate(proofIntent, { ...cloneOutcomes(), "clone-ci-hold": { status: "failed", duration: 2 } });
+  assertEquals([refused["clone-container"].status, refused["clone-t3"].status], ["skipped", "skipped"]);
 });
 
 // The publication's seconds from the outer fleet's Route clones (completions 21279, 21311, 21292): the CSR and its signature 3 to 4 s,

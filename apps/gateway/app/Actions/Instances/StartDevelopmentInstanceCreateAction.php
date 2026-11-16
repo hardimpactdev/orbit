@@ -35,6 +35,7 @@ use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\ResourceOperationException;
@@ -69,11 +70,12 @@ final readonly class StartDevelopmentInstanceCreateAction
      */
     /**
      * `$agentFiles`: the Project's agent instructions that a caller in its own transaction read before it (TaskCopyStart::read); null
-     * reads them here, before the admission transaction.
+     * reads them here, before the admission transaction. `$proofPlace`: the copy takes a CI place on its Node for a proof run
+     * (TaskCopyStart, ProofRunIntent), so its create holds that place first.
      *
      * @param  array<string, string>|null  $agentFiles
      */
-    public function execute(CreateInstanceData $data, ?string $caller, ?string $requestId, ?Task $taskOwner = null, ?array $agentFiles = null): Operation
+    public function execute(CreateInstanceData $data, ?string $caller, ?string $requestId, ?Task $taskOwner = null, ?array $agentFiles = null, bool $proofPlace = false): Operation
     {
         if (($replay = $this->idempotency->replay('instance.create')) !== null) {
             return $replay;
@@ -93,7 +95,7 @@ final readonly class StartDevelopmentInstanceCreateAction
         $selection = $data->branchSelection === null ? null
             : app(DevelopmentInstanceBranchAdmission::class)->prepare($project, $data->name, $data->branchSelection, $caller);
 
-        return DB::transaction(function () use ($data, $caller, $requestId, $selection, $observed, $taskOwner, $agentFiles): Operation {
+        return DB::transaction(function () use ($data, $caller, $requestId, $selection, $observed, $taskOwner, $agentFiles, $proofPlace): Operation {
             $project = Project::query()->findOrFail($data->projectId);
             $this->admission->assertSourceAccess($project);
             $node = Node::query()->findOrFail($data->nodeId);
@@ -251,6 +253,11 @@ final readonly class StartDevelopmentInstanceCreateAction
                         ValidatedData::string(ValidatedData::object($provisioning['resolve'])['branch']), $route?->domain, $agentFiles)];
             if ($selection !== null && is_array($input['direct_provisioning']['container'])) {
                 $input['direct_provisioning']['container']['branch_selection'] = $selection->toArray();
+            }
+            // A proof copy holds its CI place before it starts: the create stops the Node's idle runners down to the places left to
+            // runners (docs/reference/node-provisioning.md#proof-places-on-a-ci-node). Its destroy releases the hold.
+            if ($proofPlace && is_array($input['direct_provisioning']['container']['clone'] ?? null)) {
+                $input['direct_provisioning']['container']['clone']['ci_hold'] = ['places' => ProofCopyHosts::places($node)];
             }
             if ($steps !== null) {
                 // F8: no container create has run yet, so the run starts at 30 minutes, plus the deploy step timeouts and a default's

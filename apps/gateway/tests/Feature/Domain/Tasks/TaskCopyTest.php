@@ -426,6 +426,8 @@ describe('a task start on the copy path', function (): void {
             ->and($runtime->clone_source_instance_id)->toBe($default->id)
             ->and($container)->not->toHaveKey('club_key')
             ->and(ValidatedData::object($container['clone'])['clean_workspace'] ?? null)->toBeTrue()
+            // A task copy takes no CI place, so its create holds none (docs/reference/node-provisioning.md#proof-places-on-a-ci-node).
+            ->and(ValidatedData::object($container['clone']))->not->toHaveKey('ci_hold')
             // The copy's runtime reads running only when the create's result is recorded, after the checkout cleaned the tree: no check,
             // baseline included, is admitted before (tasks.instance_not_running), and a turn waits for `active`.
             ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Stopped)
