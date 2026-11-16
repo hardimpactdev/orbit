@@ -350,7 +350,7 @@ The `ci-runner` role installs the script `/usr/local/libexec/orbit-ci-runner-hol
 
 | Call | When | What it does |
 | --- | --- | --- |
-| `hold <copy>` | In each proof copy's create on the Node, before the copy starts its inner fleet | Records the hold of the copy, then stops idle runner services in `orbit-ci` down to the places left to runners, and records each one |
+| `hold <copy> <places>` | In each proof copy's create on the Node, before the copy starts its inner fleet | Records the hold of the copy, then stops idle runner services in `orbit-ci` down to the places left to runners, and records each one. `<places>` is the Node's `ci_places`, which the Gateway passes. |
 | `release <copy>` | In each proof copy's destroy on the Node, also after a failed create | Removes the hold of the copy. When no hold is left, it starts the service of each recorded runner and clears the record |
 
 An idle runner service is active, and no `Runner.Worker` process runs in its container. Both calls run under one lock file per Node, so two copies never read the holds at the same time. The holds and the record of stopped runners are files under `/var/lib/orbit/ci-hold`, readable by root only. Each call changes nothing when it finds nothing to do, so a rerun is safe.

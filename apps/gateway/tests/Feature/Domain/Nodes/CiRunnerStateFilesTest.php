@@ -38,9 +38,13 @@ describe('the ci-runner role runner state timer', function (): void {
         expect($runtime['ci_host'])->toBeTrue()
             // A CI-only Node has no /usr/local/libexec; "Create runtime folders" makes it before "Write runtime files".
             ->and($runtime['directories'])->toBe([['path' => '/usr/local/libexec', 'owner' => 'root', 'group' => 'root', 'mode' => '0755']])
-            ->and($files->keys()->all())->toBe(['/usr/local/libexec/orbit-ci-runner-state', '/etc/systemd/system/orbit-ci-runner-state.service'])
+            ->and($files->keys()->all())->toBe(['/usr/local/libexec/orbit-ci-runner-state', '/usr/local/libexec/orbit-ci-runner-hold',
+                '/etc/systemd/system/orbit-ci-runner-state.service'])
             ->and($files['/usr/local/libexec/orbit-ci-runner-state'])->toMatchArray(['ensure' => 'present', 'owner' => 'root', 'group' => 'root', 'mode' => '0755',
                 'content' => file_get_contents(resource_path('ci-runner/state.py'))])
+            // The hold script of proof places (docs/reference/node-provisioning.md#proof-places-on-a-ci-node).
+            ->and($files['/usr/local/libexec/orbit-ci-runner-hold'])->toMatchArray(['ensure' => 'present', 'owner' => 'root', 'group' => 'root', 'mode' => '0755',
+                'content' => file_get_contents(resource_path('ci-runner/hold.py'))])
             ->and($files['/etc/systemd/system/orbit-ci-runner-state.service']['content'])->toContain(
                 "Type=oneshot\n",
                 "ExecStart=/usr/local/libexec/orbit-ci-runner-state /var/lib/prometheus/node-exporter/orbit_ci_runners.prom\n",
@@ -49,7 +53,7 @@ describe('the ci-runner role runner state timer', function (): void {
             ->and($runtime['units'][0]['unit'])->toContain("OnUnitActiveSec=15s\n", "WantedBy=timers.target\n");
     });
 
-    it('stops the timer and removes the script, the service and the textfile when the role leaves', function (bool $purge): void {
+    it('stops the timer and removes the scripts, the service, the textfile and the holds when the role leaves', function (bool $purge): void {
         config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
         $node = ciRunnerStateNode();
         $role = $node->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Removing]);
@@ -60,7 +64,9 @@ describe('the ci-runner role runner state timer', function (): void {
         expect(array_column(array_column($plan['stop_units'], 'input'), 'unit'))->toBe(['orbit-ci-runner-state.timer'])
             ->and(array_column(array_column($plan['remove_units'], 'input'), 'unit'))->toBe(['orbit-ci-runner-state.timer'])
             ->and(array_column($plan['files'], 'path'))->toBe(['/etc/systemd/system/orbit-ci-runner-state.service', '/usr/local/libexec/orbit-ci-runner-state',
-                '/var/lib/prometheus/node-exporter/orbit_ci_runners.prom', '/etc/systemd/system/orbit-ci-runner-state.timer'])
+                '/usr/local/libexec/orbit-ci-runner-hold', '/var/lib/prometheus/node-exporter/orbit_ci_runners.prom',
+                '/etc/systemd/system/orbit-ci-runner-state.timer'])
+            ->and(array_column($plan['directories'], 'path'))->toBe(['/var/lib/orbit/ci-hold'])
             ->and($plan['reload_units'])->toHaveCount(1);
     })->with(['keep data' => [false], 'purge' => [true]]);
 

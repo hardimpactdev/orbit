@@ -10,11 +10,16 @@ use App\Infrastructure\Metrics\MetricsFootprint;
  * The `ci-runner` role's runner state timer (docs/reference/node-provisioning.md#runner-state-for-the-runner-view): the script, its
  * service and its timer. The script reads the runners from Incus and writes them as a node exporter textfile, which the Gateway reads
  * from Prometheus for the CI runner view. The service is a oneshot that the timer starts, so only the timer is a role unit that
- * convergence starts and checks; the service is a role file.
+ * convergence starts and checks; the service is a role file. Beside it, the hold script that a proof copy's create and destroy call
+ * (docs/reference/node-provisioning.md#proof-places-on-a-ci-node), with its folder of holds.
  */
 final class CiRunnerStateFiles
 {
     public const string Script = '/usr/local/libexec/orbit-ci-runner-state';
+
+    public const string Hold = '/usr/local/libexec/orbit-ci-runner-hold';
+
+    public const string HoldState = '/var/lib/orbit/ci-hold';
 
     public const string Service = 'orbit-ci-runner-state.service';
 
@@ -39,6 +44,7 @@ final class CiRunnerStateFiles
             'owner' => 'root', 'group' => 'root', 'mode' => $mode];
 
         return [$file(self::Script, (string) file_get_contents(resource_path('ci-runner/state.py')), '0755'),
+            $file(self::Hold, (string) file_get_contents(resource_path('ci-runner/hold.py')), '0755'),
             $file('/etc/systemd/system/'.self::Service, self::service(), '0644')];
     }
 
