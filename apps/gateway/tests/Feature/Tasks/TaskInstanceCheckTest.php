@@ -243,6 +243,40 @@ it('projects the receipt of the Instance check as it projects a task VM check', 
         ->and($check->output)->toBe('checked new');
 });
 
+it('keeps the base of a copy handoff check, and a conflict fails with its paths', function (): void {
+    [$group, $subtask] = instanceCheckWorld();
+    $main = str_repeat('e', 40);
+    $operation = app(TaskCheckIntent::class)->start($group, new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null);
+    $receipt = ['outcome' => 'passed', 'exit_code' => 0, 'output' => '', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40),
+        'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40), 'changed_paths' => [], 'failed_step' => null, 'evidence' => null,
+        'check_id' => $operation->input['check_id'], 'group_id' => $group->id, 'subtask' => $subtask->id, 'phase' => 'handoff', 'deliverables' => [],
+        'commit' => str_repeat('d', 40), 'ci' => null, 'base' => 'current', 'default_commit' => $main, 'merged_default' => $main];
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a']]);
+
+    app(TaskCheckProjection::class)->apply($operation->refresh(), ['run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'succeeded',
+        'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['instance_receipt' => ['result_json' => json_encode($receipt, JSON_THROW_ON_ERROR)]]]);
+
+    // The driver and the reviewer read the base the check judged against from the Operation's result.
+    expect(array_intersect_key($operation->refresh()->result ?? [], array_flip(['base', 'default_commit', 'merged_default'])))
+        ->toBe(['base' => 'current', 'default_commit' => $main, 'merged_default' => $main])
+        ->and(TaskCheck::query()->sole()->status->value)->toBe('passed');
+
+    TaskCheck::query()->delete();
+    $conflict = app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', 'conflict');
+    $refusal = ['error_code' => 'tasks.check_conflict', 'check_id' => $conflict->input['check_id'], 'base' => 'current', 'default_commit' => $main,
+        'merged_default' => null, 'conflicting_paths' => ['apps/gateway/app/Domain/Tasks/TaskCheckIntent.php'], 'conflicting_more' => 0];
+    $conflict->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '7b69badf-4f06-4f2e-82d7-21b62c1f587a']]);
+
+    app(TaskCheckProjection::class)->apply($conflict->refresh(), ['run_id' => '7b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'failed',
+        'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['instance_receipt' => ['result_json' => json_encode($refusal, JSON_THROW_ON_ERROR)]]]);
+
+    expect($conflict->refresh()->error_code)->toBe('tasks.check_conflict')
+        ->and($conflict->result['conflicting_paths'] ?? null)->toBe(['apps/gateway/app/Domain/Tasks/TaskCheckIntent.php'])
+        ->and(TaskCheck::query()->sole()->status->value)->toBe('failed');
+});
+
 /** Runs a handoff check of the copy's subtask to its terminal result with this outcome. */
 function instanceCheckFinished(Task $group, Task $subtask, string $outcome, string $status = 'succeeded'): TaskCheck
 {
