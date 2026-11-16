@@ -1257,6 +1257,43 @@ class CloneTest(unittest.TestCase):
                 else:
                     self.assertEqual(error, "instance.container_network_unsafe\n")
                     self.assertFalse(starts)
+        self.shared_folder_forms()
+
+    def shared_folder_forms(self):
+        """Part of the nested clone case above, whose CI file is at its cost limit."""
+        # docs/reference/development-containers.md#instance-host-in-the-fleet: the Gateway's allowed devices carry the Node's form,
+        # `shift=false` on the Instance fleet Node and `shift=true` on every other Node; the guard admits that form only.
+        config = {"security.idmap.isolated": "true"}
+
+        def devices(shift):
+            return {
+                "root": {"type": "disk", "path": "/", "pool": "orbit-instances", "size": "40GiB"},
+                "eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
+                         "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject",
+                         "security.acls.default.ingress.action": "reject",
+                         "security.ipv4_filtering": "true", "security.mac_filtering": "true"},
+                "orbit-runtime": {"type": "disk", "source": "/opt/orbit-runtime", "path": "/opt/orbit-runtime", "readonly": "true", "shift": shift},
+                "orbit-agent": {"type": "disk", "source": "/opt/orbit-agent", "path": "/opt/orbit-agent", "readonly": "true", "shift": shift},
+                "t3": {"type": "proxy", "listen": "tcp:10.44.0.7:3800", "connect": "tcp:10.253.0.2:3773", "nat": "true"},
+            }
+
+        for node, shift, other in [("fleet", "false", "true"), ("real", "true", "false")]:
+            for folder in [None, "orbit-runtime", "orbit-agent"]:
+                def effective(read):
+                    read["expanded_config"] = {**config, "volatile.uuid": "abc-123"}
+                    read["expanded_devices"] = devices(shift)
+                    if folder:
+                        read["expanded_devices"][folder]["shift"] = other
+                with self.subTest(node=node, folder=folder):
+                    calls, _, error = self.clone(effective, overrides={"project": "orbit-instances-nested", "allowed_devices": devices(shift),
+                                                                       "config": config})
+                    starts = [call for call in calls if "start" in call]
+                    if folder is None:
+                        self.assertEqual(error, "")
+                        self.assertEqual(starts, [["incus", "--project", "orbit-instances-nested", "start", "instance-7"]])
+                    else:
+                        self.assertEqual(error, "instance.container_network_unsafe\n")
+                        self.assertFalse(starts)
 
     def inner_clone(self, **fixture):
         """A copy of a nested-fleet default with an inner volume (docs/reference/development-containers.md#the-inner-volume)."""

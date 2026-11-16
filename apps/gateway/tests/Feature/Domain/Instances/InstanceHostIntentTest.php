@@ -91,6 +91,7 @@ describe('the container branch of the app-dev converge', function (): void {
                 // The fleet Node also mounts the shared folders unshifted, so its folder plans say so.
                 ->and(array_diff_key($intent($fleet), ['fleet_node' => true, 'folders' => true]))->toBe(array_diff_key($fleetBefore, ['folders' => true]))
                 ->and($intent($fleet)['folders'])->toBe(InstanceFolderPlan::for($folders, false))
+                ->and(array_column($intent($fleet)['folders'], 'shift'))->toBe(['false', 'false'])
                 ->and($intent($fleet)['fleet_node'])->toBeTrue();
         } finally {
             unlink($marker);
