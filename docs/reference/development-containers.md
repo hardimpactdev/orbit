@@ -1922,6 +1922,8 @@ A continued turn whose title T3 lists not exactly once launches nothing and is `
 
 A reviewer turn on a checkout with changes or no branch launches nothing and is `failed` with `tasks.copy_tree_dirty`, and one whose checkout is not clean on its branch at its earlier tip afterwards is `failed` with `tasks.copy_review_unrestored`, whatever its run did. The phase marks the detach as soon as it is done, so a reviewer turn cut before the restore is unrestored too.
 
+A reviewer turn's composed prompt names the checked commit and ends with two fixed rules: the [reviewer rule](/reference/tasks#the-reviewer-rule), which bounds the review by the task's scope, and the [pull request text](/reference/tasks#the-reviewers-pull-request-text) rule. An implementer turn's prompt ends with the rule on how to ask instead.
+
 ### A question ends the turn
 
 Stock T3's CLI cannot answer a question or stop a run. `t3 thread send` to a run that waits queues a second run behind it, and the answer never reaches the agent. Stock T3's server can do both through its own WebSocket RPC, which T3's web client uses:

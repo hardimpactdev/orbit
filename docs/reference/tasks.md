@@ -1245,6 +1245,22 @@ Swamp can request a reviewer turn through `task:turn`. The Gateway records the t
 
 The workflow that requested a reviewer owns review policy. The Gateway records its receipt as evidence. The operator or Swamp changes board status explicitly.
 
+### The reviewer rule
+
+Every reviewer turn in a task copy gets a fixed rule after the caller's prompt and the line that names the checked commit, whatever the reviewer's provider. The rule bounds the review by the task's scope, not by a number of findings:
+
+The scope is the brief, its deliverables, the diff of the checked commit against the task's base, and what that diff directly affects. The reviewer judges only that scope and reports every finding inside it.
+
+A blocking finding is a defect. It is wrong behaviour, a missed or unproven deliverable, a broken or missing test the brief asks for, or a security hole the diff adds. The reviewer gives its file, its line and the failing case.
+
+A finding inside the scope that is not a defect is non-blocking. A misleading name in the new code is one. The reviewer marks it so.
+
+The reviewer reports nothing outside the scope. It offers no ideas, refactors or redesigns beyond the task. It asks for no change outside the files the task touches, unless a defect forces one. Then it names that defect.
+
+With no blocking finding, the reviewer approves.
+
+The [pull request text](#the-reviewers-pull-request-text) rule follows it: a reviewer that approves sends the text, one that does not sends nothing. An implementer turn gets neither rule.
+
 ## Task group modes
 
 Every group has a mode from its creation on; it acts on a group whose workspace is a [task copy](#task-copy). The mode decides what Orbit does once the group's work is done: it waits for a person, or it opens the pull request by itself. Orbit never merges the pull request of such a group. A person merges it on GitHub.

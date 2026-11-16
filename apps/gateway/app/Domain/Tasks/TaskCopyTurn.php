@@ -37,6 +37,17 @@ final readonly class TaskCopyTurn
     public const string AskRule = 'To ask a question, use your question tool. Asking ends this turn; the answer comes as the next turn.';
 
     /**
+     * What a reviewer in a copy judges, whatever its provider (docs/reference/tasks.md#the-reviewer-rule): the task's scope, every finding
+     * inside it, nothing outside it. Its approval leads into PrTextRule, which follows it.
+     */
+    public const string ReviewRule = 'Judge only the task\'s scope: the brief, its deliverables, the diff of the checked commit against the task\'s base, '
+        .'and what that diff directly affects. Report every finding inside that scope. A blocking finding is a defect: wrong behaviour, a missed or '
+        .'unproven deliverable, a broken or missing test the brief asks for, or a security hole the diff adds. Give its file, line and failing case. '
+        .'A finding inside the scope that is not a defect, such as a misleading name in the new code, is non-blocking: mark it so. Report nothing '
+        .'outside the scope: no ideas, refactors or redesigns beyond the task. Do not ask for changes outside the files the task touches unless a '
+        .'defect forces it; then name that defect. If you find no blocking finding, approve.';
+
+    /**
      * How a reviewer in a copy approves (docs/reference/tasks.md#the-reviewers-pull-request-text): it sends the pull request text through
      * its copy key. Orbit opens the pull request once the group is done; the copy holds no Git token.
      */
@@ -114,7 +125,7 @@ final readonly class TaskCopyTurn
         // A turn that continues a thread whose last turn asked answers it: the questions come first, in the agent's own words.
         $prompt = $provider === null && $thread->questions !== null ? self::asked($thread->questions)."\n\nAnswer:\n".$data->prompt : $data->prompt;
         $prompt = $candidate === null ? $prompt."\n\n".self::AskRule : $prompt."\n\nThe checked commit under review: {$candidate}. The checkout holds it, "
-            .'detached. Orbit checks the task branch out again after this turn and discards every change in the checkout.'."\n\n".self::PrTextRule;
+            .'detached. Orbit checks the task branch out again after this turn and discards every change in the checkout.'."\n\n".self::ReviewRule."\n\n".self::PrTextRule;
 
         return [
             ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,

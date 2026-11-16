@@ -1822,8 +1822,14 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(substr_count($review->input['turn']['prompt'], TaskTurnPrompt::CopyRules))->toBe(1)
             ->and($review->input['turn']['prompt'])->toMatch('/'.preg_quote(TaskTurnPrompt::CopyRules, '/').'\n\nThis turn started at \S+Z and Orbit ends it at \S+Z\. Commit your work before then\.\n\n'
                 .'Prompt of this turn:\nReview the checked commit\.\n\nThe checked commit under review: '.$check->commit_sha.'\./')
-            // A reviewer that approves sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
-            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::PrTextRule)
+            // The reviewer rule bounds the review by the task's scope (docs/reference/tasks.md#the-reviewer-rule); a reviewer that approves
+            // then sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
+            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::ReviewRule."\n\n".TaskCopyTurn::PrTextRule)
+            ->and(substr_count($review->input['turn']['prompt'], TaskCopyTurn::ReviewRule))->toBe(1)
+            // The scope bounds the findings, not a count.
+            ->and(TaskCopyTurn::ReviewRule)->toContain('Report every finding inside that scope.')->not->toMatch('/at most|\bno more than\b/i')
+            ->and($implementer->input['turn']['prompt'])->not->toContain(TaskCopyTurn::ReviewRule)
+            ->and($implementer->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::AskRule)
             ->and($again->input['turn']['candidate'])->toBe($check->commit_sha)
             ->and($group->refresh()->reviewer_agent_thread_id)->toBe($thread->id)
             ->and($again->input['thread_id'])->toBe($thread->id)->and($again->input['turn']['thread'])->toBe('continue');
