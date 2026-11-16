@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 
@@ -31,6 +32,12 @@ final readonly class TaskProvisionIntent
         }
         if ($group->status === TaskGroupStatus::Backlog) {
             throw new ResourceOperationException('tasks.not_todo', 'Provision requires a todo task group.', 409);
+        }
+        if ($group->status === TaskGroupStatus::Todo && $group->taskable_id !== null && $group->taskable_type === (new Instance)->getMorphClass()
+            && Instance::query()->whereKey($group->taskable_id)->where('task_workspace_owner_id', $group->id)->exists()) {
+            // The copy of a failed create stays bound until its destroy succeeds (docs/reference/tasks.md#a-failed-create).
+            throw new ResourceOperationException('tasks.copy_removing',
+                'The failed copy of this task is still being removed. Start the task again once it is gone.', 409, details: ['instance_id' => $group->taskable_id]);
         }
         if ($group->status !== TaskGroupStatus::Todo || $group->taskable_id !== null) {
             throw TaskGroupGuard::alreadyClaimed();
