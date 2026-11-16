@@ -54,7 +54,7 @@ final class RoutePublicationHolds
      *
      * @var list<string>
      */
-    private const array StepKinds = ['tasks.provision', 'tasks.cancel', 'tasks.maintenance_finish', 'instance.register', 'cluster.router_set', 'cluster.router_unset'];
+    private const array StepKinds = ['instance.register', 'cluster.router_set', 'cluster.router_unset'];
 
     /**
      * How many shared writers (removals and Caddy-only clone creates) hold one Node at most. Their Node transactions queue on the Node
