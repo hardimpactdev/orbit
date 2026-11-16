@@ -97,10 +97,18 @@ final readonly class InstanceHostIntent
     public const int TaskPlaceIds = 101000000;
 
     /**
-     * The converted size of a nested-fleet container. The inner Incus takes its range from its own map: 1,000,000 up to this size, so
-     * 165,536 IDs; the floor is 1,065,536 (development-containers.md#the-id-map-size).
+     * The size of a nested-fleet container whose `nested-app-dev` hosts Instances. The inner Incus takes its range from its own map:
+     * 1,000,000 up to this size. `nested-app-dev`'s own Incus then keeps 934,464 IDs above base 65,536: 13 isolated Instances. A size whose
+     * inner range reaches 1,065,536 again, such as 2,165,536, moves that base to 1,000,000 and leaves room for one
+     * (development-containers.md#instance-host-in-the-fleet).
      */
-    public const int NestedIdMapSize = 1165536;
+    public const int NestedIdMapSize = 2000000;
+
+    /**
+     * The converted size before it: 165,536 inner IDs, no isolated Instance on `nested-app-dev`, and the rollback of its window. The floor is
+     * 1,065,536 (development-containers.md#the-id-map-size).
+     */
+    public const int ConvertedIdMapSize = 1165536;
 
     public function __construct(
         private ContainerNodes $nodes,
