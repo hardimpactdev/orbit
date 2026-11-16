@@ -191,6 +191,9 @@ final readonly class InstanceHostIntent
             // A CI-only Node's converge creates the pool; every other Node's operator provides it
             // (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
             ...($ci ? ['create_pool' => true] : []),
+            // An Instance fleet Node installs Incus and creates a directory pool first
+            // (docs/reference/development-containers.md#instance-host-in-the-fleet).
+            ...(ContainerNodes::fleetNode($node) ? ['fleet_node' => true] : []),
             'address' => $gateway.'/'.$subnet->prefixLength(),
             // The image build container takes the bridge's last address, which no Instance gets.
             'build_address' => $last,

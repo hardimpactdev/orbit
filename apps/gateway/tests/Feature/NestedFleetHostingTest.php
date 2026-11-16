@@ -261,7 +261,15 @@ describe('a CI Node that hosts proof copies', function (): void {
             ->and($host['ids'])->toBe(13_172_736 + 5 * 101_000_000)
             ->and($host)->not->toHaveKeys(['dev_ports', 'own_site'])
             // Its converge creates the Instance pool (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
-            ->and($host['create_pool'])->toBeTrue();
+            ->and($host['create_pool'])->toBeTrue()
+            ->and($host)->not->toHaveKey('fleet_node');
+        // The Instance fleet marker changes no CI intent: only nested-app-dev's address gets `fleet_node`.
+        $marker = sys_get_temp_dir().'/orbit-instance-fleet-ci-'.getmypid();
+        touch($marker);
+        config(['instances.fleet_marker' => $marker]);
+        $marked = ciRunnerRuntime($node->refresh())['instances'];
+        unlink($marker);
+        expect(array_diff_key($marked, ['bridge_admitted_at' => true]))->toBe(array_diff_key($host, ['bridge_admitted_at' => true]));
 
         $project = otherProject('orbit', true);
         config(['proof.project' => $project->id]);

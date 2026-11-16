@@ -15,6 +15,7 @@ use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\MachineSoftware\ArtifactPin;
@@ -77,6 +78,29 @@ describe('the container branch of the app-dev converge', function (): void {
         app(NodeRoleRuntimeInput::class)->prepare($node, $assignment);
 
         expect($node->refresh()->instance_bridge)->toBe('10.253.0.0/24');
+    });
+
+    // docs/reference/development-containers.md#instance-host-in-the-fleet: only nested-app-dev of an Instance fleet installs Incus and a pool first.
+    it('sends fleet_node only for the Instance fleet Node, and leaves a real app-dev intent as it was under the fleet marker', function (): void {
+        $marker = sys_get_temp_dir().'/orbit-instance-fleet-intent-'.getmypid();
+        config(['instances.fleet_marker' => $marker]);
+        $real = instanceHostNode();
+        $fleet = instanceHostNode('app-dev', TaskVmNestedFleet::Layout['app-dev']['address']);
+        config(['instances.container_nodes' => [$real->id, $fleet->id]]);
+        app(InstanceHostIntent::class)->prepare($real);
+        app(InstanceHostIntent::class)->prepare($fleet);
+        $intent = static fn (Node $node): array => array_diff_key(app(InstanceHostIntent::class)->for($node->refresh()), ['bridge_admitted_at' => true]);
+        [$realBefore, $fleetBefore] = [$intent($real), $intent($fleet)];
+        touch($marker);
+        try {
+            expect($intent($real))->toBe($realBefore)
+                ->and($realBefore)->not->toHaveKey('fleet_node')
+                ->and($fleetBefore)->not->toHaveKey('fleet_node')
+                ->and(array_diff_key($intent($fleet), ['fleet_node' => true]))->toBe($fleetBefore)
+                ->and($intent($fleet)['fleet_node'])->toBeTrue();
+        } finally {
+            unlink($marker);
+        }
     });
 
     it('names the project, pool, image and folders of a prepared Node', function (): void {

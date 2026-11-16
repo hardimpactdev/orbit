@@ -2283,7 +2283,19 @@ What the host needs, measured by hand on a task copy at 1,165,536 on 2026-11-16:
 
 So the host needs the 2,000,000 size of [The ID map size](#the-id-map-size). The inner Incus then hands `nested-app-dev` 1,000,000 IDs, its own Incus keeps base 65,536 with 934,464 IDs, and `(1,000,000 − 131,072) / 65,536` gives 13 isolated Instances. 2,165,536 would be wrong: the outer range crosses the floor again.
 
-The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys and the Incus drop-in. A nested Gateway with the [fleet marker](#fleet-rules) counts the fleet's `app-dev` Node, the Node at `nested-app-dev`'s address, as on its [build list](#the-build-list), so its role converge runs the [container branch](/reference/compute-drivers#prepare-an-instance-container-host). That branch reads the pool `orbit-instances` before it installs Incus, and only a CI-only Node's converge creates a pool. So until the fleet gives `nested-app-dev` Incus and a directory pool, the converge refuses with `instance.host_unavailable`. The fleet refresh runs only base converges, never this role converge. The fast wake stays off for nested-fleet Instances ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)); sleep and wake use the normal path.
+The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested Gateway with the [fleet marker](#fleet-rules) counts the fleet's `app-dev` Node, the Node at `nested-app-dev`'s address, as on its [build list](#the-build-list). It sends that Node's `app-dev` intent `instances.fleet_node`, so the [container branch](/reference/compute-drivers#prepare-an-instance-container-host) runs on it in this order:
+
+1. It writes the drop-in `/etc/systemd/system/incus.service.d/50-orbit-nested.conf` with `Environment=INCUS_SECURITY_APPARMOR=false`. The Incus there cannot load AppArmor profiles; the Incus one level up still confines `nested-app-dev`.
+2. It installs Incus from the recipe's pinned packages.
+3. It creates the directory pool `orbit-instances`.
+4. It writes the marker `/etc/orbit/instance-fleet-node`.
+5. It runs the rest of the branch as on any `app-dev` Node: project, bridge, folders, egress proxy and the Instance image.
+
+A real `app-dev` or CI Node gets no `fleet_node`, so its intent and its branch stay as they were.
+
+**Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has the part `host`, a digest of the nested Gateway's code and Swamp trees. When it differs from the record, `nested-app-dev` joins the due converges, and its converge takes `{"roles":["app-dev"]}` instead of the base only. That is the nested Gateway's own `node.converge`, through its Swamp. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own. A refresh with no change keeps the host and adds no time; the result names `host` as `converged` or `kept`.
+
+**The fast wake stays off.** The [power helper](/reference/prepared-restore#the-power-helper) reads `/etc/orbit/instance-fleet-node` and records no plan, with `placement_unproven`, for every Instance on that Node, as for a nested-fleet Instance ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)). Sleep and wake use the normal path.
 
 #### Raise a default to 2,000,000
 
@@ -2300,7 +2312,9 @@ The window raises the converted default 2454 from 1,165,536 to 2,000,000 once, a
 | 6 | P | `orbit instance:deploy <id>`: the refresh writes the new fleet rules with the fleet stopped, retakes `base` and the seed pair |
 | 7 | P | `orbit instance:create <project> <node> window-check --wait-active` reaches `active` at 2,000,000; destroy it |
 
-Every hand command takes `--project orbit-instances-nested`. The rollback runs steps 1 to 6 with 1,165,536 and the snapshot `pre-2m`. The command allows it while copies at 2,000,000 exist, because a copy's larger map still holds the smaller seed's range. Destroy them first anyway: at 1,165,536 no Instance fits on `nested-app-dev`.
+Every hand command takes `--project orbit-instances-nested`.
+
+The command guards only the raise: it refuses with `instance.idmap_size_copies_smaller` while a copy has a smaller size than the new one, so the raise needs every copy at 1,165,536 gone (step 0). Nothing guards the rollback. It is safe only after the operator has destroyed every copy at 2,000,000, because on `nested-app-dev` at 1,165,536 no Instance fits. The rollback then runs steps 1 to 6 with 1,165,536, or restores the snapshot `pre-2m` in step 3.
 
 The start guard names each half-converted shape:
 
@@ -2369,7 +2383,6 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 | `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` in the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service`, one `Environment=` line | `nested-gateway` | Swamp verifies a new Club key at Swamp Club, and the fleet reaches the internet only through the Node's [egress proxy](#egress-and-dns) |
 | The same proxy settings as `environment.*` keys in the inner Incus. `NO_PROXY` is `localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24` | All three | A nested Node downloads the agent and packages; fleet names stay off the proxy. PHP's HTTP clients may not match `10.45.0.1` to its range |
 | `security.nesting=true`, `security.syscalls.intercept.mknod=true` and `security.syscalls.intercept.setxattr=true` | `nested-app-dev` | Its own Incus runs the [Instance containers of the fleet](#instance-host-in-the-fleet). The fleet must be stopped to set them |
-| The drop-in `/etc/systemd/system/incus.service.d/50-orbit-nested.conf` with `Environment=INCUS_SECURITY_APPARMOR=false` | `nested-app-dev` | Its Incus cannot load AppArmor profiles three levels below the host, so its bridge's dnsmasq would not start |
 | The egress files: the egress proxy for apt in `/etc/apt/apt.conf.d/95orbit-nested-egress`, and the same proxy settings, `NO_PROXY` included, in `/etc/environment` after the image's `PATH` line | All three | A Node's base converge runs apt and downloads the agent over SSH with sudo. See below the table |
 | The marker `/etc/orbit/instance-fleet` | `nested-gateway` | The nested Gateway names no task VM package cache for its Nodes. See below the table |
 | The size files: `APT::Keep-Downloaded-Packages "false";` in `/etc/apt/apt.conf.d/91orbit-nested-package-files`, and `SystemMaxUse=64M` in `/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf` | All three | Every nested root disk is in every copy. See below the table |

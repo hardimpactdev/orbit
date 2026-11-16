@@ -187,14 +187,20 @@ class Incus:
 
 class Host:
     def __init__(self, state="/var/lib/orbit/hibernation", requests="/dev/shm/orbit/hibernation", cgroups="/sys/fs/cgroup",
-                 proc="/proc", incus=None, kernel=None, helper=None):
+                 proc="/proc", incus=None, kernel=None, helper=None, fleet_node="/etc/orbit/instance-fleet-node"):
         self.state = state
+        self.fleet_node = fleet_node
         self.requests = requests
         self.cgroups = cgroups
         self.proc = proc
         self.incus = incus or Incus()
         self.kernel = kernel or Kernel()
         self.helper = helper or os.path.realpath(__file__)
+
+    def unproven(self, project):
+        """Whether the fast path stays off (ADR 0261): a nested-fleet Instance, or any Instance of an Instance fleet Node, a third level
+        below the host, whose marker the container branch writes (instance-fleet-node.yml)."""
+        return project == NESTED_PROJECT or os.path.exists(self.fleet_node)
 
     def instance_dir(self, instance_id):
         return os.path.join(self.state, "instances", str(instance_id))
@@ -1028,7 +1034,7 @@ def prepare(host, instance_id, operation_id, intent):
 
 def prepare_plan(host, instance_id, operation_id, intent, live, relative, boot, paused, result):
     """Capture and publish the plan of the frozen container; returns the prepared_restore object."""
-    if intent["incus_project"] == NESTED_PROJECT:
+    if host.unproven(intent["incus_project"]):
         return skipped("placement_unproven")
     if not supported(host):
         return skipped("unsupported", "unsupported")
@@ -1140,7 +1146,7 @@ def restore(host, instance_id, operation_id, intent):
         plan = load_plan(host, instance_id)
         if plan is None:
             prepared = skipped("no_plan")
-        elif project == NESTED_PROJECT:
+        elif host.unproven(project):
             prepared = skipped("placement_unproven")
         elif not supported(host):
             prepared = skipped("unsupported")

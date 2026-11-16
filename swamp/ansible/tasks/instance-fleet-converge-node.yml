@@ -7,11 +7,14 @@
 # refresh fails when any Node's converge did not succeed, and names each such Node. The task VM refresh does the same with
 # `node:converge <id> --base` (task-vm-fleet-base-node.yml). The count of tasks each converge changed (`result.changed`) adds to
 # `fleet_converge_changed`, and a Node with a change joins `fleet_converge_changed_roles`; a result without a count counts as a change.
+# When the refresh's `host` part is due, nested-app-dev converges its base and its `app-dev` role instead: the container branch of an
+# Instance fleet Node (docs/reference/development-containers.md#instance-host-in-the-fleet).
 - name: Admit the base converge of each due nested Node
   ansible.builtin.command:
     argv: >-
       {{ ['timeout', '90'] + fleet_curl + ['--fail', '-X', 'POST', fleet_api ~ '/nodes/' ~ item.id ~ '/converge',
-          '-H', 'Content-Type: application/json', '-d', '{"base":true}'] }}
+          '-H', 'Content-Type: application/json', '-d',
+          '{"roles":["app-dev"]}' if item.name == 'app-dev' and fleet_due.host | default(false) | bool else '{"base":true}'] }}
   loop: "{{ fleet_converge_nodes }}"
   loop_control: { label: "{{ item.name }}" }
   register: fleet_converge

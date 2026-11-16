@@ -30,7 +30,7 @@ function local(name: string, folder: string): Task[] {
     const task = structuredClone(source);
     // The container phase includes or imports its parts; both run inline here.
     const include = (task["ansible.builtin.include_tasks"] ?? task["ansible.builtin.import_tasks"]) as string | undefined;
-    if (include?.startsWith("task-container-")) {
+    if (include?.startsWith("task-container-") || include === "incus-install.yml") {
       out.push({
         name: task.name,
         when: task.when,

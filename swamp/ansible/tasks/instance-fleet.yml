@@ -98,13 +98,6 @@
     # nested-app-dev runs Instance containers in its own Incus (docs/reference/development-containers.md#instance-host-in-the-fleet):
     # nesting and the interception of mknod and setxattr. Owned: the refresh writes them with the fleet stopped.
     fleet_instance_host: {security.nesting: "true", security.syscalls.intercept.mknod: "true", security.syscalls.intercept.setxattr: "true"}
-    # Its Incus cannot load AppArmor profiles three levels below the host, so its bridge's dnsmasq would fail; the Incus one level up
-    # still confines nested-app-dev.
-    fleet_instance_host_files:
-      - path: /etc/systemd/system/incus.service.d/50-orbit-nested.conf
-        content: |
-          [Service]
-          Environment=INCUS_SECURITY_APPARMOR=false
     # The inner Incus starts the fleet when the Instance container boots; the start also starts any nested container that is stopped.
     fleet_autostart: {boot.autostart: "true"}
     fleet_environment: "{{ dict(intent.fleet.proxy.keys() | map('regex_replace', '^', 'environment.') | zip(intent.fleet.proxy.values())) }}"
@@ -164,7 +157,7 @@
       app-dev:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_instance_host) }}"
-        files: "{{ fleet_egress_files + fleet_size_files + fleet_instance_host_files }}"
+        files: "{{ fleet_egress_files + fleet_size_files }}"
       app-prod:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"

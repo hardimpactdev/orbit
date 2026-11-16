@@ -19,8 +19,13 @@ final readonly class ContainerNodes
 {
     public function includes(Node $node): bool
     {
-        return in_array($node->id, $this->ids(), true)
-            || (InstanceFleetGateway::holds() && $node->public_ssh_host === TaskVmNestedFleet::Layout['app-dev']['address']);
+        return in_array($node->id, $this->ids(), true) || self::fleetNode($node);
+    }
+
+    /** Whether the Node is the `app-dev` Node of this nested Gateway's Instance fleet: `nested-app-dev`, a third level below the host. */
+    public static function fleetNode(Node $node): bool
+    {
+        return InstanceFleetGateway::holds() && $node->public_ssh_host === TaskVmNestedFleet::Layout['app-dev']['address'];
     }
 
     /** @return list<int> */
