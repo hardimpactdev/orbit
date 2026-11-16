@@ -97,6 +97,8 @@ The SDK exposes typed enable, disable, status, list, show, create, update, cance
 
 `PublishTaskGroupRequest($groupId, $check, $pullRequest, idempotencyKey: $key)` starts `tasks.publish`. Omit `$pullRequest` to push only, or pass title and body together. The result names the branch, commit, and optional pull request number and URL.
 
+`SyncTaskGroupRequest($groupId, $idempotencyKey)` starts `tasks.sync`, the same route as the MCP tool `task-sync`. It sends no body. The result names `default_commit`, `branch_commit`, `behind_by` and `start`.
+
 ## Logs
 
 The SDK exposes typed one-shot log reads for Instances and Processes, and create, renew, and destroy requests for live log streams. `CreateLogStreamRequest` takes an `InstanceLogStreamTarget` or a `ProcessLogStreamTarget`, the caller's Reverb socket ID, and a line count. `LogStreamResponse` returns the stream ID, its private channel, the subscription signature for that socket, and the lease and renewal intervals; the signature stays out of `toArray()`, debug output, and serialization. A refused stream raises `GatewayApiException` with `logs.live_unavailable`, and `details()['reason']` says why. The caller subscribes, renews, and falls back to one-shot reads.

@@ -218,6 +218,15 @@ trait FollowsOperations
             }
         }
 
+        if ($operation->kind === 'tasks.sync') {
+            foreach (['default_commit' => 'Default commit', 'behind_by' => 'Behind by', 'branch_commit' => 'Branch commit'] as $field => $label) {
+                $value = $operation->result[$field] ?? null;
+                if (is_int($value) || is_string($value)) {
+                    $this->writeHumanMessage($label.': '.$value);
+                }
+            }
+        }
+
         if ($operation->kind === 'instance.sync_environment') {
             $refresh = $operation->result['runtime_refresh'] ?? null;
             $restarted = $operation->result['restarted_process_ids'] ?? null;

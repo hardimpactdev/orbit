@@ -17,7 +17,8 @@ sequenceDiagram
   participant GH as GitHub<br/>origin
   CLI->>GW: task:sync 42<br/>refresh the refs
   %%> Command:
-  %%> - the MCP tool `task-sync`, or `POST /api/v1/tasks/42/sync` with an `Idempotency-Key` and no body
+  %%> - `orbit task:sync 42 [--idempotency-key=KEY] [--json]`, the MCP tool `task-sync`, or `POST /api/v1/tasks/42/sync` with an `Idempotency-Key` and no body; all three call the same route
+  %%> - the CLI sends a fresh key when none is given, follows the Operation until it ends, and prints `default_commit`, `behind_by` and `branch_commit`
   Note over GW: Admit the sync<br/>group 42 · capture the intent
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
