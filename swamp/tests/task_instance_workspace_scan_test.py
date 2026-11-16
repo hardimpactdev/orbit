@@ -2,6 +2,7 @@
 import json
 import runpy
 import subprocess
+import unittest
 from pathlib import Path
 
 SUPPORT = runpy.run_path(str(Path(__file__).parent / "_support/task_instance_workspace.py"))
@@ -53,11 +54,14 @@ class TaskInstanceWorkspaceScanTest(SUPPORT["WorkspaceHarness"]):
         self.assertEqual(self.read(value), {'refused': 'tasks.publish_secret_value: "notes.txt:2 '
             'nested-gateway:env:/var/lib/orbit-checkout-state/apps/gateway/.env:ORBIT_SWAMP_RUN_TOKEN"'})
 
-    def test_a_workflow_change_refuses_with_its_path(self):
+    def test_a_workflow_change_is_no_refusal_of_the_copy_check(self):
+        # The publish's base read judges it against the real default head (task_copy_publish_base_test.py).
         (self.checkout / '.github/workflows').mkdir(parents=True)
         (self.checkout / '.github/workflows/x.yml').write_text('on: push\n')
+        value = self.scan()
 
-        self.assertEqual(self.read(self.scan()), {'refused': 'tasks.publish_workflow_change: ".github/workflows/x.yml"'})
+        self.assertNotIn('workflows', value['scan'])
+        self.assertIs(self.read(value)['checked'], True)
 
     def test_a_clean_change_passes_with_public_facts_only(self):
         (self.checkout / 'docs.md').write_text('one line\n')
@@ -71,3 +75,7 @@ class TaskInstanceWorkspaceScanTest(SUPPORT["WorkspaceHarness"]):
         (self.checkout / 'docs.md').write_text('one line\n')
 
         self.assertEqual(self.read(self.scan()), {'refused': 'tasks.publish_secret_unchecked: the nested copy shows no inner machine'})
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,12 +1,16 @@
 file = "swamp/tests/task_copy_publish_base_test.py"
 slices = false
-cost = 15
-source_sha256 = "4c47f326a1f38ae48077d4a15a8175913492beb5a81bd66f2127f32388cab4b0"
+cost = 24
+source_sha256 = "7cf3e6d52c31a644713adc67519659a9835f8b7489cc554cb35dd572dec90422"
 cases = [
   "test_a_branch_level_with_main_is_zero_behind_and_overlaps_nothing",
   "test_a_branch_behind_without_a_shared_path_is_stated_and_publishes",
   "test_a_branch_behind_with_a_shared_path_and_no_conflict_is_stated_and_publishes_once",
   "test_a_real_conflict_is_refused_with_its_paths_before_the_push",
+  "test_a_default_commit_that_changed_a_workflow_is_no_change_of_the_copy_synced_or_carried_by_hand",
+  "test_a_copy_commit_of_its_own_that_changes_a_workflow_is_refused_with_its_path",
+  "test_a_merge_whose_workflow_differs_from_every_parent_is_refused",
+  "test_a_workflow_change_refuses_before_a_conflict",
   "test_a_read_that_fails_never_states_a_base_or_lets_the_push_run",
   "test_only_a_copy_reads_its_base_with_the_push_authorization_and_known_intent_keys"
 ]
@@ -24,5 +28,9 @@ inputs = [
 "test_a_branch_behind_without_a_shared_path_is_stated_and_publishes" = 2
 "test_a_branch_behind_with_a_shared_path_and_no_conflict_is_stated_and_publishes_once" = 4
 "test_a_real_conflict_is_refused_with_its_paths_before_the_push" = 2
+"test_a_default_commit_that_changed_a_workflow_is_no_change_of_the_copy_synced_or_carried_by_hand" = 3
+"test_a_copy_commit_of_its_own_that_changes_a_workflow_is_refused_with_its_path" = 2
+"test_a_merge_whose_workflow_differs_from_every_parent_is_refused" = 2
+"test_a_workflow_change_refuses_before_a_conflict" = 2
 "test_a_read_that_fails_never_states_a_base_or_lets_the_push_run" = 2
 "test_only_a_copy_reads_its_base_with_the_push_authorization_and_known_intent_keys" = 3
