@@ -252,7 +252,7 @@ The check cannot read prose. The reviewer walks the `Requirements` of each chart
 
 ## Batches and restores
 
-A batch is a group of cases that run one after another after one restore. Every case names its batch. `swamp/proof/batches.yaml` defines each batch: a name, a summary, optional setup steps, and the order in which batches run. A batch belongs to one command. CI balances whole batches across its VMs; a VM may run batches from several commands. Batch definitions such as `dual-stack` are shared.
+A batch is a group of cases that run one after another after one restore. Every case names its batch. `swamp/proof/batches.yaml` defines each batch: a name, a summary, optional setup steps, and the order in which batches run. A batch belongs to one command. CI balances batches across its copies; a copy may run batches from several commands. A batch that changes the fleet may split by case: each part runs on its own copy after its own restore and the batch's setup ([proof:run](/cli/proof/run)). So a case may never rely on another case of its batch, nor on running on the same copy. Batch definitions such as `dual-stack` are shared.
 
 - The run starts on the task's `base` snapshot. The first batch needs no restore.
 - A later batch starts with a restore of `base`, about 16 seconds, then its setup steps. The workflow runs it with `runner setup BATCH`; a later `runner case` finds the result on the fleet (for IPv6, the addresses that Incus reports for the guests).
@@ -261,6 +261,8 @@ A batch is a group of cases that run one after another after one restore. Every 
 - A case that does not pass triggers no restore: it leaves only its own resources, and the next batch restores `base` anyway. A case that must not meet that state gets its own batch.
 - A restore that fails or is not healthy within 45 seconds stops the run. The cases that did not run become `unrun` with cause `infrastructure`; the verdicts already reached stay.
 - A case that needs a state that no batch offers gets a new batch. Do not build a different world inside one case.
+- When several behaviours need the same long Operation, such as a converge or a role install, write one case with `stages`. The first stage runs the Operation; each later stage checks one more behaviour on the state the stage before left, such as a repeat that changes nothing or a keyed retry that starts no Operation. List every behaviour in `covers` and in the summary. Drop no assertion of a merged case without a stated reason.
+- `base` holds Nodes converged with the default scope at the seed's commit. On `base`, a converge changes nothing unless the commit under proof changed an input. A case that needs a change, such as a repair, sets up that change itself.
 
 A batch costs a restore, so keep few. `firewall:allow` needs two:
 
