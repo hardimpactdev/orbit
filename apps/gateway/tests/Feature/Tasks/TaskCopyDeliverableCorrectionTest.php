@@ -12,11 +12,15 @@ use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskStatus;
+use App\Http\Mcp\ApiDispatcher;
+use App\Http\Mcp\ApiOperationTool;
+use App\Http\Mcp\ToolManifest;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\SwampNodeFixture;
 use Tests\Support\TaskCopyDoneFixture;
@@ -185,4 +189,22 @@ describe('the reason field of the task update API', function (): void {
 
         expect($world->group->refresh()->title)->toBe('Add the export');
     });
+});
+
+it('carries the reason through the MCP task-update tool', function (): void {
+    $gateway = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit',
+    ]));
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    [$world, $failed] = failedCopyCheck();
+    $manifest = collect(ToolManifest::default()->definitions())->firstWhere('name', 'task-update');
+    $tool = new ApiOperationTool($manifest, app(ApiDispatcher::class));
+
+    $response = $tool->handle(new Laravel\Mcp\Request(['task' => (string) $world->subtask->id, 'deliverables' => rightDeliverables(), 'reason' => 'The tools tests need discover -s tools.']),
+        Request::create('/mcp', 'POST', server: ['REMOTE_ADDR' => '10.44.0.2']));
+
+    expect($manifest->inputSchema['properties']['reason'])->toBe(['type' => 'string', 'maxLength' => 500, 'minLength' => 1])
+        ->and(json_decode((string) $response->content(), true, flags: JSON_THROW_ON_ERROR)['data']['deliverables'][0]['command'])->toBe('python3 -m unittest discover -s tools')
+        ->and(Activity::query()->where('subject_id', $world->subtask->id)->where('description', 'deliverables corrected')->sole()->properties->all())
+        ->toMatchArray(['check_id' => $failed->id, 'reason' => 'The tools tests need discover -s tools.']);
 });
