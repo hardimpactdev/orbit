@@ -243,6 +243,12 @@ The nested-fleet image cases of the Instance host image file run on pull request
 
 Each fixture shard has a four-minute job limit. The runner stops the shard at 190 seconds, names running units as `OVER BUDGET` and queued units as `NOT RUN`, and fails the shard.
 
+The shard deadline counts only the units. Before the units, the job restores the pinned shape tools and Ansible collections from its cache, or builds them, in its own step: `Prepare fixture tools` runs `bin/ci-units prepare-tools` with a one-minute limit.
+
+The units' 190 seconds leave 50 seconds of the job limit for checkout, setup, this step and the artifact upload, so one whole minute is the smallest step limit. A cold cache comes back after every change to the Python version or a pin, and pull requests do not share their caches. A slow or failed build fails this step by name; it does not take time from a unit.
+
+`bin/ci-units run` checks the tools again before the first unit, so a local run without the workflow still works. With ready tools, this costs only the readiness check: the venv's `.complete` marker and a collection install that has nothing to do. Without ready tools, `run` builds them inside the shard deadline.
+
 Each unit has a 180-second ceiling; a unit that exceeds it fails with its name, time and an instruction to raise its table cost for another slice or make it faster. Units that cannot be sliced and cost more than 150 seconds run after merge only, with a reason in the table.
 
 A fixture’s metadata records its measured registrations in order. Population edits select only fixtures whose records differ between the merge base and PR head, including added or removed records for sources that still exist. Formatting alone selects no fixture bodies. The loader reads the old combined files only when comparing commits from before and after the move; the current checkout has one source for each record.
