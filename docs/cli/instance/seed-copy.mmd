@@ -60,7 +60,7 @@ sequenceDiagram
   opt every Node behind the seed was a target and passed
     SW->>N: Release the base<br/>Ansible · tags release
     %%> When:
-    %%> - the intent's `release_base`: the run's targets are all the Nodes behind the default's seed (`ProofSeeds`); every target passed; the default still holds the snapshot the run was admitted for
+    %%> - the intent's `release_base`: the run's targets are all the Nodes behind the default's seed (`ProofSeeds`); every target passed; the default still holds a snapshot with the name the run was admitted for (by name only: after a retake at the same commit during the run, the base that the retake kept goes too)
     %%> What it does:
     %%> - deletes every `base-` pair of the default; the holders drop it at their next refresh
     %%> On failure:

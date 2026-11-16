@@ -2763,7 +2763,7 @@ Before the refresh, the run renames the holder's `seed-<commit>` pair to `base-<
 
 The base goes when no CI Node needs it. The next retake keeps at most the seed that it replaces. A seed copy can drop the base earlier: when it targeted all the Nodes behind the seed and each target passed, its release step deletes every `base-` pair on the default's Node.
 
-The release step first checks that the default still holds the seed that the copy was admitted for. A retake during the copy took a new seed and chose its own base, so the release step leaves that base alone.
+The release step first checks that the default still holds a seed with the name that the copy was admitted for. It compares only the name. A retake to a new commit during the copy gives the seed a new name, so the release step leaves the base of that retake alone. A retake at the same commit keeps the name, so the release step deletes the base that the retake kept. Then the next copy to each target sends the whole pair once, as a first copy does.
 
 A failed release changes no target's result; the next retake deletes the base. The holder mirrors the default, so its next refresh drops the base there too.
 

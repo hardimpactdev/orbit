@@ -7,7 +7,7 @@
 #         volume and the container with `--refresh --mode=push`.
 #   check: on the CI Node, the holder and its volume hold the seed snapshot that the run was admitted for.
 #   release: on the default's Node, once for the run, delete the default's base when the intent allows it, every target passed and the
-#            default still holds the seed that the run was admitted for.
+#            default still holds a seed with the name that the run was admitted for.
 #   result: on the Swamp Node, the outcome of every target in `result.json`, a list of `{node_id, status, ...}`.
 # Each target writes `target-<id>.json` in the run folder: `{"status": "succeeded"}` after its check, or `{"status": "failed",
 # "detail": ...}` at its first failed phase. A later phase of a failed target does nothing.
@@ -243,8 +243,10 @@
           vars: *local
       rescue: *failed
 
-# The base serves only the Nodes behind the seed. When the run targeted all of them and each passed, none needs it. A seed that moved
-# during the run belongs to a newer retake, which keeps or deletes the base itself, so the release then does nothing.
+# The base serves only the Nodes behind the seed. When the run targeted all of them and each passed, none needs it. A seed with a new
+# name belongs to a retake to a new commit during the run, which keeps or deletes the base itself, so the release then does nothing.
+# The check is by name only: after a retake at the same commit, the release deletes the base that the retake kept, and the next copy
+# sends the whole pair (docs/reference/development-containers.md#how-the-seed-moves).
 - name: Release the default's base
   hosts: seed_source
   gather_facts: false
