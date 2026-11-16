@@ -331,3 +331,21 @@ Deno.test("a copy's batch resets with proof-copy-fleet-reset, which runs fleet_r
     );
     assert(!reset.some((step) => step.task.workflowIdOrName === "proof-fleet-restore"));
 });
+
+// The checkout in the nested guests is `agent:work` 2770 (ADR 0268). `incus exec --user 1000` runs with group 0 only and gets EACCES,
+// so each app-user command runs as root through `runuser -u orbit --`, which gives `orbit` its supplementary groups, `work` among them.
+Deno.test("the nested apply and the verify read run as orbit with its groups, never as a bare uid", async () => {
+    const apply = stepsOf(await workflow("task-nested-apply"));
+    const verify = stepsOf(await workflow("proof-fleet-verify"));
+    const gateway = "${{ inputs.fleet.guests.gateway }}";
+    assertEquals(named(apply, "Place the agent delivery").task.inputs!.argv, ["timeout", "30", "incus", "exec", gateway, "--",
+        "runuser", "-u", "orbit", "--", "install", "-D", "-m", "0444", "/home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json",
+        "/home/orbit/orbit/apps/agent/delivery/manifest.json"]);
+    assertEquals(named(apply, "Migrate").task.inputs!.argv, ["timeout", "120", "incus", "exec", gateway, "--cwd", "/home/orbit/orbit/apps/gateway",
+        "--", "runuser", "-u", "orbit", "--", "php", "artisan", "migrate", "--force"]);
+    assertEquals(named(verify, "Read the nested checkout").task.inputs!.argv, ["timeout", "60", "incus", "exec", "nested-gateway", "--",
+        "runuser", "-u", "orbit", "--", "git", "-C", "/home/orbit/orbit", "rev-parse", "HEAD"]);
+    for (const step of [...apply, ...verify]) {
+        assert(!JSON.stringify(step.task.inputs?.argv ?? []).includes('"--user"'), `${step.name} runs as a bare uid`);
+    }
+});
