@@ -129,6 +129,10 @@ function unregisterWorkflowSchema(): array
 function assertFitsUnregisterSchema(mixed $value, array $schema, string $path = 'inputs'): void
 {
     $types = (array) ($schema['type'] ?? []);
+    // A property without a type accepts any value, as Swamp's schema does.
+    if ($types === [] && ! isset($schema['properties']) && ! isset($schema['items'])) {
+        return;
+    }
     if ($value instanceof stdClass) {
         expect(in_array('object', $types, true))->toBeTrue("{$path} is an object");
         $value = (array) $value;

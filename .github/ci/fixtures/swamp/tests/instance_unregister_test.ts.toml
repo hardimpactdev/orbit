@@ -6,9 +6,10 @@ cases = [
   "the withdrawal runs for a Route and skips without one or after a held withdrawal",
   "a withdrawal that did not hold skips the Node steps and fails the end check",
   "the end check reads only check_paths: the checkout stays and passes, a unit left behind fails",
+  "every type in the inputs schema is one value Swamp's schema allows",
 ]
 file = "swamp/tests/instance_unregister_test.ts"
-cost = 6
+cost = 7
 slices = false
 inputs = ["swamp/workflows/workflow-operation-instance-unregister.yaml", "swamp/workflows/workflow-operation-instance-destroy.yaml", "docs/cli/instance/unregister.mmd"]
 [case_costs]
@@ -18,3 +19,4 @@ inputs = ["swamp/workflows/workflow-operation-instance-unregister.yaml", "swamp/
 "the withdrawal runs for a Route and skips without one or after a held withdrawal" = 1
 "a withdrawal that did not hold skips the Node steps and fails the end check" = 1
 "the end check reads only check_paths: the checkout stays and passes, a unit left behind fails" = 1
+"every type in the inputs schema is one value Swamp's schema allows" = 1

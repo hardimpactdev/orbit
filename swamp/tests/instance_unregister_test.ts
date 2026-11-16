@@ -211,3 +211,31 @@ Deno.test("the end check reads only check_paths: the checkout stays and passes, 
         await Deno.remove(root, { recursive: true });
     }
 });
+
+Deno.test("every type in the inputs schema is one value Swamp's schema allows", () => {
+    // Swamp validates `type` as a single name; a list such as ["integer", "null"] fails workflow validation.
+    const allowed = [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "array",
+        "object",
+    ];
+    const walk = (node: unknown, path: string): void => {
+        if (Array.isArray(node)) {
+            node.forEach((item, index) => walk(item, `${path}[${index}]`));
+            return;
+        }
+        if (node === null || typeof node !== "object") return;
+        for (const [key, value] of Object.entries(node)) {
+            if (key === "type") {
+                assert(
+                    typeof value === "string" && allowed.includes(value),
+                    `${path}.type is ${JSON.stringify(value)}`,
+                );
+            } else walk(value, `${path}.${key}`);
+        }
+    };
+    walk((flow as unknown as { inputs: unknown }).inputs, "inputs");
+});

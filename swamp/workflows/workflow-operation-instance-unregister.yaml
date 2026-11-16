@@ -39,10 +39,8 @@ inputs:
             properties:
               instance_id:
                 type: integer
-              route_id:
-                type:
-                - integer
-                - 'null'
+              # An integer, or null for an Instance without a Route; Swamp's schema allows one type, so it states none.
+              route_id: {}
             required:
             - instance_id
             - route_id
@@ -68,10 +66,8 @@ inputs:
                 type: string
               on_demand:
                 type: boolean
-              vite:
-                type:
-                - object
-                - 'null'
+              # An object, or null for a Process without Vite.
+              vite: {}
             required:
             - process_id
             - runtime
