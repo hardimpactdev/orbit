@@ -15,7 +15,7 @@ use Illuminate\Support\Str;
 
 /**
  * The intent of `task:sync` in a task copy: the repository, the default branch and the task branch, the copy's guest target and
- * mirrors, and the vault key of the read token. The run brings the default branch in through the copy's Node mirror. See
+ * mirrors, what the base's content read counts as published, and the vault key of the read token. The run brings the default branch in through the copy's Node mirror. See
  * docs/cli/task/sync.mmd.
  */
 final readonly class TaskSyncIntent
@@ -50,7 +50,9 @@ final readonly class TaskSyncIntent
         return [
             'group_id' => $group->id, 'instance_id' => $instance->id, 'project_id' => $group->project_id, 'node_id' => $instance->node_id,
             'workspace' => ['repository' => $base['repository'], 'default_branch' => $base['default_branch'], 'branch' => 'task-'.$group->id],
-            'copy' => [...$copy->intent(), 'start' => $base['start'], 'mirror' => $base['mirror'], 'source_mirror' => $base['source_mirror']],
+            'copy' => [...$copy->intent(), 'start' => $base['start'], 'mirror' => $base['mirror'], 'source_mirror' => $base['source_mirror'],
+                // The base's content read counts what these hold as published (docs/reference/tasks.md#published-work-of-a-copy).
+                'published' => TaskCopyEnd::published($group), 'approved' => TaskFinalReview::approvedCommit($group) ?? ''],
             'git_authorization' => $base['git_authorization'],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
         ];

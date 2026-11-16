@@ -249,7 +249,11 @@ Deno.test({
       );
       assertEquals(f.workspace("rev-parse", "HEAD"), head);
       assertEquals(f.workspace("symbolic-ref", "--short", "HEAD"), "main");
-      assertEquals(state.files["/srv/workspace/.env"], { uid: "1000", gid: "2760", mode: "0640" });
+      // `agent` owns the workspace, its .env too (ADR 0268).
+      assertEquals(state.files["/srv/workspace/.env"], { uid: "2750", gid: "2760", mode: "0640" });
+      // Root's workspace pass ran on the workspace, giving `orbit`'s entries (1000) to `agent` (2750).
+      assert(state.workspace_owner_runs.length > 0);
+      for (const run of state.workspace_owner_runs) assertEquals(run, ["/srv/workspace", "1000", "2750"]);
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/.env`), "APP_KEY=base64:secret\n");
       // Git never takes the .env, although the Project's own files do not ignore it.
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/.git/info/exclude`).split("\n").filter((line) => line === "/.env").length, 1);

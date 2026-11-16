@@ -1012,7 +1012,9 @@
                 "snapshot_id": "ee4a94ce-2808-4939-a754-8f54aeb91ef6",
                 "start": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "mirror": "/var/lib/orbit/instance-repositories/2.git",
-                "source_mirror": "/var/lib/orbit/instance-repositories/1.git"
+                "source_mirror": "/var/lib/orbit/instance-repositories/1.git",
+                "published": [],
+                "approved": ""
             },
             "git_authorization": {
                 "vault": "orbit-control-inputs",

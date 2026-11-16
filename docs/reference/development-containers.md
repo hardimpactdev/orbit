@@ -1510,11 +1510,15 @@ Work is what lies beyond the Instance's baseline:
 
 Build output that appears after the create counts too. It stays work until the Project's `.gitignore` covers it.
 
+The read also names the checked-out branch as `head`, its commit as `head_commit`, and how many of the counted commits that branch holds as `commits.head`. A task copy's cancel and complete hold the copy's [content read](/reference/tasks#published-work-of-a-copy) against that commit. Only those commits can count as published by content.
+
 The baseline is what a new Instance held when it was made, so a fresh copy of a default with local branches, stashes or untracked files reads `clean`. It holds the local branch heads, the stash ids and the untracked set, in the Gateway's `instance_runtimes.workspace_baseline`, outside the container.
 
 A clone's create reads it before the transaction that ends the create, and writes it with `workspace_baseline_at` in that transaction. The user can reach T3 only through a pairing, and Conn pairs only after it reads the create `succeeded`, so the baseline holds no work of the user. The completion writes no tracked or unignored file, so the read stays `clean` while it runs.
 
-The read runs in Horizon on an SSH connection of its own. A failed try, such as a lost connect, is tried again after 1 second and again after 3 more seconds; each failed try writes its SSH exit code and the end of its stderr to the Gateway log. Only a third failed read fails the create with `instance.workspace_baseline_unavailable`. A resumed create keeps a recorded baseline.
+The read runs in Horizon on an SSH connection of its own, with bounds of its own for a loaded host: the reader's budget is 6 seconds, an outer `timeout 8` ends it, and the SSH command bound is 10 seconds. Other workspace reads keep 2, 3 and 4 seconds.
+
+A failed try, such as a lost connect, is tried once more after 1 second; each failed try writes its SSH exit code and the end of its stderr to the Gateway log. The second failed read fails the create with `instance.workspace_baseline_unavailable`, so a stuck read ends in about 21 seconds. The job that ends the create runs within its 150-second limit. A resumed create keeps a recorded baseline. A task copy's create that fails this way [starts once more](/reference/tasks#a-failed-create).
 
 When the untracked set has more than 2,000 entries, or the answer would pass 900 KB, Orbit drops it, so every untracked file counts. Nothing rewrites a recorded baseline: not a deploy, a rename or a removal restore.
 

@@ -89,7 +89,7 @@ Then a full selection is about eight batches of under five minutes each, and nee
 
 ### Quick checks stay where they run
 
-The quick checks of a public repository run on GitHub-hosted runners, as today. Private repositories run only on Orbit's runners. Code from a fork never runs on Orbit's runners; its proof follows the existing outside-proof rule.
+The quick checks of a public repository run on GitHub-hosted runners, except fixture shards on repository branches and main: these share the nine general runners on Sabre and Shark. Ordinary fixtures from fork pull requests stay on GitHub-hosted runners. Private repositories run only on Orbit's runners. Code from a fork never runs on Orbit's runners; its proof follows the existing outside-proof rule.
 
 ### Build order
 
