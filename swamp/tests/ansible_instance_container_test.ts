@@ -2619,7 +2619,8 @@ Deno.test({
   },
 });
 
-const probeDamage: Record<string, string> = {"raw.lxc": "a raw.lxc key", "privileged": "security.privileged", "host-disk": "a host disk", "extra-share-key": "an extra share key"};
+// The guard's other damages, such as security.privileged and an extra disk, are cases of the same gate in instance_clone_test.py.
+const probeDamage: Record<string, string> = {"raw.lxc": "a raw.lxc key", "extra-share-key": "an extra share key"};
 for (const damage of Object.keys(probeDamage)) {
   Deno.test({
     name: `the nested clone probe refuses a profile with ${probeDamage[damage]} before it starts`,
@@ -2634,9 +2635,7 @@ for (const damage of Object.keys(probeDamage)) {
         const runtime = `${f.instances.folders.runtime.path}`;
         state.profiles["orbit-instances-nested"] = {description: "", config: {
           ...(damage === "raw.lxc" ? {"raw.lxc": "lxc.apparmor.profile=unconfined"} : {}),
-          ...(damage === "privileged" ? {"security.privileged": "true"} : {}),
         }, devices: {
-          ...(damage === "host-disk" ? {socket: {type: "disk", source: "/var/lib/incus/unix.socket", path: "/run/host-incus"}} : {}),
           // Profile convergence rewrites the keys it owns, so a drifted share keeps only keys it does not own.
           ...(damage === "extra-share-key" ? {"orbit-runtime": {type: "disk", source: runtime, path: runtime, propagation: "shared"}} : {}),
         }};

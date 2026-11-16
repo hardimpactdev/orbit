@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "6fecc44b4a681f4b7757e5d123a6fe0e402d50c4e3ce44710eb43c8ed2f201fb"
+source_sha256 = "ae8a3b83ed39414f39da5c52ff8db33d8ed3e2ddd89800f2824520c9e0bc2d82"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -74,8 +74,6 @@ cases = [
   "a switched-on host with a short subgid range refuses before any nesting change",
   "only a switched-on host prepares the nested project, its profile and the nesting modules",
   "the nested clone probe refuses a profile with a raw.lxc key before it starts",
-  "the nested clone probe refuses a profile with security.privileged before it starts",
-  "the nested clone probe refuses a profile with a host disk before it starts",
   "the nested clone probe refuses a profile with an extra share key before it starts",
   "a changed shared folder restarts running normal and nested runtimes before clearing its marker",
   "a changed shared folder on a normal Node runs main's list and restart command lines",
@@ -101,11 +99,6 @@ file = "swamp/tests/ansible_instance_container_test.ts"
 cost = 4013
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
-  # Two of the four nested clone probe damages (2026-11-16): splitting the two cases that ran 177-180s on a loaded CI unit adds one
-  # case's setup, and the file then needs 9 hosted shards, above the 8-shard PR limit. The PR keeps the probe's refusal end to end for a
-  # raw.lxc key and an extra share key, and the guard's refusal of security.privileged and an extra device in instance_clone_test.py.
-  "the nested clone probe refuses a profile with security.privileged before it starts",
-  "the nested clone probe refuses a profile with a host disk before it starts",
   # The proof checkout of a copy (21s locally, run in full before the PR): the file sits at the 8-shard PR limit. The PR keeps the
   # workflow's expressions in workflow_start_resolution_test.ts and the Gateway's input in ProofRunCopiesTest.php.
   "a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name",
