@@ -539,7 +539,7 @@ A refused or failed call does not fail the run; the terminal status frees the No
 
 The release records `route_withdrawn_at` on the removal. A retry of that removal skips `Withdraw the Route` and takes no hold, so it never waits for another Route write.
 
-Task provision and cancel, `instance.register` and the Cluster Router writes hold the same Nodes for one step only. The run calls `operation:direct:route-hold` before its Route-publish step and `operation:direct:route-release` after it. The hold of such a step has a lease of 5 minutes, which the minute pass frees when it ends, and the terminal status of the Operation frees it too.
+`instance.register` and the Cluster Router writes hold the same Nodes for one step only. `tasks.provision`, `tasks.cancel` and `tasks.maintenance_finish` hold none: no Operation of the first starts, and the run of the other two publishes no Route. The run calls `operation:direct:route-hold` before its Route-publish step and `operation:direct:route-release` after it. The hold of such a step has a lease of 5 minutes, which the minute pass frees when it ends, and the terminal status of the Operation frees it too.
 
 The hold is the `route_publication_holds` table, with one row per Node. A finished write frees its Nodes and queues `PromoteRouteWrites`, which moves the waiting writes that fit to `queued`, oldest first, and starts them. The minute pass of `ReconcileSwampOperations` frees the Nodes of a write that ended without a release. A waiting write has no deadline; its budget starts when it starts.
 
