@@ -109,7 +109,7 @@ final readonly class ContainerDeployOutcome
         $rows = [];
         foreach ($steps as $name => $step) {
             // Swamp names each forEach item `<step>-<index>-<index>`.
-            if (! is_string($name) || preg_match('/\A'.preg_quote(self::DeployStepsStep, '/').'-([0-9]+)(?:-\1)?\z/D', $name, $match) !== 1) {
+            if (preg_match('/\A'.preg_quote(self::DeployStepsStep, '/').'-([0-9]+)(?:-\1)?\z/D', $name, $match) !== 1) {
                 continue;
             }
             $intent = $admitted[(int) $match[1]] ?? null;

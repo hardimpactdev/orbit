@@ -74,8 +74,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             if ($status !== 'running') {
                 $native = $data;
                 $variant = ValidatedData::string(ValidatedData::object($locked->input['deployment'])['variant']);
+                $admittedSteps = ValidatedData::object($locked->input['deployment'])['steps'] ?? [];
                 [$data, $payload] = match (true) {
-                    $variant === 'container' => ContainerDeployOutcome::from($data, $this->secrets($instance), ValidatedData::object($locked->input['deployment'])['steps'] ?? []),
+                    $variant === 'container' => ContainerDeployOutcome::from($data, $this->secrets($instance), is_array($admittedSteps) ? $admittedSteps : []),
                     $this->development($locked) => DevelopmentDeployOutcome::from($data),
                     default => ProductionDeployOutcome::from($data, $locked),
                 };
