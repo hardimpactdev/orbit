@@ -22,9 +22,11 @@ A Project records one Git repository and the defaults for running it. New Instan
 
 Every Instance of a Project with the flag on is a container in the nested Incus project, made from the [nested-fleet image](/reference/development-containers#the-nested-fleet-image). One placement rule in the Gateway decides this for every path that writes an Instance or its runtime. Only development create, its retry and Conn create make such an Instance: the Project's default, or a clone of it. They refuse every other result before any record:
 
-- the Node has [nested-fleet hosting](/reference/node-settings#nested-fleet-instance-hosting) off: `instance.nested_fleet_host_unavailable` (409);
+- the Node hosts no nested fleets: `instance.nested_fleet_host_unavailable` (409);
 - the Node is not on the [build list](/reference/development-containers#the-build-list): `instance.nested_fleet_container_required` (409);
 - the result would be a host checkout, such as a clone of a default that is a checkout: the same code.
+
+A Node hosts nested fleets in two cases. Its [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on. Or it is a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node), and its last `ci-runner` converge prepared nested hosting. A CI-only Node takes only a proof copy. It refuses every other create with `instance.node_ci_only` first.
 
 Every other path refuses such a Project with `operation.kind_unavailable` (503), because it makes no such container. These paths are clone, register and migrate, and task work that needs a new task VM workspace: provision and turn, also after a wait. A `proof:run` of such a Project runs in [copies](/cli/proof/run#the-run). Each refusal comes before any record: no Instance, runtime, task place, Node identity, capacity wait or Operation. An Operation that already waited when the flag was turned on ends `failed` with the same code. A Project with the flag off is not affected.
 
@@ -33,9 +35,9 @@ The same placement rule also says where a new Instance lives:
 | Project | Node | Result |
 | --- | --- | --- |
 | Flag off | Any | A container in the Incus project `orbit-instances` on a Node of the [build list](/reference/development-containers#the-build-list), else a host checkout |
-| Flag on | [Nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) off | Refused with `instance.nested_fleet_host_unavailable` (409) |
-| Flag on | Switch on, but the result is not a container: the Node is not on the build list, or the Project's default Instance is a host checkout | Refused with `instance.nested_fleet_container_required` (409) |
-| Flag on | Switch on, on the build list, and a container result | A container in the Incus project `orbit-instances-nested` |
+| Flag on | The Node hosts no nested fleets: switch off, and no CI-only Node with nested hosting | Refused with `instance.nested_fleet_host_unavailable` (409) |
+| Flag on | Hosts nested fleets, but the result is not a container: the Node is not on the build list, or the Project's default Instance is a host checkout | Refused with `instance.nested_fleet_container_required` (409) |
+| Flag on | Hosts nested fleets, on the build list or CI-only, and a container result | A container in the Incus project `orbit-instances-nested` |
 
 Each writer calls the rule's entry for its kind. Development create, Conn create and the runtime reservation can make a container. Register, migration and the production clone read or make a host checkout. Task work and `proof:run` make a task workspace.
 

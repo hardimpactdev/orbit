@@ -95,6 +95,7 @@ In `places`:
 - `proof_only` is the Node's `ci.proof_only`. It is false when the Node has no `ci` setting.
 - `runner_jobs` counts the busy runners. It is 0 on a proof-only Node.
 - `free` is `total` minus `runner_jobs` and `proof_copies`, never below 0. It is null when `total` is null.
+- `free` is 0 on a Node that takes no proof copies, such as a Node that was not converged after a release changed the [hold script](/reference/node-provisioning#proof-places-on-a-ci-node). A proof takes no place there.
 
 Each entry of `runners`:
 

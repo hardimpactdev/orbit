@@ -285,11 +285,11 @@ Three rules decide what a Node with the `ci-runner` role does for [proof](/cli/p
 | --- | --- | --- |
 | A CI-only Node (`ciOnly`) | `ci-runner`, at least one CI place, and no `app-dev` | Its `ci-runner` converge prepares the Instance container branch, and it takes no Instance but a proof copy |
 | The Node offers proof places (`offersPlaces`) | `ci-runner` and at least one CI place, with or without `app-dev` | It keeps a seed of the proof default and can hold proof copies |
-| The Node takes proof copies (`takesCopies`) | It offers proof places, and records the hold script of this release | [proof:run](/cli/proof/run#the-run) counts its free places ([Proof places on a CI Node](#proof-places-on-a-ci-node)) |
+| The Node takes proof copies (`takesCopies`) | It offers proof places, records the hold script of this release, and [hosts nested fleets](/reference/projects#nested-fleet-setting) | [proof:run](/cli/proof/run#the-run) counts its free places ([Proof places on a CI Node](#proof-places-on-a-ci-node)) |
 
 A Node that also has `app-dev`, such as the Node of the proof default, already hosts containers through its `app-dev` role. So it offers proof places, but it is not a CI-only Node: its `app-dev` converge prepares it, and it takes normal Instances. The default's own Node needs no seed copy, because it holds the seed. [proof:run](/cli/proof/run#the-run) decides which Node takes each proof copy: one copy per free place, on every Node that offers proof places. Orbit never adds `app-dev` to a CI Node to host proof copies.
 
-On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent, with its `nested` part, for two kinds of Node: an `app-dev` Node on the build list, and a CI-only Node. The role runtime runs the branch for either one. The CI Node gets no `app-dev` role for this.
+On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. The Node gets no `nested_fleet` switch for this. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent, with its `nested` part, for two kinds of Node: an `app-dev` Node on the build list, and a CI-only Node. The role runtime runs the branch for either one. The CI Node gets no `app-dev` role for this.
 
 The branch prepares:
 
@@ -297,6 +297,10 @@ The branch prepares:
 - the nested project's profile, the kernel modules `wireguard` and `overlay`, and `volmode=dev` for [inner volumes](/reference/development-containers#the-inner-volume) on the pool;
 - the normal image and the [nested-fleet image](/reference/development-containers#the-nested-fleet-image);
 - first, a check of root's subordinate IDs against a [CI Node's demand](/reference/node-settings#a-ci-node), before any nesting change.
+
+The Gateway records the branch on the Node, in `nodes.ci_nested_hosting`: true when the Node's last passed `ci-runner` add or role converge prepared nested hosting, that is when its intent carried the branch with its `nested` part. A CI-only Node with the record hosts nested fleets, as a Node with the switch on does.
+
+So a proof copy there passes the placement rule, and its intent keeps `fleet`, so its inner fleet can be reset ([Nested fleet setting](/reference/projects#nested-fleet-setting)). Without the record, the Node takes no proof copies, and a copy there is refused with `instance.nested_fleet_host_unavailable`. The record follows the rule of the hold script record ([Proof places on a CI Node](#proof-places-on-a-ci-node)). A passed add or role converge sets it from its intent. A `node:converge` only keeps it. A failed run or a role removal clears it.
 
 The intent leaves out the parts that serve a Route or a sleep through the Node's Caddy: the own-site rules, the redirect of agent development ports and the wake of frozen containers. The tasks are the same; the intent decides. The admission of the role add or converge allocates the Node's Instance bridge, as for an `app-dev` Node.
 
@@ -356,16 +360,16 @@ The `ci-runner` role installs the script `/usr/local/libexec/orbit-ci-runner-hol
 | `hold <copy> <places>` | In each proof copy's create on the Node, before the copy starts its inner fleet | Records the hold of the copy, then stops idle runner services in `orbit-ci` down to the places left to runners, and records each one. `<places>` is the Node's `ci_places`, which the Gateway passes. |
 | `release <copy>` | In each proof copy's destroy on the Node, also after a failed create | Removes the hold of the copy. When no hold is left, it starts the service of each recorded runner and clears the record |
 
-The Gateway records the hold script on the Node, in `nodes.ci_hold_digest`: the SHA-256 digest of the script that the Node's last passed `ci-runner` add or role converge installed. A Node offers places to [proof:run](/cli/proof/run#the-run) only while the record is the digest of the script that the running Gateway release installs (`ProofCopyHosts::takesCopies`). So after a release that adds or changes the script, a CI Node offers no place until a `ci-runner` add or converge of the Node passes.
+The Gateway records the hold script on the Node, in `nodes.ci_hold_digest`, by the same rule and in the same place as `nodes.ci_nested_hosting`: the SHA-256 digest of the script that the Node's last passed `ci-runner` add or role converge installed. A Node offers places to [proof:run](/cli/proof/run#the-run) only while the record is the digest of the script that the running Gateway release installs (`ProofCopyHosts::takesCopies`). So after a release that adds or changes the script, a CI Node offers no place until a `ci-runner` add or converge of the Node passes. The [runner view](/reference/ci-runner-view) uses the same rule: such a Node shows no free place.
 
 The seed listener and the Instance container branch do not read the record: the converge that installs the script still prepares them. One rule sets and clears the record, at the end of the same runs as `seed_sender_id`:
 
-| The run | `ci_hold_digest` |
-| --- | --- |
-| A passed `ci-runner` add or role converge | The digest of the script in its intent |
-| A `node:converge` whose roles phase passed | Kept when it is the digest of the script in its intent, else cleared |
-| Failed, cancelled or interrupted | Cleared: the run may have changed the script |
-| A `ci-runner` removal, passed or failed | Cleared: its phase removes the script |
+| The run | `ci_hold_digest` | `ci_nested_hosting` |
+| --- | --- | --- |
+| A passed `ci-runner` add or role converge | The digest of the script in its intent | True when its intent carried the nested branch, else false |
+| A `node:converge` whose roles phase passed | Kept when it is the digest of the script in its intent, else cleared | Kept when its intent carries the nested branch, else false |
+| Failed, cancelled or interrupted | Cleared: the run may have changed the script | False |
+| A `ci-runner` removal, passed or failed | Cleared: its phase removes the script | False |
 
 A proof copy's create checks the script before it calls it. When the script is missing, the step calls nothing and the create fails with `instance.ci_hold_unavailable`; the detail names the Node. The copy does not start, and its destroy skips the release, because the Node has no script.
 
