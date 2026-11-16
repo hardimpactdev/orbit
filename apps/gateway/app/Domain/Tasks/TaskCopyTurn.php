@@ -24,8 +24,9 @@ use Illuminate\Support\Str;
 final readonly class TaskCopyTurn
 {
     /**
-     * The driver of a copy turn's thread. Orbit stops a copy's run only inside a turn's phase, where it stops a run that asks through
-     * the stock T3 server in the copy; the registry holds no driver for it.
+     * The driver of a copy turn's thread. Orbit stops a copy's run only inside a turn's phase, through the stock T3 server in the copy:
+     * a run that asks, a run cut by the turn's bound, and the run of an earlier turn that is over in Orbit. The registry holds no driver
+     * for it.
      */
     public const string Driver = 't3';
 
@@ -126,15 +127,16 @@ final readonly class TaskCopyTurn
     }
 
     /**
-     * Refuses a check, a publish or a proof of the copy while an earlier turn is not settled: none of them can read T3 in the copy. The
-     * next turn settles it in its own phase.
+     * Refuses a check, a publish or a proof of the copy while an earlier turn is not settled: none of them can read T3 in the copy. It
+     * waits for the next turn, which stops the earlier run and settles it in its own phase.
      */
     public static function refuseUnended(Task $group): void
     {
         $unended = self::unsettled($group)[0] ?? null;
         if ($unended instanceof Operation) {
             throw new ResourceOperationException('tasks.copy_turn_unended', 'An earlier turn may still run in the task copy or left its checkout unrestored. '
-                .'The next task:turn settles it once its run ended; task:cancel ends it with the copy.', 409, details: ['operation_id' => $unended->id]);
+                .'A check, publish or proof waits for the next task:turn, which stops that run and settles it. operation:cancel ends a running turn, '
+                .'and the next turn stops its run.', 409, details: ['operation_id' => $unended->id]);
         }
     }
 
