@@ -40,13 +40,14 @@ final readonly class NodeConvergePhaseDigest
     }
 
     /**
-     * The digests a converge compares with: none when the caller asks for `--full` or the Node has no record.
+     * The digests a converge compares with: none when the caller asks for `--full`, the Node has no record, or an agent command recorded
+     * a failed agent pin since the record. That command took no admission lock, and the converge it asks for must install the agent again.
      *
      * @return array<string,string>
      */
     public function recorded(Node $node, bool $full): array
     {
-        return $full ? [] : array_map(ValidatedData::string(...), $node->converge_digests ?? []);
+        return $full || $node->agent_failed_pin !== null ? [] : array_map(ValidatedData::string(...), $node->converge_digests ?? []);
     }
 
     /**

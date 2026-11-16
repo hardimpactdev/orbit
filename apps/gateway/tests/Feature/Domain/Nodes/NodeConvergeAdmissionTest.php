@@ -492,6 +492,15 @@ it('sends the recorded phase digests and a phase input that does not move with t
         ->and($second->input['_converge']['intent']['recorded_digests'])->toBe([]);
 })->with(['recorded' => false, 'full' => true]);
 
+it('compares with no recorded digest while the Node records a failed agent pin', function (): void {
+    // An agent command records the pin outside any admission lock; the converge that repairs it must run the agent phase.
+    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode(['agent' => str_repeat('a', 64)]), 'agent_failed_pin' => str_repeat('c', 64)]);
+
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
+
+    expect(Operation::query()->sole()->input['_converge']['intent']['recorded_digests'])->toBe([]);
+});
+
 it('clears the recorded phase digests when another Operation takes the Node admission lock', function (): void {
     $this->node->update(['tld' => 'target.test']);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
