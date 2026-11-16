@@ -168,7 +168,6 @@ it('sends repeatable provision settings and rejects invalid setting input locall
     expect($mockClient->getRecordedResponses()[0]->getPendingRequest()->getRequest()?->body()->all()['settings'] ?? null)
         ->toBe([
             'apps' => ['path' => '/srv/orbit:data/apps'],
-            'task_vms' => null,
         ]);
 
     MockClient::destroyGlobal();
@@ -181,6 +180,14 @@ it('sends repeatable provision settings and rejects invalid setting input locall
             '--setting' => ['packages.path:/srv/a'],
         ])
         ->expectsOutputToContain('Unknown setting')
+        ->assertExitCode(1);
+    $this
+        ->artisan('node:add', [
+            'name' => 'app-dev',
+            'host' => '94.237.40.75',
+            '--setting' => ['task_vms:{"cidr":"10.251.77.0/24","task_places":1,"ci_places":0}'],
+        ])
+        ->expectsOutputToContain('Unknown setting [task_vms].')
         ->assertExitCode(1);
 
     expect($mockClient->getLastPendingRequest())->toBeNull();

@@ -4,20 +4,17 @@ declare(strict_types=1);
 
 namespace App\Support;
 
-use JsonException;
 use Orbit\Sdk\Requests\Nodes\CiPlacesInput;
 use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeSettings;
-use Orbit\Sdk\Responses\Nodes\TaskVmsSettings;
-use stdClass;
 
 final readonly class NodeSettingOptions
 {
     /** @var list<string> */
-    private const array KNOWN = ['apps.path', 'task_vms'];
+    private const array KNOWN = ['apps.path'];
 
     /**
-     * @return array{ok: true, provided: bool, body: array{apps?: array{path: string}|null, task_vms?: array<string, mixed>|null}}|array{ok: false, code: string, message: string}
+     * @return array{ok: true, provided: bool, body: array{apps?: array{path: string}|null}}|array{ok: false, code: string, message: string}
      */
     public static function parse(mixed $options): array
     {
@@ -60,53 +57,18 @@ final readonly class NodeSettingOptions
 
             $seen[$key] = true;
 
-            if ($key === 'task_vms') {
-                $host = self::parseTaskVms($value);
-                if ($host['ok'] === false) {
-                    return $host;
-                }
-                $body['task_vms'] = $host['value'];
-            } else {
-                $body['apps'] = $value === '' ? null : ['path' => $value];
-            }
+            $body['apps'] = $value === '' ? null : ['path' => $value];
         }
 
         return ['ok' => true, 'provided' => true, 'body' => $body];
     }
 
-    /** @param array{apps?: array{path: string}|null, task_vms?: array<string, mixed>|null} $body */
+    /** @param array{apps?: array{path: string}|null} $body */
     public static function settings(array $body): NodeSettings
     {
         return new NodeSettings(
             apps: array_key_exists('apps', $body) ? self::apps($body['apps']) : null,
-            task_vms: self::taskVms($body['task_vms'] ?? null),
         );
-    }
-
-    /**
-     * Reads the task VM host settings: a typed JSON object, or `null` or an empty value to remove them.
-     *
-     * @return array{ok: true, value: array<string, mixed>|null}|array{ok: false, code: string, message: string}
-     */
-    public static function parseTaskVms(string $value): array
-    {
-        if ($value === '' || $value === 'null') {
-            return ['ok' => true, 'value' => null];
-        }
-        try {
-            $decoded = json_decode($value, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return self::invalidTaskVms();
-        }
-        if (! $decoded instanceof stdClass || ! self::validTaskVms(get_object_vars($decoded))) {
-            return self::invalidTaskVms();
-        }
-        $host = get_object_vars($decoded);
-        if (($host['containers'] ?? null) instanceof stdClass) {
-            $host['containers'] = get_object_vars($host['containers']);
-        }
-
-        return ['ok' => true, 'value' => $host];
     }
 
     /**
@@ -130,60 +92,6 @@ final readonly class NodeSettingOptions
         $input = new CiPlacesInput(is_string($places) ? (int) $places : null, $proofOnly ? true : ($notProofOnly ? false : null));
 
         return ['ok' => true, 'provided' => $input->toArray() !== [], 'value' => $input];
-    }
-
-    public static function taskVms(mixed $value): ?TaskVmsSettings
-    {
-        return is_array($value) ? TaskVmsSettings::fromGatewayData($value) : null;
-    }
-
-    /** @param array<string, mixed> $value */
-    private static function validTaskVms(array $value): bool
-    {
-        $strings = ['cidr', 'project', 'network', 'pool', 'pool_size', 'image_alias', 'memory', 'disk'];
-        $integers = ['task_places', 'ci_places', 'cpus'];
-        if (! is_string($value['cidr'] ?? null) || ! is_int($value['task_places'] ?? null) || ! is_int($value['ci_places'] ?? null)) {
-            return false;
-        }
-        foreach ($value as $key => $item) {
-            $valid = match (true) {
-                in_array($key, $strings, true) => is_string($item),
-                in_array($key, $integers, true) => is_int($item),
-                $key === 'zfs_dataset' => $item === null || is_string($item),
-                $key === 'operator_owned' => is_array($item) && array_is_list($item) && array_all($item, fn (mixed $resource): bool => is_string($resource)),
-                $key === 'containers' => $item instanceof stdClass && self::validContainers(get_object_vars($item)),
-                default => false,
-            };
-            if (! $valid) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * The task container side: task places and bridge network, with an optional project and bridge name. It has no CI places.
-     *
-     * @param  array<string, mixed>  $value
-     */
-    private static function validContainers(array $value): bool
-    {
-        if (! is_string($value['cidr'] ?? null) || ! is_int($value['task_places'] ?? null)) {
-            return false;
-        }
-
-        return array_all($value, static fn (mixed $item, string $key): bool => match ($key) {
-            'cidr', 'project', 'network' => is_string($item),
-            'task_places' => is_int($item),
-            default => false,
-        });
-    }
-
-    /** @return array{ok: false, code: string, message: string} */
-    private static function invalidTaskVms(): array
-    {
-        return ['ok' => false, 'code' => 'node.setting_invalid', 'message' => 'task_vms must be a typed JSON host object or null.'];
     }
 
     public static function apps(mixed $value): ?AppsSettings
