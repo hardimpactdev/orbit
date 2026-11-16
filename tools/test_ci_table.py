@@ -96,7 +96,7 @@ ROOT = plan.ROOT
 # Infrastructure, not checks: explicit exceptions so new jobs cannot evade the table.
 NON_CHECKS = {'changes', 'gateway-release', 'required', 'cli-release', 'proof-run', 'proof-eligibility', 'delivery', 'main-required', 'fixture-report'}
 OTHER_DEPENDENCIES = {'required', 'cli-release', 'proof-run', 'delivery', 'main-required', 'fixture-report'}
-PROOF_GATE_TIMEOUT = "${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' && 275 || 2 }}"
+PROOF_GATE_TIMEOUT = "${{ vars.ORBIT_PROOF_ENABLED == 'true' && github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' && 275 || 2 }}"
 FIXTURES_CONDITION = "${{ !inputs.changed-only && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}"
 
 
