@@ -11,24 +11,32 @@ orbit task:cancel [task] [--yes] [--discard] [--idempotency-key=KEY] [--json]
 | Option | Meaning |
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. It never discards work. |
-| `--discard` | Destroy a task copy that holds work origin lacks, or whose workspace cannot be read. The API and MCP field is `discard: true`. |
+| `--discard` | Destroy a task copy that holds work that is not on the default branch or published, or whose workspace cannot be read. The API and MCP field is `discard: true`. |
 | `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
 
-In a terminal, the task list leaves out `settling`, `waiting_for_review`, and `completed` tasks. Before it asks, the CLI reads the task and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the task. A `completed` task, or a `settling` task with a pull request, fails with `tasks.not_cancellable`; complete a settling task instead. Pass the task ID to cancel a `settling` task without a pull request. When the task holds a workspace or a task VM, origin's task branch must already reach its latest approved commit. Otherwise the call fails with `tasks.approved_work_unpublished`, names the commit, and changes nothing; run [`task:publish`](/cli/task/publish) first, which resumes a parked VM. A failed GitHub read fails the same way. The [tasks reference](/reference/tasks#cancel-a-stuck-task) describes the rule.
+In a terminal, the task list leaves out `settling`, `waiting_for_review`, and `completed` tasks. Before it asks, the CLI reads the task and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the task. A `completed` task, or a `settling` task with a pull request, fails with `tasks.not_cancellable`; complete a settling task instead. Pass the task ID to cancel a `settling` task without a pull request. When the task holds a workspace or a task VM, origin's task branch must already reach its latest approved commit, or, for a task copy, the copy's latest read must find that commit's work on the default branch. Otherwise the call fails with `tasks.approved_work_unpublished`, names the commit, and changes nothing; run [`task:publish`](/cli/task/publish) first, which resumes a parked VM. A failed GitHub read fails the same way. The [tasks reference](/reference/tasks#cancel-a-stuck-task) describes the rule.
 
 When the task has a running Operation, such as its task start, the cancel asks it to stop and answers `operation.target_busy` with its id if it is still running. Run the cancel again once that Operation has ended. An Operation that timed out can still hold the task while nothing proves that its run ended, for up to an hour. The cancel then answers `operation.target_busy` with its id too, before it admits the destroy of the task's copy.
 
 When the task owns a task copy (see [`task:start`](/cli/task/start#a-task-copy)), the cancel first reads the copy's workspace. The read gives `unpushed` commits, `uncommitted`, `modified`, `untracked` and `stashes` counts and the `head`. A stopped or unreachable copy reads `state: unknown` with its `reason`.
 
-Before `task:publish`, the task branch exists only in the copy, so the cancel guards that work:
+Committed work counts as published when its content is on the default branch, or in a commit that a succeeded `task:publish` of the task pushed. Commit SHAs do not matter, so a squash-merged or hand-carried branch is published. The copy's content read decides: the [`task:sync`](/cli/task/sync) of the copy makes it, and the cancel uses it when it is of the copy's current head. The [tasks reference](/reference/tasks#published-work-of-a-copy) defines the rule. The read's details keep the commits it counted as `commits`, and the verdict as `work`:
+
+| `work` | Meaning |
+| --- | --- |
+| `on_default` | Every committed change of the checked-out branch is on the default branch or published. That branch's own commits do not count as `unpushed`. |
+| `work_not_on_default` | A committed path differs from the default branch. |
+| `work_unread` | No content read is of the copy's current head. Run `task:sync`, then cancel again. |
+
+The cancel guards the work that only the copy holds:
 
 | Copy reads | Without `--discard` | With `--discard` |
 | --- | --- | --- |
 | `clean` | The cancel goes on. | The cancel goes on. |
-| `dirty`: unpushed commits, uncommitted or untracked files, or stashes | HTTP 409 `tasks.copy_unpublished_work`. Its details carry the counts and the `head`. | The cancel goes on and the work goes with the copy. |
+| `dirty`: unpublished commits, uncommitted or untracked files, or stashes | HTTP 409 `tasks.copy_unpublished_work`. Its details carry the counts, the `head` and `work`. | The cancel goes on and the work goes with the copy. |
 | `unknown` | HTTP 409 `tasks.copy_workspace_unknown`. Its details carry the `reason`. | The cancel goes on. |
 
-`--yes` only confirms the question; it never means discard. Both refusals come before the cancel stops running work, so they change nothing. A copy never fetches, so the read also counts as on origin every commit that a succeeded `task:publish` of the task pushed, and its history. A published copy with no later work reads `clean`; a commit made after the publish still counts.
+`--yes` only confirms the question; it never means discard. Both refusals come before the cancel stops running work, so they change nothing. Uncommitted and untracked files, stashes, and commits that only another local branch holds always count. `work` is empty when the checked-out branch holds no counted commit.
 
 The read runs before the task's lock. A commit made in the copy between the read and the destroy, by a T3 run that outlived its Operation or a direct reply in the copy's T3, goes with the copy without `--discard`.
 

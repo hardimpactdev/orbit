@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: docs/reference/tasks.md#complete-and-cleanup. Orchestrator 2026-11-08: keeping approved work is a precondition of completion, not a step of it. Orchestrator 2026-11-14: a task copy goes through its normal instance.destroy, as on cancel. 2026-11-15: the task VMs and their release are removed (docs/reference/old-paths.md).
+  %% Target design: docs/reference/tasks.md#complete-and-cleanup. Orchestrator 2026-11-08: keeping approved work is a precondition of completion, not a step of it. Orchestrator 2026-11-14: a task copy goes through its normal instance.destroy, as on cancel. 2026-11-16 (group 5615): a copy group whose committed work is on the default branch completes without an ended watched pull request (a hand-carry); the copy's content read decides, and an empty group still needs cancel. 2026-11-16 (group 5615, subtask 2): complete reads the copy first and never destroys one that holds uncommitted, untracked, stashed or other-branch work; a copy group whose watched pull request merged completes by itself from the task:copy-settle tick, in every Project. 2026-11-15: the task VMs and their release are removed (docs/reference/old-paths.md).
   %% status: draft
   %% command: task:complete
   %% kind: tasks.complete
@@ -16,22 +16,36 @@ sequenceDiagram
   %%> - syntax: `[task] [--yes] [--json]`
   %%> Requirements:
   %%> - the group is `settling` or `waiting_for_review`, or `running` or `reviewing` with a watched pull request that merged or closed; a `completed` group retries its removal
+  %%> - or a `running` or `reviewing` group with a task copy and no ended watched pull request, whose latest content read (`work`, of a `task:sync`) is of the copy's current head, found every committed path on the default branch, and is not `empty`: its work was carried to the default branch by hand
+  %%> - otherwise HTTP 409 `tasks.not_settling`, whose `reason` detail says why: `status`, `pull_request_not_ended`, `work_unread` (run `task:sync` first), `work_not_on_default` or `work_empty` (cancel the group instead)
   %%> - your Node has an access grant to the Gateway
+  %%> - the `task:copy-settle` tick runs this same completion by itself, every five minutes in every Project, for a copy group whose watched pull request merged; it reads the pull request and records `merged` and `merged_at` first, so this completion reads it no more; it skips a group with an open Operation, or whose copy an Operation holds, and the next tick tries again
   GW->>GH: Compare the task branch<br/>approved...task-42
   %%> What it does:
   %%> - resolves the group's latest approved commit: the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval
   %%> - reads origin's task branch head and compares it with that commit, with a `contents: read` token
   %%> - only when GitHub answers that the branch does not exist (404) and the group's pull request merged does that pull request's head stand in; the pull request is read with a `pull_requests: read` token
   %%> - skipped when the group has no approval, or holds no workspace
+  %%> - for a task copy, content on the default branch counts too: the copy's latest content read (`work`, of a `task:sync`) is of the copy's current head, holds the approved commit in its history and found every committed path on the default branch
   %%> Why:
   %%> - the destroy deletes the copy, and a commit that only the copy holds would go with it
   GH-->>GW: Branch reaches it
   %%> Result:
   %%> - otherwise completion refuses with HTTP 409 `tasks.approved_work_unpublished`, names the commit and the branch, and changes nothing: run `task:publish` first
   %%> - every other outcome refuses the same way: a GitHub read that fails, a branch that is gone without a merged pull request
+  opt the task owns a task copy
+  Note over GW: Read the copy's workspace<br/>one SSH read · as on cancel
+  %%> What it does:
+  %%> - reads what the copy holds beyond origin and the default branch, as `task:cancel` does (docs/reference/tasks.md#published-work-of-a-copy)
+  %%> - skipped for a group that is already `completed`: the completion that ended it read the copy
+  %%> Result:
+  %%> - a copy that holds uncommitted, untracked, stashed or other-branch work refuses with HTTP 409 `tasks.copy_unpublished_work` and the read's counts, and changes nothing
+  %%> - a copy that cannot be read refuses with HTTP 409 `tasks.copy_workspace_unknown`
+  %%> - the settle tick does not destroy the copy: it records `failure` assistance once for unpublished work or a stopped, asleep or broken copy, and retries any other refusal, such as a read that timed out, on its next tick
+  end
   Note over GW: Complete the group<br/>stop work · subtasks cancelled
   %%> What it does:
-  %%> - stores how the watched pull request ended, stops the running implementer, reviewer and checks, and marks the group `completed`
+  %%> - stores how the watched pull request ended, if one did, stops the running implementer, reviewer and checks, and marks the group `completed`
   %%> - a group without a workspace ends here
   %%> - a group that still holds a workspace that is no task copy (a task VM workspace) is `completed` too, and asks for `removal_failure` assistance: task VMs and their release are removed, so nothing removes that workspace
   alt the task owns a task copy
@@ -41,7 +55,7 @@ sequenceDiagram
   %%> What it does:
   %%> - admits the normal `instance.destroy` of the copy with force, the destroy that `task:cancel` admits
   %%> Why:
-  %%> - origin already has the approved work, which the compare above proved, so complete needs no `--discard`: what else the copy holds goes with it
+  %%> - origin already has the approved work, which the compare or the content read above proved, and the workspace read found nothing else, so complete needs no `--discard`
   %%> Result:
   %%> - the group is `completed` at once and still names the copy; when the destroy succeeds the group lets go of it and stays `completed`
   %%> - when the destroy fails, the group stays `completed` and keeps the copy; a later complete admits the destroy again

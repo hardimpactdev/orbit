@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: orchestrator 2026-11-08: keeping approved work is a precondition of the cancel, not a step of it. 2026-11-15: the task VMs and their release are removed (docs/reference/old-paths.md); a cancel starts no run. 2026-11-16: the place release workflows are deleted; `operation-task-cancel` keeps its inputs and its end check, and calls no release.
-  %% Orchestrator 2026-11-13: a task copy ends through its Instance destroy. Orchestrator 2026-11-14: work that only the copy holds, or a copy that cannot be read, refuses the cancel unless the caller discards it; the cancel is recorded under the group lock, in one transaction with the destroy's admission, after the destroy's reads. A commit a publish pushed counts as on origin.
+  %% Orchestrator 2026-11-13: a task copy ends through its Instance destroy. Orchestrator 2026-11-14: work that only the copy holds, or a copy that cannot be read, refuses the cancel unless the caller discards it; the cancel is recorded under the group lock, in one transaction with the destroy's admission, after the destroy's reads. A commit a publish pushed counts as on origin. 2026-11-16 (group 5615): published means content on the default branch, not commit SHAs: the copy's content read, made by the `base` phase that task:sync runs, decides for committed work, so a squash-merged or hand-carried copy cancels without discard.
   %% status: draft
   %% command: task:cancel
   %% kind: tasks.cancel
@@ -19,6 +19,7 @@ sequenceDiagram
   %%> - reads origin's task branch head and compares it with that commit, with a `contents: read` token
   %%> - only when GitHub answers that the branch does not exist (404) and the group's pull request merged does that pull request's head stand in; the pull request is read with a `pull_requests: read` token
   %%> - skipped when the group has no approval, or holds no workspace
+  %%> - for a task copy, content on the default branch counts too: the copy's latest content read (`work`, of a `task:sync`) is of the copy's current head, holds the approved commit in its history and found every committed path on the default branch
   GH-->>GW: Branch reaches it
   %%> Result:
   %%> - otherwise the cancel refuses with HTTP 409 `tasks.approved_work_unpublished`, names the commit and the branch, and admits nothing: run `task:publish` first
@@ -29,8 +30,9 @@ sequenceDiagram
     %%> - one SSH call to the copy's Node, bounded at 4 s, reads what the copy holds beyond its seed: commits that origin lacks, uncommitted, untracked and stashed files
     %%> - a copy never fetches, so the commits that the group's publishes pushed are named to the read as on origin, with their history
     %%> - a stopped or unreachable copy reads `unknown` with its reason
+    %%> - committed work counts by content, not by commit id: when the copy's latest content read (`work` of a `task:sync`, docs/reference/tasks.md#published-work-of-a-copy) is of the head this read sees and found every committed path on the default branch, the checked-out branch's own commits count as published, as after a squash merge or a hand-carry; a commit that only another local branch holds still counts
     %%> Result:
-    %%> - unless the caller discards the work, a copy that holds work (`dirty`: unpushed commits, uncommitted or untracked files, stashes) refuses the cancel with HTTP 409 `tasks.copy_unpublished_work`; its details carry the counts and the head
+    %%> - unless the caller discards the work, a copy that holds work (`dirty`: unpublished commits, uncommitted or untracked files, stashes) refuses the cancel with HTTP 409 `tasks.copy_unpublished_work`; its details carry the counts, the head, the commits the read counted and the content verdict `work`: `on_default`, `work_not_on_default`, or `work_unread` when no content read is of this head (run `task:sync`, then cancel again)
     %%> - unless the caller discards it, a copy that cannot be read (`unknown`) refuses with HTTP 409 `tasks.copy_workspace_unknown`, naming the reason
     %%> - a `clean` copy goes on; both refusals come before the cancel stops running work, so they change nothing
     Note over GW: Record, then admit destroy<br/>one transaction · group lock
