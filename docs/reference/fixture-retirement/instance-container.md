@@ -1,11 +1,13 @@
 ---
 title: "Fixture retirement: instance containers"
-description: "How each case of the instance-container fixtures moves to a proof case, is designed away or is dropped, for ADR 0262 step 3. It also lists the proof infrastructure that the new cases need."
+description: "Status: kept as fixtures until the math fits. How each case of the instance-container fixtures would move to a proof case, and the proof infrastructure and wall time that the move needs."
 ---
 
 # Fixture retirement: instance containers
 
-[ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) retires the shape-gate fixtures. This page classifies each case of the first family:
+**Status: kept as fixtures until the math fits.** The proof of these cases does not fit in the five minutes that a pull request may take ([Implementation loop](/reference/implementation-loop)). So the three fixture files and their registries stay as they are. This page records what the move would need, so that a later decision can start from it. See [The five-minute math](#the-five-minute-math).
+
+[ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) retires the shape-gate fixtures. This page classifies each case of the first family that it reviewed:
 
 - `swamp/tests/ansible_instance_container_test.ts` (80 cases)
 - `swamp/tests/ansible_instance_container_destroy_test.ts` (4 cases)
@@ -21,7 +23,7 @@ Each case gets one class.
 | --- | --- |
 | **New** | A new [proof case](/reference/verification-cases) takes the case over. The row names the command and the case id. |
 | **Covered** | A proof case that another row of this page adds also checks this effect. |
-| **Copy path** | A nested-fleet or proof-copy behaviour. Every proof run uses it, but the proof fleet cannot host it. See [Open](#open). |
+| **Copy path** | A nested-fleet or proof-copy behaviour. It stays a fixture case under the [exception of ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#exception-the-code-that-makes-the-proof-copy). |
 | **Designed away** | A rare situation that the design makes impossible. The row says how. |
 | **Dropped** | A rare situation that a proof copy cannot make on demand, such as a fault or a crash between two calls. The row says why. |
 | **Pure-code** | Code with no playbook, workflow run or Node behind it. It stays as a quick check until the owner decides ADR 0262's open question. |
@@ -232,19 +234,37 @@ The cases need five new steps.
 
 This is an estimate. No proof Node can host a container yet, so nothing is measured.
 
-- A batch starts with the restore of `base`, then its setup.
+- A batch starts with the restore of `base` and the preparation of the fleet, then its setup.
 - A create from the image takes some minutes: the checkout, the deploy steps and the seed.
 - A clone, a sleep or a wake takes tens of seconds. A deployment takes about a minute.
 - A batch of eight to ten cases takes about 10 to 15 minutes.
 
-The 33 cases fill about six batches. CI balances them over its copies.
+The 33 cases fill about six batches. On a pull request that selects all of them, the proof takes about 15 minutes of wall time.
+
+## The five-minute math
+
+A pull request's proof fits in five minutes only when its slowest batch fits. The wall time of one pull request's proof is about:
+
+`restore + preparation + setup + (selected cases × case time) / (places × hosts per copy)`
+
+The terms are these:
+
+| Term | Today | What would make it fit |
+| --- | --- | --- |
+| Restore of `base` | Some seconds | Nothing to change |
+| Preparation | The observer install and its wait on every batch, bounded by its budget in [Verification cases](/reference/verification-cases) | A base snapshot that holds the candidate's observers, so a batch only waits for the report |
+| Setup | A create from the image: some minutes | A base snapshot with the inner Incus, the prepared image and the `proof-web` default with its seed. Setup then makes only clones |
+| Case time | Tens of seconds for a clone, a sleep or a wake; about a minute for a deployment | Nothing to change: the cases run the real operation |
+| Cases per batch | 8 to 10 | About 4 deployments, or 6 clone, sleep or wake cases, so that the cases fit in the time left after restore and preparation |
+| Places | The free proof places of the CI Nodes when the pull request runs | One free place for each batch of the selection |
+| Hosts per copy | 1: only `app-dev` hosts Instances, and every case is a writer there | 2: `app-prod` also hosts Instances, so two writers run at the same time |
+| Selected cases | All 33 for a change to `swamp/ansible/instance-container.yml`, which every phase shares | A selection by phase: a change to the sleep phase selects the sleep and wake cases only |
+
+All four changes are needed together. Then the full selection is about eight batches of under five minutes, which needs eight free places. A narrow selection needs one or two.
 
 ## Open
 
-The owner decides these questions.
+The owner decides these questions when the math is taken up again.
 
-- **Copy path.** 24 cases test the nested fleet and the proof copy, such as the inner volume, the Club key and the CI place.
-- **Why the copy path has no proof target.** A proof copy cannot hold another nested fleet. The released code makes the copy, not the candidate.
-- **Where the copy path is proven.** One option: a pull request that changes this path makes its own proof copies with the candidate's code.
 - **Pure-code.** The 2 pure-code cases wait for the open question of ADR 0262.
 - **Fixture source.** The nested Gateway must read the fixture Projects without a GitHub App. Options: a public repository through the egress proxy, or a Git server in the fleet.
