@@ -69,6 +69,7 @@ cases:
 
   - id: ci-places-role-required
     batch: fresh-fleet
+    read_only: true
     covers: [ci-role-missing]
     summary: CI places on a Node without an active ci-runner role are refused, and nothing changes. Clearing them is allowed on any Node and, with nothing stored, writes nothing.
     act:

@@ -21,7 +21,8 @@ final readonly class SwampScheduledResults
     /** A first read, with no saved read time, goes back this far. */
     private const int FirstReadMinutes = 10;
 
-    /** Finished runs are read back over this span, so a long run that ends later and a short Gateway outage lose nothing. */
+    /** Finished runs are read back over this span before the read, so a long run that ends later and a short Gateway outage lose
+     * nothing. It never counts from an older saved read: an older result cannot be read back, and its `done` mark may have expired. */
     private const int WindowMinutes = 60;
 
     /** A queued projection is not queued again for this long; a projection that failed is tried again after it. */
@@ -54,8 +55,9 @@ final readonly class SwampScheduledResults
         }
         $started = Carbon::now();
         $saved = Cache::get($this->key('cursor'));
-        // With no saved read, only recent runs are listed: their results are still in Swamp.
-        $since = is_string($saved) ? Carbon::parse($saved)->subMinutes(self::WindowMinutes) : $started->copy()->subMinutes(self::FirstReadMinutes);
+        // With no saved read, only recent runs are listed: their results are still in Swamp. A saved read only says that this is not
+        // the first: a Gateway that starts again from an older state (a restored snapshot) must not queue every run since then.
+        $since = $started->copy()->subMinutes(is_string($saved) ? self::WindowMinutes : self::FirstReadMinutes);
         $runs = $this->step->finishedRuns($since->utc()->format('Y-m-d\TH:i:s.v\Z'));
         $completed = static fn (array $run): string => is_string($run['completedAt'] ?? null) ? $run['completedAt'] : '';
         usort($runs, static fn (array $left, array $right): int => strcmp($completed($left), $completed($right)));

@@ -1,4 +1,4 @@
-"""Copy converge deadlines and complete receipts when its Operation may outlive the CLI."""
+"""Copy deadlines of the Node Operation commands and complete receipts when their Operation may outlive the CLI."""
 import contextlib
 import io
 import json
@@ -21,13 +21,13 @@ from test_parallel import BATCHES, load_text
 HEADER = 'command: node:converge\nchart: node/converge\ntarget: app-dev\nparallel: 1\nsources: [gateway, app-prod]\nbaseline: []\n'
 
 
-def case(name, setup=False):
+def case(name, setup=False, command='node:converge'):
     return f'''  - id: {name}
     batch: fresh-fleet
     covers: [main]
     summary: Converge a copy Node.
     {'setup' if setup else 'act'}:
-      - cli: {{run: [node:converge, "211"], expect: {{exit: 0}}}}
+      - cli: {{run: [{command}, "211"], expect: {{exit: 0}}}}
 ''' + ('    act: []\n' if setup else '') + '    expect: []\n'
 
 
@@ -37,7 +37,7 @@ def transport():
 
 
 class ConvergeTimeoutTest(unittest.TestCase):
-    def test_copy_outer_and_nested_converge_get_600_but_vm_and_other_commands_keep_240(self):
+    def test_copy_outer_and_nested_node_operations_get_600_but_vm_and_other_commands_keep_240(self):
         for shift in ('true', 'false'):
             calls = []
 
@@ -50,7 +50,7 @@ class ConvergeTimeoutTest(unittest.TestCase):
                 for node in (None, 'app-prod'):
                     for command in ('node:converge', 'node:list', 'node:role:add'):
                         target.cli([command, '211'], node=node)
-                        self.assertEqual(calls[-1][1], 600 if command == 'node:converge' and shift == 'false' else 240)
+                        self.assertEqual(calls[-1][1], 600 if command != 'node:list' and shift == 'false' else 240)
                 target.cli(['doctor'], timeout=40)
                 self.assertEqual(calls[-1][1], 40)
             self.assertEqual(sum(argv[-1] == 'shift' for argv, _ in calls), 1)
@@ -115,7 +115,9 @@ class ConvergeTimeoutTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
 
     def test_timeout_in_setup_or_act_stops_later_cases_and_writes_every_receipt(self):
-        for setup in (True, False):
+        # Proof 25268 (release 2120): node:role:add timed out at 240 s, the batch went on, and the next case failed at 'Apply role
+        # prerequisites' beside the Operation that still ran.
+        for setup, command in ((True, 'node:converge'), (False, 'node:converge'), (False, 'node:role:add')):
             calls = []
 
             def invoke(argv, **kwargs):
@@ -126,7 +128,7 @@ class ConvergeTimeoutTest(unittest.TestCase):
 
             with tempfile.TemporaryDirectory() as directory:
                 source = Path(directory) / 'converge.cases.yaml'
-                source.write_text(HEADER + 'cases:\n' + case('times-out', setup) + case('later') + case('last'))
+                source.write_text(HEADER + 'cases:\n' + case('times-out', setup, command) + case('later') + case('last'))
                 out = io.StringIO()
                 with patch.object(fleet, 'from_environment', return_value=transport()), patch.object(fleet.subprocess, 'run', invoke), \
                         contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):

@@ -173,10 +173,13 @@ final readonly class ProofCopies
             ?? throw new ResourceOperationException('tasks.no_workspace', 'The task group of the proof run owns no copy.', 409);
         $verify = app(ProofVerifyIntent::class)->captureCopy($group, $copy, ValidatedData::string($input['command']));
         $verifications = [];
+        // The first batch resets the fleet, and so does each batch after one that could change it: a read-only batch leaves it at `base`.
+        $base = false;
         foreach (ProofBatchPlan::stored($input['assignments']) as $index => $assignment) {
             $verifications[] = [...$verify, 'command' => $assignment['command'], 'file' => $assignment['file'],
                 'batch' => $assignment['batch'], ...($assignment['cases'] === [] ? [] : ['case_ids' => $assignment['cases']]),
-                'step' => 'Prove assigned batches-'.$index, 'restore_first' => true];
+                'step' => 'Prove assigned batches-'.$index, 'restore_first' => ! $base];
+            $base = $assignment['read_only'];
         }
         $steps = app(DevelopmentDeploySteps::class)->capture($group->project);
         $repository = $this->settings->repository();
