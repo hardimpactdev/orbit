@@ -1225,7 +1225,7 @@ Swamp requests a baseline before implementation when its workflow calls for one.
 
 ### Scoped task check
 
-The Orbit Project whose default Instance is a container uses `bin/task-check` as its check. The candidate gate, `bin/review-check`, checks all five Composer projects and does not fit a handoff in a copy. `bin/task-check` checks only what the task changed since its start commit, and stays under five minutes.
+The Orbit Project whose default Instance is a container uses `bin/task-check` as its check. The candidate gate, `bin/review-check`, checks all five Composer projects and does not fit a handoff in a copy. `bin/task-check` checks what the task changed since its start commit, as CI checks it, within a 15-minute budget.
 
 A person sets it on the Project once, after the release that ships the command. `orbit project:update` takes the numeric Project id; the Orbit container Project is 78:
 
@@ -1233,7 +1233,7 @@ A person sets it on the Project once, after the release that ships the command. 
 orbit project:update 78 --task-check=bin/task-check
 ```
 
-Orbit runs every task check with `ORBIT_CHECK_PROCESSES=1`, whatever the copy's CPU count, so the check runs PHPStan and Pest in one process. Its five-minute budget holds at that value.
+Orbit runs every task check with `ORBIT_CHECK_PROCESSES=1`, whatever the copy's CPU count, so the check runs PHPStan, Pest and the fixture units in one process. Its 15-minute budget holds at that value; fixture units it does not reach run in the next check of the same tree.
 
 Another Project that develops Orbit sets the same setting on its own id. Its copy must hold what the parts run: the vendor folders of the Composer projects, Deno for the Swamp parts and Node for the flow charts. A seeded copy holds them; the command installs nothing. Project 46 keeps `composer check` as its task check, as [its task policy](/reference/instance-setup#configure-orbits-task-policy) states.
 
@@ -1266,7 +1266,7 @@ When a page is neither changed nor waived, the part's output names the file and 
 
 #### Parts
 
-[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. The `ci-policy` part runs the CI policy tests, `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, when the change touches what those tests read: the CI registry and its fixture tomls, the workflows, the CI scripts or a Swamp test file. It runs before Pest and the fixtures and prints the same summary line as every part.
+[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. The `ci-policy` part runs the CI policy and budget tests on every change, as CI's "Select build inputs" job runs them. It runs before Pest and the fixtures and prints the same summary line as every part. The `fixtures` part does not pass while a runnable unit of CI's fixture plan has not passed for the candidate tree.
 
 Within a selected Pest job, the check runs the project's changed test files and its pin test files: the Gateway and CLI tests that pin a whole intent, digest or command surface, such as `GatewayRuntimeFilesTest` and `CommandSurfaceTest`. A change far from such a test can break it, so the check runs them whenever CI selects their project's Pest job, and a handoff check finds what CI's full suite finds on them. The `PIN_TESTS` table in `bin/task-check` lists them.
 

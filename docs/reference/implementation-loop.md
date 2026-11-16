@@ -657,12 +657,12 @@ Before it writes, the gate removes the `review-*` directories its own Unix user 
 
 ### The scoped task check
 
-`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks what the task changed since its start commit, and the pin tests of the Pest jobs that change selects, so it catches in the copy what CI would otherwise catch after the push. It runs in under five minutes.
+`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks what the task changed since its start commit, and the pin tests of the Pest jobs that change selects, so it catches in the copy what CI would otherwise catch after the push. A passed check means CI passes the same parts: each part runs as CI runs it, with CI's limits. It runs within a 15-minute budget.
 
 ```bash
 bin/task-check                    # against the start commit
 bin/task-check --base REF         # against another start commit
-bin/task-check --budget 200       # seconds for the whole run (default 270)
+bin/task-check --budget 600       # seconds for the whole run (default 900)
 bin/task-check --only pest,phpstan
 ```
 
@@ -676,23 +676,20 @@ The [start commit](/reference/tasks#start-commit) has one rule, which the tasks 
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
 | `phpstan <project>` | The plan selects the project's static job | `vendor/bin/phpstan analyse` with the project's `phpstan.neon`, on the changed PHP files inside the paths that config analyses |
 | `swamp-shape` | The plan selects the Swamp checks | `bin/swamp-shape-gate --only control`, the static controls that CI's shape job runs, in a checkout of the candidate |
-| `ci-policy` | A path that the CI policy tests read changed (see below) | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, the CI policy tests that CI's `changes` job runs on every PR |
+| `ci-policy` | Always | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy and budget tests that CI's "Select build inputs" job runs on every PR |
 | `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
 | `pest <project>` | The plan selects the project's Pest job | See below |
-| `fixtures` | `bin/ci-units plan` plans units | The planned units that fit the budget, through `bin/ci-units run`. A unit whose declared host program is missing does not run |
+| `fixtures` | `bin/ci-units plan` plans units | Every planned unit that has not passed for this tree, through `bin/ci-units run`. A unit whose declared host program is missing does not run (see below) |
 
-A changed path selects `ci-policy` when the CI policy tests read it:
+The `ci-policy` part runs on every change, whatever it touched, as CI runs it. CI's budget tests catch a fixture unit above CI's lane even when no CI input changed. The part runs before Pest and the fixtures, so the budget never leaves it out for them. On a loaded Beast it takes about 65 seconds.
 
-- the CI registry and its fixture tomls, under `.github/ci/`, and the workflows under `.github/workflows/`;
-- the CI policy tests themselves, `tools/test_ci_*.py`, their evidence under `tools/tests/`, and `tools/ci*`;
-- the CI scripts `bin/ci-*` and `bin/task-check`;
-- a Swamp test file, `swamp/tests/*_test.py` or `*_test.ts`, whose cases and source the registry pins.
-
-A Pest test, an extension's own Deno test or a Swamp test helper does not select it: the CI policy tests do not read them. Such a change, and any other, leaves the part `not selected`. The part runs before Pest and the fixtures, so the budget never leaves it out for them. On a clean `main` it takes about 40 seconds.
+The check prints CI's per-unit time caps at its start: the most seconds a fixture unit declares, `shard_seconds`, and the ceiling that stops it, `unit_ceiling_seconds`, both from `.github/ci/checks.toml`, and the Pest per-test limit of each CI job that sets one. Keep each new or changed test unit within them.
 
 The Pest jobs are `gateway-tests`, `cli-tests`, `sdk-tests` and `docs` for the docs app. For a selected job:
 
 - `packages/php-sdk` runs its whole suite. It takes about a second.
+- Each Pest run uses the per-test time limit of the project's CI job, read from `.github/workflows/ci.yml`. For `apps/gateway` that is `--default-time-limit=5`.
+- A job that sets no limit keeps its project's `phpunit.xml` limit. A copy, like CI, runs on a shared and loaded host.
 - `apps/gateway`, `apps/cli` and `apps/docs` run their changed test files in one Pest run. `apps/cli` also runs the CLI tests that replay a changed SDK fixture, as `bin/cli-contract --changed <start commit>` names them.
 - `apps/gateway` and `apps/cli` also run their pin test files in that run, whatever changed. The `PIN_TESTS` table in `bin/task-check` lists them.
 - The line's detail counts the changed and pin files and names the pins, such as `0 changed or contract-mapped, 1 pin test files: CommandSurfaceTest`.
@@ -712,17 +709,23 @@ The population check catches a Deno fixture whose registered cases differ from t
 
 The budget is wall time from the start of the run. Each part gets the time left as a hard limit. A part that reaches the end of the budget is stopped and reported as `skipped (budget: stopped after Ns)`. A part with no time left does not start and is reported as skipped.
 
-A fixture collection starts only with at least 15 seconds left; a collection that outlasts its 15-second limit, such as with a cold Deno cache, is a named budget skip. Units join cheapest first, by their declared cost, so a quick source check of the change runs before a long suite can take the budget. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
+The default budget is 900 seconds. Orbit gives the `tasks.check` Operation about 29 minutes (`run_budget_seconds` 1740), which also covers the setup steps and the deliverables, so 15 minutes leave them room.
 
-The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`. Every file and unit that did not start or was stopped is named, with the reason. A budget skip does not fail the check; CI still runs it.
+A fixture collection starts only with at least 15 seconds left; a collection that outlasts its 15-second limit, such as with a cold Deno cache, is a named budget skip.
 
-Only the check's own time limit stops a unit. A unit that did not run for another reason, such as a failed tool setup, fails the `fixtures` part, with the end of the output. A capacity row of the CI plan, which `bin/ci-units` marks "Required checks will fail", is a failed `fixture-capacity` line.
+The `fixtures` part runs the unit set of CI's plan: the same planner, changed-file rules and not-run rules for capacity gaps, hosted and self-hosted units alike. Only a unit whose declared host program is missing in the copy is left out, and named. The units of files the change touched run first, then the rest, each group cheapest first. The check runs them in consecutive `bin/ci-units run` calls, each within one CI shard by the `pack` rule of `bin/ci-units`, so no call reaches CI's shard deadline. A call starts only when its declared seconds and setup fit the time left.
+
+The check keeps each unit's verdict for the candidate tree in `<git-common-dir>/orbit/task-check-units.json`. The next check of the same tree runs only the units that have not passed; a failed unit runs again. A check of another tree starts afresh. While a runnable planned unit has not passed for this tree, the part is `unfinished` and the check fails. Its line names how many units remain, and that the next `task:check` of this tree continues them. A large plan, such as the 97 units of #3909, takes several checks.
+
+The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`.
+
+Only the check's own time limit stops a unit; such a unit remains for the next check of the tree. A unit that did not run for another reason, such as a failed tool setup, fails the `fixtures` part, with the end of the output. A capacity row of the CI plan, which `bin/ci-units` marks "Required checks will fail", is a failed `fixture-capacity` line.
 
 Measure the check with `ORBIT_CHECK_PROCESSES=1`. Orbit sets that value for every task check, whatever the copy's CPU count, so PHPStan and Pest run in one process.
 
 #### Output
 
-Each part prints its output when it fails. The run ends with a summary of at most 12 KiB: one line per part, `passed`, `FAILED`, `skipped` with its reason, or `not selected`, then the last lines of each failed part. The last line names the start commit and the total seconds. The command exits 1 when a part failed. [Stored result](/reference/tasks#stored-result) states the bounds and why the summary always reaches the stored output.
+Each part prints its output when it fails. The run ends with a summary of at most 12 KiB: one line per part, `passed`, `FAILED`, `unfinished`, `skipped` with its reason, or `not selected`, then the last lines of each failed part. The last line names the start commit and the total seconds. The command exits 1 when a part is `FAILED` or `unfinished`. [Stored result](/reference/tasks#stored-result) states the bounds and why the summary always reaches the stored output.
 
 A part whose program is missing fails with `<program>: required tool not found`. The command installs nothing.
 
@@ -730,7 +733,7 @@ A fixture unit whose fixture declares a host program in `host_programs` does not
 
 #### What it leaves to CI
 
-The scoped check does not run Rector, the full PHPStan analysis or the Gateway, CLI and docs Pest suites beyond the changed, contract-mapped and pin test files. Nor does it run the web app checks, Rust formatting, the Generated contracts job, the Swamp shape fixtures outside the plan, or Swamp workflow validation. It also leaves out a fixture unit whose declared host program the copy lacks. It does not fix files: Pint runs with `--test`. CI runs all of these on the handoff commit.
+The scoped check does not run Rector, the full PHPStan analysis or the Gateway, CLI and docs Pest suites beyond the changed, contract-mapped and pin test files. Nor does it run the web app checks, Rust formatting, the Generated contracts job, or Swamp workflow validation. It also leaves out a fixture unit whose declared host program the copy lacks. It does not fix files: Pint runs with `--test`. CI runs all of these on the handoff commit.
 
 #### Its tests
 
