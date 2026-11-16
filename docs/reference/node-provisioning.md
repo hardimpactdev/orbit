@@ -292,7 +292,7 @@ The converge reads the default Node's client certificate there. When root has no
 
 The default's Node gets no listener and no change to its Incus daemon. Each seed copy adds a client remote of root there for each CI Node, `proof-node-<id>`, when it is missing.
 
-When a converge finds that the Node offers no proof places, or that the proof Project has no default, the converge removes the trust entry `orbit-proof-seed`, unsets `core.https_address` when it is the listener above, and deletes both UFW rules. It can name the allow rule only while the proof Project has a default. A removal of the `ci-runner` role does the same. The holder stays, as the other Incus resources of the branch do.
+When a converge finds that the Node offers no proof places, or that the proof Project has no default, the converge removes the trust entry `orbit-proof-seed`, unsets `core.https_address` when it is the listener above, and deletes both UFW rules. It can name the allow rule only while the proof Project has a default. A removal of the `ci-runner` role deletes both UFW rules. It does not yet remove the trust entry and the listener: the removal flow runs no Ansible phase for them. The holder stays, as the other Incus resources of the branch do.
 
 The converge makes no seed. When a `ci-runner` add or converge of a Node that offers proof places passes, the Gateway admits a [seed copy](/reference/development-containers#the-seed-on-each-ci-node) to the Node if it is not the default's Node and its seed is not the proof default's current seed.
 
