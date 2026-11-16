@@ -36,9 +36,20 @@ for (const status of ["Running", "Stopped"]) {
                 assertStringIncludes(result.output, `${name}/eth0 needs an effective ACL`);
                 assertEquals(f.state().networks.find((network: {name: string}) => network.name === "orbitinst0").config["security.acls.default.egress.action"], "reject");
                 assert(!f.calls().slice(before).some((call) => call.includes("security.acls.default.egress.action=allow")));
+            } finally { f.cleanup(); }
+        },
+    });
+    Deno.test({
+        name: `a ${status.toLowerCase()} attachment without its own NIC device passes the audit through the profile gate`,
+        ignore: !hasAnsible,
+        async fn() {
+            const f = await fixture({ pool: "dir" });
+            try {
+                let result = await f.run();
+                assert(result.ok, result.output);
                 // Removing the whole local device restores the profile gate; individual missing properties do not inherit.
                 const fixed = f.state();
-                delete fixed.instances.at(-1).devices.eth0;
+                fixed.instances.push({name, project: "orbit-instances", status, devices: {}});
                 Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(fixed));
                 result = await f.run();
                 assert(result.ok, result.output);
