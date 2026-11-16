@@ -145,17 +145,24 @@ final readonly class ProofSeeds
 
     /**
      * The admission at the end of a seed copy (docs/cli/instance/seed-copy.mmd): for every Node behind the default's seed when the seed
-     * moved during the copy, else only for Nodes that were not its targets, which a trigger refused while the copy held the lock. A Node
-     * that failed at the same seed is not tried again: it waits for the next seed or its own ci-runner converge, so a lasting failure
-     * does not repeat.
+     * moved during the copy, else only for Nodes that no seed copy has tried at that seed, such as one whose own trigger the copy's lock
+     * refused. A Node tried at the same seed waits for the next seed or its own ci-runner converge, so lasting failures do not repeat,
+     * also not two failing Nodes for each other. The tried Nodes are the targets of the recorded copies of that seed.
      */
     public function admitAfter(Operation $ended): ?Operation
     {
         $source = $this->source();
         $moved = $source === null || $source->seed_commit !== $ended->input['commit']
             || $source->seed_taken_at?->toIso8601String() !== $ended->input['taken_at'];
+        if ($moved) {
+            return $this->admit('seed_copy');
+        }
+        $tried = Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $source->instance_id)->get(['input'])
+            ->filter(static fn (Operation $copy): bool => ($copy->input['commit'] ?? null) === $source->seed_commit
+                && ($copy->input['taken_at'] ?? null) === $source->seed_taken_at?->toIso8601String())
+            ->flatMap(static fn (Operation $copy): array => ValidatedData::integerList($copy->input['targets']))->unique()->all();
 
-        return $this->admit('seed_copy', $moved ? [] : ValidatedData::integerList($ended->input['targets']));
+        return $this->admit('seed_copy', array_values($tried));
     }
 
     /**

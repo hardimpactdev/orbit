@@ -17,9 +17,9 @@ sequenceDiagram
   %%> Started by:
   %%> - the proof default records a new seed: the refresh after a release, or an `instance:deploy` of the default
   %%> - a `ci-runner` add or converge of a Node that offers proof places passes
-  %%> - a seed copy ends, only when the default's seed moved during it (all Nodes behind the new seed), or for Nodes that were not its targets (a Node that became a target while the copy held the lock)
+  %%> - a seed copy ends, only when the default's seed moved during it (all Nodes behind the new seed), or for Nodes that no seed copy has tried at the same seed (a Node that became a target while the copy held the lock)
   %%> Never started by:
-  %%> - the end of a copy for a Node that failed at the same seed: it waits for the next seed or for its own `ci-runner` converge, so a lasting failure does not repeat
+  %%> - the end of a copy for a Node that any seed copy has tried at the same seed: it waits for the next seed or for its own `ci-runner` converge, so lasting failures do not repeat, also not two Nodes for each other
   %%> Requirements:
   %%> - the proof Project's default is active and has a seed; a seed is its commit and the time the default took it
   %%> - targets: every Node that offers proof places (`ci-runner`, CI places, with or without `app-dev`), other than the default's Node, whose recorded seed is not that seed (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node); with none, nothing is admitted
@@ -68,7 +68,7 @@ sequenceDiagram
     Note over GW: Admit the next copy<br/>Nodes not at the seed
     %%> When:
     %%> - the default took a newer seed while the copy ran: every Node behind it is a target
-    %%> - the seed is the same, and a Node that was not a target of this copy is behind it: only such Nodes are targets
+    %%> - the seed is the same, and a Node that no seed copy has tried at this seed is behind it: only such Nodes are targets; the Gateway reads which Nodes were tried from the targets of the recorded `instance.seed_copy` Operations of that seed
     %%> Not:
     %%> - for a Node that failed at the same seed
   end

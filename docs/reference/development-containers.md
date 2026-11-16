@@ -2729,9 +2729,9 @@ The Gateway copies the seed with one Operation, `instance.seed_copy`. Its target
 - when the default records a new seed: after the [refresh after a release](#refresh-after-a-release), or after an `instance:deploy` of the default;
 - when a `ci-runner` add or converge of a CI Node passes, so a new CI Node does not wait for the next release;
 - at the end of a seed copy during which the default's seed moved: for every Node behind the new seed;
-- at the end of a seed copy at the same seed: for the Nodes that were not its targets.
+- at the end of a seed copy at the same seed: for the Nodes that no seed copy has tried at that seed.
 
-So a seed that moved during a copy reaches every Node. A Node that failed at the current seed is not tried again by the end of its copy: it waits for the next seed or for its own `ci-runner` converge. So a lasting failure, such as no listener or no free ID range, does not repeat with a new Operation each time.
+So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own `ci-runner` converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no listener or no free ID range, does not repeat with a new Operation each time.
 
 A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The default's runtime records both (`seed_commit`, `seed_taken_at`). The Gateway records the seed of each CI Node in `proof_seeds`: its holder, its commit and that time (`ProofSeeds`).
 

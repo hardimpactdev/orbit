@@ -20,7 +20,7 @@ use Throwable;
 /**
  * Projects the end of `instance.seed_copy` once (docs/cli/instance/seed-copy.mmd): each Node whose target passed records the new holder
  * as its seed; each failed Node keeps its recorded holder and gets the Activity row `instance.seed_copy_failed`. Then the next copy is
- * admitted only for a seed that moved, or for Nodes that were not targets of this run (ProofSeeds::admitAfter).
+ * admitted only for a seed that moved, or for Nodes that no copy has tried at the same seed (ProofSeeds::admitAfter).
  */
 final readonly class ProofSeedCopyProjection implements DirectOperationProjection
 {
