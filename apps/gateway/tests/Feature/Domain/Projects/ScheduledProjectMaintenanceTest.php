@@ -93,7 +93,8 @@ it('admits the weekly routine first, and the hourly inspection once the routine 
 it('admits an observation, not an inspection, while a group that has not ended holds a pull request or waits for capacity', function (array $group): void {
     $starts = recordedStarts();
     $project = maintainedProject();
-    Task::query()->create(['project_id' => $project->id, 'title' => 'Maintenance', 'brief' => 'Update', ...$group]);
+    // Without events: the copy that a kept-copy group still names is not part of this test.
+    Task::withoutEvents(fn () => Task::query()->create(['project_id' => $project->id, 'title' => 'Maintenance', 'brief' => 'Update', ...$group]));
     Setting::withoutEvents(fn () => Setting::query()->create(['scope_type' => SettingScopeType::Gateway, 'scope_id' => 0, 'key' => ScheduledProjectMaintenance::StateKey, 'is_secret' => false,
         'value' => json_encode(['admissions' => [$project->id.':routine' => ['key' => $project->id.'-routine-2026-11-02', 'operation_id' => 1]]])]));
 
@@ -104,6 +105,9 @@ it('admits an observation, not an inspection, while a group that has not ended h
     'a pull request' => [['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/nckrtl/launch/pull/17']],
     'a watched pull request' => [['status' => TaskGroupStatus::Running, 'watched_pr_url' => 'https://github.com/nckrtl/launch/pull/17']],
     'a wait for capacity' => [['status' => TaskGroupStatus::Todo, 'maintenance' => ['admission_pending' => true]]],
+    // docs/reference/tasks.md#a-copy-group-settles-on-merge: the next observation retries the copy's failed destroy.
+    'a completed copy group whose destroy failed' => [['status' => TaskGroupStatus::Completed, 'watched_pr_url' => 'https://github.com/nckrtl/launch/pull/17',
+        'watched_pr_completion' => 'merged', 'taskable_type' => 'instance', 'taskable_id' => 99]],
 ]);
 
 it('inspects a Project whose only pull request belongs to a group that ended', function (): void {

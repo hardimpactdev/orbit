@@ -44,6 +44,8 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Projects\ProjectAgentInstructionSource;
+use App\Domain\Projects\ProjectMaintenanceIntent;
+use App\Domain\Projects\ProjectMaintenanceProjection;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
@@ -2446,4 +2448,162 @@ describe('a cancel or complete of a copy group whose work was carried to the def
 
         expect(completeRefusal($group->refresh()))->toBe($held ? null : 'tasks.approved_work_unpublished ');
     })->with(['held' => [true], 'not held' => [false]]);
+});
+
+describe('a copy group whose watched pull request merged settles itself', function (): void {
+    /**
+     * A running copy group whose watched pull request is #7, on a Project with maintenance on, so the hourly observation reads it.
+     *
+     * @return array{Task, Instance}
+     */
+    function watchedCopy(): array
+    {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $group->project->update(['maintenance' => true, 'task_check' => 'composer test']);
+        $group->update(['watched_pr_url' => 'https://github.com/nckrtl/trial/pull/7', 'watched_pr_state' => 'open']);
+
+        return [$group->refresh(), $copy];
+    }
+
+    /** One `project.observe` run read the watched pull request in `$state`, and the Gateway projects it (docs/reference/tasks.md#a-copy-group-settles-on-merge). */
+    function observeWatched(Task $group, string $state, ?string $mergedAt = '2026-11-16T20:00:00Z'): void
+    {
+        $group->refresh();
+        $project = $group->project()->firstOrFail();
+        $operation = Operation::query()->create(['kind' => 'project.observe', 'target_type' => 'project', 'target_id' => $project->id,
+            'node_id' => Node::query()->where('name', 'control')->value('id'), 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0,
+            'state' => ['swamp_run_id' => 'run-observe'], 'input' => ['project' => ['id' => $project->id, 'repository' => $project->repository_url,
+                'default_branch' => $project->default_branch, 'check' => $project->task_check],
+                'groups' => [$group->only(['id', 'project_id', 'status', 'pr_url', 'watched_pr_url', 'watched_pr_state', 'watched_pr_completion', 'taskable_id', 'maintenance'])],
+                'pr_urls' => [$group->watched_pr_url]]]);
+        app(ProjectMaintenanceProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'run-observe', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['maintenance' => ['project_id' => $project->id, 'resume_group_ids' => [], 'requests' => [],
+                'observations' => [['group_id' => $group->id, 'url' => $group->watched_pr_url, 'state' => $state, 'head' => str_repeat('a', 40), 'merged_at' => $mergedAt]]]]]);
+    }
+
+    it('records the merge, completes the group and admits the copy\'s destroy, and reads, readies or merges nothing on GitHub', function (): void {
+        [$group, $copy] = watchedCopy();
+        Http::fake();
+
+        observeWatched($group, 'merged');
+
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+            ->and($group->watched_pr_state)->toBe('merged')->and($group->watched_pr_completion)->toBe('merged')
+            ->and($group->merged_at?->toIso8601ZuluString())->toBe('2026-11-16T20:00:00Z')->and($group->settled_at)->not->toBeNull()
+            ->and($group->tasks()->where('status', TaskStatus::Cancelled)->count())->toBe(1)
+            ->and($destroy->target_id)->toBe($copy->id)->and($destroy->input['force'])->toBeTrue()
+            ->and($group->assistance_requested)->toBeFalse();
+        Http::assertNothingSent();
+        // A repeated observation while the destroy runs admits nothing more.
+        observeWatched($group, 'merged');
+        expect(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+
+        destroySucceeded($destroy);
+        expect(Instance::query()->find($copy->id))->toBeNull()->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($group->taskable_id)->toBeNull();
+    });
+
+    it('records a pull request that closed without a merge, and leaves the group and its copy for a person', function (): void {
+        [$group, $copy] = watchedCopy();
+
+        observeWatched($group, 'closed', null);
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->watched_pr_state)->toBe('closed')
+            ->and($group->watched_pr_completion)->toBeNull()->and($group->taskable_id)->toBe($copy->id)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+    });
+
+    it('skips a group while an Operation of its own runs, and completes it on the next tick once that ended', function (): void {
+        [$group] = watchedCopy();
+        $turn = Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $group->taskable->node_id,
+            'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
+
+        observeWatched($group, 'merged');
+
+        // The recorded merge holds new work back; the running turn is not stopped.
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->watched_pr_completion)->toBe('merged')
+            ->and($turn->refresh()->status)->toBe(OperationStatus::Running)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+
+        $turn->forceFill(['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null])->save();
+        observeWatched($group, 'merged');
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+    });
+
+    it('completes a group whose merge an earlier tick recorded before it crashed', function (): void {
+        [$group] = watchedCopy();
+        $group->update(['watched_pr_state' => 'merged', 'watched_pr_completion' => 'merged', 'merged_at' => '2026-11-16T20:00:00Z']);
+
+        observeWatched($group, 'merged');
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+    });
+
+    it('keeps a completed group with its copy when the destroy fails, and the next tick admits a new destroy', function (): void {
+        [$group, $copy] = watchedCopy();
+        observeWatched($group, 'merged');
+        Operation::query()->where('kind', 'instance.destroy')->sole()->forceFill(['status' => 'failed', 'finished_at' => now(), 'lock_key' => null])->save();
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($group->taskable_id)->toBe($copy->id);
+
+        observeWatched($group, 'merged');
+
+        expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->count())->toBe(2)
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed);
+    });
+
+    it('reads the pull request of a completed group again while it keeps its copy after a failed destroy', function (bool $kept): void {
+        [$group, $copy] = watchedCopy();
+        $group->project->update(['source_access' => ProjectSourceAccess::GitHubApp]);
+        observeWatched($group, 'merged');
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        $kept ? $destroy->forceFill(['status' => 'failed', 'finished_at' => now(), 'lock_key' => null])->save() : destroySucceeded($destroy);
+
+        $observe = app(ProjectMaintenanceIntent::class)->start($group->project->refresh(), 'observe');
+
+        expect($observe->input['pr_urls'])->toBe($kept ? [$group->watched_pr_url] : []);
+    })->with(['kept' => [true], 'destroyed' => [false]]);
+
+    it('does not destroy a copy that holds work that is not published: it records the refusal once as assistance', function (): void {
+        [$group, $copy] = watchedCopy();
+        $this->ssh->answer = [...$this->ssh->answer, 'state' => 'dirty', 'modified' => ['count' => 1, 'names' => ['a.php']]];
+
+        observeWatched($group, 'merged');
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->taskable_id)->toBe($copy->id)
+            ->and($group->assistance_kind)->toBe(AssistanceKind::Failure)
+            ->and($group->assistance_reason)->toContain('tasks.copy_unpublished_work')
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+        $reads = $this->ssh->calls;
+
+        observeWatched($group, 'merged');
+
+        expect($this->ssh->calls)->toBe($reads)->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+    });
+
+    it('refuses a complete of a copy that holds work that is not published, and changes nothing', function (array $answer, string $code, array $details): void {
+        [$group] = watchedCopy();
+        $group->update(['status' => TaskGroupStatus::Settling]);
+        $group->tasks()->update(['status' => TaskStatus::Completed]);
+        $this->ssh->answer = [...$this->ssh->answer, ...$answer];
+
+        try {
+            app(CompleteTaskGroupAction::class)->execute($group->refresh());
+            $this->fail('The complete destroyed unpublished work.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe($code)->and($error->status)->toBe(409)->and($error->details)->toMatchArray($details);
+        }
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Settling)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+    })->with([
+        'an uncommitted file' => [['state' => 'dirty', 'modified' => ['count' => 1, 'names' => ['a.php']]], 'tasks.copy_unpublished_work', ['uncommitted' => 1]],
+        'an untracked file' => [['state' => 'dirty', 'untracked' => ['count' => 1, 'names' => ['b.txt']]], 'tasks.copy_unpublished_work', ['untracked' => 1]],
+        'a stash' => [['state' => 'dirty', 'stashes' => ['count' => 1, 'names' => ['stash@{0}']]], 'tasks.copy_unpublished_work', ['stashes' => 1]],
+        'a commit only another branch holds' => [['state' => 'dirty', 'commits' => ['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'experiment', 'count' => 1]], 'head' => 0]],
+            'tasks.copy_unpublished_work', ['unpushed' => 1]],
+        'a copy that cannot be read' => [['state' => 'unknown', 'reason' => 'stopped'], 'tasks.copy_workspace_unknown', ['reason' => 'stopped']],
+    ]);
 });
