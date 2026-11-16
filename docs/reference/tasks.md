@@ -1620,10 +1620,11 @@ A task without a task copy holds nothing to release: the task VMs and their rele
 
 Cancel asks a running group Operation to stop. If it is still running, the call returns HTTP 409 `operation.target_busy` with its id and confirms the stop request. Run `task:cancel` again once that Operation has ended. A timed-out Operation whose run nothing has proven ended still holds the group, for up to an hour; the cancel then returns the same 409 before it admits the destroy of the task's copy.
 
-- **Work only a task copy holds.** A cancel of a [task copy](#task-copy) without discard reads the copy in a Swamp run. [Published work of a copy](#published-work-of-a-copy) defines the read.
-- **Unpublished work.** It fails the cancel with `tasks.copy_unpublished_work`, with the paths and counts.
+- **Work only a task copy holds.** A cancel refuses a [task copy](#task-copy) with work that is not published. It returns HTTP 409 `tasks.copy_unpublished_work` with the counts and the content verdict `work`.
+- **Published work.** [Published work of a copy](#published-work-of-a-copy) defines it. A succeeded `task:publish` put its commit and that commit's history on origin; they do not count either.
 - **Squash-merged or hand-carried work.** Its content is on the default branch, so it does not count, whatever its commit SHAs.
-- **Unread task copy.** A cancel refuses a copy it cannot read: HTTP 409, or a failed cancel, with `tasks.copy_workspace_unknown` and the reason.
+- **Unread task copy.** A cancel refuses a copy it cannot read: HTTP 409 `tasks.copy_workspace_unknown`, with the reason.
+- **No content read of the head.** The verdict is `work_unread`. Run `task:sync`, then cancel again.
 - **Discard.** `discard: true` (CLI `--discard`) lets the cancel destroy that work; `--yes` never does. Complete needs no discard, because origin has the approved work.
 - **Approved work not on origin.** Cancel and complete refuse with HTTP 409 `tasks.approved_work_unpublished` and change nothing. Run `task:publish` first.
 - **Refused admission.** `tasks.not_cancellable` and `tasks.workspace_ownership_refused` change nothing.
@@ -1648,11 +1649,11 @@ Origin must already have the approved work, as [Cancel a stuck task](#cancel-a-s
 
 A task whose workspace is a [task copy](#task-copy) has no task VM. `task:complete` admits the copy's normal `instance.destroy` with force, as `task:cancel` does, marks the task `completed` and answers HTTP 200 with the task. An open destroy of the copy is reused. When the destroy succeeds, the task lets go of the copy and stays `completed`. When it fails, the task keeps the copy, and completing again admits a new destroy.
 
-A cancel of a copy without discard records the `tasks.cancel` Operation under the group's lock key and starts `operation-task-cancel`, which reads the copy as the next section describes. A `clean` read admits the destroy when the run ends; anything else fails the cancel and keeps the copy. A cancel with discard reads nothing: it records the Operation and admits the destroy in one transaction, record first. An Operation that holds or takes the group lock refuses the record with `operation.target_busy`, and the transaction admits no destroy.
+A cancel of a copy records the `tasks.cancel` Operation under the group's lock key and admits the destroy in one transaction, record first. An Operation that holds or takes the group lock refuses the record with `operation.target_busy`, and the transaction admits no destroy.
 
 ### Published work of a copy
 
-One rule decides whether a task copy holds work that would be lost with it. It lives in one place: the content read at the end of the copy's `base` phase, in `swamp/ansible/tasks/task-instance-workspace-phase.yml`. [`task:sync`](/cli/task/sync) and a cancel without discard run that phase, with the same minted read token, so the copy holds the current default head as `origin/<default>` when it reads.
+One rule decides whether a task copy holds work that would be lost with it. It lives in one place: the content read at the end of the copy's `base` phase, in `swamp/ansible/tasks/task-instance-workspace-phase.yml`. [`task:sync`](/cli/task/sync) runs that phase with its minted read token, so the copy holds the current default head as `origin/<default>` when it reads. The sync records the read as `work` in its result.
 
 - **Changed paths.** The read takes every path that HEAD changed since its merge base with the default head.
 - **Kinds of change.** Adds, edits, deletes and mode changes count.
@@ -1663,7 +1664,7 @@ One rule decides whether a task copy holds work that would be lost with it. It l
 - **Never published.** Uncommitted and untracked files and stashes always count.
 - **Empty.** A copy whose HEAD changed no path since the merge base is `empty`: complete refuses it, and cancel ends it.
 
-The read returns `work`: `state` (`clean` or `dirty`), `head`, `empty`, the count of differing `paths` with up to five names, and the `uncommitted`, `untracked` and `stashes` counts. The Gateway keeps it in the Operation's result. The copy never holds a GitHub credential: the base phase fetches on the Node, and the copy receives only a bundle.
+The read returns `work`: `state` (`clean` or `dirty`), `head`, `empty`, the count of differing `paths` with up to five names, the `uncommitted`, `untracked` and `stashes` counts, and `approved_held`. Cancel and complete use the latest sync's read only while it is of the copy's current head, which their own bounded read sees. A commit made after the sync needs a new sync. The copy never holds a GitHub credential: the base phase fetches on the Node, and the copy receives only a bundle.
 
 
 A copy turn runs on the `t3` driver, which the driver registry does not hold. Its turn is its `tasks.copy_turn` Operation, which complete stops as it stops every running group Operation, so the subtask stop interrupts no `t3` thread.

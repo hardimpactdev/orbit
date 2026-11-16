@@ -16,7 +16,7 @@ sequenceDiagram
   %%> - syntax: `[task] [--yes] [--json]`
   %%> Requirements:
   %%> - the group is `settling` or `waiting_for_review`, or `running` or `reviewing` with a watched pull request that merged or closed; a `completed` group retries its removal
-  %%> - or a `running` or `reviewing` group with a task copy and no ended watched pull request, whose latest content read (`work`, of a `task:sync` or a cancel run) is of the copy's current head, found every committed path on the default branch, and is not `empty`: its work was carried to the default branch by hand
+  %%> - or a `running` or `reviewing` group with a task copy and no ended watched pull request, whose latest content read (`work`, of a `task:sync`) is of the copy's current head, found every committed path on the default branch, and is not `empty`: its work was carried to the default branch by hand
   %%> - otherwise HTTP 409 `tasks.not_settling`, whose `reason` detail says why: `status`, `pull_request_not_ended`, `work_unread` (run `task:sync` first), `work_not_on_default` or `work_empty` (cancel the group instead)
   %%> - your Node has an access grant to the Gateway
   GW->>GH: Compare the task branch<br/>approved...task-42
@@ -25,7 +25,7 @@ sequenceDiagram
   %%> - reads origin's task branch head and compares it with that commit, with a `contents: read` token
   %%> - only when GitHub answers that the branch does not exist (404) and the group's pull request merged does that pull request's head stand in; the pull request is read with a `pull_requests: read` token
   %%> - skipped when the group has no approval, or holds no workspace
-  %%> - for a task copy, content on the default branch counts too: the copy's latest content read (`work`, of a `task:sync` or a cancel run) is of the copy's current head, holds the approved commit in its history and found every committed path on the default branch
+  %%> - for a task copy, content on the default branch counts too: the copy's latest content read (`work`, of a `task:sync`) is of the copy's current head, holds the approved commit in its history and found every committed path on the default branch
   %%> Why:
   %%> - the destroy deletes the copy, and a commit that only the copy holds would go with it
   GH-->>GW: Branch reaches it

@@ -1136,7 +1136,7 @@ describe('a cancel of a group that owns a copy', function (): void {
             $this->fail('The cancel destroyed unpublished work.');
         } catch (ResourceOperationException $error) {
             expect($error->errorCode)->toBe('tasks.copy_unpublished_work')->and($error->status)->toBe(409)
-                ->and($error->details)->toBe(['head' => str_repeat('e', 40), 'unpushed' => 3, 'uncommitted' => 3, 'modified' => 1, 'untracked' => 2, 'stashes' => 0]);
+                ->and($error->details)->toBe(['head' => str_repeat('e', 40), 'commits' => 3, 'unpushed' => 3, 'work' => 'work_unread', 'uncommitted' => 3, 'modified' => 1, 'untracked' => 2, 'stashes' => 0]);
         }
         expect(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse()
             ->and(Instance::query()->find($copy->id))->not->toBeNull()
@@ -2339,7 +2339,7 @@ describe('a turn of a group that owns a copy', function (): void {
     });
 });
 
-describe('a complete of a copy group whose work was carried to the default branch', function (): void {
+describe('a cancel or complete of a copy group whose work was carried to the default branch', function (): void {
     /**
      * A running copy group without a watched pull request, whose copy now reads `$head`, and the content read of its latest sync:
      * `$work` overrides the read of a hand-carried branch (docs/reference/tasks.md#published-work-of-a-copy).
@@ -2397,6 +2397,38 @@ describe('a complete of a copy group whose work was carried to the default branc
         'read of an older head' => [['head' => str_repeat('f', 40)], 'work_unread'],
         'a path that differs' => [['state' => 'dirty', 'paths' => ['count' => 1, 'names' => ['work.txt']]], 'work_not_on_default'],
         'an empty copy: cancel it' => [['empty' => true], 'work_empty'],
+    ]);
+
+    it('cancels a squash-merged copy without discard: its local commits are on the default branch by content', function (): void {
+        [$group, $copy] = carriedCopy([]);
+        // The read counts the copy's own commits and the check's empty handoff commit: origin lacks their ids.
+        $this->ssh->answer = [...$this->ssh->answer, 'state' => 'dirty', 'head' => str_repeat('d', 40),
+            'commits' => ['count' => 2, 'branch_count' => 1, 'branches' => [['name' => 'task-'.$group->id, 'count' => 2]]]];
+
+        $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
+
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        expect($cancel->result['destroy_operation_id'])->toBe($destroy->id)->and($destroy->target_id)->toBe($copy->id)
+            ->and($cancel->result['workspace'])->toMatchArray(['state' => 'clean', 'commits' => 2, 'unpushed' => 0, 'work' => 'on_default']);
+    });
+
+    it('still refuses a copy whose committed work is on the default branch but which holds uncommitted work, or whose commits were not read', function (array $answer, ?array $work, array $details): void {
+        [$group] = carriedCopy($work);
+        $this->ssh->answer = [...$this->ssh->answer, 'state' => 'dirty', 'head' => str_repeat('d', 40),
+            'commits' => ['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'task-'.$group->id, 'count' => 1]]], ...$answer];
+
+        try {
+            app(TaskCancelIntent::class)->start($group, 'test', null);
+            $this->fail('The cancel destroyed unpublished work.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('tasks.copy_unpublished_work')->and($error->details)->toMatchArray($details);
+        }
+        expect(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse();
+    })->with([
+        'an uncommitted file' => [['modified' => ['count' => 1, 'names' => ['a.php']]], [], ['unpushed' => 0, 'work' => 'on_default', 'uncommitted' => 1]],
+        'a stash' => [['stashes' => ['count' => 1, 'names' => ['stash@{0}']]], [], ['unpushed' => 0, 'stashes' => 1]],
+        'no read of this head' => [[], ['head' => str_repeat('f', 40)], ['unpushed' => 1, 'work' => 'work_unread']],
+        'a path that differs' => [[], ['state' => 'dirty', 'paths' => ['count' => 1, 'names' => ['a.php']]], ['unpushed' => 1, 'work' => 'work_not_on_default']],
     ]);
 
     it('takes the approved commit as kept when the content read holds it on the default branch, though origin\'s branch cannot be read', function (bool $held): void {

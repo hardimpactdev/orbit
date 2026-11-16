@@ -12,7 +12,8 @@ use App\Models\Task;
 /**
  * The Gateway's reader of a task copy's content read (docs/reference/tasks.md#published-work-of-a-copy). The rule itself runs in the
  * copy, at the end of its `base` phase; this class only reads the verdict that the newest succeeded `tasks.sync` recorded, and holds
- * it against the copy's current head, so a commit made after the read is never taken as published.
+ * it against the copy's current head, so a commit made after the read is never taken as published. Cancel (TaskCopyEnd) and complete
+ * read it here.
  */
 final readonly class TaskCopyWork
 {
@@ -24,15 +25,21 @@ final readonly class TaskCopyWork
      */
     public function refusal(Task $group, TaskInstanceWorkspace $copy): ?string
     {
+        return self::committed($group, $this->read->read($copy->instance)['head']) ?? (self::latest($group)['empty'] ?? false ? 'work_empty' : null);
+    }
+
+    /**
+     * Why the copy's committed work at `$head` is not on the default branch, or null when the latest content read is of that head and
+     * found every committed path there: `work_unread` (no read of that head: run task:sync) or `work_not_on_default`.
+     */
+    public static function committed(Task $group, ?string $head): ?string
+    {
         $work = self::latest($group);
-        if ($work === null || $work['head'] !== $this->read->read($copy->instance)['head']) {
+        if ($work === null || $head === null || $work['head'] !== $head) {
             return 'work_unread';
         }
-        if ($work['paths']['count'] > 0) {
-            return 'work_not_on_default';
-        }
 
-        return $work['empty'] ? 'work_empty' : null;
+        return $work['paths']['count'] > 0 ? 'work_not_on_default' : null;
     }
 
     /**

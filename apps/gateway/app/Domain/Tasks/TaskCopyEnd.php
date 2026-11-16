@@ -28,8 +28,10 @@ final readonly class TaskCopyEnd
 
     /**
      * What the copy's workspace holds beyond the seed: commits that origin lacks, uncommitted and untracked files. A copy never fetches,
-     * so the commits that the group's publishes pushed are named to the read: they and their history are on origin. A stopped or
-     * unreachable copy reads `unknown` with its reason. One bounded SSH read; call it outside any transaction.
+     * so the commits that the group's publishes pushed are named to the read: they and their history are on origin. Local commits whose
+     * content the copy's latest content read found on the default branch are published too (TaskCopyWork); `commits` keeps what the
+     * read counted and `work` the verdict. A stopped or unreachable copy reads `unknown` with its reason. One bounded SSH read; call it
+     * outside any transaction.
      *
      * @return array<string, mixed>
      */
@@ -37,9 +39,15 @@ final readonly class TaskCopyEnd
     {
         $read = $this->read->read($copy, self::published($group));
         $count = static fn (mixed $class): ?int => is_array($class) && is_int($class['count'] ?? null) ? $class['count'] : null;
+        // Committed work counts by content, not by commit id: when the copy's content read of this head finds every committed path on
+        // the default branch, its local commits are published, as after a squash merge or a hand-carry.
+        $work = $read['state'] === 'unknown' ? null : (($read['unpushed'] ?? 0) > 0 ? TaskCopyWork::committed($group, $read['head']) : null);
+        $unpushed = $work === null && $read['state'] !== 'unknown' ? 0 : $read['unpushed'];
+        $state = $read['state'] === 'dirty' && $unpushed + $read['uncommitted'] + ($count($read['stashes']) ?? 0) === 0 ? 'clean' : $read['state'];
 
-        return ['state' => $read['state'], 'reason' => $read['reason'], 'read_at' => $read['read_at'], 'head' => $read['head'],
-            'unpushed' => $read['unpushed'], 'uncommitted' => $read['uncommitted'], 'modified' => $count($read['modified']),
+        return ['state' => $state, 'reason' => $read['reason'], 'read_at' => $read['read_at'], 'head' => $read['head'],
+            'commits' => $read['unpushed'], 'unpushed' => $unpushed, 'work' => $read['state'] === 'unknown' ? null : ($work ?? 'on_default'),
+            'uncommitted' => $read['uncommitted'], 'modified' => $count($read['modified']),
             'untracked' => $count($read['untracked']), 'stashes' => $count($read['stashes'])];
     }
 
@@ -79,8 +87,8 @@ final readonly class TaskCopyEnd
             return;
         }
         if ($workspace['state'] === 'dirty') {
-            throw new ResourceOperationException('tasks.copy_unpublished_work', 'The task copy holds work that origin lacks; publish it, or cancel with discard to destroy it.', 409,
-                details: array_intersect_key($workspace, array_flip(['head', 'unpushed', 'uncommitted', 'modified', 'untracked', 'stashes'])));
+            throw new ResourceOperationException('tasks.copy_unpublished_work', 'The task copy holds work that is not on the default branch or origin; publish it, run task:sync to read it again, or cancel with discard to destroy it.', 409,
+                details: array_intersect_key($workspace, array_flip(['head', 'commits', 'unpushed', 'work', 'uncommitted', 'modified', 'untracked', 'stashes'])));
         }
 
         throw new ResourceOperationException('tasks.copy_workspace_unknown', 'The task copy\'s workspace cannot be read; cancel with discard to destroy it unread.', 409,
