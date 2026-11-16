@@ -48,11 +48,16 @@ const owned = { ...egress, ...sizeFiles };
 /** The marker of the nested Gateway of an Instance fleet (InstanceFleetGateway::Marker): its Nodes get no task VM package cache. */
 const marker = "/etc/orbit/instance-fleet";
 const markerFile = "# Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).\n";
+/** nested-app-dev is an Instance host (development-containers.md#instance-host-in-the-fleet): nesting keys, and its Incus runs without AppArmor. */
+const instanceHostKeys = { "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true" };
+const incusDropIn = { "/etc/systemd/system/incus.service.d/50-orbit-nested.conf": "[Service]\nEnvironment=INCUS_SECURITY_APPARMOR=false\n" };
+/** The files each container owns: the egress and size files, and nested-app-dev's Incus drop-in. */
+const ownedBy = (name: string) => name === "nested-app-dev" ? { ...owned, ...incusDropIn } : owned;
 /** Each file rule in the order the rules read it: the nested Gateway's drop-ins and marker, then the owned files of each container. */
 const fileRules: [string, string][] = [
   ...units.map((unit): [string, string] => ["nested-gateway", unit]),
   ["nested-gateway", marker],
-  ...names.flatMap((name) => Object.keys(owned).map((path): [string, string] => [name, path])),
+  ...names.flatMap((name) => Object.keys(ownedBy(name)).map((path): [string, string] => [name, path])),
 ];
 /** The inner bridge as the seed's first fleet has it, and with its rule: its dnsmasq has no upstream. */
 const exportedBridge = { "ipv4.address": "10.232.2.1/24", "ipv4.nat": "true", "ipv6.address": "none" };
@@ -73,7 +78,8 @@ function ruled() {
   for (const name of names) containers[name].config["raw.idmap"] = idmap;
   for (const name of names) Object.assign(containers[name].config, environment);
   containers["nested-gateway"].files = { ...Object.fromEntries(units.map((unit) => [unit, dropIn])), [marker]: markerFile };
-  for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...owned };
+  Object.assign(containers["nested-app-dev"].config, instanceHostKeys);
+  for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...ownedBy(name) };
   return containers;
 }
 
@@ -322,7 +328,8 @@ Deno.test({
         "incus config device set nested-gateway club-key source=/run/orbit-club path=/home/orbit/.config/swamp/club required=false shift=false",
         "incus config device set nested-app-dev checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         ...["nested-gateway", "nested-app-dev", "nested-app-prod"].flatMap((name) =>
-          [`raw.idmap=${idmap}`, ...proxyKeys].map((key) => `incus config set ${name} ${key}`)),
+          [`raw.idmap=${idmap}`, ...proxyKeys, ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : [])]
+            .map((key) => `incus config set ${name} ${key}`)),
         "incus network set oe-nested raw.dnsmasq=no-resolv",
         ...fileRules.map(([name, path]) => push(name, path)),
         ...reads,
@@ -875,7 +882,7 @@ Deno.test({
         const want = structuredClone(live[name]);
         want.config["boot.autostart"] = "true";
         // The live fleet was built before the egress files and the marker; they are owned rules, which the refresh writes.
-        want.files = { ...(want.files ?? {}), ...(name === "nested-gateway" ? { [marker]: markerFile } : {}), ...owned };
+        want.files = { ...(want.files ?? {}), ...(name === "nested-gateway" ? { [marker]: markerFile } : {}), ...ownedBy(name) };
         assertEquals(state[name].devices, want.devices, name);
         assertEquals(state[name].files ?? {}, want.files ?? {}, name);
         const keys = ["raw.idmap", "boot.autostart", ...Object.keys(environment)];
@@ -902,9 +909,10 @@ Deno.test({
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
-      const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [marker] : []), ...Object.keys(owned)].map((path) => push(name, path)));
+      const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [marker] : []), ...Object.keys(ownedBy(name))].map((path) => push(name, path)));
       assertEquals(writes(calls).filter((call) => !/ (stop|snapshot) /.test(call)),
-        [...egressWrites, ...names.map((name) => `incus config set ${name} boot.autostart=true`)]);
+        [...egressWrites, ...names.flatMap((name) => ["boot.autostart=true", ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : [])]
+          .map((key) => `incus config set ${name} ${key}`))]);
       assert(calls.indexOf(egressWrites.at(-1)!) < calls.findIndex((call) => call.includes("/converge ")), calls.join("\n"));
       for (const name of names) {
         assertEquals(f.state().containers[name].snapshots.base.config["boot.autostart"], "true");
@@ -1599,7 +1607,7 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 const tokenMark = (milliseconds: number) => new Date(milliseconds).toISOString().slice(0, 19).replace(/[^0-9]/g, "");
 /** The fleet files in the order the rules list them, as the refresh's `rules` digest reads them. */
 const fleetFiles = fileRules.map(([container, path]) => ({ container, path,
-  content: units.includes(path) ? dropIn : path === marker ? markerFile : owned[path as keyof typeof owned] }));
+  content: units.includes(path) ? dropIn : path === marker ? markerFile : (ownedBy(container) as Record<string, string>)[path] }));
 /**
  * The record a passed refresh of the fixture's default inputs writes, with `converged` at the given time (seconds) and the oldest
  * token made at `tokens` (a day ago by default, as the fake's tokens are).
