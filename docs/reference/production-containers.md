@@ -147,13 +147,13 @@ A rollback has no capacity check. No deploy runs beside it, so old runs in the p
 
 **Swap.** Every release container gets `memory.swap.max` 0 while it runs, also without a memory limit. A sleep opens swap, and a wake closes it again.
 
-**No stop.** A production sleep never stops live. When swap cannot take the memory, the sleep resumes live, closes swap, removes the marker and fails with `instance.container_freeze_failed`. The sweep keeps live awake for one idle window with `swap_full`. Live keeps `boot.autostart`: a Node reboot boots it awake. The first request or fire that meets the asleep marker starts a wake, which finds live running and removes the marker (`wake: already_running`).
+**No stop.** A production sleep never stops live. When swap cannot take the memory, the sleep resumes live, closes swap, removes the marker and fails with `instance.container_freeze_failed`. The sweep keeps live awake for one idle window with `swap_full`. Live keeps `boot.autostart`: a Node reboot boots it awake. The boot removes the asleep marker, the Gateway records `power_state` `running`, and a fresh watch starts.
 
 **Traffic.** Each request through any Route of the Instance, a Cluster Route included, writes the Instance's access log on the Node's Caddy. A request with `X-Orbit-Probe: 1`, such as readiness, does not count. An uptime check without that header keeps live awake.
 
 **The visitor.** A production visitor never gets the progress page. When a request meets the asleep marker, Caddy calls the activation endpoint, and the Gateway admits or joins the wake and answers at once. Then the Node's Caddy holds the request: it tries the live upstream again until the marker is gone, and proxies the request to live.
 
-The targets are about 1.5 s for a warm wake with the prepared restore, and 2.4 s for a cold one, in which pages come back from swap one fault at a time. After 10 s, or after a failed wake, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance. 
+The targets are about 1.5 s for a warm wake with the prepared restore, and 2.4 s for a cold one, in which pages come back from swap one fault at a time. After 10 s, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance.
 
 A failed wake is stored as in development. While it is stored, Caddy answers `503` with `Retry-After: 30` at once. The first request 30 s or more after the failure starts one new wake by itself; `instance:wake` retries at once. The hold takes no Gateway worker, but a wake needs the Gateway to admit it.
 
