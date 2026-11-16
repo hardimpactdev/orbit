@@ -7,11 +7,7 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_host_updates_test.ts"
 self_hosted = true
-# 159.349s, hosted four-worker run 43000765953 (completed unit).
-# 168.762s, hosted four-worker run 43000765953 (completed unit).
-cost = 444
-# Completed Deno case times rounded up by one second; startup is added per slice.
-# Unmeasured cases use the observed maximum (111s); these are estimates, not completed measurements.
+cost = 340
 slices = 4
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
@@ -40,12 +36,14 @@ inputs = [
   "swamp/ansible/transport-exit-codes.json",
   "swamp/tests/_support/fixture_supervisor.py",
   "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/_support/host_task_scope.ts",
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
 
+# Scoped subsystem case costs are ESTIMATES pending managed-pool receipts.
 [case_costs]
-  "a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old" = 117 # completed body 116.727s, run 43010311414; larger completed history retained
-  "a Squid configuration that does not parse never replaces the live one, and the run fails" = 105 # completed body 97.442s, run 43010311414; larger completed history retained
-"a project that lists disk paths loses the list, so a container with the idmapped folders starts" = 111 # ESTIMATE: the file's observed maximum (111s); unmeasured
-"an old folder version that a process still maps stays; a restart that failed runs again on the next converge" = 111 # ESTIMATE: the file's observed maximum (111s); unmeasured
+"a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old" = 90
+"a Squid configuration that does not parse never replaces the live one, and the run fails" = 25
+"a project that lists disk paths loses the list, so a container with the idmapped folders starts" = 125
+"an old folder version that a process still maps stays; a restart that failed runs again on the next converge" = 100

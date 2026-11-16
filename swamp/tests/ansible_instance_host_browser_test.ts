@@ -1,3 +1,4 @@
+import { hostTasks } from "./_support/host_task_scope.ts";
 /**
  * The runtime folder's browser libraries and fonts, the image's shared files in every existing container, and Chromium's trust of
  * the Orbit root CA (docs/reference/development-containers.md#browser-libraries-and-fonts, #existing-containers, #trust).
@@ -39,6 +40,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
+            hostTasks(f.folder, ["Install the shared folders", "Bring the existing containers to the image's shared files"]);
             const nss = await deb(f.folder, "libfake3", {
                 "usr/lib/x86_64-linux-gnu/libfake3.so": "library",
                 "usr/lib/x86_64-linux-gnu/libfakeutil.so.1.0.0": "versioned",
@@ -108,6 +110,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
+            hostTasks(f.folder, ["Install the shared folders"]);
             const one = await deb(f.folder, "libone", { "usr/lib/x86_64-linux-gnu/libsame.so.1": "one" });
             const two = await deb(f.folder, "libtwo", { "usr/lib/x86_64-linux-gnu/libsame.so.1": "two" });
             f.write({ ...f.instances, folders: { ...f.instances.folders, runtime: { ...f.instances.folders.runtime, parts: [...f.instances.folders.runtime.parts, one, two] } } });
@@ -258,6 +261,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
+            hostTasks(f.folder, ["Install the shared folders", "Bring the existing containers to the image's shared files"]);
             let result = await f.run();
             assert(result.ok, result.output);
             const state = f.state();
