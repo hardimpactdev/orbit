@@ -25,7 +25,4 @@ enum TaskVmError: string
 
     // The group's runtime on the VM.
     case GitCredentialRefused = 'task_vm.git_credential_refused';
-
-    // Workspace ownership.
-    case WorkspaceMismatch = 'task_vm.workspace_mismatch';
 }
