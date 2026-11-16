@@ -36,7 +36,7 @@ cases:
   - id: required-only
     batch: fresh-fleet
     covers: [main, add, succeeded, role-refused, converge-requested, converge-mode, converge, converge-succeeded]
-    summary: Repair a stopped Docker service when adding database, verify its package and active assignment, refuse an ordinary repeat, then prove convergence changes nothing.
+    summary: Repair a stopped Docker service when adding database, verify its package and active assignment, refuse an ordinary repeat, then prove that a convergence after the install succeeds and changes nothing.
     timeout: 1200
     setup:
       - service: {on: app-dev, name: docker.socket, state: stop}
@@ -52,8 +52,8 @@ cases:
           - cli: {run: [node:role:add, "${app-dev.id}", database], expect: {exit: 1, code: validation.failed, request: none}}
         expect:
           - unchanged: {since: act, what: [ufw, operations]}
-      - act:
-          - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], expect: {exit: 0, status: succeeded}}
+      # The install converged the role, so the first --converge is already the repeat that must change nothing (measured in a copy:
+      # both converges after the install changed 0 in every phase). One Operation checks both.
       - act:
           - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], save: {id: database-repeat}, expect: {exit: 0, status: succeeded}}
         expect:
