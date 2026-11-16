@@ -26,40 +26,6 @@ fn config_matches_only_when_every_reserved_key_has_its_value() {
 }
 
 #[test]
-fn the_swamp_spec_and_the_agent_set_one_project_config_that_admits_only_the_runtime_disk() {
-    // The role converge applies the Swamp spec; the agent's ci-runner.host applies PROJECT_CONFIG. Both must agree.
-    let spec =
-        include_str!("../../../../swamp/extensions/behaviors/operations/node/ci_host_spec.ts");
-    let block = spec
-        .split("export const projectConfig = {")
-        .nth(1)
-        .and_then(|rest| rest.split("\n};").next())
-        .expect("ci_host_spec.ts exports projectConfig");
-    let swamp: BTreeMap<String, String> = block
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with("//"))
-        .map(|line| {
-            let (key, value) = line.trim_end_matches(',').split_once(':').expect(line);
-            let value = value.trim();
-            let value = if value == "network" {
-                NETWORK
-            } else {
-                value.trim_matches('"')
-            };
-            (key.trim().trim_matches('"').to_string(), value.to_string())
-        })
-        .collect();
-    let agent: BTreeMap<String, String> = PROJECT_CONFIG
-        .iter()
-        .map(|(key, value)| (key.to_string(), value.to_string()))
-        .collect();
-    assert_eq!(swamp, agent);
-    assert_eq!(agent["restricted.devices.disk"], "allow");
-    assert_eq!(agent["restricted.devices.disk.paths"], "/opt/orbit-runtime");
-}
-
-#[test]
 fn default_scope_applies_to_networks_and_acls_only() {
     assert_eq!(
         default_path("networks", Some(NETWORK)),

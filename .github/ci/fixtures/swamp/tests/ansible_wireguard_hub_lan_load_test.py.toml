@@ -13,7 +13,8 @@ file = "swamp/tests/ansible_wireguard_hub_lan_load_test.py"
 self_hosted = true
 # The whole hub LAN file ran 167 s hosted and 155.554 s locally; this part ran 46.46 s locally.
 # ESTIMATE: local time scaled to the hosted whole-file time, x 1.15, rounded up. Python files run whole.
-cost = 58
+# Self-hosted cost: no pool time (OVER BUDGET); hosted 58 x the median ratio of all passed pool units 1.04.
+cost = 61
 inputs = [
   "swamp/tests/_support/wireguard_hub_lan.py",
   "bin/swamp-shape-gate",

@@ -8,7 +8,8 @@ cases = [
 file = "swamp/bin/check-swamp-base-policy_test.ts"
 self_hosted = true
 # Local run of all four cases, 55s with the gate tools on PATH, rounded up by one second.
-cost = 56
+# Self-hosted cost: no pool time (OVER BUDGET); hosted 56 x the median ratio of all passed pool units 1.04.
+cost = 59
 inputs = [
   "swamp/bin/constant-name.ts",
   "swamp/bin/bounded-phase-scripts.ts",
