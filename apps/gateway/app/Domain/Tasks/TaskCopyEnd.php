@@ -35,15 +35,25 @@ final readonly class TaskCopyEnd
      */
     public function workspace(Task $group, Instance $copy): array
     {
-        $published = array_values(Operation::query()->where('kind', 'tasks.publish')->where('target_type', 'task_group')->where('target_id', $group->id)
-            ->where('status', OperationStatus::Succeeded)->pluck('result')
-            ->map(static fn (mixed $result): mixed => is_array($result) ? ($result['commit'] ?? null) : null)->filter(static fn (mixed $commit): bool => is_string($commit))->unique()->all());
-        $read = $this->read->read($copy, $published);
+        $read = $this->read->read($copy, self::published($group));
         $count = static fn (mixed $class): ?int => is_array($class) && is_int($class['count'] ?? null) ? $class['count'] : null;
 
         return ['state' => $read['state'], 'reason' => $read['reason'], 'read_at' => $read['read_at'], 'head' => $read['head'],
             'unpushed' => $read['unpushed'], 'uncommitted' => $read['uncommitted'], 'modified' => $count($read['modified']),
             'untracked' => $count($read['untracked']), 'stashes' => $count($read['stashes'])];
+    }
+
+    /**
+     * The commits that the group's succeeded publishes pushed: they and their history are on origin. The copy's reads name them, and
+     * the content read of its base counts what they hold as published (docs/reference/tasks.md#published-work-of-a-copy).
+     *
+     * @return list<string>
+     */
+    public static function published(Task $group): array
+    {
+        return array_values(Operation::query()->where('kind', 'tasks.publish')->where('target_type', 'task_group')->where('target_id', $group->id)
+            ->where('status', OperationStatus::Succeeded)->pluck('result')
+            ->map(static fn (mixed $result): mixed => is_array($result) ? ($result['commit'] ?? null) : null)->filter(static fn (mixed $commit): bool => is_string($commit))->unique()->all());
     }
 
     /** Refuses while an Operation holds the copy: its create still runs, or an earlier destroy has not ended. Call before any change. */

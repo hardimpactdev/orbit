@@ -37,6 +37,12 @@ inputs:
         # Makes a missing mirror of the copy; empty when the default is gone.
         source_mirror: {type: string, pattern: '^(/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git)?$'}
         start: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+        # The content read after the base (docs/reference/tasks.md#published-work-of-a-copy): the commits the group's publishes
+        # pushed, and its latest approved commit or empty.
+        published:
+          type: array
+          items: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+        approved: {type: string, pattern: '^([0-9a-f]{40}([0-9a-f]{24})?)?$'}
         # The shared address-node tasks own the pinned SSH descriptor contract.
         ssh_execution: {type: object}
       required: [runtime, branch, snapshot_id, instance_id, ssh_execution]

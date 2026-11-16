@@ -18,7 +18,11 @@ class TaskInstanceWorkspaceBaseTest(HARNESS['BaseHarness']):
         before = self.state()
         result = self.phase('base')
         self.assertEqual(result, {'default_branch': 'main', 'default_commit': self.head, 'branch': 'task-42',
-                                  'branch_commit': self.work, 'behind_by': 2, 'start': self.seed, 'bundled': True, 'changed': True})
+                                  'branch_commit': self.work, 'behind_by': 2, 'start': self.seed, 'bundled': True, 'changed': True,
+                                  # The copy's own commit is not on main, and its uncommitted work never is.
+                                  'work': {'state': 'dirty', 'head': self.work, 'default_commit': self.head, 'empty': False,
+                                           'paths': {'count': 1, 'names': ['work.txt']}, 'uncommitted': 2, 'untracked': 0,
+                                           'stashes': 0, 'approved_held': None}})
         self.assertEqual(self.evidence('base'), result)
         self.assertEqual(self.git('rev-parse', 'refs/remotes/origin/main'), self.head)
         self.assertEqual(self.state(), before)
