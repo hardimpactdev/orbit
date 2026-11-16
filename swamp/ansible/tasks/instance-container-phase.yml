@@ -164,7 +164,7 @@
   tags: [start]
   when: phase == 'start' and intent.marker is defined and start_found in ['Running', 'Frozen']
   ansible.builtin.find:
-    paths: /var/lib/orbit/hibernation/outcomes
+    paths: "{{ wake_outcomes | default('/var/lib/orbit/hibernation/outcomes') }}"
     patterns: "app-instance-{{ container.instance_id }}-op-{{ lookup('ansible.builtin.env', 'ORBIT_OPERATION_ID') }}.ready-*"
   register: wake_fast_outcome
 

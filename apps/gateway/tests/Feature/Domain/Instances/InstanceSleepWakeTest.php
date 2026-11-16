@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
 use App\Actions\Operations\StartOperationAction;
+use App\Data\Operations\OperationListItemData;
+use Carbon\CarbonInterval;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContribution;
 use App\Domain\Instances\InstanceLifecycleContributions;
@@ -558,6 +560,127 @@ it('answers the wake command with the ended Operation when the Node resumed the 
     Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay !== null);
     Queue::assertNotPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
 });
+
+it('projects the ready file\'s status and time: restore_mode, prepared_restore and ready_at in whole seconds, and no number it was not sent', function (string $suffix, string $status, string $mode): void {
+    $clone = frozenClone();
+    wakeNode($clone, ['restore' => $suffix, 'readyAt' => 1794790000]);
+
+    $operation = app(InstanceWake::class)->start($clone, null, null);
+
+    expect($operation->status->value)->toBe('succeeded')
+        ->and(Arr::except($operation->result, ['trigger_seconds', 'confirm_seconds']))->toBe(['power_state' => 'running', 'wake' => 'resumed',
+            'marker_found' => true, 'restore_mode' => $mode, 'prepared_restore' => ['status' => $status],
+            'ready_at' => '2026-11-16T00:46:40Z', 'ready_at_resolution_seconds' => 1])
+        // finished_at is the projection, not the readiness time.
+        ->and($operation->finished_at?->getTimestamp())->not->toBe(1794790000);
+})->with([
+    'complete' => ['complete', 'complete', 'prepared'],
+    'partial' => ['partial', 'partial', 'prepared'],
+    'timed out' => ['timed-out', 'timed_out', 'prepared'],
+    'skipped: an ordinary resume' => ['skipped', 'skipped', 'ordinary'],
+]);
+
+it('reads the outcome at once and then every 25 ms, never waiting first', function (int $after, int $pauses): void {
+    $clone = frozenClone();
+    $state = wakeNode($clone, ['after' => $after]);
+
+    expect(app(InstanceWake::class)->start($clone, null, null)->status->value)->toBe('succeeded')
+        ->and($state->reads)->toBe($after);
+    Sleep::assertSleptTimes($pauses);
+    Sleep::assertSlept(fn (CarbonInterval $pause): bool => (int) $pause->totalMicroseconds === 25_000, $pauses);
+})->with([
+    'ready at the first read' => [1, 0],
+    'ready at the fourth read' => [4, 3],
+]);
+
+it('gives up on a silent worker after 6 s, well before the safety net, and continues the same Operation in its run', function (): void {
+    $clone = frozenClone();
+    $state = wakeNode($clone, ['silent' => true]);
+    $started = ContainerResume::now();
+
+    $operation = app(InstanceWake::class)->start($clone, null, null);
+
+    expect($operation->status->value)->toBe('queued')
+        ->and($operation->state[InstanceWake::ResumeState])->toBe('workflow')
+        ->and(ContainerResume::now() - $started)->toBeGreaterThanOrEqual(ContainerResume::BoundSeconds - 0.05)->toBeLessThan(ContainerResume::BoundSeconds + 0.1)
+        ->and(ContainerResume::BoundSeconds + 1.0)->toBeLessThan((float) InstanceWake::SafetyNetSeconds)
+        ->and(array_slice($state->calls, -1))->toBe(['hibernation.marker:remove'])
+        ->and($state->files)->not->toHaveKey(ContainerResume::requestPath($clone->id, $operation->id));
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $operation->id && $job->delay === null);
+});
+
+it('never takes another Operation\'s outcome, nor the old unqualified answer, for this wake', function (): void {
+    $clone = frozenClone();
+    $state = wakeNode($clone, ['silent' => true]);
+    $other = Operation::query()->max('id') + 100;
+    foreach (['ready-complete', 'done'] as $suffix) {
+        $state->files[ContainerResume::outcomePath($clone->id, $other, $suffix)] = time();
+    }
+    $state->files['/dev/shm/orbit/hibernation/app-instance-'.$clone->id.'.resumed'] = time();
+
+    $operation = app(InstanceWake::class)->start($clone, null, null);
+
+    expect($operation->status->value)->toBe('queued')->and($operation->state[InstanceWake::ResumeState])->toBe('workflow');
+});
+
+it('lets the safety net\'s run and a late Node outcome make one transition and one projection, with the extensions once', function (): void {
+    $clone = frozenClone();
+    $state = wakeNode($clone);
+    $contribution = Mockery::mock(InstanceLifecycleContribution::class)->shouldIgnoreMissing();
+    $contribution->shouldReceive('projectWake')->once();
+    app()->instance(InstanceLifecycleContributions::class, new InstanceLifecycleContributions([$contribution]));
+    // The safety net started the run just as the worker wrote its outcome.
+    $state->onRead = function () use ($clone): void {
+        $wake = Operation::query()->where('kind', InstanceWake::Kind)->where('target_id', $clone->id)->sole();
+        $wake->forceFill(['status' => 'running', 'state' => [...$wake->state, 'swamp_run_id' => 'safety-net']])->save();
+    };
+
+    $operation = app(InstanceWake::class)->start($clone, null, null);
+
+    expect($operation->status->value)->toBe('running')->and($operation->result)->toBeNull()->and($state->restores)->toBe(1)
+        ->and($clone->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
+    // The run waited for the helper's lock, found the container running and reports the worker's outcome of this Operation.
+    $done = app(DirectOperation::class)->projection($operation)->apply($operation->refresh(), ['status' => 'succeeded', 'run_id' => 'safety-net',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['commit' => null, 'wake' => 'already_running',
+            'marker_found' => true, 'prepared_restore' => ['status' => 'complete'], 'ready_at' => '2026-11-16T00:46:40Z', 'ready_at_resolution_seconds' => 1]]);
+    app(DeferredCallbackCollection::class)->invoke();
+
+    expect($done->status->value)->toBe('succeeded')
+        ->and($done->result)->toMatchArray(['power_state' => 'running', 'wake' => 'already_running', 'restore_mode' => 'prepared',
+            'prepared_restore' => ['status' => 'complete'], 'ready_at' => '2026-11-16T00:46:40Z', 'ready_at_resolution_seconds' => 1])
+        ->and($state->restores)->toBe(1)
+        // After the projection the Gateway removes the Operation's files, off the visitor's path.
+        ->and(array_slice($state->calls, -4))->toBe(cleanUpCalls(3))
+        ->and(array_keys($state->files))->toBe([ContainerResume::WorkerPath]);
+});
+
+it('keeps the run\'s prepared restore, restore_mode and ready_at, and drops values outside the contract', function (array $phase, array $expected): void {
+    $clone = frozenClone();
+    wakeNode($clone, ['worker' => false]);
+    $wake = app(InstanceWake::class)->start($clone, null, null);
+
+    $done = powerRun($wake, 'succeeded', ['commit' => null, 'wake' => 'resumed', 'marker_found' => true, ...$phase]);
+
+    expect(Arr::except($done->result, ['power_state', 'wake', 'marker_found']))->toBe($expected)
+        ->and(OperationListItemData::fromModel($done)->toArray()['ready_at'])->toBe($expected['ready_at'] ?? null);
+})->with([
+    'a prepared restore with its reason and milliseconds' => [
+        ['prepared_restore' => ['status' => 'partial', 'reason' => 'deadline', 'pages' => 12, 'host_pid' => 4],
+            'ready_at' => '2026-11-16T00:46:40.123Z', 'ready_at_resolution_seconds' => 0.001],
+        ['prepared_restore' => ['status' => 'partial', 'reason' => 'deadline'], 'restore_mode' => 'prepared',
+            'ready_at' => '2026-11-16T00:46:40.123Z', 'ready_at_resolution_seconds' => 0.001]],
+    'an ordinary resume without a plan' => [
+        ['prepared_restore' => ['status' => 'skipped', 'reason' => 'no_plan']],
+        ['prepared_restore' => ['status' => 'skipped', 'reason' => 'no_plan'], 'restore_mode' => 'ordinary']],
+    'a boot: nothing to restore' => [['prepared_restore' => ['status' => 'not_applicable']],
+        ['prepared_restore' => ['status' => 'not_applicable'], 'restore_mode' => 'ordinary']],
+    'values outside the contract' => [
+        ['prepared_restore' => ['status' => 'ready', 'reason' => 'whatever'], 'restore_mode' => 'prepared', 'ready_at' => 'yesterday',
+            'ready_at_resolution_seconds' => 1],
+        []],
+    'a reason outside the contract' => [['prepared_restore' => ['status' => 'skipped', 'reason' => '/proc/4/maps']],
+        ['prepared_restore' => ['status' => 'skipped'], 'restore_mode' => 'ordinary']],
+]);
 
 it('runs the wake workflow in the same Operation for every other state, removes an untaken request, and keeps the progress page', function (array $node, string $sleep, array $calls): void {
     $clone = frozenClone($sleep);

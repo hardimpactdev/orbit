@@ -3,7 +3,7 @@
  * build, a rerun that changes nothing, a deployment, the refusals of a deployment and the result file each phase writes. The Node is
  * this machine: the run's connection is local and nothing becomes root.
  */
-import { assert, assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert@1";
+import { assert, assertEquals, assertMatch, assertStringIncludes, assertThrows } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 import { fixture as hostFixture } from "./_support/instance_host.ts";
 import { helperCalls, installPowerHelper } from "./_support/power_helper.ts";
@@ -1325,7 +1325,8 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
       const silent = f.run("start");
       assert(!silent.ok, silent.output);
-      assertEquals(f.result(), { error_code: "instance.web_unready", wake: "started", marker_found: true });
+      // The marker stays, so the result names no readiness time.
+      assertEquals(f.result(), { error_code: "instance.web_unready", wake: "started", marker_found: true, prepared_restore: { status: "not_applicable" } });
       assert(sleeping.present());
     } finally {
       f.cleanup();
@@ -1345,7 +1346,11 @@ Deno.test({
       f.write();
       const silent = f.run("start");
       assert(!silent.ok, silent.output);
-      assertEquals(f.result(), { error_code: "instance.t3_unready", wake: "started", marker_found: true });
+      const { ready_at, ...rest } = f.result();
+      assertEquals(rest, { error_code: "instance.t3_unready", wake: "started", marker_found: true, prepared_restore: { status: "not_applicable" },
+        ready_at_resolution_seconds: 0.001 });
+      // The run removed the marker: the website was ready then, in the Node's UTC milliseconds.
+      assertMatch(String(ready_at), /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
       assert(!sleeping.present());
 
       sleeping = asleep(f, { web: [200], t3: true });
@@ -1382,7 +1387,8 @@ Deno.test({
 
 /** The wake of each state a sleeping container can be in; the cgroup files live in the fixture. */
 function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | "Running",
-  options: { marker?: boolean; web?: number[]; silent?: boolean; nested?: boolean; inner?: Record<string, string>; opened?: string[]; intent?: Record<string, unknown> } = {}) {
+  options: { marker?: boolean; web?: number[]; silent?: boolean; nested?: boolean; inner?: Record<string, string>; opened?: string[]; intent?: Record<string, unknown>;
+    outcomes?: string } = {}) {
   if (options.nested) {
     f.container.project = "orbit-instances-nested";
     f.write();
@@ -1409,7 +1415,7 @@ function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | 
   Object.assign(f.intent, options.intent ?? { marker: sleeping.marker, web: { port: 8080, ready_seconds: 2, settle_seconds: 1, resume_seconds: 2 } });
   f.write();
   const calls = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").length;
-  const run = f.run("start");
+  const run = f.run("start", {}, options.outcomes ? ["-e", `wake_outcomes=${options.outcomes}`] : []);
   const families = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").slice(calls - 1).filter(Boolean)
     .map((line) => (JSON.parse(line) as string[]).filter((arg, i, all) => arg !== "--project" && all[i - 1] !== "--project")[0]);
   return { run, sleeping, families, swap: Deno.readTextFileSync(`${cgroup}/memory.swap.max`), status: f.state().containers["instance-7"].status as string,
@@ -1439,10 +1445,43 @@ Deno.test({
       const result = f.result();
       assertEquals([result.wake, result.marker_found], ["resumed", true]);
       assert(typeof result.resume_seconds === "number" && typeof result.web_probe_seconds === "number", JSON.stringify(result));
+      // The helper's restore status, and the readiness time of this run's marker removal.
+      assertEquals([(result.prepared_restore as Record<string, unknown>).status, result.ready_at_resolution_seconds], ["complete", 0.001]);
+      assertMatch(String(result.ready_at), /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
       // After the marker went, one exec checks the library cache that a converge could not refresh while the container was frozen.
       assert(Deno.readTextFileSync(`${f.folder}/calls`).includes("ldconfig -p"), "the library check ran");
       assert(Deno.readTextFileSync(`${f.folder}/calls`).includes("update-ca-certificates"), "the CA bundle check ran");
     } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a wake that follows the Node's fast wake of its Operation reports that wake's ready file, and no other Operation's",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    const outcomes = Deno.makeTempDirSync();
+    try {
+      // The worker resumed the container and removed the marker after the Gateway gave up: the run finds it running.
+      const at = new Date(Date.UTC(2026, 10, 16, 0, 46, 40));
+      Deno.writeTextFileSync(`${outcomes}/app-instance-7-op-31.ready-timed-out`, "");
+      Deno.utimeSync(`${outcomes}/app-instance-7-op-31.ready-timed-out`, at, at);
+      Deno.writeTextFileSync(`${outcomes}/app-instance-7-op-30.ready-complete`, "");
+      const woken = wakeFrom(f, "Running", { marker: false, outcomes });
+      assert(woken.run.ok, woken.run.output);
+      assertEquals(woken.helper, []);
+      const result = f.result();
+      assertEquals([result.wake, result.marker_found, result.prepared_restore, result.ready_at, result.ready_at_resolution_seconds],
+        ["already_running", false, { status: "timed_out" }, "2026-11-16T00:46:40Z", 1]);
+
+      // Without a ready file of this Operation the run reports a running container and no readiness time.
+      Deno.removeSync(`${outcomes}/app-instance-7-op-31.ready-timed-out`);
+      wakeFrom(f, "Running", { marker: false, outcomes });
+      assertEquals([f.result().prepared_restore, f.result().ready_at], [{ status: "not_applicable" }, undefined]);
+    } finally {
+      Deno.removeSync(outcomes, { recursive: true });
       f.cleanup();
     }
   },
