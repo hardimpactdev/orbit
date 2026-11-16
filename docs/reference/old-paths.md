@@ -131,7 +131,7 @@ Nodes and the fleet lose these:
 
 The code that served only those readers goes too:
 
-- The SSH credential guard `TaskVmCredentialGuard`. The `incus` transport keeps its refusal `task_vm.git_credential_refused`.
+- The SSH credential guard `TaskVmCredentialGuard`. The `incus` transport kept its refusal `task_vm.git_credential_refused` until [the guest agent chain](#the-guest-agent-chain) went.
 - The relations `Node::liveTaskVm`, `Node::taskVms` and `Task::latestVm`.
 - `TaskVmStepClock`, `TaskVmFailedException` and the check runner's task VM setup branches.
 - The slot lookup and slot update of `TaskProvisionProjection`.
@@ -160,7 +160,7 @@ The workspace readers go too:
 - The evidence writers `TaskCheckEvidence::recordSubtaskStart` and `recordReading`. Nothing has called them since checks moved to Swamp. The check's projection records the subtask start and the result.
 - The workspace file read of the deliverable paths. Deliverable path validation reads the origin, with or without a task copy.
 
-What stays: a task copy is removed through its `instance.destroy`, and any other workspace a group owns is refused with `operation.kind_unavailable` (503) and stays. The `incus` transport keeps `task_vm.git_credential_refused`.
+What stays: a task copy is removed through its `instance.destroy`, and any other workspace a group owns is refused with `operation.kind_unavailable` (503) and stays.
 
 `ProblemRecovery` resolves an open `recipe-image:` alert as `resource_gone` and reads neither `task_vm_image_builds` nor `task_vm_image_recipe`. The answers `verified_image_build` and `recipe_generation_superseded` are gone.
 
@@ -173,11 +173,22 @@ With the tables go:
 - The models `TaskVm` and `TaskVmImageBuild`, and the enums `TaskVmState`, `TaskVmImageBuildState`, `TaskVmImageBuildStep`, `TaskVmSize`, `TaskVmProviderKind`, `TaskVmPublishState` and `TaskVmRuntime`, with `TaskVmResources`.
 - The cleanup deletes. Node removal deletes no `task_vms` or `task_vm_image_builds` rows, and Project removal deletes no `task_vms` rows.
 - The task wait `task_vm`, which nothing produced or read, and the unused class `App\Infrastructure\TaskVms\TaskVmRuntime`.
-- The row error helpers of `TaskVmException`.
+- The row error helpers of `TaskVmException`. The class went with [the guest agent chain](#the-guest-agent-chain).
 
-`TaskVmError` loses every case that nothing produces any more: `task_vm.invalid_config`, `task_vm.unknown_host`, `task_vm.host_configured`, `task_vm.fleet_unavailable`, `task_vm.setup_failed`, `task_vm.job_failed`, `task_vm.vm_missing`, `task_vm.not_settled` and `task_vm.awaiting_host_sweep`. It keeps `task_vm.git_credential_refused`. `task_vm.workspace_mismatch` went with the SSH task workspace path ([the task VM readers](#the-task-vm-readers)). The Ansible host preparation still fails with its own `task_vm.setup_failed`, and the frozen agent contract keeps `task_vm.vm_missing`.
+`TaskVmError` loses every case that nothing produces any more: `task_vm.invalid_config`, `task_vm.unknown_host`, `task_vm.host_configured`, `task_vm.fleet_unavailable`, `task_vm.setup_failed`, `task_vm.job_failed`, `task_vm.vm_missing`, `task_vm.not_settled` and `task_vm.awaiting_host_sweep`. Its last case, `task_vm.git_credential_refused`, went with [the guest agent chain](#the-guest-agent-chain). `task_vm.workspace_mismatch` went with the SSH task workspace path ([the task VM readers](#the-task-vm-readers)). The Ansible host preparation still fails with its own `task_vm.setup_failed`, and the frozen agent contract keeps `task_vm.vm_missing`.
 
 The contract does not change. The task group field `vm_power` stays and is always `null`. The Node removal input keeps `task_vm_id` as `null` and `task_vm_guest` as `false`, and the Operation inputs of a task copy end and of a cancel keep `task_vm_id: null`. `tasks.provision` stays registered. No other API, agent or Swamp input field changes.
+
+### The guest agent chain
+
+S10d removed the last VM-era code that nothing called. Nothing built an agent guest, so the guest runner, its `incus` transport and the error that transport raised had no caller. These go:
+
+- `AgentGuest`, the interface `GuestAgentCommandRunner` and its container binding, and `NativeAgentCommandRunner::runGuest()` and `installGuest()`.
+- `AgentTransports::guest()` and `IncusAgentTransport`, with its refusal `task_vm.git_credential_refused`.
+- The enum `TaskVmError`, which held only that refusal, and `TaskVmException`, which only the transport threw.
+- The deliverable evidence verifier: `TaskDeliverableVerifier::failures()` and the class `TaskDeliverableEvidence`. Nothing has called them since checks moved to Swamp.
+
+`AgentDelivery`, `SshAgentTransport` and `NativeAgentCommandRunner` take a Node only. What stays: the Node agent transports (local, SSH, a workspace, and the connection of a Node that is being admitted), `TaskDeliverableVerifier::matches()` and `unconfirmed()`, `TaskCheckOutputBuilder`, and `TaskVmAptCache`, `TaskVmModelRoute` and `TaskVmNestedFleet`. `GitReadScript` still marks its input as one that carries a credential. No API, agent or Swamp field changes.
 
 ### What stays
 

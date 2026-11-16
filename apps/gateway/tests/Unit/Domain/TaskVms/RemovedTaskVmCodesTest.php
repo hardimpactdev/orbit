@@ -4,11 +4,22 @@ declare(strict_types=1);
 
 use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Tasks\TaskWait;
-use App\Domain\TaskVms\TaskVmError;
+use Illuminate\Support\Facades\File;
+use Symfony\Component\Finder\SplFileInfo;
 
-/** The task VM error and doctor codes that nothing produced or read are gone (docs/reference/old-paths.md#the-task-vm-lifecycle). */
-it('holds no task VM error code that nothing produces', function (string $code): void {
-    expect(TaskVmError::tryFrom($code))->toBeNull();
+/**
+ * The task VM error and doctor codes that nothing produced or read are gone (docs/reference/old-paths.md#the-task-vm-lifecycle).
+ * The error enum and its exception went with the guest agent chain (docs/reference/old-paths.md#the-guest-agent-chain).
+ */
+it('has no task VM error enum or exception', function (string $class): void {
+    expect(class_exists($class))->toBeFalse();
+})->with(['App\\Domain\\TaskVms\\TaskVmError', 'App\\Domain\\TaskVms\\TaskVmException']);
+
+it('names no task VM error code in Gateway code', function (string $code): void {
+    $sources = [...File::allFiles(app_path()), ...File::allFiles(base_path('extensions'))];
+    $naming = array_filter($sources, static fn (SplFileInfo $file): bool => $file->getExtension() === 'php' && str_contains($file->getContents(), "'{$code}'"));
+
+    expect(array_map(static fn (SplFileInfo $file): string => $file->getRelativePathname(), $naming))->toBe([]);
 })->with(array_map(static fn (string $name): string => "task_vm.{$name}", [
     'host_in_use', 'range_in_use', 'setup_unavailable', 'pool_start_timeout', 'park_failed', 'resume_timeout', 'invalid_user_data',
     'invalid_gateway_key', 'host_command_failed', 'invalid_host_output', 'host_key_failed', 'topology_failed', 'project_unsupported',
@@ -19,11 +30,9 @@ it('holds no task VM error code that nothing produces', function (string $code):
     'awaiting_host_sweep',
     // Only the removed SSH task workspace guard produced this (docs/reference/old-paths.md#the-task-vm-readers).
     'workspace_mismatch',
+    // Only the removed incus agent transport produced this (docs/reference/old-paths.md#the-guest-agent-chain).
+    'git_credential_refused',
 ]));
-
-it('keeps the task VM error codes that a refusal still produces', function (): void {
-    expect(array_column(TaskVmError::cases(), 'value'))->toBe(['task_vm.git_credential_refused']);
-});
 
 it('has no task wait for a task VM, which nothing produces or reads', function (): void {
     expect(TaskWait::tryFrom('task_vm'))->toBeNull()->and(array_column(TaskWait::cases(), 'value'))->toBe(['capacity', 'topology']);

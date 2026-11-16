@@ -424,16 +424,17 @@ A transport loss, a missing result, a malformed result, a timeout, and an undecl
 
 ### Transports
 
-The runner picks the transport from the Node or build guest. Every adapter carries the same arguments, envelope, and result.
+The runner picks the transport from the Node. Every adapter carries the same arguments, envelope, and result.
 
 | Node | Transport |
 | --- | --- |
 | A managed Node | SSH to its WireGuard address, as its enrolled account, with its pinned host key |
 | The Gateway's own Node | A local process. Mutations still change the Node, because each runs in its own transient service outside the worker's read-only view |
 | A Node being admitted | Its pinned bootstrap SSH connection, until managed WireGuard SSH is ready |
-| An Incus build guest | `incus exec` through its managed host, before guest networking or SSH exists |
 
 Native bootstrap and image consumers receive typed public input from `orbit:node-recipe`: the Node account and roles, bootstrap input, stored machine recipe, and frozen observer delivery. Swamp supplies the system programs and runs their effects. The export contains no agent actions, executable programs or command fingerprints.
+
+No transport runs through `incus exec`: the build guest transport had no caller and is removed ([old paths](/reference/old-paths#the-guest-agent-chain)).
 
 Only binary staging may change a Node outside a named command. First admission uses a fixed `uname -sm` staging probe because no agent exists yet. It validates the platform and architecture before installing a candidate. A root bootstrap login runs root commands directly; other Linux logins use passwordless sudo. The installer owns atomic replacement and the cleanup of each candidate it runs from.
 

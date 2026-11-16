@@ -10,7 +10,6 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentCommands\AgentTransports;
-use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
 use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -35,7 +34,6 @@ final class AgentCommandsServiceProvider extends ServiceProvider
             Config::string('orbit.home'),
         ));
         $this->app->bind(AgentCommandRunner::class, NativeAgentCommandRunner::class);
-        $this->app->bind(GuestAgentCommandRunner::class, NativeAgentCommandRunner::class);
         $this->app->bind(WorkspaceAgentCommandRunner::class, NativeAgentCommandRunner::class);
         $this->app->bind(AdmissionAgentRunner::class, NativeAgentCommandRunner::class);
     }

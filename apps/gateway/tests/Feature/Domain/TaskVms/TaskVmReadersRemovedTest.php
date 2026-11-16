@@ -17,7 +17,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\TaskVmError;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
@@ -112,8 +111,8 @@ it('refuses the removal of an owned workspace that is no task copy with the one 
     expect($group->refresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
         ->and($group->assistance_reason)->toBe('Workspace removal failed: This workspace is no task copy. Task VMs and their release are removed, so Orbit cannot remove it.')
         ->and(Instance::query()->find($workspace->id))->not->toBeNull()
-        // The refusal of the removed SSH guard is gone from the task VM error codes.
-        ->and(TaskVmError::tryFrom('task_vm.workspace_mismatch'))->toBeNull();
+        // The refusal of the removed SSH guard is gone with the task VM error codes.
+        ->and(class_exists('App\\Domain\\TaskVms\\TaskVmError'))->toBeFalse();
 });
 
 it('recovers an old open recipe-image alert as resource_gone', function (): void {

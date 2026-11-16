@@ -50,7 +50,7 @@ def references(source, php=False):
     ts = tokens(source)
     agent_file = bool(re.search(r'AgentCommandRunner|AgentInvocation|AgentStep|AgentContract|AgentSchemas|node-agent|orbit-agent|localAgent|image_guest|image_ssh', source))
     found = set()
-    receivers = {variable: kind for kind, variable in re.findall(r'(AgentCommandRunner|GuestAgentCommandRunner|WorkspaceAgentCommandRunner|AgentInvocation|AgentContract)\s+\$(\w+)', source)} if php else {}
+    receivers = {variable: kind for kind, variable in re.findall(r'(AgentCommandRunner|WorkspaceAgentCommandRunner|AgentInvocation|AgentContract)\s+\$(\w+)', source)} if php else {}
     wrappers = {}
     if php and agent_file:
         for method in re.finditer(r'function\s+(\w+)\s*\(([^)]*)\)', source):
@@ -95,7 +95,7 @@ def references(source, php=False):
                 kind = receivers.get(receiver)
                 if t == 'run' and receiver == 'AgentStep':
                     index = 2
-                elif kind and t in ('run', 'runGuest', 'runInWorkspace', 'command', 'operationCommand'):
+                elif kind and t in ('run', 'runInWorkspace', 'command', 'operationCommand'):
                     index = 0 if kind == 'AgentContract' else (2 if t == 'runInWorkspace' else 1)
                 elif ts[i - 1][0] == '->' and receiver == '$this' and t in wrappers:
                     index = wrappers[t]

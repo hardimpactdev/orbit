@@ -13,7 +13,7 @@ use JsonException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
-final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, AgentCommandRunner, GuestAgentCommandRunner, WorkspaceAgentCommandRunner
+final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, AgentCommandRunner, WorkspaceAgentCommandRunner
 {
     public const string VersionMismatch = 'agent.version_mismatch';
 
@@ -49,18 +49,6 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
     }
 
     #[\Override]
-    public function runGuest(AgentGuest $guest, string $command, #[\SensitiveParameter] array $input = [], ?float $deadlineSeconds = null): array
-    {
-        return $this->runWith($this->transports->guest($guest), $guest, $command, $input, $deadlineSeconds);
-    }
-
-    #[\Override]
-    public function installGuest(AgentGuest $guest): bool
-    {
-        return $this->installPin($guest, $this->transports->guest($guest), $this->delivery->pin($guest), null);
-    }
-
-    #[\Override]
     public function runOver(Node $node, SshConnection $connection, string $command, #[\SensitiveParameter] array $input = [], ?float $deadlineSeconds = null): array
     {
         return $this->runWith($this->transports->over($node, $connection), $node, $command, $input, $deadlineSeconds);
@@ -82,7 +70,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    private function runWith(AgentTransport $transport, Node|AgentGuest $node, string $command, #[\SensitiveParameter] array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+    private function runWith(AgentTransport $transport, Node $node, string $command, #[\SensitiveParameter] array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         $spec = $this->contract->command($command);
         if (($spec->inputMaxBytes > 0) !== ($binaryInput !== null) || ($binaryInput !== null && $binaryInput->bytes > $spec->inputMaxBytes)) {
@@ -96,7 +84,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         }
 
         $pin = $this->delivery->pin($node);
-        if ($node instanceof Node && $node->agent_failed_pin === $pin) {
+        if ($node->agent_failed_pin === $pin) {
             throw new AgentCommandRefused($command, self::InstallFailed, "The pinned agent failed to install on Node [{$node->name}]; run node:converge to repair it.", ['pin' => $pin]);
         }
 
@@ -131,7 +119,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
      * installer share one deadline. Only a refusal the installer declares, other than a busy lock or too little time,
      * marks the pin as failed; any other outcome lets the next command try again.
      */
-    private function installPin(Node|AgentGuest $node, AgentTransport $transport, string $pin, ?float $deadline): bool
+    private function installPin(Node $node, AgentTransport $transport, string $pin, ?float $deadline): bool
     {
         $installBy = microtime(true) + self::InstallWaitSeconds;
         if ($deadline !== null) {
@@ -166,14 +154,12 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
             if (! $spec->declares($code) || in_array($code, self::RetryableInstallRefusals, true)) {
                 throw new AgentCommandRefused(self::Install, $code, $outcome['error']['message'], $outcome['error']['details']);
             }
-            if ($node instanceof Node) {
-                $this->recordFailedPin($node, $pin);
-            }
+            $this->recordFailedPin($node, $pin);
 
             throw new AgentCommandRefused(self::Install, self::InstallFailed, "The pinned agent failed to install on Node [{$node->name}].", ['pin' => $pin, 'cause' => $code, ...$outcome['error']['details']]);
         }
 
-        if ($node instanceof Node && $node->agent_failed_pin !== null) {
+        if ($node->agent_failed_pin !== null) {
             $this->recordFailedPin($node, null);
         }
 
