@@ -55,13 +55,23 @@ final readonly class NodeExecutorInput
             return null;
         }
         $artifact = $artifacts[$artifactKey] ?? null;
+        // Rollout (docs/reference/executor.md#rollout): until the pinned delivery carries the executor and the Gateway pins a key,
+        // the converge skips the install and records why. Nothing uses the executor before then. Once both are present the install
+        // is required, and a wrong pin fails the converge.
+        $skip = match (true) {
+            $artifact === null => 'executor.release_missing',
+            $keys === [] => 'executor.keys_missing',
+            default => null,
+        };
         $error = match (true) {
-            $artifact === null || ! isset($artifact['url']) => 'executor.release_missing',
-            $keys === [] || count($keys) > 2 => 'executor.keys_invalid',
+            $skip !== null => null,
+            ! isset($artifact['url']) => 'executor.release_invalid',
+            count($keys) > 2 => 'executor.keys_invalid',
             default => null,
         };
 
         return [
+            'skip' => $skip,
             'plan_error' => $error,
             'path' => self::Binary,
             'url' => $artifact['url'] ?? null,
@@ -69,7 +79,7 @@ final readonly class NodeExecutorInput
             'relay_user' => self::RelayUser,
             'node' => $nodeId."\n",
             'enabled' => implode("\n", $families)."\n",
-            'keys' => implode("\n", $keys)."\n",
+            'gateway_keys' => implode("\n", $keys)."\n",
             'unit' => self::unit(),
             'sudoers' => "{$user} ALL=(".self::RelayUser.') NOPASSWD: '.self::Binary." relay\n",
         ];
