@@ -38,7 +38,7 @@ jobs:
   shape:
     name: Swamp shape gate
     if: ${{ !inputs.changed-only || inputs.shape }}
-    # Static controls stay on; ci-full-set.yml owns the after-merge fixtures.
+    # Static controls stay on; fixtures run only on the pull request (ADR 0262).
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     defaults:

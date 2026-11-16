@@ -78,11 +78,8 @@ class CallerTest(unittest.TestCase):
     def invoke(self, receipt, exit_code=0):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'receipt.json'
-            env = {**environment(), 'PROOF_RECEIPT': str(path), 'PROOF_BASE': 'b' * 40, 'PROOF_ALL': 'true',
-                   'PROOF_CHECK_ELIGIBILITY': 'true'}
+            env = {**environment(), 'PROOF_RECEIPT': str(path), 'PROOF_CHECK_ELIGIBILITY': 'true'}
             def caller():
-                self.assertEqual('', os.environ['PROOF_BASE'])
-                self.assertEqual('false', os.environ['PROOF_ALL'])
                 self.assertEqual('false', os.environ['PROOF_CHECK_ELIGIBILITY'])
                 self.assertEqual('true', os.environ['PROOF_STORE_RESULT'])
                 self.assertEqual(SHA, os.environ['PROOF_SHA'])
@@ -120,17 +117,12 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", jobs['preflight']['if'])
         self.assertIn("github.repository == 'hardimpactdev/orbit'", jobs['preflight']['if'])
         self.assertEqual('preflight', jobs['proof']['needs'])
-        main = yaml.safe_load((ROOT / '.github/workflows/ci-main-proof.yml').read_text())
-        self.assertEqual(main['jobs']['proof']['runs-on'], jobs['proof']['runs-on'])
         for job in jobs.values():
             checkout = job['steps'][0]['with']
             self.assertEqual('${{ github.sha }}', checkout['ref'])
             self.assertEqual('hardimpactdev/orbit', checkout['repository'])
             self.assertEqual(0, checkout['fetch-depth'])
             self.assertFalse(checkout['persist-credentials'])
-        text = (ROOT / '.github/workflows/ci-proof-manual.yml').read_text()
-        self.assertNotIn('ci-main-queue', text)
-        self.assertNotIn('ORBIT_MAIN_PROOF_ENABLED', text)
         upload = jobs['proof']['steps'][-1]
         self.assertEqual('always()', upload['if'])
         self.assertEqual('proof-receipt', upload['with']['name'])

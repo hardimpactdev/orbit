@@ -21,9 +21,9 @@ These terms distinguish the task images, topology seeds, their hosts and the sta
 
 ## The proof CI
 
-The job `proof-run` is built but report-only. It is outside `Required checks`. One firewall proof has passed end to end; complete coverage and reliable admission still need review. Nick decides when proof becomes required. The outside-PR label workflow is built. Execution is on by default (`proof.execution`); see [the execution switch](/cli/proof/run#the-execution-switch). CI admits no proof today: the repository variable `ORBIT_PROOF_ENABLED` is unset ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)).
+The job `proof-run` is built. When it runs, it is part of `Required checks` and blocks the merge; no switch makes it report-only ([ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request)). The outside-PR label workflow is built. Execution is on by default (`proof.execution`); see [the execution switch](/cli/proof/run#the-execution-switch). CI admits no proof today: the repository variable `ORBIT_PROOF_ENABLED` is unset ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)).
 
-The job is `proof-run` (`Proof request and report (optional)`), followed by `Proof assertions (optional)`. The merge does not wait for either job. See [the proof run job](/reference/implementation-loop#the-proof-run-job).
+The job is `proof-run` (`CI proof`). See [the proof run job](/reference/implementation-loop#the-proof-run-job).
 
 A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on a self-hosted runner, waits for the verdict, and passes or fails. The runner reaches the Gateway over the private network as an enrolled Node. The job adds no runner and no access.
 
@@ -38,11 +38,10 @@ A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on 
 
 - The job summary lists each case, the uncovered paths and the receipt link. It holds no command output and no host name. The receipt link needs access to the private network.
 - A run with uncovered paths and no case passes, and the summary says so. It never looks like a run that proved something.
-- A report-only admission refusal with `tasks.capacity_unavailable`, no case rows and a known command selection records **not run: capacity unavailable**.
-- The request report succeeds and the assertion check skips. No proof passes.
+- A capacity message with no cases fails. No proof passes without case verdicts.
 - Its artifact receipt names the commit, operation, selected commands, outcome and idempotency key. It excludes execution input and host details.
 - Other errors and failed assertions stay red. The job exits with the verdict. The timeout is 45 minutes: the VM wait plus the run budget. A cancelled job cancels its run.
-- `Proofs` tests the pull request head, not its merge with `main`. It does not run again after the merge.
+- The proof tests the pull request head, not its merge with `main`. It does not run again after the merge: main runs no proof.
 
 **Triggers**
 
@@ -56,7 +55,8 @@ A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on 
 - Orbit accepts only the current head, with the label and a maintainer's approval of exactly that commit.
 - A new push removes the label and cancels the proof of the old head. The new head needs a new approval and the label again.
 - A label added before the approval fails. Remove the label and add it again after approving.
-- `ci.yml` starts no proof for such a pull request, and `Required checks` does not wait for the proof.
+- `ci.yml` starts no proof for such a pull request.
+- `Required checks` requires the outside proof's status on the exact head while proof admission is on.
 
 **Guards**
 
@@ -70,8 +70,7 @@ A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on 
 
 **Required check**
 
-- Proof remains report-only and outside `Required checks`. One passing family does not establish complete coverage or reliable admission.
-- Nick decides the graduation rule before proof becomes required.
+- A selected proof is part of `Required checks` whenever CI admits proofs (`ORBIT_PROOF_ENABLED`).
 - Only the scope step may skip it, and only for a change that needs no proof.
 
 ## Choose the cases

@@ -13,9 +13,8 @@ cases = [
   "task-check-ci: a tick without a pending check runs only its collect step",
 ]
 file = "swamp/tests/workflow_engine_semantics_native_test.ts"
+self_hosted = true
 cost = 60 # 12 cases in 45-70 s locally on Beast; each case inits a repository and runs one real workflow with stubbed steps
-after_merge = true
-reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
 inputs = [
   "swamp/workflows/workflow-operation-instance-destroy.yaml",
   "swamp/tests/_support/native_auth.ts",

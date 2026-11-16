@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from test_ci_full_set import full
 from test_ci_units import ROOT, names, units
 
 EVIDENCE = ROOT / 'tools/tests/ci-workspace-cost-evidence.json'
@@ -18,7 +17,6 @@ class WorkspaceFixturesTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         result = units.plan(['swamp/tests/_support/task_instance_workspace.py'], budget, fixtures, defaults)
         self.assertCountEqual(names(result), [*evidence, "swamp/tests/task_copy_publish_test.py"])
-        self.assertFalse(result['deferred'])
         self.assertFalse(result.get('capacity'))
         seen = []
         for file, measured in evidence.items():
@@ -28,8 +26,7 @@ class WorkspaceFixturesTest(unittest.TestCase):
                 seen.extend(current['cases'])
                 entry = fixtures[file]
                 self.assertFalse(units.sliceable(entry))
-                self.assertFalse(entry.get('after_merge'))
-                self.assertFalse(entry.get('after_merge_cases'))
+                self.assertFalse(entry.get('self_hosted'))
                 for case, seconds in measured['case_seconds'].items():
                     self.assertGreaterEqual(entry['case_costs'][case], math.ceil(seconds * 2.1) + 1)
                 self.assertEqual(entry['cost'], sum(entry['case_costs'].values()))
@@ -56,18 +53,7 @@ class WorkspaceFixturesTest(unittest.TestCase):
             budget, fixtures, defaults = units.configuration()
             result = units.plan([file], budget, fixtures, defaults)
         self.assertEqual(names(result), [file])
-        self.assertFalse(result['deferred'])
         self.assertFalse(result.get('capacity'))
         step = units.unit_step(file, fixtures, steps, Path('/collections'))
         self.assertEqual(step.argv, ['python3', '-I', 'tests/task_instance_workspace_export_test.py'])
         self.assertEqual(step.env['ANSIBLE_COLLECTIONS_PATH'], '/collections')
-
-    def test_full_set_keeps_registry_only_python_files_and_all_cases(self):
-        config, inventory = units.registry.load(ROOT)
-        files = json.loads(EVIDENCE.read_text())['files']
-        config['fixture'] = [f for f in config['fixture'] if f['file'] in files]
-        with patch.object(units, 'fixture_steps', return_value={}):
-            result = full.build_plan(config, inventory, units.collect, units)
-        self.assertCountEqual([u['unit'] for u in result['units']], files)
-        for unit in result['units']:
-            self.assertCountEqual(unit['cases'], files[unit['unit']]['case_seconds'])

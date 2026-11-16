@@ -215,6 +215,11 @@ fn converges_a_fresh_host_and_repeats_without_change() {
     assert_eq!(project["restricted.containers.privilege"], "unprivileged");
     assert_eq!(project["restricted.containers.nesting"], "block");
     assert_eq!(project["limits.virtual-machines"], "0");
+    assert_eq!(project["restricted.devices.disk"], "allow");
+    assert_eq!(
+        project["restricted.devices.disk.paths"],
+        "/opt/orbit-runtime"
+    );
     let profile = &incus.objects[PROFILE_PATH];
     assert_eq!(profile["config"]["limits.cpu"], "6");
     assert_eq!(profile["config"]["limits.memory"], "12GiB");
@@ -328,6 +333,16 @@ fn inspection_reports_each_boundary_drift_without_change_and_convergence_repairs
         assert_eq!(act_on(&mut incus, "inspect").unwrap(), "drift", "{key}");
         assert_eq!(incus.objects, before);
         assert!(changes(&incus).is_empty());
+        assert_eq!(act_on(&mut incus, "converge").unwrap(), "converged");
+        assert_eq!(act_on(&mut incus, "inspect").unwrap(), "matches", "{key}");
+    }
+    // A project without the runtime disk keys refuses the runner's orbit-runtime device.
+    for key in ["restricted.devices.disk", "restricted.devices.disk.paths"] {
+        let config = incus.objects.get_mut(PROJECT_PATH).unwrap()["config"]
+            .as_object_mut()
+            .unwrap();
+        assert!(config.remove(key).is_some(), "{key}");
+        assert_eq!(act_on(&mut incus, "inspect").unwrap(), "drift", "{key}");
         assert_eq!(act_on(&mut incus, "converge").unwrap(), "converged");
         assert_eq!(act_on(&mut incus, "inspect").unwrap(), "matches", "{key}");
     }

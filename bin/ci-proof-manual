@@ -38,8 +38,7 @@ def check(env, github, root=ROOT):
 
 def run(env, sha):
     receipt = Path(env['PROOF_RECEIPT'])
-    child_env = {**env, 'PROOF_SHA': sha, 'PROOF_BASE': '', 'PROOF_ALL': 'false',
-                 'PROOF_STORE_RESULT': 'true', 'PROOF_CHECK_ELIGIBILITY': 'false'}
+    child_env = {**env, 'PROOF_SHA': sha, 'PROOF_STORE_RESULT': 'true', 'PROOF_CHECK_ELIGIBILITY': 'false'}
     # The Gateway's trust refusal stays a failed proof, never a skipped preflight success.
     # Run the existing caller in this process so its SIGINT/SIGTERM forwarding remains the cancellation owner.
     os.environ.update(child_env)

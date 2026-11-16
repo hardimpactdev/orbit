@@ -12,6 +12,8 @@ A check runs when its inputs change, and only then, on the pull request. The qui
 
 In progress.
 
+Steps 1 and 2 of the [build order](#build-order) are in work.
+
 Decided by the owner on 2026-11-15.
 
 Principle: [One way, one name](/mission#principles): each operation has one test, its proof. It also serves [Lean](/mission#principles): Orbit deletes the after-merge consumers, the full set and the fixtures that nothing reads.
@@ -19,7 +21,6 @@ Principle: [One way, one name](/mission#principles): each operation has one test
 Open:
 
 - Whether a fixture that tests pure code, with no playbook, workflow or Node behind it, stays as a quick check or is removed. Decide per file when the fixtures are retired (step 3 of the [build order](#build-order)).
-- Whether main still runs its checks when the merged tree differs from the tree that the pull request's green run checked out ([Reuse a green PR tree on main](/reference/implementation-loop#reuse-a-green-pr-tree-on-main)), and whether that run includes the proof.
 - Whether `Manual copy proof`, an operator's on-demand proof of one commit, stays.
 
 ## Context
@@ -28,7 +29,7 @@ Orbit's CI has three stages:
 
 - **Pull request checks**: quick checks (Pest, PHPStan, builds, docs, Swamp shape and Deno tests) and fixture shards for the changed files, selected by their inputs.
 - **Release** on main: the same checks again, unless the merged tree matches a green pull request tree, then the CLI release and the docs site.
-- **After-merge consumers** ([Main full set](/reference/main-full-set)): `Main deferred fixtures` runs the fixtures that pull requests skip, on every push and every 10 minutes, and sweeps the whole set every night; `Main full set` runs the same sweep on demand; `Main copy proof` runs a report-only proof of the newest main commit. Their shards queue for the self-hosted runners they are pinned to. Nothing waits for their result, so a failure surfaces after the merge, when main is already red.
+- **After-merge consumers** (the Main full set): `Main deferred fixtures` runs the fixtures that pull requests skip, on every push and every 10 minutes, and sweeps the whole set every night; `Main full set` runs the same sweep on demand; `Main copy proof` runs a report-only proof of the newest main commit. Their shards queue for the self-hosted runners they are pinned to. Nothing waits for their result, so a failure surfaces after the merge, when main is already red.
 
 The shape-gate fixtures are 179 test files under `swamp/tests/`, `swamp/bin/` and `swamp/extensions/`, registered in `.github/ci/fixtures/`. Most run a shipped playbook or workflow on the CI runner against stand-ins: this machine as the Node, a stand-in Incus, no network. They declare about 6.6 hours of single-worker time; `ansible_instance_migrate_test.ts` alone declares 2.3 hours. The [proof](/cli/proof/run) runs the same operations end to end, through the Gateway and Swamp, against a nested fleet. The two layers test the same behavior twice.
 
@@ -44,9 +45,13 @@ Each check declares its inputs. A pull request runs exactly the checks whose inp
 
 There are no after-merge consumers and no nightly sweep. Main builds and releases.
 
+### Main checks a merged tree that differs
+
+When the merged tree differs from the tree that the pull request's green run checked out, main runs its selected quick checks again on the merged tree, as the CLI release already requires ([Reuse a green PR tree on main](/reference/implementation-loop#reuse-a-green-pr-tree-on-main)). When the trees match, main reuses the pull request's result. Main runs no proof: a green pull request merges without a second proof run.
+
 ### Proof is the test of an operation
 
-When a change touches an operation's code, its proof cases run on the pull request: `proof:run` selects the changed cases, groups them into batches, and balances the batches over copies, as [proof:run](/cli/proof/run) describes. The proof is part of `Required checks` and blocks the merge.
+When a change touches an operation's code, its proof cases run on the pull request: `proof:run` selects the changed cases, groups them into batches, and balances the batches over copies, as [proof:run](/cli/proof/run) describes. The proof is part of `Required checks` and blocks the merge. No switch makes it report-only: the only proof switch, `ORBIT_PROOF_ENABLED`, decides whether CI runs proof at all.
 
 The shape-gate fixtures are retired. For each fixture file, a case that a proof case does not already cover becomes a proof case of its operation when it is reasonably expected to happen in normal use. A case for a rare situation is not kept: the operation is designed so that the situation cannot occur.
 
@@ -88,10 +93,22 @@ The quick checks of a public repository run on GitHub-hosted runners, as today. 
 
 ### Build order
 
-1. Make the proof blocking again, with its cases selected per changed operation. This needs proof capacity on more than one Node ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies)).
-2. Remove the after-merge consumers and the full set: `Main deferred fixtures`, `Main full set`, `Main copy proof`, the answer collector and the failure sweep, with their scripts and repository variables. The 23 fixture files whose registration marks the file or a list of its cases `after_merge` become units that a pull request selects by their inputs, like every other fixture. No coverage is dropped.
+1. In work. Make the proof blocking again while `ORBIT_PROOF_ENABLED` is `true`, with its cases selected per changed operation, and remove the report-only switches `ORBIT_PROOF_BLOCKING` and `ORBIT_SLOW_CHECKS_BLOCKING`. This needs proof capacity on more than one Node ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies)).
+2. In work. Remove the after-merge consumers and the full set: `Main deferred fixtures`, `Main full set`, `Main copy proof`, the answer collector, the main queue and the failure sweep, with their scripts, tests, repository variables and the Main full set page. The 23 fixture files that the registry kept out of pull requests (`after_merge`, `after_merge_cases`) become pull request units, selected by their inputs, so no coverage is dropped; the two registry keys go. They run only on the self-hosted CI pool, in their own shard jobs, and only for a pull request from a branch of the repository itself; a fork pull request that selects them fails `Required checks` and never reaches Orbit's runners. Selected work that does not fit the shards fails `Required checks`; nothing is deferred. Every unit fits a 150-second lane and every job ends within five minutes, so the migration fixture is split by phase. A change to the shared fixture machinery (fixture list, loader, runner, budgets, the shape gate and the Ansible toolchain pins) selects the fixtures whose own code it touches plus a small declared machinery canary set that fits one pull request's budget, not every fixture; the machinery's pure-code tests cover the rest. The canary set holds one small Ansible fixture per family (container, host, node, migrate and worker), so a toolchain change still runs Ansible in every family. Each fixture file declares as inputs only the task and playbook files its cases run, so a change to one shared task selects only the files that run it. A file that still cannot fit the eight self-hosted shards when selected is a named capacity gap, listed in `capacity_gap` in `checks.toml`: its units that fit run, and the plan names the rest as not run, with the reason; this is not a merge blocker. Overflow of any other file fails `Required checks`. The gaps are:
+   - `swamp/tests/ansible_instance_migrate_move_test.ts`: the full move. Its units need more lanes than the self-hosted shards hold.
+   - `swamp/tests/ansible_instance_migrate_preflight_test.ts`: the phases short of a full move. A change to a shared container task also selects the host files, and together they need more lanes than the shards hold. On the self-hosted pool, these cases cost more than the 150-second lane: the forced files, processes and seed failures after quiesce, a moved Process executable whose runtime is removed, a copied tracked-file mismatch, and a database server that the container cannot reach.
+   - `swamp/tests/ansible_instance_container_test.ts`: its units need more lanes than the shards hold, and three cases are above the 150-second lane: each runs two or more converges that need a saved state boundary before they can split.
+   - `swamp/tests/ansible_instance_host_test.ts`: three cases ran past the unit ceiling on the self-hosted pool: the two build-list Node cases and the CI Node intent without Caddy parts.
+   - `swamp/tests/ansible_instance_host_acl_test.ts`: two cases ran past the unit ceiling on the self-hosted pool: the bridge stays reject after a late unsafe running or stopped attachment.
+   - `swamp/tests/ansible_wireguard_hub_lan_rules_test.py`: the file ran past the unit ceiling on the self-hosted pool. A Python file runs whole, so it needs a split by case first.
+
+   A self-hosted shard runs two units at once (`self_hosted_workers`), not four: the runner container shares its Node's memory with proof copies, and four Ansible units at once made it reclaim memory until the heaviest units ran past the unit ceiling. When a run on the self-hosted pool measured a case, the case costs its pool time. A case in a unit that a pool run planned but did not finish costs its hosted cost scaled by its file's pool ratio: the median ratio of pool time to declared cost of the file's measured units, or of all measured units when the file has none. When the unit ceiling cut that case, it costs the larger of its cut time and the scaled cost. A file or case that no pool run has reached keeps its hosted cost until a pool run measures it. Each registry names the source of each cost.
+
+   Every phase of a move runs the shared task files `instance-migrate-phase.yml` and `instance-container-phase.yml`, so inputs per task file cannot narrow the move files further. The split by phase shrinks each gap; a file leaves the list when every selection of it fits. The CI runner setup supplies the tools these files need ([Self-hosted fixture shards](/reference/implementation-loop#self-hosted-fixture-shards)). Step 3 then retires them with the other fixtures.
+
+   Follow-up: once this step merges, remove `after_merge`, `after_merge_cases` and `reason` from the scheduling keys in `bin/ci-units`. The step's own pull request still needs them: they make its removal of those keys from the registry a scheduling edit.
 3. Retire the fixtures, file by file: move each realistic uncovered case into a proof case, then delete the file and its registration. A family retires only when its proof fits the condition in [When a family retires](#when-a-family-retires).
-4. Absorb this ADR into [Implementation loop](/reference/implementation-loop#ci) and the proof pages, and retire [Main full set](/reference/main-full-set).
+4. Absorb this ADR into [Implementation loop](/reference/implementation-loop#ci) and the proof pages.
 
 ## Rejected alternatives
 
@@ -112,5 +129,5 @@ The quick checks of a public repository run on GitHub-hosted runners, as today. 
 
 - Components: apps/gateway, apps/docs
 - ADRs: [0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies)
-- Detail: [Implementation loop: CI](/reference/implementation-loop#ci); [proof:run](/cli/proof/run); [Main full set](/reference/main-full-set), which is retired
-- Verify: a pull request that changes one operation runs that operation's proof cases and no fixture; `Required checks` fails on a failing proof case; no after-merge consumer or nightly sweep runs
+- Detail: [Implementation loop: CI](/reference/implementation-loop#ci); [proof:run](/cli/proof/run); the Main full set page, removed in step 2
+- Verify: a pull request that changes one operation runs that operation's proof cases and no fixture; `Required checks` fails on a failing proof case; main runs its quick checks only on a merged tree that differs and runs no proof; no after-merge consumer or nightly sweep runs

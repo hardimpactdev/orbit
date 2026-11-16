@@ -4,9 +4,8 @@ cases = [
   "a migrate's registration stores its sessions under the same allowed keys, which the Gateway reads",
 ]
 file = "swamp/tests/instance_register_grants_native_test.ts"
+self_hosted = true
 cost = 20 # 2 cases in 17-19 s locally on a loaded Beast; each case starts a token-mode serve with the rendered release grants
-after_merge = true
-reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release and php for the grants renderer; hosted fixture shards do not install that proof binary."
 inputs = [
   "swamp/tests/_support/native_auth.ts",
   "swamp/extensions/behaviors/node-worker/config.ts",

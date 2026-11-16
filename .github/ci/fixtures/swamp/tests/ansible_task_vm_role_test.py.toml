@@ -2,7 +2,6 @@ order = 610
 cases = [
   "test_every_phase_is_one_tag_and_the_recipe_is_always_resolved",
   "test_the_nested_gateway_restarts_and_redelivers_only_for_what_changed",
-  "test_a_task_start_converges_the_converge_part_of_its_whole_intent_and_keeps_the_host_pins",
   "test_a_phase_that_is_not_due_is_one_skipped_task",
   "test_the_files_name_no_version",
   "test_a_task_vm_is_reached_directly",

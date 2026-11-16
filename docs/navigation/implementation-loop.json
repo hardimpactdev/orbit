@@ -8,5 +8,11 @@
         "reference/implementation-loop"
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/reference/main-full-set",
+      "destination": "/reference/implementation-loop#no-after-merge-stage"
+    }
   ]
 }

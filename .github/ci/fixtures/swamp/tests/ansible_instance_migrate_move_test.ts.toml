@@ -1,0 +1,167 @@
+order = 12
+cases = [
+  "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
+  "migration counts 0 files that Git does not ignore beside a large ignored tree",
+  "migration counts 1 files that Git does not ignore beside a large ignored tree",
+  "untracked non-ignored files and nested repository leaves migrate with an exact archived file count",
+  "source status changes after export refuse retirement and preserve every later file",
+  "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files",
+  "a linked worktree migrates before its active owner and preserves every file and sibling registration",
+  "linked worktree preflight handles unstaged without touching its active owner or sibling",
+  "linked worktree preflight handles staged without touching its active owner or sibling",
+  "linked worktree preflight handles unpushed without touching its active owner or sibling",
+  "linked worktree preflight handles identity without touching its active owner or sibling",
+  "linked worktree preflight handles nested without touching its active owner or sibling",
+  "linked retirement interrupted before unregister fails explicitly on repeat",
+  "the last worktree moves into a standalone workspace and retires its owner checkout in the same batch",
+  "the last worktree moves into a standalone workspace and retires its owner checkout in the same batch past a prunable entry whose folder is gone",
+  "the owner of the last worktree still refuses retirement for sibling",
+  "the owner of the last worktree still refuses retirement for locked-prunable",
+  "the owner of the last worktree still refuses retirement for sibling-before-retire",
+  "the owner of the last worktree still refuses retirement for owner-change",
+  "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact",
+  "a moved Laravel checkout clears its config, route, event, compiled and view caches and its file cache store as orbit",
+  "a failed clear of the old path's caches warns and the move goes on; a store of another driver than file stays",
+  "a move removes only ignored files in cache folders that name the old path",
+  "a Git failure while listing ignored files removes no tool cache and warns, and the move goes on",
+  "a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was",
+  "a move starts with a new container: one that an earlier failed move left goes first",
+  "a database server that listens is reached from the container",
+  "retirement rechecks changes created after preflight and leaves the container and source intact",
+  "retirement rechecks worktree created after preflight and leaves the container and source intact",
+  "retirement rechecks commits created after preflight and leaves the container and source intact",
+  "retirement rechecks stashes created after preflight and leaves the container and source intact",
+  "Schedule migration repoints a current timer with enabled intent only after successful cutover",
+  "Schedule migration repoints a agent timer with disabled intent only after successful cutover",
+  "Schedule migration repoints a direct timer with enabled intent only after successful cutover",
+  "Schedule rollback restores exact observed timer activation when its enabled intent differs",
+  "Schedule rollback restores exact observed timer activation when its disabled intent differs",
+  "Schedule cutover resumes the timer even when a late Git retirement check refuses",
+  "Process migration carries a running vp-dev through the shared units and retires only moved host files",
+  "Process migration restores a running vp-dev only after removing its failed container",
+  "Process migration carries a stopped vp-dev through the shared units and retires only moved host files",
+  "Process migration restores a stopped vp-dev only after removing its failed container",
+  "migration carries every divergent unpushed local branch without changing the source",
+  "a checkout with no remote tracking refs carries every local commit",
+  "a detached selected HEAD still refuses as a changed branch",
+  "migration carries duplicate stash messages and every ordered stash entry and content",
+  "a clean default with pushed commits and no stash retains all Git metadata and repeats without changes",
+  "a direct repository refuses a worktree created before its final preflight",
+  "a common_of repository refuses a worktree created before its final preflight",
+  "a worktree created after retirement listing refuses the source snapshot before retention",
+  "migration carries a surviving stash ref with an expired reflog without inventing entries",
+  "a worker receipt failure leaves the source untouched and a retry reuses the prepared retention time",
+  "migration refuses a moved Process with exit127 before cutover and restores its host ownership",
+  "migration refuses a moved Process with restart before cutover and restores its host ownership",
+  "migration refuses a moved Process with pid before cutover and restores its host ownership",
+  "migration refuses a moved Process with job before cutover and restores its host ownership",
+  "migration refuses a moved Process with inactive before cutover and restores its host ownership",
+  "migration refuses a moved Process with never-active before cutover and restores its host ownership",
+  "only migration settles desired-running Processes; a stable Process passes with its PID and restart count unchanged",
+  "24 moved workers share one five-second settle window inside the 120-second process phase budget",
+  "empty untracked storage and nested ignored directories migrate with exact modes and resolving links",
+  "copy prediction refuses missing targets and omitted submodule content before quiesce without changing the checkout",
+  "stock unused MySQL passes both real preflights and its warning survives the completed move",
+]
+file = "swamp/tests/ansible_instance_migrate_move_test.ts"
+self_hosted = true
+# This part of the move fixture runs the full move: every phase up to the processes and the seed.
+# The hosted case costs came from the single move file; startup is added per slice.
+# Self-hosted costs: pool run 43904342622 with 4 workers per shard, an upper bound for 2; each case names its source.
+cost = 5025
+slices = 62
+inputs = [
+  "swamp/tests/_support/instance_migrate.ts",
+  "swamp/ansible/library/orbit_migrate_env.py",
+  "swamp/ansible/templates/instance-migrate-schedule.j2",
+  "swamp/extensions/behaviors/operations/processes-schedules/unit-templates.json",
+  "swamp/ansible/instance_node_services.py",
+  "swamp/ansible/tasks/instance-private-names.yml",
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance-container.yml",
+  "swamp/ansible/instance-migrate.yml",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_migrate_files.py",
+  "swamp/ansible/instance_migrate_links.py",
+  "swamp/ansible/instance_migrate_git.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/tasks/instance-bridge-rules.yml",
+  "swamp/ansible/tasks/instance-container-*.yml",
+  "swamp/ansible/tasks/instance-migrate-*.yml",
+  "swamp/ansible/tasks/instance-network-nic-check.yml",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/instance-migrate*",
+]
+[case_costs]
+"file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links" = 65 # no pool time (OVER BUDGET); hosted 62 x the median ratio of all passed pool units 1.04
+"migration counts 0 files that Git does not ignore beside a large ignored tree" = 80
+"migration counts 1 files that Git does not ignore beside a large ignored tree" = 80
+"untracked non-ignored files and nested repository leaves migrate with an exact archived file count" = 80
+"source status changes after export refuse retirement and preserve every later file" = 74
+"a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files" = 75
+"a linked worktree migrates before its active owner and preserves every file and sibling registration" = 66
+"linked worktree preflight handles unstaged without touching its active owner or sibling" = 73
+"linked worktree preflight handles staged without touching its active owner or sibling" = 67
+"linked worktree preflight handles unpushed without touching its active owner or sibling" = 75
+"linked worktree preflight handles identity without touching its active owner or sibling" = 5 # no pool time (NOT RUN); hosted 4 x the median ratio of all passed pool units 1.04
+"linked worktree preflight handles nested without touching its active owner or sibling" = 10
+"linked retirement interrupted before unregister fails explicitly on repeat" = 68
+"the last worktree moves into a standalone workspace and retires its owner checkout in the same batch" = 100
+"the last worktree moves into a standalone workspace and retires its owner checkout in the same batch past a prunable entry whose folder is gone" = 100
+"the owner of the last worktree still refuses retirement for sibling" = 9
+"the owner of the last worktree still refuses retirement for locked-prunable" = 9
+"the owner of the last worktree still refuses retirement for sibling-before-retire" = 95
+"the owner of the last worktree still refuses retirement for owner-change" = 9
+"a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact" = 100
+"a moved Laravel checkout clears its config, route, event, compiled and view caches and its file cache store as orbit" = 110
+"a failed clear of the old path's caches warns and the move goes on; a store of another driver than file stays" = 110
+"a move removes only ignored files in cache folders that name the old path" = 110
+"a Git failure while listing ignored files removes no tool cache and warns, and the move goes on" = 110
+"a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was" = 120
+"a move starts with a new container: one that an earlier failed move left goes first" = 120
+"a database server that listens is reached from the container" = 63
+"retirement rechecks changes created after preflight and leaves the container and source intact" = 67
+"retirement rechecks worktree created after preflight and leaves the container and source intact" = 67
+"retirement rechecks commits created after preflight and leaves the container and source intact" = 68
+"retirement rechecks stashes created after preflight and leaves the container and source intact" = 68
+"Schedule migration repoints a current timer with enabled intent only after successful cutover" = 120
+"Schedule migration repoints a agent timer with disabled intent only after successful cutover" = 120
+"Schedule migration repoints a direct timer with enabled intent only after successful cutover" = 120
+"Schedule rollback restores exact observed timer activation when its enabled intent differs" = 93
+"Schedule rollback restores exact observed timer activation when its disabled intent differs" = 94
+"Schedule cutover resumes the timer even when a late Git retirement check refuses" = 97
+"Process migration carries a running vp-dev through the shared units and retires only moved host files" = 120
+"Process migration restores a running vp-dev only after removing its failed container" = 68
+"Process migration carries a stopped vp-dev through the shared units and retires only moved host files" = 120
+"Process migration restores a stopped vp-dev only after removing its failed container" = 110
+"migration carries every divergent unpushed local branch without changing the source" = 51
+"a checkout with no remote tracking refs carries every local commit" = 39
+"a detached selected HEAD still refuses as a changed branch" = 6
+"migration carries duplicate stash messages and every ordered stash entry and content" = 41
+"a clean default with pushed commits and no stash retains all Git metadata and repeats without changes" = 90
+"a direct repository refuses a worktree created before its final preflight" = 78
+"a common_of repository refuses a worktree created before its final preflight" = 78
+"a worktree created after retirement listing refuses the source snapshot before retention" = 53
+"migration carries a surviving stash ref with an expired reflog without inventing entries" = 45
+"a worker receipt failure leaves the source untouched and a retry reuses the prepared retention time" = 90
+"migration refuses a moved Process with exit127 before cutover and restores its host ownership" = 120
+"migration refuses a moved Process with restart before cutover and restores its host ownership" = 120
+"migration refuses a moved Process with pid before cutover and restores its host ownership" = 120
+"migration refuses a moved Process with job before cutover and restores its host ownership" = 120
+"migration refuses a moved Process with inactive before cutover and restores its host ownership" = 120
+"migration refuses a moved Process with never-active before cutover and restores its host ownership" = 120
+"only migration settles desired-running Processes; a stable Process passes with its PID and restart count unchanged" = 120
+"24 moved workers share one five-second settle window inside the 120-second process phase budget" = 121
+"empty untracked storage and nested ignored directories migrate with exact modes and resolving links" = 50
+"copy prediction refuses missing targets and omitted submodule content before quiesce without changing the checkout" = 8
+"stock unused MySQL passes both real preflights and its warning survives the completed move" = 120
