@@ -734,6 +734,6 @@ export async function program(
     return await sha256(`${folder}/artifacts/${name}`);
 }
 
-/** What PHP prints for the check's probe: its version, then its extensions. */
+/** What PHP prints for the check's probe (ansible/library/orbit_static_php.py): its marker, its version, no ini file, then its extensions. */
 export const probe = (version: string, extensions: string[]) =>
-    `printf '%s\\n' ${[version, ...extensions].join(" ")}`;
+    `printf '%s\\n' orbit-static-php-probe ${version} '' ${extensions.join(" ")}`;

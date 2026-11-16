@@ -129,9 +129,16 @@ For example, `instance.migrate` has 5,700 seconds and `node.converge` 3,900 seco
 
 `tasks.cancel` and `tasks.maintenance_finish` also have 3,900 seconds, derived from the work they compose: the former VM destroy bound of 2,700 seconds, the 540-second Project teardown cap, and 660 seconds for the workspace Route withdrawal. Withdrawal's only fixed wait is the 31-second DNS grace, so most of that allowance is deliberate margin until real runs are measured. Their history came from cancels with no VM to destroy and was too short for real cleanup.
 
-`tasks.copy_turn` has a fixed 4,560 seconds. Its Ansible phase ends after 4,400 seconds.
+`tasks.copy_turn` has a fixed 4,680 seconds. Its Ansible phase ends after 4,500 seconds.
 
-That holds the turn's own bound of 3,600 seconds and the 30-second kill grace. It holds six T3 or helper calls of up to a minute each: the settle's list, the list of a continued turn, the question's read and stop, and the list and show after the turn. It also holds sixteen Git commands of up to 20 seconds each, for the settle's restore and a reviewer's set-up and restore, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
+That holds the turn's own bound of 3,600 seconds and the 30-second kill grace. It holds eight T3 or helper calls of up to a minute each:
+
+- the settle's list, and its stops of up to two earlier runs, one in the implementer's thread and one in the reviewer's;
+- the list of a continued turn;
+- the question's read and stop, or a cut run's list and stop;
+- the list and show after the turn.
+
+It also holds sixteen Git commands of up to 20 seconds each, for the settle's restore and a reviewer's set-up and restore, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
 
 `proof.run` has no execution budget of its own: its children and the watchdog end it. Its execution duration starts at admission; its 7,200-second admission allowance starts at creation. Waiting for the working proof, an earlier parent or a copy place consumes that allowance, and the proof reads `waiting` until admission; expiry fails with `proof.capacity_timeout`. See [proof admission](/cli/proof/run#the-run).
 
@@ -842,6 +849,8 @@ A declared `OperationArtifactSource` may return a bounded existing-file referenc
 Development `instance.mail_update` holds the Instance lock and has a 120-second run budget. Its 90-second mail phase leaves room for input, result and cleanup. It returns path and mailer outcomes without environment values; see [`instance:mail:update`](/cli/instance/mail-update).
 
 Development `instance.sleep` and `instance.wake` hold the Instance lock. Their run budgets are 150 and 300 seconds: a 30-second marker phase and a 90-second freeze phase, or a 120-second start phase and a 120-second T3 and marker phase, plus input, result and cleanup. A second wake of the same Instance joins the open one. When the Instance is a clone of a nested-fleet default, the wake admits `instance.start` instead. That kind holds the Instance lock too. Its run budget is 1,200 seconds: a 240-second start phase, a 300-second fleet check and a 600-second fleet start. See [`instance:sleep`](/cli/instance/sleep) and [`instance:wake`](/cli/instance/wake).
+
+`instance.seed_copy` sends the proof default's seed to each CI Node that is behind it ([The seed on each CI Node](/reference/development-containers#the-seed-on-each-ci-node)). It holds the default's seed-copy lock, not its Instance lock, so a deployment of the default can run beside it. Its run budget is 7,800 seconds: the targets run side by side, and each target's copy phase allows two `incus copy` commands of up to 3,600 seconds each.
 
 Container `instance.node_service_detach` uses one `node-service` Ansible phase with a 90-second execution bound and a 120-second Operation budget. It removes only the detached Instance access, retaining a shared port for other attachments; terminal success removes the record. A checkout detach still completes immediately without Node work.
 

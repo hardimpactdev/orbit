@@ -687,6 +687,8 @@ A `default` Instance in a container deploys with the variant `container` in the 
 
 Right after the start, a nested-fleet container gets its nested Gateway's [Club key](/reference/development-containers#the-club-key-of-the-nested-gateway) into its `/run`; the Operation's result says what that start did in `nested_fleet_club_key`.
 
+When a passed deployment of the proof Project's default records its seed, the Gateway admits a [seed copy](/reference/development-containers#the-seed-on-each-ci-node) to each CI Node that is behind. Nothing in the deployment waits for it.
+
 Before its first seed, a nested-fleet default compares its inner fleet with the [fleet rules](/reference/development-containers#fleet-rules). A refusal, `instance.container_fleet_drift`, names each difference in the result's `fleet_drift` and changes nothing. The refresh migrates and restarts the nested Gateway before any Doctor wait, and a passed run ends with the inner fleet running. A failed fleet phase names its failed task and message in `error.detail`: a native step that exits nonzero keeps no output, so the phase writes it into the result file. Each Project command runs in the container as `orbit`, from its vault copy. [The default Instance](/reference/development-containers#the-default-instance) has the details.
 
 When a development deploy runs, it leaves Process definitions, Route publication and PHP configuration with their existing native kinds. A pending default Route projection refuses deploy admission.
