@@ -250,11 +250,13 @@ An App merge is a push by the App to the default branch, so GitHub starts the `p
 
 ## How the runner view reads CI jobs
 
-The [CI runner view](/reference/ci-runner-view) reads the self-hosted jobs of the last 48 hours. For each repository it reads, the Gateway asks for one token with only `actions: read`, from the App's existing `Actions: read`.
+The [CI runner view](/reference/ci-runner-view) reads the self-hosted jobs of the last 48 hours. For each repository it reads, the Gateway asks for one token with only `actions: read`, from the App's existing `Actions: read`. Once an hour it also asks for one token with only `contents: read`, from the App's existing `Contents: write`, to read the workflow files.
 
 | Call | Endpoint | Token |
 | --- | --- | --- |
-| List the runs of the window | `GET /repos/{owner}/{repo}/actions/runs?created=>={time}`, pages of 100 | `actions: read` |
+| List the workflows | `GET /repos/{owner}/{repo}/actions/workflows`, pages of 100 | `actions: read` |
+| Read a workflow file | `GET /repos/{owner}/{repo}/contents/{path}` | `contents: read` |
+| List the runs of a workflow in the window | `GET /repos/{owner}/{repo}/actions/workflows/{id}/runs?created={from}..{to}`, pages of 100 | `actions: read` |
 | List the jobs of a run | `GET /repos/{owner}/{repo}/actions/runs/{id}/jobs?filter=latest`, pages of 100 | `actions: read` |
 
 Each job names the runner that took it. The view reads no runner list, for the organization or a repository, so the App needs no new permission.
