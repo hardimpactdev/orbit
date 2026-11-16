@@ -152,11 +152,11 @@ Every development container has the same layout. The image and the create set it
 | --- | --- |
 | Image | Ubuntu 26.04 with the OS packages the runtime needs, the users, `nftables`, `acl` and `hidepid`. No PHP, no Node, no agent software |
 | Egress | The [proxy settings](#egress-and-dns) for every unit, login shell and apt, and no DNS server |
-| `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process |
-| `agent` | uid 2750, home `/home/agent` mode 0700, password locked. Runs T3, Claude Code, Codex and their shell commands. Owns the T3 state, the agent settings and the placeholder key |
+| `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process. Owns no part of the workspace that Orbit keeps ([ADR 0266](/decisions/0266-one-owner-for-the-workspace)) |
+| `agent` | uid 2750, home `/home/agent` mode 0700, password locked. Runs T3, the agents, Orbit's checkout Git calls and the deploy steps. Owns the workspace, the T3 state, the agent settings and the placeholder key |
 | `work` | gid 2760, members `agent` and `orbit` |
 | Sudo | None for either user. The image's `sudoers.d` grant is removed. The [nested-fleet image](#the-nested-fleet-image) gives `agent` alone passwordless sudo, so it is root in its own [nested-fleet](#users) container |
-| Workspace | `/srv/workspace`, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others. `core.sharedRepository=group` |
+| Workspace | `/srv/workspace` and every entry in it, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others, and `core.sharedRepository=group`. Root's [pass](#who-runs-what) gives `agent` what `orbit` made |
 | Git | `safe.directory=/srv/workspace` in `/etc/gitconfig`, for every user and only that path; the agent part of the T3 step also writes it to `agent`'s own Git config and preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
 | T3 unit | `User=agent`, `UMask=0007`, `PATH` from the shared folders, `Requires=nftables.service`, `ConditionPathExists=/etc/orbit/instance`. The unit file is mode 0640. A drop-in names the [container server](#container-server) it starts |
@@ -181,11 +181,17 @@ The build container reaches the internet as every container does, through the [e
 
 The app runs as `orbit`: FrankenPHP, queue workers and every Orbit Process. `orbit` cannot run the agent binaries, read `/home/agent`, reach the model route or T3's port, or see agent processes. A public preview URL reaches only an Orbit Process, so an attacker who comes in through it lands as `orbit`.
 
-T3 and the agents run as `agent`, and so do the shell commands of Claude Code and Codex. There is no wrapper shell. Both users read and write the workspace: a file each one writes is `rw-rw----`, group `work`.
+T3 and the agents run as `agent`, and so do the shell commands of Claude Code and Codex. There is no wrapper shell.
 
-A tool that asks for a narrower mode, such as Bun with its 0755 folders in `node_modules`, caps the ACL mask, and the other user cannot write there. Root gives the group back what the owner has before a deployment's steps and after them, and after a clone's create. Between those, a folder that one user creates with a narrow mode stays closed to the other until the next deployment.
+`agent` owns the workspace ([ADR 0266](/decisions/0266-one-owner-for-the-workspace)). Orbit's own work in it runs as `agent` too, with `HOME=/home/agent`. That is the checkout's Git calls, the line that keeps `.env` out of Git and the record of the deploy steps. It is also each development deploy step of a deployment, a create and a proof run. A deploy step runs as uid 2750, so it can reach the model forwarder, as the agent can. `orbit` stays off the model route.
 
-The workspace is live while root does this: Git, the app or an agent may remove an entry between its listing and its change. An entry that is gone needs nothing. Any other error fails the pass and names the path, and the pass never follows a link.
+Both users read and write the workspace: a file each one writes is `rw-rw----`, group `work`. Some calls only a file's owner may make, such as `chmod`, `utime` with explicit times and `setfacl`. So an `orbit` file in the workspace, such as one that the running app wrote in `storage/` or `bootstrap/cache`, stays `orbit`'s only until root's next pass.
+
+A tool that asks for a narrower mode, such as Bun with its 0755 folders in `node_modules`, caps the ACL mask, and the other user cannot write there. Root's pass gives the group back what the owner has, and gives `agent` each entry that `orbit` owns. It runs before a deployment's steps and after them, before a proof run's steps, and in the `services` part of a clone's create. Between those, a folder that one user creates with a narrow mode stays closed to the other until the next pass.
+
+One program does the pass: `swamp/ansible/instance_workspace_owner.py`. It names each entry it changed, up to 20; above that it prints only the count.
+
+The workspace is live while root does this: Git, the app or an agent may remove an entry between its listing and its change. An entry that is gone needs nothing. Any other error fails the pass and names the path. The pass never follows a link: it changes the mode and the owner through the entry it opened without following one, and it gives a link itself to `agent`, never its target.
 
 Orbit's own Git commands in the workspace start no automatic maintenance (`maintenance.auto=false`, `gc.auto=0`): a fetch would otherwise repack in the background and remove pack files while the pass and the deploy steps run. The Git commands of the people and agents who work in the workspace still repack it.
 
@@ -486,7 +492,7 @@ The recipe pins each library and font as a Debian package of its Ubuntu snapshot
 
 #### Playwright browsers
 
-The default's deploy steps run as `orbit`, and a [task check](#a-task-copy-starts-clean) runs as `agent`. A browser in one user's cache is not visible to the other. The dependency folder is shared by both users through the group `work`. When a Project ignores `node_modules` in its `.gitignore`, the folder survives the clean of a task copy. The seed carries it, and a clone gets it with no copy and no download. The build always matches the Project's own Playwright version.
+The default's deploy steps and a [task check](#a-task-copy-starts-clean) both run as `agent`. A browser in `agent`'s own cache would still be outside the workspace, where the app, as `orbit`, does not see it. The dependency folder is shared by both users through the group `work`. When a Project ignores `node_modules` in its `.gitignore`, the folder survives the clean of a task copy. The seed carries it, and a clone gets it with no copy and no download. The build always matches the Project's own Playwright version.
 
 So a Project whose check runs browser tests installs the browser in a [development deploy step](/reference/deployments#development-deploy-steps) of its own, after its JavaScript install, such as `bunx playwright install chromium`. The step downloads only when the Project's Playwright version changed. Otherwise it does nothing.
 
@@ -1054,7 +1060,7 @@ A proof copy's runtime still names the default as its clone source, so the defau
 | Git | The Node fetches with the read token into its mirror `/var/lib/orbit/instance-repositories/<id>.git`. A bundle carries the branch into the container, and `orbit` checks it out in `/srv/workspace` |
 | Checkout path | The workspace's path on the Node, inside the container's root file system. It keeps the path unique on the Node; Orbit never works in it from the Node |
 | `.env` | In the workspace's application directory, for `orbit` with group `work`, mode 0640. Git never takes it: see [the `.env` stays out of Git](#the-env-stays-out-of-git) |
-| Deploy steps | Each runs as `orbit` at `/srv/workspace`, from its own vault copy. Its environment holds only `HOME`, `USER`, `LOGNAME`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, the [proxy settings](#proxy-settings-in-a-container), and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |
+| Deploy steps | Each runs as `agent` at `/srv/workspace`, from its own vault copy ([ADR 0266](/decisions/0266-one-owner-for-the-workspace)). Its environment holds only `HOME=/home/agent`, `USER=agent`, `LOGNAME=agent`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, the [proxy settings](#proxy-settings-in-a-container), and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders |
 | FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile` as `orbit` on port 8080. The Route proxies to the bridge address; the Node runs no PHP pool for it |
 | Seed | The first build and each passed deployment take `seed-<commit>` with the units stopped. Older seeds go, except the proof default's [base](#a-retake-keeps-the-seed). The runtime row records the commit |

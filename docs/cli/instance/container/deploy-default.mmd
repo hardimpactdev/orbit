@@ -54,13 +54,15 @@ sequenceDiagram
   SW->>C: Check out in the container<br/>Ansible · tags checkout
   %%> What it does:
   %%> - the same checks as a checkout default: a dirty tree refuses `deployment.checkout_dirty`, a diverged branch `deployment.branch_diverged`
+  %%> - Orbit's Git calls, the repack, the `.env` exclude line and the deploy steps' record run as `agent` (ADR 0266)
   %%> - after the checkout, a bounded repack in the foreground (`git repack -d --geometric=2`, 30 s): each fetch adds a pack and Orbit's Git calls start no automatic maintenance; it first removes the temporary files of an earlier repack that are an hour old; a repack that fails or times out prints one `orbit-workspace-repack=` line and never fails the deployment
+  %%> - after the repack and before the steps, root's workspace pass gives the group back what the owner has and gives `agent` each entry that `orbit` owns; it never follows a link and prints only a count above 20 entries; phase `processes` runs it again after the steps
   Note over SW: Read the steps to skip<br/>run folder
   %%> What it does:
   %%> - reads the names the checkout found unchanged; only a deployment with a step that has `inputs` runs it
   SW->>C: Run dev deploy steps<br/>incus exec · vault copy
   %%> What it does:
-  %%> - the Project's development deploy steps, as `orbit`: they install changed dependencies and migrate
+  %%> - the Project's development deploy steps, as `agent`, the workspace's owner, with `HOME=/home/agent` (ADR 0266): they install changed dependencies and migrate
   %%> - a step with `inputs` runs only when they or its command changed since its last passed run in this workspace: the checkout compares the Git object IDs of its inputs at the commit and its command's digest with the step's record in `.git/orbit-deploy-steps`, and the step's guard skips it when they match; a passed step records them; a step without `inputs` always runs
   %%> Why:
   %%> - most releases change no lock file: an install that finds nothing to do still costs its tool's start, its autoload and its scripts, about 4 s a step

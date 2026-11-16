@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 266,
+      "pages": [
+        "decisions/0266-one-owner-for-the-workspace"
+      ]
+    }
+  ]
+}
