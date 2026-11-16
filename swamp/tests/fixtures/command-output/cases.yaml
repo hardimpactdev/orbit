@@ -113,6 +113,10 @@ contexts:
       - stdout: '[{"name":"seed/current"},{"name":"seed/old"}]'
     keep:
     - current
+  # `ufw status numbered` on the vpn Node (2026-11-16): the task VM hub's route rules among other orbit rules.
+  ufw-numbered-hub:
+    hub_task_vm_rules:
+      stdout: "Status: active\n\n     To                         Action      From\n     --                         ------      ----\n[ 1] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n[ 2] 10.44.0.128/25 22/tcp on orbit ALLOW FWD   10.44.0.15 on orbit        # orbit:task-vm-control-ssh\n[ 3] 10.44.0.128/25 80/tcp      ALLOW FWD   10.44.0.7                  # orbit:task-vm-router-web-10-44-0-7-80\n[ 4] 10.252.10.1 53/udp on orbittask0 ALLOW IN    Anywhere                   # orbit:task-vms-dns-udp\n[ 5] 10.44.0.128/25 3774/tcp    ALLOW FWD   10.44.0.15                 # orbit:task-vm-swamp-pi\n[ 6] 10.44.0.128/25 9000/tcp    ALLOW FWD   10.44.0.20\n\n"
   ufw-numbered:
     firewall_numbered: &id001
       stdout: '[ 1] 8318/tcp ALLOW IN 10.0.0.9 # orbit:allow-node-9
@@ -2318,6 +2322,14 @@ cases:
   expected:
     install-root: 6ccb28b9f44de8cdf8af525fb074eeb5a7ca9a9f4c1b82e2245dc0e53ee17baa
     install-web: ''
+- file: tasks/node-converge-hub-filter-absent.yml
+  task: Delete the task VM route rules
+  field: loop
+  context: ufw-numbered-hub
+  expected:
+  - 5
+  - 3
+  - 2
 non_command_output:
 - file: tasks/gateway-swamp-pin.yml
   task: Remove the other Swamp releases
