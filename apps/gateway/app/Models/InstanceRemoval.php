@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Instances\InstanceRemovalKind;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use Illuminate\Database\Eloquent\Collection;
@@ -16,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property int $requested_instance_id
  * @property string $requested_name
  * @property bool $force
+ * @property InstanceRemovalKind $kind
  * @property string $inventory_digest
  * @property array<string,mixed>|null $native_sources
  * @property array<string,mixed>|null $native_intent
@@ -38,6 +40,10 @@ final class InstanceRemoval extends Model
     #[\Override]
     protected $keyType = 'string';
 
+    /** @var array<string, mixed> */
+    #[\Override]
+    protected $attributes = ['kind' => 'destroy'];
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
@@ -45,6 +51,7 @@ final class InstanceRemoval extends Model
         'requested_instance_id',
         'requested_name',
         'force',
+        'kind',
         'inventory_digest',
         'total',
         'native_intent',
@@ -67,6 +74,7 @@ final class InstanceRemoval extends Model
     {
         return [
             'force' => 'boolean',
+            'kind' => InstanceRemovalKind::class,
             'native_intent' => 'array',
             'native_sources' => 'array',
             'status' => InstanceRemovalStatus::class,

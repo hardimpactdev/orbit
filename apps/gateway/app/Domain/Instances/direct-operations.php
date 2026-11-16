@@ -15,6 +15,7 @@ use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Instances\InstanceRestoreProjection;
+use App\Domain\Instances\InstanceUnregisterProjection;
 use App\Domain\Instances\NativeInstanceTransferProjection;
 use App\Domain\Instances\NodeServiceTargetOperation;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
@@ -94,6 +95,13 @@ return [
             'captures' => ['withdrawal' => ['job' => 'destroy', 'step' => 'Withdraw the Route', 'field' => 'result'],
                 'route_hold_release' => ['job' => 'destroy', 'step' => 'Release the Route Nodes', 'field' => 'stdout']]],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-git-(?:operation|credential)-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'], DatabaseDestroyRun::OWNED_EXECUTION_COPY]],
+    // Orbit forgets a host checkout and keeps its folder: destroy's Route, Process and hibernation steps, then destroy's record projection.
+    'instance.unregister' => ['workflow' => 'operation-instance-unregister', 'workflow_inputs' => true,
+        'projection' => InstanceUnregisterProjection::class,
+        'terminal_result' => ['job' => 'unregister', 'step' => 'Check units gone', 'native' => true,
+            'captures' => ['withdrawal' => ['job' => 'unregister', 'step' => 'Withdraw the Route', 'field' => 'result'],
+                'route_hold_release' => ['job' => 'unregister', 'step' => 'Release the Route Nodes', 'field' => 'stdout']]],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']]],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
         // Development ends with the checkout's end check, a container default with "Finish the container", whose last phase is its

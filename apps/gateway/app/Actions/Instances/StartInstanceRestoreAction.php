@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Instances\InstanceRemovalKind;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceState;
 use App\Domain\NodeFacts\NodeAgentLiveness;
@@ -58,6 +59,10 @@ final readonly class StartInstanceRestoreAction
             if ($instance->status !== InstanceState::Removing || $removal === null || $removal->status !== InstanceRemovalStatus::Failed
                 || $removal->requested_instance_id !== $instance->id || ! is_array($removal->native_intent)) {
                 self::refuse('state_invalid', 'The Instance must be removing, with its own failed removal.');
+            }
+            // An unregister keeps its kind: only a rerun of instance:unregister finishes it (docs/reference/instance-removal.md).
+            if ($removal->kind !== InstanceRemovalKind::Destroy) {
+                throw new ResourceOperationException('instance.removal_conflict', 'The failed removal is an unregister; run instance:unregister again.', 409);
             }
             if ($removal->members()->count() !== 1) {
                 self::refuse('unsupported', 'The removal holds other Instances.');

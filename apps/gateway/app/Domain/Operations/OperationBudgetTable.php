@@ -46,6 +46,7 @@ final class OperationBudgetTable
         'instance.complete' => 1800,
         // The removal steps, teardown timeouts, withdrawn Routes and owned databases, captured at admission.
         'instance.destroy' => 'run_budget_seconds',
+        'instance.unregister' => 'run_budget_seconds',
         // Two database batches and one Route create; 900 s, captured at admission.
         'instance.restore' => 'run_budget_seconds',
         // The deploy step timeouts plus 900 s, captured at admission (docs/reference/deployments.md#deploy).

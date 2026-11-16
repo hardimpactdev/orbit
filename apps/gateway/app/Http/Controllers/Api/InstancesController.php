@@ -12,6 +12,7 @@ use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceRestoreAction;
+use App\Actions\Instances\StartInstanceUnregisterAction;
 use App\Actions\Instances\UpdateInstanceAction;
 use App\Data\Instances\InstanceData;
 use App\Data\Operations\OperationData;
@@ -135,6 +136,18 @@ final class InstancesController extends Controller
             'data' => OperationData::fromModel($operation)->toArray(),
             'meta' => $this->meta($request),
         ], 202);
+    }
+
+    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    #[StartsOperation('instance.unregister')]
+    public function unregister(Request $request, int $instance, StartInstanceUnregisterAction $action): JsonResponse
+    {
+        if ($request->all() !== []) {
+            throw new ResourceOperationException('validation.failed', 'Instance unregistration takes no options or body fields.', 422);
+        }
+        $operation = $action->execute(Instance::query()->findOrFail($instance), $this->caller($request), $request->attributes->getString('orbit.request_id'));
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]

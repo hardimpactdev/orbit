@@ -36,15 +36,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         [$database['servers'], $serverCopies] = DatabaseOwnedRemoval::servers(ValidatedData::integer($database['intent_id']),
             $database['servers'] ?? [], ! $operation->status->terminal());
         $detail['database'] = $database;
-        // Each member's hibernation files, so a removed Instance leaves no awake or cold marker or access log behind.
-        // Rendered at run start, so a removal recorded earlier gets them too.
-        $detail['hibernation'] = [];
-        foreach (InstanceLifecycleInput::members($input) as $member) {
-            $key = RuntimeHibernation::key(ValidatedData::integer($member['instance_id']));
-            foreach ([RuntimeHibernation::awakePath($key), RuntimeHibernation::coldPath($key), RuntimeHibernation::accessLogPath($key)] as $path) {
-                $detail['hibernation'][] = ['instance_id' => ValidatedData::integer($member['instance_id']), 'path' => $path];
-            }
-        }
+        $detail['hibernation'] = self::hibernationFiles($input);
         $public = [...Arr::only($input, ['container_destroy', 'removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'force', 'inventory_digest', 'repository', 'source_pending', 'protected_source_roots', 'members', 'route_withdrawn']), 'direct_destroy' => $detail];
         $programs = ValidatedData::object(app(InstanceDestroyTeardownSecret::class)->resolve($operation, $operation->target_id, '', 'teardown')->value);
         $teardown = [];
@@ -70,6 +62,26 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             'push_check_paths' => array_map(static fn (array $member): string => ValidatedData::string($member['checkout_path']), $checked),
             'source_paths' => array_map(static fn (array $member): string => ValidatedData::string($member['checkout_path']), $members)],
             'execution_secrets' => [...$secrets, ...$serverCopies, ...$git]];
+    }
+
+    /**
+     * Each member's hibernation files, so a removed Instance leaves no awake or cold marker or access log behind.
+     * Rendered at run start, so a removal recorded earlier gets them too.
+     *
+     * @param  array<string,mixed>  $input
+     * @return list<array{instance_id:int,path:string}>
+     */
+    public static function hibernationFiles(array $input): array
+    {
+        $files = [];
+        foreach (InstanceLifecycleInput::members($input) as $member) {
+            $key = RuntimeHibernation::key(ValidatedData::integer($member['instance_id']));
+            foreach ([RuntimeHibernation::awakePath($key), RuntimeHibernation::coldPath($key), RuntimeHibernation::accessLogPath($key)] as $path) {
+                $files[] = ['instance_id' => ValidatedData::integer($member['instance_id']), 'path' => $path];
+            }
+        }
+
+        return $files;
     }
 
     public function apply(Operation $operation, array $data): Operation

@@ -75,6 +75,7 @@ Route::middleware([
         ->name('instance:migrate');
     Route::post('instances/{instance}/complete', [InstancesController::class, 'complete'])->whereNumber('instance')->name('instance:complete');
     Route::post('instances/{instance}/restore', [InstancesController::class, 'restore'])->whereNumber('instance')->name('instance:restore');
+    Route::post('instances/{instance}/unregister', [InstancesController::class, 'unregister'])->whereNumber('instance')->name('instance:unregister');
     Route::delete('instances/{instance}', [InstancesController::class, 'destroy'])
         ->whereNumber('instance')
         ->name('instance:destroy');
