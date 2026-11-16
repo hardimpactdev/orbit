@@ -363,16 +363,16 @@ describe('the seed of the proof default on each Node that offers proof places', 
         $both = ciNode(2, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
         $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
         $current = ciNode(2, LifecycleStatus::Active, 'ci-now', '10.44.0.36');
-        ProofSeed::query()->create(['node_id' => $current->id, 'holder' => 'proof-seed-7', 'commit' => str_repeat('a', 40),
+        ProofSeed::query()->create(['node_id' => $current->id, 'holder' => 'proof-seed', 'commit' => str_repeat('a', 40),
             'taken_at' => '2026-11-16 00:00:00', 'operation_id' => 7]);
         // A retake at the same commit is a new seed: the time differs.
         $retaken = ciNode(2, LifecycleStatus::Active, 'ci-old', '10.44.0.37');
-        ProofSeed::query()->create(['node_id' => $retaken->id, 'holder' => 'proof-seed-6', 'commit' => str_repeat('a', 40),
+        ProofSeed::query()->create(['node_id' => $retaken->id, 'holder' => 'proof-seed', 'commit' => str_repeat('a', 40),
             'taken_at' => '2026-11-15 00:00:00', 'operation_id' => 6]);
         ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34');
 
         expect(array_map(static fn (Node $node): string => $node->name, app(ProofSeeds::class)->targets()))->toBe(['ci', 'ci-app', 'ci-old'])
-            ->and(app(ProofSeeds::class)->holder($current)?->holder)->toBe('proof-seed-7')
+            ->and(app(ProofSeeds::class)->holder($current)?->operation_id)->toBe(7)
             ->and(app(ProofSeeds::class)->holder($retaken))->toBeNull()
             ->and(app(ProofSeeds::class)->holder($behind))->toBeNull();
     });
@@ -647,9 +647,9 @@ describe('the seed of the proof default on each Node that offers proof places', 
             'snapshot' => 'seed-'.$commit, 'seed_commit' => $commit, 'inner_volume' => 'inner-'.$default->id])
             ->and(placementRefusal(fn () => TaskCopyStart::seed($runtime, $node)))->toBe('tasks.copy_source_unavailable 409');
 
-        ProofSeed::query()->create(['node_id' => $node->id, 'holder' => 'proof-seed-9', 'commit' => $commit, 'taken_at' => '2026-11-16 00:00:00', 'operation_id' => 9]);
-        expect(TaskCopyStart::seed($runtime, $node))->toBe(['source' => 'proof-seed-9', 'snapshot' => 'seed-'.$commit,
-            'seed_commit' => $commit, 'inner_volume' => 'proof-seed-9-inner']);
+        ProofSeed::query()->create(['node_id' => $node->id, 'holder' => 'proof-seed', 'commit' => $commit, 'taken_at' => '2026-11-16 00:00:00', 'operation_id' => 9]);
+        expect(TaskCopyStart::seed($runtime, $node))->toBe(['source' => 'proof-seed', 'snapshot' => 'seed-'.$commit,
+            'seed_commit' => $commit, 'inner_volume' => 'proof-seed-inner']);
 
         $runtime->update(['seed_taken_at' => '2026-11-16 01:00:00']);
         expect(placementRefusal(fn () => TaskCopyStart::seed($runtime->refresh(), $node)))->toBe('tasks.copy_source_unavailable 409');

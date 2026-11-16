@@ -9,7 +9,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * The seed of the proof default that one Node holds (docs/reference/development-containers.md#the-seed-on-each-ci-node): the holder
- * `proof-seed-<operation id>` and its volume `proof-seed-<operation id>-inner` in the nested Incus project, the commit and the time
+ * `proof-seed` and its volume `proof-seed-inner` in the nested Incus project (ProofSeeds::Holder), the commit and the time
  * that the default took the seed, and the seed copy that made it.
  *
  * @property int $id
