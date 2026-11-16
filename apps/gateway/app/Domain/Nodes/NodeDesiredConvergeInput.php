@@ -18,6 +18,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 
 /** Immutable, recorded desired state. No live reads and no Instance publication payloads. */
 final readonly class NodeDesiredConvergeInput
@@ -79,6 +80,25 @@ final readonly class NodeDesiredConvergeInput
     public function baseDigest(Node $node): string
     {
         return hash('sha256', json_encode($this->baseIntent($node), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * The SHA-256 of the Node's default converge intent, as its admission captures it, for a fixed Operation ID: the capture runs in a
+     * transaction that rolls back, so it records nothing and pushes no execution copy (SwampDispatch drops the copies of a rolled back
+     * transaction). The nested-fleet refresh compares it (`orbit:node-converge-digest`).
+     */
+    public function defaultDigest(Node $node): string
+    {
+        $operation = new Operation(['kind' => 'node.converge']);
+        $operation->id = 0;
+        DB::beginTransaction();
+        try {
+            $intent = $this->capture($node, NodeConvergeScope::roles($node, false, null), true, $operation, NodeNetworkReservation::hub())['intent'];
+        } finally {
+            DB::rollBack();
+        }
+
+        return hash('sha256', json_encode($intent, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
     /** @return array<string,mixed> */

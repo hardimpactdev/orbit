@@ -112,10 +112,35 @@ it('moves when an input of the base converge moves: the agent pin or the Node us
     expect($pin)->not->toBe($before)->and($user)->not->toBe($pin);
 });
 
-it('fails without --base, and for an unknown Node, with no digest printed', function (): void {
-    $this->artisan('orbit:node-converge-digest', ['nodes' => ['app-dev']])->assertFailed();
+it('fails for an unknown Node, with no digest printed', function (): void {
     $this->artisan('orbit:node-converge-digest', ['nodes' => ['app-dev', 'missing'], '--base' => true])
         ->expectsOutputToContain('The Node missing is unknown.')->doesntExpectOutputToContain('app-dev":')->assertFailed();
+});
+
+it('prints the phase input digest of the default converge without --base, writes nothing and moves with a role', function (): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: the refresh compares what a default converge would send.
+    config(['swamp.run_token' => 'test-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
+    $read = function (): string {
+        $this->artisan('orbit:node-converge-digest', ['nodes' => ['app-dev']])->assertSuccessful();
+
+        return app(NodeDesiredConvergeInput::class)->defaultDigest($this->node);
+    };
+    $base = app(NodeDesiredConvergeInput::class)->baseDigest($this->node);
+    $before = $read();
+    $writes = [];
+    DB::listen(function ($query) use (&$writes): void {
+        if (preg_match('/^\s*(insert|update|delete|replace)\b/i', $query->sql) === 1) {
+            $writes[] = $query->sql;
+        }
+    });
+    $again = $read();
+    $quiet = $writes;
+    $this->node->roles()->create(['role' => RoleName::Database, 'status' => 'active']);
+    $moved = app(NodeDesiredConvergeInput::class)->defaultDigest($this->node);
+
+    expect($before)->toMatch('/^[0-9a-f]{64}$/')->and($again)->toBe($before)->and($quiet)->toBe([])
+        ->and(Operation::query()->count())->toBe(0)->and($moved)->not->toBe($before)
+        ->and(app(NodeDesiredConvergeInput::class)->baseDigest($this->node))->toBe($base);
 });
 
 it('carries the units of the Node roles in the base intent, never the serve unit, so the digest moves when their text does', function (): void {

@@ -7,6 +7,7 @@ namespace App\Domain\Operations;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Deployment\InstanceDeployExecutionCopies;
+use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Models\Operation;
@@ -49,6 +50,11 @@ final readonly class OperationStore
                     'input' => $input, 'state' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
                     'triggered_by' => $triggeredBy, 'request_id' => $requestId,
                 ]);
+                // Every Operation under the Node's admission lock may change what a converge phase applied, so the next converge runs every
+                // phase (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+                if ($lockKey !== null && str_starts_with($lockKey, 'node:')) {
+                    app(NodeConvergePhaseDigest::class)->clear((int) substr($lockKey, 5));
+                }
                 if (isset($definition['workflow'])) {
                     $operation->forceFill(['state' => [...($operation->state ?? []), 'swamp_start' => [
                         'key' => 'operation:'.$operation->id, 'workflow' => app(DirectOperation::class)->workflowFor($operation),

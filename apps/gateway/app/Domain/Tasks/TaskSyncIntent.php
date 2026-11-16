@@ -44,21 +44,40 @@ final readonly class TaskSyncIntent
     {
         $instance = $copy->instance;
         $instance->loadMissing('node');
-        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
-        $base = $group->project->default_branch;
-        if ($repository === null || ! is_string($base) || ! GitBranchName::isValid($base)) {
-            throw new ResourceOperationException('tasks.sync_failed', 'A task copy syncs only from a GitHub repository with a valid default branch.', 422);
-        }
-        $source = $copy->runtime->clone_source_instance_id === null ? null : Instance::query()->find($copy->runtime->clone_source_instance_id);
-        $target = $copy->intent();
+        $base = self::base($group, $copy)
+            ?? throw new ResourceOperationException('tasks.sync_failed', 'A task copy syncs only from a GitHub repository with a valid default branch.', 422);
 
         return [
             'group_id' => $group->id, 'instance_id' => $instance->id, 'project_id' => $group->project_id, 'node_id' => $instance->node_id,
-            'workspace' => ['repository' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git', 'default_branch' => $base, 'branch' => 'task-'.$group->id],
-            'copy' => [...$target, 'start' => $copy->start(), 'mirror' => InstanceContainer::mirror($instance),
-                'source_mirror' => $source instanceof Instance ? InstanceContainer::mirror($source) : ''],
-            'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-sync-token-'.Str::uuid()],
+            'workspace' => ['repository' => $base['repository'], 'default_branch' => $base['default_branch'], 'branch' => 'task-'.$group->id],
+            'copy' => [...$copy->intent(), 'start' => $base['start'], 'mirror' => $base['mirror'], 'source_mirror' => $base['source_mirror']],
+            'git_authorization' => $base['git_authorization'],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
+        ];
+    }
+
+    /**
+     * What the copy's `base` phase reads: the Project's GitHub repository and default branch, the copy's start, its own Node mirror and
+     * the default's, and the vault key of a new read token, which the Gateway mints as the run starts. A sync and the handoff check of
+     * a copy both bring the default branch in this way (docs/reference/tasks.md#the-handoff-check-merges-main-first). Null when the
+     * Project has no GitHub repository or no valid default branch.
+     *
+     * @return array{repository:string,default_branch:string,start:string,mirror:string,source_mirror:string,git_authorization:array{vault:string,key:string}}|null
+     */
+    public static function base(Task $group, TaskInstanceWorkspace $copy): ?array
+    {
+        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
+        $branch = $group->project->default_branch;
+        if ($repository === null || ! is_string($branch) || ! GitBranchName::isValid($branch)) {
+            return null;
+        }
+        $source = $copy->runtime->clone_source_instance_id === null ? null : Instance::query()->find($copy->runtime->clone_source_instance_id);
+
+        return [
+            'repository' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git', 'default_branch' => $branch,
+            'start' => $copy->start(), 'mirror' => InstanceContainer::mirror($copy->instance),
+            'source_mirror' => $source instanceof Instance ? InstanceContainer::mirror($source) : '',
+            'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-sync-token-'.Str::uuid()],
         ];
     }
 }

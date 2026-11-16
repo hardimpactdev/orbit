@@ -17,7 +17,8 @@ sequenceDiagram
   participant GH as GitHub<br/>origin
   CLI->>GW: task:sync 42<br/>refresh the refs
   %%> Command:
-  %%> - the MCP tool `task-sync`, or `POST /api/v1/tasks/42/sync` with an `Idempotency-Key` and no body
+  %%> - `orbit task:sync 42 [--idempotency-key=KEY] [--json]`, the MCP tool `task-sync`, or `POST /api/v1/tasks/42/sync` with an `Idempotency-Key` and no body; all three call the same route
+  %%> - the CLI sends a fresh key when none is given, follows the Operation until it ends, and prints `default_commit`, `behind_by` and `branch_commit`
   Note over GW: Admit the sync<br/>group 42 · capture the intent
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
@@ -42,7 +43,8 @@ sequenceDiagram
     %%> - the copy intent and the vault key name of the read token, never the token; every expression of the workflow reads only its keys
     SW->>N: Bring in the base<br/>task-copy-base · base
     %%> Why its own child:
-    %%> - only this path calls `task-copy-base`; the shared workspace child of turns, checks and publishes takes no secret and no base input
+    %%> - only this path and the handoff check of a copy call `task-copy-base`; the shared workspace child of turns, checks and publishes takes no secret and no base input
+    %%> - the handoff check of a copy runs the same `base` phase with its own read token, under the same rules, before it merges the head ([task:check](/cli/task/check#how-it-works))
     %%> On the Node:
     %%> - first removes what an earlier, cancelled sync of the copy left in the copy's Node scratch and bundle folder, which the copy's Instance names
     %%> - fetches `+refs/heads/<default>` from the Project's repository into the copy's own mirror, `/var/lib/orbit/instance-repositories/<instance>.git`; a missing mirror is made from the default's mirror, which only then is needed

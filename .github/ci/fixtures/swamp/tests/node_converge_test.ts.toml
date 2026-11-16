@@ -52,6 +52,13 @@ cases = [
   "value-like names are withheld without changing the failure class",
   "only hosts with fatal statistics compete in play and task order, with hub winning ties",
   "the roles phase takes the intent's roles_seconds, 900 to 1800, as its timeout, 900 without it, and refuses any other bound before the command",
+  "a phase digest moves with what the phases read, and equals the record only when that did not move",
+  "the code digest moves with a file's content and name",
+  "input preparation writes the phase digests and the unchanged phases, and keeps the digest fields out of the Ansible variables",
+  "a phase whose digest is unchanged reports unchanged with no work, and the result carries every digest",
+  "each skippable phase is guarded by the unchanged list of the input preparation; input and check always run",
+  "a changed plan or secret value moves the roles digest, and the Operation's own ID does not",
+  "a changed shipped Tool file that the Tool helper imports moves the tools digest",
 ]
 file = "swamp/tests/node_converge_test.ts"
 cost = 4

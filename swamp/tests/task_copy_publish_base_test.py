@@ -339,6 +339,30 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         facts = self.no_workflow_change()
         self.assertEqual((facts['behind_by'], facts['overlapping_paths']), (0, []))
 
+    def test_a_checked_merge_of_main_publishes_level_with_main_and_merges_again_only_after_main_moved(self):
+        """The copy's handoff check merged the default head before it ran (docs/reference/tasks.md#the-handoff-check-merges-main-first),
+        where only main changed a workflow, then committed its candidate on that merge. Publish's own base read finds no workflow
+        change of the copy and nothing behind, and pushes the checked commit itself; a main that moved after the check still gets
+        publish's own merge."""
+        self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        head = self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        orbit = {**GIT_ENV, 'GIT_AUTHOR_NAME': 'Orbit', 'GIT_AUTHOR_EMAIL': 'orbit@users.noreply.github.com',
+                 'GIT_COMMITTER_NAME': 'Orbit', 'GIT_COMMITTER_EMAIL': 'orbit@users.noreply.github.com'}
+        self.fetched()
+        for argv in (['merge', '--quiet', '--no-ff', '-m', f'Merge main {head} before the check', 'origin/main'],
+                     ['commit', '--quiet', '--allow-empty', '-m', 'Export orders']):
+            subprocess.run(['git', *argv], cwd=self.work, check=True, capture_output=True, env={**os.environ, **orbit})
+        candidate = self.git('rev-parse', 'HEAD', cwd=self.work)
+        facts, merged, error = self.publish()
+        self.assertEqual((self.scratch / 'base/workflows').read_bytes(), b'')
+        self.assertEqual((error, merged, facts['behind_by'], facts['merged_default'], facts['default_commit']), ('', '', 0, None, head))
+        self.assertEqual(self.git('rev-parse', 'refs/heads/task-1', cwd=self.origin), candidate)
+        # Main moves after the check with another workflow change: publish merges it, on top of the checked merge.
+        moved = self.advance_main({WORKFLOW: 'on: [push, pull_request, workflow_dispatch]\n'})
+        facts, merged, error = self.publish()
+        self.assertEqual((error, facts['behind_by']), ('', 1))
+        self.assertEqual(self.published_merge(facts, merged, [candidate, moved]), moved)
+
     def test_a_default_commit_that_changed_a_workflow_carried_in_by_hand_is_no_change_of_the_copy(self):
         """Operation 24405: main changed a workflow after the last release, and the copy got that main by hand, not through its
         remote refs. The default head holds the commit, so the copy publishes."""

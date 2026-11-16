@@ -7,7 +7,7 @@ sequenceDiagram
   participant SW as Swamp
   participant CP as Proof copy
   GW->>SW: Start one shard<br/>operation-proof-run-copy
-  %%> Admission recorded one group and its copy with the whole batch assignments and the expected expanded case ids, and the run budget of the shard from its batches: 600 s, 180 s a batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours. The run starts only once its copy is active. Each development deploy step's command goes to its own vault key at the start.
+  %%> Admission recorded one group and its copy with its assigned parts (a batch and its case ids) and the expected expanded case ids, and the run budget of the shard from its parts: 600 s, 180 s a part that is not read-only and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours. The run starts only once its copy is active. Each development deploy step's command goes to its own vault key at the start.
   SW->>CP: Bring in the commit
   %%> One Ansible phase on the copy's Node fetches the commit by its SHA from the public Orbit repository, as `agent`, the workspace's owner (ADR 0268), and checks it out detached. A fetch that fails or takes more than 60 seconds fails the run; nothing retries.
   SW->>CP: Read the steps to skip

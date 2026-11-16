@@ -53,9 +53,18 @@ Deno.test("a workspace phase names its group only for the phase itself", () => {
   assertEquals(scoped("workflow-task-instance-workspace.yaml", phase(41), phase(42)), ["Run workspace phase"]);
 });
 
-Deno.test("a copy check names its group only for the check, commit and commit-ref phases", () => {
+Deno.test("a copy check names its group only for the merge, check, commit and commit-ref phases", () => {
   const check = (group: number) => ({ operation_id: 900 + group, node_id: node, kind: "tasks.check", intent: { group_id: group, workspace }, run_id: "run-1" });
-  assertEquals(scoped("workflow-task-instance-check.yaml", check(41), check(42)), ["Commit the candidate", "Pin the candidate", "Run the check"]);
+  assertEquals(scoped("workflow-task-instance-check.yaml", check(41), check(42)), ["Commit the candidate", "Merge the base", "Pin the candidate", "Run the check"]);
+});
+
+Deno.test("a copy's handoff check passes its group to both calls of the copy's base", () => {
+  const calls = steps("workflow-task-instance-check.yaml").filter((step) => step.task.workflowIdOrName === "task-copy-base");
+  assertEquals(calls.map((call) => [call.name, call.task.inputs?.phase]), [["Bring in the base", "base"], ["Discard the base scratch", "base-cleanup"]]);
+  for (const call of calls) {
+    const group = call.task.inputs?.group_id;
+    assertEquals(Number(cel.evaluate(expression(String(group)), { inputs: { intent: { group_id: 42 } } })), 42, call.name);
+  }
 });
 
 Deno.test("a sync names its group only for the clone and the bundle on 209", () => {
