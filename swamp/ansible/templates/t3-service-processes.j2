@@ -23,13 +23,15 @@
 {%- if ns.main == 0 or ns.main not in pids or ns.children != 0 -%}
 {{ {'readable': false} | to_json }}
 {%- else -%}
-{%- set provider_pids = procs | selectattr('ppid', 'equalto', ns.main) | selectattr('tty', 'equalto', '?') | selectattr('comm', 'in', providers) | map(attribute='pid') | list -%}
+{%- set server = procs | selectattr('pid', 'equalto', ns.main) | map(attribute='comm') | first -%}
+{%- set host_pids = procs | selectattr('ppid', 'equalto', ns.main) | selectattr('tty', 'equalto', '?') | selectattr('comm', 'equalto', 'MainThread') | map(attribute='pid') | list if server == 'conn-server' else [] -%}
+{%- set provider_pids = procs | selectattr('ppid', 'in', [ns.main] + host_pids) | selectattr('tty', 'equalto', '?') | selectattr('comm', 'in', providers) | map(attribute='pid') | list -%}
 {%- set session_pids = procs | selectattr('pid', 'in', provider_pids) | selectattr('comm', 'in', session_providers) | map(attribute='pid') | list -%}
 {%- set counts = {'terminals': 0, 'commands': unparsed | length} -%}
 {%- for p in procs if p.pid != ns.main -%}
   {%- if p.tty != '?' -%}
     {%- set _ = counts.update({'terminals': counts.terminals + 1} if p.ppid == ns.main else {'commands': counts.commands + 1}) -%}
-  {%- elif p.ppid == ns.main and (p.comm in ['t3-resource-mon', 'git'] or p.pid in provider_pids) -%}
+  {%- elif (p.ppid == ns.main and (p.comm in ['t3-resource-mon', 'git'] or p.pid in host_pids)) or p.pid in provider_pids -%}
   {%- elif p.sid in session_pids and p.ppid in pids -%}
   {%- elif p.ppid == ns.main -%}
     {%- set _ = counts.update({'terminals': counts.terminals + 1}) -%}

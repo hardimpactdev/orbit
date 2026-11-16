@@ -172,6 +172,36 @@ Deno.test({ name: "a turn's tool tree, in its own session, keeps the container b
     }
 } });
 
+/** A Conn Server's service, measured on conn-server 0.1.0 with one idle Claude session: the SDK host (`node`, named MainThread) leads
+ * no session, and the `claude` it runs leads its own, as under T3. */
+const conn = ["  184     1   184 ?        conn-server", " 1165   184   184 ?        MainThread"];
+const connIdle = [...conn, " 1173  1165  1173 ?        claude", " 1174  1173  1173 ?        sh"];
+
+Deno.test({ name: "an idle Conn Server restarts: its SDK host, the providers under it and what stays in the claude session", ignore: !available, async fn() {
+    for (const ps of [connIdle, [...connIdle, " 1175  1173  1173 ?        php"], [...conn, " 1180  1165  1180 ?        codex"], conn]) {
+        const run = await restart({ ps, main: 184 });
+        assert(run.ok, run.output);
+        assertEquals(run.result.answer, "restarted");
+        assertEquals(run.systemctl, [["try-restart", "--", "t3.service"]]);
+    }
+} });
+
+Deno.test({ name: "a terminal, a tool shell or another process under the Conn Server's SDK host keeps the container busy, and so does a MainThread under T3", ignore: !available, async fn() {
+    for (const [ps, main, terminals, commands] of [
+        [[...connIdle, " 1200  1165  1200 pts/0    bash"], 184, 0, 1],
+        [[...connIdle, " 1300  1173  1300 ?        bash", " 1301  1300  1300 ?        sleep"], 184, 0, 2],
+        [[...connIdle, " 1400  1165   184 ?        node"], 184, 0, 1],
+        [[...conn, " 1180  1165  1180 ?        codex", " 1181  1180  1180 ?        sh"], 184, 0, 1],
+        [[...conn, " 1500   184  1500 pts/0    MainThread"], 184, 1, 0],
+        [[...idle, " 3900   389  3900 ?        MainThread"], 389, 1, 0],
+    ] as const) {
+        const run = await restart({ ps: [...ps], main });
+        assert(run.ok, run.output);
+        assertEquals(run.result, { answer: "busy", reason: "processes", terminals, commands });
+        assertEquals(run.systemctl, []);
+    }
+} });
+
 Deno.test({ name: "an orphan left in T3's service, or a member line that does not parse, keeps the container busy", ignore: !available, async fn() {
     // Measured: node processes of past turns reparented to PID 1, in their own sessions, still in t3.service's cgroup.
     for (const [ps, commands] of [[[...base, " 5000     1  2944 ?        node", " 5001     1  6586 ?        node"], 2], [[...idle, "garbled line"], 1]] as const) {

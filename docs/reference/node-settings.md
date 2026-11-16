@@ -108,6 +108,8 @@ A change is a record. Orbit saves it at once and contacts no Node. `node:show` s
 
 Set the count from the CPU pressure of the full Node: all its places busy, together with any other work that the Node runs. Do not derive it from container memory limits. A Node with other work keeps its count small. It can set `proof_only` so that its few places serve proof copies only.
 
+A proof takes a place only when the Node's available memory also holds one copy's peak, the Gateway setting `proof.copy_memory`. While a proof holds places on a Node, the Node's idle runners stop, and they start again when the proof's copies there end ([Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node)).
+
 `ci.places` replaced the CI places of the removed task container setting; a database migration removed that member from every stored setting. The [subordinate-ID demand](#nested-fleet-instance-hosting) counts `ci.places` in their place.
 
 ## Derive the effective root

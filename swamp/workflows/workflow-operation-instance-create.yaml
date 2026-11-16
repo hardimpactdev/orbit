@@ -388,6 +388,35 @@ jobs:
   - name: clone
     dependsOn: [{job: input, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
     steps:
+      # A proof copy holds its CI place before the copy exists: the role's hold script stops idle runners on the Node down to the
+      # places left to runners (docs/reference/node-provisioning.md#proof-places-on-a-ci-node). Every other create skips it; its
+      # destroy releases the hold, also after a failed create.
+      - name: clone-ci-hold
+        labels: {role: swamp}
+        writes: true
+        dependsOn: []
+        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null && has(inputs.intent.container.clone.ci_hold)) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
+          methodName: exec
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ inputs.intent.container != null && inputs.intent.container.clone != null && has(inputs.intent.container.clone.ci_hold) ? ["timeout", "240", "/usr/local/libexec/orbit-ci-runner-hold", "hold", inputs.intent.container.name, string(inputs.intent.container.clone.ci_hold.places)] : ["true"] }}'
+            timeoutSec: 250
+          globalArgs:
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
       # One dispatch stages and copies (docs/cli/instance/container/create.mmd): the Gateway's launcher stages the stage copy's public
       # line (the release scripts) into the private folder, then runs the container part with only the copy's private text on stdin.
       # A create that is no clone skips the step; serve resolves its expressions all the same, so stdin names a key every create has
@@ -395,7 +424,7 @@ jobs:
       - name: clone-container
         labels: {role: swamp}
         writes: true
-        dependsOn: []
+        dependsOn: [{step: clone-ci-hold, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
         guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior

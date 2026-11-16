@@ -112,6 +112,16 @@ sequenceDiagram
     %%> - an Instance whose runtime records an inner volume, a default or its copy: deletes the volume `inner-<id>` with its snapshots after the container; a copy's volume shares blocks with the default's seed until it goes
     %%> - checks that the container, its storage volume and any inner volume are absent; already absent resources are removed
     %%> - the default and sibling clones stay; a migrated Instance's retained Git directory is untouched and can be purged only by hand
+    opt a proof copy
+      Note over N: Release the CI place<br/>orbit-ci-runner-hold release
+      %%> When:
+      %%> - in the same remove phase, only after the container and its volumes are gone; also after a failed create
+      %%> What it does:
+      %%> - removes the copy's hold; when no hold is left on the Node, starts the runners that the holds stopped (docs/reference/node-provisioning.md#proof-places-on-a-ci-node)
+      %%> - a rerun changes nothing; a Node without the `ci-runner` role has no hold script and releases nothing
+      %%> On failure:
+      %%> - the phase fails and the copy stays recorded; the watchdog asks again for every proof group that still owns a copy
+    end
     alt all steps pass
       %% path: succeeded
       SW-->>GW: Run succeeded<br/>terminal event

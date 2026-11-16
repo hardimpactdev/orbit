@@ -21,10 +21,10 @@ final readonly class ProofSettings
         return Config::integer('proof.project');
     }
 
-    /** The most copies one proof takes at once. */
-    public function copies(): int
+    /** One proof copy's peak memory in bytes: a Node takes a copy only while its available memory holds one more (ProofCopyHosts). */
+    public function copyMemory(): int
     {
-        return Config::integer('proof.copies');
+        return max(1, Config::integer('proof.copy_memory'));
     }
 
     public function repository(): GitHubRepository

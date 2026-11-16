@@ -61,12 +61,15 @@ final readonly class TaskCopyStart
     }
 
     /**
-     * The reads a copy start needs before its transaction: the source facts, the default's container, its Node's ID map and the
-     * Project's agent instructions. Each can reach the forge, the Node or the document store, so a caller that starts copies in its own transaction, such as a proof, calls this first.
+     * The reads a copy start needs before its transaction: the source facts, the default's container, the ID map of each Node a copy
+     * goes to and the Project's agent instructions. Each can reach the forge, the Node or the document store, so a caller that starts
+     * copies in its own transaction, such as a proof, calls this first. A task copy goes to the default's Node; a proof names the Nodes
+     * of its CI places.
      *
-     * @return array{asleep: bool, host: array{ranges: IsolatedIdRanges, containers: list<string>}|null, agent_files: array<string, string>}
+     * @param  list<int>  $nodeIds
+     * @return array{asleep: bool, hosts: array<int, array{ranges: IsolatedIdRanges, containers: list<string>}|null>, agent_files: array<string, string>}
      */
-    public function read(Project $project): array
+    public function read(Project $project, array $nodeIds = []): array
     {
         // The create captures missing source facts itself; that read can reach the forge, so it runs here, before the transaction.
         if ($project->source_facts_captured_at === null && $project->source_access !== ProjectSourceAccess::GhCli) {
@@ -75,19 +78,19 @@ final readonly class TaskCopyStart
 
         // A copy is always a clone of the default: its agent instructions are read here, before the transaction
         // (docs/reference/development-containers.md#agent-instructions).
-        return ['asleep' => $this->assertDefaultRuns($project), 'host' => $this->readIds($project),
+        return ['asleep' => $this->assertDefaultRuns($project), 'hosts' => $this->readIds($project, $nodeIds),
             'agent_files' => app(InstanceAgentInstructions::class)->read($project)];
     }
 
     /**
      * Admits one copy for the group from the reads of {@see read()}. Call it in a transaction; a second copy in the same transaction
-     * counts the first as live and as an open create on the Node.
+     * counts the first as live and as an open create on the Node. A task copy goes to the default's Node, within `orbit.tasks.copies_max`.
+     * A proof copy goes to the Node of its free CI place (`$place`, ProofCopies), which counted it already: it reads no copy cap.
      *
-     * @param  array{asleep: bool, host: array{ranges: IsolatedIdRanges, containers: list<string>}|null, agent_files: array<string, string>}  $read
+     * @param  array{asleep: bool, hosts: array<int, array{ranges: IsolatedIdRanges, containers: list<string>}|null>, agent_files: array<string, string>}  $read
      */
-    public function admitRead(Task $group, string $caller, ?string $request, array $read): Operation
+    public function admitRead(Task $group, string $caller, ?string $request, array $read, ?Node $place = null): Operation
     {
-        $host = $read['host'];
         $asleep = $read['asleep'];
         $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
         app(TaskProvisionIntent::class)->assertProvisionable($group);
@@ -109,17 +112,16 @@ final readonly class TaskCopyStart
         // plain clone and counts as every clone does.
         $limit = Config::integer('orbit.tasks.copies_max');
         $live = self::live($default->node_id);
-        if ($runtime->incus_project === InstancePlacement::NestedProject && $live >= $limit) {
+        if ($place === null && $runtime->incus_project === InstancePlacement::NestedProject && $live >= $limit) {
             throw new ResourceOperationException('tasks.copy_capacity_full',
                 "The Node holds {$live} task copies; the Gateway allows {$limit} at once.", 409, details: ['live' => $live, 'limit' => $limit]);
         }
-        // Placement is unchanged: a copy goes to the default's Node until ADR 0260 build step 5 chooses the Node. The copy starts from
-        // the seed of the Node it is placed on.
-        $node = $default->node()->firstOrFail();
+        // The copy starts from the seed of the Node it is placed on.
+        $node = $place ?? $default->node()->firstOrFail();
         self::seed($runtime, $node);
-        $this->assertIdRanges($default, $runtime, $host);
+        $this->assertIdRanges($node, $runtime, $read['hosts'][$node->id] ?? null);
         $operation = app(StartDevelopmentInstanceCreateAction::class)->execute(
-            new CreateInstanceData($project->id, $node->id, $name, null, null, $name), $caller, $request, $group, $read['agent_files']);
+            new CreateInstanceData($project->id, $node->id, $name, null, null, $name), $caller, $request, $group, $read['agent_files'], $place !== null);
         $group->taskable()->associate(Instance::query()->findOrFail($operation->target_id));
         $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
 
@@ -172,16 +174,25 @@ final readonly class TaskCopyStart
     }
 
     /**
-     * The ID map facts of the default's host, read before the transaction: one bounded SSH call (NodeIdMapRead, at most about 4 s).
-     * Null when there is no default, which the transaction refuses, or when the host cannot be read, which assertIdRanges refuses.
+     * The ID map facts of each host, by Node id, read before the transaction: one bounded SSH call each (NodeIdMapRead, at most about
+     * 4 s). Without `$nodeIds`, the default's host. Null for a host that cannot be read, which assertIdRanges refuses; none when there is
+     * no default, which the transaction refuses.
      *
-     * @return array{ranges: IsolatedIdRanges, containers: list<string>}|null
+     * @param  list<int>  $nodeIds
+     * @return array<int, array{ranges: IsolatedIdRanges, containers: list<string>}|null>
      */
-    private function readIds(Project $project): ?array
+    private function readIds(Project $project, array $nodeIds): array
     {
-        $default = Instance::query()->with('node')->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->first();
+        $default = Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->first();
+        if ($default === null) {
+            return [];
+        }
+        $hosts = [];
+        foreach (Node::query()->whereKey($nodeIds === [] ? [$default->node_id] : $nodeIds)->get() as $node) {
+            $hosts[$node->id] = $this->ids->read($node);
+        }
 
-        return $default === null ? null : $this->ids->read($default->node);
+        return $hosts;
     }
 
     /**
@@ -194,13 +205,13 @@ final readonly class TaskCopyStart
      *
      * @param  array{ranges: IsolatedIdRanges, containers: list<string>}|null  $host
      */
-    private function assertIdRanges(Instance $default, InstanceRuntime $runtime, ?array $host): void
+    private function assertIdRanges(Node $node, InstanceRuntime $runtime, ?array $host): void
     {
         if ($host === null) {
             throw new ResourceOperationException('tasks.copy_id_ranges_unreadable',
-                "The ID ranges of the default's Node cannot be read, so the Gateway cannot show a free range for the copy and its next seed.", 409);
+                "The ID ranges of the copy's Node cannot be read, so the Gateway cannot show a free range for the copy and its next seed.", 409);
         }
-        $runtimes = InstanceRuntime::query()->where('node_id', $default->node_id)->whereIn('incus_project', InstancePlacement::projects())
+        $runtimes = InstanceRuntime::query()->where('node_id', $node->id)->whereIn('incus_project', InstancePlacement::projects())
             ->get(['instance_id', 'incus_project', 'container_name', 'idmap_size']);
         // A runtime row whose container is not on the host holds a range only while its create is open; a failed one never will.
         $open = Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')
@@ -213,8 +224,8 @@ final readonly class TaskCopyStart
         }
         $size = self::rangeSize($runtime);
         $placed = $ranges?->with($size);
-        $defaults = Instance::query()->where('node_id', $default->node_id)->where('name', DefaultInstanceName::Name)->pluck('id')->all();
-        $seeds = $runtimes->filter(static fn (InstanceRuntime $other): bool => in_array($other->instance_id, $defaults, true))
+        $defaults = Instance::query()->where('node_id', $node->id)->where('name', DefaultInstanceName::Name)->pluck('id')->all();
+        $seeds = $runtimes->toBase()->filter(static fn (InstanceRuntime $other): bool => in_array($other->instance_id, $defaults, true))
             ->map(static fn (InstanceRuntime $other): int => self::rangeSize($other))->push($size)->unique()->values();
         $short = $placed === null ? $seeds : $seeds->filter(static fn (int $seed): bool => $placed->place($seed) === null)->values();
         if ($short->isNotEmpty()) {

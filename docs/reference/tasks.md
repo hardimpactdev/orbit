@@ -923,7 +923,7 @@ A driver reads a turn from its result alone; the whole transcript stays in the a
 
 [`task:sync`](/cli/task/sync#a-task-copy) brings the Project's newest default branch into it, as [bring main into a copy](#bring-main-into-a-copy) describes. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet.
 
-[`proof:run`](/cli/proof/run#the-run) starts its own copies, one per shard and at most two. Proof groups own them; each group has one subtask row and no agent thread. A proof never takes the last two copy places, and every end of a run destroys its copy. Consults, a handoff check with hosted CI, prep and build do not run in a copy yet.
+[`proof:run`](/cli/proof/run#the-run) starts its own copies, one per shard and one in each free CI place. Proof groups own them; each group has one subtask row and no agent thread. Proof copies take CI places, not the copy places of task groups, and every end of a run destroys its copy. Consults, a handoff check with hosted CI, prep and build do not run in a copy yet.
 
 The copy's `.env` holds its secrets. Git never takes it: every container create and clone names it in the checkout's own `info/exclude` ([what is built](/reference/development-containers#what-is-built)), so neither the check's commit nor an agent's commit holds it. A copy or container made before that line existed lacks it until its next create or clone: its check can still commit the file. The publish refusal `tasks.publish_secret_path` covers such a copy too: nothing of it is pushed. Cancel it and start the task again.
 

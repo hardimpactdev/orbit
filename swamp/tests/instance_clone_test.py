@@ -69,7 +69,7 @@ class BranchSelectionTest(unittest.TestCase):
     def prepare(self, mode="new", target="fix-login", base="release", sha=None, legacy=False):
         overrides = {"repository": str(self.remote), "mirror": str(self.mirror), "protocols": ["file"], "branch": target,
                      "clone": {"source": "instance-1", "snapshot": "seed-abc", "t3": {"device": "t3"},
-                               "seed_commit": self.seed, "source_mirror": str(self.remote / ".git")}}
+                               "seed_commit": self.seed}}
         if not legacy:
             overrides["branch_selection"] = {"mode": mode, "target": target, "base": base, "source_sha": sha or self.tip}
         _, _, error = CloneTest().clone(overrides=overrides, real_git=True)
