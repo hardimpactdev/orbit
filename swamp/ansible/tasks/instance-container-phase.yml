@@ -526,7 +526,12 @@
     container_php_ini_path: /etc/orbit/php/conf.d/99-orbit-runtime.ini
     container_php_ini_content: "memory_limit = 1G\nauto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n"
     container_php_cli_ini_path: /etc/orbit/php/php-cli.ini
-    container_php_cli_ini_content: "{{ container.php_cli_ini | default(none) or '' }}"
+    container_php_cli_ini_lines: "{{ (container.php_cli_ini | default(none) or '').splitlines() }}"
+    # The wanted lines without those whose module the runtime folder lacks; no line left is no file.
+    container_php_cli_ini_kept: >-
+      {{ container_php_cli_ini_lines | reject('in', container_php_cli_modules.results | selectattr('rc', 'defined')
+      | rejectattr('rc', 'eq', 0) | map(attribute='item') | list) | list }}
+    container_php_cli_ini_content: "{{ (container_php_cli_ini_kept | join('\n') ~ '\n') if container_php_cli_ini_kept else '' }}"
   block:
     - name: Read the container's PHP settings
       ansible.builtin.command: { argv: "{{ as_root + ['cat', '--', container_php_ini_path] }}" }
@@ -547,6 +552,16 @@
     # as PCOV, or none (docs/reference/php-runtime.md#pcov-in-the-cli-only). PHP reads `php-<SAPI name>.ini` in the config path
     # (main/php_ini.c), and reads `php.ini` there only when it finds none; Orbit writes no `php.ini`. `php` and `frankenphp php-cli`
     # have the SAPI name `cli`, so both read the file. Only the FrankenPHP server, with the SAPI name `frankenphp`, never does.
+    # A line stays only when the Node's runtime folder, mounted at /opt/orbit-runtime, holds its module: a Gateway release before
+    # the Node's converge must not make every PHP CLI call warn "Unable to load dynamic library". This phase runs again at each
+    # start and deploy, so the line returns by itself once the Node holds the module.
+    - name: Read which CLI-only PHP modules the runtime folder holds
+      when: item.startswith('extension=')
+      loop: "{{ container_php_cli_ini_lines }}"
+      ansible.builtin.command: { argv: "{{ as_root + ['timeout', '5', 'test', '-f', item.removeprefix('extension=')] }}" }
+      register: container_php_cli_modules
+      changed_when: false
+      failed_when: container_php_cli_modules.rc not in [0, 1] or container_php_cli_modules.stderr != ''
     - name: Read the container's CLI-only PHP settings
       ansible.builtin.command: { argv: "{{ as_root + ['cat', '--', container_php_cli_ini_path] }}" }
       register: container_php_cli_ini_read

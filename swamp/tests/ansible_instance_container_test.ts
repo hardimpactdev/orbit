@@ -47,6 +47,9 @@ function transform(task: Task): Task {
   return task;
 }
 
+/** The container phase read the Node's runtime folder for the PCOV module of the fixture's php-cli.ini. */
+const readsPcov = /Read which CLI-only PHP modules the runtime folder holds\] \*+\nok: \[node\] => \(item=extension=\/opt\/orbit-runtime\/current\/php\/8\.5\/modules\/pcov\.so\)/;
+
 const git = (cwd: string, ...args: string[]) => {
   const done = new Deno.Command("git", {
     args: ["-c", "user.name=Orbit", "-c", "user.email=orbit@example.test", ...args],
@@ -100,6 +103,9 @@ function fixture() {
   Deno.copyFileSync(new URL("tasks/instance-node-runtime.yml", root), `${folder}/tasks/instance-node-runtime.yml`);
   Deno.copyFileSync(new URL("tasks/instance-fleet.yml", root), `${folder}/tasks/instance-fleet.yml`);
   Deno.mkdirSync(`${folder}/run`);
+  // The Node's runtime folder, which the fake shows the container at /opt/orbit-runtime: a converged Node holds PCOV for PHP 8.5.
+  Deno.mkdirSync(`${folder}/orbit-runtime/current/php/8.5/modules`, { recursive: true });
+  Deno.writeTextFileSync(`${folder}/orbit-runtime/current/php/8.5/modules/pcov.so`, "");
   // The Project's repository, with one commit on main.
   const source = `${folder}/source`;
   Deno.mkdirSync(source);
@@ -614,6 +620,8 @@ Deno.test({
       for (const phases of [["start", "fetch"], ["checkout"], ["seed", "check"]]) {
         const result = f.phases(phases);
         assert(result.ok, `${phases}: ${result.output}`);
+        // The start converges the CLI-only PHP settings against the Node's runtime folder.
+        if (phases[0] === "start") assert(readsPcov.test(result.output), result.output);
         // The checkout's repack passed (one that did not names itself in an `orbit-workspace-repack=` line) and rolled the fetched
         // pack into the first one; it removed only the hour-old temporary files.
         if (phases[0] === "checkout") {
@@ -1667,6 +1675,9 @@ Deno.test({
       const clone = `${f.folder}/containers/instance-8`;
       const result = f.run("clone");
       assert(result.ok, result.output);
+      // The clone converges the CLI-only PHP settings against the Node's runtime folder, which holds PCOV.
+      assert(readsPcov.test(result.output), result.output);
+      assertEquals(Deno.readTextFileSync(`${clone}/etc/orbit/php/php-cli.ini`), f.container.php_cli_ini);
       // At its first boot nothing of the default starts: no FrankenPHP on the default's address, no worker on its database.
       assertEquals(f.state().containers["instance-8"].booted, [[]]);
       assertEquals(f.state().containers["instance-8"].bootMachineIds, ["696e7374616e63652d382d2d2d2d2d2d"]);
@@ -1818,7 +1829,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, and a Project without PHP loses php-cli.ini",
+  name: "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, a module the Node lacks leaves its line out until the Node holds it, and a Project without PHP loses php-cli.ini",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1864,6 +1875,34 @@ Deno.test({
       assertEquals(Deno.readTextFileSync(cli), pcov);
       assertEquals(tryRestarts().slice(before + 1), ["try-restart --no-block orbit-*.service"]);
 
+      // A Gateway release before the Node's converge: the runtime folder lacks the module. Its line goes, so with no line left the
+      // phase removes Orbit's file and the running units restart; a rerun changes nothing and restarts nothing.
+      const module = `${f.folder}/orbit-runtime/current/php/8.5/modules/pcov.so`;
+      Deno.removeSync(module);
+      const missing = f.run("start");
+      assert(missing.ok, missing.output);
+      assertThrows(() => Deno.lstatSync(cli));
+      assertEquals(tryRestarts().slice(before + 2), ["try-restart --no-block orbit-*.service"]);
+      const missingStable = f.run("start");
+      assert(missingStable.ok, missingStable.output);
+      assertEquals(missingStable.changed, 0, missingStable.output);
+      assertThrows(() => Deno.lstatSync(cli));
+      assertEquals(tryRestarts().length, before + 3);
+      // Only the missing module's line goes; any other line stays.
+      f.container.php_cli_ini = "; CLI only\n" + pcov;
+      f.write();
+      const kept = f.run("start");
+      assert(kept.ok, kept.output);
+      assertEquals(Deno.readTextFileSync(cli), "; CLI only\n");
+      // Once the Node holds the module, the next start or deploy writes its line again: no other repair is needed.
+      Deno.writeTextFileSync(module, "");
+      f.container.php_cli_ini = pcov;
+      f.write();
+      const returned = f.run("start");
+      assert(returned.ok, returned.output);
+      assertEquals(Deno.readTextFileSync(cli), pcov);
+      assertEquals(tryRestarts().slice(before + 3), Array(2).fill("try-restart --no-block orbit-*.service"));
+
       // A Project without PHP loses Orbit's file, and the running units restart; a rerun changes nothing and restarts nothing.
       // The first build's rerun shows the same for a Project with PHP.
       f.container.php = null;
@@ -1872,11 +1911,11 @@ Deno.test({
       const removed = f.run("start");
       assert(removed.ok, removed.output);
       assertThrows(() => Deno.lstatSync(cli));
-      assertEquals(tryRestarts().slice(before + 2), ["try-restart --no-block orbit-*.service"]);
+      assertEquals(tryRestarts().slice(before + 5), ["try-restart --no-block orbit-*.service"]);
       const stable = f.run("start");
       assert(stable.ok, stable.output);
       assertEquals(stable.changed, 0, stable.output);
-      assertEquals(tryRestarts().length, before + 3);
+      assertEquals(tryRestarts().length, before + 6);
     } finally {
       f.cleanup();
     }
