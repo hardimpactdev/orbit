@@ -2,7 +2,7 @@ order = 740
 cases = [
   "the pass visits one Node at a time and the Gateway reads its report step",
   "each Node runs drain, reboot and check in order, each phase bounded and the drain longer than its budget",
-  "a Node waits outside the window or when admission found its task work busy, and an operator's pass ignores the window",
+  "a Node waits outside the window or when admission deferred it, and an operator's pass ignores the window",
   "a Node after a failed one halts from the records in the run folder",
   "a Node's play reads the clock and writes its record on the Swamp Node without SSH to localhost",
   "the check waits for the boot to finish before it reads the failed units",
@@ -10,7 +10,7 @@ cases = [
   "a failed phase records the assert's error code or the phase's own code, keeps the earlier record, and fails",
   "the report lists every Node record in pass order and reports a cut Node failed",
   "only the swamp Node schedules its own reboot, behind a path unit that the pass's cleanup releases",
-  "a failed drain starts what it stopped, and each task guest is recorded as soon as it stops",
+  "a failed drain starts what it stopped, and the drain stops no task guest",
   "the rerun picks only failed jobs still running on a stopped runner at its freeze, in runs still at that attempt",
   "the rerun records each accepted call on its own and the refused ones apart",
   "the waits and calls of the rerun never fail the phase, and the tokens are always revoked",
