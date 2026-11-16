@@ -1386,6 +1386,7 @@ Both records match by the repository, not by the Project. Two Projects can name 
 | [`task:pr-merge`](/cli/task/pr-merge) | Refused before any GitHub read, also for a watched pull request that a copy of any Project opened. Once read, also for a head on a copy group's branch |
 | [`project:pr-merge`](/cli/project/pr-merge) | Refused for such a pull request of any Project on the repository: by its number before any GitHub read, or by its `task-<id>` branch once read |
 | [`task:pr-gate`](#gate-check) | Skips the group with `tasks.copy_pr_no_merge`: no ready step and no merge |
+| [Settle on merge](#a-copy-group-settles-on-merge) | Reads the pull request's state only, and completes the group after a person merged it |
 | [Review and merge](#review-and-merge) | Acts only through `task:pr-gate` and `project:pr-merge`, so it merges no such pull request |
 | [Dependency merge](#dependency-batch-squash-admission) | Refused for a batch group whose publish came from a task copy |
 | [Automatic deployments](/reference/deployments#automatic-deployments) | Deploy commits already on the default branch, and merge nothing |
@@ -1422,6 +1423,25 @@ Swamp observes the published PR and records the group status. Swamp owns branch 
 ### Settling
 
 Swamp owns PR checks, feedback, retries, fixups and cleanup. Updating a group to `settling` or `waiting_for_review` records board state and starts nothing.
+
+#### A copy group settles on merge
+
+A group whose workspace is a [task copy](#task-copy) settles itself when its watched pull request merges. Orbit only reads the pull request. It never merges, readies or comments on it ([No merge](#no-merge)).
+
+The hourly `project.observe` run of [Project maintenance](/reference/projects#maintenance) reads each watched pull request in Swamp, with the repository's read token. It runs for Projects with maintenance on. The Gateway then acts on each copy group by the state it read:
+
+- **Merged.** The Gateway records `watched_pr_completion` `merged` and `merged_at`. Then it completes the group as [`task:complete`](#complete-and-cleanup) does, with no GitHub read and no sync.
+- **The result.** The group ends `completed` with `settled_at` and `merged_at` set, so task insights count it as completed. The copy's destroy is admitted.
+- **Closed without a merge.** The Gateway records the state only. A person completes or cancels the group.
+The tick waits for the group to be free and keeps the copy's work:
+
+- **Busy.** The tick skips a group with an open Operation of its own: a turn, a check or a publish. The next tick tries again.
+- **No new work.** The recorded merge holds new turns and checks back.
+- **Unpublished work.** Completion refuses a copy that holds uncommitted, untracked, stashed or other-branch work. The copy stays.
+- **The refusal.** The tick records it once as `failure` assistance.
+- **After a refusal.** The tick leaves the group alone until a person resolves the request.
+- **A failed destroy.** The group is `completed` and still names the copy. The next tick reads it again and completes it again, which admits a new destroy.
+- **Repeats.** A crash between the record and the complete leaves `merged` recorded. The next tick completes the group.
 
 #### Trusted GitHub feedback
 
@@ -1641,13 +1661,15 @@ When cancel marks the task `cancelled`, it follows the [ending rule](#assistance
 
 Swamp requests group completion or cancellation through the API. The Gateway stops admitted work and performs the requested workspace removal. A failed remote stop or removal preserves the owned workspace and error evidence for retry. Swamp schedules retries.
 
-`task:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. A running or reviewing group with a task copy also completes when its work is already on the default branch and is not empty, such as work carried there by hand; [Published work of a copy](#published-work-of-a-copy) decides. An empty copy group needs a cancel. A refused complete answers `tasks.not_settling` with a `reason`: `status`, `pull_request_not_ended`, `work_unread`, `work_not_on_default` or `work_empty`. Repeating completion on a completed group retries its attached workspace removal. An explicit cancellation or completion remains available even though automatic orchestration is removed.
+`task:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. A running or reviewing group with a task copy also completes when its work is already on the default branch and is not empty, such as work carried there by hand; [Published work of a copy](#published-work-of-a-copy) decides. An empty copy group needs a cancel. A refused complete answers `tasks.not_settling` with a `reason`: `status`, `pull_request_not_ended`, `work_unread`, `work_not_on_default` or `work_empty`.
+
+Completion never destroys a copy that holds uncommitted, untracked, stashed or other-branch work. It reads the copy first, as a cancel does, and refuses with `tasks.copy_unpublished_work` and the read's counts, or `tasks.copy_workspace_unknown` when the copy cannot be read. Publish or remove that work, or cancel with `--discard`. Repeating completion on a completed group retries its attached workspace removal without a new read. A copy group whose watched PR merged completes by itself ([A copy group settles on merge](#a-copy-group-settles-on-merge)). An explicit cancellation or completion remains available even though automatic orchestration is removed.
 
 Origin must already have the approved work, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
 
 ### Task copy cleanup
 
-A task whose workspace is a [task copy](#task-copy) has no task VM. `task:complete` admits the copy's normal `instance.destroy` with force, as `task:cancel` does, marks the task `completed` and answers HTTP 200 with the task. An open destroy of the copy is reused. When the destroy succeeds, the task lets go of the copy and stays `completed`. When it fails, the task keeps the copy, and completing again admits a new destroy.
+A task whose workspace is a [task copy](#task-copy) has no task VM. `task:complete` reads the copy as `task:cancel` does and refuses one that holds work that is not published ([Complete and cleanup](#complete-and-cleanup)). It then admits the copy's normal `instance.destroy` with force, as `task:cancel` does, marks the task `completed` and answers HTTP 200 with the task. An open destroy of the copy is reused. When the destroy succeeds, the task lets go of the copy and stays `completed`. When it fails, the task keeps the copy, and completing again admits a new destroy.
 
 A cancel of a copy records the `tasks.cancel` Operation under the group's lock key and admits the destroy in one transaction, record first. An Operation that holds or takes the group lock refuses the record with `operation.target_busy`, and the transaction admits no destroy.
 
