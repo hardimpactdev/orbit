@@ -100,14 +100,15 @@ class RegistryTest(unittest.TestCase):
 
     def test_cost_input_and_population_changes_select_only_their_fixture(self):
         file = self.files[0]
-        for updates, expected_population in [({'cost': 101}, []), ({'inputs': ['swamp/new.yml']}, []),
-                                              ({'cases': ['renamed', 'first']}, [file])]:
+        # A cost is scheduling metadata: alone it is a machinery change, which selects the canary set.
+        for updates, expected_population, expected in [({'cost': 101}, [], ([], True)), ({'inputs': ['swamp/new.yml']}, [], ([file], False)),
+                                                        ({'cases': ['renamed', 'first']}, [file], ([], False))]:
             with self.subTest(updates=updates):
                 row = {**self.records[0], **self.population[file], 'order': 10, **updates}
                 self.write_record(row)
                 head = self.commit()
                 changed, population = self.changes(self.new, head)
-                self.assertEqual(changed, ([file] if not expected_population else [], False))
+                self.assertEqual(changed, expected)
                 self.assertEqual(population, expected_population)
                 # The move must preserve fast-check and release-input selection too.
                 old_paths = [registry.TABLE] + ([registry.LEGACY_INVENTORY] if expected_population else [])
@@ -155,18 +156,18 @@ class RegistryTest(unittest.TestCase):
     def test_unrelated_fixture_edits_merge_cleanly_and_compare_at_merge_base(self):
         self.git('checkout', '-qb', 'topic')
         a = self.root / registry.metadata_path(self.files[0])
-        a.write_text(a.read_text().replace('cost = 100', 'cost = 101'))
+        a.write_text(a.read_text().replace('inputs = [', 'inputs = ["swamp/topic.yml", '))
         topic = self.commit()
         self.git('checkout', '-qb', 'main-side', self.new)
         b = self.root / registry.metadata_path(self.files[1])
-        b.write_text(b.read_text().replace('cost = 100', 'cost = 102'))
+        b.write_text(b.read_text().replace('inputs = [', 'inputs = ["swamp/main.yml", '))
         main = self.commit()
         with contextlib.chdir(self.root):
             base, _ = plan.changed_inputs(main, topic)
         self.assertEqual(self.changes(base, topic), (([self.files[0]], False), []))
         self.git('merge', '--no-edit', topic)
         records = registry.load(self.root)[0]['fixture']
-        self.assertEqual([row['cost'] for row in records], [101, 102])
+        self.assertEqual([row['inputs'][0] for row in records], ['swamp/topic.yml', 'swamp/main.yml'])
         self.assertEqual(self.changes(main, 'HEAD'), (([self.files[0]], False), []))
 
     def test_edits_to_different_cases_of_one_file_merge_and_a_stale_case_list_fails(self):
@@ -207,7 +208,7 @@ class RegistryTest(unittest.TestCase):
 
     def test_conflicting_edits_to_same_fixture_still_conflict(self):
         a = self.root / registry.metadata_path(self.files[0])
-        a.write_text(a.read_text().replace('cost = 100', 'cost = 101'))
+        a.write_text(a.read_text().replace('inputs = [', 'inputs = ["swamp/topic.yml", '))
         topic = self.commit()
         self.git('checkout', '-qb', 'other', self.new)
         a.write_text(a.read_text().replace('cost = 100', 'cost = 102'))

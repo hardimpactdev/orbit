@@ -24,6 +24,8 @@ TABLE = ROOT / '.github/ci/checks.toml'
 PRELOAD = 'swamp/tests/_support/slice.ts'
 # The shared fixture machinery. A change to it selects the machinery canary set, not every fixture.
 MACHINERY = ('bin/ci-units', 'bin/ci-registry', PRELOAD)
+# Fixture metadata keys that only schedule a fixture: where it runs, its declared costs and its slices.
+SCHEDULING = ('self_hosted', 'cost', 'case_costs', 'slices')
 OUTPUT_LOCK = threading.Lock()
 CANCELLED = threading.Event()
 
@@ -187,7 +189,12 @@ def registry_changes(base, head):
     # and removals alone do not reorder the surviving files.
     reordered = [file for file in old if file in new] != [file for file in new if file in old]
     shared = reordered or any(before.get(key) != after.get(key) for key in ('budget', 'fixtures'))
-    changed = sorted(file for file in old.keys() | new.keys() if old.get(file) != new.get(file))
+    # Scheduling metadata decides where and when a fixture runs, not what it tests. A change to it alone is a
+    # machinery change: it selects the machinery canary. A change to cases, inputs or any other key selects the fixture.
+    test = lambda entry: {key: value for key, value in entry.items() if key not in SCHEDULING}
+    changed = sorted(file for file in old.keys() | new.keys()
+                     if file not in old or file not in new or test(old[file]) != test(new[file]))
+    shared = shared or any(file in old and file not in changed and old[file] != new[file] for file in new)
     return changed, shared
 
 
