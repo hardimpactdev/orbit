@@ -12,6 +12,7 @@ use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
 use App\Domain\Nodes\NativeNodeRoleRelocateInput;
@@ -33,6 +34,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Processes\ProcessOwnershipClaim;
 use App\Domain\Routes\RouteRemovalGuard;
+use App\Domain\Routes\StaleRouterAssignment;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -144,9 +146,9 @@ final readonly class AdmitNodeRoleOperationAction
             ]);
         }
 
-        return DB::transaction(function () use ($node, $role, $purgeData, $offline, $deleted, $requestId): Operation {
+        $admit = fn (): Operation => DB::transaction(function () use ($node, $role, $purgeData, $offline, $deleted, $requestId): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
-            $this->guardMutable($node, $role);
+            $this->guardMutable($node, $role, removing: true);
             if ($role === RoleName::Swamp) {
                 throw new NodeRoleValidationException("Role [{$role->value}] runs this removal's Swamp run, so it can't remove itself.", [
                     'reason' => 'swamp_self_removal', 'role' => $role->value,
@@ -157,6 +159,9 @@ final readonly class AdmitNodeRoleOperationAction
             }
             $this->routes->assertRoleRemovable($node, $role);
             $assignment = $node->roles()->where('role', $role)->lockForUpdate()->firstOrFail();
+            if ($role === RoleName::Router) {
+                app(StaleRouterAssignment::class)->assertRemovable($assignment);
+            }
             if ($role === RoleName::AppDev && $node->instances()->exists()) {
                 throw new NodeRoleValidationException('The app-dev role cannot be removed while its Node owns Instances.', [
                     'reason' => 'instances_attached', 'role' => $role->value,
@@ -181,6 +186,10 @@ final readonly class AdmitNodeRoleOperationAction
 
             return $operation;
         });
+        // A router row is checked under its Cluster's Router lock, so no Router set or unset is admitted meanwhile.
+        $clusterId = $role === RoleName::Router ? $node->roles()->where('role', $role)->first()?->cluster_id : null;
+
+        return is_int($clusterId) ? app(ClusterRouterOperationLock::class)->run($clusterId, $admit) : $admit();
     }
 
     /**
@@ -255,12 +264,12 @@ final readonly class AdmitNodeRoleOperationAction
             'private_bindings' => ['metrics_runtime' => ['owner_node_id' => $owner, 'read_node_ids' => $metrics === null ? [] : [$owner], 'write_node_ids' => []]]]]);
     }
 
-    private function guardMutable(Node $node, RoleName $role): void
+    private function guardMutable(Node $node, RoleName $role, bool $removing = false): void
     {
         if (! $node->exists || $node->status !== LifecycleStatus::Active) {
             throw new NodeRoleValidationException('Roles can be changed only on an active node.');
         }
-        if (! $this->roles->definition($role)->mutable) {
+        if (! ($removing ? $this->roles->removable($role) : $this->roles->definition($role)->mutable)) {
             throw new NodeRoleValidationException("Role [{$role->value}] is protected from generic mutation.");
         }
     }

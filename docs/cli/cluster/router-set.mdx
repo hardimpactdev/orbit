@@ -26,7 +26,7 @@ In a terminal, an omitted Cluster is chosen from an interactive list, and an omi
 
 Members on the LAN reach Cluster Routes through the Router over HTTPS. Cluster DNS on the Router is not built yet. Replacement keeps the current Router serving until the candidate can serve every Cluster Route. Orbit prepares the candidate, signs its certificates, opens the LAN paths, publishes the Router sites, probes every workload from the candidate, switches private DNS, waits for the DNS answers to expire, and then retires the old Router's sites and LAN rules. The CLI follows the Operation and prints the final result with the request ID.
 
-Each Cluster has one Router operation owner. A concurrent Router change on the same Cluster waits up to 30 seconds and then fails with `cluster.router_busy`. A replacement that another Router change left unfinished fails with `cluster.router_transition_conflict`. A Node that is not an active member, or not a Linux Node with a valid account, fails with `cluster.router_node_invalid`. A candidate without a LAN address is reached by its WireGuard address. Setting the Node that is already the active Router, with no replacement pending, succeeds with `Skipped — already the Router (cluster.router_unchanged)` and changes nothing.
+Each Cluster has one Router operation owner. A concurrent Router change on the same Cluster waits up to 30 seconds and then fails with `cluster.router_busy`. A replacement that another Router change left unfinished fails with `cluster.router_transition_conflict`, and so does a call while [`node:role:remove`](/cli/node/role-remove#a-stale-router-assignment) removes a stale Router assignment of the Cluster. A Node that is not an active member, or not a Linux Node with a valid account, fails with `cluster.router_node_invalid`. A candidate without a LAN address is reached by its WireGuard address. Setting the Node that is already the active Router, with no replacement pending, succeeds with `Skipped — already the Router (cluster.router_unchanged)` and changes nothing.
 
 If preparing, publishing or the DNS selection fails, Orbit restores the captured Caddy, firewall and DNS state, so the old Router keeps serving, and the candidate's assignment is marked failed. If the restore fails too, the old assignment stays active, the result says the restore failed, and `doctor` shows the drift. Packages and Caddy installed on the candidate stay. If retiring the old Router fails after the switch, the candidate stays the Router, the old assignment stays recorded as unfinished, and a rerun finishes it. After you fix the cause, run the same command again.
 
@@ -37,7 +37,7 @@ If preparing, publishing or the DNS selection fails, Orbit restores the captured
 | `cluster.id_invalid`, `node.id_invalid` | The Cluster or Node is missing or is not a positive integer, and the CLI cannot prompt. |
 | `cluster.router_node_invalid` | The Node is not an active member of the Cluster, or not a Linux Node with a valid account. |
 | `cluster.router_busy` | Another Router change holds the Cluster. |
-| `cluster.router_transition_conflict` | An earlier replacement is unfinished. |
+| `cluster.router_transition_conflict` | An earlier replacement is unfinished, or a stale Router assignment of the Cluster is being removed. |
 | `http.404` | The Cluster or Node is unknown. |
 | `node_access.required` | The caller has no access grant to the candidate Node. |
 

@@ -31,6 +31,7 @@ sequenceDiagram
   %%> - the Cluster is inactive or has no TLD (`cluster.active_router_required`)
   %%> - the Cluster owns no Route (`cluster.routes_require_router`, or `route.reconciliation_required` for an active Route)
   %%> - no other Router change runs for the Cluster; the Gateway waits up to 30 seconds, then refuses with `cluster.router_busy`
+  %%> - no `node:role:remove` of a stale Router assignment of the Cluster runs (`cluster.router_transition_conflict`)
   %%> Builds:
   %%> - the Router state to remove: Router sites and certificates, and the LAN rules only the Router needed
   %%> Result:

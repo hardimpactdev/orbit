@@ -32,7 +32,7 @@ sequenceDiagram
   %%> - the calling Node has an access grant to the candidate
   %%> - the candidate is an active member of the Cluster and a Linux Node with a valid account (`cluster.router_node_invalid`); a candidate without a LAN address is reached by its WireGuard address
   %%> - no other Router change runs for the Cluster; the Gateway waits up to 30 seconds, then refuses with `cluster.router_busy`
-  %%> - no unfinished replacement from another Router change (`cluster.router_transition_conflict`)
+  %%> - no unfinished replacement from another Router change, and no running `node:role:remove` of a stale Router assignment of the Cluster (`cluster.router_transition_conflict`)
   %%> Builds:
   %%> - the Router's Caddy sites for every Cluster Route, its certificate requests, and the LAN firewall rules
   %%> - the before and after state, so a failure can restore the before state

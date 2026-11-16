@@ -24,6 +24,20 @@ final readonly class NativeClusterRouterIntent
     public function __construct(private AgentDelivery $agents,
         private RolePrerequisites $prerequisites, private NativeRouteCertificateInput $certificates) {}
 
+    /** The Router certificate scopes a Router Node holds for the Cluster's Routes.
+     * @param  iterable<Route>  $routes
+     * @return list<string>
+     */
+    public static function certificateScopes(iterable $routes): array
+    {
+        $scopes = [];
+        foreach ($routes as $route) {
+            $scopes = [...$scopes, "route-{$route->id}-router", "route-{$route->id}-router-hostname-change"];
+        }
+
+        return $scopes;
+    }
+
     /** @return array<string,mixed> */
     public function forOperation(Operation $operation): array
     {
@@ -40,7 +54,7 @@ final readonly class NativeClusterRouterIntent
         $edgeNodeIds = [];
         foreach ($old as $role) {
             $oldNodes[] = [...$this->identity($role->node), 'assignment_id' => $role->id,
-                'certificate_scopes' => $routes->flatMap(static fn (Route $route): array => ["route-{$route->id}-router", "route-{$route->id}-router-hostname-change"])->all()];
+                'certificate_scopes' => self::certificateScopes($routes)];
         }
         foreach ($routes as $route) {
             if ($route->publication === RoutePublication::Public && $route->cluster?->ingressAssignment?->node_id !== null) {
