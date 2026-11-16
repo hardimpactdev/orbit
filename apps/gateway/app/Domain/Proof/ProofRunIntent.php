@@ -103,7 +103,7 @@ final readonly class ProofRunIntent
                 // A retry after a wait for a place: the first pass checked the commit, selected the cases and planned the batches, and
                 // recorded them, so a retry reads GitHub no more and keeps that selection (docs/cli/proof/run.mmd).
                 $intent = $input;
-                $uncovered = is_array($input['uncovered'] ?? null) ? $input['uncovered'] : [];
+                $uncovered = self::storedUncovered($input['uncovered'] ?? null);
                 $batches = ProofBatchPlan::stored($input['batches']);
                 $this->assertExecutionEnabled();
             } else {
@@ -276,9 +276,6 @@ final readonly class ProofRunIntent
         return $nodes;
     }
 
-    /** A held proof reads `waiting` until admission makes it `running`; a proof with no free CI place waits within the total admission budget.
-     * @return bool whether another admission attempt was queued
-     */
     private function assertExecutionEnabled(): void
     {
         if (! $this->settings->executionEnabled()) {
@@ -286,6 +283,27 @@ final readonly class ProofRunIntent
         }
     }
 
+    /**
+     * The uncovered paths that the first pass recorded with its selection.
+     *
+     * @return list<array{path:string,reason:string}>
+     */
+    private static function storedUncovered(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new \InvalidArgumentException('The recorded uncovered paths must be a list.');
+        }
+
+        return array_map(static function (mixed $row): array {
+            $row = ValidatedData::stringMap($row);
+
+            return ['path' => ValidatedData::string($row['path'] ?? null), 'reason' => ValidatedData::string($row['reason'] ?? null)];
+        }, $value);
+    }
+
+    /** A held proof reads `waiting` until admission makes it `running`; a proof with no free CI place waits within the total admission budget.
+     * @return bool whether another admission attempt was queued
+     */
     private function waitForRoom(Operation $proof, string $reason, string $step): bool
     {
         if ($proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::WaitSeconds))) {

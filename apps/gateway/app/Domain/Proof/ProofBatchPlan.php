@@ -93,6 +93,7 @@ final readonly class ProofBatchPlan
             throw new ResourceOperationException('proof.selection_invalid', 'Selected command has no valid cases.', 409);
         }
         $population = [];
+        $waits = is_array($spec['waits'] ?? null) ? $spec['waits'] : [];
         foreach ($spec['cases'] as $case) {
             if (! is_array($case) || ! is_string($case['id'] ?? null) || preg_match('/\A[a-zA-Z0-9_-]+\z/D', $case['id']) !== 1
                 || ! is_string($case['batch'] ?? null)) {
@@ -100,7 +101,7 @@ final readonly class ProofBatchPlan
             }
             // A case that waits for a named reason of the file's `waits` map is never planned (docs/reference/verification-cases).
             if (array_key_exists('waits', $case)) {
-                if (! is_string($case['waits']) || ! is_string($spec['waits'][$case['waits']] ?? null)) {
+                if (! is_string($case['waits']) || ! is_string($waits[$case['waits']] ?? null)) {
                     throw new ResourceOperationException('proof.selection_invalid', 'Case '.$case['id'].' waits for no named reason.', 409);
                 }
 
@@ -167,10 +168,10 @@ final readonly class ProofBatchPlan
         $shards = self::place($batches, $places);
         while (count($batches) < $places) {
             $cuttable = array_filter($batches, static fn (array $batch): bool => ! ($batch['read_only'] ?? false) && count($batch['case_seconds'] ?? []) >= 2);
-            if ($cuttable === []) {
+            $heaviest = array_key_first(self::heaviestFirst($cuttable));
+            if ($heaviest === null) {
                 break;
             }
-            $heaviest = array_key_first(self::heaviestFirst($cuttable));
             $parts = [...array_values(array_diff_key($batches, [$heaviest => true])), ...self::cut($batches[$heaviest])];
             $placed = self::place($parts, $places);
             if (max(array_map(self::work(...), $placed)) >= max(array_map(self::work(...), $shards))) {
@@ -183,8 +184,9 @@ final readonly class ProofBatchPlan
     }
 
     /**
-     * @param  list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds?:list<float>}>  $batches
-     * @return list<list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds?:list<float>}>>
+     * @param  non-empty-list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds?:list<float>}>  $batches
+     * @param  positive-int  $places
+     * @return non-empty-list<list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds?:list<float>}>>
      */
     private static function place(array $batches, int $places): array
     {
@@ -222,7 +224,7 @@ final readonly class ProofBatchPlan
      * Two parts of one batch: its cases in file order, cut where the sums of their seconds are closest (the first such cut).
      *
      * @param  array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds?:list<float>}  $batch
-     * @return list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds:list<float>}>
+     * @return non-empty-list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds:list<float>}>
      */
     private static function cut(array $batch): array
     {

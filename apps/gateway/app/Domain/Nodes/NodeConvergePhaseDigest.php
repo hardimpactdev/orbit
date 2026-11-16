@@ -15,6 +15,18 @@ use App\Support\ValidatedData;
 final readonly class NodeConvergePhaseDigest
 {
     /**
+     * The converge intent as Swamp reads it: the captured intent with its phase input part and the digests the Node records.
+     *
+     * @param  array<string,mixed>  $intent
+     * @param  array<string,string>  $recorded
+     * @return array<string,mixed>
+     */
+    public function stamp(array $intent, Operation $operation, array $recorded): array
+    {
+        return [...$intent, 'phase_input' => $this->input($intent, $operation), 'recorded_digests' => $recorded];
+    }
+
+    /**
      * The phase input part: the SHA-256 of the intent with this Operation's ID replaced by a fixed mark, so two attempts with the same
      * recorded state have the same digest. Secret values are not in the intent; Swamp adds their digest.
      *

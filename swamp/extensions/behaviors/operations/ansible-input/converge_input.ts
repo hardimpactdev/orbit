@@ -84,7 +84,9 @@ export async function convergeInput(folder: string, builder: string, toolHelper:
     await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify(phases), { mode: 0o600 });
     await Deno.writeTextFile(`${folder}/inventory.json`, JSON.stringify({ all: { hosts, children: { proof_seed_sender: { hosts: senders } } } }), { mode: 0o600 });
     await Deno.writeTextFile(`${folder}/known_hosts`, [...known].sort().join("\n") + "\n", { mode: 0o600 });
-    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: intent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: toolRuntime, converge_secrets: secrets, converge_plans: plans }), { mode: 0o600 });
+    // The digest fields are the input of the skip only; Ansible reads none of them, so its variables stay those of the converge.
+    const { phase_input: _input, recorded_digests: _recorded, ...playIntent } = intent;
+    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: playIntent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: toolRuntime, converge_secrets: secrets, converge_plans: plans }), { mode: 0o600 });
     // Reuse the shipped role materializer. Only its literal variables are consumed: its cross-Node
     // inventory and publication plays are deliberately never used by a Node converge.
     for (const role of intent.roles) {

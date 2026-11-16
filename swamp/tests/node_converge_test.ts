@@ -445,7 +445,7 @@ Deno.test("the code digest moves with a file's content and name", async () => {
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-Deno.test("input preparation writes the phase digests and the unchanged phases", async () => {
+Deno.test("input preparation writes the phase digests and the unchanged phases, and keeps the digest fields out of the Ansible variables", async () => {
     const folder = await Deno.makeTempDir();
     try {
         const ssh = { identity_file: "/test/identity", target: { host: "10.44.0.7", port: 22, user: "orbit", host_keys: ["ssh-ed25519 pinned"] } };
@@ -457,6 +457,8 @@ Deno.test("input preparation writes the phase digests and the unchanged phases",
         assertEquals(phases.unchanged, ["software"]);
         assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/digests.json`)), phases);
         assertEquals((await Deno.stat(`${folder}/digests.json`)).mode! & 0o777, 0o600);
+        const vars = parse(await Deno.readTextFile(`${folder}/vars.yml`)) as { converge_intent: Record<string, unknown> };
+        assertEquals(Object.keys(vars.converge_intent).sort(), ["node_id", "roles", "ssh"]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
