@@ -25,7 +25,7 @@ Call `executionCopy(string $vault, string $key, string $value): array{vault:stri
 
 Serve rate-limits requests and WebSocket handshakes per client and answers `429` with `Retry-After`. Its source admits at most 50 new WebSocket connections from one IP address in a fixed minute, for every token together, and names the rest of that minute as `Retry-After`; no serve setting changes it. Every Gateway process shares that budget.
 
-The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its `operation-starts` queue and answers admission without waiting for them. Children of a proof use the [spaced start sequence](/reference/operations#direct-swamp-starts).
+The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its `operation-starts` queue and answers admission without waiting for them. Children of a proof are [held until all their copies succeed](/reference/operations#direct-swamp-starts), then queued together.
 
 Each start job opens one connection. Its run-time execution copies and its `workflow.run` share it, and it closes when the start ends: serve streams every event of the run to the socket that started it, and `workflow.run` has no detach. So one start costs one handshake, plus one for each read on the read token that building its inputs makes. A start is a priority caller of the [handshake ledger](#handshake-ledger), so screen reads never take its place in serve's window.
 

@@ -535,7 +535,7 @@ describe('proof:run in copies: the start waits for the copy', function (): void 
     it('holds a run while its copy is not active, and releases it on an active copy', function (): void {
         copyProofAdmitted();
         $run = copyProofRuns()->first();
-        app(OperationStore::class)->change($run, ['state' => [...($run->state ?? []), 'proof_child_start' => ['not_before' => now()->subSecond()->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+        app(OperationStore::class)->change($run, ['state' => [...($run->state ?? []), 'proof_child_start' => ['not_before' => now()->subSecond()->toISOString(), 'released_at' => null]]]);
 
         expect(app(ProofChildStarts::class)->release($run->refresh()))->toBeInstanceOf(CarbonImmutable::class);
         copyProofActive($run);
@@ -546,7 +546,7 @@ describe('proof:run in copies: the start waits for the copy', function (): void 
         copyProofAdmitted();
         $run = copyProofRuns()->first();
         Task::topLevel()->whereKey($run->input['group_id'])->update(['status' => TaskGroupStatus::Failed]);
-        app(OperationStore::class)->change($run, ['state' => [...($run->state ?? []), 'proof_child_start' => ['not_before' => now()->subSecond()->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+        app(OperationStore::class)->change($run, ['state' => [...($run->state ?? []), 'proof_child_start' => ['not_before' => now()->subSecond()->toISOString(), 'released_at' => null]]]);
 
         expect(app(ProofChildStarts::class)->release($run->refresh()))->toBeFalse();
         $run->refresh();
@@ -561,7 +561,7 @@ describe('proof:run in copies: the start waits for the copy', function (): void 
         copyProofAdmitted();
         $run = copyProofRuns()->first();
         app(OperationStore::class)->change($run, ['input' => [...$run->input, 'copy' => false],
-            'state' => [...($run->state ?? []), 'proof_child_start' => ['not_before' => now()->subSecond()->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+            'state' => [...($run->state ?? []), 'proof_child_start' => ['not_before' => now()->subSecond()->toISOString(), 'released_at' => null]]]);
 
         expect(app(ProofCopies::class)->state($run->refresh()))->toBe('failed')
             ->and(app(ProofChildStarts::class)->release($run))->toBeFalse();
@@ -697,7 +697,7 @@ describe('proof:run in copies: every end removes the copy', function (): void {
         foreach (Queue::pushed(DestroyTaskCopy::class) as $job) {
             app()->call([$job, 'handle']);
         }
-        app(OperationStore::class)->change($run->refresh(), ['state' => [...($run->state ?? []), 'proof_child_start' => ['not_before' => now()->subSecond()->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+        app(OperationStore::class)->change($run->refresh(), ['state' => [...($run->state ?? []), 'proof_child_start' => ['not_before' => now()->subSecond()->toISOString(), 'released_at' => null]]]);
 
         expect(app(ProofChildStarts::class)->release($run->refresh()))->toBeFalse()
             ->and($run->refresh()->status)->toBe(OperationStatus::Failed);
