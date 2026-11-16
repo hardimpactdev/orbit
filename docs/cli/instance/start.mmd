@@ -41,9 +41,11 @@ sequenceDiagram
   %%> - the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
   %%> - `incus start`, then the Club key into the container's /run (tmpfs) on stdin, the same script as the create's `clone-club-key`
   %%> - waits until each desired-running unit is active; T3 starts with the container, and the start does not wait for it
-  %%> - a container frozen by a sleep resumes through the power helper's `restore`, and swap closes on each cgroup of `limits.json`; a stopped container's plan is discarded before the boot; a start that left the container running removes the asleep marker
+  %%> - a container frozen by a sleep resumes through the power helper's `restore`, under the Instance's lock: it reads the plan's pages back while still frozen, unfreezes once and closes swap on each cgroup of `limits.json`; a stopped container's plan is discarded before the boot; a start that left the container running removes the asleep marker
   %%> Why:
   %%> - no seed or snapshot holds the key, so every start delivers it before the fleet checks
+  %%> On failure:
+  %%> - `instance.power_helper_busy` when another power action on the Instance held the power helper's lock for 10 s, `instance.power_helper_failed` when the helper refused its input or crashed; either leaves the asleep marker and the container's power state as they were
   SW->>N: Start the inner fleet<br/>Ansible · fleet check, resume
   %%> What it does:
   %%> - the create's `clone-fleet`: the fleet rules, the three nested containers, the tunnel `wg-nested`

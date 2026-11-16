@@ -50,6 +50,7 @@ sequenceDiagram
   %%> - one play instead of two saves one Ansible start, about 2.5 s
   %%> On failure:
   %%> - the code names the failed phase, such as `instance.container_start_failed` or `instance.container_fetch_failed`; a failed `start` leaves the container's power state as it was
+  %%> - a sleeping container's `start`: `instance.power_helper_busy` when another power action on the Instance held the power helper's lock for 10 s, `instance.power_helper_failed` when the helper refused its input or crashed; either leaves the asleep marker and the container's power state as they were
   SW->>C: Check out in the container<br/>Ansible · tags checkout
   %%> What it does:
   %%> - the same checks as a checkout default: a dirty tree refuses `deployment.checkout_dirty`, a diverged branch `deployment.branch_diverged`
