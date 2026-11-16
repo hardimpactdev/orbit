@@ -54,8 +54,9 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
 
     /**
      * The base a task copy's publish states: the merge base of the checked commit and the default head at publish time, how far
-     * behind, and the paths both sides changed, bounded with the count beyond. A task VM publish, or a run that started on the
-     * workflow before the base step, has no statement and records none of the fields.
+     * behind, the paths both sides changed, bounded with the count beyond, and the default head the worker merged at publish or null
+     * (docs/reference/tasks.md#merge-main-at-publish). A task VM publish, or a run that started on the workflow before the base
+     * step, has no statement and records none of the fields; a run before the merge at publish records no `merged_default`.
      *
      * @return array<string,mixed>
      */
@@ -66,7 +67,7 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
         }
         $facts = ValidatedData::object(json_decode($captured, true, flags: JSON_THROW_ON_ERROR));
 
-        return array_intersect_key($facts, array_flip(['base_commit', 'default_commit', 'behind_by', 'overlapping_paths', 'overlapping_more']));
+        return array_intersect_key($facts, array_flip(['base_commit', 'default_commit', 'behind_by', 'overlapping_paths', 'overlapping_more', 'merged_default']));
     }
 
     /**

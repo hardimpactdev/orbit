@@ -313,9 +313,10 @@ function runningCopyPublish(): array
     return [$group, $operation->refresh(), $run];
 }
 
-it('states the base of a copy publish in its result and publishes, behind or not', function (int $behind, array $overlap): void {
+it('states the base of a copy publish in its result and publishes, behind or not, and through a merge at publish', function (int $behind, array $overlap, ?string $merged): void {
     [$group, $operation, $run] = runningCopyPublish();
-    $base = ['base_commit' => str_repeat('a', 40), 'default_commit' => str_repeat('c', 40), 'behind_by' => $behind, 'overlapping_paths' => $overlap, 'overlapping_more' => 0];
+    $base = ['base_commit' => str_repeat('a', 40), 'default_commit' => str_repeat('c', 40), 'behind_by' => $behind, 'overlapping_paths' => $overlap, 'overlapping_more' => 0,
+        'merged_default' => $merged];
 
     $projected = app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(),
         'finished_at' => now()->toIso8601String(), 'result' => ['base' => json_encode($base),
@@ -326,9 +327,11 @@ it('states the base of a copy publish in its result and publishes, behind or not
             'pull_request_url' => 'https://github.com/example/trial/pull/7', ...$base])
         ->and($group->refresh()->pr_url)->toBe('https://github.com/example/trial/pull/7');
 })->with([
-    'level with the default branch' => [0, []],
-    'behind, no path changed on both sides' => [3, []],
-    'behind, a path changed on both sides without a conflict' => [2, ['app/Models/Order.php']],
+    'level with the default branch' => [0, [], null],
+    'behind, no path changed on both sides' => [3, [], null],
+    'behind, a path changed on both sides without a conflict' => [2, ['app/Models/Order.php'], null],
+    // The record keeps the checked commit; the result names the head the worker merged (docs/reference/tasks.md#merge-main-at-publish).
+    'behind a workflow change of the default branch, merged at publish' => [1, [], str_repeat('c', 40)],
 ]);
 
 it('records no base for a run that started on the workflow before the base step', function (): void {
