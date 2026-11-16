@@ -25,8 +25,9 @@ PRELOAD = 'swamp/tests/_support/slice.ts'
 # The shared fixture machinery. A change to it selects the machinery canary set, not every fixture, even a fixture that
 # lists it as an input. The shape gate lists and launches the fixtures.
 MACHINERY = ('bin/ci-units', 'bin/ci-registry', 'bin/swamp-shape-gate', PRELOAD)
-# Fixture metadata keys that only schedule a fixture: where it runs, its declared costs and its slices.
-SCHEDULING = ('self_hosted', 'cost', 'case_costs', 'slices')
+# Fixture metadata keys that only schedule a fixture: where it runs, its declared costs and its slices. The retired
+# after-merge keys, with their reason, also only scheduled a fixture or some of its cases (ADR 0262).
+SCHEDULING = ('self_hosted', 'cost', 'case_costs', 'slices', 'after_merge', 'after_merge_cases', 'reason')
 OUTPUT_LOCK = threading.Lock()
 CANCELLED = threading.Event()
 

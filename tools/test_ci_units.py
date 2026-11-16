@@ -310,6 +310,16 @@ class RegistrySelectionTest(unittest.TestCase):
         with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root):
             return units.registry_changes(self.base, head)
 
+    def test_removing_the_after_merge_keys_is_a_machinery_change(self):
+        deferred = self.initial.replace('cost = 40', 'cost = 40\nafter_merge = true\nreason = "slow"\nafter_merge_cases = ["late"]')
+        before = self.commit(deferred)
+        after = self.commit(self.initial.replace('cost = 40', 'cost = 40\nself_hosted = true'))
+        with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root):
+            self.assertEqual(units.registry_changes(before, after), ([], True))
+            # The same edit with a changed input still selects the fixture.
+            moved = self.commit(self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/new.yml"]'))
+            self.assertEqual(units.registry_changes(before, moved), (['swamp/process.ts'], False))
+
     def test_scheduling_metadata_alone_is_a_machinery_change(self):
         fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
         budget = {**BUDGET, 'machinery_canary': ['swamp/egress.py']}
