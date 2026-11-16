@@ -521,3 +521,20 @@ Deno.test("a converge writes the units of the Node's roles and reloads systemd o
         await localPlay({ intent: { role_units: [] } }, [write, load]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
+
+Deno.test("the base converge installs the executor only from its intent, after the agent, refusing an unplanned release first", async () => {
+    const base = (parse(await Deno.readTextFile(taskPath("node-converge-base"))) as Array<Record<string, unknown>>);
+    const names = base.map((task) => task.name);
+    const install = base.find((task) => task.name === "Install the executor on a Node whose roles need it")!;
+    assertEquals([install.when, install["ansible.builtin.include_tasks"]], ["intent.executor | default(None) != None", "node-executor.yml"]);
+    assertEquals(names.indexOf("Start the agent and restart only for managed changes") < names.indexOf(install.name as string), true);
+
+    const tasks = parse(await Deno.readTextFile(taskPath("node-executor"))) as Array<Record<string, unknown>>;
+    assertEquals(tasks[0]["ansible.builtin.assert"], { that: ["intent.executor.plan_error == None"], fail_msg: "{{ intent.executor.plan_error }}", quiet: true });
+    const replace = tasks.find((task) => task.name === "Reconcile the pinned executor binary")!;
+    assertEquals((replace.vars as Record<string, Record<string, string>>).converge_replacement.sha256, "{{ intent.executor.sha256 }}");
+    const sudoers = tasks.find((task) => task.name === "Allow the Node user the one relay command")!["ansible.builtin.copy"] as Record<string, string>;
+    assertEquals([sudoers.mode, sudoers.validate], ["0440", "/usr/sbin/visudo -cf %s"]);
+    const files = (tasks.find((task) => task.name === "Reconcile the executor's keys, Node id, allowlist and unit")!.loop as Array<{ path: string }>).map((file) => file.path);
+    assertEquals(files, ["/etc/orbit/executor/gateway.pub", "/etc/orbit/executor/node", "/etc/orbit/executor/enabled", "/etc/systemd/system/orbit-executor.service"]);
+});
