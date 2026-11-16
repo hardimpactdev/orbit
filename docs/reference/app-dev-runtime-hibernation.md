@@ -26,7 +26,7 @@ Hibernation applies to a Process that meets every condition:
 
 Processes in [Instance containers](/reference/development-containers#processes) are excluded from this Node-level policy. A container sleeps as a whole, through the same sweep: see [Sleep and wake](/reference/development-containers#sleep-and-wake). Its Route uses the same activation endpoint and pages as below.
 
-Restart policy does not matter. Hibernation never touches Node Processes, production Instances, Schedules, PHP-FPM services or pools, or Caddy socket paths.
+Restart policy does not matter. This Process policy never touches Node Processes, production Instances, Schedules, PHP-FPM services or pools, or Caddy socket paths. Planned: a production Instance's live release container sleeps as a whole by the container rule ([ADR 0265](/decisions/0265-sleep-idle-production-containers)); see [Production containers](/reference/production-containers#sleep-and-wake).
 
 The Gateway's [Project Document cleanup gate](/reference/project-documents#local-state-and-startup-ordering) is separate from Instance hibernation. Its local runtime directory, `documents.cleanup_runtime`, changes no hibernation threshold or wake behavior. Restarting a Gateway consumer invalidates document-body cleanup authorization; waking an Instance does not grant it.
 
@@ -57,8 +57,8 @@ Set these values in the Gateway's environment, not an Instance's `.env`. They co
 | Sweep interval | 600 seconds | `orbit.hibernation.sweep_seconds` | `ORBIT_HIBERNATION_SWEEP_SECONDS` |
 | Wake timeout | 60 seconds | `orbit.hibernation.wake_timeout_seconds` | `ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS` |
 | Cold wake timeout | 1,800 seconds | `orbit.hibernation.cold_wake_timeout_seconds` | `ORBIT_HIBERNATION_COLD_WAKE_TIMEOUT_SECONDS` |
-| Container idle sleep | Off | `orbit.hibernation.container_sleep`, the environment value as written | `ORBIT_HIBERNATION_CONTAINER_SLEEP`: `false`, `without_t3` (only Instances without a T3 server, such as defaults) or `true` |
-| Containers that never sleep | None | `orbit.hibernation.container_never_sleep` | `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`, comma-separated Instance ids |
+| Container idle sleep | Off | `orbit.hibernation.container_sleep`, the environment value as written | `ORBIT_HIBERNATION_CONTAINER_SLEEP`: `false`, `without_t3` (only Instances without a T3 server, such as defaults) or `true`. Planned: `without_t3` and `true` also act on each production live, which has no T3 server |
+| Containers that never sleep | None | `orbit.hibernation.container_never_sleep` | `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`, comma-separated Instance ids. Planned: the Instance's `never_sleep` field replaces it, and its ids move into the field ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) |
 
 `ORBIT_HIBERNATION_CONTAINER_SLEEP` is one setting with three values. `false`, or no value, puts no container to sleep by itself. `true` lets the idle sleep act on every development container. `without_t3` lets it act only on Instances whose runtime records no T3 server, which today are the Projects' defaults; a clone stays awake with the reason `t3_server`.
 

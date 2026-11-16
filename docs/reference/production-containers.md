@@ -7,7 +7,7 @@ description: "Planned, ADR 0263: a production Instance's releases are Incus cont
 
 **Planned.** Nothing on this page is built. It is the target contract of [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers). Until it is built, production Instances deploy as [Instance releases](/reference/deployments) describes.
 
-A production Instance keeps one record: its id, Routes, environment, deploy steps, attachments, Processes and Schedules. Each release of it is an Incus container on its `app-prod` Node, made with the same machinery as [Instance containers](/reference/development-containers): the image, ZFS clones and snapshots, the runtime folder, the bridge and the egress proxy. A production container has only the user `orbit`, no agent and no model route, and it never sleeps.
+A production Instance keeps one record: its id, Routes, environment, deploy steps, attachments, Processes and Schedules. Each release of it is an Incus container on its `app-prod` Node, made with the same machinery as [Instance containers](/reference/development-containers): the image, ZFS clones and snapshots, the runtime folder, the bridge and the egress proxy. A production container has only the user `orbit`, no agent and no model route. An idle live [sleeps and wakes](#sleep-and-wake) as a development container does ([ADR 0265](/decisions/0265-sleep-idle-production-containers)).
 
 ## Release states
 
@@ -135,6 +135,34 @@ A rollback has no capacity check. No deploy runs beside it, so old runs in the p
 | Start, readiness or switch | Live, unchanged, with its previous files back in place after a failed switch | Stopped again, and stays old |
 | Handover or retire | Old, as the new live | Is live. The Gateway records the release states that the run reached |
 
+## Sleep and wake
+
+**Planned** ([ADR 0265](/decisions/0265-sleep-idle-production-containers)). An idle live sleeps and wakes fully ready, by the rule of [Sleep and wake](/reference/development-containers#sleep-and-wake): the same idle window of one hour, sweep, `instance.sleep` and `instance.wake` Operations, reasons and dry run. The whole container sleeps, with every Process and timer. The fast wake and the [prepared restore](/reference/prepared-restore) apply; the `app-prod` role installs the power helper and the wake worker.
+
+| Release state | Sleeps |
+| --- | --- |
+| `hot` | Never. It exists only during a deploy, and the open Operation keeps the Instance awake (`busy`) |
+| `live` | After an idle hour, when no reason keeps it awake |
+| `old` | Never. It stays stopped and holds no memory and no swap (`not_live`) |
+
+**Swap.** Every release container gets `memory.swap.max` 0 while it runs, also without a memory limit. A sleep opens swap, and a wake closes it again.
+
+**No stop.** A production sleep never stops live. When swap cannot take the memory, the sleep resumes live, closes swap, removes the marker and fails with `instance.container_freeze_failed`. The sweep keeps live awake for one idle window with `swap_full`. Live keeps `boot.autostart`: a Node reboot boots it awake, and the `app-prod` role's boot unit removes its asleep marker.
+
+**Traffic.** Each request through any Route of the Instance, a Cluster Route included, writes the Instance's access log on the Node's Caddy. A request with `X-Orbit-Probe: 1`, such as readiness, does not count. An uptime check without that header keeps live awake.
+
+**The visitor.** A production visitor never gets the progress page. When a request meets the asleep marker, Caddy holds it, starts or joins the wake, and passes it to live after the wake: about 1.5 s for a warm wake and 2.4 s for a cold one. After 10 s, or after a failed wake, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance. A failed wake is stored as in development.
+
+**Schedules and workers.**
+
+- A due native cron Schedule wakes live, waits for the wake and runs. This wake does not count as activity.
+- The per-minute container timer pauses with live. Missed minutes are skipped, not caught up.
+- Queue workers pause with live, and queued jobs wait for the next wake. A job that ran at the freeze can run twice after the wake, because its reservation expires.
+- A Project whose jobs or scheduler must run without visitors sets the Instance's `never_sleep` field with `instance:update`, or gives a Process `keep_alive`. Either keeps the whole container awake.
+- An Instance with an attached Node service, such as PowerSync, stays awake (`node_service`). A sleep never touches a Process on the Services Node.
+
+**Deploy and rollback.** A deploy does not wake a sleeping live: hot clones live's `release` snapshot. A visit during the deploy wakes live as at any other time. The [switch](#switch) removes the asleep marker in the same step as it replaces the upstream file and the live link, and a failed switch puts it back. The new live starts its own watch of one idle window. The [handover](#handover) resumes a frozen previous live before it stops its units, because a clean stop of a frozen container times out; then [retire](#retire) stops it as old. A rollback does the same with the rolled-away live.
+
 ## Database
 
 Every release container uses the Instance's one shared database. Migrations run in hot before the switch, so live's code must work on the migrated schema:
@@ -164,7 +192,7 @@ Before it makes hot, a deploy or a [migration](#a-checkout-production-instance) 
 - The Node's available memory covers hot's need plus 1 GiB.
 - The pool has 10 GiB free.
 
-Hot's need is the Instance's memory limit, if one is set. Without a limit, hot's need is live's current memory use, because hot runs the same app. For a migration, the checkout's PHP-FPM pool and Processes take the place of live.
+Hot's need is the Instance's memory limit, if one is set. Without a limit, hot's need is live's current memory use, because hot runs the same app. For a sleeping live, it is the use that live's last sleep recorded before the freeze. For a migration, the checkout's PHP-FPM pool and Processes take the place of live.
 
 The automatic tick retries that failure at its [backoff](/reference/deployments#failures-of-automatic-deployments) times, but it does not count toward the three failures that block a commit: the cause is the Node, not the commit. A commit that waits 30 minutes raises the stalled-commit alert.
 
