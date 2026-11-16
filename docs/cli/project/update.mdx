@@ -27,7 +27,7 @@ orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repo
 | `--container-server=SERVER` | `t3` or `conn`: the [server](/reference/projects#container-server) that runs in the Project's containers that Orbit reserves after the change. Existing containers keep theirs. Any other value returns `project.container_server_invalid` before a request. A server whose program the recipe's agent folder does not pin returns `project.container_server_unavailable` (409). |
 | `--merge-check=NAME` | The check that must pass on a head before Orbit merges it, such as `Required checks`. |
 | `--clear-merge-check` | Remove the merge check. Combining it with `--merge-check` fails with `project.merge_check_conflict`. The Gateway refuses it while the flow is on. |
-| `--task-implementer-provider=NAME` | The default implementer provider of the Project's [task copies](/reference/tasks#copy-turn-agents), such as `claude`. A task that names its own value keeps it. |
+| `--task-implementer-provider=NAME` | The default implementer provider of the Project's [task copies](/reference/tasks#copy-turn-agents): `claude` or `codex`. A task that names its own value keeps it. |
 | `--task-implementer-model=MODEL` | The default implementer model, such as `claude-opus-5-5`. |
 | `--task-implementer-effort=LEVEL` | The default implementer effort: `low`, `medium`, `high`, `xhigh` or `max`. |
 | `--task-reviewer-provider=NAME` | The default reviewer provider. |

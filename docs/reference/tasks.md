@@ -1078,13 +1078,15 @@ The thread stores the resolved model and effort and the T3 provider instance it 
 
 A role's own values on the task change with `task:update` until the role has a thread; after that, `task:update` refuses them with `tasks.agent_settings_locked` (409). The lock covers only the task's own values. The Project's default and the Gateway's settings can still change, and a later new thread of the role, such as the implementer of the next subtask or a turn with `--thread=new`, resolves again and takes them.
 
-Stock T3 0.1.7 takes no effort on its command line. The copy's T3 settings therefore hold one provider instance per provider and effort, such as `claudeMedium`, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment, and a new thread starts on the instance of its provider and effort. Claude Code takes that variable over the `--effort` T3 passes: verified with Claude Code 2.1.311 and T3 0.1.7. See [Swamp drives T3](/reference/development-containers#swamp-drives-t3).
+Stock T3 0.1.7 takes no effort on its command line. The copy's T3 settings therefore hold one provider instance per provider and effort, such as `claudeMedium` or `codexHigh`, and a new thread starts on the instance of its provider and effort.
+
+A Claude instance sets the effort with `CLAUDE_CODE_EFFORT_LEVEL` in its environment. A Codex thread carries its effort as its `reasoningEffort` model option, because T3 0.1.7 sends Codex no other effort. Orbit therefore creates each new thread through T3's own RPC and runs its first turn with `t3 thread send`. This was verified with Claude Code 2.1.311, Codex 0.167.0 and T3 0.1.7. See [turn model and effort](/reference/development-containers#turn-model-and-effort). A copy made before the Codex instances cannot run a Codex thread: start the task on a new copy.
 
 A new thread's values are checked against what the copy's T3 offers, in two places:
 
 | Value | Where | Against | Refusal |
 | --- | --- | --- | --- |
-| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
+| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max`; `codex` at `low`, `medium`, `high`, `xhigh`, `max` or `ultra` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
 | Model | First in the turn, before any checkout or start | The slugs and aliases that T3's cached `model-manifest.json` lists for the instance's driver | The turn fails with `tasks.copy_turn_model_unoffered` and the offered slugs; nothing is launched |
 
 Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy.
