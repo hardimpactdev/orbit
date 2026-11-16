@@ -7,7 +7,7 @@
   ansible.builtin.set_fact:
     folder_root: "{{ folder.path }}/{{ folder.version }}"
     folder_stage: "{{ folder.path }}/.{{ folder.version }}.stage"
-    # The agent's programs sit one level down, in `agent/`, which only gid 2750 opens; the notes beside it stay public.
+    # The agent's programs sit one level down, in `agent/`, which only gid 2750 opens where the folder is idmapped; the notes beside it stay public.
     folder_parts: "{{ folder.path }}/.{{ folder.version }}.stage{{ '/agent' if folder_name == 'agent' else '' }}"
 
 - name: Read the folder version
@@ -142,13 +142,15 @@
         fail_msg: "instance.host_unavailable: the Node group {{ folder_agent_group.stdout | trim }} holds gid 2750, the gid of every container's agent"
         quiet: true
     # Everyone reads the runtime folder. Only root and gid 2750, the `agent` of every container, open the agent's programs: no Node
-    # account holds that gid, and an idmapped mount keeps it 2750 in every container.
+    # account holds that gid, and an idmapped mount keeps it 2750 in every container. An unshifted folder (`shift: false`, an Instance
+    # fleet Node) shows a container every file as `nobody:nogroup`, so there the agent's programs stay open to everyone.
     - name: Set the folder owners and modes
       ansible.builtin.command:
         argv: "{{ item }}"
       loop: >-
         {{ [['chown', '-R', 'root:root', folder_stage], ['chmod', '-R', 'u+rwX,go+rX,go-w', folder_stage]]
-           + ([['chown', '-R', 'root:' ~ instance_agent_gid, folder_parts], ['chmod', '-R', 'o-rwx', folder_parts]] if folder_name == 'agent' else []) }}
+           + ([['chown', '-R', 'root:' ~ instance_agent_gid, folder_parts], ['chmod', '-R', 'o-rwx', folder_parts]]
+              if folder_name == 'agent' and folder.shift | default('true') == 'true' else []) }}
       vars: { instance_agent_gid: 2750 }
       changed_when: true
     - name: Make the version whole
