@@ -6,7 +6,7 @@ import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 import { createHash } from "node:crypto";
 import { migrateResult, writtenFailure } from "../extensions/behaviors/operations/instance-dev-command/migrate_result.ts";
-import { has, hasAnsible, root, Task, git, exists, fixture, gitFiles, migrationProcesses, migrationSchedules } from "./_support/instance_migrate.ts";
+import { has, hasAnsible, Task, git, exists, fixture, gitFiles, migrationProcesses, migrationSchedules } from "./_support/instance_migrate.ts";
 
 Deno.test({
   name: "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",

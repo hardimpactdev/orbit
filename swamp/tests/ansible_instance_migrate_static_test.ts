@@ -4,7 +4,7 @@
  */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1";
-import { root, Task, git } from "./_support/instance_migrate.ts";
+import { root, Task } from "./_support/instance_migrate.ts";
 
 Deno.test("retention keeps real Git edge cases intact", () => {
   const done = new Deno.Command("python3", {

@@ -4,7 +4,7 @@
  */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
-import { hasAnsible, root, Task, git, exists, fixture, gitFiles, migrationProcesses, migrationSchedules, real53Environment } from "./_support/instance_migrate.ts";
+import { hasAnsible, Task, git, exists, fixture, gitFiles, migrationProcesses, migrationSchedules, real53Environment } from "./_support/instance_migrate.ts";
 
 for (const reason of ["outside checkout", "broken"]) {
   Deno.test({
