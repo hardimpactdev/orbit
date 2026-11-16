@@ -22,6 +22,7 @@ use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Schedules\ScheduleRuntimeAccount;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
@@ -212,12 +213,37 @@ describe('a successful unregister', function (): void {
             ->and(InstanceRemoval::query()->findOrFail($operation->input['removal_id'])->route_withdrawn_at)->not->toBeNull();
     });
 
-    it('answers the API with the Operation', function (): void {
+    it('answers the API with the Operation, records the removal in the activity, and replays a key after the Instance is gone', function (): void {
         $this->node->accessibleNodes()->attach($this->node);
+        $call = fn (string $key) => $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip])
+            ->postJson("/api/v1/instances/{$this->instance->id}/unregister", [], ['Idempotency-Key' => $key]);
 
-        $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip])
-            ->postJson("/api/v1/instances/{$this->instance->id}/unregister")
-            ->assertStatus(202)->assertJsonPath('data.kind', 'instance.unregister')->assertJsonPath('data.target_id', $this->instance->id);
+        $first = $call('unregister-key')->assertStatus(202)->assertJsonPath('data.kind', 'instance.unregister')
+            ->assertJsonPath('data.target_id', $this->instance->id);
+        $operation = Operation::query()->findOrFail($first->json('data.id'));
+        expect(Activity::query()->where('command', 'instance:unregister')->sole()->properties['removal']['id'] ?? null)->toBe($operation->id);
+
+        ($this->terminal)($operation, 'succeeded');
+        expect(Instance::query()->find($this->instance->id))->toBeNull();
+
+        // The Instance is gone; the same key still finds its Node through the Operation and returns the same Operation.
+        $call('unregister-key')->assertStatus(202)->assertJsonPath('data.id', $operation->id);
+        $call('another-key')->assertNotFound();
+        expect(Operation::query()->where('kind', 'instance.unregister')->count())->toBe(1);
+    });
+    it('requires an access grant to the Instance Node, before and after the Instance is gone', function (): void {
+        $other = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'stranger', 'status' => 'active', 'platform' => 'linux',
+            'wireguard_ip' => '10.44.0.77', 'public_ssh_host' => '10.44.0.77', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-stranger-key']));
+        $call = fn (Node $caller) => $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+            ->postJson("/api/v1/instances/{$this->instance->id}/unregister", [], ['Idempotency-Key' => 'stranger-key']);
+
+        $call($other)->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+        expect(Operation::query()->count())->toBe(0)->and($this->scheduleCalls->count())->toBe(0);
+
+        $this->node->accessibleNodes()->attach($this->node);
+        $operation = Operation::query()->findOrFail($call($this->node)->assertStatus(202)->json('data.id'));
+        ($this->terminal)($operation, 'succeeded');
+        $call($other)->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
     });
 });
 
