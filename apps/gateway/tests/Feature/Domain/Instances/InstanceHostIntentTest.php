@@ -133,13 +133,14 @@ describe('the container branch of the app-dev converge', function (): void {
         $node = Node::withoutEvents(fn (): Node => Node::query()->create([
             'name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.7',
             'public_ssh_host' => '10.44.0.7', 'user' => 'orbit', 'settings' => ['task_vms' => NodeTaskVmsData::validated(
-                ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 2, 'ci_places' => 1]],
+                ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 2]],
                 Ipv4Subnet::from('10.44.0.0/24'))->toArray()],
         ]));
         config(['instances.container_nodes' => [$node->id]]);
         app(InstanceHostIntent::class)->prepare($node);
 
-        expect(app(InstanceHostIntent::class)->for($node)['ids'])->toBe(201 * 65536 + 4 * 101000000);
+        // Two task container places and the base; the VM places add nothing.
+        expect(app(InstanceHostIntent::class)->for($node)['ids'])->toBe(201 * 65536 + 3 * 101000000);
     });
 
     it('prepares a task VM host beside its task side: its own bridge, and the task side keeps the ARC', function (): void {

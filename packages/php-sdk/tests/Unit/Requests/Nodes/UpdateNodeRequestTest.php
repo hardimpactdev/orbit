@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Nodes\CiPlacesInput;
 use Orbit\Sdk\Requests\Nodes\UpdateNodeRequest;
 use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
@@ -63,6 +64,31 @@ it('sends task host intent and explicit clearing without touching apps', functio
     ]]);
     $clear = new UpdateNodeRequest(nodeId: 9, hasTaskVms: true);
     expect($clear->body()->all())->toBe(['task_vms' => null]);
+});
+
+it('sends only the CI members it names, and an explicit null to clear them', function (?CiPlacesInput $ci, ?array $body): void {
+    $request = new UpdateNodeRequest(nodeId: 14, hasCi: true, ci: $ci);
+
+    expect($request->body()->all())->toBe(['ci' => $body]);
+})->with([
+    'places' => [new CiPlacesInput(places: 4), ['places' => 4]],
+    'proof only' => [new CiPlacesInput(proofOnly: true), ['proof_only' => true]],
+    'both, with zero places' => [new CiPlacesInput(places: 0, proofOnly: false), ['places' => 0, 'proof_only' => false]],
+    'cleared' => [null, null],
+]);
+
+it('reads the CI places of the updated Node', function (): void {
+    $connector = new GatewayConnector('https://10.44.0.1');
+    $connector->withMockClient(new MockClient([UpdateNodeRequest::class => MockResponse::make(['data' => [
+        'id' => 14, 'name' => 'ci-node', 'status' => 'active', 'public_ssh_host' => '10.44.0.20', 'public_ssh_port' => 22, 'user' => 'orbit',
+        'roles' => ['ci-runner'], 'settings' => ['ci' => ['places' => 2, 'proof_only' => true]],
+    ], 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']])]));
+
+    $node = $connector->send(new UpdateNodeRequest(nodeId: 14, hasCi: true, ci: new CiPlacesInput(places: 2)))->dto()->result;
+
+    expect($node)->toBeInstanceOf(NodeResponse::class)
+        ->and($node->settings?->ci?->places)->toBe(2)
+        ->and($node->settings?->ci?->proof_only)->toBeTrue();
 });
 
 it('sends an explicit null nested member to unset a setting', function (): void {

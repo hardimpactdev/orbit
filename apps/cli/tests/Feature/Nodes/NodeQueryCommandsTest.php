@@ -276,13 +276,32 @@ describe('node:show', function (): void {
             'Node: app-dev', 'Status active', 'Roles app-dev', 'SSH orbit@94.237.40.75:22',
             'Cluster development', 'WireGuard 10.44.0.3', 'LAN 10.0.0.3', 'WireGuard public key app-dev-public-key',
             'DNS server override 10.0.0.2',
-            'TLD .app-dev.orbit', 'Platform linux (x86_64)', 'Apps folder —',
+            'TLD .app-dev.orbit', 'Platform linux (x86_64)', 'Apps folder —', 'CI places —',
             'Access to app-dev (#3), app-prod (#5)', 'Accessible by maintainer (#4)',
             'Request ID: '.request_id(),
         ] as $field) {
             expect($output)->toContain($field);
         }
     });
+
+    it('shows a CI Node\'s CI places, marked when they serve proof copies only, and keeps them in JSON', function (bool $proofOnly, string $shown): void {
+        MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
+                'data' => [...show_node_payload(), 'settings' => ['ci' => ['places' => 4, 'proof_only' => $proofOnly]]],
+                'meta' => ['request_id' => request_id()],
+            ]),
+        ]);
+
+        expect(Artisan::call('node:show', ['node' => '2']))->toBe(0);
+        $output = preg_replace('/[ \t]+/', ' ', Artisan::output());
+        expect($output)->toContain('CI places '.$shown)
+            ->and(str_contains((string) $output, 'proof copies only'))->toBe($proofOnly);
+        expect(Artisan::call('node:show', ['node' => '2', '--json' => true]))->toBe(0)
+            ->and(json_decode(Artisan::output(), true)['settings']['ci'] ?? null)->toBe(['places' => 4, 'proof_only' => $proofOnly]);
+    })->with([
+        'shared with runner jobs' => [false, '4'],
+        'proof copies only' => [true, '4, proof copies only'],
+    ]);
 
     it('shows every assignment state with native failure detail and the named Cluster', function (string $failedStep): void {
         $payload = show_node_payload();

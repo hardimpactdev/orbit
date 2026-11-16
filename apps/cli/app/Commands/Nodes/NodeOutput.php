@@ -9,6 +9,7 @@ use App\Support\Console\HumanRenderer;
 use App\Support\Console\ProgressState;
 use App\Support\Console\TerminalText;
 use Orbit\Sdk\GatewayApiException;
+use Orbit\Sdk\Responses\Nodes\CiSettings;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeRoleAssignmentResponse;
@@ -53,6 +54,12 @@ final class NodeOutput
         }
 
         return "{$node->user}@{$node->publicSshHost}:{$node->publicSshPort}";
+    }
+
+    /** The count of a CI Node's places, marked when they serve proof copies only; null, an em dash, when it has none. */
+    public static function ciPlaces(?CiSettings $ci): ?string
+    {
+        return $ci === null ? null : $ci->places.($ci->proof_only ? ', proof copies only' : '');
     }
 
     public static function tld(?string $tld): ?string

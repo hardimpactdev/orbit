@@ -165,4 +165,4 @@ Notes for some families:
 - Node update fixtures under `nodes/node-update` record an unmanaged peer set to `ipados` and the `node.platform_managed` refusal. The SDK and `node:update` CLI tests replay both responses.
 - The `instances/instance-show/attached-targets` fixture records attached targets with and without the `shared` mark. The Gateway's attached-target test records it, and the `instance:show` CLI contract test replays it.
 - Automatic Gateway release fixtures use the `gateway-auto-release-*` directories under `gateway-releases`, matching the public commands.
-- Task publication fixtures cover deletion of the VM and its identity. The public `task:park` command has no response fixture. Node host settings expose separate `task_places` and `ci_places` counts.
+- Task publication fixtures cover deletion of the VM and its identity. The public `task:park` command has no response fixture. Node host settings expose separate VM `task_places` and `ci_places` counts. A CI Node's [CI places](/reference/node-settings#ci-places) are a separate `settings.ci` member.

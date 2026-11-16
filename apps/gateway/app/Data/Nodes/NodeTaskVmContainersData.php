@@ -13,7 +13,6 @@ final class NodeTaskVmContainersData extends Data
     public function __construct(
         public string $cidr,
         public int $task_places,
-        public int $ci_places,
         public string $project = 'orbit-task-containers',
         public string $network = 'orbittaskc0',
     ) {}
@@ -21,7 +20,7 @@ final class NodeTaskVmContainersData extends Data
     public static function fromContainers(TaskVmContainers $containers): self
     {
         return new self(
-            cidr: $containers->cidr, task_places: $containers->taskPlaces, ci_places: $containers->ciPlaces,
+            cidr: $containers->cidr, task_places: $containers->taskPlaces,
             project: $containers->project, network: $containers->network,
         );
     }
