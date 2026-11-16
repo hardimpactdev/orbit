@@ -3,6 +3,7 @@ title: "Old paths"
 description: "Code that still runs but that a stage of the command development pipeline replaces. Check this page before you build on it."
 covers:
   - apps/gateway/app/Infrastructure/TaskVms/RecipeImageBuilds.php
+  - apps/gateway/database/migrations/2027_03_03_000000_drop_task_vm_tables.php
 ---
 
 # Old paths
