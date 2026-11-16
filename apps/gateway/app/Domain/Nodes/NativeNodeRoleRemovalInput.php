@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsGatewayResolver;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\RouteExecutionProof;
@@ -91,6 +92,12 @@ final readonly class NativeNodeRoleRemovalInput
         $wanted = array_column(RouteExecutionProof::objects(ValidatedData::object($plan['firewall'])['remove']), 'comment');
         foreach (app(NodeFirewallRuleCatalog::class)->ownedByRole($node, $assignment->role) as $rule) {
             if (in_array($rule->shape->comment, $wanted, true)) {
+                $firewall[] = ['ssh' => $ssh, 'input' => ['argv' => $rule->removalArguments()]];
+            }
+        }
+        // The seed listener's two rules are inserted in front of the member trust, not owned by the role's list.
+        if ($assignment->role === RoleName::CiRunner) {
+            foreach (app(NodeRoleFirewallInput::class)->proofSeedRules($node) as $rule) {
                 $firewall[] = ['ssh' => $ssh, 'input' => ['argv' => $rule->removalArguments()]];
             }
         }
@@ -187,6 +194,16 @@ final readonly class NativeNodeRoleRemovalInput
             $files[] = ['ssh' => $ssh, 'path' => $path];
             $directories[] = ['ssh' => $ssh, 'path' => $path.'.releases'];
         }
+        $listener = [];
+        if ($assignment->role === RoleName::CiRunner) {
+            // The seed listener (docs/reference/node-provisioning.md#the-seed-listener): the Node finds its trust entry by name, so the
+            // Gateway never needs the fingerprint, and unsets only its own listener address. It goes before the firewall rules.
+            $trust = 'incus config trust list --format csv,noheader -c nF';
+            $listener[] = ['ssh' => $ssh, 'command' => 'timeout 60 sh -c '.escapeshellarg($trust." | awk -F, '\$1 == \"".ProofSeeds::TrustName."\" { print \$2 }' | xargs -r -n 1 incus config trust remove"),
+                'only_if' => $trust.' | cut -d, -f1 | grep -qx '.ProofSeeds::TrustName];
+            $listener[] = ['ssh' => $ssh, 'command' => 'timeout 60 incus config unset core.https_address',
+                'only_if' => 'test "$(incus config get core.https_address)" = '.escapeshellarg($node->wireguard_ip.':'.ProofSeeds::ListenerPort)];
+        }
         if ($assignment->role === RoleName::CiRunner && $purgeData) {
             foreach (['project' => 'orbit-ci', 'network' => 'orbitci0', 'network acl' => 'orbit-ci-egress'] as $type => $name) {
                 $commands[] = ['ssh' => $ssh, 'command' => 'timeout 60 incus '.$type.' delete '.$name,
@@ -222,9 +239,9 @@ final readonly class NativeNodeRoleRemovalInput
             'remove_units' => array_map(static fn (string $unit): array => ['ssh' => $ssh, 'input' => ['unit' => $unit]], $units),
             'stop_containers' => array_map(static fn (string $name): array => ['ssh' => $ssh, 'input' => ['name' => $name, 'action' => 'stop']], $containers),
             'remove_containers' => array_map(static fn (string $name): array => ['ssh' => $ssh, 'input' => ['name' => $name, 'action' => 'rm']], $containers),
-            'firewall' => $firewall, 'certificates' => $certificates,
+            'firewall' => $firewall, 'certificates' => $certificates, 'seed_listener' => $listener,
             'ci_host' => $assignment->role === RoleName::CiRunner ? [['ssh' => $ssh, 'input' => []]] : []];
-        foreach (['public_ssh', 'stop_units', 'files', 'directories', 'commands', 'reload_units', 'remove_units', 'stop_containers', 'remove_containers', 'firewall', 'ci_host'] as $field) {
+        foreach (['public_ssh', 'stop_units', 'files', 'directories', 'commands', 'reload_units', 'remove_units', 'stop_containers', 'remove_containers', 'firewall', 'ci_host', 'seed_listener'] as $field) {
             $input[$field] = array_values(array_filter($input[$field], static fn (array $action): bool => $action['ssh'] !== null));
         }
 

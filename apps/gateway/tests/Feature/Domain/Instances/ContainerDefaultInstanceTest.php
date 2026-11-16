@@ -281,7 +281,8 @@ it('records a created routed container default at its first seed and admits depl
     $runtime = InstanceRuntime::query()->where('instance_id', $operation->target_id)->firstOrFail();
     expect(Instance::query()->findOrFail($operation->target_id)->status)->toBe(InstanceState::Active)
         ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Running)
-        ->and($runtime->seed_commit)->toBe($commit);
+        ->and($runtime->seed_commit)->toBe($commit)
+        ->and($runtime->seed_taken_at)->not->toBeNull();
     // A default has no baseline: its read is the plain truth.
     expect($runtime->workspace_baseline)->toBeNull();
     $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(['head' => $commit, 'files' => [

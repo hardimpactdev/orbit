@@ -7,6 +7,24 @@
   tasks:
     - name: Install the role prerequisites
       ansible.builtin.import_tasks: tasks/role-prerequisites.yml
+# The default's Node sends the seed to a CI Node; the CI Node trusts root's Incus client certificate there
+# (docs/reference/node-provisioning.md#the-seed-listener). Nothing else changes on that Node.
+- name: Read the Incus client certificate of the default's Node
+  hosts: proof_seed_sender
+  tags:
+    - node
+  become: true
+  tasks:
+    - name: Make the client certificate of root
+      ansible.builtin.command:
+        argv: [incus, remote, generate-certificate]
+        creates: /root/.config/incus/client.crt
+    - name: Read the client certificate of root
+      ansible.builtin.slurp: { src: /root/.config/incus/client.crt }
+      register: proof_seed_client
+    - name: Keep it for the role Node
+      ansible.builtin.set_fact:
+        proof_seed_certificate: "{{ proof_seed_client.content | b64decode }}"
 - name: Role resources on the Node
   hosts: role_node
   tags:
@@ -102,6 +120,11 @@
         firewall_commands: >-
           {{ (intent.firewall.desired | reject('contains', 'docker0') | list
           if intent.role == 'analytics' else intent.firewall.desired) + intent.firewall.remove }}
+    # The seed listener opens only once its allow and deny exist (docs/reference/node-provisioning.md#the-seed-listener).
+    - name: Open the seed listener
+      when: intent.runtime.proof_seed is defined and intent.runtime.proof_seed.present
+      ansible.builtin.include_tasks: tasks/proof-seed-listen.yml
+      vars: { seed: "{{ intent.runtime.proof_seed }}" }
 - name: Node exporters
   hosts: exporter_nodes
   tags:

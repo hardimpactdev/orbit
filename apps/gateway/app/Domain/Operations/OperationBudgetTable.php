@@ -28,6 +28,10 @@ final class OperationBudgetTable
         'instance.start' => 1200,
         // One 150 s network, file and restart phase, plus input, result and cleanup. No live sample yet.
         'instance.connection_environment' => 180,
+        // No run yet. Basis: the phases of the seed copy, which run their targets side by side: the 120 s certificate read, the
+        // 7,300 s copy (two incus copies of up to 3,600 s each: the inner volume, then the container), the 120 s check, the 60 s report,
+        // input, result and cleanup, rounded up to five minutes. Replace with the 14-day p95 after the first successes.
+        'instance.seed_copy' => 7800,
         // The 240 s restart phase (a 100 s try-restart and about 84 s of label reads), a 30 s queue wait, input, result and cleanup,
         // rounded up to five minutes. No live sample yet.
         'conn.environment_restart' => 300,

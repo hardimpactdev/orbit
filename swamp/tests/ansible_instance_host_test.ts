@@ -729,3 +729,41 @@ Deno.test({
         }
     },
 });
+
+Deno.test({
+    name:
+        "a CI Node's intent without Caddy parts gets the Instance side without the dev-port table, the own-site rules and the wake",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            // The ci-runner converge of a CI Node that hosts proof copies: the Gateway sends no `dev_ports` and no `own_site`.
+            const { dev_ports: _devPorts, own_site: _ownSite, ...ci } = f.instances;
+            f.write(ci);
+            const result = await f.run();
+            assert(result.ok, result.output);
+            const state = f.state();
+            assert(state.networks.some((n: { name: string }) => n.name === "orbitinst0"));
+            const acls = Object.fromEntries(
+                state["network-acls"].map((a: { name: string }) => [a.name, a]),
+            );
+            // The bridge ACL admits the model forwarder and the egress proxy, and no own site.
+            assertEquals(
+                acls["orbitinst0-egress"].egress.map((rule: { destination_port: string }) => rule.destination_port),
+                ["8319", "3128"],
+            );
+            for (const name of ["dhcp", "egress"]) {
+                assert(f.has(`firewall-orbit_instances-${name}.json`), name);
+            }
+            for (const name of ["own-site", "own-dev"]) {
+                assert(!f.has(`firewall-orbit_instances-${name}.json`), name);
+            }
+            assert(!f.has("dev-ports.nft"));
+            assert(!f.has("systemd/orbit-instance-dev-ports.service"));
+            assert(!f.has("systemd/orbit-instance-wake.path"));
+            assert(!f.has("libexec/orbit-instance-wake"));
+        } finally {
+            f.cleanup();
+        }
+    },
+});

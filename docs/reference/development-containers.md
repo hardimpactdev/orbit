@@ -2,10 +2,10 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
+  - apps/gateway/app/{Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
-  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
+  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,25_000000_create_proof_seeds,26_000000_add_ci_bridge_to_nodes,26_000001_release_an_unused_instance_bridge}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
@@ -54,12 +54,15 @@ Every `app-dev` Node runs its Instances in containers. There is no setting to op
 
 The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
 
+A [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) gets the same container setup through its `ci-runner` role, with nested-fleet hosting on. It never gets the `app-dev` role. It holds no default Instance: it holds a [seed of the proof default](#the-seed-on-each-ci-node), and it takes only proof copies.
+
 ### Prepare a Node
 
-This part is built. The `app-dev` role converge of a Node on the [build list](#the-build-list) runs a container branch; a task VM never does. The Gateway sends the branch's intent only for such a Node, so every other Node gets the same intent as before. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+This part is built. The `app-dev` role converge of a Node on the [build list](#the-build-list) runs a container branch; a task VM never does. The Gateway sends the branch's intent only for such a Node, so every other Node gets the same intent as before. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; that part is the target design of [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies). [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
 - **Allocation.** The admission of a role add or converge allocates the Node's bridge. The captured intent only reads it.
 - **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
+- **Pool of a CI-only Node.** Its `ci-runner` converge creates the pool on a new dataset of the zpool that its ZFS Incus pool uses ([Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node)).
 - **Missing pool.** A Node without the pool is refused with `instance.host_unavailable`.
 - **Project.** Containers of `orbit-instances` must set an isolated ID map. They may mount host folders and have proxy devices, and cannot be VMs. The profile mounts the two shared folders.
 - **Host paths.** The project sets no `restricted.devices.disk.paths`. Incus refuses `shift` on a disk under that list, and the shared folders need the idmapped mount.
@@ -121,7 +124,11 @@ A task VM host on the build list, such as Beast, gets the container branch besid
 
 Before it changes anything, the converge refuses a bridge range that another interface of the Node holds, with `instance.host_unavailable`. The Gateway only knows the bridges it records, not one an operator made, such as a CI bridge.
 
-The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253.0.0/16`, and records it on the Node. It takes the first `/24` that overlaps no recorded bridge and not the VPN subnet. A Node keeps its bridge. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A task VM host's bridges may not overlap an Instance bridge either: `node:update` refuses them with `node.settings_invalid`.
+The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253.0.0/16`, and records it on the Node. It takes the first `/24` that overlaps no recorded bridge and not the VPN subnet. The recorded bridges include each Node's CI bridge `orbitci0`, whose subnet Incus chose when the `ci-runner` role made it. Orbit never moves a CI bridge.
+
+Each `ci-runner` add and converge reads the subnet of `orbitci0` (`incus network get orbitci0 ipv4.address`), and the Gateway records it on the Node as `ci_bridge`. The node phase reads it twice: before the Instance container branch, so a refused clash is still recorded, and after the CI resources, so a new `orbitci0` is recorded in the same run.
+
+The admission of the first converge allocates before any read. When that bridge overlaps the CI bridge, the branch refuses with `instance.host_unavailable` before it changes anything. The Gateway records the CI bridge from that run and gives back the Node's Instance bridge, when no container uses it yet. The next `ci-runner` converge then allocates a `/24` around the CI bridge. A Node keeps its bridge while a container uses it. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A task VM host's bridges may not overlap an Instance bridge either: `node:update` refuses them with `node.settings_invalid`.
 
 T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address. The Node records the last T3 port it gave. A new runtime takes the first free port after it and wraps from 3999 to 3800, so a port freed by a destroy is given again only after the Node has used every other free port. A client that saved the destroyed server under its address therefore does not meet a new server there at once. When every port is held, the reservation fails with `instance.host_unavailable` (409).
 
@@ -1008,7 +1015,7 @@ A default sleeps like any other development container: after one idle window wit
 
 #### A retake keeps the seed
 
-A retake never leaves the default without a seed. It takes the new snapshot first, beside the old one. When `seed-<commit>` exists already, the new snapshot waits under `next-<commit>`. Only when the new snapshot exists does the old `seed-<commit>` go, and `next-<commit>` takes its name. Older seeds go last. The seed of a default with an [inner volume](#the-seed-pair) is a pair, and both halves follow the same order.
+A retake never leaves the default without a seed. It takes the new snapshot first, beside the old one. It holds the default's seed lock on the Node while it does so. When `seed-<commit>` exists already, the new snapshot waits under `next-<commit>`. Only when the new snapshot exists does the old `seed-<commit>` go, and `next-<commit>` takes its name. Older seeds go last. The seed of a default with an [inner volume](#the-seed-pair) is a pair, and both halves follow the same order.
 
 Incus maps a new snapshot as it maps a new container: it needs a free [isolated ID range](#isolated-id-ranges) for a moment, but a delete or a rename needs none. So the step never uses `incus snapshot create --reuse`, which deletes the old snapshot before it creates the new one. On 2026-11-14 a retake with `--reuse` on a host with no free range left Instance 2454 without a seed for seven minutes.
 
@@ -1028,7 +1035,7 @@ A separate job publishes the Route, certificate and DNS. Swamp runs jobs in leve
 
 #### What is built
 
-The first default Instance and its deployments are built for the Nodes of the [build list](#the-build-list). A Project has one `default` Instance in the whole fleet, and every clone of it is made on its Node. Deployment admission refreshes the Project’s [source facts at the deployed commit](/reference/deployments#container-source-facts).
+The first default Instance and its deployments are built for the Nodes of the [build list](#the-build-list). A Project has one `default` Instance in the whole fleet, and every clone of it is made on its Node. The one exception is a proof copy on a CI Node: it clones that Node's [seed](#the-seed-on-each-ci-node). Deployment admission refreshes the Project’s [source facts at the deployed commit](/reference/deployments#container-source-facts).
 
 | Part | What Orbit does |
 | --- | --- |
@@ -2016,11 +2023,11 @@ A Project setting turns on a nested fleet. Each Instance container of that Proje
 
 Built: placement, host preparation, the start guards, the readers below and the [nested-fleet image](#the-nested-fleet-image). The [fleet step](#the-fleet-step) is built. The deployment of the default calls it in the [refresh after a release](#refresh-after-a-release), and the create of a clone calls it to [start its fleet](#a-clone-starts-its-fleet).
 
-Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
+Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. A proof copy can also be on a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
 
 ### The container
 
-An Instance container with a nested fleet lives in its own Incus project on the Node, `orbit-instances-nested`, which allows what the fleet needs. `orbit-instances` keeps refusing it. A Node prepares that project, its profile and two kernel modules only when it is on the build list and its [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on. It shares the pool, the bridge, the ACLs and the egress proxy with `orbit-instances`. The container is unprivileged and sets these keys:
+An Instance container with a nested fleet lives in its own Incus project on the Node, `orbit-instances-nested`, which allows what the fleet needs. `orbit-instances` keeps refusing it. A Node prepares that project, its profile and two kernel modules only when it is on the build list and its [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on, or when it is a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). It shares the pool, the bridge, the ACLs and the egress proxy with `orbit-instances`. The container is unprivileged and sets these keys:
 
 | Key | Value | Why |
 | --- | --- | --- |
@@ -2283,6 +2290,8 @@ A deployment retakes the two halves one after the other. So a clone of such a de
 
 A copy of such a default, a plain clone or a task copy, gets its own volume `inner-<copy id>`, which its runtime records. The [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) checks that the default's volume holds the seed's half, else `instance.default_seed_incomplete`. It copies that snapshot to the new volume. Then it copies the container with its disk `inner-pool` set to the new volume, before the first start. Both copies are ZFS clones. Incus gives the copied volume a new btrfs fsid, so copies never share one. In the 2026-11-14 test the two copies took 3.8 to 4.2 s and the outer start about 1 s.
 
+A proof copy on a CI Node copies the same way from that Node's [seed holder](#the-seed-on-each-ci-node), `proof-seed` and `proof-seed-inner`.
+
 The start guard admits the copy's volume with exactly the keys above. A failed container copy deletes the volume it copied. A volume without its container, left by a failed copy, is deleted and copied again. Destroy of the copy deletes its volume. A copy shares blocks with the default's seed until it goes, as a container copy does.
 
 ### Fleet rules
@@ -2395,6 +2404,8 @@ Before the delivery, an operator placed the key by hand in `/etc/orbit/swamp-clu
 ### Refresh after a release
 
 After each Gateway release, Orbit deploys each nested-fleet default to the release commit. The deployment is `instance.deploy` with more steps, which only an intent with `fleet` runs. The inner fleet keeps running between releases. The run checks it once, first, then takes the seed of the default as it is, fleet included. Then it refreshes the fleet and takes the seed snapshot again. The [refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) has the steps. An `instance:deploy` of the default runs the same flow.
+
+When the run records the new seed of the proof Project's default, the Gateway copies that seed to each other Node that offers proof places ([The seed on each CI Node](#the-seed-on-each-ci-node)). The copies run after the refresh, and nothing in the release waits for them.
 
 A default gets `fleet` when its runtime is in `orbit-instances-nested`, its Project has `nested_fleet` on and its Node's switch is on (`InstancePlacement::keepsFleet`). Every other deployment runs the same steps and calls as before.
 
@@ -2707,6 +2718,72 @@ The run budget grows by the fleet's part of these bounds, 5,590 s: the check 400
 
 Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each, and each Node converge by 900 s.
 
+#### The seed on each CI Node
+
+This is the target design of ADR 0260, build step 4. Built, not yet proven on the live fleet: the listener of the `ci-runner` role, the `instance.seed_copy` run and its triggers, the record of each Node's seed, and the start of a copy from its own Node's seed. ADR 0260 build step 5 places copies on CI Nodes.
+
+Each Node that [offers proof places](/reference/node-provisioning#proof-copies-on-a-ci-node), other than the default's own Node, keeps its own seed of the proof Project's default: a copy of the default's [seed pair](#the-seed-pair) on the Node. A proof copy on that Node starts from it. The default's Node holds the seed itself, and a copy there clones the default, as before. In this section a CI Node is such a Node. No copy fetches a seed over the network when it starts.
+
+The holder of the seed on a CI Node is one stopped container, `proof-seed`, and its volume `proof-seed-inner`, in `orbit-instances-nested`. The holder never starts. It keeps the default's `seed-<commit>` snapshots, and a proof copy on the Node clones `proof-seed/seed-<commit>`.
+
+The Gateway copies the seed with one Operation, `instance.seed_copy`. Its targets are the CI Nodes whose seed is not the default's current seed. The [seed copy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/seed-copy.mmd) has the steps. The Gateway admits it:
+
+- when the default records a new seed: after the [refresh after a release](#refresh-after-a-release), or after an `instance:deploy` of the default;
+- when a `ci-runner` add or converge of a CI Node passes, so a new CI Node does not wait for the next release;
+- at the end of a seed copy during which the default's seed moved: for every Node behind the new seed;
+- at the end of a seed copy at the same seed: for the Nodes that no seed copy has tried at that seed.
+
+So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own `ci-runner` converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no listener or no free ID range, does not repeat with a new Operation each time.
+
+A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The default's runtime records both (`seed_commit`, `seed_taken_at`). The Gateway records the seed of each CI Node in `proof_seeds`: its holder, its commit and that time (`ProofSeeds`).
+
+##### How the seed moves
+
+Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for each target side by side:
+
+- `incus copy <default> proof-node-<id>:proof-seed --refresh --mode=push`, in the project `orbit-instances-nested`;
+- `incus storage volume copy` of the default's inner volume to `proof-seed-inner` on the same remote, with `--refresh --mode=push`.
+
+An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
+
+`--refresh` sends only what changed since the last copy. Incus compares the snapshots on both sides and sends the newer ones as ZFS increments, so the holder gets the new `seed-<commit>` snapshot natively. The first copy to a Node sends the whole seed pair. The copy reads the default as an instance, not one snapshot of it: a snapshot source carries no snapshots, so `--refresh` could not find a common one and would send the whole pair each time.
+
+Push mode means that the source server sends the data to the target server, and only the target listens on the network (`incus copy --help` of the installed Incus client). So the default's Node gets no Incus listener and no change to its daemon config. Its only change is a client remote of root, `proof-node-<id>`, for each CI Node. The run adds the remote when it is missing. It reads the CI Node's server certificate on that Node first, and fails the target when the certificate that root's client stored for the remote is not that one.
+
+Each CI Node gets an Incus listener on its WireGuard address and one restricted trust entry: root's Incus client certificate of the default's Node, limited to the project `orbit-instances-nested`. The `ci-runner` converge adds both ([Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node)). So a seed copy can change only that project on a CI Node, and only from the default's Node.
+
+Each target's step may fail alone. It does not stop the other targets. A Node whose copy failed keeps its recorded seed. That seed is not the default's current seed, so the Node offers no proof places. What the failed copy left in the holder does not matter: the next copy refreshes the holder again. Copies made earlier keep running, because ZFS keeps the blocks they share with a changed holder.
+
+A retake of the default during a copy does not wait for it. When the retake deletes a snapshot that the copy reads, that target fails. When the copy ends first, it records the seed it was admitted for; that seed is not the default's new seed, so the end of the copy admits the next one.
+
+Why `incus copy --refresh`, once per seed and Node:
+
+- One refresh makes one fleet. Every CI Node gets the same seed, so the shards of one proof run on the same fleet.
+- It reuses the refresh. A seed Instance on each CI Node would refresh its own fleet at every release. That repeats the work on every Node, and the fleets can drift apart.
+- A seed Instance on a new CI Node would also need a first build: a [rebuild from stock](#rebuild-from-stock), which is not built.
+- Incus does the incremental send, the snapshots and the records of the holder. Orbit adds no ZFS stream, bookmark or pin of its own.
+- The data goes from Node to Node. It does not pass the Swamp worker, which is on another host and is short of CPU.
+- It moves the seed once per seed and Node, not at each copy's start, which ADR 0260 rejects.
+
+The cost is one trust between Nodes: each CI Node trusts the default's Node for one Incus project. The listener answers only on the WireGuard address, and the firewall admits its port only from the default's Node.
+
+A proof copy on a CI Node is a clone with the same [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd). Its intent names the holder, its snapshot and its volume as the source, in place of the default's container and volume (`TaskCopyStart::seed`).
+
+A copy on a Node whose seed is not the default's current seed is refused with `tasks.copy_source_unavailable`. Until ADR 0260 build step 5, every copy still goes to the default's Node and clones the default. The fleet start, the Club key and the [reset](#reset) are the same as for a copy on the default's Node. The copy takes the default's [ID map size](#the-id-map-size). The holder does not need to run, as the default does not need to run for a copy on its own Node.
+
+The copy runs after the release, and nothing in a release or a proof waits for it.
+
+| Rule | What happens |
+| --- | --- |
+| Never blocks the release | The default's run has ended when the Gateway admits a seed copy. A failed copy changes neither the release nor the default |
+| No proof places on an old seed | While a Node's seed is not the default's current seed, the Node offers no proof places. So one proof never mixes the fleets of two seeds. Earlier copies keep running |
+| A failed target | The step fails with `instance.seed_copy_failed`, and the result names the failed command and its error output for that Node. The Node keeps its recorded seed |
+| One copy at a time | An open seed copy holds the default's seed-copy lock. A second admission refuses with `operation.target_busy`; the end of the open copy admits the next one |
+| No listener yet | A CI Node whose converge has not added the listener and the trust fails its target. A `ci-runner` converge of the Node adds them, and its end admits the next copy |
+| ID ranges on a CI Node | The holder and the snapshot it receives need a free range of the default's size. The [CI Node's demand](/reference/node-settings#a-ci-node) counts them. Without one, that target fails |
+| A failure shows | Nothing waits for the copy. So each failed target also writes the Activity row `instance.seed_copy_failed` with the Node, the Operation and the detail, as a failed refresh writes `instance.refresh_failed` |
+| A rerun is safe | The next seed, or the Node's own `ci-runner` converge, copies again. `--refresh` makes the holder equal to the default, whatever an earlier run left |
+
 ### A clone starts its fleet
 
 A new Instance or a task of the nested-fleet Project is a ZFS clone of the default's seed, as every [clone](#create) is. The clone then starts the outer container and places the Club key. Its step `clone-fleet` runs the [fleet step](#the-fleet-step)'s check and resume. It waits for the inner Incus and checks the fleet rules. It starts the nested containers and the operator tunnel `wg-nested`. Then it waits for the same Doctor check that a proof uses: the nested Gateway is healthy and its three agents are online.
@@ -2887,6 +2964,7 @@ Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each contai
 | `clone_source_instance_id` | The default Instance it was cloned from. Null for the default Instance and for a migrated checkout |
 | `power_state` | `running` or `stopped`. A sleeping container is stopped. The terminal results of create, deploy, migrate, sleep and wake write it |
 | `seed_commit` | A default Instance's commit of its newest `seed-<commit>` snapshot, which clones copy. Null before its first seed |
+| `seed_taken_at` | When the default took that seed. With `seed_commit` it names one seed, because a retake at the same commit keeps the name |
 | `agent_key_hash` | The SHA-256 hash of a task copy's [copy key](#the-copy-key). Null for every other container, and for a task copy made before the copy key existed |
 
 The database keeps these rules:
@@ -2930,6 +3008,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | --- | --- | --- |
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
+| `instance.node_ci_only` | 409 | `instance:create` on a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node): `ci-runner`, CI places and no `app-dev`. Only a proof copy is made there. Nothing is recorded |
+| `instance.seed_copy_failed` | 502 | A [seed copy](#the-seed-on-each-ci-node) could not copy the seed to a CI Node. That Node keeps its old seed and offers no proof places |
 | `project.container_server_unavailable` | 409 | `instance:create`, `instance:migrate` or `task:start` of a container with a server, while the recipe's agent folder does not pin the program of the Project's [container server](#container-server). Nothing is recorded |
 | `projects.agent_instructions_too_large` | 422 | `instance:create` or `task:start` of a clone while the Project's [agent instructions](#agent-instructions) hold more than 32 files or 32 KiB. Nothing is recorded |
 | `projects.agent_instructions_invalid` | 422 | `instance:create` or `task:start` of a clone while an agent instruction file breaks a rule of [What counts](#what-counts). Nothing is recorded |

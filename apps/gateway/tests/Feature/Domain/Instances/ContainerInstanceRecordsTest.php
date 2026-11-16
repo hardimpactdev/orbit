@@ -79,14 +79,15 @@ describe('Instance bridges', function (): void {
         expect($beast->refresh()->instance_bridge)->toBeNull();
     });
 
-    it('never changes or shares a recorded bridge', function (): void {
+    it('never changes or shares a recorded bridge, and gives back only one that no container uses', function (): void {
         $beast = recordsNode();
         app(AllocateInstanceBridgeAction::class)->execute($beast);
 
         expect(fn () => Node::query()->whereKey($beast->id)->update(['instance_bridge' => '10.253.9.0/24']))->toThrow(QueryException::class, 'A Node keeps its Instance bridge.')
-            ->and(fn () => Node::query()->whereKey($beast->id)->update(['instance_bridge' => null]))->toThrow(QueryException::class, 'A Node keeps its Instance bridge.')
             ->and($beast->isDirty('instance_bridge'))->toBeFalse()
-            ->and(fn () => Node::query()->whereKey(recordsNode('shark', '10.44.0.11')->id)->update(['instance_bridge' => '10.253.0.0/24']))->toThrow(QueryException::class, 'UNIQUE');
+            ->and(fn () => Node::query()->whereKey(recordsNode('shark', '10.44.0.11')->id)->update(['instance_bridge' => '10.253.0.0/24']))->toThrow(QueryException::class, 'UNIQUE')
+            // No container uses it yet, so the record of a clashing CI bridge may give it back (docs/reference/development-containers.md#nodes).
+            ->and(Node::query()->whereKey($beast->id)->update(['instance_bridge' => null]))->toBe(1);
     });
 
     it('refuses task VM host settings whose bridge overlaps an Instance bridge, also its own Node\'s', function (bool $own): void {
