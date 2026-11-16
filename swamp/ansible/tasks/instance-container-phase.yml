@@ -700,29 +700,13 @@
           '-c', 'protocol.allow=never', '-c', 'http.followRedirects=false',
           '-c', 'url.https://github.com/.insteadOf=git@github.com:', '-c', 'url.https://github.com/.insteadOf=ssh://git@github.com/',
           '-c', 'protocol.' ~ container.protocols[0] ~ '.allow=always'] }}
-    # A clone's branch is the matching origin branch, or a new branch at the seed's commit, which the workspace already holds.
-    - name: Read whether the origin has the clone's branch
-      when: phase == 'clone'
-      ansible.builtin.command: { argv: "{{ remote_git + ['ls-remote', '--heads', '--', container.repository, 'refs/heads/' ~ container.branch] }}" }
-      register: clone_remote
-      changed_when: false
+    # The live clone selects its branch in its clone script (instance_clone.py), which needs no mirror of the default.
     - name: Fetch
-      when: phase != 'clone' or clone_remote.stdout | trim != ''
       ansible.builtin.command:
         argv: >-
           {{ remote_git + ['fetch', '--quiet', '--no-tags', '--', container.repository,
           '+refs/heads/' ~ container.branch ~ ':refs/heads/' ~ container.branch] }}
       changed_when: false
-    # The default's mirror on this Node holds the seed's commit, whichever branch the default follows.
-    - name: Fetch the seed's commit from the default's mirror
-      when: phase == 'clone' and clone_remote.stdout | trim == '' and mirror_before.rc != 0
-      ansible.builtin.command:
-        argv: "{{ mirror_git + ['fetch', '--quiet', '--no-tags', '--', container.clone.source_mirror, '+refs/heads/*:refs/seed/*'] }}"
-      changed_when: false
-    - name: Create the branch at the seed's commit
-      when: phase == 'clone' and clone_remote.stdout | trim == '' and mirror_before.rc != 0
-      ansible.builtin.command: { argv: "{{ mirror_git + ['branch', '--', container.branch, container.clone.seed_commit] }}" }
-      changed_when: true
     - name: Read the fetched branch
       ansible.builtin.command: { argv: "{{ mirror_git + ['rev-parse', '--verify', 'refs/heads/' ~ container.branch] }}" }
       register: mirror_after

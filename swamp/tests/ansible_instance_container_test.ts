@@ -794,7 +794,8 @@ Deno.test({
       );
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(sourceState));
       const seed = git(f.source, "rev-parse", "HEAD");
-      // A commit on main after the seed: a new branch starts at the seed, not at main.
+      // The origin's feature branch is at the seed; main moves on after it, and the clone takes its own branch, not main.
+      git(f.source, "branch", "feature");
       Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
       git(f.source, "commit", "--quiet", "-am", "after the seed");
       const route = { route: "yes", interface_in: "orbit", interface_out: "orbitinst0", to_ip: "10.253.0.3", to_port: "3773", proto: "tcp" };
@@ -807,7 +808,7 @@ Deno.test({
           { ...route, rule: "allow", from_ip: "any", comment: "orbit:instance-8-t3" },
         ],
         clone: {
-          source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed, source_mirror: `${f.folder}/mirror/7.git`,
+          source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed,
           t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 20,
             url: "http://10.44.0.7:3800", label: "tool / feature", t3: "/opt/orbit-agent/current/agent/bin/t3",
             project_mark: "/home/agent/.config/orbit/t3-project" },
@@ -843,7 +844,7 @@ Deno.test({
       // The task VM range's deny comes before the allow.
       assertEquals(Deno.readTextFileSync(`${f.folder}/ufw`).trim().split("\n").map((line) => JSON.parse(line).comment),
         ["orbit:instance-8-t3-task-vms", "orbit:instance-8-t3"]);
-      // The branch is new, at the seed's commit; the default's workspace and seed stay as they were.
+      // The branch is the origin's, at the seed's commit; the default's workspace and seed stay as they were.
       assertEquals(git(`${clone}/srv/workspace`, "symbolic-ref", "--short", "HEAD"), "feature");
       assertEquals(git(`${clone}/srv/workspace`, "rev-parse", "HEAD"), seed);
       // The seed's exclude line comes with the copy; the clone's own write keeps it once.
@@ -972,7 +973,7 @@ Deno.test({
       const seed = git(f.source, "rev-parse", "HEAD");
       Object.assign(f.container, {
         name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`, branch: "main", firewall: [],
-        clone: { source: "instance-7", snapshot: "seed-gone", seed_commit: seed, source_mirror: `${f.folder}/mirror/7.git`,
+        clone: { source: "instance-7", snapshot: "seed-gone", seed_commit: seed,
           t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "other.service", internal_port: 3773, ready_seconds: 1, t3: "/t3",
             project_mark: "/home/agent/.config/orbit/t3-project" },
           model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" }, files: [], links: [] },
@@ -1717,13 +1718,14 @@ Deno.test({
         assert(f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments }).ok);
       }
       const seed = git(f.source, "rev-parse", "HEAD");
+      git(f.source, "branch", "feature");
       // The clone's own record of the same definition has its own id, unit and environment file.
       const own = { ...worker, id: 51, name: "orbit-process-51-worker.service", environment: "/etc/orbit/processes/51/abc.env",
         content: worker.content.replace("/41/", "/51/") };
       Object.assign(f.container, {
         instance_id: 8, name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`, branch: "feature",
         firewall: [], processes: [own],
-        clone: { source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed, source_mirror: `${f.folder}/mirror/7.git`,
+        clone: { source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed,
           t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 1, t3: "/t3",
             project_mark: "/home/agent/.config/orbit/t3-project" },
           model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" }, files: [], links: [] },
@@ -1776,12 +1778,13 @@ Deno.test({
         .map((entry) => entry.name).sort();
       assertEquals(wants("instance-7"), ["orbit-frankenphp.service", worker.name]);
       const seed = git(f.source, "rev-parse", "HEAD");
+      git(f.source, "branch", "feature");
       const own = { ...worker, id: 51, name: "orbit-process-51-worker.service", environment: "/etc/orbit/processes/51/abc.env",
         content: worker.content.replace("/41/", "/51/") };
       Object.assign(f.container, {
         instance_id: 8, name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`, branch: "feature",
         firewall: [], processes: [own],
-        clone: { source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed, source_mirror: `${f.folder}/mirror/7.git`,
+        clone: { source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed,
           t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 1, t3: "/t3",
             project_mark: "/home/agent/.config/orbit/t3-project" },
           model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" }, files: [], links: [] },
