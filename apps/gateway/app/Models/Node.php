@@ -35,6 +35,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $ci_bridge
  * @property int|null $seed_sender_id
  * @property string|null $ci_hold_digest
+ * @property array<string, string>|null $converge_digests
  * @property bool $ci_nested_hosting
  * @property int|null $t3_port_last
  * @property string|null $ssh_host_fingerprint
@@ -208,6 +209,7 @@ final class Node extends Model
             'status' => LifecycleStatus::class,
             'public_ssh_port' => 'integer',
             'settings' => 'array',
+            'converge_digests' => 'array',
             'id_ranges' => 'array',
             'reboot_hold' => 'boolean',
             'ci_nested_hosting' => 'boolean',

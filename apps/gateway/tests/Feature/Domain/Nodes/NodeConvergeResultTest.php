@@ -19,16 +19,18 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 
 uses(LazilyRefreshDatabase::class);
 
-function converge_receipt(?string $failure = null, array $tools = []): array
+/** @param list<string> $unchanged */
+function converge_receipt(?string $failure = null, array $tools = [], array $unchanged = [], array $digests = []): array
 {
     $failed = false;
     $phases = [];
     foreach (['input', 'agent', 'software', 'roles', 'tools', 'network', 'check'] as $name) {
-        $phases[] = ['name' => $name, 'status' => $failed ? 'skipped' : ($name === $failure ? 'failed' : 'succeeded'), 'changed' => 0, 'elapsed_seconds' => $failed ? 0 : 1];
+        $skip = ! $failed && in_array($name, $unchanged, true);
+        $phases[] = ['name' => $name, 'status' => $failed ? 'skipped' : ($skip ? 'unchanged' : ($name === $failure ? 'failed' : 'succeeded')), 'changed' => 0, 'elapsed_seconds' => $failed || $skip ? 0 : 1];
         $failed = $failed || $name === $failure;
     }
 
-    return ['outcome' => $failure === null ? 'succeeded' : 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => array_sum(array_column($phases, 'elapsed_seconds')), 'tools' => $tools, 'browser_trust' => [], 'cleanup_complete' => true]
+    return ['outcome' => $failure === null ? 'succeeded' : 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => array_sum(array_column($phases, 'elapsed_seconds')), 'tools' => $tools, 'browser_trust' => [], 'cleanup_complete' => true, 'digests' => $digests]
         + ($failure === null ? [] : ['failed_phase' => $failure, 'error_code' => 'operation.native_failed']);
 }
 
@@ -321,4 +323,64 @@ it('clears the seed listener record of a ci-runner converge whose result is refu
     $operation = app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => 'failed', 'result' => converge_receipt()]);
 
     expect($operation->error_code)->toBe('operation.result_invalid')->and($this->node->refresh()->seed_sender_id)->toBeNull();
+});
+
+it('accepts a phase that skipped because its digest was unchanged, and its digests', function (): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change
+    $digests = array_fill_keys(NodeConvergeResult::Skippable, str_repeat('a', 64));
+    $receipt = converge_receipt(null, [], NodeConvergeResult::Skippable, $digests);
+    expect(NodeConvergeResult::parse($receipt))->toBe($receipt)
+        ->and(NodeConvergeResult::passed($receipt['phases'][3]))->toBeTrue()
+        ->and(NodeConvergeResult::passed(converge_receipt('roles')['phases'][3]))->toBeFalse();
+});
+
+it('refuses an unchanged phase that cannot skip, follows a failure or reports work, and a foreign digest', function (Closure $change): void {
+    expect(fn () => NodeConvergeResult::parse($change()))->toThrow(ResourceOperationException::class, 'terminal result is invalid');
+})->with([
+    'input unchanged' => [fn (): array => converge_receipt(null, [], ['input'])],
+    'check unchanged' => [fn (): array => converge_receipt(null, [], ['check'])],
+    'unchanged after a failure' => [function (): array {
+        $receipt = converge_receipt('agent');
+        $receipt['phases'][2]['status'] = 'unchanged';
+
+        return $receipt;
+    }],
+    'unchanged with changes' => [function (): array {
+        $receipt = converge_receipt(null, [], ['roles']);
+        $receipt['phases'][3]['changed'] = 1;
+        $receipt['changed'] = 1;
+
+        return $receipt;
+    }],
+    'unchanged tools with observations' => [fn (): array => converge_receipt(null, [['id' => 1, 'status' => 'installed', 'installed_version' => '1']], ['tools'])],
+    'digest of input' => [fn (): array => converge_receipt(null, [], [], ['input' => str_repeat('a', 64)])],
+    'digest not hex' => [fn (): array => converge_receipt(null, [], [], ['agent' => 'secret'])],
+    'no digests' => [function (): array {
+        $receipt = converge_receipt();
+        unset($receipt['digests']);
+
+        return $receipt;
+    }],
+]);
+
+it('records the phase digests after a succeeded converge and none after a failed one', function (?string $failure, ?array $recorded): void {
+    $digests = ['agent' => str_repeat('a', 64), 'roles' => str_repeat('b', 64)];
+    app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => $failure === null ? 'succeeded' : 'failed', 'result' => converge_receipt($failure, [], ['agent', 'tools'], $digests)]);
+
+    expect($this->node->refresh()->converge_digests)->toBe($recorded);
+})->with([
+    'succeeded' => [null, ['agent' => str_repeat('a', 64), 'roles' => str_repeat('b', 64)]],
+    'failed' => ['network', null],
+]);
+
+it('keeps the seed listener record when the roles phase of a ci-runner converge was unchanged', function (): void {
+    $default = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'default', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit']));
+    Node::query()->whereKey($this->node->id)->update(['seed_sender_id' => $default->id]);
+    $input = $this->operation->input;
+    $input['_converge']['intent'] = ['tools' => [], 'roles' => [['role' => RoleName::CiRunner->value, 'runtime' => ['proof_seed' => ['present' => true, 'sender' => ['node_id' => $default->id]]]]]];
+    $this->operation->update(['input' => $input]);
+
+    app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => 'succeeded', 'result' => converge_receipt(null, [], ['roles'])]);
+
+    expect($this->node->refresh()->seed_sender_id)->toBe($default->id);
 });

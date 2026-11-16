@@ -892,7 +892,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'node:converge' => [['node'], ['base' => false, 'roles' => null, 'idempotency-key' => null, 'json' => false]],
+        'node:converge' => [['node'], ['base' => false, 'roles' => null, 'full' => false, 'idempotency-key' => null, 'json' => false]],
         'node:list' => [[], ['json' => false]],
         'node:metrics' => [['node'], ['json' => false]],
         'node:remove' => [['node'], ['force' => false, 'offline' => false, 'idempotency-key' => null, 'json' => false]],

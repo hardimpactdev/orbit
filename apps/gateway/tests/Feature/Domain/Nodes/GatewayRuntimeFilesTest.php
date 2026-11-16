@@ -10,6 +10,7 @@ use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
@@ -266,10 +267,10 @@ it('keeps production Gateway runtime recipe and Ansible vars byte identical to m
     $role = $capture['intent']['roles'][0];
     $folder = TestOrbitHome::scratch('production-gateway-equality');
     mkdir($folder, 0700, true);
-    file_put_contents($folder.'/intent.json', json_encode($capture['intent'], JSON_THROW_ON_ERROR));
+    file_put_contents($folder.'/intent.json', json_encode(app(NodeConvergePhaseDigest::class)->stamp($capture['intent'], []), JSON_THROW_ON_ERROR));
     file_put_contents($folder.'/plans.json', '{}');
     $materializer = new Symfony\Component\Process\Process(['deno', 'eval',
-        'import { convergeInput } from '.json_encode('file://'.base_path('../../swamp/extensions/behaviors/operations/ansible-input/converge_input.ts'), JSON_THROW_ON_ERROR).'; await convergeInput(Deno.args[0], Deno.args[1], "/fixture/converge_tool.ts");',
+        'import { convergeInput } from '.json_encode('file://'.base_path('../../swamp/extensions/behaviors/operations/ansible-input/converge_input.ts'), JSON_THROW_ON_ERROR).'; await convergeInput(Deno.args[0], 701, Deno.args[1], "/fixture/converge_tool.ts", []);',
         $folder, base_path('../../swamp/ansible/build_vars.py')]);
     $materializer->mustRun();
     $hash = static fn (mixed $value): string => hash('sha256', json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
