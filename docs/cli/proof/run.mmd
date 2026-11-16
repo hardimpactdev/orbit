@@ -15,7 +15,7 @@ sequenceDiagram
   GW->>GH: Select commands<br/>check trust
   %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a copy. Trust passes before any copy exists: a copy holds the nested Club key, so untrusted code never reaches one.
   %%> Retry:
-  %%> - A GitHub read that fails with a transport error or a 5xx answer is read once more after 2 s, once for each admission attempt (a proof that waits for room is attempted again). A rate limit, 401, 403, 404 or 422 is not read again.
+  %%> - A GitHub read that fails with a transport error or a 5xx answer is read once more after 2 s, once in the first admission attempt (a later attempt keeps that attempt's selection and reads GitHub no more). A rate limit, 401, 403, 404 or 422 is not read again.
   %%> On failure:
   %%> - The refusal names the read, the HTTP status or the transport error class, and the reset of a rate limit: proof.github_unavailable (run again), proof.github_rate_limited (run after the reset), proof.github_refused (an operator checks the GitHub App), proof.github_not_found (do not retry).
   opt --base supplied
@@ -60,6 +60,7 @@ sequenceDiagram
   %%> - Read the runner state and MemAvailable of each Node from Prometheus before the admission transaction. A Node without a fresh read offers no place.
   %%> When:
   %%> - With no free place on any Node, the proof waits with the step "Wait for a free CI place" and tries again every 20 seconds.
+  %%> - The first attempt records the selected cases and the batch plan on the proof. A later attempt keeps them: it does not check the commit, read GitHub or select again.
   GW->>GW: Balance batches<br/>by measured time
   %%> One shard per free place, at most one per part. The read-only cases (`read_only: true`) of a batch with no setup form their own batch. The weight of a part is its measured case seconds, plus 180 s for its reset and setup when it is not read-only. Longest weight first; assign each part to the least loaded copy. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each part that is not read-only (at least one) and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
   %%> Split:
