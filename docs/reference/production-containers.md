@@ -5,7 +5,7 @@ description: "Planned, ADR 0263: a production Instance's releases are Incus cont
 
 # Production containers
 
-**Planned.** Nothing on this page is built. It is the target contract of [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers). Until it is built, production Instances deploy as [Instance releases](/reference/deployments) describes. The ADR's open question 1 can still change when old is removed; this page follows the ADR's proposal.
+**Planned.** Nothing on this page is built. It is the target contract of [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers). Until it is built, production Instances deploy as [Instance releases](/reference/deployments) describes.
 
 A production Instance keeps one record: its id, Routes, environment, deploy steps, attachments, Processes and Schedules. Each release of it is an Incus container on its `app-prod` Node, made with the same machinery as [Instance containers](/reference/development-containers): the image, ZFS clones and snapshots, the runtime folder, the bridge and the egress proxy. A production container has only the user `orbit`, no agent and no model route, and it never sleeps.
 
@@ -27,7 +27,7 @@ The Gateway keeps the Instance and its release states. The Node keeps the contai
 
 | Record | Where | Content |
 | --- | --- | --- |
-| The Instance | Gateway | Id, Routes, environment, deploy steps, attachments, Processes, Schedules, shared paths, memory limit (4 GiB by default) |
+| The Instance | Gateway | Id, Routes, environment, deploy steps, attachments, Processes, Schedules, shared paths, and an optional memory limit: unset means no limit |
 | Runtime rows | Gateway, `instance_runtimes` | One per release container: container name, bridge address, `release_state`, release name, commit, image fingerprint, `runtime_version`, `power_state` |
 | Deployment history | Gateway | One row per deploy or rollback, as [History](/reference/deployments#history) describes. `release` names the release container that the deploy built |
 | Release container | Node | `instance-<id>-<release>` in the Incus project `orbit-instances`, in the [`instance-<id>` form](/reference/development-containers#the-machine-name). The release name follows from the deploy Operation, as today |
@@ -52,7 +52,7 @@ The first part builds hot while live serves.
 
 1. **Check.** The Node's live link must name the live container of the intent. Otherwise the deploy fails with `deployment.selection_invalid`. Then the [capacity check](#capacity) runs.
 2. **Make hot.** Orbit clones live's `release` snapshot into a new release container. A [cold hot](#cold-hot) launches from the image instead.
-3. **Prepare hot.** Orbit attaches the storage volume and sets the memory limit. It mounts the runtime folder version that the Node pins now, then starts hot.
+3. **Prepare hot.** Orbit attaches the storage volume and mounts the runtime folder version that the Node pins now. It sets the Instance's optional [memory limit](#capacity) and starts hot.
 4. **Upgrade.** Hot applies the Node's pending package upgrades.
 5. **Source.** The Node's mirror fetches the commit: the pinned one, or the branch head for a manual deploy. Orbit pushes it into hot and checks it out. Untracked dependency folders stay.
 6. **Links and environment.** Orbit links each shared path into the volume and writes the rendered `.env`.
@@ -128,7 +128,7 @@ Incus keeps the removed container's dataset while a ZFS clone still depends on i
 
 A rollback runs no deploy step, fetches nothing and changes no data. It pauses automatic deploys and blocks the rolled-away commit, as [Pause](/reference/deployments#pause) describes. Without an old release, it refuses with `rollback.release_not_retained`. To go back further, deploy the earlier commit with `instance:deploy --commit`. That deploy builds a warm hot from live's snapshot.
 
-A rollback has no capacity check: no deploy runs beside it, so old takes the memory that hot would take.
+A rollback has no capacity check. No deploy runs beside it, so old runs in the place that hot takes during a deploy.
 
 | Failed boundary | Serves | Old |
 | --- | --- | --- |
@@ -157,9 +157,14 @@ Hot's `before_activation` steps run while live serves, and both mount the same v
 
 ## Capacity
 
-Each release container has the Instance's memory limit. During a deploy, hot and live run and old is stopped. A clone's disk holds only its changed blocks.
+A release container has no memory limit by default, so one busy release can use all of the Node's memory. The Instance's memory limit is optional. When `instance:update` sets it, every release container of the Instance gets it. During a deploy, hot and live run and old is stopped. A clone's disk holds only its changed blocks.
 
-Before it makes hot, a deploy or a [migration](#a-checkout-production-instance) checks that the Node's available memory covers hot's memory limit plus 1 GiB, and that the pool has 10 GiB free. Otherwise it fails with `deployment.node_capacity` and changes nothing.
+Before it makes hot, a deploy or a [migration](#a-checkout-production-instance) checks two things. Otherwise it fails with `deployment.node_capacity` and changes nothing.
+
+- The Node's available memory covers hot's need plus 1 GiB.
+- The pool has 10 GiB free.
+
+Hot's need is the Instance's memory limit, if one is set. Without a limit, hot's need is live's current memory use, because hot runs the same app. For a migration, the checkout's PHP-FPM pool and Processes take the place of live.
 
 The automatic tick retries that failure at its [backoff](/reference/deployments#failures-of-automatic-deployments) times, but it does not count toward the three failures that block a commit: the cause is the Node, not the commit. A commit that waits 30 minutes raises the stalled-commit alert.
 

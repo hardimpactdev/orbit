@@ -43,7 +43,7 @@ sequenceDiagram
     %%> What it does:
     %%> - writes `.env` into old and starts it; its units and timers are disabled, so only FrankenPHP runs
     %%> Why no capacity check:
-    %%> - no deploy runs beside a rollback, so old takes the memory that hot would take
+    %%> - no deploy runs beside a rollback, so old runs in the place that hot takes during a deploy
     SW->>N: Check old is ready<br/>Ansible · tags ready
     %%> What it does:
     %%> - the readiness of a deploy, without the snapshot condition: old already has its snapshot

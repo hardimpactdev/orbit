@@ -38,7 +38,7 @@ sequenceDiagram
   %%> - the CLI follows the task until it ends
   SW->>N: Check capacity, launch hot<br/>Ansible · tags admit · hot
   %%> What it does:
-  %%> - the capacity check of a deploy, then a cold hot from the image with the storage volume, the memory limit and the pinned runtime folder version
+  %%> - the capacity check of a deploy, then a cold hot from the image with the storage volume, the memory limit when one is set, and the pinned runtime folder version
   SW->>N: Copy shared paths<br/>Ansible · tags copy
   %%> What it does:
   %%> - copies each shared path of the home, and a SQLite database of the home, into the volume; the checkout still serves

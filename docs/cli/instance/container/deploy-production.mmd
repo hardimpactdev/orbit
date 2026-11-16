@@ -25,7 +25,7 @@ sequenceDiagram
   %%> - the Instance is an active production Instance in containers; no other operation holds it, else `operation.target_busy`
   %%> Freezes:
   %%> - live, its `release` snapshot and its image; the Node's image and pinned runtime folder version
-  %%> - the commit, the release name, the steps, the shared paths, the memory limit
+  %%> - the commit, the release name, the steps, the shared paths, the memory limit when one is set
   %%> - the Process and Schedule definitions, the health path and the domain of each Route
   %%> Result:
   %%> - a running deployment row; a manual deploy pauses automatic deploys, as today
@@ -41,7 +41,7 @@ sequenceDiagram
   SW->>N: Check live and capacity<br/>Ansible · tags admit
   %%> What it does:
   %%> - the live link must name the frozen live container, else `deployment.selection_invalid`
-  %%> - the capacity check: available memory covers hot's limit plus 1 GiB, and the pool has 10 GiB free
+  %%> - the capacity check: available memory covers hot's need plus 1 GiB: the Instance's memory limit, or live's memory use without one, and the pool has 10 GiB free
   %%> Why on the Node:
   %%> - free memory and pool space change between admission and the run
   %%> On failure:
@@ -52,7 +52,7 @@ sequenceDiagram
     %%> - a ZFS clone of live's `release` snapshot: warm dependencies, build output and caches; about a second, no file copied
     %%> - live's changes after its snapshot (logs, caches, request files) never reach hot
     %%> Then:
-    %%> - attaches the storage volume at `/srv/shared`, sets the memory limit, mounts the pinned runtime folder version, starts hot and applies the Node's pending package upgrades
+    %%> - attaches the storage volume at `/srv/shared`, sets the memory limit when one is set, mounts the pinned runtime folder version, starts hot and applies the Node's pending package upgrades
   else no live, or a newer image
     SW->>N: Launch hot from image<br/>Ansible · tags hot
     %%> What it does:

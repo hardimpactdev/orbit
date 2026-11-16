@@ -1,7 +1,7 @@
 ---
 title: "ADR 0263: Run production releases in hot, live and old containers"
 sidebarTitle: "0263 Production containers"
-description: "In progress, proposed. A production Instance keeps one record; each release is an Incus container on its app-prod Node. Hot is a ZFS clone of the live release's snapshot that builds and migrates the next commit; when it is ready, Caddy switches the Route to it and it becomes live. The ADR proposes, as a deviation open for the owner, that the previous live stays stopped as old for rollback."
+description: "In progress, proposed. A production Instance keeps one record; each release is an Incus container on its app-prod Node. Hot is a ZFS clone of the live release's snapshot that builds and migrates the next commit; when it is ready, Caddy switches the Route to it and it becomes live. The previous live stays stopped as old for rollback, and the next deploy removes it. A release container has no memory limit unless its Instance sets one."
 ---
 
 # ADR 0263: Run production releases in hot, live and old containers
@@ -10,7 +10,7 @@ A production Instance keeps one stable record: its id, Routes, environment, depl
 
 - **Hot** builds the next commit. It is a ZFS clone of the live release's snapshot. Orbit fetches the commit into it, runs the deploy steps and migrates the shared database, while live still serves.
 - **Live** serves the Instance's Routes and runs its workers and Schedules.
-- **Old** is the release before live. This ADR proposes to keep it stopped for rollback. That is a deviation from the owner's design, open as [question 1](#open-questions-for-the-owner).
+- **Old** is the release before live. It stays stopped for rollback, and the next deploy's retire removes it.
 
 When hot is ready, Caddy points the Routes at it in one reload, and hot becomes live. The [production containers](/reference/production-containers) page is the contract and holds every number and path.
 
@@ -22,27 +22,15 @@ Proposed: a design for review, with no part built. It specifies step 10 of [ADR 
 
 Principle: [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles). Production uses the container machinery of development: images, ZFS clones, snapshots, the runtime folder, the bridge and the egress proxy. Each old production path below goes when its replacement is built.
 
-### Deviation from the owner's design
+### Why old stays stopped
 
-The owner's design: "when hot is ready Caddy points the Route at it, it becomes live, and the previous live container is removed". This ADR deviates from it in one point. It keeps the previous live stopped as old until the next switch, and removes it only then.
+The owner decided that the previous live stays stopped as old, and that the next deploy's retire removes it:
 
-| | Owner's design | This ADR's proposal |
-| --- | --- | --- |
-| Between deploys | Live only | Live running, old stopped |
-| During a deploy | Hot and live | Hot and live running, old stopped |
-| Memory | One limit between deploys, two during a deploy | The same: a stopped old holds no memory |
-| Disk | Live's root disk | Live's and old's root disks. Live is a ZFS clone of old's snapshot, so they share most blocks |
-| Rollback | Only while the previous live still exists, during the handover drain: switch back to it | Start old, check it as ready and switch to it, in seconds, with no build |
-| An earlier release after that | `instance:deploy --commit` of the earlier commit: a warm hot from live's snapshot, with every before step | The same, for any release before old |
+- A rollback starts old, checks it as ready and switches to it, in seconds, with no build.
+- A stopped old holds no memory. Between deploys only live runs; during a deploy, hot and live run.
+- Live is a ZFS clone of old's snapshot, so the two share most blocks on disk.
 
-In the owner's design no copy of the previous release outlives its container. An Incus snapshot is deleted with its container, and an image published from a snapshot copies files. So the only way back after the drain is a new build.
-
-The disk gain of the owner's design is also small. Live is a ZFS clone of the previous live's snapshot, and Incus keeps a removed container's dataset while a clone still depends on it.
-
-### Open questions for the owner
-
-1. **When the previous live goes.** Keep it stopped as old until the next switch (this ADR), or remove it after the handover (the owner's design), as the [deviation](#deviation-from-the-owners-design) compares. Recommendation: keep it stopped. A rollback in seconds, with no build, costs only changed blocks on disk.
-2. **The memory limit.** The [contract](/reference/production-containers#records) sets a default per release container, which `instance:update` changes per Instance. Recommendation: take the default, and change it after the fixture proof.
+Without old, the only way back after the handover is a new build. An Incus snapshot is deleted with its container, and an image published from a snapshot copies files.
 
 ## Context
 
@@ -95,7 +83,7 @@ The planned charts are `docs/cli/instance/container/deploy-production.mmd`, `doc
 
 Each release container takes one snapshot, `release`, after its deploy steps passed and before any request reaches it. The next hot is a ZFS clone of live's `release` snapshot. It starts with the dependencies, the build output and the Composer and npm caches of the live release, so a deploy without a dependency change installs nothing. The clone copies no file and takes about a second.
 
-After the clone, and before the first step, Orbit attaches the storage volume, sets the limits and mounts the runtime folder version that the Node pins now. Hot applies the Node's pending package upgrades, so a [patch run](/decisions/0253-patch-nodes-and-reboot-them-drained) that upgraded live reaches the next release too. The Node's mirror fetches the commit and Orbit pushes it into hot, which checks it out with the cleanup rules of a [development deploy](/reference/deployments#development-defaults). Then Orbit writes the rendered `.env`.
+After the clone, and before the first step, Orbit attaches the storage volume, sets the Instance's memory limit when it has one, and mounts the runtime folder version that the Node pins now. Hot applies the Node's pending package upgrades, so a [patch run](/decisions/0253-patch-nodes-and-reboot-them-drained) that upgraded live reaches the next release too. The Node's mirror fetches the commit and Orbit pushes it into hot, which checks it out with the cleanup rules of a [development deploy](/reference/deployments#development-defaults). Then Orbit writes the rendered `.env`.
 
 A release snapshot holds that release's `.env`, because the deploy steps need it before the snapshot. So a warm hot carries live's `.env` from its clone until Orbit writes the new one. Secrets never come from the image or the mirror, and the snapshot stays on the Node, inside the same boundary as live.
 
@@ -147,9 +135,9 @@ PowerSync runs on the Services Node as Node Processes and replicates from the sh
 - changes a table that a publication covers only by expand and contract, like every other table;
 - keeps the token and upload endpoints of the app answering, because the switch is one Caddy reload with the previous live finishing its requests.
 
-### 8. Capacity: limits and an admission check
+### 8. Capacity: an optional limit and an admission check
 
-Each release container has the memory limit of its Instance. During a deploy, live and hot run, and old is stopped: two memory limits and three root disks, of which a clone uses only its changed blocks.
+A release container has no memory limit by default. The owner decided this: a busy release may use the Node's memory. The production Instance's memory limit is optional, and `instance:update` sets it. When it is set, every release container of the Instance gets it. During a deploy, live and hot run, and old is stopped. The three root disks of a deploy use little space, because a clone holds only its changed blocks.
 
 The deploy's first step on the Node runs the [capacity check](/reference/production-containers#capacity) before the hot clone. When the Node lacks memory or pool space, the deploy fails with `deployment.node_capacity` and changes nothing. Nothing waits on the Node. The automatic tick retries it, and it never counts toward blocking the commit, because the cause is the Node, not the commit.
 
@@ -220,7 +208,7 @@ During every case, a load loop sends a request to the health path and to one pag
 | Expand migration | A commit that adds a nullable column and code that uses it | Failed requests during the migration | Live serves through the migration with no failed request |
 | Failed migration | A commit whose migration fails | The outcome | `deployment.step_failed`; hot is removed; live serves with no failed request; the tick blocks the commit |
 | Failed readiness | A commit whose health path answers `500` | The outcome | `deployment.not_ready`; hot is removed; live serves unchanged |
-| Capacity refusal | The memory limit set above the Node's free memory, then set back | The tick's results | `deployment.node_capacity` with nothing made; the commit is not blocked; the tick deploys it after the limit is set back |
+| Capacity refusal | A memory limit set above the Node's free memory, then removed | The tick's results | `deployment.node_capacity` with nothing made; the commit is not blocked; the tick deploys it after the limit is removed |
 | Rollback and forward | `instance:rollback`, then `instance:rollback` again | Time to the first response of each release, failed requests | Each switch has no failed request; the workers and timers run only in the new live; automatic deploys are paused and the commit is blocked |
 | Node reboot | A reboot of the Node between deploys | The containers and units after the boot | Only live starts, with its Processes and timers; old stays stopped |
 | One fire | Every case above, read from the fire records | Fires per Schedule per minute | Each Schedule fired once each minute: no minute twice and none skipped, except while the Node rebooted |
@@ -251,6 +239,8 @@ mealou moves after hauzer's first container deploy passed. Neither waits for a w
 - **A database copy per release.** One shared database is the production state; a copy per release would split writes.
 - **Migrations after the switch.** The new code would serve on the old schema until they end.
 - **Undo a migration on rollback.** Older code can need a data recovery that only the application knows. Rollback selects code only.
+- **Remove the previous live after the handover.** A rollback after the drain would need a new build, and the disk gain is small: Incus keeps a removed container's dataset while a clone still depends on it.
+- **A default memory limit per release container.** The owner wants a busy release to use the Node's memory. An Instance can still set a limit.
 - **Keep old running.** It would hold memory for a rollback that a start of a stopped container serves in seconds.
 - **Keep more releases or snapshots.** Each kept release holds a ZFS chain and disk. A pinned deploy of an earlier commit covers the rare deeper rollback.
 - **Publish an image of each release for rollback.** Publishing an image copies files.
@@ -264,10 +254,11 @@ mealou moves after hauzer's first container deploy passed. Neither waits for a w
 
 ## Consequences
 
+- One busy release container can use all of the Node's memory unless its Instance sets a limit. The owner accepts this.
 - A deploy never stops traffic: live serves until the switch, and the switch is one Caddy reload. The PHP-FPM restart of today goes.
 - A failed build, migration or readiness check never touches live. Hot is removed.
 - Every migration must be expand and contract, and every queued job payload must stay readable by the release before it. This is a rule for each Project, not something Orbit can check.
-- With this ADR's proposal, a rollback goes back one release in seconds, as long as old exists. A deeper rollback is a deploy of an earlier commit.
+- A rollback goes back one release in seconds, as long as old exists. A deeper rollback is a deploy of an earlier commit.
 - Each deploy holds two running containers and three root disks on the Node for its duration.
 - ZFS clone chains grow by one release per warm deploy until the next cold hot resets them. The live proof measures whether Incus frees the removed releases' datasets once no clone depends on them.
 - A Project that caches its configuration in a deploy step serves that cache after a rollback, with the values it cached.
