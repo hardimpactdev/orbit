@@ -15,6 +15,8 @@ use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrMode;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -65,7 +67,7 @@ function instanceCheckWorld(): array
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running,
         'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'proof-instance', 'checkout_path' => '/srv/proof-instance',
-        'status' => InstanceState::Active, 'branch' => 'proof-branch', 'task_workspace_owner_id' => $group->id]);
+        'status' => InstanceState::Active, 'branch' => 'proof-branch', 'task_workspace_owner_id' => $group->id, 'starting_commit' => str_repeat('c', 40)]);
     $runtime = InstanceRuntime::query()->create(['node_id' => $node->id, 'power_state' => 'running', 'runtime_version' => 'test', 'agent_version' => 'test', 'instance_id' => $instance->id,
         'incus_project' => 'alternate-proof', 'container_name' => 'proof-instance', 'bridge_address' => '10.253.0.5', 'seed_commit' => str_repeat('c', 40)]);
     $group->update(['taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id]);
@@ -80,7 +82,7 @@ it('admits a check in the recorded container Instance without a task VM', functi
 
     $operation = app(TaskCheckIntent::class)->start($group, new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null);
 
-    $intent = TaskCheckProjection::workflowInput($operation->input)['intent'];
+    $intent = TaskCheckProjection::inputOf($operation->input)['intent'];
     $workspace = ValidatedData::object($intent['workspace']);
     expect($operation->status)->toBe(OperationStatus::Queued)
         ->and($operation->kind)->toBe('tasks.check')
@@ -92,8 +94,13 @@ it('admits a check in the recorded container Instance without a task VM', functi
         ->and($workspace['snapshot_id'])->toMatch('/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/')
         ->and(data_get($intent, 'ssh_execution.target.host'))->toBe('10.44.0.71')
         ->and($operation->input['execution_secrets'])->toBe([])
-        // The Swamp regression runs exactly this intent shape through the production phases.
-        ->and(array_keys($intent))->toEqualCanonicalizing(array_keys(instanceCheckIntent()))
+        // The Swamp regression runs exactly this intent shape through the production phases; a copy's handoff adds its base.
+        ->and(array_keys(array_diff_key($intent, ['copy_base' => true])))->toEqualCanonicalizing(array_keys(instanceCheckIntent()))
+        ->and(array_diff_key(ValidatedData::object($intent['copy_base']), ['git_authorization' => true]))->toBe([
+            'repository' => 'https://github.com/example/proof.git', 'default_branch' => 'main', 'start' => str_repeat('c', 40),
+            'mirror' => '/var/lib/orbit/instance-repositories/'.$instance->id.'.git', 'source_mirror' => ''])
+        ->and(data_get($intent, 'copy_base.git_authorization.vault'))->toBe('orbit-control-inputs')
+        ->and(data_get($intent, 'copy_base.git_authorization.key'))->toMatch('/^task-sync-token-[a-f0-9-]{36}$/')
         ->and(array_keys($workspace))->toEqualCanonicalizing(array_keys(ValidatedData::object(instanceCheckIntent()['workspace'])))
         ->and(Operation::query()->where('kind', 'task_vm.resume')->count())->toBe(0)
         ->and(TaskCheck::query()->sole()->status->value)->toBe('running');
@@ -128,14 +135,71 @@ it('runs a container baseline without the setup steps, because the copied seed a
 
     $operation = app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Baseline), 'test', null);
 
-    $intent = TaskCheckProjection::workflowInput($operation->input)['intent'];
+    $intent = TaskCheckProjection::inputOf($operation->input)['intent'];
     expect($operation->kind)->toBe('tasks.check')
         ->and($intent['phase'])->toBe('baseline')
         ->and($intent['setup'])->toBe([])
         ->and($intent['command'])->toBe($group->project->task_check)
         ->and($intent['deliverables'])->toBe([])
         ->and(array_keys($intent))->toEqualCanonicalizing(array_keys(instanceCheckIntent()))
+        // A baseline brings in no base, so it names no read token.
+        ->and($intent)->not->toHaveKey('copy_base')
         ->and(TaskCheck::query()->sole()->kind)->toBe(TaskCheckKind::Baseline);
+});
+
+it('mints the read token of a copy handoff check as the run starts, and none for a baseline', function (): void {
+    [$group, $subtask] = instanceCheckWorld();
+    $vault = new class implements WebSocketClient
+    {
+        /** @var list<array{key: string, value: string}> */
+        public array $puts = [];
+
+        /** @var list<array<string, mixed>> */
+        private array $frames = [];
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = end($this->frames);
+            $this->puts[] = ['key' => $frame['payload']['key'], 'value' => (string) $frame['payload']['value']];
+
+            return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => [
+                'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
+        }
+
+        public function close(): void {}
+
+        public function isConnected(): bool
+        {
+            return true;
+        }
+    };
+    app()->instance(WebSocketClient::class, $vault);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
+
+    $baseline = app(TaskCheckIntent::class)->start($group, new StartTaskCheckData($subtask->id, TaskCheckKind::Baseline), 'test', null);
+    $inputs = app(DirectOperation::class)->workflowInputs($baseline);
+    expect($vault->puts)->toBe([])
+        ->and($inputs['intent'])->not->toHaveKey('copy_base');
+    $baseline->update(['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
+    TaskCheck::query()->update(['status' => 'passed']);
+
+    $handoff = app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', 'second');
+    $key = ValidatedData::string(data_get($handoff->input, 'copy_base.git_authorization.key'));
+    $inputs = app(DirectOperation::class)->workflowInputs($handoff);
+
+    // A Project without GitHub App source access fetches anonymously: the header is empty, but the run gets its own key.
+    $patterns = array_column(ValidatedData::object(app(DirectOperation::class)->definition('tasks.check'))['execution_copies'], 'key_pattern');
+    expect($vault->puts)->toBe([['key' => $key, 'value' => '']])
+        ->and(data_get($inputs, 'intent.copy_base.git_authorization'))->toBe(['vault' => 'orbit-control-inputs', 'key' => $key])
+        ->and($inputs['execution_secrets'])->toEqual((object) [])
+        ->and(array_filter($patterns, fn (string $pattern): bool => preg_match('/'.$pattern.'/', $key) === 1))->toHaveCount(1);
 });
 
 // The task VM check is removed with the task VMs (docs/reference/old-paths.md): a group whose workspace sat on a task VM has no task copy.

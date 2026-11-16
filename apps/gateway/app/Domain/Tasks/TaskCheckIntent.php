@@ -84,6 +84,9 @@ final readonly class TaskCheckIntent
                 'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-check-git-'.$key],
             ];
         }
+        // A handoff check of a copy first brings in the current default head and merges it when clean, so it judges the tree that
+        // publish pushes (docs/reference/tasks.md#the-handoff-check-merges-main-first). A baseline brings in none.
+        $base = $input->phase === TaskCheckKind::Handoff ? TaskSyncIntent::base($group, $container) : null;
         $check = $task->checks()->create(['kind' => $input->phase, 'status' => TaskCheckStatus::Running, 'pid' => 0, 'process_started' => '', 'head_before' => '', 'tree_before' => '', 'started_at' => now()]);
 
         return [
@@ -100,6 +103,7 @@ final readonly class TaskCheckIntent
             // The time limit of each SSH step of the check workflows, so a step against a Node that is gone ends with the Operation.
             'run_budget_seconds' => OperationRunBudgets::historySeconds(OperationKinds::TasksCheck),
             'workspace' => $workspace,
+            ...($base === null ? [] : ['copy_base' => $base]),
         ];
     }
 
