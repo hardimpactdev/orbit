@@ -2726,7 +2726,9 @@ Each Node that [offers proof places](/reference/node-provisioning#proof-copies-o
 
 The holder of the seed on a CI Node is one stopped container, `proof-seed`, and its volume `proof-seed-inner`, in `orbit-instances-nested`. The holder never starts. It keeps the default's `seed-<commit>` snapshots, and a proof copy on the Node clones `proof-seed/seed-<commit>`.
 
-The Gateway copies the seed with one Operation, `instance.seed_copy`. Its targets are the CI Nodes whose seed is not the default's current seed and whose [seed listener](/reference/node-provisioning#the-seed-listener) is ready for the default's Node. A CI Node is ready when the Gateway records, from its last `ci-runner` converge, that the listener trusts the default's Node. A CI Node without that record is not a target. So no seed copy fails on it and no seed copy marks it tried. Its next `ci-runner` converge that passes makes it a target. The [seed copy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/seed-copy.mmd) has the steps. The Gateway admits it:
+The Gateway copies the seed with one Operation, `instance.seed_copy`. Its targets are the CI Nodes whose seed is not the default's current seed and whose [seed listener](/reference/node-provisioning#the-seed-listener) is ready for the default's Node.
+
+A CI Node is ready when the Gateway records, from its last `ci-runner` converge, that the listener trusts the default's Node. A CI Node without that record is not a target. So no seed copy fails on it and no seed copy marks it tried. Its next `ci-runner` converge that passes makes it a target. When the default moves to another Node, the CI Nodes stay untargeted until the `ci-runner` role of each is converged again. The [seed copy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/seed-copy.mmd) has the steps. The Gateway admits a seed copy:
 
 - when the default records a new seed: after the [refresh after a release](#refresh-after-a-release), or after an `instance:deploy` of the default;
 - when a `ci-runner` add or converge of a CI Node passes, so a new CI Node does not wait for the next release;
