@@ -10,18 +10,23 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\NodeRemovalInput;
 use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Problems\ProblemRecovery;
+use App\Domain\Problems\ProblemSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
 
@@ -114,4 +119,14 @@ it('refuses every owned task workspace with task_vm.workspace_mismatch and reads
         'state' => TaskVmState::Ready, 'wireguard_ip' => $node->wireguard_ip]);
 
     expect($refusal)->toThrow($refused);
+});
+
+it('recovers an old open recipe-image alert as resource_gone, also while its failed build row remains', function (): void {
+    $host = readerNode('beast', '10.44.0.148');
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Failed, 'attempt' => 2]);
+    $problem = static fn (int $id): ProblemFingerprint => new ProblemFingerprint(['source' => ProblemSource::Release, 'filed_at' => now()->subHour(), 'evidence' => [
+        'release_kind' => 'build_failed', 'incident_resource' => 'recipe-image:'.$id, 'incident_attempt' => '2', 'incident_fault' => 'build_failed']]);
+
+    expect(app(ProblemRecovery::class)->reason($problem($build->id)))->toBe('resource_gone')
+        ->and(app(ProblemRecovery::class)->reason($problem($build->id + 1)))->toBe('resource_gone');
 });

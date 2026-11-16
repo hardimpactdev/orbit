@@ -141,9 +141,7 @@ The task group field `vm_power` stays and is always `null` ([VM power](/referenc
 
 The SSH task workspace path still remains, and a later slice removes it: `TaskWorkspaceExecutor` and its callers, which are the check runner (`RemoteTaskCheckRunner`), the workspace diff and state readers, and the workspace file read of the deliverable paths. Each of them fails at the guard.
 
-One reader stays, because it does not guard an empty row:
-
-- `ProblemRecovery` closes an open `recipe-image:` alert from its `task_vm_image_builds` row (`verified_image_build`, `recipe_generation_superseded` or `resource_gone`).
+`ProblemRecovery` resolves an open `recipe-image:` alert as `resource_gone` and reads neither `task_vm_image_builds` nor `task_vm_image_recipe`. The answers `verified_image_build` and `recipe_generation_superseded` are gone.
 
 Two cleanup deletes stay until the tables go, because the tables keep foreign keys to `nodes` and `tasks`: Node removal deletes the Node's `task_vms` rows and its finished `task_vm_image_builds` rows, and Project removal deletes the `destroyed` `task_vms` rows of its groups.
 

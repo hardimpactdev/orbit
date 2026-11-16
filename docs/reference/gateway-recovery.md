@@ -550,9 +550,7 @@ The alert records `release|{kind}|{resource}|{attempt}|{fault}`, with the source
 
 An open incident keeps one linked group. Further observations update its generated brief while the group and its subtasks remain untouched. Operator edits or a move out of Backlog preserve the group. Confirmed recovery or supersession cancels an untouched generated group. A successful stage is held and does not confirm recovery. Filing clears an occurrence episode; that reset is not recovery evidence.
 
-The recipe image build raised alerts that use `recipe-image:<build id>` as the resource, the build attempt as the attempt, and `build_failed` as the fault. Nothing raises one since the build was removed. An alert raised before stays open until its build is superseded or a later promoted build resolves it.
-
-The incident resolves when a later attempt succeeds, the desired recipe identity differs from the build, or the build row is gone. An attempt that is still running or failed does not prove recovery. A recipe revert to the failed build’s identity does not resolve the incident, even at a newer generation.
+The recipe image build raised alerts that use `recipe-image:<build id>` as the resource, the build attempt as the attempt, and `build_failed` as the fault. Nothing raises one since the build was removed. Recovery resolves an alert raised before as `resource_gone`, because no build runs to recover it. It reads no build row and no recipe identity.
 
 A migration merges the old buckets based on SHA only when retained alert evidence proves their resource, attempt, and fault. It adopts only groups whose original generated content and lack of operator activity can be confirmed. Ambiguous history stays available for an operator and cannot file a new group automatically.
 
