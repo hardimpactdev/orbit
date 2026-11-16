@@ -42,6 +42,8 @@ The generated API schema includes show and update operations for Project Documen
 
 The generated Instance rename request exposes optional `branch` and `domain` fields. The Gateway still requires at least one; optional TypeScript properties do not replace API validation. This API operation adds no web UI control.
 
+The generated `Operation` type has a nullable `ready_at`, the time a woken Instance's website became ready ([Operations](/reference/operations)). The demo fleet and test Operations set it to `null`. The app does not render it yet.
+
 The generated Instance schema includes effective `shared_paths`. Its update input accepts a directory list or null to restore the default. [Shared paths](/reference/deployments#shared-paths) defines the production storage contract.
 
 The Project schema includes `task_workspace_routed`, which describes routing for new task workspaces; an existing workspace keeps its recorded mode. The Gateway serves it from its own origin.
