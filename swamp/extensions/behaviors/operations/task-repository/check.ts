@@ -377,7 +377,9 @@ export async function localResult(
     return {
         ...local,
         outcome: local.outcome === "passed" &&
-                deliverables.some((item) => item.outcome === "failed")
+                deliverables.some((item) =>
+                    ["failed", "not_run"].includes(item.outcome)
+                )
             ? "failed"
             : local.outcome,
         check_id: input.check_id,
