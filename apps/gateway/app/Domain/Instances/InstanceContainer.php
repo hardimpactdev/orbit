@@ -330,9 +330,10 @@ final readonly class InstanceContainer
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
             'branch' => $branch !== '' ? $branch : ValidatedData::string($project->default_branch), 'commit' => null,
             'workspace' => $workspace, 'environment_file' => self::environmentFile($instance),
-            // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first, the Vite+ home and
-            // the egress proxy (docs/reference/development-containers.md#egress-and-dns), and the Playwright browser folder.
-            'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.self::path($project),
+            // The deploy commands' whole environment: the home of `agent`, the workspace's owner who runs them (ADR 0268), the runtime
+            // folder with the Project's PHP first, the Vite+ home and the egress proxy (docs/reference/development-containers.md#egress-and-dns),
+            // and the Playwright browser folder.
+            'environment' => ['HOME=/home/agent', 'USER=agent', 'LOGNAME=agent', 'PATH='.self::path($project),
                 ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment),
                 ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys(self::BrowserEnvironment), self::BrowserEnvironment)],
             ...($nodeServices === [] ? [] : ['node_services' => $nodeServices]),

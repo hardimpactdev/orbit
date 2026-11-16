@@ -1,6 +1,7 @@
 ---
 # One phase of instance-container.yml, `phase`, on the Node. Containers live in `container.project`; `incus` gets no stray input.
-# Work in the container runs through `incus exec` from the Node: root for units and snapshots, `orbit` for the workspace.
+# Work in the container runs through `incus exec` from the Node: root for units and snapshots, `agent`, the workspace's owner, for the
+# workspace (ADR 0268), and `orbit`, the app user, for the app's own files such as the Node store.
 - name: Name the container commands
   tags: [always]
   when: phase != 'node-service'
@@ -24,6 +25,10 @@
     as_orbit: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
           '--', 'runuser', '-u', 'orbit', '--'] }}
+    # The workspace's owner (ADR 0268): Orbit's Git calls and its other work in the workspace, as the deploy steps run.
+    as_owner: >-
+      {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/agent', container.name,
+          '--', 'runuser', '-u', 'agent', '--'] }}
     as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
     # A clone's T3 and its agents run as `agent`, which alone reaches T3's port in the container.
     as_agent: >-
@@ -34,8 +39,8 @@
     # large repository would outlast the checkout's time limit. The Git commands of the people and agents who work in the workspace
     # still repack it; a deployment's checkout runs its own geometric repack, bounded to 30 seconds ("Repack the workspace").
     in_workspace: >-
-      {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
-          '--', 'runuser', '-u', 'orbit', '--', 'git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
+      {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/agent', container.name,
+          '--', 'runuser', '-u', 'agent', '--', 'git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
           '-c', 'maintenance.auto=false', '-c', 'gc.auto=0'] }}
     mirror_git: [/usr/bin/git, -c, core.hooksPath=/dev/null, -c, core.fsmonitor=false, -C, "{{ container.mirror }}"]
     node_bundle: "/tmp/orbit-instance-{{ container.instance_id }}-{{ run_id }}.bundle"
@@ -740,14 +745,14 @@
   when: phase == 'workspace'
   block:
     - name: Read the workspace repository
-      ansible.builtin.command: { argv: "{{ as_orbit + ['test', '-d', container.workspace ~ '/.git'] }}" }
+      ansible.builtin.command: { argv: "{{ as_owner + ['test', '-d', container.workspace ~ '/.git'] }}" }
       register: workspace_repository
       changed_when: false
       failed_when: workspace_repository.rc not in [0, 1]
     - name: Initialise the workspace repository
       when: workspace_repository.rc != 0
       ansible.builtin.command:
-        argv: "{{ as_orbit + ['git', 'init', '--quiet', '--shared=group', '--initial-branch', container.branch, container.workspace] }}"
+        argv: "{{ as_owner + ['git', 'init', '--quiet', '--shared=group', '--initial-branch', container.branch, container.workspace] }}"
       changed_when: true
     - name: Read the workspace's branch and commit
       ansible.builtin.command: { argv: "{{ in_workspace + item }}" }
@@ -804,13 +809,13 @@
       changed_when: true
     - name: Push the bundle into the container
       ansible.builtin.command:
-        argv: "{{ incus_project + ['file', 'push', '--uid', '1000', '--gid', '2760', '--mode', '0640', node_bundle, container.name ~ container_bundle] }}"
+        argv: "{{ incus_project + ['file', 'push', '--uid', '2750', '--gid', '2760', '--mode', '0640', node_bundle, container.name ~ container_bundle] }}"
       changed_when: true
   always:
     - name: Remove the bundle on the Node
       ansible.builtin.file: { path: "{{ node_bundle }}", state: absent }
 
-# The workspace is a repository shared by `orbit` and `agent` through the group `work`.
+# The workspace is a repository that `agent` owns and shares with `orbit` through the group `work`.
 - name: Check out the branch in the workspace
   tags: [workspace]
   when: phase == 'workspace' and workspace_behind | bool
@@ -838,8 +843,9 @@
       ansible.builtin.set_fact:
         container_commit: "{{ workspace_head.stdout | trim }}"
 
-# The .env goes in as `orbit` with group `work`, 0640, through a 0600 file on the Node that is removed at once. It is compared by
-# digest first, so a rerun with the same .env changes nothing.
+# The .env goes in as `agent`, the workspace's owner, with group `work`, 0640, so the app reads it as `orbit` through the group. It
+# goes through a 0600 file on the Node that is removed at once. It is compared by digest first, so a rerun with the same .env changes
+# nothing.
 - name: Read the digest of .env in the container
   tags: [workspace]
   when: phase == 'workspace'
@@ -865,7 +871,7 @@
     - name: Push the .env into the container
       ansible.builtin.command:
         argv: >-
-          {{ incus_project + ['file', 'push', '--uid', '1000', '--gid', '2760', '--mode', '0640', environment_path,
+          {{ incus_project + ['file', 'push', '--uid', '2750', '--gid', '2760', '--mode', '0640', environment_path,
           container.name ~ container.environment_file] }}
       changed_when: true
   always:
@@ -884,7 +890,7 @@
       changed_when: false
     - name: Name .env in the exclude file
       ansible.builtin.command:
-        argv: "{{ as_orbit + ['python3', '-I', '-c', exclude_program, workspace_exclude.stdout | trim, container.environment_file[container.workspace | length + 1:]] }}"
+        argv: "{{ as_owner + ['python3', '-I', '-c', exclude_program, workspace_exclude.stdout | trim, container.environment_file[container.workspace | length + 1:]] }}"
       vars:
         exclude_program: |
           import os, re, sys
@@ -956,7 +962,7 @@
     - name: Remove the temporary files of an earlier repack
       ansible.builtin.command:
         argv: >-
-          {{ as_orbit + ['find', container.workspace ~ '/.git/objects/pack', '-maxdepth', '1', '-type', 'f',
+          {{ as_owner + ['find', container.workspace ~ '/.git/objects/pack', '-maxdepth', '1', '-type', 'f',
                          '(', '-name', 'tmp_pack_*', '-o', '-name', 'tmp_idx_*', '-o', '-name', 'tmp_rev_*', ')', '-mmin', '+60',
                          '-print', '-delete'] }}
       register: workspace_repack_leftovers
@@ -964,7 +970,7 @@
       failed_when: false
     - name: Repack the workspace
       ansible.builtin.command:
-        argv: "{{ as_orbit + ['timeout', '30'] + in_workspace[in_workspace.index('git'):] + ['repack', '-d', '-q', '--geometric=2'] }}"
+        argv: "{{ as_owner + ['timeout', '30'] + in_workspace[in_workspace.index('git'):] + ['repack', '-d', '-q', '--geometric=2'] }}"
       register: workspace_repack
       changed_when: false
       failed_when: false
@@ -1009,7 +1015,7 @@
       register: deploy_steps_objects
       changed_when: false
     - name: Read the deploy step records
-      ansible.builtin.command: { argv: "{{ as_orbit + ['grep', '-rH', '', deploy_steps_record ~ '/done'] }}" }
+      ansible.builtin.command: { argv: "{{ as_owner + ['grep', '-rH', '', deploy_steps_record ~ '/done'] }}" }
       register: deploy_steps_done
       changed_when: false
       failed_when: deploy_steps_done.rc not in [0, 1, 2]
@@ -1046,7 +1052,7 @@
     - name: Write the pending deploy step records
       ansible.builtin.command:
         argv: >-
-          {{ as_orbit + ['python3', '-I', '-c', deploy_steps_program, deploy_steps_record,
+          {{ as_owner + ['python3', '-I', '-c', deploy_steps_program, deploy_steps_record,
               deploy_steps_digest | dict2items | rejectattr('key', 'in', deploy_steps_skip) | items2dict | to_json,
               deploy_steps_watched | map(attribute='name') | list | to_json] }}
       vars:
@@ -1080,65 +1086,17 @@
         ansible_connection: local
         ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
-# `orbit` and `agent` share the workspace through the group `work`. A tool that asks for 0755 folders, such as Bun in `node_modules`,
-# caps their ACL mask, so the other user cannot write there. Before the deploy steps (`checkout`) and after them (`processes`) root
-# gives the group back what the owner has; only entries that lack it change, as `chmod g+rwX` would change them: rwx for a folder, rw
-# for a file and x for a file that someone may run. The workspace is live while the pass runs: Git, an app or an agent may remove an
-# entry between its listing and its change. An entry that is gone needs nothing; any other error fails the pass and names its path.
-# Each entry is opened without following a link, so a link that replaces an entry never changes the mode of what it points at.
+# `agent` owns the workspace and shares it with `orbit` through the group `work` (ADR 0268). Before the deploy steps (`checkout`,
+# `proof_checkout`) and after them (`processes`) root gives the group back what the owner has, and gives `agent` each entry that `orbit`
+# owns, such as a file the running app wrote. The program is instance_workspace_owner.py, which a clone's `services` part runs too: it
+# never follows a link, skips an entry that is gone, and prints only a count when it changed many entries.
 - name: Keep the workspace writable for its group
   tags: [checkout, processes, proof_checkout]
   when: phase in ['checkout', 'processes', 'proof_checkout']
   ansible.builtin.command:
-    argv: "{{ as_root + ['python3', '-I', '-c', workspace_modes_program, container.workspace] }}"
-  vars:
-    workspace_modes_program: |
-      import errno, os, stat, sys
-      faults = []
-      def fault(path, error):
-          if error.errno != errno.ENOENT:
-              faults.append(f'{path}: {error.strerror}')
-      def lacks(mode):
-          return mode & 0o070 != 0o070 if stat.S_ISDIR(mode) else stat.S_ISREG(mode) and mode & 0o060 != 0o060
-      def give(fd, path):
-          mode = os.fstat(fd).st_mode
-          if lacks(mode):
-              os.fchmod(fd, stat.S_IMODE(mode) | (0o070 if stat.S_ISDIR(mode) else 0o060 | (0o010 if mode & 0o111 else 0)))
-              sys.stdout.buffer.write(os.fsencode(path) + b'\n')
-      def visit(fd, path):
-          try:
-              give(fd, path)
-          except OSError as error:
-              fault(path, error)
-          try:
-              entries = list(os.scandir(fd))
-          except OSError as error:
-              return fault(path, error)
-          for entry in entries:
-              child = os.path.join(path, entry.name)
-              try:
-                  folder = entry.is_dir(follow_symlinks=False)
-                  if not folder and not lacks(entry.stat(follow_symlinks=False).st_mode):
-                      continue
-                  flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOCTTY | (os.O_DIRECTORY if folder else 0)
-                  child_fd = os.open(entry.name, flags, dir_fd=fd)
-              except OSError as error:
-                  # ELOOP and ENOTDIR: the entry was replaced by a link or a file since its listing; it is not followed.
-                  if error.errno not in (errno.ELOOP, errno.ENOTDIR):
-                      fault(child, error)
-                  continue
-              try:
-                  if folder:
-                      visit(child_fd, child)
-                  else:
-                      give(child_fd, child)
-              except OSError as error:
-                  fault(child, error)
-              finally:
-                  os.close(child_fd)
-      visit(os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW), sys.argv[1])
-      if faults:
-          sys.exit('\n'.join(faults))
+    argv: >-
+      {{ as_root + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_workspace_owner.py'),
+                    container.workspace, '1000', '2750'] }}
   register: workspace_modes
   changed_when: workspace_modes.stdout != ''
 
@@ -1392,7 +1350,8 @@
     - name: Make the agent's configuration folders
       ansible.builtin.command: { argv: "{{ as_agent + ['mkdir', '-p', '-m', '0700', '/home/agent/.claude', '/home/agent/.t3/userdata'] }}" }
       changed_when: false
-    # Git keeps the agent's own preferences; only its trust list is Orbit's. The workspace's .git belongs to orbit.
+    # Git keeps the agent's own preferences; only its trust list is Orbit's. A copy of an older seed may hold a .git of orbit's until
+    # its services part gives it to agent.
     - name: Read the agent's trusted Git directories
       ansible.builtin.command: { argv: "{{ as_agent + ['git', 'config', '--global', '--get-all', 'safe.directory'] }}" }
       register: agent_git_safe

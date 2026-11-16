@@ -13,6 +13,7 @@ file = "swamp/tests/instance_complete_native_test.ts"
 self_hosted = true
 cost = 30
 inputs = [
+  "swamp/ansible/instance_workspace_owner.py",
   "swamp/tests/_support/native_auth.ts",
   "swamp/extensions/behaviors/node-worker/config.ts",
   "swamp/workflows/workflow-operation-instance-complete.yaml",

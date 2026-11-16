@@ -45,6 +45,14 @@ Deno.test("a deployment without a step that has inputs reads no skip list, and i
   ]);
 });
 
+Deno.test("each step runs as agent, the workspace's owner, in the workspace with only its own environment", () => {
+  const command = argv(plain);
+  assertEquals(command.slice(0, command.indexOf("/bin/sh")), [
+    "incus", "exec", "--project", "orbit-instances", "--cwd", "/srv/workspace", "instance-7", "--",
+    "runuser", "-u", "agent", "--", "/usr/bin/env", "-i", "PATH=/usr/bin",
+  ]);
+});
+
 Deno.test("a step with inputs that the checkout named unchanged is skipped; any other step runs", () => {
   const value = intent([watched, { ...plain, name: "install-web", inputs: ["apps/web/bun.lock"], command_digest: "b".repeat(64) }]);
   assertEquals(skips("Read the steps to skip", value, {}, passed), false);

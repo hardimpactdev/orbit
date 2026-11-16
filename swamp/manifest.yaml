@@ -114,6 +114,7 @@ additionalFiles:
   - ansible/instance_migrate_files.py
   - ansible/instance_migrate_links.py
   - ansible/instance_node_runtime.py
+  - ansible/instance_workspace_owner.py
   - ansible/tasks/instance-node-runtime.yml
   - ansible/tasks/instance-private-names.yml
   - ansible/tasks/instance-migrate-link-result.yml

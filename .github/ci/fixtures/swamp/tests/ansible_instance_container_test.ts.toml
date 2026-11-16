@@ -110,6 +110,7 @@ cost = 7690
 slices = 99
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/instance_workspace_owner.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",

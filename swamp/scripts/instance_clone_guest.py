@@ -216,7 +216,7 @@ def rewrite_default_hosts(text, keys, hosts):
     return "".join(out), sorted(rewritten)
 
 
-# Run as orbit in the checkout: names one path, relative to the checkout, once in Git's own info/exclude.
+# Run as agent, the owner, in the checkout: names one path, relative to the checkout, once in Git's own info/exclude.
 EXCLUDE_PROGRAM = r"""
 import os, re, subprocess, sys
 path = subprocess.run(["git", "rev-parse", "--git-path", "info/exclude"], capture_output=True, text=True, check=True).stdout.strip()
@@ -239,10 +239,11 @@ def phase_main(phase, raw):
     root = pathlib.Path
     private = sys.stdin.read()
 
-    def run(argv, check=True, agent=False, orbit=False, timeout=40, private_input=None, isolated=False):
+    def run(argv, check=True, agent=False, orbit=False, owner=False, timeout=40, private_input=None, isolated=False):
+        # `owner`: as `agent`, the workspace's owner, in the workspace (ADR 0268); `agent`: as `agent` in its home; `orbit`: the app user.
         command = argv
-        if agent or orbit:
-            argv = ["runuser", "-u", "agent" if agent else "orbit", "--"] + argv
+        if agent or orbit or owner:
+            argv = ["runuser", "-u", "orbit" if orbit else "agent", "--"] + argv
         r = subprocess.run(
             argv,
             check=False,
@@ -253,11 +254,11 @@ def phase_main(phase, raw):
             errors="surrogateescape" if isolated else "strict",
             env=dict(
                 os.environ,
-                HOME="/home/agent" if agent else "/home/orbit" if orbit else "/root",
+                HOME="/home/agent" if agent or owner else "/home/orbit" if orbit else "/root",
                 # The task check's own Git environment: no global or system configuration, so no ignore rule of a user's own.
                 **({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "LC_ALL": "C"} if isolated else {}),
             ),
-            cwd=ws if orbit else "/home/agent" if agent else "/",
+            cwd=ws if orbit or owner else "/home/agent" if agent else "/",
             timeout=timeout,
         )
         if check and r.returncode:
@@ -289,7 +290,7 @@ def phase_main(phase, raw):
             ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"]
             + list(args),
             agent=agent,
-            orbit=not agent,
+            owner=not agent,
             check=check,
             isolated=isolated,
             private_input=private_input,
@@ -403,7 +404,7 @@ def phase_main(phase, raw):
             written = {key for key, _, _ in env_blocks(updated) if key is not None}
             environment_keys["shared"] = sorted(set(merge["shared"]) & written)
         if env != updated:
-            write(c["environment_file"], updated, 1000, 2760, "0640")
+            write(c["environment_file"], updated, 2750, 2760, "0640")
         exclude_environment()
         return {"environment": environment_keys, "commit": checked_out["commit"], **({"cleaned": cleaned} if cleaned is not None else {})}
 
@@ -419,7 +420,8 @@ def phase_main(phase, raw):
         def clean_git(*args, private_input=None):
             # The ignore rules the task check reads: no global or system configuration, and the agent's own ignore file, which the
             # check (as `agent`, HOME=/home/agent) reads by default. The C locale keeps `git clean -n`'s words as parsed below.
-            # Without global configuration `orbit` loses its trust of the checkout, which another user owns: trust it here, as the check does.
+            # Without global configuration Git loses its trust of a checkout whose `.git` another user owns, as in a copy of an older seed:
+            # trust it here, as the check does.
             return git("-c", "safe.directory=" + ws, "-c", "core.quotePath=false", "-c", "core.excludesFile=" + AGENT_IGNORE, *args,
                        isolated=True, private_input=private_input)
 
@@ -456,11 +458,11 @@ def phase_main(phase, raw):
 
     def exclude_environment():
         """Git never takes the `.env`, also when the Project's .gitignore does not name it: one line in the checkout's own
-        info/exclude, written once, as orbit, who owns the checkout. Its other lines and the Project's files stay as they are
+        info/exclude, written once, as agent, who owns the checkout. Its other lines and the Project's files stay as they are
         (development-containers.md)."""
         if not c["environment_file"].startswith(ws + "/"):
             return
-        written = run(["python3", "-I", "-c", EXCLUDE_PROGRAM, c["environment_file"][len(ws) + 1:]], orbit=True)
+        written = run(["python3", "-I", "-c", EXCLUDE_PROGRAM, c["environment_file"][len(ws) + 1:]], owner=True)
         if written.stdout.strip() == "changed":
             changes.append("exclude")
 
@@ -494,20 +496,11 @@ def phase_main(phase, raw):
             changes.append(PHP_CLI_INI)
         # A running unit read the old settings at its start.
         php_settings_changed = len(changes) > php_settings
-        # The existing Processes phase's group-write guarantee and foreign-owner cleanup.
-        for directory, ds, fs in os.walk(ws):
-            for name in ds + fs:
-                p = root(directory) / name
-                if p.is_symlink():
-                    continue
-                s = p.stat()
-                mode = stat.S_IMODE(s.st_mode)
-                wanted = mode | 0o060
-                if p.is_dir() or mode & 0o111:
-                    wanted |= 0o010
-                if wanted != mode:
-                    os.chmod(p, wanted)
-                    changes.append("group-mode")
+        # Root's workspace pass, the one program a deployment runs too (instance_workspace_owner.py, ADR 0268): the group gets back what
+        # the owner has, and `agent` gets each entry that `orbit` owns, so a copy of an older seed gets its one owner here.
+        # A copy of an older seed gives every entry away, `vendor` and `node_modules` too: it has the processes phase's whole time.
+        if run(["python3", "-I", "-c", c["workspace_owner"], ws, "1000", "2750"], timeout=120).stdout.strip():
+            changes.append("workspace-rights")
         own = {x["name"] for x in c["processes"]}
         own_ids = {str(x["id"]) for x in c["processes"]}
         removed_units = False

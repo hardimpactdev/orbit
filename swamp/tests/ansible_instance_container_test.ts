@@ -99,6 +99,7 @@ function fixture() {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
+  Deno.copyFileSync(new URL("instance_workspace_owner.py", root), `${folder}/instance_workspace_owner.py`);
   // The power helper that resumes a Frozen container and discards a Stopped one's plan (_support/power_helper.ts).
   installPowerHelper(folder, folder);
   // The composed proxy environment goes into the container through instance_node_services.py `proxy`; the fake keeps its value.
@@ -1832,6 +1833,10 @@ Deno.test({
       assertEquals(f.workspace("status", "--porcelain", "--untracked-files=all"), "");
       Object.assign(f.container, { environment_file: "/srv/workspace/.env" });
       f.write();
+      // `agent`, the workspace's owner, runs every call of the first build in the workspace: `git init`, Git and the `.env` exclude
+      // program (ADR 0268).
+      const calls = () => f.state().workspace_calls as string[];
+      assertEquals([...new Set(calls())].sort(), ["agent git", "agent python3", "agent test"]);
 
       // An install as `orbit` asks for 0755 folders and 0644 files, as Bun does in node_modules.
       Deno.mkdirSync(`${workspace}/node_modules/react`, { recursive: true, mode: 0o755 });
@@ -1849,10 +1854,13 @@ Deno.test({
       // A later install as `agent` leaves 0755 folders again; the next deployment's checkout opens them before its steps run.
       Deno.mkdirSync(`${workspace}/node_modules/.vite`, { mode: 0o755 });
       Deno.chmodSync(`${workspace}/node_modules/.vite`, 0o755);
+      const beforeCheckout = calls().length;
       assert(f.run("fetch").ok);
       const checkout = f.run("checkout");
       assert(checkout.ok, checkout.output);
       assertEquals(mode("node_modules/.vite"), 0o775);
+      // The checkout's Git calls, the repack and its clean-up run as `agent` too; root's pass runs outside the workspace's cwd.
+      assertEquals([...new Set(calls().slice(beforeCheckout))].sort(), ["agent find", "agent git"]);
     } finally {
       f.cleanup();
     }

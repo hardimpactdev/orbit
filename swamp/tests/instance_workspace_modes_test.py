@@ -1,12 +1,16 @@
-"""The container phase's group mode pass and its Git calls in a live workspace (swamp/ansible/tasks/instance-container-phase.yml).
+"""The container phase's workspace pass and its Git calls in a live workspace (swamp/ansible/tasks/instance-container-phase.yml).
 
 On 2026-11-14 the checkout of a release refresh failed: the fetch of the new commit started Git's automatic maintenance in the
 background, the repack removed pack files while `find … -exec chmod g+rwX {} +` ran over the workspace, and chmod's "No such file or
 directory" failed the phase. These cases run the shipped pass and the shipped Git options on a scratch repository.
+
+On 2026-11-16 files that deploy steps made as `orbit` in a default reached its copies, where the agent, as `agent`, could not change
+their modes or times: the pass now also gives each `orbit` entry to `agent` (ADR 0268).
 """
 
 import os
 import re
+import socket
 import stat
 import subprocess
 import sys
@@ -18,7 +22,10 @@ import yaml
 
 PHASE = Path(__file__).resolve().parents[1] / 'ansible/tasks/instance-container-phase.yml'
 TASKS = yaml.safe_load(PHASE.read_text())
-PROGRAM = next(task for task in TASKS if task.get('name') == 'Keep the workspace writable for its group')['vars']['workspace_modes_program']
+PASS = next(task for task in TASKS if task.get('name') == 'Keep the workspace writable for its group')
+PROGRAM = (PHASE.parents[1] / 'instance_workspace_owner.py').read_text()
+# A uid that owns no fixture file: the pass then changes modes only.
+NOBODY = '4242424'
 # The Git options of every Orbit Git call in the workspace: the quoted words after 'git' in `in_workspace`.
 IN_WORKSPACE = next(task for task in TASKS if task.get('name') == 'Name the container commands')['ansible.builtin.set_fact']['in_workspace']
 GIT_OPTIONS = re.findall(r"'([^']*)'", IN_WORKSPACE.split("'git',", 1)[1])
@@ -48,6 +55,21 @@ def _locked_fchmod(fd, mode):
     return _fchmod(fd, mode)
 import subprocess
 os.open, os.fchmod = _vanishing_open, _locked_fchmod
+# With CHOWN_LOG, an owner change is written to that file instead of made, as a test user may not give a file away: `fd <path> <uid>`
+# for a change through an open entry, `entry <path> <uid>` for the owner of a link or a socket itself.
+_fchown, _chown, _log = os.fchown, os.chown, os.environ.get('CHOWN_LOG', '')
+def _recorded_fchown(fd, uid, gid):
+    if not _log:
+        return _fchown(fd, uid, gid)
+    with open(_log, 'a') as stream:
+        stream.write(f"fd {os.readlink(f'/proc/self/fd/{fd}')} {uid}\\n")
+def _recorded_chown(path, uid, gid, *, dir_fd=None, follow_symlinks=True):
+    if not _log:
+        return _chown(path, uid, gid, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+    target = os.path.join(os.readlink(f'/proc/self/fd/{dir_fd}'), path) if dir_fd is not None else path
+    with open(_log, 'a') as stream:
+        stream.write(f"{'path' if follow_symlinks else 'entry'} {target} {uid}\\n")
+os.fchown, os.chown = _recorded_fchown, _recorded_chown
 '''
 
 
@@ -70,9 +92,92 @@ class WorkspaceModesTest(unittest.TestCase):
             os.chmod(self.workspace / path, 0o644)
         os.chmod(self.workspace / 'run.sh', 0o744)
 
-    def run_pass(self, **environment):
-        return subprocess.run([sys.executable, '-I', '-c', INJECT + PROGRAM, str(self.workspace)], check=False, capture_output=True, text=True,
-                              env={**os.environ, 'VANISH': '', 'LOCKED': '', **environment})
+    def run_pass(self, from_uid=NOBODY, **environment):
+        return subprocess.run([sys.executable, '-I', '-c', INJECT + PROGRAM, str(self.workspace), str(from_uid), '2750'], check=False,
+                              capture_output=True, text=True, env={**os.environ, 'VANISH': '', 'LOCKED': '', 'CHOWN_LOG': '', **environment})
+
+    def test_the_phase_runs_the_shipped_program_as_root_giving_orbit_entries_to_agent(self):
+        self.assertEqual(PASS['when'], "phase in ['checkout', 'processes', 'proof_checkout']")
+        self.assertEqual(re.sub(r'\s+', ' ', PASS['ansible.builtin.command']['argv']),
+                         "{{ as_root + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_workspace_owner.py'),"
+                         " container.workspace, '1000', '2750'] }}")
+
+    def test_entries_of_the_other_user_become_agents_and_a_link_is_changed_itself_never_its_target(self):
+        # The test user stands for `orbit`: it owns every fixture entry. Outside the workspace, a file and a folder that links point at.
+        outside, outside_folder = self.folder / 'outside', self.folder / 'outside-folder'
+        outside.write_text('x')
+        outside_folder.mkdir()
+        (self.workspace / 'storage').mkdir()
+        (self.workspace / 'storage/view.php').write_text('x')
+        for path in ['.', '.git', '.git/objects', 'node_modules', 'node_modules/react', '.git/objects/pack', 'storage']:
+            os.chmod(self.workspace / path, 0o2770)
+        for path in ['node_modules/react/index.js', '.git/objects/pack/pack-1.pack', '.git/objects/pack/.tmp-1-pack-2.pack', 'storage/view.php']:
+            os.chmod(self.workspace / path, 0o660)
+        os.chmod(self.workspace / 'run.sh', 0o770)
+        (self.workspace / 'storage/link').symlink_to(outside)
+        (self.workspace / 'folder-link').symlink_to(outside_folder)
+        log = self.folder / 'chown.log'
+        done = self.run_pass(os.getuid(), CHOWN_LOG=str(log))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        changes = sorted(log.read_text().splitlines())
+        # Every entry, the workspace itself, its folders and files, through the entry the pass opened without following a link.
+        entries = ['.', '.git', '.git/objects', '.git/objects/pack', '.git/objects/pack/.tmp-1-pack-2.pack', '.git/objects/pack/pack-1.pack',
+                   'node_modules', 'node_modules/react', 'node_modules/react/index.js', 'run.sh', 'storage', 'storage/view.php']
+        self.assertEqual(changes, sorted([f'fd {(self.workspace / entry).resolve()} 2750' for entry in entries]
+                                         + [f'entry {self.workspace / "folder-link"} 2750', f'entry {self.workspace / "storage/link"} 2750']))
+        # No change reached a link's target.
+        self.assertFalse(any(str(outside) in line for line in changes))
+        self.assertNotIn(str(outside), done.stdout)
+        # The modes were already right: only the owners changed, and each changed entry is named.
+        self.assertEqual(len(done.stdout.splitlines()), len(entries) + 2)
+        # An entry another user owns, here `agent` itself, keeps its owner.
+        log.unlink()
+        self.assertEqual(self.run_pass(NOBODY, CHOWN_LOG=str(log)).stdout, '')
+        self.assertFalse(log.exists())
+
+    def test_an_orbit_file_hard_linked_from_outside_keeps_its_owner(self):
+        # A hard link in the workspace to a file outside it: giving the inode away would give away the outside name too.
+        outside = self.folder / 'outside'
+        outside.write_text('x')
+        os.chmod(outside, 0o600)
+        os.link(outside, self.workspace / 'hard')
+        log = self.folder / 'chown.log'
+        done = self.run_pass(os.getuid(), CHOWN_LOG=str(log))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        changes = log.read_text().splitlines()
+        self.assertFalse(any(line.endswith(f'/hard 2750') or str(outside) in line for line in changes), changes)
+        # Other entries are still given away, and the mode follows the group rule as before.
+        self.assertIn(f'fd {(self.workspace / "run.sh").resolve()} 2750', changes)
+        self.assertEqual(mode(outside), 0o660)
+
+    def test_a_given_file_loses_setuid_and_setgid_and_a_socket_gets_its_owner_without_being_opened(self):
+        # `orbit` must never make a program that runs as `agent`; a socket of an `orbit` Process cannot be opened (ENXIO).
+        program = self.workspace / 'program'
+        program.write_text('x')
+        os.chmod(program, 0o6750)
+        listener = socket.socket(socket.AF_UNIX)
+        self.addCleanup(listener.close)
+        listener.bind(str(self.workspace / 'app.sock'))
+        log = self.folder / 'chown.log'
+        done = self.run_pass(os.getuid(), CHOWN_LOG=str(log))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(mode(program), 0o770)
+        changes = log.read_text().splitlines()
+        self.assertIn(f'fd {program.resolve()} 2750', changes)
+        self.assertIn(f'entry {self.workspace / "app.sock"} 2750', changes)
+        # A file that stays its owner's keeps its bits.
+        os.chmod(program, 0o4770)
+        self.assertEqual(self.run_pass().returncode, 0)
+        self.assertEqual(mode(program), 0o4770)
+
+    def test_a_pass_that_changes_many_entries_prints_only_their_count(self):
+        for index in range(25):
+            (self.workspace / f'view-{index}.php').write_text('x')
+            os.chmod(self.workspace / f'view-{index}.php', 0o640)
+        done = self.run_pass()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        # The 25 files, and the 10 entries of the fixture that lack the group bits.
+        self.assertEqual(done.stdout, '35 entries changed\n')
 
     def test_entries_that_vanish_during_the_pass_are_skipped_and_the_rest_gets_the_group_bits(self):
         done = self.run_pass(VANISH='pack-1.pack,.tmp-1-pack-2.pack,react')
@@ -156,7 +261,7 @@ class WorkspaceGitMaintenanceTest(unittest.TestCase):
         self.git(folder, 'init', '--quiet', '--shared=group', '--initial-branch', 'main', str(workspace))
         packs = workspace / '.git/objects/pack'
         self.assertEqual(REPACK_ARGS, ['repack', '-d', '-q', '--geometric=2'])
-        self.assertIn("as_orbit + ['timeout', '30'] + in_workspace[in_workspace.index('git'):]", REPACK_ARGV)
+        self.assertIn("as_owner + ['timeout', '30'] + in_workspace[in_workspace.index('git'):]", REPACK_ARGV)
         counts = []
         for index in range(40):
             # Each deployment's bundle adds files of its own, so each fetch adds one pack.

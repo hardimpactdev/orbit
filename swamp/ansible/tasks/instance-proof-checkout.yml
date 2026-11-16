@@ -1,14 +1,14 @@
 ---
-# The phase `proof_checkout` of a proof run in a copy (docs/cli/proof/run.mmd, "Bring in the commit"): as `orbit` in the copy, fetch the
-# commit under proof by its SHA from the public repository through the copy's own egress (the environment of the deploy commands, with
-# its proxy), and check it out detached. The fetch has 60 s
+# The phase `proof_checkout` of a proof run in a copy (docs/cli/proof/run.mmd, "Bring in the commit"): as `agent`, the workspace's
+# owner, in the copy, fetch the commit under proof by its SHA from the public repository through the copy's own egress (the
+# environment of the deploy commands, with its proxy), and check it out detached. The fetch has 60 s
 # and is not retried; a failed one fails the phase by name. No credential is used or written: the repository is public. The deploy
 # steps whose inputs changed since the seed run next, in the workflow ("Decide which deploy steps run" in instance-container-phase.yml
-# names the others). Input: instance-container-phase.yml (`in_workspace`, `as_orbit`) and the run's intent (`commit`, `repository`).
+# names the others). Input: instance-container-phase.yml (`in_workspace`, `as_owner`) and the run's intent (`commit`, `repository`).
 - name: Fetch the commit under proof
   ansible.builtin.command:
     argv: >-
-      {{ as_orbit + ['/usr/bin/env', '-i'] + container.environment + ['GIT_TERMINAL_PROMPT=0', 'timeout', '60'] + in_workspace[in_workspace.index('git'):]
+      {{ as_owner + ['/usr/bin/env', '-i'] + container.environment + ['GIT_TERMINAL_PROMPT=0', 'timeout', '60'] + in_workspace[in_workspace.index('git'):]
          + ['-c', 'credential.helper=', '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always', '-c', 'http.followRedirects=false',
             'fetch', '--quiet', '--no-tags', '--', intent.repository, intent.commit] }}
     stdin: ''

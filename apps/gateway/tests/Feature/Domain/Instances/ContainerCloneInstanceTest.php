@@ -480,6 +480,7 @@ it('frames the release scripts in one single-line launch copy beside the clone c
             'mail' => file_get_contents($swamp.'/ansible/instance_mail.py'),
             'bridge' => file_get_contents($swamp.'/ansible/instance_bridge.py'),
             'node' => file_get_contents($swamp.'/ansible/instance_node_runtime.py'),
+            'workspace_owner' => file_get_contents($swamp.'/ansible/instance_workspace_owner.py'),
         ]);
 });
 

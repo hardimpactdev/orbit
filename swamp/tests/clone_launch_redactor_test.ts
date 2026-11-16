@@ -16,7 +16,8 @@ const stage = {
     container: { instance_id: 7, clone: { source: "instance-1" } }, guest: read("scripts/instance_clone_guest.py"),
     network: read("ansible/instance_network.py"), account: "orbit",
     bundle: { node_services: read("ansible/instance_node_services.py"), machine_name: read("ansible/instance_machine_name.py"),
-        mail: read("ansible/instance_mail.py"), bridge: read("ansible/instance_bridge.py"), node: read("ansible/instance_node_runtime.py") },
+        mail: read("ansible/instance_mail.py"), bridge: read("ansible/instance_bridge.py"), node: read("ansible/instance_node_runtime.py"),
+        workspace_owner: read("ansible/instance_workspace_owner.py") },
 };
 // The clone copy's text in its real shape (InstanceContainer::modelEnvironment), with fixture values of the real length.
 const token = "ghs_" + "T".repeat(36);
