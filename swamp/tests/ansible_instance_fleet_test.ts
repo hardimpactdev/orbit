@@ -514,7 +514,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a refresh applies the checkout, converges the three Node bases, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
+  name: "a refresh applies the checkout, converges the three Nodes one at a time, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
   ignore: !hasAnsible,
   fn() {
     // Below 2,000,000: nested-app-dev keeps the base scope. The host's own order is the window's first refresh case.
