@@ -8,6 +8,7 @@ use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\NativeCaddyPublicationInput;
+use App\Domain\Routes\NativeClusterRouterIntent;
 use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\LifecycleStatus;
@@ -19,6 +20,7 @@ use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Route;
 use App\Support\ValidatedData;
 
 /** Reusable public contract for node-role-remove; role policy stays in the canonical capture. */
@@ -168,6 +170,19 @@ final readonly class NativeNodeRoleRemovalInput
             }
         }
         $commands = [];
+        if ($assignment->role === RoleName::Router) {
+            // Only a stale row is removable (StaleRouterAssignment): it serves no Router site and no DNS answer, so the
+            // withdrawal is its LAN rules and the Router certificates of this Node. Caddy stays; the publication rebuilds it.
+            foreach (app(NodeFirewallRuleCatalog::class)->forRole($node, RoleName::Router) as $rule) {
+                $firewall[] = ['ssh' => $ssh, 'input' => ['argv' => $rule->removalArguments()]];
+            }
+            $routes = Route::query()->where('cluster_id', $assignment->cluster_id)->orderBy('id')->get();
+            $paths = array_map(static fn (string $scope): string => '/etc/caddy/orbit-certificates/'.$scope, NativeClusterRouterIntent::certificateScopes($routes));
+            if ($paths !== []) {
+                $commands[] = ['ssh' => $ssh, 'command' => 'timeout 60 rm -rf -- '.implode(' ', $paths),
+                    'only_if' => 'test -d /etc/caddy/orbit-certificates'];
+            }
+        }
         if ($assignment->role === RoleName::Gateway) {
             $files[] = ['ssh' => $ssh, 'path' => '/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf'];
             $reloads[] = ['ssh' => $ssh];

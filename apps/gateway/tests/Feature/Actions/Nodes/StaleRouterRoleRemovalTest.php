@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -15,6 +17,8 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Models\Project;
+use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\SwampNodeFixture;
@@ -83,6 +87,53 @@ it('admits the removal of a failed router row on a Node that is not the Cluster 
         ->and($stale->refresh()->status)->toBe(LifecycleStatus::Removing)
         ->and($active->refresh()->status)->toBe(LifecycleStatus::Active)
         ->and($dispatch->started)->toBe([$operation->id]);
+});
+
+it('withdraws the Router sites, certificates and LAN rules on that Node only', function (): void {
+    Http::preventStrayRequests();
+    staleRouterDispatch();
+    [$shark, , $active] = staleRouterCluster();
+    $project = Project::query()->create(['name' => 'bench', 'slug' => 'bench', 'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => 'main', 'root' => 'public']);
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $project->id, 'cluster_id' => $shark->cluster_id, 'provenance' => 'explicit',
+        'publication' => 'private', 'domain' => 'kept.bench.test', 'status' => 'pending']);
+    $dnsBefore = app(ClusterRouterTransition::class)->dnsRouters();
+
+    $intent = app(AdmitNodeRoleOperationAction::class)->remove($shark, RoleName::Router, force: true)->input['intent'];
+    $hosts = static fn (array $actions): array => array_values(array_unique(array_map(static fn (array $action): string => $action['ssh']['target']['host'], $actions)));
+    $comments = array_map(static fn (array $action): string => $action['input']['argv'][array_key_last($action['input']['argv'])], $intent['firewall']);
+
+    expect($comments)->toBe(['orbit:router-lan-https:'.$active->node_id, 'orbit:router-lan-dns-udp:'.$active->node_id, 'orbit:router-lan-dns-tcp:'.$active->node_id])
+        ->and($intent['firewall'][0]['input']['argv'])->toBe(['ufw', '--force', 'delete', 'allow', 'in', 'proto', 'tcp', 'from', '192.168.6.9', 'to', '192.168.6.13', 'port', '443',
+            'comment', 'orbit:router-lan-https:'.$active->node_id])
+        ->and($intent['commands'])->toHaveCount(1)
+        ->and($intent['commands'][0]['command'])->toBe("timeout 60 rm -rf -- /etc/caddy/orbit-certificates/route-{$route->id}-router /etc/caddy/orbit-certificates/route-{$route->id}-router-hostname-change")
+        ->and($hosts([...$intent['firewall'], ...$intent['commands']]))->toBe(['10.44.0.13'])
+        ->and(array_column($intent['publications'], 'node_id'))->toBe([$shark->id])
+        ->and(array_column(array_column($intent['publications'], 'after'), 'dns'))->toBe([null])
+        ->and($intent['stop_units'])->toBe([])
+        ->and($intent['remove_units'])->toBe([])
+        ->and($intent['stop_containers'])->toBe([])
+        ->and($intent['files'])->toBe([])
+        ->and($intent['directories'])->toBe([])
+        ->and($intent['certificates'])->toBe([])
+        ->and(app(ClusterRouterTransition::class)->dnsRouters())->toBe($dnsBefore)
+        ->and(app(ClusterRouterTransition::class)->secondRouters())->toBe([]);
+});
+
+it('deletes the router row once its removal run succeeds', function (): void {
+    Http::preventStrayRequests();
+    staleRouterDispatch();
+    [$shark, $stale, $active] = staleRouterCluster();
+    $operation = app(AdmitNodeRoleOperationAction::class)->remove($shark, RoleName::Router, force: true);
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'fixture-run']])->save();
+
+    app(NodeRoleRemovalProjection::class)->apply($operation, ['run_id' => 'fixture-run', 'status' => 'succeeded',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => ['Confirm role removal' => ['status' => 'succeeded']], 'summary' => ['failed_steps' => []]]]);
+
+    expect(NodeRole::query()->whereKey($stale->id)->exists())->toBeFalse()
+        ->and($active->refresh()->status)->toBe(LifecycleStatus::Active)
+        ->and(Cluster::query()->whereKey($shark->cluster_id)->exists())->toBeTrue();
 });
 
 it('refuses the active Router of the Cluster', function (): void {
