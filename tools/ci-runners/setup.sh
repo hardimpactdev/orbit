@@ -34,7 +34,7 @@ BUN_SHA256=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
 COMPOSER_VERSION=2.10.3
 COMPOSER_SHA256=7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
 REPO_URL=https://github.com/hardimpactdev
-# The labels every hardimpactdev shard runner carries. A ci-sabre-* container also gets `sabre`.
+# The labels every hardimpactdev shard runner carries. No runner carries a host label: all CI Nodes form one pool.
 LABELS=self-hosted,Linux,X64,hardimpact,orbit-shard
 # systemd 259 (Ubuntu 26.04) hangs at boot in (sd-mkuserns) without nesting: AppArmor denies PID 1 and udevd
 # signal/ptrace to container processes whose label is stacked (profile//&...). This lets the container signal its own
@@ -94,8 +94,8 @@ fi
 echo "deb [signed-by=$caddy_key] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
   > /etc/apt/sources.list.d/caddy-stable.list
 apt-get update -qq
-# actions/cache puts the compression method in the cache version: without zstd, every zstd entry from Sabre and
-# hosted runners misses.
+# actions/cache puts the compression method in the cache version: without zstd, every zstd entry from other runners
+# and hosted runners misses.
 apt-get install -y -qq --no-install-recommends --no-upgrade \
   git curl ca-certificates jq unzip zip rsync sqlite3 python3 python3-venv openssh-client socat netcat-openbsd bind9-dnsutils \
   acl attr wireguard-tools openssl sudo dbus-user-session caddy tar gzip xz-utils zstd libkrb5-3 zlib1g gpgv >/dev/null
@@ -257,8 +257,7 @@ SH
 }
 
 register() {
-  local name=$1 token=${2:-${ORBIT_RUNNER_TOKEN:-}} labels=$LABELS
-  case $name in ci-sabre-*) labels=$labels,sabre ;; esac
+  local name=$1 token=${2:-${ORBIT_RUNNER_TOKEN:-}}
   if ! in_ct "$name" test -f /home/runner/actions-runner/.runner; then
     [ -n "$token" ] || { echo 'register needs TOKEN or ORBIT_RUNNER_TOKEN' >&2; exit 2; }
     in_ct "$name" chown -R runner:runner /home/runner/actions-runner
@@ -270,7 +269,7 @@ register() {
     printf '%s\n' "$token" | incus exec "$name" --project "$PROJECT" --user "$uid" --group "$gid" \
       --env HOME=/home/runner --cwd /home/runner/actions-runner -- \
       sh -c 'IFS= read -r token; exec ./config.sh --unattended --url "$1" --token "$token" --name "$2" --labels "$3" --runnergroup Default --work /home/runner/work --replace' \
-      config "$REPO_URL" "$name" "$labels" >/dev/null
+      config "$REPO_URL" "$name" "$LABELS" >/dev/null
   fi
   in_ct "$name" bash -c "cd /home/runner/actions-runner && { [ -f .service ] || ./svc.sh install runner >/dev/null; } && ./svc.sh start >/dev/null && systemctl is-active \$(cat .service)"
 }

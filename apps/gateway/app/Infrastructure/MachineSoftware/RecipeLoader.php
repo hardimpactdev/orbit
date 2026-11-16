@@ -208,8 +208,8 @@ final readonly class RecipeLoader
     }
 
     /**
-     * The static PHP builds of the runtime folder (docs/reference/compute-drivers.md#static-php-build). Each build takes its PHP version's extensions, less the ones that
-     * `without` names. `bin/static-php-build verify-pins` alone checks that `build` and `url` name the current definition;
+     * The static PHP builds of the runtime folder (docs/reference/compute-drivers.md#static-php-build). Each build links its PHP version's extensions, less the ones that
+     * `without` names and the `cli_extensions`, which it builds shared for the PHP CLI only. `bin/static-php-build verify-pins` alone checks that `build` and `url` name the current definition;
      * this reads their shape. A null `sha256` is a build that main has not published yet.
      *
      * @param  array<string, array{packages: list<string>, extensions: list<string>}>  $php
@@ -217,11 +217,13 @@ final readonly class RecipeLoader
      */
     private function staticPhpBuilds(mixed $value, array $php): array
     {
-        $raw = $this->object($value, 'instances.php', ['static_php_cli', 'frankenphp', 'without', 'versions']);
+        $raw = $this->object($value, 'instances.php', ['static_php_cli', 'frankenphp', 'without', 'cli_extensions', 'versions']);
         $this->require(preg_match('/\A[0-9a-f]{40}\z/', $this->text($raw->static_php_cli, 'instances.php.static_php_cli')) === 1, 'instances.php.static_php_cli: expected a full static-php-cli commit SHA.');
         $frankenphp = $this->text($raw->frankenphp, 'instances.php.frankenphp');
         $this->require(preg_match('/\A[0-9]+\.[0-9]+\.[0-9]+\z/', $frankenphp) === 1, 'instances.php.frankenphp: expected an exact FrankenPHP release, such as 1.13.5.');
         $without = $this->strings($raw->without, 'instances.php.without');
+        $cliExtensions = $this->strings($raw->cli_extensions, 'instances.php.cli_extensions');
+        $this->require(array_intersect($cliExtensions, $without) === [], 'instances.php.cli_extensions: ['.implode(', ', array_intersect($cliExtensions, $without)).'] are also in instances.php.without.');
         $builds = [];
         foreach (get_object_vars($this->object($raw->versions, 'instances.php.versions')) as $version => $rawBuild) {
             $field = "instances.php.versions.{$version}";
@@ -236,8 +238,9 @@ final readonly class RecipeLoader
             $this->require($pin->sha256 === null || (is_string($pin->sha256) && preg_match('/\A[0-9a-f]{64}\z/', $pin->sha256) === 1), "{$field}.sha256: expected the published SHA-256, or null before publication.");
             $extensions = $php[$version]['extensions'];
             $this->require(array_diff($without, $extensions) === [], 'instances.php.without: ['.implode(', ', array_diff($without, $extensions))."] are not PHP {$version} extensions.");
-            $builds[(string) $version] = new StaticPhpBuild((string) $version, $phpVersion, $frankenphp, array_values(array_diff($extensions, $without)), $build, $url,
-                $pin->sha256 === null ? null : new ArtifactPin($url, 'sha256', $pin->sha256, $phpVersion));
+            $this->require(array_diff($cliExtensions, $extensions) === [], 'instances.php.cli_extensions: ['.implode(', ', array_diff($cliExtensions, $extensions))."] are not PHP {$version} extensions.");
+            $builds[(string) $version] = new StaticPhpBuild((string) $version, $phpVersion, $frankenphp, array_values(array_diff($extensions, $without, $cliExtensions)), $cliExtensions,
+                $build, $url, $pin->sha256 === null ? null : new ArtifactPin($url, 'sha256', $pin->sha256, $phpVersion));
         }
         $this->require($builds !== [], 'instances.php.versions: expected at least one PHP version.');
 

@@ -14,7 +14,7 @@ use function Pest\Laravel\withServerVariables;
 
 uses(LazilyRefreshDatabase::class);
 
-const UnchangedHost = ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 1, 'ci_places' => 1]];
+const UnchangedHost = ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 1]];
 
 function unchangedNode(): Node
 {

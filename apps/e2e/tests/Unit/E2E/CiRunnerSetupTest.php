@@ -47,21 +47,21 @@ function ciRunnerConfigCall(array $calls): string
     return $configs[0];
 }
 
-it('registers each shard runner with the organization labels, and Sabre containers with sabre too', function (string $name, string $labels): void {
+it('registers every shard runner with the one shared label set and no host label', function (string $name): void {
     ['process' => $process, 'calls' => $calls, 'stdin' => $stdin] = registerCiRunner($name);
 
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
     $config = ciRunnerConfigCall($calls);
-    expect($config)->toEndWith("config https://github.com/hardimpactdev {$name} {$labels}")
+    expect($config)->toEndWith("config https://github.com/hardimpactdev {$name} self-hosted,Linux,X64,hardimpact,orbit-shard")
         ->and($stdin)->toBe("registration-token\n");
     // The token reaches config.sh on stdin, never in the argv of incus.
     foreach ($calls as $call) {
         expect($call)->not->toContain('registration-token');
     }
 })->with([
-    'Sabre' => ['ci-sabre-3', 'self-hosted,Linux,X64,hardimpact,orbit-shard,sabre'],
-    'Shark' => ['ci-shark-4', 'self-hosted,Linux,X64,hardimpact,orbit-shard'],
-    'Beast' => ['ci-beast-1', 'self-hosted,Linux,X64,hardimpact,orbit-shard'],
+    'ci-sabre-3',
+    'ci-shark-4',
+    'ci-beast-1',
 ]);
 
 it('never reconfigures a registered runner, so its labels stay', function (): void {

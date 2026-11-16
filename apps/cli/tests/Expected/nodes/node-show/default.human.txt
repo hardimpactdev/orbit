@@ -39,6 +39,8 @@ Loading Node...
 │
 ├  Apps folder            —
 │
+├  CI places              —
+│
 ├  Access to              —
 │
 └  Accessible by          —

@@ -27,7 +27,7 @@ use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
-const ContainerHost = ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 1, 'ci_places' => 1]];
+const ContainerHost = ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 1]];
 
 /** A Node that may call the API about itself, with `$settings` stored. */
 function containerSettingsNode(string $name = 'beast', string $ip = '10.44.0.10', ?array $settings = null): Node
@@ -71,9 +71,10 @@ it('stores the containers member with its defaults, and a host without it keeps 
     $node = containerSettingsNode();
 
     containerSettingsPatch($node, ContainerHost)->assertOk()
-        ->assertJsonPath('data.settings.task_vms.containers', ['cidr' => '10.252.11.0/24', 'task_places' => 1, 'ci_places' => 1, 'project' => 'orbit-task-containers', 'network' => 'orbittaskc0']);
+        ->assertJsonPath('data.settings.task_vms.containers', ['cidr' => '10.252.11.0/24', 'task_places' => 1, 'project' => 'orbit-task-containers', 'network' => 'orbittaskc0']);
     $host = TaskVmHost::fromConfig([...$node->refresh()->settings['task_vms'], 'node_id' => $node->id], 0, Ipv4Subnet::from('10.44.0.0/24'), []);
     expect($host->containers?->project)->toBe('orbit-task-containers')->and($host->places(TaskVmRuntime::Container, false))->toBe(1)
+        ->and($host->places(TaskVmRuntime::Container, true))->toBe(0)
         ->and($host->places(TaskVmRuntime::Vm, false))->toBe(2)->and($host->bridges())->toBe(['10.252.10.0/24', '10.252.11.0/24']);
 
     $vmOnly = array_diff_key(ContainerHost, ['containers' => true]);
@@ -96,8 +97,8 @@ it('validates the containers member like the VM fields, apart from the host\'s V
     'the VPN subnet' => [[...ContainerHost['containers'], 'cidr' => '10.44.0.0/24'], 'containers.cidr must not overlap the VPN subnet'],
     'a public network' => [[...ContainerHost['containers'], 'cidr' => '8.8.8.0/24'], 'containers.cidr must be a private'],
     'an invalid bridge name' => [[...ContainerHost['containers'], 'network' => 'br0'], 'containers.network is invalid'],
-    'no task places' => [['cidr' => '10.252.11.0/24', 'ci_places' => 1], 'containers.task_places'],
-    'too many CI places' => [[...ContainerHost['containers'], 'ci_places' => 65], 'containers.ci_places'],
+    'no task places' => [['cidr' => '10.252.11.0/24'], 'containers.task_places'],
+    'CI places, which a CI Node\'s ci.places replace' => [[...ContainerHost['containers'], 'ci_places' => 1], 'containers must be an object'],
     'places as a string' => [[...ContainerHost['containers'], 'task_places' => '1'], 'containers.task_places'],
     'an unknown field' => [[...ContainerHost['containers'], 'image_alias' => 'base'], 'containers must be an object'],
 ]);
@@ -113,6 +114,8 @@ it('refuses an invalid containers member through the API and keeps the stored se
 
     containerSettingsPatch($node, [...ContainerHost, 'containers' => [...ContainerHost['containers'], 'network' => 'orbittask0']])
         ->assertStatus(422)->assertJsonPath('error.code', 'node.settings_invalid');
+    containerSettingsPatch($node, [...ContainerHost, 'containers' => [...ContainerHost['containers'], 'ci_places' => 1]])
+        ->assertStatus(422)->assertJsonPath('error.code', 'node.settings_invalid');
     expect($node->refresh()->settings)->toBe($stored);
 });
 
@@ -124,8 +127,8 @@ it('refuses a bridge of either runtime that overlaps a bridge of another host', 
     expect($node->refresh()->settings)->toBeNull();
 })->with([
     'my container bridge, their VM bridge' => [ContainerHost, ['cidr' => '10.252.11.0/24', 'task_places' => 1, 'ci_places' => 0]],
-    'my VM bridge, their container bridge' => [ContainerHost, ['cidr' => '10.252.20.0/24', 'task_places' => 1, 'ci_places' => 0, 'containers' => ['cidr' => '10.252.10.0/24', 'task_places' => 1, 'ci_places' => 0]]],
-    'both container bridges' => [ContainerHost, ['cidr' => '10.252.20.0/24', 'task_places' => 1, 'ci_places' => 0, 'containers' => ['cidr' => '10.252.11.0/25', 'task_places' => 1, 'ci_places' => 0]]],
+    'my VM bridge, their container bridge' => [ContainerHost, ['cidr' => '10.252.20.0/24', 'task_places' => 1, 'ci_places' => 0, 'containers' => ['cidr' => '10.252.10.0/24', 'task_places' => 1]]],
+    'both container bridges' => [ContainerHost, ['cidr' => '10.252.20.0/24', 'task_places' => 1, 'ci_places' => 0, 'containers' => ['cidr' => '10.252.11.0/25', 'task_places' => 1]]],
 ]);
 
 it('reads the container placement switch from the Gateway config, off by default', function (bool $on): void {
@@ -137,7 +140,7 @@ it('reads the container placement switch from the Gateway config, off by default
 })->with([true, false]);
 
 it('fails the task VM settings when stored container bridges of two hosts overlap', function (): void {
-    containerSettingsNode('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.252.20.0/24', 'task_places' => 1, 'ci_places' => 0, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 1, 'ci_places' => 0]]]);
+    containerSettingsNode('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.252.20.0/24', 'task_places' => 1, 'ci_places' => 0, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 1]]]);
     containerSettingsNode(settings: ['task_vms' => ContainerHost]);
 
     expect(fn () => TaskVmSettings::fromConfig())->toThrow(TaskVmException::class, 'task_vms host bridges must not overlap.');
@@ -177,8 +180,8 @@ it('lets the container places change while task containers live, and a live task
     $node = containerSettingsNode(settings: ['task_vms' => NodeTaskVmsData::validated(ContainerHost, Ipv4Subnet::from('10.44.0.0/24'))->toArray()]);
     liveContainer($node);
 
-    containerSettingsPatch($node, [...ContainerHost, 'containers' => [...ContainerHost['containers'], 'task_places' => 0, 'ci_places' => 3]])
-        ->assertOk()->assertJsonPath('data.settings.task_vms.containers.ci_places', 3);
+    containerSettingsPatch($node, [...ContainerHost, 'containers' => [...ContainerHost['containers'], 'task_places' => 3]])
+        ->assertOk()->assertJsonPath('data.settings.task_vms.containers.task_places', 3);
 
     TaskVm::query()->update(['runtime' => TaskVmRuntime::Vm]);
     $operation = containerSettingsWithdrawal($node->refresh(), array_diff_key(ContainerHost, ['containers' => true]));

@@ -122,6 +122,22 @@ Container PHP has two settings, the same in every container. The container phase
 
 The bridge comes from the [runtime folder](/reference/development-containers#shared-folders), so one update on the Node reaches every container. It records web requests only: under the CLI it returns at once. FrankenPHP serves in classic mode, where each request gets a fresh PHP; the bridge stays off in FrankenPHP's worker mode. An app turns the bridge off with `collect.enabled: false` in a `php-data-bridge.json` beside its `composer.json`.
 
+#### PCOV in the CLI only
+
+The PHP CLI of a development container loads PCOV, so Pest TIA and `pest --coverage` work there. The container phase, and the clone guest on clone, write the CLI-only file `/etc/orbit/php/php-cli.ini` with one line:
+
+```ini
+extension=/opt/orbit-runtime/current/php/<php-version>/modules/pcov.so
+```
+
+`<php-version>` is the Project's PHP version: the part whose `bin/php` the link `/usr/local/bin/php` points to. A Project without PHP gets no file, and the phase removes Orbit's file. The `pcov.so` comes from the same [static PHP build](/reference/compute-drivers#static-php-build) as the linked `php`.
+
+The Gateway renders the file into the container intent as `php_cli_ini`: one `extension=` line for each name in the recipe's `instances.php.cli_extensions`. So a new CLI-only extension needs no change in Ansible or the clone guest.
+
+The PHP CLI reads `php-<sapi>.ini` in its config path, `/etc/orbit/php`, and reads the `conf.d` scan directory as well. It reads `php.ini` only when it finds no `php-cli.ini`; Orbit writes no `php.ini` there. FrankenPHP's server has the SAPI name `frankenphp`, so it does not read `php-cli.ini`, and it never loads PCOV. `frankenphp php-cli` takes the SAPI name `cli`, so it reads `php-cli.ini` and loads PCOV, as `php` does. Only the server never loads PCOV. The settings of `99-orbit-runtime.ini` stay in `conf.d`, because both binaries need them. When the file changes in a running container, the phase restarts the running `orbit-*` units, as for the shared settings: a queue worker is a PHP CLI too.
+
+`pcov.enabled` stays at PCOV's default, on, so Pest TIA needs no flag. This costs test time for Projects that use no coverage. A production container gets no `php-cli.ini`. [ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov) holds the decision.
+
 ## Production runtime
 
 Each production Instance that serves PHP has a dedicated service for its Unix user. Production users on one Node share the installed PHP packages, but not a PHP-FPM master.
@@ -206,7 +222,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### PCOV only where checks run
 
-PCOV is part of PHPStan's cache key, so the machines that share CI caches must load it: `app-dev` Nodes, task VMs, and CI. Production Nodes and the Gateway run no checks, so their CLI does not pay its overhead.
+PCOV is part of PHPStan's cache key, so the machines that share CI caches must load it: `app-dev` Nodes, task VMs, and CI. A development container's PHP CLI loads it too, for Pest TIA and coverage; its FrankenPHP server does not. Production Nodes and the Gateway run no checks, so their CLI does not pay its overhead.
 
 ### Sury packages, not a custom PHP build
 

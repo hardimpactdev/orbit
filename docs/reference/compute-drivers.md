@@ -91,7 +91,7 @@ A part that pins its own artifact may leave `bin` out: it gives the folder files
 
 | Folder | Parts |
 | --- | --- |
-| `runtime` | `node`, `bun` and `deno`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `php-data-bridge`, with no program; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>` |
+| `runtime` | `node`, `bun` and `deno`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `php-data-bridge`, with no program; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>`, with `bin/` and `modules/` |
 | `agent` | `t3`, the release tarball; `claude-code` and `codex`, the npm packages of the Linux x64 builds |
 
 #### The Vite+ home
@@ -320,7 +320,7 @@ The standalone recipe CLI uses `python3`, `gpg` and `gpgv`. Run `php artisan orb
 
 ### Static PHP build
 
-The runtime folder of a [development container](/reference/development-containers#php) holds a static PHP CLI and FrankenPHP for each PHP version. Both come from one [static-php-cli](https://static-php.dev) build, so web requests and commands run the same PHP with the same extensions. No published release ships both binaries from one build, so Orbit builds them.
+The runtime folder of a [development container](/reference/development-containers#php) holds a static PHP CLI and FrankenPHP for each PHP version. Both come from one [static-php-cli](https://static-php.dev) build, so web requests and commands run the same PHP with the same static extensions. The same build gives the CLI-only extensions as shared files, which only the PHP CLI loads. No published release ships both binaries from one build, so Orbit builds them. [ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov) moves the build from musl to glibc and adds the CLI-only PCOV.
 
 The recipe's `instances.php` section defines the builds:
 
@@ -328,17 +328,20 @@ The recipe's `instances.php` section defines the builds:
 | --- | --- |
 | `static_php_cli` | The full static-php-cli commit that runs the build, on its `v3` line, which FrankenPHP's own static build uses |
 | `frankenphp` | The exact FrankenPHP release, such as `1.13.5` |
-| `without` | Extensions of the [PHP build](#php-build) that the static build leaves out: `ffi` and `pcov`. A fully static musl binary cannot load shared code, and static-php-cli builds `pcov` only as a shared extension |
+| `without` | Extensions of the [PHP build](#php-build) that the static build leaves out: `ffi` |
+| `cli_extensions` | Extensions of the PHP build that the build makes shared, for the PHP CLI only: `pcov` |
 | `versions.<X.Y>.php_version` | The exact PHP release, such as `8.5.12`. It can differ from the Node pin's patch release for a while, because a new release needs a new build |
-| `versions.<X.Y>.build` | The build id: a SHA-256 over the PHP release, FrankenPHP, the static-php-cli commit, the extension list, `tools/static-php/craft.yml` and `bin/static-php-build` |
+| `versions.<X.Y>.build` | The build id: a SHA-256 over the PHP release, FrankenPHP, the static-php-cli commit, the static and CLI-only extension lists, `tools/static-php/craft.yml` and `bin/static-php-build` |
 | `versions.<X.Y>.url` | The release asset `static-php-<php_version>-<build id prefix>-linux-x86_64.tar.gz` under the `static-php-<php_version>-<build id prefix>` release |
 | `versions.<X.Y>.sha256` | The asset's SHA-256, or `null` until the build is published |
 
 static-php-cli resolves the sources of the libraries and PECL extensions when it builds, so two builds of one id can differ. The archive's `sources.json`, static-php-cli's download record, names each source's version and hash. The published SHA-256 is what fixes the bytes a Node installs.
 
-A build's extensions are its PHP version's `extensions` less `without`, so the Node build and the static build share one list. Today that is every extension Orbit's Laravel projects require, from their `composer.json` files and locks: `intl`, `exif`, `sodium`, `pcntl`, `sockets` and the rest, with `pdo_pgsql`, `pdo_mysql`, `pdo_sqlite`, `redis`, `igbinary`, `imagick`, `gd` and `opentelemetry`. Both binaries load OpenTelemetry, because they share one build; on a Node only PHP-FPM loads it. The section is not part of the [recipe identity](#recipe-identity): no Node profile or task image holds the static build.
+A build's static extensions are its PHP version's `extensions` less `without` and less `cli_extensions`, so the Node build and the static build share one list. Today that is every extension Orbit's Laravel projects require, from their `composer.json` files and locks: `intl`, `exif`, `sodium`, `pcntl`, `sockets` and the rest, with `pdo_pgsql`, `pdo_mysql`, `pdo_sqlite`, `redis`, `igbinary`, `imagick`, `gd` and `opentelemetry`. Both binaries load OpenTelemetry, because they share one build; on a Node only PHP-FPM loads it. The section is not part of the [recipe identity](#recipe-identity): no Node profile or task image holds the static build.
 
-`tools/static-php/craft.yml` is the static-php-cli build definition. It builds the `cli` and `frankenphp` SAPIs together with ZTS, as a fully static musl binary for the baseline x86_64 CPU, without static-php-cli's suggested extensions. Its libraries give `gd` its image formats and `curl` HTTP/2 and HTTP/3. PHP reads its configuration from `/etc/orbit/php` and `/etc/orbit/php/conf.d`.
+static-php-cli builds `pcov` only as a shared extension, so it is a CLI-only extension. The archive holds each CLI-only extension as `modules/<name>.so`. Only the PHP CLI loads it, through [`php-cli.ini`](/reference/php-runtime#pcov-in-the-cli-only).
+
+`tools/static-php/craft.yml` is the static-php-cli build definition. It builds the `cli` and `frankenphp` SAPIs together with ZTS, for the baseline x86_64 CPU, without static-php-cli's suggested extensions. Each binary links everything statically except glibc. `bin/static-php-build` sets static-php-cli's target `SPC_TARGET=x86_64-linux-gnu.2.17`: its Zig toolchain links against glibc 2.17, which is older than Ubuntu 26.04's, so the binaries run in every container. It builds the `cli_extensions` as shared extensions. Its libraries give `gd` its image formats and `curl` HTTP/2 and HTTP/3. PHP reads its configuration from `/etc/orbit/php` and `/etc/orbit/php/conf.d`.
 
 `bin/static-php-build` runs the build:
 
@@ -346,16 +349,29 @@ A build's extensions are its PHP version's `extensions` less `without`, so the N
 | --- | --- |
 | `definition` | Prints each version's build id, release tag, asset and URL |
 | `verify-pins` | Fails when a recorded `build` or `url` is not the definition's |
-| `build --version X.Y --output DIR` | Fetches the pinned static-php-cli and FrankenPHP sources, runs `spc craft`, and packs `bin/php`, `bin/frankenphp`, `build.json` and `sources.json` with a `SHA256SUMS` file |
-| `check --version X.Y --bin DIR` | Fails unless both binaries report the pinned PHP release and load exactly the build's extensions |
+| `build --version X.Y --output DIR` | Fetches the pinned static-php-cli and FrankenPHP sources, runs `spc craft`, and packs `bin/php`, `bin/frankenphp`, `modules/pcov.so` (one `modules/<name>.so` for each of the `cli_extensions`), `build.json` and `sources.json` with a `SHA256SUMS` file |
+| `check --version X.Y --bin DIR` | Fails unless both binaries report the pinned PHP release and load exactly the build's static extensions, and the CLI, given the `cli_extensions`, loads exactly the static extensions and those |
 
-The check is the Ansible module `orbit_static_php`. The [runtime folder](/reference/development-containers#shared-folders) holds each published build as the part `php/<version>`, unpacked to `php/<version>/bin`, and its install runs the check on each one before the folder version is whole. A build whose `sha256` is still `null` is not in the folder. FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with `php -n`. FrankenPHP's own SAPI module, such as `frankenphp-cli`, is not an extension, so the check leaves it out for FrankenPHP only.
+The check is the Ansible module `orbit_static_php`. The [runtime folder](/reference/development-containers#shared-folders) holds each published build as the part `php/<version>`, unpacked to `php/<version>/bin` and `php/<version>/modules`, and its install runs the check on each one before the folder version is whole. A build whose `sha256` is still `null` is not in the folder.
+
+FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with `php -n`: both must load exactly the static extensions. The CLI then runs the probe with `php -n` and `-d extension=<part>/modules/<name>.so` for each of the `cli_extensions`, and must load exactly the static extensions and those. FrankenPHP's own SAPI module, such as `frankenphp-cli`, is not an extension, so the check leaves it out for FrankenPHP only.
+
+`frankenphp php-cli` takes the SAPI name `cli`, so it reads `php-cli.ini` and the `conf.d` scan directory, and it has no `-n`. The probe prints the ini files that PHP read, and the check fails when one binary read any. So the check runs only where the build's config path, `/etc/orbit/php`, does not exist: on a Node and on the CI runner, not in a container. The probe runs in an empty folder, because `frankenphp php-cli` also looks for its ini file in the working folder. Output that PHP prints at startup, such as a warning that it cannot load an extension, also fails the check.
 
 #### The static PHP workflow
 
 The `Static PHP build` workflow runs when the recipe, the build files or the workflow change. It requires every pin to name its definition. Compilation exceeds the [CI budget](/reference/implementation-loop#ci-budget), so a pull request only validates the pins. On main, a push or a manual run builds the versions whose release does not exist yet. The proof job keeps each archive it proved in the Actions cache under its build id, so a change to the proof alone does not build again.
 
-A proof job unpacks the archive, checks its SHA-256, refuses a binary that is not fully static, and runs the extension check. It then runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan and Pest with `php -d memory_limit=1G vendor/bin/pest`, and serves the Gateway's `/up` with `frankenphp php-server`.
+A proof job unpacks the archive, checks its SHA-256 and runs the extension check. Then `tools/static-php/prove.py` proves the build. It runs from the run's own commit, so a manual run from main uses main's copy, not the built branch's. A branch's change to its own proof is never what proves it. The branch's own code still runs in the job, so run only a reviewed ref.
+
+The proof has four parts:
+
+- **Linkage.** `php`, `frankenphp` and each CLI-only extension in `modules/` may need only glibc's own libraries, no newer than Ubuntu 26.04's glibc. A fully static binary also passes.
+- **CLI only.** The proof writes the `php-cli.ini` that a container has. It holds one `extension=` line for each CLI-only extension in the archive's `build.json`. `php -m` with it must list each one.
+- **Not in FrankenPHP.** `frankenphp php-server` serves a page with the same configuration. The page must run under the `frankenphp` SAPI and load no CLI-only extension.
+- **Coverage.** After the Gateway install, Pest runs with that `php-cli.ini`. It runs `tests/Unit/Infrastructure/MachineSoftware` with a clover report. The report must cover lines of `StaticPhpBuild.php`.
+
+The job also runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan, and serves the Gateway's `/up` with `frankenphp php-server`. A build whose `build.json` names no `cli_extensions`, such as a fully static musl build, fails the proof.
 
 On main, from a push or a manual run, the publish job creates the release with the archive and `SHA256SUMS`. It never replaces a release: a published SHA-256 may already be pinned. Pull requests never build, prove or publish.
 
@@ -528,7 +544,7 @@ No entry admits a task VM any more: each answers `tasks.vm_runtime_removed` ([Ta
 
 A task publishes its PR and releases its VM, workspace, keys and peer. An [idle](/reference/tasks#release-an-idle-task-vm) group releases its VM too. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
-A host with a [`containers` setting](/reference/node-settings#task-container-fields) also has container task and CI places. Each live row records its runtime, `vm` or `container`, and holds a place of that runtime only, so container places never count against VM places. Normal placement takes container places only while `task_vms.container_placement` is on, and then only on a host with a recorded container base. The setting is off by default, so a host's task VMs keep their task groups. A base refresh takes a VM CI place. The host keeps one recorded base per runtime.
+A host with a [`containers` setting](/reference/node-settings#task-container-fields) also has container task places. Each live row records its runtime, `vm` or `container`, and holds a place of that runtime only, so container places never count against VM places. Normal placement takes container places only while `task_vms.container_placement` is on, and then only on a host with a recorded container base. The setting is off by default, so a host's task VMs keep their task groups. A base refresh takes a VM CI place. The host keeps one recorded base per runtime.
 
 Every new VM copies the base and has the Large profile: 6 vCPU, 12 GiB of memory and a 60 GiB disk. VM size does not multiply its capacity charge.
 
@@ -638,7 +654,7 @@ The `tools` phase installs the shape gate linters and prepares the Incus client 
 
 - The intent names the nested subnet and the interface `nested` (`TaskVmNestedFleet`), so the VM leads the nested network of that subnet.
 - UFW then allows DHCP, DNS and the package cache from the nested bridge, and routes it out.
-- The linters build into `/opt/orbit-shape-gate`, named by the digest of the pins in `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`.
+- The linters build into `/opt/orbit-shape-gate`. The venv name covers the pins and the interpreter that builds it, by the rule of [the shape gate](/reference/implementation-loop#run-the-swamp-shape-gate-before-you-push).
 - `bin/swamp-shape-gate` finds the folder by that name. The handoff check then runs offline.
 
 The `check` phase is the one end check. It asserts every package at its pin, every runtime and tool at its version, and the package cache active.
@@ -950,7 +966,7 @@ The system file sets up the kernel and Incus side of the host.
 - **SCTP.** The `sctp` module cannot load, as described below.
 - **Kernel modules.** `wireguard`, `overlay` and `br_netfilter` go in `/etc/modules-load.d/orbit-task-containers.conf` and load now. A container cannot load a module itself.
 - **Sysctls.** `/etc/sysctl.d/60-orbit-task-containers.conf` holds the floors in the table below. They apply now.
-- **Subordinate IDs.** Root's range in `/etc/subuid` and `/etc/subgid` must hold `(containers.task_places + containers.ci_places + 1) × 101,000,000` IDs: one isolated range per place and one for the base. A smaller range fails the phase with both numbers and changes nothing.
+- **Subordinate IDs.** Root's range in `/etc/subuid` and `/etc/subgid` must hold `(containers.task_places + 1) × 101,000,000` IDs: one isolated range per task container place and one for the base. A smaller range fails the phase with both numbers and changes nothing.
 - **ZFS ARC.** It sizes the ARC cap, which never rises. See [the ARC cap](#the-arc-cap-of-a-container-host) below.
 
 A host without Incus gets `incus`, `incus-base` and `incus-client` from the recipe's [pinned packages](#incus-lts-packages-and-upgrades). They are the packages of its architecture, checked by SHA-256. The package's `db:Status-Status` must be `installed`; a hold does not cause a reinstall, and config files left after removal do not count as installed. A host with Incus must run a server on the recipe's line, such as 7.0. The inner Incus of the base uses the same line. The phase never upgrades a running Incus.

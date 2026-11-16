@@ -228,13 +228,19 @@ Each failure names the check or step that stopped the request.
 
 ## CI runner role
 
-`orbit node:role:add <node> ci-runner` prepares a Linux Node to host GitHub Actions runners in unprivileged Incus containers. The role is not a singleton or relocatable. Add it to an enrolled Node through the normal role-add path; `node:add --role` does not accept it. It can share every role except `gateway` and `vpn`, which hold fleet trust anchors. A Node that serves CI alone needs no app role, TLD, or Cluster. Beast can keep its app and database roles. Shark needs only `ci-runner` for CI; removing its existing roles is a separate operator decision.
+`orbit node:role:add <node> ci-runner` prepares a Linux Node to host GitHub Actions runners in unprivileged Incus containers. The role is not a singleton or relocatable. Add it to an enrolled Node through the normal role-add path; `node:add --role` does not accept it. It can share every role except `gateway` and `vpn`, which hold fleet trust anchors. A Node that serves CI alone needs no app role, TLD, or Cluster. A Node can keep its app and database roles beside `ci-runner`; removing them is a separate operator decision.
 
 The role installs Incus, and the agent's `ci-runner.host` prepares the restricted `orbit-ci` project, the `orbitci0` bridge, the `orbit-ci-egress` ACL, and the default runner profile. The profile sets 6 CPUs, 12 GiB of memory, 8192 processes, and autostart, with privilege and nesting disabled. The project permits only that bridge and forbids VMs and host disk devices. The role uses the existing `default` storage pool, or creates a directory pool when it is absent. It never changes an existing pool or bridge IPv4 subnet. Incus chooses a subnet for a new bridge.
 
 The ACL permits public IPv4 egress and rejects private, CGNAT, loopback, link-local, multicast, reserved IPv4, and all IPv6. Incus permits bridge DNS and DHCP before the ACL; this boundary does not claim to block those services. The normal managed firewall catalog owns the routed allowance on `orbitci0`, including adoption of the existing `orbit-ci-runners` comment. Role convergence repairs the project, profile, ACL, bridge settings, and managed firewall rule. Doctor checks their projection, packages, service, and firewall. Task VM stray checks recognize the role's project without an `operator_owned` entry.
 
-The role owns the host boundary. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) creates, updates, registers, and verifies containers. Run its container step only while the runner is idle. Adoption has no container-count or running-state requirement: it preserves clones and stopped containers without starting, deleting, recreating, or registering them. Each active runner carries `hardimpact,orbit-shard`, plus `sabre` on Sabre. The Gateway holds no organization registration token. A token stays with the operator and never enters role input or settings.
+Each CI Node has one pool of [CI places](/reference/node-settings#ci-places), set with `orbit node:update <node> --ci-places=N`. One place runs one runner job or one proof copy. `--ci-proof-only` keeps the places for proof copies, so a Node with other work can keep its CI small. Only a Node with an active `ci-runner` role takes the setting. The operator sets the count from the CPU pressure of the full Node.
+
+The role owns the host boundary. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) creates, updates, registers, and verifies containers. Run its container step only while the runner is idle. Adoption has no container-count or running-state requirement: it preserves clones and stopped containers without starting, deleting, recreating, or registering them.
+
+Every runner carries the same labels: `self-hosted,Linux,X64,hardimpact,orbit-shard`. No runner carries a host label, so all CI Nodes form one pool. A workflow never names a host: it names only the shared labels. Only the Node and its runner setup differ per host, never the workflow.
+
+The Gateway holds no organization registration token. A token stays with the operator and never enters role input or settings.
 
 A Node with only this role appears in the web app's workload table with CPU, memory, and disk meters. It selects the normal role-default exporter and joins fleet rollout group 2. Explicit exporter preferences still apply. Its role selects the recipe's `ci-runner` tool set; a recorded recipe profile does not grant fleet participation. The container installer alone purges extra PHP packages.
 
@@ -243,12 +249,31 @@ Remove all containers and their GitHub registrations before removing the role. R
 After merge and deployment, an operator runs these commands; this feature does not run them. Adding the first role to a roleless Node closes the normal `orbit:public-ssh-recovery` firewall rule. Confirm WireGuard access before adding it:
 
 ```bash
-orbit node:role:add Sabre ci-runner
-orbit node:role:add Shark ci-runner
-orbit node:role:add Beast ci-runner
+orbit node:role:add <node> ci-runner
 ```
 
+Run it once for each CI Node.
+
 Verify each Node with `orbit doctor --node=<numeric-node-id>`. For a failed role add, repair the reported cause and retry with `orbit node:role:add <node> ci-runner --converge`. Existing runners and registrations stay in place.
+
+### Runner state for the runner view
+
+The role installs the Node's part of the [CI runner view](/reference/ci-runner-view): the script `/usr/local/libexec/orbit-ci-runner-state`, the service `orbit-ci-runner-state.service` and the timer `orbit-ci-runner-state.timer`, which starts the service every 15 seconds. Role convergence first creates `/usr/local/libexec` as root with mode `0755`, because a Node that hosts no Instance does not have that folder. It then writes and repairs all three and enables the timer. Role removal stops the timer and removes the three files and the script's output, so Prometheus drops the series.
+
+The script only reads. For each container in the Incus project `orbit-ci`, it reads the state from Incus. Inside a running container it reads, under `/home/runner/actions-runner`, the runner version from the `bin` link and the state of the runner service that `.service` names. The runner is busy while a `Runner.Worker` process runs. A container that does not run reports the service as `unknown`. The script starts, stops and registers nothing.
+
+It writes the result in the node exporter's text format to `/var/lib/prometheus/node-exporter/orbit_ci_runners.prom`. The service's `StateDirectory=prometheus/node-exporter` makes that folder, owned by root, when no exporter package made it. It writes a temporary file in the same folder first and renames it, so the exporter never reads half a file.
+
+| Series | Labels | Value |
+| --- | --- | --- |
+| `orbit_ci_runner_info` | `runner`, `state`, `service`, `version` (empty when unreadable) | `1` |
+| `orbit_ci_runner_busy` | `runner` | `1` when busy, else `0` |
+| `orbit_ci_runners_observed_timestamp_seconds` | none | The Unix time of the read |
+| `orbit_ci_runners_read_ok` | none | `0` when Incus did not answer, else `1` |
+
+The service runs as root, because the Incus socket belongs to root; membership of `incus-admin` would give the same power. It has no new privileges and a read-only file system, except the output folder and a runtime folder for the Incus client's configuration. Each run has a 10-second limit. Each Incus call has its own shorter limit, and the script starts no call after 8 seconds.
+
+The [Metrics role](/reference/metrics#exporter-selection)'s node exporter reads the folder with its textfile collector. Without a selected exporter on the Node, or without a Metrics role, the script still runs, and the view reports `ci_runner.state_unavailable` for the Node.
 
 ## macOS Nodes
 

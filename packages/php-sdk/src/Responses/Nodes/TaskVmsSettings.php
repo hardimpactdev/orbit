@@ -9,7 +9,7 @@ final readonly class TaskVmsSettings
     /**
      * @param  list<string>  $operator_owned
      * @param  array{count:int,project_id:int,size:string}|null  $slots  the ready slots the host keeps
-     * @param  array{cidr:string,task_places:int,ci_places:int,project?:string,network?:string}|null  $containers  the host's task container side
+     * @param  array{cidr:string,task_places:int,project?:string,network?:string}|null  $containers  the host's task container side
      */
     public function __construct(
         public string $cidr,
@@ -48,15 +48,15 @@ final readonly class TaskVmsSettings
         );
     }
 
-    /** @return array{cidr:string,task_places:int,ci_places:int,project?:string,network?:string}|null */
+    /** @return array{cidr:string,task_places:int,project?:string,network?:string}|null */
     private static function containers(mixed $data): ?array
     {
-        if (! is_array($data) || ! is_string($data['cidr'] ?? null) || ! is_int($data['task_places'] ?? null) || ! is_int($data['ci_places'] ?? null)) {
+        if (! is_array($data) || ! is_string($data['cidr'] ?? null) || ! is_int($data['task_places'] ?? null)) {
             return null;
         }
 
         return [
-            'cidr' => $data['cidr'], 'task_places' => $data['task_places'], 'ci_places' => $data['ci_places'],
+            'cidr' => $data['cidr'], 'task_places' => $data['task_places'],
             ...(is_string($data['project'] ?? null) ? ['project' => $data['project']] : []),
             ...(is_string($data['network'] ?? null) ? ['network' => $data['network']] : []),
         ];
