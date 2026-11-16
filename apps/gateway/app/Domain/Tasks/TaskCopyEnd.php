@@ -28,9 +28,10 @@ final readonly class TaskCopyEnd
 
     /**
      * What the copy's workspace holds beyond the seed: commits that origin lacks, uncommitted and untracked files. A copy never fetches,
-     * so the commits that the group's publishes pushed are named to the read: they and their history are on origin. Local commits whose
-     * content the copy's latest content read found on the default branch are published too (TaskCopyWork); `commits` keeps what the
-     * read counted and `work` the verdict. A stopped or unreachable copy reads `unknown` with its reason. One bounded SSH read; call it
+     * so the commits that the group's publishes pushed are named to the read: they and their history are on origin. The checked-out
+     * branch's own commits are published too when the copy's latest content read found their content on the default branch
+     * (TaskCopyWork); a commit only another branch holds still counts. `commits` keeps what the read counted and `work` the verdict,
+     * null when the branch holds none of them. A stopped or unreachable copy reads `unknown` with its reason. One bounded SSH read; call it
      * outside any transaction.
      *
      * @return array<string, mixed>
@@ -40,13 +41,15 @@ final readonly class TaskCopyEnd
         $read = $this->read->read($copy, self::published($group));
         $count = static fn (mixed $class): ?int => is_array($class) && is_int($class['count'] ?? null) ? $class['count'] : null;
         // Committed work counts by content, not by commit id: when the copy's content read of this head finds every committed path on
-        // the default branch, its local commits are published, as after a squash merge or a hand-carry.
-        $work = $read['state'] === 'unknown' ? null : (($read['unpushed'] ?? 0) > 0 ? TaskCopyWork::committed($group, $read['head_commit']) : null);
-        $unpushed = $work === null && $read['state'] !== 'unknown' ? 0 : $read['unpushed'];
+        // the default branch, the checked-out branch's own commits are published, as after a squash merge or a hand-carry. The content
+        // read is of that branch alone, so a commit that only another branch holds always counts.
+        $own = $read['commits']['head'] ?? 0;
+        $work = $own > 0 ? TaskCopyWork::committed($group, $read['head_commit']) : null;
+        $unpushed = $read['unpushed'] === null ? null : $read['unpushed'] - ($own > 0 && $work === null ? $own : 0);
         $state = $read['state'] === 'dirty' && $unpushed + $read['uncommitted'] + ($count($read['stashes']) ?? 0) === 0 ? 'clean' : $read['state'];
 
         return ['state' => $state, 'reason' => $read['reason'], 'read_at' => $read['read_at'], 'head' => $read['head'],
-            'commits' => $read['unpushed'], 'unpushed' => $unpushed, 'work' => $read['state'] === 'unknown' ? null : ($work ?? 'on_default'),
+            'commits' => $read['unpushed'], 'unpushed' => $unpushed, 'work' => $own > 0 ? ($work ?? 'on_default') : null,
             'uncommitted' => $read['uncommitted'], 'modified' => $count($read['modified']),
             'untracked' => $count($read['untracked']), 'stashes' => $count($read['stashes'])];
     }

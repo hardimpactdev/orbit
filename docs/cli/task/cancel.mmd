@@ -30,7 +30,7 @@ sequenceDiagram
     %%> - one SSH call to the copy's Node, bounded at 4 s, reads what the copy holds beyond its seed: commits that origin lacks, uncommitted, untracked and stashed files
     %%> - a copy never fetches, so the commits that the group's publishes pushed are named to the read as on origin, with their history
     %%> - a stopped or unreachable copy reads `unknown` with its reason
-    %%> - committed work counts by content, not by commit id: when the copy's latest content read (`work` of a `task:sync`, docs/reference/tasks.md#published-work-of-a-copy) is of the head this read sees and found every committed path on the default branch, its local commits count as published, as after a squash merge or a hand-carry
+    %%> - committed work counts by content, not by commit id: when the copy's latest content read (`work` of a `task:sync`, docs/reference/tasks.md#published-work-of-a-copy) is of the head this read sees and found every committed path on the default branch, the checked-out branch's own commits count as published, as after a squash merge or a hand-carry; a commit that only another local branch holds still counts
     %%> Result:
     %%> - unless the caller discards the work, a copy that holds work (`dirty`: unpublished commits, uncommitted or untracked files, stashes) refuses the cancel with HTTP 409 `tasks.copy_unpublished_work`; its details carry the counts, the head, the commits the read counted and the content verdict `work`: `on_default`, `work_not_on_default`, or `work_unread` when no content read is of this head (run `task:sync`, then cancel again)
     %%> - unless the caller discards it, a copy that cannot be read (`unknown`) refuses with HTTP 409 `tasks.copy_workspace_unknown`, naming the reason

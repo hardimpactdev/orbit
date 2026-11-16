@@ -24,7 +24,7 @@ Committed work counts as published when its content is on the default branch, or
 
 | `work` | Meaning |
 | --- | --- |
-| `on_default` | Every committed change is on the default branch or published. Local commits do not count as `unpushed`. |
+| `on_default` | Every committed change of the checked-out branch is on the default branch or published. That branch's own commits do not count as `unpushed`. |
 | `work_not_on_default` | A committed path differs from the default branch. |
 | `work_unread` | No content read is of the copy's current head. Run `task:sync`, then cancel again. |
 
@@ -36,7 +36,7 @@ The cancel guards the work that only the copy holds:
 | `dirty`: unpublished commits, uncommitted or untracked files, or stashes | HTTP 409 `tasks.copy_unpublished_work`. Its details carry the counts, the `head` and `work`. | The cancel goes on and the work goes with the copy. |
 | `unknown` | HTTP 409 `tasks.copy_workspace_unknown`. Its details carry the `reason`. | The cancel goes on. |
 
-`--yes` only confirms the question; it never means discard. Both refusals come before the cancel stops running work, so they change nothing. Uncommitted and untracked files and stashes always count.
+`--yes` only confirms the question; it never means discard. Both refusals come before the cancel stops running work, so they change nothing. Uncommitted and untracked files, stashes, and commits that only another local branch holds always count. `work` is empty when the checked-out branch holds no counted commit.
 
 The read runs before the task's lock. A commit made in the copy between the read and the destroy, by a T3 run that outlived its Operation or a direct reply in the copy's T3, goes with the copy without `--discard`.
 

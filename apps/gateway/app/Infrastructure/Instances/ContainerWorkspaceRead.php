@@ -56,7 +56,7 @@ final readonly class ContainerWorkspaceRead
      * @param  list<string>  $published
      * @return array{instance_id: int, state: string, reason: ?string, read_at: string, duration_ms: int, baseline: ?string,
      *     head: ?string, head_commit: ?string, uncommitted: ?int, unpushed: ?int, modified: ?array<string, mixed>, untracked: ?array<string, mixed>,
-     *     commits: ?array<string, mixed>, stashes: ?array<string, mixed>}
+     *     commits: ?array{count: int, branch_count: int, branches: list<array{name: string, count: int}>, head: int}, stashes: ?array<string, mixed>}
      */
     public function read(Instance $instance, array $published = []): array
     {
@@ -203,7 +203,7 @@ final readonly class ContainerWorkspaceRead
      * @param  array<string, mixed>|null  $answer
      * @return array{instance_id: int, state: string, reason: ?string, read_at: string, duration_ms: int, baseline: ?string,
      *     head: ?string, head_commit: ?string, uncommitted: ?int, unpushed: ?int, modified: ?array<string, mixed>, untracked: ?array<string, mixed>,
-     *     commits: ?array<string, mixed>, stashes: ?array<string, mixed>}
+     *     commits: ?array{count: int, branch_count: int, branches: list<array{name: string, count: int}>, head: int}, stashes: ?array<string, mixed>}
      */
     private static function shape(int $instanceId, ?array $answer, int $milliseconds): array
     {
@@ -245,12 +245,18 @@ final readonly class ContainerWorkspaceRead
         return ['count' => $class['count'], 'names' => array_slice($names, 0, 5)];
     }
 
-    /** @return array{count: int, branch_count: int, branches: list<array{name: string, count: int}>}|null */
+    /**
+     * `head`: how many of the counted commits the checked-out branch holds; an answer without it holds none, so none is cleared.
+     *
+     * @return array{count: int, branch_count: int, branches: list<array{name: string, count: int}>, head: int}|null
+     */
     private static function commits(mixed $class): ?array
     {
         if (! is_array($class) || ! is_int($class['count'] ?? null) || ! is_int($class['branch_count'] ?? null) || ! is_array($class['branches'] ?? null)) {
             return null;
         }
+        $head = $class['head'] ?? 0;
+        $head = is_int($head) && $head >= 0 && $head <= $class['count'] ? $head : 0;
         $branches = [];
         foreach (array_slice($class['branches'], 0, 5) as $branch) {
             if (is_array($branch) && is_string($branch['name'] ?? null) && is_int($branch['count'] ?? null)) {
@@ -258,6 +264,6 @@ final readonly class ContainerWorkspaceRead
             }
         }
 
-        return ['count' => $class['count'], 'branch_count' => $class['branch_count'], 'branches' => $branches];
+        return ['count' => $class['count'], 'branch_count' => $class['branch_count'], 'branches' => $branches, 'head' => $head];
     }
 }

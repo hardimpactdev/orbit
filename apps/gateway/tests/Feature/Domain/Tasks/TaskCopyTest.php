@@ -1136,7 +1136,7 @@ describe('a cancel of a group that owns a copy', function (): void {
             $this->fail('The cancel destroyed unpublished work.');
         } catch (ResourceOperationException $error) {
             expect($error->errorCode)->toBe('tasks.copy_unpublished_work')->and($error->status)->toBe(409)
-                ->and($error->details)->toBe(['head' => str_repeat('e', 40), 'commits' => 3, 'unpushed' => 3, 'work' => 'work_unread', 'uncommitted' => 3, 'modified' => 1, 'untracked' => 2, 'stashes' => 0]);
+                ->and($error->details)->toBe(['head' => str_repeat('e', 40), 'commits' => 3, 'unpushed' => 3, 'work' => null, 'uncommitted' => 3, 'modified' => 1, 'untracked' => 2, 'stashes' => 0]);
         }
         expect(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse()
             ->and(Instance::query()->find($copy->id))->not->toBeNull()
@@ -2404,7 +2404,7 @@ describe('a cancel or complete of a copy group whose work was carried to the def
         [$group, $copy] = carriedCopy([]);
         // The read counts the copy's own commits and the check's empty handoff commit: origin lacks their ids.
         $this->ssh->answer = [...$this->ssh->answer, 'state' => 'dirty',
-            'commits' => ['count' => 2, 'branch_count' => 1, 'branches' => [['name' => 'task-'.$group->id, 'count' => 2]]]];
+            'commits' => ['count' => 2, 'branch_count' => 1, 'branches' => [['name' => 'task-'.$group->id, 'count' => 2]], 'head' => 2]];
 
         $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
 
@@ -2416,7 +2416,7 @@ describe('a cancel or complete of a copy group whose work was carried to the def
     it('still refuses a copy whose committed work is on the default branch but which holds uncommitted work, or whose commits were not read', function (array $answer, ?array $work, array $details): void {
         [$group] = carriedCopy($work);
         $this->ssh->answer = [...$this->ssh->answer, 'state' => 'dirty',
-            'commits' => ['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'task-'.$group->id, 'count' => 1]]], ...$answer];
+            'commits' => ['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'task-'.$group->id, 'count' => 1]], 'head' => 1], ...$answer];
 
         try {
             app(TaskCancelIntent::class)->start($group, 'test', null);
@@ -2429,6 +2429,10 @@ describe('a cancel or complete of a copy group whose work was carried to the def
         'an uncommitted file' => [['modified' => ['count' => 1, 'names' => ['a.php']]], [], ['unpushed' => 0, 'work' => 'on_default', 'uncommitted' => 1]],
         'a stash' => [['stashes' => ['count' => 1, 'names' => ['stash@{0}']]], [], ['unpushed' => 0, 'stashes' => 1]],
         'no read of this head' => [[], ['head' => str_repeat('f', 40)], ['unpushed' => 1, 'work' => 'work_unread']],
+        // The content read is of the checked-out branch alone: a commit that only another branch holds is never cleared.
+        'a commit only another branch holds' => [['commits' => ['count' => 2, 'branch_count' => 2,
+            'branches' => [['name' => 'experiment', 'count' => 1], ['name' => 'task-1', 'count' => 1]], 'head' => 1]], [],
+            ['commits' => 2, 'unpushed' => 1, 'work' => 'on_default', 'uncommitted' => 0, 'stashes' => 0]],
         'a path that differs' => [[], ['state' => 'dirty', 'paths' => ['count' => 1, 'names' => ['a.php']]], ['unpushed' => 1, 'work' => 'work_not_on_default']],
     ]);
 

@@ -1510,7 +1510,7 @@ Work is what lies beyond the Instance's baseline:
 
 Build output that appears after the create counts too. It stays work until the Project's `.gitignore` covers it.
 
-The read also names the checked-out branch as `head` and its commit as `head_commit`. A task copy's cancel and complete hold the copy's [content read](/reference/tasks#published-work-of-a-copy) against that commit.
+The read also names the checked-out branch as `head`, its commit as `head_commit`, and how many of the counted commits that branch holds as `commits.head`. A task copy's cancel and complete hold the copy's [content read](/reference/tasks#published-work-of-a-copy) against that commit. Only those commits can count as published by content.
 
 The baseline is what a new Instance held when it was made, so a fresh copy of a default with local branches, stashes or untracked files reads `clean`. It holds the local branch heads, the stash ids and the untracked set, in the Gateway's `instance_runtimes.workspace_baseline`, outside the container.
 

@@ -1661,7 +1661,7 @@ One rule decides whether a task copy holds work that would be lost with it. It l
 - **Committed work.** The default head must hold the same content at each changed path. A commit that a succeeded `task:publish` of the group pushed counts too.
 - **Commit SHAs do not matter.** Content is compared, so a squash-merged or hand-carried branch is published.
 - **Empty commits.** A check's empty handoff commit adds nothing. So does a commit whose tree repeats published content.
-- **Never published.** Uncommitted and untracked files and stashes always count.
+- **Never published.** Uncommitted and untracked files, stashes, and commits that only another local branch holds always count.
 - **Empty.** A copy whose HEAD changed no path since the merge base is `empty`: complete refuses it, and cancel ends it.
 
 The read returns `work`: `state` (`clean` or `dirty`), `head`, `empty`, the count of differing `paths` with up to five names, the `uncommitted`, `untracked` and `stashes` counts, and `approved_held`. Cancel and complete use the latest sync's read only while it is of the copy's current head, which their own bounded read sees. A commit made after the sync needs a new sync. The copy never holds a GitHub credential: the base phase fetches on the Node, and the copy receives only a bundle.
