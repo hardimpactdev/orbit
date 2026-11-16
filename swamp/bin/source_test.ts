@@ -33,6 +33,24 @@ Deno.test("every workflow keeps an interrupted run interrupted", async () => {
         assertEquals(workflow.autoContinue, false, path.path);
     }
 });
+// The task VM workflows that #3849 kept and the vault keys that nothing writes are deleted (docs/reference/old-paths.md#the-pi-task-loop):
+// no workflow starts one of them as a child, and none reads or writes a key of those five families.
+Deno.test("no workflow names a deleted task VM workflow or an unwritten vault key", async () => {
+    const deleted = ["operation-task-provision", "task-vm-start", "operation-task-vm-slot-release", "task-vm-slot-phase", "task-vm-hub-peer",
+        "task-vm-hub-peer-remove"];
+    const keys = /swamp-proof-club-api-key|task-vm-slot-(?:wireguard|ssh-host|agent)-|task-vm-pi-(?:claim|token)-|pr-comment-write-|task-provision-deps-/;
+    let workflows = 0;
+    for await (const path of expandGlob(`${ROOT}/workflows/*.yaml`)) {
+        const text = Deno.readTextFileSync(path.path);
+        workflows++;
+        for (const [, child] of text.matchAll(/workflowIdOrName:\s*['"]?([a-z0-9_.-]+)/g)) {
+            assertFalse(deleted.includes(child), `${path.path} starts ${child}`);
+        }
+        assertFalse(deleted.includes(/^name: ['"]?([a-z0-9_.-]+)/m.exec(text)?.[1] ?? ""), `${path.path} is a deleted workflow`);
+        assertFalse(keys.test(text), `${path.path} names an unwritten vault key`);
+    }
+    assert(workflows > 0);
+});
 Deno.test("workflow queue bounds have measured per-kind budgets", async () => {
     for await (const path of expandGlob(`${ROOT}/workflows/*.yaml`)) {
         const workflow = yaml(path.path);

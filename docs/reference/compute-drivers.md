@@ -489,7 +489,7 @@ The template builder verifies the guest account before it becomes a template. Cl
 
 ### From claim to workspace
 
-A task start (`tasks.provision`, [command](/cli/task/start)) takes the lowest free place of a host and mints the identity of its VM. It copies the host's [base snapshot](#claims-copy-the-base-snapshot), writes the identity and the claim, and adds the hub peer. Then it converges the VM to the commit and starts the task branch. There is no provision, enrollment or bootstrap kind; the Node, its `app-dev` role and its `pi-server` Process are recorded at admission.
+No task start claims a place any more: a [task start](/cli/task/start) makes a task copy. The workflows that took a place, copied the [base snapshot](#claims-copy-the-base-snapshot), added the hub peer and converged the VM (`operation-task-provision`, `task-vm-start`, `task-vm-hub-peer`), and the ones that released it (`operation-task-vm-slot-release`, `task-vm-slot-phase`, `task-vm-hub-peer-remove`), are deleted ([old paths](/reference/old-paths#the-pi-task-loop)). The steps below describe the old claim.
 
 1. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 2. The claim starts the baseline check. Then the same claim projects the Route.
@@ -639,7 +639,7 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Converge a running task VM
 
-The common converge brings a task VM to the pins of the release. A [base snapshot refresh](#refresh-the-base-snapshot) runs it on the base VM, and every task start runs it on the new VM, in one Ansible run with the host part (`swamp/ansible/task-vm-start.yml`). It has no kind or command of its own. Swamp runs the phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH, so a base and a started VM end in the same state. These are the `software`, `tools` and `check` phases.
+The common converge brings a task VM to the pins of the release. A [base snapshot refresh](#refresh-the-base-snapshot) runs it on the base VM, and a task start ran it on the new VM until the task VM start was deleted. It has no kind or command of its own. Swamp runs the phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH, so a base and a started VM end in the same state. These are the `software`, `tools` and `check` phases.
 
 The Gateway puts these in the intent:
 
@@ -722,7 +722,7 @@ Admission captures live VM names and the highest allocated VM and build IDs befo
 
 Swamp runs task VM effects through recorded Operations. Each effect fixes its host, guest identity and command input before execution. The Gateway admits the effect and requires a matching successful command receipt before recording completion. A retry uses the same Operation and effect key. A lost reply does not authorize a second VM or a different target.
 
-No provider class is left in the Gateway: the observation provider and its host reader had no caller and are deleted. A task start copies the base snapshot with the Ansible phases of `task-vm-host.yml`.
+No provider class is left in the Gateway: the observation provider and its host reader had no caller and are deleted. No task start copies the base snapshot any more: the `start` and `delete` play of `task-vm-host.yml` is deleted with the task VM start and release ([old paths](/reference/old-paths#the-pi-task-loop)).
 
 A [medium VM](#incus-provider) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. A task copy inherits the boot config of its base snapshot.
 
@@ -1128,7 +1128,7 @@ The host part that logged task VM egress is removed with the base snapshot refre
 
 No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`, its intent and projection, and the artisan command `task-vms:image-builds` are removed; its triggers went before them. It is replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates the default Instance of each nested-fleet Project. A recorded base snapshot stays the base of a task start until the rest of the task VM path leaves.
 
-The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`. The parts `host-prepare` and `base-*` stay while tests of shared files load them; nothing runs them. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
+The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`, and later its task start and release parts `start` and `delete`. The parts `host-prepare` and `base-*` stay while tests of shared files load them; nothing runs them. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
 
 The Node column `image_refresh_hold` and `orbit node:update NODE --image-refresh-hold` / `--no-image-refresh-hold` remain until the task VM settings leave. Nothing reads the hold.
 

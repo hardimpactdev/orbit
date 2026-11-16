@@ -10,7 +10,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [tasks.provision, proof.run]}
+    kind: {type: string, enum: [proof.run]}
     guest_node_id: {type: integer, minimum: 1}
     ssh_execution: {type: object}
     fleet: {type: object}

@@ -51,7 +51,9 @@ The lifecycle that only the Pi loop used is removed as well:
 
 A task without a [task copy](/reference/tasks#task-copy) has no workspace that Orbit can use or remove. Its sync, check and publish answer `tasks.no_workspace`. Its cancel ends it at admission and starts no run. When it still holds a task VM workspace, its complete asks for removal assistance.
 
-`tasks.provision` stays registered as the request kind of `task:start`, with its vault patterns. No Operation of it starts. The rows of `task_vms` stay, and nothing changes them.
+`tasks.provision` stays registered as the request kind of `task:start`, which scopes the route's `Idempotency-Key`. No Operation of it starts. Its registry entry names `operation-instance-create`, the workflow a start runs through its task copy, and declares no vault pattern. The rows of `task_vms` stay, and nothing changes them.
+
+The task VM workflows that #3849 kept are deleted: the start `operation-task-provision` with its children `task-vm-start` and `task-vm-hub-peer`, and the place release `operation-task-vm-slot-release` with its children `task-vm-slot-phase` and `task-vm-hub-peer-remove`. The playbook `swamp/ansible/task-vm-start.yml`, which only the start ran, goes with them. `operation-task-cancel` calls no release any more; a cancel starts no run.
 
 ### The Pi agent server
 
@@ -67,7 +69,7 @@ The machine recipe pins no Pi build: the tool `pi`, its entry in the task VM pro
 
 Old Operations of all these kinds stay as history, as for every [kind that left the registry](/reference/operations#kinds-that-left-the-registry).
 
-The Swamp workflows that only the Pi loop ran are deleted. They are the Pi turn, the script, the package install, the idle save, the maintenance run, the prep, the prep fix, the build, the review round and the VM resume. Their child workflows, extensions, playbook and tests go with them. The vault patterns `^task-vm-pi-token-[1-9][0-9]*$`, `^pr-comment-write-[a-f0-9-]{36}$` and `^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$` stay declared on `tasks.provision` until the grants release after the Pi loop.
+The Swamp workflows that only the Pi loop ran are deleted. They are the Pi turn, the script, the package install, the idle save, the maintenance run, the prep, the prep fix, the build, the review round and the VM resume. Their child workflows, extensions, playbook and tests go with them. The grants release after the Pi loop removed the five vault patterns that nothing writes from the declarations and from `swamp/config/gateway-workflow-grants.json`: `^(swamp-proof-club-api-key|task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$`, `^task-vm-pi-(claim|token)-[1-9][0-9]*$`, `^task-vm-pi-token-[1-9][0-9]*$`, `^pr-comment-write-[a-f0-9-]{36}$` and `^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$`. `^nested-fleet-club-api-key$` stays.
 
 ## Off in the live fleet
 
