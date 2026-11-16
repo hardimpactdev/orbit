@@ -6,27 +6,38 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Task;
+use LogicException;
 
 /**
- * The prompt the agent receives for one turn in a task copy: the title, brief and deliverables of the subtask, then the prompt of the
- * caller. The admission records this text as the admitted prompt. See docs/cli/task/copy-turn.mmd.
+ * The prompt the agent receives for one turn in a task copy: the title and brief of the group, the title, brief and deliverables of the
+ * subtask, Orbit's copy rules, then the prompt of the caller. The admission records this text as the admitted prompt. See
+ * docs/cli/task/copy-turn.mmd.
  */
 final readonly class TaskTurnPrompt
 {
     /** The longest prompt a turn accepts, in UTF-16 code units. */
     public const int Limit = 100000;
 
+    /** How an agent works in a task copy, for every role. Project-neutral: it names no command of one Project. */
+    public const string CopyRules = "Copy rules:\n"
+        ."- Run every command in the foreground. Leave none running when this turn ends.\n"
+        ."- The Project's long gates and full test sets are the work of the task check and CI (`task:check`). Run single test files by path.\n"
+        ."- Commit your work before this turn ends.\n"
+        .'- Never print an environment file, a token, a key or a session value.';
+
     public static function compose(Task $subtask, string $prompt): string
     {
-        $parts = ['Subtask: '.$subtask->title, "Brief:\n".$subtask->brief];
+        $group = $subtask->parent ?? throw new LogicException('A turn prompt needs the group of its subtask.');
+        $parts = ['Task group: '.$group->title, "Group brief:\n".$group->brief, 'Subtask: '.$subtask->title, "Brief:\n".$subtask->brief];
         $deliverables = $subtask->deliverableList();
         if ($deliverables !== []) {
             $parts[] = "Deliverables:\n".implode("\n", array_map(static fn (TaskDeliverable $deliverable): string => $deliverable->line(), $deliverables));
         }
+        $parts[] = self::CopyRules;
         $parts[] = "Prompt of this turn:\n".$prompt;
         $text = implode("\n\n", $parts);
         if (strlen(mb_convert_encoding($text, 'UTF-16LE', 'UTF-8')) / 2 > self::Limit) {
-            throw new ResourceOperationException('tasks.prompt_too_large', 'The subtask and the prompt together are longer than a turn accepts ('.self::Limit.' characters).', 422);
+            throw new ResourceOperationException('tasks.prompt_too_large', 'The group, the subtask and the prompt together are longer than a turn accepts ('.self::Limit.' characters).', 422);
         }
 
         return $text;
