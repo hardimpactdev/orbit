@@ -173,8 +173,8 @@ const names = (
 
 /**
  * The files "Read the base" wrote: the default head, the merge base, how far behind, the overlapping paths, the workflow paths and
- * the merge-tree reply. A workflow path that candidate commits the default head lacks change refuses first, because the publish token
- * cannot push it; then exit 0 states the base; exit 3 is a real conflict, refused with its paths; anything else is an error of the
+ * the merge-tree reply. A path under .github/workflows/ that differs between the default head and the candidate refuses first,
+ * because GitHub refuses that net diff to a token without the workflows permission; then exit 0 states the base; exit 3 is a real conflict, refused with its paths; anything else is an error of the
  * read. A workflow list the read did not write is an error, never an empty list.
  */
 export function baseFacts(
