@@ -26,7 +26,7 @@ The view uses Orbit's terminal style. It shows one frame for each CI Node:
 
 Below the frames, the view lists the running and queued jobs. Then, for each runner, it shows its jobs of the last 48 hours: the count, the failures, the queue wait and the run time, and its recent jobs.
 
-A place counts as used while a runner is busy or a proof copy lives on the Node. An idle runner holds no place. The count of places is the Node's `ci_places`.
+A place counts as used while a runner is busy or a proof copy lives on the Node. An idle runner holds no place. The count of places is the Node's `ci.places` setting. When a Node has no count, the bar shows its used places and no free count.
 
 ## Where each value comes from
 
@@ -83,7 +83,7 @@ Each entry of `nodes`:
 | Field | Meaning |
 | --- | --- |
 | `node_id`, `node_name` | The Node's ID and name. |
-| `places` | `total`, `runner_jobs`, `proof_copies` and `free`. `total` is the Node's `ci_places`, or null when it has none. `free` is `total` minus the used places, never below 0, and null when `total` is null. |
+| `places` | `total`, `runner_jobs`, `proof_copies` and `free`. `total` is the Node's `ci.places` setting, or null when it has none. `free` is `total` minus the used places, never below 0, and null when `total` is null. |
 | `proof_copies` | Each proof copy on the Node: `instance_id`, `instance_name` and `task_group_id`. |
 | `resources` | Null when the agent reported no metrics snapshot yet. Else `observed_at`, `possibly_outdated`, `cpu_pressure` and `memory_pressure` (the `some` `avg10` values), `memory` and `disk` (each `used_bytes` and `total_bytes`; `disk` is the `/` mount). |
 | `runner_state` | `observed_at`, the time the Node's timer read its runners; `stale`, true when that is more than 60 seconds ago; and `error_code`, null when Prometheus answered with a reading for the Node. |

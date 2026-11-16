@@ -21,7 +21,6 @@ use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Proof\ProofGroup;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\GitHub\GitHubActionsJobs;
 use App\Infrastructure\Metrics\PrometheusCiRunnerStates;
 use App\Models\Instance;
@@ -58,7 +57,6 @@ final readonly class ShowCiRunnersAction
             ->orderBy('name')->get();
         $jobs = $this->github->read();
         $states = $nodes->isEmpty() ? [] : $this->states->states();
-        $settings = TaskVmSettings::fromConfig();
         $copies = $this->proofCopies($nodes->map(static fn (Node $node): int => $node->id)->all());
         $facts = NodeFact::query()->whereIn('node_id', $nodes->modelKeys())->where('kind', NodeFactKind::Metrics)->get()->keyBy('node_id');
 
@@ -67,14 +65,14 @@ final readonly class ShowCiRunnersAction
             $state = $states === null ? null : ($states[$node->name] ?? null);
             $runners = $state !== null && $state['read_ok'] ? $this->runners($state, $jobs->jobs) : [];
             $own = $copies[$node->id] ?? [];
-            $total = $settings->hasHost($node->id) ? $settings->host($node->id)->ciPlaces : null;
             $busy = count(array_filter($runners, static fn (CiRunnerData $runner): bool => $runner->busy));
             $fact = $facts->get($node->id);
 
             $views[] = new CiNodeData(
                 node_id: $node->id,
                 node_name: $node->name,
-                places: new CiPlacesData($total, $busy, count($own), $total === null ? null : max(0, $total - $busy - count($own))),
+                // The count is the Node's `ci.places` setting, which is not wired yet, so no Node has a count.
+                places: self::places(null, $busy, count($own)),
                 proof_copies: $own,
                 resources: $fact instanceof NodeFact ? $this->resources($node, $fact) : null,
                 runner_state: $this->runnerState($state, $now),
@@ -168,6 +166,11 @@ final readonly class ShowCiRunnersAction
             memory: new CiUsageData($metrics->memory['used'], $metrics->memory['total']),
             disk: $root === null || $root['used'] === null || $root['total'] === null ? null : new CiUsageData($root['used'], $root['total']),
         );
+    }
+
+    private static function places(?int $total, int $runnerJobs, int $proofCopies): CiPlacesData
+    {
+        return new CiPlacesData($total, $runnerJobs, $proofCopies, $total === null ? null : max(0, $total - $runnerJobs - $proofCopies));
     }
 
     /** @param list<int> $values */

@@ -141,7 +141,7 @@ describe('GET /api/v1/ci/runners', function (): void {
             'resources' => null, 'runners' => [], 'proof_copies' => []])
             ->and($unread['runner_state'])->toBe(['observed_at' => '2026-11-16T11:55:00Z', 'stale' => true, 'error_code' => 'ci_runner.state_unavailable']);
 
-        expect($node['places'])->toBe(['total' => 3, 'runner_jobs' => 1, 'proof_copies' => 1, 'free' => 1])
+        expect($node['places'])->toBe(['total' => null, 'runner_jobs' => 1, 'proof_copies' => 1, 'free' => null])
             ->and($node['proof_copies'])->toBe([['instance_id' => Instance::query()->where('name', 'task-proof')->value('id'), 'instance_name' => 'task-proof', 'task_group_id' => $proof->id]])
             ->and($node['resources'])->toBe(['observed_at' => '2026-11-16T11:59:30Z', 'possibly_outdated' => true, 'cpu_pressure' => 12.5, 'memory_pressure' => 0.5,
                 'memory' => ['used_bytes' => 4_000, 'total_bytes' => 16_000], 'disk' => ['used_bytes' => 300, 'total_bytes' => 1_000]])
@@ -171,7 +171,7 @@ describe('GET /api/v1/ci/runners', function (): void {
                 ['observed_at' => null, 'stale' => false, 'error_code' => 'ci_runner.state_unavailable'],
                 ['observed_at' => null, 'stale' => false, 'error_code' => 'ci_runner.state_unavailable'],
             ])
-            ->and($data['nodes'][1]['places'])->toBe(['total' => 3, 'runner_jobs' => 0, 'proof_copies' => 0, 'free' => 3]);
+            ->and($data['nodes'][1]['places'])->toBe(['total' => null, 'runner_jobs' => 0, 'proof_copies' => 0, 'free' => null]);
     });
 
     it('reads Prometheus once for every viewer of the same ten seconds', function (): void {
