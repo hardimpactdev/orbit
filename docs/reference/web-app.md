@@ -91,7 +91,11 @@ The dashboard and Nodes page group Nodes by the existing Metrics status. Tracked
 
 ## CI runner view
 
-The runner view at `/runners` shows each CI Node's places, CPU pressure, memory and disk, each runner's state and current job, and the runners' jobs of the last 48 hours. It reads `GET /api/v1/ci/runners`. [CI runner view](/reference/ci-runner-view) owns its content, sources and freshness.
+The runner view is `/runners` in the main navigation, after Activity. It reads `GET /api/v1/ci/runners`. [CI runner view](/reference/ci-runner-view) owns its content, sources and freshness.
+
+The page draws one frame for each CI Node. The places bar has one cell for each place: a runner job, then a proof copy, then a free place. A Node without a count shows only its used places. The frame also shows CPU pressure, memory and disk, and a table of its runners with their state, version, current job and how long that job has run. The frame border names a missing or stale runner state, or an outdated metrics snapshot.
+
+Below the frames are three panes: the running and queued jobs, each runner's jobs, failures, median queue wait, median run time and busy share over the window, and the recent completed jobs. A job row opens the job on GitHub. A repository that GitHub did not answer for, or that the Gateway read only in part, is named in the bottom border of these panes.
 
 ## Node detail pages
 
@@ -203,6 +207,7 @@ These views have no event. A view with an interval polls while the tab is visibl
 | Live UFW rules, on a Linux Node's Firewall section | 15 seconds |
 | Process logs, Instance logs, queue, and analytics | 10 seconds |
 | Node metrics from Grafana | 10 seconds |
+| CI runner view | 15 seconds |
 | Quota (`ai-router`) status and provider pools | 60 seconds |
 
 The fleet firewall list reads every Node's rules with one request, `GET /api/v1/firewall-rules`, the same read as `firewall:list`. It returns only the Nodes that the browser's Node can reach.

@@ -1,0 +1,175 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/ci/runners",
+    "status": 200,
+    "body": {
+        "data": {
+            "generated_at": "2026-10-28T12:00:00Z",
+            "window_hours": 48,
+            "nodes": [
+                {
+                    "node_id": 2,
+                    "node_name": "beast",
+                    "places": { "total": 4, "runner_jobs": 1, "proof_copies": 1, "free": 2 },
+                    "proof_copies": [
+                        { "instance_id": 3, "instance_name": "dev", "task_group_id": 12 }
+                    ],
+                    "resources": {
+                        "observed_at": "2026-10-28T11:59:30Z",
+                        "possibly_outdated": false,
+                        "cpu_pressure": 12.5,
+                        "memory_pressure": 0.5,
+                        "memory": { "used_bytes": 17179869184, "total_bytes": 68719476736 },
+                        "disk": { "used_bytes": 322122547200, "total_bytes": 1073741824000 }
+                    },
+                    "runner_state": {
+                        "observed_at": "2026-10-28T11:59:55Z",
+                        "stale": false,
+                        "error_code": null
+                    },
+                    "runners": [
+                        {
+                            "name": "beast-ci-1",
+                            "state": "running",
+                            "service": "active",
+                            "busy": true,
+                            "version": "2.330.0",
+                            "current_job": {
+                                "job_id": 501,
+                                "repository": "acme/shop",
+                                "workflow": "CI",
+                                "job": "php (1)",
+                                "started_at": "2026-10-28T11:56:00Z",
+                                "url": "https://github.com/acme/shop/actions/runs/50/job/501"
+                            },
+                            "stats": {
+                                "jobs": 2,
+                                "failed": 1,
+                                "queue_wait_seconds_median": 20,
+                                "run_seconds_median": 450,
+                                "busy_seconds": 900
+                            }
+                        },
+                        {
+                            "name": "beast-ci-2",
+                            "state": "running",
+                            "service": "active",
+                            "busy": false,
+                            "version": "2.330.0",
+                            "current_job": null,
+                            "stats": {
+                                "jobs": 1,
+                                "failed": 0,
+                                "queue_wait_seconds_median": 60,
+                                "run_seconds_median": 60,
+                                "busy_seconds": 60
+                            }
+                        },
+                        {
+                            "name": "beast-ci-3",
+                            "state": "stopped",
+                            "service": "unknown",
+                            "busy": false,
+                            "version": null,
+                            "current_job": null,
+                            "stats": {
+                                "jobs": 0,
+                                "failed": 0,
+                                "queue_wait_seconds_median": null,
+                                "run_seconds_median": null,
+                                "busy_seconds": 0
+                            }
+                        }
+                    ]
+                }
+            ],
+            "repositories": [{ "repository": "acme/shop", "error_code": null, "truncated": false }],
+            "github_error_code": null,
+            "jobs": [
+                {
+                    "job_id": 502,
+                    "run_id": 50,
+                    "repository": "acme/shop",
+                    "workflow": "CI",
+                    "job": "php (2)",
+                    "runner_name": null,
+                    "status": "queued",
+                    "conclusion": null,
+                    "created_at": "2026-10-28T11:58:00Z",
+                    "started_at": null,
+                    "completed_at": null,
+                    "queue_wait_seconds": null,
+                    "run_seconds": null,
+                    "url": "https://github.com/acme/shop/actions/runs/50/job/502"
+                },
+                {
+                    "job_id": 501,
+                    "run_id": 50,
+                    "repository": "acme/shop",
+                    "workflow": "CI",
+                    "job": "php (1)",
+                    "runner_name": "beast-ci-1",
+                    "status": "in_progress",
+                    "conclusion": null,
+                    "created_at": "2026-10-28T11:55:40Z",
+                    "started_at": "2026-10-28T11:56:00Z",
+                    "completed_at": null,
+                    "queue_wait_seconds": 20,
+                    "run_seconds": null,
+                    "url": "https://github.com/acme/shop/actions/runs/50/job/501"
+                },
+                {
+                    "job_id": 401,
+                    "run_id": 40,
+                    "repository": "acme/shop",
+                    "workflow": "CI",
+                    "job": "php (1)",
+                    "runner_name": "beast-ci-1",
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "created_at": "2026-10-28T10:00:00Z",
+                    "started_at": "2026-10-28T10:00:10Z",
+                    "completed_at": "2026-10-28T10:10:10Z",
+                    "queue_wait_seconds": 10,
+                    "run_seconds": 600,
+                    "url": "https://github.com/acme/shop/actions/runs/40/job/401"
+                },
+                {
+                    "job_id": 402,
+                    "run_id": 40,
+                    "repository": "acme/shop",
+                    "workflow": "CI",
+                    "job": "php (2)",
+                    "runner_name": "beast-ci-1",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "created_at": "2026-10-28T09:00:00Z",
+                    "started_at": "2026-10-28T09:00:30Z",
+                    "completed_at": "2026-10-28T09:05:30Z",
+                    "queue_wait_seconds": 30,
+                    "run_seconds": 300,
+                    "url": "https://github.com/acme/shop/actions/runs/40/job/402"
+                },
+                {
+                    "job_id": 403,
+                    "run_id": 40,
+                    "repository": "acme/shop",
+                    "workflow": "CI",
+                    "job": "php (3)",
+                    "runner_name": "beast-ci-2",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "created_at": "2026-10-28T08:00:00Z",
+                    "started_at": "2026-10-28T08:01:00Z",
+                    "completed_at": "2026-10-28T08:02:00Z",
+                    "queue_wait_seconds": 60,
+                    "run_seconds": 60,
+                    "url": "https://github.com/acme/shop/actions/runs/40/job/403"
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}
