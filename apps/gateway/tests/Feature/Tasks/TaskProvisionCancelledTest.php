@@ -50,13 +50,13 @@ function claimedProvision(): array
     return [$operation, $group, $slot, $instance];
 }
 
-it('runs the group on its slot after a claim that passed', function (): void {
+it('runs the group after a claim that passed and leaves its old slot row as it is', function (): void {
     Queue::fake();
     [$operation, $group, $slot, $instance] = claimedProvision();
 
     app(TaskProvisionProjection::class)->record($operation, 'succeeded', null, fn (): Operation => $operation);
 
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($slot->refresh()->state)->toBe(TaskVmState::Ready)
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($slot->refresh()->state)->toBe(TaskVmState::Provisioning)
         ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)->and($instance->starting_commit)->toBe(str_repeat('a', 40));
     Queue::assertNothingPushed();
 });
