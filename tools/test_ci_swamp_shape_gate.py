@@ -45,9 +45,21 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
         self.assertIn('uses: ./.github/workflows/ci-deferred.yml', receiver)
         import yaml
         consumer = yaml.safe_load((ROOT / '.github/workflows/ci-deferred.yml').read_text())
-        self.assertEqual(['self-hosted', 'orbit-shard', 'sabre'], consumer['jobs']['fixtures']['runs-on'])
+        self.assertEqual(['self-hosted', 'orbit-shard'], consumer['jobs']['fixtures']['runs-on'])
         required = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:', 1)[1]
         self.assertNotIn('Main full set', required)
+
+    def test_the_fixture_tools_cache_key_follows_the_interpreter(self):
+        # A venv of another interpreter fails to load its libpython, so a new interpreter must miss the cache.
+        import yaml
+        steps = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']['fixtures']['steps']
+        python = next(step for step in steps if step.get('uses', '').startswith('actions/setup-python@'))
+        cache = next(step for step in steps if step.get('name') == 'Cache pinned fixture tools and collections')
+        self.assertLess(steps.index(python), steps.index(cache))
+        key = cache['with']['key']
+        for output in ('python-version', 'python-path'):
+            self.assertIn(f"${{{{ steps.{python['id']}.outputs.{output} }}}}", key)
+        self.assertNotRegex(key, r'py\d', 'the key names no fixed Python version')
 
     def test_the_linter_pins_live_only_in_the_requirements_file(self):
         pins = (ROOT / 'swamp/ansible/shape-gate-requirements.txt').read_text()

@@ -2588,7 +2588,7 @@ The same step keeps three host programs that Swamp fixture units run: `zip`, `un
 
 It also keeps `btrfs-progs`. The inner Incus needs it for its btrfs pool on the [inner volume](#the-inner-volume). The nested image carries it since PR #3706, so a new nested-fleet default has it from its image. A default made from an older image, Instance 2454 among them, keeps that image and lacks it until this step installs it. [Convert a default](#convert-a-default) needs it inside the container before the inner pool can be made.
 
-The step sends `swamp/ansible/instance_shape_tools.py` into the outer container and runs it as root, with the workspace as its argument. The script loads the checkout's own `bin/swamp-shape-gate`. The gate names the tools from its three pin files: `/opt/orbit-shape-gate/venv-<digest>` from `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`, and `/opt/orbit-shape-gate/collections-<digest>` from `swamp/ansible/requirements.yml`. The gate also builds the venv. So the step, the gate and the proof runner always use the same names, and no version or naming rule exists twice.
+The step sends `swamp/ansible/instance_shape_tools.py` into the outer container and runs it as root, with the workspace as its argument. The script loads the checkout's own `bin/swamp-shape-gate`. The gate names the tools: `/opt/orbit-shape-gate/venv-<digest>` from `swamp/ansible/shape-gate-requirements.txt`, `swamp/ansible/requirements.txt` and the interpreter that builds the venv, by [the gate's venv rule](/reference/implementation-loop#run-the-swamp-shape-gate-before-you-push), and `/opt/orbit-shape-gate/collections-<digest>` from `swamp/ansible/requirements.yml`. The gate also builds the venv. So the step, the gate and the proof runner always use the same names, and no version or naming rule exists twice.
 
 | State in the default | What the step does | Result |
 | --- | --- | --- |
@@ -2606,7 +2606,7 @@ A build does five things:
 2. It builds the venv with the gate's own `tool_path`.
 3. It installs the collections into a `.partial` folder and renames it. Collections that are complete already stay.
 4. It writes the venv's `.complete`, the marker of ready tools.
-5. It removes the `venv-*` and `collections-*` folders of other pins.
+5. It removes the `venv-*` and `collections-*` folders of other pins or another interpreter.
 
 The build reaches three services: the Ubuntu mirror (apt, for the packages), the Python package index (pip) and Ansible Galaxy (`ansible-galaxy`). All three go through the Node's egress proxy: apt by its own setting in the image, pip and `ansible-galaxy` by `HTTPS_PROXY` from the Instance profile. The first build in a copy took about 30 s. The folders are mode 0755 and the files 0644, so `agent` reads them. The runner's own `ansible-galaxy collection install` then finds every collection and writes nothing.
 
