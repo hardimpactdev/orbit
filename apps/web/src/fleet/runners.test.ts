@@ -33,7 +33,7 @@ const runner = (overrides: Partial<CiRunner> = {}): CiRunner => ({
 const node = (name: string, runners: CiRunner[]): CiNode => ({
     node_id: name.length,
     node_name: name,
-    places: { total: null, runner_jobs: 0, proof_copies: 0, free: null },
+    places: { total: null, proof_only: false, runner_jobs: 0, proof_copies: 0, free: null },
     proof_copies: [],
     resources: null,
     runner_state: { observed_at: null, stale: false, error_code: null },
@@ -60,7 +60,7 @@ const job = (id: number, overrides: Partial<CiJob> = {}): CiJob => ({
 
 describe("the places bar", () => {
     it("draws runner jobs, then proof copies, then the free places", () => {
-        const places = { total: 5, runner_jobs: 2, proof_copies: 1, free: 2 };
+        const places = { total: 5, proof_only: false, runner_jobs: 2, proof_copies: 1, free: 2 };
 
         expect(placeCells(places)).toEqual(["runner", "runner", "proof", "free", "free"]);
         expect(placesReading(places)).toBe("3/5 used · 2 free");
@@ -68,15 +68,28 @@ describe("the places bar", () => {
     });
 
     it("shows only the used places when the Node has no count", () => {
-        const places = { total: null, runner_jobs: 1, proof_copies: 2, free: null };
+        const places = {
+            total: null,
+            proof_only: false,
+            runner_jobs: 1,
+            proof_copies: 2,
+            free: null,
+        };
 
         expect(placeCells(places)).toEqual(["runner", "proof", "proof"]);
         expect(placesReading(places)).toBe("3 used");
         expect(placesOverbooked(places)).toBe(false);
     });
 
+    it("names a Node that keeps its places for proof copies", () => {
+        const places = { total: 3, proof_only: true, runner_jobs: 0, proof_copies: 1, free: 2 };
+
+        expect(placeCells(places)).toEqual(["proof", "free", "free"]);
+        expect(placesReading(places)).toBe("1/3 used · 2 free · proof copies only");
+    });
+
     it("marks a Node that uses more places than its count", () => {
-        const places = { total: 2, runner_jobs: 2, proof_copies: 1, free: 0 };
+        const places = { total: 2, proof_only: false, runner_jobs: 2, proof_copies: 1, free: 0 };
 
         expect(placeCells(places)).toEqual(["runner", "runner", "proof"]);
         expect(placesReading(places)).toBe("3/2 used · 0 free");

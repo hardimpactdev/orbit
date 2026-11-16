@@ -61,7 +61,7 @@ beforeEach(function (): void {
     $metrics->roles()->create(['role' => RoleName::Metrics, 'status' => 'active']);
     $this->mock(MetricsCredentialManager::class, fn ($mock) => $mock->shouldReceive('storedCredentials')
         ->andReturn(new MetricsCredentialsData('https://metrics.orbit', 'admin', 'secret')));
-    $this->ci = ciRunnersNode('ci-b', '10.44.0.7', ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 0, 'ci_places' => 3]]);
+    $this->ci = ciRunnersNode('ci-b', '10.44.0.7', ['ci' => ['places' => 3, 'proof_only' => false]]);
     $this->ci->forceFill(['instance_bridge' => '10.253.0.0/24'])->saveQuietly();
     $this->ci->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
     $this->other = ciRunnersNode('ci-a', '10.44.0.8');
@@ -137,11 +137,11 @@ describe('GET /api/v1/ci/runners', function (): void {
             ->and(array_column($data['jobs'], 'job_id'))->toBe([501, 401, 402, 403]);
 
         [$unread, $node] = $data['nodes'];
-        expect($unread)->toMatchArray(['node_id' => $this->other->id, 'places' => ['total' => null, 'runner_jobs' => 0, 'proof_copies' => 0, 'free' => null],
+        expect($unread)->toMatchArray(['node_id' => $this->other->id, 'places' => ['total' => null, 'proof_only' => false, 'runner_jobs' => 0, 'proof_copies' => 0, 'free' => null],
             'resources' => null, 'runners' => [], 'proof_copies' => []])
             ->and($unread['runner_state'])->toBe(['observed_at' => '2026-11-16T11:55:00Z', 'stale' => true, 'error_code' => 'ci_runner.state_unavailable']);
 
-        expect($node['places'])->toBe(['total' => null, 'runner_jobs' => 1, 'proof_copies' => 1, 'free' => null])
+        expect($node['places'])->toBe(['total' => 3, 'proof_only' => false, 'runner_jobs' => 1, 'proof_copies' => 1, 'free' => 1])
             ->and($node['proof_copies'])->toBe([['instance_id' => Instance::query()->where('name', 'task-proof')->value('id'), 'instance_name' => 'task-proof', 'task_group_id' => $proof->id]])
             ->and($node['resources'])->toBe(['observed_at' => '2026-11-16T11:59:30Z', 'possibly_outdated' => true, 'cpu_pressure' => 12.5, 'memory_pressure' => 0.5,
                 'memory' => ['used_bytes' => 4_000, 'total_bytes' => 16_000], 'disk' => ['used_bytes' => 300, 'total_bytes' => 1_000]])
@@ -160,6 +160,20 @@ describe('GET /api/v1/ci/runners', function (): void {
         Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/runners'));
     });
 
+    it('keeps a proof-only Node\'s places for proof copies, while its busy runner still shows', function (): void {
+        $this->ci->forceFill(['settings' => ['ci' => ['places' => 3, 'proof_only' => true]]])->saveQuietly();
+        $project = Project::query()->create(['slug' => 'orbit', 'name' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main', 'root' => '.',
+            'source_access' => 'gh_cli']);
+        $proof = ciRunnersCopy($this->ci, $project, 'task-proof');
+        Operation::query()->create(['kind' => ProofGroup::OwnerKind, 'target_type' => 'task_group', 'target_id' => $proof->id, 'node_id' => $this->gateway->id,
+            'status' => 'running', 'input' => [], 'triggered_by' => 'test']);
+
+        $node = $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])->getJson('/api/v1/ci/runners')->assertOk()->json('data.nodes.1');
+
+        expect($node['places'])->toBe(['total' => 3, 'proof_only' => true, 'runner_jobs' => 0, 'proof_copies' => 1, 'free' => 2])
+            ->and(array_column($node['runners'], 'busy', 'name'))->toBe(['ci-b-1' => true, 'ci-b-2' => false]);
+    });
+
     it('still answers when Prometheus and the GitHub App cannot', function (): void {
         $this->prometheus = static fn () => Http::response(['message' => 'down'], 502);
 
@@ -171,7 +185,7 @@ describe('GET /api/v1/ci/runners', function (): void {
                 ['observed_at' => null, 'stale' => false, 'error_code' => 'ci_runner.state_unavailable'],
                 ['observed_at' => null, 'stale' => false, 'error_code' => 'ci_runner.state_unavailable'],
             ])
-            ->and($data['nodes'][1]['places'])->toBe(['total' => null, 'runner_jobs' => 0, 'proof_copies' => 0, 'free' => null]);
+            ->and($data['nodes'][1]['places'])->toBe(['total' => 3, 'proof_only' => false, 'runner_jobs' => 0, 'proof_copies' => 0, 'free' => 3]);
     });
 
     it('reads Prometheus once for every viewer of the same ten seconds', function (): void {

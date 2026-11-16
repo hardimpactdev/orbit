@@ -18,13 +18,18 @@ export function placeCells(places: CiPlaces): PlaceKind[] {
     ];
 }
 
-/** The reading beside the bar: the used places, and out of how many when the Node has a count. */
+/**
+ * The reading beside the bar: the used places, out of how many when the Node has a count, and
+ * whether the Node keeps its places for proof copies. The Gateway counts no runner job there.
+ */
 export function placesReading(places: CiPlaces): string {
     const used = places.runner_jobs + places.proof_copies;
+    const reading =
+        places.total === null
+            ? `${used} used`
+            : `${used}/${places.total} used · ${places.free ?? 0} free`;
 
-    return places.total === null
-        ? `${used} used`
-        : `${used}/${places.total} used · ${places.free ?? 0} free`;
+    return places.proof_only ? `${reading} · proof copies only` : reading;
 }
 
 /** More places are in use than the Node's count allows. */

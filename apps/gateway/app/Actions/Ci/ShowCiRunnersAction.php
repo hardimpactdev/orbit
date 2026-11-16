@@ -16,9 +16,11 @@ use App\Data\Ci\CiRunnersData;
 use App\Data\Ci\CiRunnerStateData;
 use App\Data\Ci\CiRunnerStatsData;
 use App\Data\Ci\CiUsageData;
+use App\Data\Nodes\NodeCiData;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Proof\ProofGroup;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\GitHub\GitHubActionsJobs;
@@ -48,6 +50,7 @@ final readonly class ShowCiRunnersAction
         private PrometheusCiRunnerStates $states,
         private GitHubActionsJobs $github,
         private ShowNodeMetricsAction $metrics,
+        private NodeSettingsNormalizer $settings,
     ) {}
 
     public function execute(): CiRunnersData
@@ -71,8 +74,7 @@ final readonly class ShowCiRunnersAction
             $views[] = new CiNodeData(
                 node_id: $node->id,
                 node_name: $node->name,
-                // The count is the Node's `ci.places` setting, which is not wired yet, so no Node has a count.
-                places: self::places(null, $busy, count($own)),
+                places: self::places($this->settings->fromStored($node->settings)?->ci(), $busy, count($own)),
                 proof_copies: $own,
                 resources: $fact instanceof NodeFact ? $this->resources($node, $fact) : null,
                 runner_state: $this->runnerState($state, $now),
@@ -168,9 +170,14 @@ final readonly class ShowCiRunnersAction
         );
     }
 
-    private static function places(?int $total, int $runnerJobs, int $proofCopies): CiPlacesData
+    /** The Node's `ci` setting counts its places; on a proof-only Node a runner job uses none of them. */
+    private static function places(?NodeCiData $ci, int $busyRunners, int $proofCopies): CiPlacesData
     {
-        return new CiPlacesData($total, $runnerJobs, $proofCopies, $total === null ? null : max(0, $total - $runnerJobs - $proofCopies));
+        $runnerJobs = $ci?->proof_only === true ? 0 : $busyRunners;
+        $total = $ci?->places;
+
+        return new CiPlacesData($total, $ci?->proof_only ?? false, $runnerJobs, $proofCopies,
+            $total === null ? null : max(0, $total - $runnerJobs - $proofCopies));
     }
 
     /** @param list<int> $values */

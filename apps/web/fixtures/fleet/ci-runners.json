@@ -10,7 +10,13 @@
                 {
                     "node_id": 2,
                     "node_name": "beast",
-                    "places": { "total": 4, "runner_jobs": 1, "proof_copies": 1, "free": 2 },
+                    "places": {
+                        "total": 4,
+                        "proof_only": false,
+                        "runner_jobs": 1,
+                        "proof_copies": 1,
+                        "free": 2
+                    },
                     "proof_copies": [
                         { "instance_id": 3, "instance_name": "dev", "task_group_id": 12 }
                     ],
