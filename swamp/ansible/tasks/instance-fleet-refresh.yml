@@ -379,12 +379,22 @@
   changed_when: false
   loop: "{{ fleet_converge_roles }}"
 # The due Nodes converge side by side: all are admitted, then each is awaited, and a failure fails the refresh only after every
-# admitted converge has ended (instance-fleet-converge-node.yml).
+# admitted converge has ended (instance-fleet-converge-node.yml). When the `host` part is due, nested-app-dev's converge comes after
+# them, alone, with its `app-dev` role: the hub's reservation refuses a converge with roles beside any other converge. Its wait is
+# 1800 s while the record holds no `host`, the first host build with the stock and Instance images; 900 s after.
 - name: Converge the base of the due nested Nodes
   when: fleet_due.converge
   ansible.builtin.include_tasks: instance-fleet-converge-node.yml
   vars:
-    fleet_converge_nodes: "{{ fleet_nodes | selectattr('name', 'in', fleet_converge_roles) | list }}"
+    fleet_converge_nodes: >-
+      {{ fleet_nodes | selectattr('name', 'in', fleet_converge_roles | reject('eq', 'app-dev' if fleet_due.host | bool else '') | list) | list }}
+- name: Converge nested-app-dev's Instance host after the base converges
+  when: fleet_due.host | bool
+  ansible.builtin.include_tasks: instance-fleet-converge-node.yml
+  vars:
+    fleet_converge_nodes: "{{ fleet_nodes | selectattr('name', 'eq', 'app-dev') | list }}"
+    fleet_converge_body: '{"roles":["app-dev"]}'
+    fleet_converge_seconds: "{{ 1800 if fleet_recorded.host is not defined else 900 }}"
 
 - name: Time the converge
   ansible.builtin.set_fact:
