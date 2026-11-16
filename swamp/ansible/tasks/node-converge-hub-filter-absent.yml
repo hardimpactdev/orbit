@@ -1,0 +1,38 @@
+---
+# The task VM hub filter that the removed `task_vm.hub_converge` installed (docs/reference/old-paths.md#the-task-vm-lifecycle).
+# A hub that never had it changes nothing.
+- name: Read the task VM hub filter unit
+  ansible.builtin.stat: { path: /etc/systemd/system/orbit-task-vms-hub.service, get_checksum: false }
+  register: hub_filter_unit
+- name: Stop and disable the task VM hub filter
+  when: hub_filter_unit.stat.exists
+  ansible.builtin.systemd: { name: orbit-task-vms-hub.service, state: stopped, enabled: false }
+- name: Delete the task VM hub filter files
+  ansible.builtin.file: { path: "{{ item }}", state: absent }
+  loop: [/etc/systemd/system/orbit-task-vms-hub.service, /etc/orbit/task-vms/hub.nft]
+  register: hub_filter_files
+- name: Forget the deleted hub filter unit
+  when: hub_filter_files.results[0].changed
+  ansible.builtin.systemd: { daemon_reload: true }
+  changed_when: true
+- name: Read the task VM folder
+  ansible.builtin.stat: { path: /etc/orbit/task-vms, get_checksum: false }
+  register: hub_filter_folder
+- name: Find what else the task VM folder holds
+  when: hub_filter_folder.stat.isdir | default(false)
+  ansible.builtin.find: { paths: /etc/orbit/task-vms, file_type: any, hidden: true }
+  register: hub_filter_rest
+- name: Delete the empty task VM folder
+  when: hub_filter_folder.stat.isdir | default(false) and hub_filter_rest.matched == 0
+  ansible.builtin.file: { path: /etc/orbit/task-vms, state: absent }
+- name: Read the task VM hub table
+  ansible.builtin.command: { argv: [nft, list, table, inet, orbit_task_vms] }
+  register: hub_filter_table
+  changed_when: false
+  failed_when: false
+- name: Delete the task VM hub table
+  when: hub_filter_table.rc == 0
+  ansible.builtin.command: { argv: [nft, delete, table, inet, orbit_task_vms] }
+  register: hub_filter_delete
+  changed_when: true
+  failed_when: hub_filter_delete.rc != 0
