@@ -6,6 +6,11 @@ cases = [
   "test_another_php_version_fails",
   "test_a_binary_that_fails_stops_the_check",
   "test_the_folder_install_checks_each_static_php_part",
+  "test_only_the_cli_loads_a_cli_only_extension",
+  "test_no_cli_only_extension_needs_no_third_run",
+  "test_frankenphp_must_read_no_configuration",
+  "test_the_probe_runs_in_an_empty_folder",
+  "test_the_probe_prints_the_ini_files_php_read",
 ]
 file = "swamp/tests/ansible_static_php_test.py"
 cost = 1

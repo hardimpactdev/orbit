@@ -9,16 +9,15 @@ cases = [
   "a real Ansible deadline kills a stalled command after its worker detaches",
   "a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing",
   "a build-list Node prepared before the bridge DNS and container ACL rules gets both on its next converge",
-  "a task VM host keeps the ZFS ARC its task side sets: the Instance side writes no cap",
   "an Instance bridge range that another interface of the Node holds refuses before any change",
   "a CI Node's intent without Caddy parts gets the Instance side without the dev-port table, the own-site rules and the wake",
 ]
 file = "swamp/tests/ansible_instance_host_test.ts"
 self_hosted = true
-cost = 359
+cost = 271
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (88s); these are estimates, not completed measurements.
-slices = 12
+slices = 11
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -60,6 +59,5 @@ inputs = [
   "deadline reaps a detached stdout holder forked before leader exit" = 3 # UNMEASURED estimate; observed maximum body cost
   "deadline reaps a detached stdout holder forked during TERM" = 3 # UNMEASURED estimate; observed maximum body cost
   "a real Ansible deadline kills a stalled command after its worker detaches" = 7 # UNMEASURED estimate; observed maximum body cost
-  "a task VM host keeps the ZFS ARC its task side sets: the Instance side writes no cap" = 88 # completed body 67.161s, run 43010311414; larger completed history retained
   "an Instance bridge range that another interface of the Node holds refuses before any change" = 3 # UNMEASURED estimate; observed maximum body cost
   "a CI Node's intent without Caddy parts gets the Instance side without the dev-port table, the own-site rules and the wake" = 41 # local body 40s; UNMEASURED on a hosted runner

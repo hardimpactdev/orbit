@@ -2,10 +2,13 @@ order = 110
 cases = [
   "real frozen policy owns limits and dependencies",
   "stale baseline evidence can be repaired without growing immutable source debt",
+  "bridge transaction contract is enforced by current and immutable base rules",
+  "current and frozen bridge policy enforce closed state custody and import boundaries",
 ]
 file = "swamp/bin/check-swamp-base-policy_test.ts"
 self_hosted = true
-cost = 20
+# Local run of all four cases, 55s with the gate tools on PATH, rounded up by one second.
+cost = 56
 inputs = [
   "swamp/bin/constant-name.ts",
   "swamp/bin/bounded-phase-scripts.ts",
