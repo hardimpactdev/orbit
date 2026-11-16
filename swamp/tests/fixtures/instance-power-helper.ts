@@ -2,7 +2,8 @@
  * The power helper behind the fixture's `systemd-run` (docs/reference/prepared-restore.md#the-power-helper): it answers each command as
  * the helper's contract says, on the Incus fixture's state.json and the fixture's cgroup files, so the sleep phase's own steps run for
  * real. The helper's engine has its own tests (instance_power_helper_test.py). `helper` in state.json scripts what the fixture does:
- * `busy` calls answer with systemd's UnitExists refusal first, `crash` names a command that ends with exit code 70, `pause_fails`
+ * `busy` calls answer with systemd's UnitExists refusal first, `crash` names a command that ends with exit code 70, `worker_resumed`
+ * makes a restore find the container that the fast worker resumed meanwhile, `pause_fails`
  * comes from the Incus fixture. Each call is one JSON line in `helper-calls`, beside the Incus fixture's `calls`.
  */
 const folder = Deno.env.get("HOST_FIXTURE")!;
@@ -92,6 +93,12 @@ if (command[0] === "prepare") {
             save();
         }
         out({ outcome: status === "running" ? "already_running" : status, state_before: status, state_after: status, swap_subtree: [],
+            prepared_restore: { version: 1, status: "not_applicable" } });
+    } else if (helper.worker_resumed) {
+        // The Node's fast worker held the lock and resumed the container before this call took it.
+        container.status = "Running";
+        save();
+        out({ outcome: "already_running", state_before: "running", state_after: "running", swap_subtree: [],
             prepared_restore: { version: 1, status: "not_applicable" } });
     } else if (state.resume_fails) {
         out({ outcome: "failed", error_code: "instance.container_start_failed", state_before: "frozen", state_after: "frozen", swap_subtree: [],

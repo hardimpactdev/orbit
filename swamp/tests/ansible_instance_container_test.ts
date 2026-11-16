@@ -1388,7 +1388,7 @@ Deno.test({
 /** The wake of each state a sleeping container can be in; the cgroup files live in the fixture. */
 function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | "Running",
   options: { marker?: boolean; web?: number[]; silent?: boolean; nested?: boolean; inner?: Record<string, string>; opened?: string[]; intent?: Record<string, unknown>;
-    outcomes?: string } = {}) {
+    outcomes?: string; workerResumed?: boolean } = {}) {
   if (options.nested) {
     f.container.project = "orbit-instances-nested";
     f.write();
@@ -1401,7 +1401,7 @@ function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | 
   state.containers["instance-7"].status = status;
   if (options.silent) state.containers["instance-7"].silent_until_boot = true;
   // The sleep's plan and the cgroups it opened, as the helper fixture keeps them: "" is the container's own cgroup.
-  Object.assign(state, { plan: true, opened: ["", ...(options.opened ?? [])], helper: {} });
+  Object.assign(state, { plan: true, opened: ["", ...(options.opened ?? [])], helper: options.workerResumed ? { worker_resumed: true } : {} });
   Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
   const cgroup = `${f.folder}/cgroup/lxc.payload.${f.container.project}_instance-7`;
   Deno.mkdirSync(cgroup, { recursive: true });
@@ -1476,8 +1476,19 @@ Deno.test({
       assertEquals([result.wake, result.marker_found, result.prepared_restore, result.ready_at, result.ready_at_resolution_seconds],
         ["already_running", false, { status: "timed_out" }, "2026-11-16T00:46:40Z", 1]);
 
-      // Without a ready file of this Operation the run reports a running container and no readiness time.
+      // The run read Frozen, then waited for the helper's lock while the worker resumed the container: no second resume, the
+      // worker's facts.
+      Deno.writeTextFileSync(`${outcomes}/app-instance-7-op-31.ready-partial`, "");
+      Deno.utimeSync(`${outcomes}/app-instance-7-op-31.ready-partial`, at, at);
       Deno.removeSync(`${outcomes}/app-instance-7-op-31.ready-timed-out`);
+      const raced = wakeFrom(f, "Frozen", { marker: false, outcomes, workerResumed: true });
+      assert(raced.run.ok, raced.run.output);
+      assertEquals(raced.helper, ["restore"]);
+      assert(!raced.families.some((family) => ["resume", "start", "stop"].includes(family)), raced.families.join(","));
+      assertEquals([f.result().wake, f.result().prepared_restore, f.result().ready_at], ["resumed", { status: "partial" }, "2026-11-16T00:46:40Z"]);
+      Deno.removeSync(`${outcomes}/app-instance-7-op-31.ready-partial`);
+
+      // Without a ready file of this Operation the run reports a running container and no readiness time.
       wakeFrom(f, "Running", { marker: false, outcomes });
       assertEquals([f.result().prepared_restore, f.result().ready_at], [{ status: "not_applicable" }, undefined]);
     } finally {
