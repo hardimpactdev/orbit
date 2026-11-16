@@ -14,10 +14,10 @@ use Illuminate\Validation\ValidationException;
 use stdClass;
 use UnexpectedValueException;
 
-/** One closed object: a new name, a platform, the LAN address, reboot hold, image refresh hold, the apps folder, the task VM host settings, nested-fleet hosting, or a CI Node's CI places; at least one. */
+/** One closed object: a new name, a platform, the LAN address, reboot hold, the apps folder, nested-fleet hosting, or a CI Node's CI places; at least one. */
 final class UpdateNodeRequest extends FormRequest
 {
-    private const array MEMBERS = ['name', 'platform', 'lan_ip', 'reboot_hold', 'image_refresh_hold', 'apps', 'task_vms', 'nested_fleet', 'ci'];
+    private const array MEMBERS = ['name', 'platform', 'lan_ip', 'reboot_hold', 'apps', 'nested_fleet', 'ci'];
 
     public function authorize(): bool
     {
@@ -34,37 +34,12 @@ final class UpdateNodeRequest extends FormRequest
             'platform' => ['sometimes', 'string', Rule::in(['linux', 'macos', 'ipados'])],
             'lan_ip' => ['sometimes', 'nullable', 'ipv4'],
             'reboot_hold' => ['sometimes', 'boolean:strict'],
-            'image_refresh_hold' => ['sometimes', 'boolean:strict'],
             'nested_fleet' => ['sometimes', 'boolean:strict'],
             'apps' => ['sometimes', 'nullable', 'array:path'],
             'apps.path' => ['sometimes', 'nullable', 'string'],
             'ci' => ['sometimes', 'nullable', 'array:places,proof_only'],
             'ci.places' => ['sometimes', 'integer:strict', 'between:0,64'],
             'ci.proof_only' => ['sometimes', 'boolean:strict'],
-            'task_vms' => ['sometimes', 'nullable', 'array:cidr,task_places,project,network,pool,pool_size,image_alias,zfs_dataset,cpus,memory,disk,operator_owned,slots,ci_places,containers'],
-            'task_vms.ci_places' => ['required_with:task_vms', 'integer:strict', 'between:0,64'],
-            'task_vms.cidr' => ['required_with:task_vms', 'string'],
-            'task_vms.task_places' => ['required_with:task_vms', 'integer:strict', 'between:0,64'],
-            'task_vms.project' => ['sometimes', 'string'],
-            'task_vms.network' => ['sometimes', 'string'],
-            'task_vms.pool' => ['sometimes', 'string'],
-            'task_vms.pool_size' => ['sometimes', 'string'],
-            'task_vms.image_alias' => ['sometimes', 'string'],
-            'task_vms.zfs_dataset' => ['sometimes', 'nullable', 'string'],
-            'task_vms.cpus' => ['sometimes', 'integer:strict', 'between:0,64'],
-            'task_vms.memory' => ['sometimes', 'string'],
-            'task_vms.disk' => ['sometimes', 'string'],
-            'task_vms.operator_owned' => ['sometimes', 'list'],
-            'task_vms.operator_owned.*' => ['string'],
-            'task_vms.slots' => ['sometimes', 'nullable', 'array:count,project_id,size'],
-            'task_vms.slots.count' => ['required_with:task_vms.slots', 'integer:strict', 'between:1,16'],
-            'task_vms.slots.project_id' => ['required_with:task_vms.slots', 'integer:strict', 'min:1'],
-            'task_vms.slots.size' => ['required_with:task_vms.slots', 'string', 'in:normal,medium,large'],
-            'task_vms.containers' => ['sometimes', 'array:cidr,task_places,project,network'],
-            'task_vms.containers.cidr' => ['required_with:task_vms.containers', 'string'],
-            'task_vms.containers.task_places' => ['required_with:task_vms.containers', 'integer:strict', 'between:0,64'],
-            'task_vms.containers.project' => ['sometimes', 'string'],
-            'task_vms.containers.network' => ['sometimes', 'string'],
         ];
     }
 
@@ -81,9 +56,8 @@ final class UpdateNodeRequest extends FormRequest
         $patch = $this->settings();
 
         return [
-            ...array_intersect_key($body, array_flip(['name', 'platform', 'lan_ip', 'reboot_hold', 'image_refresh_hold'])),
+            ...array_intersect_key($body, array_flip(['name', 'platform', 'lan_ip', 'reboot_hold'])),
             ...($patch->hasApps ? ['apps' => $patch->apps === null ? null : ['path' => $patch->apps->path]] : []),
-            ...($patch->hasTaskVms ? ['task_vms' => $patch->taskVms?->toArray()] : []),
             ...($patch->hasNestedFleet ? ['nested_fleet' => $patch->nestedFleet] : []),
             ...($patch->hasCi ? ['ci' => $patch->ci?->toArray()] : []),
         ];
@@ -123,19 +97,12 @@ final class UpdateNodeRequest extends FormRequest
         return is_bool($hold) ? $hold : null;
     }
 
-    public function imageRefreshHold(): ?bool
-    {
-        $hold = $this->validated()['image_refresh_hold'] ?? null;
-
-        return is_bool($hold) ? $hold : null;
-    }
-
-    /** The apps, task_vms, nested_fleet and ci members; the settings parser owns their shape and the `node.settings_*` codes. */
+    /** The apps, nested_fleet and ci members; the settings parser owns their shape and the `node.settings_*` codes. */
     public function settings(): NodeSettingsPatch
     {
         $decoded = json_decode($this->getContent(), associative: false);
         $settings = new stdClass;
-        foreach (['apps', 'task_vms', 'nested_fleet', 'ci'] as $member) {
+        foreach (['apps', 'nested_fleet', 'ci'] as $member) {
             if ($decoded instanceof stdClass && property_exists($decoded, $member)) {
                 $settings->{$member} = $decoded->{$member};
             }
@@ -153,7 +120,7 @@ final class UpdateNodeRequest extends FormRequest
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
         if ($body === []) {
-            throw ValidationException::withMessages(['body' => ['The request body must contain at least one of name, platform, lan_ip, reboot_hold, image_refresh_hold, apps, task_vms, nested_fleet, or ci.']]);
+            throw ValidationException::withMessages(['body' => ['The request body must contain at least one of name, platform, lan_ip, reboot_hold, apps, nested_fleet, or ci.']]);
         }
 
         return $body;

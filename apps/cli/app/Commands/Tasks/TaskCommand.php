@@ -27,7 +27,6 @@ use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCopyAgentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
-use Orbit\Sdk\Responses\Tasks\TaskPlaceHolderResponse;
 use Orbit\Sdk\Responses\Tasks\TaskQuestionResponse;
 
 /**
@@ -308,23 +307,6 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         return $group instanceof TaskGroupResponse ? $group : null;
     }
 
-    /**
-     * One entry per holder of a task place: its group, status and last activity, or the VM when it serves no group.
-     *
-     * @param  list<TaskPlaceHolderResponse>  $holders
-     */
-    protected static function placeHolders(array $holders): string
-    {
-        if ($holders === []) {
-            return 'none';
-        }
-
-        return implode('; ', array_map(static fn (TaskPlaceHolderResponse $holder): string => $holder->groupId === null
-            ? "{$holder->vm} ({$holder->pool})"
-            : "#{$holder->groupId} {$holder->status}, last activity ".($holder->lastActivityAt ?? 'never')
-                .($holder->activeOperationId === null ? '' : ", operation {$holder->activeOperationId} open"), $holders));
-    }
-
     /** The values of a task group's pull request mode (docs/reference/tasks.md#task-group-modes). */
     public const array PR_MODES = ['review_before_pr', 'pr_when_done'];
 
@@ -362,10 +344,6 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             ...($group->previewUrl === null ? [] : ['Preview URL' => $group->previewUrl]),
             'Last activity' => $group->lastActivityAt,
             ...($group->capacityWaitReason === null ? [] : ['Waiting for capacity' => $group->capacityWaitReason]),
-            ...($group->capacityWait === null ? [] : [
-                'Queue position' => "{$group->capacityWait->position} (operation {$group->capacityWait->operationId})",
-                'Places held by' => self::placeHolders($group->capacityWait->holders),
-            ]),
             'Assistance' => $group->assistanceRequested,
             'Kind' => self::askingKind($group->assistanceRequested, $group->assistanceKind),
             'Question' => self::askingText($group->assistanceRequested, $group->assistanceQuestion),

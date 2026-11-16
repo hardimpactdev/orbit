@@ -118,7 +118,7 @@ The `task:start` body schema is empty, and the script declares no `worker` block
 
 The `task:insights` response is `TaskInsightsData`, mapped in the script because the controller returns the data class from its action and does not name it. Its nested data classes give the [task insights](/reference/tasks#task-insights) numbers, trend, and breakdowns. The route has no SDK request and no CLI command, because only the web app reads it.
 
-The `task:status`, `task:show` and `operation:show` descriptions name the [task places](/reference/tasks#task-places) fields: `capacity`, `last_activity_at`, `preview_url`, `capacity_wait` and `poll_after_seconds`. Their response schemas come from the data classes, so regenerate OpenAPI, MCP metadata and web types after changing them.
+The `task:show` and `operation:show` descriptions name the fields `last_activity_at`, `preview_url` and `poll_after_seconds`. Their response schemas come from the data classes, so regenerate OpenAPI, MCP metadata and web types after changing them.
 
 `operation:list` answers with `OperationListItem`, the Operation record without `input`, `result` and `steps`, and the script adds `meta.next_cursor` to its response. Its `limit` and `cursor` parameters come from the form request. [Page the list](/reference/operations#page-the-list) owns the contract.
 
@@ -191,7 +191,7 @@ A request field the API validates as a boolean is a JSON `boolean` in `docs/open
 
 The Instance rename body has optional `branch` and `domain` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. The PHP example supplies a branch rather than sending an empty body; that branch must already be checked out on the Node.
 
-The `node:update` body has optional `name`, `platform`, `apps`, and `task_vms` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. It publishes two success responses: HTTP 200 with the Node for a record-only change, and HTTP 202 with the `node.update` operation for an apps folder change.
+The `node:update` body has optional `name`, `platform`, `lan_ip`, `reboot_hold`, `apps`, `ci` and `nested_fleet` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. It publishes two success responses: HTTP 200 with the Node for a record-only change, and HTTP 202 with the `node.update` operation for an apps folder change.
 
 ### External task status inputs
 

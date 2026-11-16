@@ -37,7 +37,6 @@
             "current_step_started_at": null,
             "current_step_observed_at": null,
             "steps": [],
-            "capacity_wait": null,
             "overdue_since": "2026-11-11T10:15:00.000000Z",
             "hold_wait_reason": null,
             "ready_at": null

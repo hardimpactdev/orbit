@@ -120,9 +120,8 @@ it('decides the ACL and the instance file by the same rule as the site: a clone 
         ->and(str_contains($instanceFile['content'], 'ORBIT_DEV_PORTS'))->toBeFalse();
 });
 
-it('binds the development site to the WireGuard address only, and aborts every client outside the VPN and every task VM', function (): void {
+it('binds the development site to the WireGuard address only, and aborts every client outside the VPN', function (): void {
     $world = devPortWorld();
-    config(['task_vms.enabled' => true, 'task_vms.wireguard_range' => '10.44.0.128/25']);
     $site = devPortSites($world['clone'], $world['route'])[0];
     $source = new class($site) implements NodeCaddySiteSource
     {
@@ -144,8 +143,7 @@ it('binds the development site to the WireGuard address only, and aborts every c
     expect($caddyfile->content)->toContain("https://feature.tool.test:444 {\n    bind 10.44.0.7\n")
         ->toContain('@orbit_outside not remote_ip 10.44.0.0/24')
         ->toContain('abort @orbit_outside')
-        ->toContain('@orbit_task_vms remote_ip 10.44.0.128/25')
-        ->toContain('abort @orbit_task_vms')
+        ->and(str_contains($caddyfile->content, '@orbit_task_vms'))->toBeFalse()
         ->and(str_contains($caddyfile->content, 'bind 0.0.0.0'))->toBeFalse()
         ->and(str_contains($caddyfile->content, '192.168.'))->toBeFalse();
 });
@@ -204,7 +202,10 @@ describe('the Node\'s redirect of the development range', function (): void {
     });
 });
 
-/** The Caddyfile that origin/main rendered for the site set of ownSiteFixtureSites, before container own sites. */
+/**
+ * The Caddyfile that origin/main rendered for the site set of ownSiteFixtureSites, before container own sites, with the task VM
+ * matcher that each WireGuard and LAN route block carried then.
+ */
 const OwnSiteGolden = __DIR__.'/../../../Fixtures/Caddy/route-sites-before-own-site.caddy';
 
 /**
@@ -253,17 +254,16 @@ function ownSiteRender(Node $node, array $sites): NodeCaddyfile
     return (new NodeCaddyfileRenderer([$source]))->render($node);
 }
 
-/** A Node with a WireGuard and a LAN address, an Instance bridge, and task VMs configured, so every guard renders. */
+/** A Node with a WireGuard and a LAN address and an Instance bridge, so every guard renders. */
 function ownSiteNode(): Node
 {
-    config(['task_vms.enabled' => true, 'task_vms.wireguard_range' => '10.44.0.128/25']);
     $node = containerDefaultNode();
     $node->forceFill(['lan_ip' => '192.168.1.5'])->save();
 
     return $node->refresh();
 }
 
-it('renders every WireGuard and LAN site byte for byte as origin/main did', function (): void {
+it('renders every WireGuard and LAN site as origin/main did, less only the two task VM matcher lines of each block', function (): void {
     $node = ownSiteNode();
 
     $caddyfile = ownSiteRender($node, app(RouteCaddySiteSource::class)->fromSites(collect(ownSiteFixtureSites($node))));
@@ -275,8 +275,20 @@ it('renders every WireGuard and LAN site byte for byte as origin/main did', func
 
     // Only the private clone gets own sites: the default, the checkout, the public, production and proxy sites get none.
     expect(array_map(static fn (array $block): string => $block['name'], $own))->toBe(['app-instance-12-bridge', 'app-instance-12-dev-bridge'])
-        ->and($caddyfile->problems)->toBe([])
-        ->and($without)->toBe((string) file_get_contents(OwnSiteGolden));
+        ->and($caddyfile->problems)->toBe([]);
+
+    $golden = (string) file_get_contents(OwnSiteGolden);
+    $matcher = static fn (string $line): bool => in_array(trim($line), ['@orbit_task_vms remote_ip 10.44.0.128/25', 'abort @orbit_task_vms'], true);
+    $before = explode(PHP_EOL, $golden);
+    $kept = array_values(array_filter($before, static fn (string $line): bool => ! $matcher($line)));
+    $blocks = substr_count($golden, '# orbit: ');
+
+    // Every route block carried the matcher and its abort; the render now is the same file without those two lines.
+    expect($blocks)->toBe(7)
+        ->and(substr_count($golden, '@orbit_task_vms remote_ip 10.44.0.128/25'))->toBe($blocks)
+        ->and(substr_count($golden, 'abort @orbit_task_vms'))->toBe($blocks)
+        ->and(count($before) - count($kept))->toBe(2 * $blocks)
+        ->and(explode(PHP_EOL, $without))->toBe($kept);
 });
 
 it('serves a clone\'s own site and development ports on the bridge gateway address, to its own bridge address alone', function (): void {
@@ -294,12 +306,11 @@ it('serves a clone\'s own site and development ports on the bridge gateway addre
             "https://feature.tool.test {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.3/32\n    abort @orbit_outside\n",
             "https://feature.tool.test:444 {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.3/32\n    abort @orbit_outside\n",
         )
-        // The own site never admits the task VM range, a sibling, or the VPN: one /32 is its only client.
+        // The own site never admits a sibling or the VPN: one /32 is its only client.
         ->and(substr_count($caddyfile->content, 'bind 10.253.0.1'))->toBe(2)
         ->and(substr_count($caddyfile->content, 'remote_ip 10.253.0.3/32'))->toBe(2)
         // The address check skips the bridge address: a down bridge must not fail the Node's build.
-        ->and($caddyfile->listenAddresses)->toBe(['10.44.0.7', '192.168.1.5'])
-        ->and(collect($caddyfile->blocks)->firstWhere('name', 'app-instance-12-bridge')['block'])->not->toContain('@orbit_task_vms');
+        ->and($caddyfile->listenAddresses)->toBe(['10.44.0.7', '192.168.1.5']);
 });
 
 it('gives a default and a clone without a Route no own site', function (): void {

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Data\Operations;
 
-use App\Data\Tasks\TaskPlaceWaitData;
 use App\Models\Operation;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -39,7 +38,6 @@ final class OperationListItemData extends Data
         public ?array $error = null,
         public ?string $currentStepStartedAt = null,
         public ?string $currentStepObservedAt = null,
-        public ?TaskPlaceWaitData $capacityWait = null,
         public ?string $overdueSince = null,
         public ?string $holdWaitReason = null,
         public ?string $readyAt = null,
@@ -72,7 +70,6 @@ final class OperationListItemData extends Data
             error: $record->error,
             currentStepStartedAt: $record->currentStepStartedAt,
             currentStepObservedAt: $record->currentStepObservedAt,
-            capacityWait: $record->capacityWait,
             overdueSince: $record->overdueSince,
             holdWaitReason: $record->holdWaitReason,
             readyAt: $record->readyAt,

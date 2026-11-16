@@ -1261,7 +1261,6 @@ export function createDemoGateway() {
             ready_at: null,
             // The demo has no worker to wait for, so the page reads again at once.
             poll_after_seconds: 0,
-            capacity_wait: null,
         };
         operations.push(operation);
         return ok(operation, 202);

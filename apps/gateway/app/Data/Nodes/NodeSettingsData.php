@@ -11,7 +11,6 @@ final class NodeSettingsData extends Data
 {
     public function __construct(
         public ?NodeStorageAppsData $apps = null,
-        public ?NodeTaskVmsData $task_vms = null,
         public bool $nested_fleet = false,
         // Absent on a Node without CI places, so its responses leave the member out.
         public NodeCiData|Optional $ci = new Optional,
@@ -31,6 +30,6 @@ final class NodeSettingsData extends Data
 
     public function isEmpty(): bool
     {
-        return $this->appsPath() === null && $this->task_vms === null && ! $this->nested_fleet && $this->ci() === null;
+        return $this->appsPath() === null && ! $this->nested_fleet && $this->ci() === null;
     }
 }

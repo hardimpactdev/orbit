@@ -5,8 +5,8 @@ import shlex
 import sys
 from pathlib import Path
 
-TASK_VM_KINDS = ('tasks.provision', 'task_vm.nested_ready')
-SSH_EXECUTION_KINDS = ('task_vm.nested_ready',)
+# The one task VM kind that still reaches the builder: the readiness check of a nested fleet copy (task-nested-ready).
+TASK_VM_KIND = 'task_vm.nested_ready'
 
 
 def unsafe(value):
@@ -29,11 +29,8 @@ def build_task_vm(folder, kind):
     """The inventory, known hosts and variables of the task VM role. A builder behind its host is reached through a jump."""
     folder = Path(folder)
     intent = json.loads((folder / 'intent.json').read_text())
-    # A task start's one run holds the whole start intent in the file; the role converges the part that names it.
-    if os.environ.get('ORBIT_INTENT_KEY'):
-        intent = intent[os.environ['ORBIT_INTENT_KEY']]
-    # The readiness intent names its connection ssh_execution; the other task VM intents name it ssh.
-    ssh = intent['ssh_execution' if kind in SSH_EXECUTION_KINDS else 'ssh']
+    # The readiness intent names its connection ssh_execution.
+    ssh = intent['ssh_execution']
     target = dict(ssh['target'])
     known = set(known_host_lines(target))
     host = {'ansible_host': target['host'], 'ansible_user': target['user'], 'ansible_port': target['port'],
@@ -109,7 +106,7 @@ def build(folder, kind):
         return
     if kind == 'node.add':
         return build_node_add(folder)
-    if kind in TASK_VM_KINDS:
+    if kind == TASK_VM_KIND:
         return build_task_vm(folder, kind)
     folder = Path(folder)
     intent = json.loads((folder / 'intent.json').read_text())

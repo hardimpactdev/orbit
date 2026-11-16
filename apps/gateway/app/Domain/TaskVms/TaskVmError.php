@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 /**
- * Stable Gateway `task_vm.*` error codes. Rows, `task:status`, logs, and the API carry the value.
+ * Stable Gateway `task_vm.*` error codes. Rows, logs, and the API carry the value.
  * {@see TaskVmException} takes a case. Native command refusals belong to the exported agent contract.
  */
 enum TaskVmError: string
@@ -14,30 +14,16 @@ enum TaskVmError: string
     case InvalidConfig = 'task_vm.invalid_config';
     case UnknownHost = 'task_vm.unknown_host';
     case HostConfigured = 'task_vm.host_configured';
-    case HostInUse = 'task_vm.host_in_use';
-    case RangeInUse = 'task_vm.range_in_use';
     case FleetUnavailable = 'task_vm.fleet_unavailable';
     case SetupFailed = 'task_vm.setup_failed';
-    case SetupUnavailable = 'task_vm.setup_unavailable';
 
     // The VM lifecycle.
     case JobFailed = 'task_vm.job_failed';
-    case PoolStartTimeout = 'task_vm.pool_start_timeout';
     case VmMissing = 'task_vm.vm_missing';
     case NotSettled = 'task_vm.not_settled';
-    case ParkFailed = 'task_vm.park_failed';
     case AwaitingHostSweep = 'task_vm.awaiting_host_sweep';
-    case ResumeTimeout = 'task_vm.resume_timeout';
-    case InvalidUserData = 'task_vm.invalid_user_data';
-    case InvalidGatewayKey = 'task_vm.invalid_gateway_key';
-
-    // Commands on hosts and guests.
-    case HostCommandFailed = 'task_vm.host_command_failed';
-    case InvalidHostOutput = 'task_vm.invalid_host_output';
-    case HostKeyFailed = 'task_vm.host_key_failed';
 
     // The group's runtime on the VM.
-    case TopologyFailed = 'task_vm.topology_failed';
     case GitCredentialRefused = 'task_vm.git_credential_refused';
 
     // Workspace ownership.
@@ -45,18 +31,4 @@ enum TaskVmError: string
     case ForeignInstance = 'task_vm.foreign_instance';
     case Parked = 'task_vm.parked';
     case AccessRefused = 'task_vm.access_refused';
-    case ProjectUnsupported = 'task_vm.project_unsupported';
-
-    // Base images.
-    case ImageMismatch = 'task_vm.image_mismatch';
-    case ImageCheckFailed = 'task_vm.image_check_failed';
-    case ImageCleanFailed = 'task_vm.image_clean_failed';
-    case ImageIdentityPresent = 'task_vm.image_identity_present';
-    case TopologySeedMissing = 'task_vm.topology_seed_missing';
-    case TopologySeedFailed = 'task_vm.topology_seed_failed';
-    case BaseImageMissing = 'task_vm.base_image_missing';
-    case ImageSyncFailed = 'task_vm.image_sync_failed';
-
-    // The Gateway host's queue worker units.
-    case WorkersFailed = 'task_vm.workers_failed';
 }

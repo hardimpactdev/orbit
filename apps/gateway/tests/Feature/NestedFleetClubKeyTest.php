@@ -36,7 +36,6 @@ beforeEach(function (): void {
     Queue::fake();
     Cache::flush();
     $this->withoutMiddleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class]);
-    config(['swamp.proof_club_api_key' => FakeProofClubKey]);
     $this->clubEnvironment = clubEnvironment();
 });
 

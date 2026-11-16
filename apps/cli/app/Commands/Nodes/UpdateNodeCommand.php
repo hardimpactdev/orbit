@@ -27,11 +27,8 @@ final class UpdateNodeCommand extends NodeCommand
         {--name= : New unique registry name}
         {--platform= : Platform of an unmanaged Node: linux, macos, or ipados}
         {--reboot-hold= : Hold fleet reboots: true or false}
-        {--image-refresh-hold : Hold task VM image refreshes}
-        {--no-image-refresh-hold : Clear the task VM image refresh hold}
         {--lan-ip= : LAN IPv4 address; an empty value clears it}
         {--apps-path= : Apps folder; an empty value restores the default}
-        {--task-vms= : Task VM host settings as a JSON object, or null to remove them}
         {--ci-places= : CI places that runner jobs and proof copies share, from 0 to 64}
         {--ci-proof-only : Keep the CI places for proof copies}
         {--no-ci-proof-only : Let runner jobs use the CI places too}
@@ -40,7 +37,7 @@ final class UpdateNodeCommand extends NodeCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Change the name, platform, LAN address, reboot hold, image refresh hold, apps folder, task VM host settings, or CI places of a Node.';
+    protected $description = 'Change the name, platform, LAN address, reboot hold, apps folder, or CI places of a Node.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -54,25 +51,17 @@ final class UpdateNodeCommand extends NodeCommand
         $platform = $this->option('platform');
         $lanIp = $this->option('lan-ip');
         $rebootHold = $this->option('reboot-hold');
-        $holdImageRefresh = (bool) $this->option('image-refresh-hold');
-        $clearImageRefreshHold = (bool) $this->option('no-image-refresh-hold');
-        $imageRefreshHold = $holdImageRefresh ? true : ($clearImageRefreshHold ? false : null);
         $appsPath = $this->option('apps-path');
-        $taskVms = $this->option('task-vms');
         $ci = NodeSettingOptions::parseCi($this->option('ci-places'), (bool) $this->option('ci-proof-only'),
             (bool) $this->option('no-ci-proof-only'), (bool) $this->option('no-ci'));
 
-        if (! is_string($name) && ! is_string($platform) && ! is_string($lanIp) && ! is_string($appsPath) && ! is_string($taskVms) && ! is_string($rebootHold) && $imageRefreshHold === null
+        if (! is_string($name) && ! is_string($platform) && ! is_string($lanIp) && ! is_string($appsPath) && ! is_string($rebootHold)
             && ($ci['ok'] && ! $ci['provided'])) {
-            return $this->renderGatewayFailure('node.option_required', 'Provide at least one of --name, --platform, --lan-ip, --reboot-hold, --image-refresh-hold, --no-image-refresh-hold, --apps-path, --task-vms, --ci-places, --ci-proof-only, --no-ci-proof-only, or --no-ci.');
+            return $this->renderGatewayFailure('node.option_required', 'Provide at least one of --name, --platform, --lan-ip, --reboot-hold, --apps-path, --ci-places, --ci-proof-only, --no-ci-proof-only, or --no-ci.');
         }
 
         if ($ci['ok'] === false) {
             return $this->renderGatewayFailure($ci['code'], $ci['message']);
-        }
-
-        if ($holdImageRefresh && $clearImageRefreshHold) {
-            return $this->renderGatewayFailure('node.image_refresh_hold_invalid', 'Use only one of --image-refresh-hold or --no-image-refresh-hold.');
         }
 
         if (is_string($rebootHold) && ! in_array($rebootHold, ['true', 'false'], true)) {
@@ -85,12 +74,6 @@ final class UpdateNodeCommand extends NodeCommand
 
         if ($platform === '') {
             return $this->renderGatewayFailure('node.platform_required', 'Platform is required: linux, macos, or ipados.');
-        }
-
-        $host = is_string($taskVms) ? NodeSettingOptions::parseTaskVms($taskVms) : null;
-
-        if ($host !== null && $host['ok'] === false) {
-            return $this->renderGatewayFailure($host['code'], $host['message']);
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
@@ -131,11 +114,8 @@ final class UpdateNodeCommand extends NodeCommand
                 platform: is_string($platform) ? $platform : null,
                 hasApps: is_string($appsPath),
                 apps: is_string($appsPath) ? new AppsSettings($appsPath === '' ? null : $appsPath) : null,
-                hasTaskVms: $host !== null,
-                taskVms: NodeSettingOptions::taskVms($host['value'] ?? null),
                 idempotencyKey: is_string($idempotencyKey) ? $idempotencyKey : null,
                 rebootHold: is_string($rebootHold) ? $rebootHold === 'true' : null,
-                imageRefreshHold: $imageRefreshHold,
                 hasLanIp: is_string($lanIp),
                 lanIp: is_string($lanIp) && $lanIp !== '' ? $lanIp : null,
                 hasCi: $ci['provided'],

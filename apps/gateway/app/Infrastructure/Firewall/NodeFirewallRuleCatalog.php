@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Firewall;
 
-use App\Data\Nodes\NodeTaskVmContainersData;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageConnection;
@@ -15,7 +14,6 @@ use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceOwnSite;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
@@ -24,17 +22,19 @@ use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\LanAddress;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
-use App\Infrastructure\TaskVms\TaskVmHubPolicy;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
 
 final readonly class NodeFirewallRuleCatalog
 {
-    /** The DHCP, DNS over TCP and DNS over UDP input rules of a task VM host's VM bridge, in that order. */
+    /**
+     * The DHCP, DNS over TCP and DNS over UDP input rules that a task VM host's VM bridge once had, in that order. No rule is desired
+     * under them any more; Node removal still deletes them by comment.
+     */
     public const array TaskHostInputComments = ['orbit:task-vms-dhcp', 'orbit:task-vms-dns-tcp', 'orbit:task-vms-dns-udp'];
 
-    /** The same rules for the bridge of a host's task containers. Each bridge has its own names: a withdrawal deletes rules by comment. */
+    /** The same rules that the bridge of a host's task containers once had. */
     public const array TaskContainerInputComments = ['orbit:task-containers-dhcp', 'orbit:task-containers-dns-tcp', 'orbit:task-containers-dns-udp'];
 
     /**
@@ -58,41 +58,6 @@ final readonly class NodeFirewallRuleCatalog
             InstanceEgress::rule(InstanceHostIntent::Network, $gateway),
             ...($role === RoleName::AppDev ? InstanceOwnSite::rules($gateway) : []),
         ];
-    }
-
-    /** @return list<UfwManagedRule> */
-    public function taskHostInput(Node $node): array
-    {
-        $host = app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->task_vms;
-        if ($host === null) {
-            return [];
-        }
-
-        return [
-            ...$this->bridgeInput($host->network, $host->cidr, self::TaskHostInputComments),
-            ...($host->containers instanceof NodeTaskVmContainersData
-                ? $this->bridgeInput($host->containers->network, $host->containers->cidr, self::TaskContainerInputComments) : []),
-        ];
-    }
-
-    /**
-     * DHCP from the bridge, and DNS over TCP and UDP to its address, under `$comments` in that order.
-     *
-     * @param  list<string>  $comments
-     * @return list<UfwManagedRule>
-     */
-    private function bridgeInput(string $network, string $cidr, array $comments): array
-    {
-        [$bridge] = Ipv4Subnet::from($cidr)->usableRange();
-        $rules = [$this->dhcpInput($network, $comments[0])];
-        foreach (['tcp' => $comments[1], 'udp' => $comments[2]] as $protocol => $comment) {
-            $rules[] = new UfwManagedRule(
-                new UfwRuleShape($comment, 'allow', 'in', 'any', $bridge, '53', $protocol, $network, null, 'v4'),
-                ['sudo', 'ufw', 'allow', 'in', 'on', $network, 'proto', $protocol, 'from', 'any', 'to', $bridge, 'port', '53', 'comment', $comment],
-            );
-        }
-
-        return $rules;
     }
 
     /** DHCP from the bridge, under `$comment`. */
@@ -169,7 +134,7 @@ final readonly class NodeFirewallRuleCatalog
                 new UfwRuleShape('orbit-ci-runners', 'allow', 'fwd', 'any', 'any', 'any', 'any', 'orbitci0', null, null),
                 ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbitci0', 'comment', 'orbit-ci-runners'],
             )],
-            RoleName::Vpn => [...app(TaskVmHubPolicy::class)->managedRules(), ...$this->vpnLanSsh($node)],
+            RoleName::Vpn => $this->vpnLanSsh($node),
             RoleName::Router => $this->routerLanIngress($node),
             RoleName::Ingress => $this->ingressPublicHttp($node),
             RoleName::AppDev => [],

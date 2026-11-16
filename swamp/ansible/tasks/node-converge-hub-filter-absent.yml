@@ -36,3 +36,16 @@
   register: hub_filter_delete
   changed_when: true
   failed_when: hub_filter_delete.rc != 0
+# The UFW route rules that the task VM hub kept for the range 10.44.0.128/25. Each comment starts with `orbit:task-vm-`; the Gateway
+# names none of them any more and their sources differ per rule, so they go by comment. Highest number first: a deletion renumbers
+# only the rules after it.
+- name: Read the UFW rules
+  ansible.builtin.command: { argv: [ufw, status, numbered] }
+  register: hub_task_vm_rules
+  changed_when: false
+- name: Delete the task VM route rules
+  ansible.builtin.command: { argv: [ufw, --force, delete, "{{ item }}"] }
+  loop: >-
+    {{ hub_task_vm_rules.stdout | regex_findall('(?m)^\[\s*(\d+)\].*#\s*orbit:task-vm-\S*\s*$')
+       | map('int') | sort(reverse=true) | list }}
+  changed_when: true

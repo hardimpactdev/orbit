@@ -786,7 +786,7 @@ When a waiting `instance:create`, `instance:clone`, `instance:restore` or `route
 
 A timed-out task keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. The DNS Node is not held: its records are keyed. A withdrawal merges them under `/run/lock/orbit-dnsmasq.lock`, the lock the Gateway's DNS publication also takes, and reads them right before it writes. The Swamp DNS writers (`route-create-dns`, `route-dns-publish`, `node-private-dns` and the role publication) write the files whole without that lock. One that writes in the milliseconds between the withdrawal's last check and its write can still lose the withdrawal's change or its own, as before.
 
-Task provision and cancel, `instance:register` and the Cluster Router writes also publish sites, but their run does much else. They hold the Nodes of their Route-publish step only (decided by the orchestrator, for Nick's review, 2026-11-06). Before that step the run calls `operation:direct:route-hold` with its run ID. The Gateway reads the Nodes from the admitted intent and answers when it holds all of them, after at most 5 s.
+`instance:register` and the Cluster Router writes also publish sites, but their run does much else. They hold the Nodes of their Route-publish step only (decided by the orchestrator, for Nick's review, 2026-11-06). Before that step the run calls `operation:direct:route-hold` with its run ID. The Gateway reads the Nodes from the admitted intent and answers when it holds all of them, after at most 5 s.
 
 The call is repeated for up to 2 minutes. Then the step fails (the Gateway answered `423 route_hold.busy`) and the Route step does not run. After the Route step the run calls `operation:direct:route-release`, which cannot fail the run. The hold has a 5-minute lease that only a repeated hold call renews, and the end of the Operation frees it too. A Route write that waits for a Node starts before a new hold on that Node is granted.
 
@@ -873,7 +873,7 @@ A configured LAN address is operator intent. A LAN path that fails shows as a vi
 
 ### WireGuard membership is the private trust boundary
 
-Access grants authorize Orbit commands. They do not describe which services Nodes may reach. Applying grants to private traffic would need a per-port authorization model. Limiting private traffic to Route HTTPS would block the general connectivity that trusted Nodes need. So removing a Node from WireGuard revokes its private network trust. [Task VMs](/reference/compute-drivers#limit-fleet-traffic-on-the-hub) are untrusted peers in a reserved range. Their bridge ACL, hub filter, and Caddy guard limit private traffic. The optional Swamp hostname admits one HTTPS site for worker enrollment and execution, without trusting task VMs to reach other private sites.
+Access grants authorize Orbit commands. They do not describe which services Nodes may reach. Applying grants to private traffic would need a per-port authorization model. Limiting private traffic to Route HTTPS would block the general connectivity that trusted Nodes need. So removing a Node from WireGuard revokes its private network trust. [Task VMs](/reference/compute-drivers#limit-fleet-traffic-on-the-hub) are untrusted peers in a reserved range. Their bridge ACL and hub filter limited private traffic; the task VM path and its Caddy guard are removed, and the WireGuard address allocator still keeps the range off every Node.
 
 ### One publication field and Let's Encrypt on public Ingress
 

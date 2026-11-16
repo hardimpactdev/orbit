@@ -7,8 +7,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Node;
@@ -43,9 +41,6 @@ function forwarderRouter(): Node
     forwarderNode('swamp', '10.44.0.15')->roles()->create(['role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
     // The forwarder's Orbit routes go to the active Gateway's WireGuard address.
     forwarderNode('gateway', '10.6.0.2')->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25',
-        [new TaskVmHost(9, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB')],
-        '/pi', str_repeat('a', 64), ['gpt-6']));
     app()->instance(SwampCommandStep::class, new class
     {
         /** @return array{vault: string, key: string} */
@@ -300,9 +295,6 @@ it('passes the placeholder through the forwarder unchanged, so the guard alone d
     [$upstream, $guardPort, $forwarderPort] = [$port(), $port(), $port()];
     $services = forwarderNode('services', '10.44.0.3');
     $beast = forwarderNode('beast', '10.44.0.7');
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25',
-        [new TaskVmHost(9, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB')],
-        '/pi', str_repeat('a', 64), ['gpt-6']));
     app(AiRouterState::class)->enable($services->id, 'cache', "http://10.44.0.3:{$upstream}", 'management', 'read', 'control');
     $directory = sys_get_temp_dir().'/orbit-forwarder-'.bin2hex(random_bytes(4));
     mkdir($directory);

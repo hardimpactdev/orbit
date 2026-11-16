@@ -3,9 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
-use App\Actions\Nodes\UpdateNodeAction;
-use App\Data\Nodes\NodeSettingsData;
-use App\Data\Nodes\NodeTaskVmsData;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceDevPorts;
 use App\Domain\Instances\InstanceEgress;
@@ -13,14 +10,11 @@ use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstanceNotes;
-use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\MachineSoftware\ArtifactPin;
@@ -96,7 +90,7 @@ describe('the container branch of the app-dev converge', function (): void {
         expect(array_diff_key($intent, array_flip(['incus', 'image', 'folders', 'egress', 'ingress', 'profile_config', 'dev_ports', 'own_site', 'bridge_admitted_at'])))->toBe([
             'project' => 'orbit-instances', 'network' => 'orbitinst0', 'nic_acl' => 'orbitinst0-proxy', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
             'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'dhcp_range' => '10.253.0.2-10.253.0.253', 'stock' => 'ubuntu-26.04-instance-stock',
-            'forwarder_port' => 8319, 'bridge_endpoints' => [], 'ids' => 201 * 65536, 'arc' => true,
+            'forwarder_port' => 8319, 'bridge_endpoints' => [], 'ids' => 201 * 65536,
             // A Node without Instance runtimes names no container's machine name (InstanceMachineName::forNode).
             'machine_names' => [],
         ])
@@ -129,34 +123,20 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($ingress[1]['destination_port'])->toBe((string) InstanceHostIntent::T3Port);
     });
 
-    it('needs the ID ranges of a host\'s task containers too, which share root\'s one range', function (): void {
+    it('keeps the Instance bridge clear of a task bridge that a Node still stores', function (): void {
         $node = Node::withoutEvents(fn (): Node => Node::query()->create([
             'name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.7',
-            'public_ssh_host' => '10.44.0.7', 'user' => 'orbit', 'settings' => ['task_vms' => NodeTaskVmsData::validated(
-                ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 2]],
-                Ipv4Subnet::from('10.44.0.0/24'))->toArray()],
-        ]));
-        config(['instances.container_nodes' => [$node->id]]);
-        app(InstanceHostIntent::class)->prepare($node);
-
-        // Two task container places and the base; the VM places add nothing.
-        expect(app(InstanceHostIntent::class)->for($node)['ids'])->toBe(201 * 65536 + 3 * 101000000);
-    });
-
-    it('prepares a task VM host beside its task side: its own bridge, and the task side keeps the ARC', function (): void {
-        $node = Node::withoutEvents(fn (): Node => Node::query()->create([
-            'name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.7',
-            'public_ssh_host' => '10.44.0.7', 'user' => 'orbit', 'settings' => ['task_vms' => NodeTaskVmsData::validated(
-                ['cidr' => '10.253.0.0/24', 'task_places' => 4, 'ci_places' => 2], Ipv4Subnet::from('10.44.0.0/24'))->toArray()],
+            'public_ssh_host' => '10.44.0.7', 'user' => 'orbit', 'settings' => ['task_vms' => ['cidr' => '10.253.0.0/24', 'task_places' => 4, 'ci_places' => 2]],
         ]));
         config(['instances.container_nodes' => [$node->id]]);
         app(InstanceHostIntent::class)->prepare($node);
 
         $intent = app(InstanceHostIntent::class)->for($node);
 
-        // The task bridge holds the first /24 of the range, so the Instance bridge takes the next one.
+        // The stored task bridge holds the first /24 of the range, so the Instance bridge takes the next one; no task VM term changes the IDs.
         expect($intent)->toMatchArray(['project' => 'orbit-instances', 'network' => 'orbitinst0', 'nic_acl' => 'orbitinst0-proxy', 'pool' => 'orbit-instances',
-            'cidr' => '10.253.1.0/24', 'ids' => 201 * 65536, 'arc' => false]);
+            'cidr' => '10.253.1.0/24', 'ids' => 201 * 65536])
+            ->and($intent)->not->toHaveKey('arc');
     });
 
     it('adds the branch to the app-dev runtime of a build-list Node only, so every other intent stays exactly as it was', function (): void {
@@ -433,31 +413,6 @@ describe('the bridge check and write', function (): void {
         $write = array_find($queries, static fn (array $q): bool => str_starts_with($q['sql'], 'update "nodes" set "instance_bridge"'));
 
         expect($read['level'])->toBeGreaterThan($base)->and($write['level'])->toBe($read['level']);
-    });
-
-    it('checks and stores a task host\'s bridges during provisioning in one transaction, after the SSH work', function (): void {
-        $node = instanceHostNode();
-        // The roots are inspected over SSH before the transaction; this fixture has no Node to reach.
-        app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
-        {
-            public function resolve(Node $node): ManagedUserAccount
-            {
-                return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
-            }
-        });
-        $settings = new NodeSettingsData(task_vms: NodeTaskVmsData::validated(['cidr' => '10.252.10.0/24', 'task_places' => 1, 'ci_places' => 0], Ipv4Subnet::from('10.44.0.0/24')));
-
-        $base = DB::transactionLevel();
-        $queries = bridgeQueries(fn () => app(UpdateNodeAction::class)->persistDuringProvisioning($node, $settings));
-        $write = array_find_key($queries, static fn (array $q): bool => str_starts_with($q['sql'], 'update "nodes" set "settings"'));
-        $reads = array_keys(array_filter($queries, static fn (array $q): bool => str_contains($q['sql'], 'select "id", "settings", "instance_bridge", "ci_bridge" from "nodes"')));
-        $lastRead = max(array_filter($reads, static fn (int $index): bool => $index < $write));
-
-        // The last bridge check before the write runs in the write's own transaction; before this change the write had none.
-        expect($queries[$write]['level'])->toBeGreaterThan($base)
-            ->and($queries[$lastRead]['level'])->toBe($queries[$write]['level'])
-            ->and(array_filter(array_slice($queries, $lastRead, $write - $lastRead), static fn (array $q): bool => $q['level'] <= $base))->toBe([])
-            ->and($node->refresh()->settings['task_vms']['cidr'])->toBe('10.252.10.0/24');
     });
 
 });

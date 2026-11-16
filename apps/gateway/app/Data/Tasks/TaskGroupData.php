@@ -11,7 +11,6 @@ use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
-use App\Domain\Tasks\TaskPlaces;
 use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskPrModeChoice;
 use App\Domain\Tasks\TaskReviewMode;
@@ -83,7 +82,6 @@ final class TaskGroupData extends Data
         public TaskOrchestration $orchestration = TaskOrchestration::External,
         public ?string $lastActivityAt = null,
         public ?string $previewUrl = null,
-        public ?TaskPlaceWaitData $capacityWait = null,
         public ?string $implementerProvider = null,
         public ?string $implementerEffort = null,
         public ?string $reviewerProvider = null,
@@ -138,16 +136,14 @@ final class TaskGroupData extends Data
     {
         $groups->loadMissing(self::Relations);
         $activity = TaskGroupActivity::of(array_values($groups->modelKeys()));
-        $waits = app(TaskPlaces::class)->waitsOfGroups(array_values($groups->whereNotNull('capacity_wait_reason')->modelKeys()));
 
-        return array_values($groups->map(static fn (Task $group): self => self::fromLoaded($group, $activity[$group->id], $waits))->all());
+        return array_values($groups->map(static fn (Task $group): self => self::fromLoaded($group, $activity[$group->id]))->all());
     }
 
     /**
-     * @param  array{last_activity_at: string|null, active_operation_id: int|null}  $activity
-     * @param  array<int, TaskPlaceWaitData>  $waits  group id => its capacity wait
+     * @param  string|null  $lastActivityAt  when an Operation on the group was last created, started or ended
      */
-    private static function fromLoaded(Task $group, array $activity, array $waits): self
+    private static function fromLoaded(Task $group, ?string $lastActivityAt): self
     {
         $taskable = $group->taskable;
         $status = $group->groupStatus();
@@ -159,9 +155,8 @@ final class TaskGroupData extends Data
         }
 
         return new self(
-            lastActivityAt: $activity['last_activity_at'],
+            lastActivityAt: $lastActivityAt,
             previewUrl: self::previewUrl($group, $taskable),
-            capacityWait: $waits[$group->id] ?? null,
             orchestration: $group->groupOrchestration(),
             capacityWaitReason: $group->capacity_wait_reason,
             vmPower: self::vmPower($group),
