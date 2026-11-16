@@ -102,7 +102,7 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 7848
+cost = 7690
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
@@ -227,10 +227,10 @@ inputs = [
 "a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit" = 43 # ESTIMATE: local 20s * 2.1, rounded up + 1s
 "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one" = 119 # ESTIMATE: local 56s * 2.1, rounded up + 1s
 "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait" = 90 # ESTIMATE: local 42s * 2.1, rounded up + 1s
-"one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase" = 306 # ESTIMATE: local about 145s * 2.1, rounded up + 1s; above the lane, split in step 3
+"one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase" = 164 # local 142s x 1.15; above the 150-second lane, a named capacity gap (ADR 0262)
 "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing" = 96 # ESTIMATE: local 45s * 2.1, rounded up + 1s
 "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs" = 94 # ESTIMATE: local 44s * 2.1, rounded up + 1s
-"the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes" = 188 # ESTIMATE: local 89s * 2.1, rounded up + 1s; above the lane, split in step 3
+"the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes" = 173 # local 150s x 1.15; above the 150-second lane, a named capacity gap (ADR 0262)
 "a retake on a host with no free ID range keeps the old seed, starts the Processes again and names the cause" = 127 # ESTIMATE: local 30-60s; 60s * 2.1, rounded up + 1s
 "a retake that stopped between the delete and the rename is finished first; any other leftover retake goes" = 127 # ESTIMATE: local 30-60s; 60s * 2.1, rounded up + 1s
 "a same-commit retake of a pair takes both new halves under next- first, and a failure of either half keeps the old pair whole" = 127 # ESTIMATE: local 30-60s; 60s * 2.1, rounded up + 1s
@@ -244,5 +244,5 @@ inputs = [
 "a nested-fleet default without an inner volume (Instance 2454's shape) and a normal default make no volume, disk or inner pool" = 67 # ESTIMATE: local 20-31s; 31s * 2.1, rounded up + 1s
 "the start gate admits the inner volume only with its exact keys, never a delegated volume, and never its disk without the intent" = 67 # ESTIMATE: local 20-31s; 31s * 2.1, rounded up + 1s
 "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing" = 67 # ESTIMATE: local 20-31s; 31s * 2.1, rounded up + 1s
-"only a switched-on host prepares the nested project, its profile and the nesting modules" = 166 # ESTIMATE: hosted 144.1s (PR run 43421256788) * 1.15, rounded up; cut at 180s on main; above the lane, split in step 3
+"only a switched-on host prepares the nested project, its profile and the nesting modules" = 165 # local 143s x 1.15; above the 150-second lane, a named capacity gap (ADR 0262)
 "start refuses a NIC without the address filters with its own code, and starts it once the device set adds them" = 110 # ESTIMATE: estimated 52s * 2.1, rounded up + 1s
