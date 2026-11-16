@@ -1,5 +1,4 @@
 order = 1430
-source_sha256 = "f37cbc0af0bd7bf1b4c19ed704d34a752edf99fb84ca522555b445e944b78e1b"
 cases = [
   "a copy reads its plan as agent in the copy, through root on its Node",
   "the copy prefix is the fixed shape of a copy turn, names from the intent only, and closed stdin",

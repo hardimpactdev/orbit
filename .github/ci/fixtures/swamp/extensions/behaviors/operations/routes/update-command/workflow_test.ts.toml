@@ -1,5 +1,4 @@
 order = 1400
-source_sha256 = "e09002288001cc243463473ec8b9c48d9bf22d29dd800756cdd91b69eef0c607"
 cases = [
   "Route update workflows place every step on the swamp role and keep mutation parents small",
   "restore keeps the observed candidate serving, then withdraws it after DNS grace",

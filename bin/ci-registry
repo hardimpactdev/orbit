@@ -9,7 +9,10 @@ import tomllib
 TABLE = '.github/ci/checks.toml'
 DIRECTORY = '.github/ci/fixtures'
 LEGACY_INVENTORY = 'tools/tests/ci-fixture-cases.json'
-POPULATION = ('source_sha256', 'cases')
+# A population is its ordered case names alone. A hash of the whole test file
+# changed on every edit, so any two PRs that touched one file conflicted on it.
+POPULATION = ('cases',)
+RETIRED = 'source_sha256'
 
 
 def metadata_path(file):
@@ -41,6 +44,8 @@ def decode(blobs, historical=False):
         if file in seen:
             raise ValueError(f'Duplicate fixture: {file}')
         seen.add(file)
+        if RETIRED in entry and not historical:
+            raise ValueError(f'{path}: remove {RETIRED}; the registered cases are the population')
         order = entry.pop('order', 2**63)
         if type(order) is not int or order < 0:
             raise ValueError(f'{path}: order must be a non-negative integer')

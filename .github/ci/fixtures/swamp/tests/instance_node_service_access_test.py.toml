@@ -1,5 +1,4 @@
 order = 1380
-source_sha256 = "d0db7dff8d5738aaa2d348ac03afbd4302a68dd542bc60cf3bf0cd701f529344"
 cases = [
   "test_real_remote_host_exact_acl_and_untranslated_bridge_endpoint",
   "test_proxy_bypass_reaches_exec_manager_and_app_login_and_repeat_is_unchanged",

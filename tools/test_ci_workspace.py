@@ -40,7 +40,6 @@ class WorkspaceFixturesTest(unittest.TestCase):
         self.assertEqual(len(set(seen)), 45)
         publish = fixtures['swamp/tests/task_copy_publish_test.py']
         current = units.collect(publish['file'])
-        self.assertEqual(publish['source_sha256'], current['source_sha256'])
         self.assertEqual(publish['cases'], current['cases'])
         self.assertEqual(len(current['cases']), 26)
         self.assertFalse(set(seen) & set(current['cases']))

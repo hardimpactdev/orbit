@@ -1,5 +1,4 @@
 order = 430
-source_sha256 = "8c361cb5bc9c1646c24ce74cf7e9245d3efa30926a969fee085f2a82eada4b0f"
 cases = [
   "test_table_unit_loads_after_nftables_and_reloads_in_place",
   "test_forwarder_runs_only_with_its_table",

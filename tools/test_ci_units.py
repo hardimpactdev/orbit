@@ -706,21 +706,17 @@ class PopulationTest(unittest.TestCase):
                     result = units.run_unit(step, os.environ.copy(), 10)
                 self.assertEqual(result['status'], expected, result)
 
-    def test_fixture_hashes_do_not_gate_docs_or_unrelated_inputs(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            config, inventory = units.registry.load(ROOT)
-            file = 'swamp/tests/ansible_instance_migrate_test.ts'
-            inventory[file]['source_sha256'] = 'stale'
-            with patch.object(units.registry, 'load', return_value=(config, inventory)):
-                budget, fixtures, defaults = units.configuration()
-                self.assertEqual(units.plan(['docs/mission.md'], budget, fixtures, defaults)['shards'], [])
-                selected = units.plan(['swamp/tests/ansible_instance_container_test.ts'], budget, fixtures, defaults)
-                self.assertIn('swamp/tests/ansible_instance_container_test.ts', {u.split('#')[0] for u in names(selected)})
-                self.assertNotIn('capacity', selected)
-                migration = units.plan([file], budget, fixtures, defaults)
-                self.assertTrue(migration['deferred'])
-                self.assertNotIn('capacity', migration)
-                self.assertIn('12 hosted shards', units.plan_summary(migration, fixtures))
+    def test_docs_select_no_fixture_and_a_fixture_selects_itself(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/ansible_instance_migrate_test.ts'
+        self.assertEqual(units.plan(['docs/mission.md'], budget, fixtures, defaults)['shards'], [])
+        selected = units.plan(['swamp/tests/ansible_instance_container_test.ts'], budget, fixtures, defaults)
+        self.assertIn('swamp/tests/ansible_instance_container_test.ts', {u.split('#')[0] for u in names(selected)})
+        self.assertNotIn('capacity', selected)
+        migration = units.plan([file], budget, fixtures, defaults)
+        self.assertTrue(migration['deferred'])
+        self.assertNotIn('capacity', migration)
+        self.assertIn('12 hosted shards', units.plan_summary(migration, fixtures))
 
     def test_named_case_costs_and_startup_replace_the_equal_share_estimate(self):
         f = fixture('swamp/cases.ts', 140, cases=['large', 'small'], slices=2,
@@ -764,7 +760,6 @@ class PopulationTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         file = 'swamp/tests/fleet_reboot_test.ts'
         evidence = json.loads((ROOT / 'tools/tests/ci-reboot-cost-evidence.json').read_text())
-        self.assertEqual(evidence['source_sha256'], fixtures[file]['source_sha256'])
         self.assertCountEqual(evidence['case_seconds'], fixtures[file]['cases'])
         result = units.plan([file], budget, fixtures, defaults)
         self.assertFalse(result.get('capacity'))

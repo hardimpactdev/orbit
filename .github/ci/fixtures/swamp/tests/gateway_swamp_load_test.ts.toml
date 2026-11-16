@@ -1,5 +1,4 @@
 order = 780
-source_sha256 = "99a34bb8b8fc3748e2a11474460ec620cfe0953c4e4f1f2c64cf139f490bab86"
 cases = [
   "the release load compares only the commit's workflows, never a Schedule's",
   "the release load checks the Ansible collections without failing the release, and installs nothing",

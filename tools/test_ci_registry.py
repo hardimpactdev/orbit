@@ -27,7 +27,7 @@ class RegistryTest(unittest.TestCase):
         self.files = ['swamp/z.ts', 'swamp/a.ts']
         self.records = [dict(file=file, cost=100, inputs=['swamp/shared.yml'], slices=2,
                              case_costs={'later': 60, 'first': 40}) for file in self.files]
-        self.population = {file: dict(cases=['later', 'first'], source_sha256='a' * 64) for file in self.files}
+        self.population = {file: dict(cases=['later', 'first']) for file in self.files}
         self.shared = '[budget]\n' + ''.join(f'{k} = {v}\n' for k, v in BUDGET.items()) + '\n[fixtures]\ndefault = []\n'
         legacy = self.shared + ''.join('\n[[fixture]]\n' + self.record_text(row, 'fixture.') for row in self.records)
         self.write(registry.TABLE, legacy)
@@ -101,8 +101,7 @@ class RegistryTest(unittest.TestCase):
     def test_cost_input_and_population_changes_select_only_their_fixture(self):
         file = self.files[0]
         for updates, expected_population in [({'cost': 101}, []), ({'inputs': ['swamp/new.yml']}, []),
-                                              ({'cases': ['renamed', 'first']}, [file]),
-                                              ({'source_sha256': 'b' * 64}, [file])]:
+                                              ({'cases': ['renamed', 'first']}, [file])]:
             with self.subTest(updates=updates):
                 row = {**self.records[0], **self.population[file], 'order': 10, **updates}
                 self.write_record(row)
@@ -121,7 +120,7 @@ class RegistryTest(unittest.TestCase):
             with self.subTest(paths=paths):
                 self.git('checkout', '-q', self.new)
                 self.write_record({**self.records[0], **self.population[file],
-                                   'source_sha256': 'b' * 64, 'order': 10})
+                                   'cases': ['renamed', 'first'], 'order': 10})
                 for path in paths:
                     self.write(path, '# input\n')
                 head = self.commit()
@@ -197,6 +196,14 @@ class RegistryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Remove the combined inventory'):
             registry.load(self.root)
         self.assertEqual(len(registry.read_revision(self.root, self.old)[0]['fixture']), 2)
+
+    def test_a_whole_file_hash_is_refused_in_current_metadata_and_read_in_history(self):
+        self.write_record({**self.records[0], **self.population[self.files[0]], 'order': 10, 'source_sha256': 'a' * 64})
+        with self.assertRaisesRegex(ValueError, 'remove source_sha256; the registered cases are the population'):
+            registry.load(self.root)
+        hashed = self.commit()
+        _, inventory = registry.read_revision(self.root, hashed)
+        self.assertEqual(inventory[self.files[0]], {'cases': ['later', 'first']})
 
 
 if __name__ == '__main__':

@@ -1,5 +1,4 @@
 order = 990
-source_sha256 = "a6f9a470a47b496b07736aca46d4218d49fb18cc76d4e45baf25cba6b6f609ca"
 cases = [
   "the data file holds the recorded Project 20 configuration",
   "weekly slots cross year boundaries and hourly inspection stays separate",

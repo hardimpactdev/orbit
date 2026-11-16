@@ -1,5 +1,4 @@
 order = 970
-source_sha256 = "1b128456ada74d77a1939fb6959a230cfa752733acce97afce26f7a13148041b"
 cases = [
   "a project plan includes every compatible major and security target once, at exact versions",
   "too-young, prerelease, missing-date and unsolved targets stay recorded; security cannot bypass policy",

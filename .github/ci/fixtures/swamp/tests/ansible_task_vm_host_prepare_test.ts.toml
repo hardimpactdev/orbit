@@ -1,5 +1,4 @@
 order = 580
-source_sha256 = "d33ec9f38e034e6e362df54f24483f37523f17f8e926ba74387411f055804a36"
 cases = [
   "a deny-input host admits bridge DHCP and DNS without exposing other host services",
   "a new loop host gets a sized ZFS pool, ARC cap and isolated network, then changes nothing",

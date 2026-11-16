@@ -1,5 +1,4 @@
 order = 890
-source_sha256 = "b17bd154ef0e630fb3efc54944c3766275d86f6d4b6d886b5163822e33479e92"
 cases = [
   "failure capture is opt-in and never swallows abort or infrastructure failure",
 ]

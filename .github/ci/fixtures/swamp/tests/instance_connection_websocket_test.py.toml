@@ -1,5 +1,4 @@
 order = 1250
-source_sha256 = "ff5b11e7ed27401e2391ac31205e0aebff65b1a6ac7bc3a5a8ea4bfe3ea233c0"
 cases = [
   "test_an_attached_app_adds_its_rule_once_and_keeps_the_other_rules",
   "test_a_removed_app_closes_the_path_and_keeps_every_other_rule",

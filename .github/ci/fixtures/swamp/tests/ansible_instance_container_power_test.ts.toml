@@ -1,5 +1,4 @@
 order = 390
-source_sha256 = "75bb06f98f40d88663f214d3f3795a6bf8633e9b433e5a6563cc88d816da75cb"
 cases = [
   "each sleep and wake step runs its charted part with the shipped Ansible settings; the wake is one playbook",
   "a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet",

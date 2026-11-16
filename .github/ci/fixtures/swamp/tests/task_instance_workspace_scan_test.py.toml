@@ -1,7 +1,6 @@
 file = "swamp/tests/task_instance_workspace_scan_test.py"
 slices = false
 cost = 24
-source_sha256 = "d42139a609cfeba5c4c2769df95d108eb9bdbce8d75d62bcbdbb34c64758651f"
 cases = [
   "test_a_secret_of_the_inner_gateway_refuses_by_path_line_and_name",
   "test_a_workflow_change_is_no_refusal_of_the_copy_check",

@@ -1,5 +1,4 @@
 order = 320
-source_sha256 = "2aaabed7f28d5b315531b0bb183de89113dd43c305e612e703b6cd3fdfd55fc5"
 cases = [
   "test_offline_recorded_peers_do_not_fail_the_hub_converge",
   "test_a_peer_that_was_live_before_the_change_must_handshake_again",

@@ -1,7 +1,6 @@
 file = "swamp/tests/task_copy_scan_test.py"
 slices = false
 cost = 26
-source_sha256 = "db01be183838a2801bab36fc992e2e00ba240983358b76236660918029352f71"
 cases = [
   "test_a_clean_change_passes_and_names_what_it_read",
   "test_each_secret_of_the_copy_is_named_by_path_line_and_name_never_by_value",

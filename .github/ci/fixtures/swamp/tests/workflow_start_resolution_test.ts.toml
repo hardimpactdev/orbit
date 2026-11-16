@@ -1,5 +1,4 @@
 order = 1490
-source_sha256 = "d075467e34726b95f5789e8f2a4f3ae9b8c8e6a8da0bddf7066dc014fc6804db"
 cases = [
   "a task VM sync starts: every expression of operation-task-sync resolves against its intent",
   "a copy sync starts: every expression of operation-task-sync-copy resolves against its intent",

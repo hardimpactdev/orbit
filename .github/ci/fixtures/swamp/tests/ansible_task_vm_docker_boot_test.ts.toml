@@ -1,5 +1,4 @@
 order = 530
-source_sha256 = "3fdabaf07d443822c8efc899501de55b58bf43f71980aa7ff844f1b005df9bb5"
 cases = [
   "the boot enables containerd, Docker and its socket, and disables none of them",
 ]

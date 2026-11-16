@@ -1,5 +1,4 @@
 order = 30
-source_sha256 = "7d8f12b0120a9b7151d595d923923554846ba6adbf8b454d99f9b0ffadd12fce"
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",

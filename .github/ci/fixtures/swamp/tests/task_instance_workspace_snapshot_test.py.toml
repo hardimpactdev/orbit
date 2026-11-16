@@ -1,7 +1,6 @@
 file = "swamp/tests/task_instance_workspace_snapshot_test.py"
 slices = false
 cost = 32
-source_sha256 = "d5e5c501e46492d004eb497c03bf2af5b7c59b4535359f7d5e20250a0e5dddd6"
 cases = [
   "test_snapshots_include_force_added_ignored_work_without_changing_index",
   "test_immutable_after_evidence_and_discard_leave_checkout_unchanged"

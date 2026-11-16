@@ -1,5 +1,4 @@
 order = 950
-source_sha256 = "105c1ca46dc06861adbc2bccd26442708437fa91b68a7e4073ac8d70f4f3ace1"
 cases = [
   "worker drain retains final child cleanup after its main process exits",
   "systemd restarts the rendered worker policy despite a lingering connection child",

@@ -1,5 +1,4 @@
 order = 1110
-source_sha256 = "2e3a4a2b9c9a08e5c8e6c48e1c96c247f36f0b2478f9bb718e027690dc08c979"
 cases = [
   "worker renewal: two permanent peers accept before a drains and c stays running",
   "worker renewal: b renews next while fresh a and permanent c stay connected",

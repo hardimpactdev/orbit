@@ -1,5 +1,4 @@
 order = 1440
-source_sha256 = "d0e739389b9c1a2257eafd3c56be117aeacba24ee6ec44b12ea3c3b581ec814f"
 cases = [
   "a workflow with a built-in trigger reads nothing of the production Swamp Node",
   "the production Swamp Node's schedules have no built-in trigger",

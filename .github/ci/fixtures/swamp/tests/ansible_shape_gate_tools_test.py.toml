@@ -1,5 +1,4 @@
 order = 450
-source_sha256 = "51242ffd5a1c723bed47b4a4b482be2b04fd6da64d1f8d0dfb8bd3a8c5ba4503"
 cases = [
   "test_uses_the_system_tools_only_when_built_for_these_pins",
   "test_a_venv_of_another_interpreter_is_never_reused",

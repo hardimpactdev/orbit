@@ -1,5 +1,4 @@
 order = 250
-source_sha256 = "53c9c0a9d51b95fcec2d8e799905225f9668b106d738707bc9604975793ad939"
 cases = [
   "one candidate becomes one ordered backlog task through the Gateway, never a live start",
   "baseline is one task and repeated scans create no second baseline",

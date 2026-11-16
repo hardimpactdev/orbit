@@ -1,5 +1,4 @@
 order = 260
-source_sha256 = "3a9f7cd695d5bfe91773efe3c3c2e6a037a251651a7572e50ca72616b35359d7"
 cases = [
   "test_mirror_success_does_not_fetch_upstream",
   "test_missing_mirror_dns_and_timeout_fall_back",

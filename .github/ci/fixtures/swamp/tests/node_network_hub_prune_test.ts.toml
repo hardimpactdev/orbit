@@ -1,5 +1,4 @@
 order = 940
-source_sha256 = "8e5e861695a1705935c833e80a639fc8490402318b9f51f519daed6d3da2e908"
 cases = [
   "the prune of the hub does not wait for the peer files, which a removal leaves without a step",
 ]

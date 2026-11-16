@@ -1,5 +1,4 @@
 order = 980
-source_sha256 = "107878a15bac0755ddbc8c66fb004d215d0e35541c117a7ade287cf770d88325"
 cases = [
   "nckrtl-com: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
   "launch-starter-kit: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",

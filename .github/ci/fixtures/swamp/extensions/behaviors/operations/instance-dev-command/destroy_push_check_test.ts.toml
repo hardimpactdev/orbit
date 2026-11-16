@@ -1,5 +1,4 @@
 order = 1310
-source_sha256 = "65b450caf23a54ac6dc5cce5e6c345e1406561a2a8815cdc508c0ddb4752323c"
 cases = [
   "the files Orbit renders do not count as unpushed work, at any depth",
   "any other change is still work that is not pushed",

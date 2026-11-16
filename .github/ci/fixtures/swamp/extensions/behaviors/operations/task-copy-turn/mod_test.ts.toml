@@ -1,5 +1,4 @@
 order = 370
-source_sha256 = "38a65334d3879a00ee77dd8611fb054b17408caaf1ea1347ef1f9d918b60ed60"
 cases = [
   "a completed run is done and over, and records the message transcript and the T3 thread",
   "a run that asks has its question stored and its run stopped: it asks for input, is over, and keeps every question in its own words",

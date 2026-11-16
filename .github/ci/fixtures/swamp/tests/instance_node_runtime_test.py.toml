@@ -1,5 +1,4 @@
 order = 1320
-source_sha256 = "989b8c8d5db8e56b27c08efa3691947ac7255f740b1dcd318655b1836bff6227"
 cases = [
   "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat",
   "test_recipe_copy_survives_current_flip_and_shared_pruning_and_seed_keeps_download",

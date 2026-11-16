@@ -1,5 +1,4 @@
 order = 380
-source_sha256 = "26b9e0271027e8ab5cb768308a6d1de9b77ba143f662d9d513d137d59a88899c"
 cases = [
   "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result",
   "the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time",
