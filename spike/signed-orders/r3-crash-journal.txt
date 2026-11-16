@@ -1,0 +1,20 @@
+Nov 16 15:15:51.480197 nested-app-dev orbit-spike-executor[12567]: done wake op=bwake-92ce12-3-101 target=101 from pid=12578 uid=0 observer
+Nov 16 15:15:51.611598 nested-app-dev orbit-spike-executor[12567]: done wake op=bwake-92ce12-3-103 target=103 from pid=12578 uid=0 observer
+Nov 16 15:15:51.614445 nested-app-dev orbit-spike-executor[12567]: done wake op=bwake-92ce12-3-102 target=102 from pid=12578 uid=0 observer
+Nov 16 15:15:51.620534 nested-app-dev orbit-spike-executor[12567]: done wake op=bwake-92ce12-3-104 target=104 from pid=12578 uid=0 observer
+Nov 16 15:15:51.623058 nested-app-dev orbit-spike-executor[12567]: done wake op=bwake-92ce12-3-105 target=105 from pid=12578 uid=0 observer
+Nov 16 15:15:52.753201 nested-app-dev orbit-spike-executor[12567]: done wake op=rwake-a2052f target=104 from pid=15814 uid=982 relay
+Nov 16 15:15:52.769928 nested-app-dev orbit-spike-executor[12567]: refused order op="rwake-a2052f" nonce="61aa8d452c780d678cedf574959c6842" from pid=12578 uid=0 observer: replayed nonce
+Nov 16 15:16:06.745312 nested-app-dev orbit-spike-executor[12567]: test pause 3000 ms after restore of 105
+Nov 16 15:16:08.077924 nested-app-dev systemd[1]: orbit-spike-executor3.service: Sent signal SIGKILL to main process 12567 (orbit-spike-exe) on client request.
+Nov 16 15:16:08.077966 nested-app-dev systemd[1]: orbit-spike-executor3.service: Killed unit cgroup '/system.slice/orbit-spike-executor3.service' with SIGKILL on client request.
+Nov 16 15:16:08.089800 nested-app-dev systemd[1]: orbit-spike-executor3.service: Main process exited, code=killed, status=9/KILL
+Nov 16 15:16:08.090014 nested-app-dev systemd[1]: orbit-spike-executor3.service: Failed with result 'signal'.
+Nov 16 15:16:08.090556 nested-app-dev systemd[1]: orbit-spike-executor3.service: Consumed 12.666s CPU time over 2min 23.351s wall clock time, 42.8M memory peak.
+Nov 16 15:16:08.401711 nested-app-dev systemd[1]: orbit-spike-executor3.service: Scheduled restart job, restart counter is at 1.
+Nov 16 15:16:08.415205 nested-app-dev systemd[1]: Started orbit-spike-executor3.service - Orbit spike executor (round 3, sleep and wake in-process).
+Nov 16 15:16:08.443836 nested-app-dev orbit-spike-executor[15954]: executor ready: 1 open order(s) to finish
+Nov 16 15:16:08.447744 nested-app-dev orbit-spike-executor[15954]: recovering open order op=cwake-8d8f50 target=105 action=wake
+Nov 16 15:16:08.683536 nested-app-dev orbit-spike-executor[15954]: recovered op=cwake-8d8f50 target=105: "done"
+Nov 16 15:16:10.099152 nested-app-dev orbit-spike-executor[15954]: done wake op=cwake-8d8f50 target=105 from pid=12578 uid=0 observer (repeat: first result returned)
+Nov 16 15:16:10.141216 nested-app-dev orbit-spike-executor[15954]: refused order op="cwake-8d8f50" nonce="9014ad0fd4909c4b90fb78aa47c80d0e" from pid=15995 uid=982 relay: replayed nonce

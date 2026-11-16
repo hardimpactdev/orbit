@@ -1,0 +1,22 @@
+## other user (nobody), socket 0660 root:orbit-spike-relay
+connect refused by the kernel: Permission denied
+## other user (nobody), socket opened to 0666 for this test
+Traceback (most recent call last):
+  File "/usr/local/libexec/orbit-spike-caller-test.py", line 12, in <module>
+    s.sendall(open(order_file, 'rb').read())
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+BrokenPipeError: [Errno 32] Broken pipe
+## relay user running another program (python), not the relay command
+{"reason":"caller","status":"refused"}
+## root, interactive shell (incus exec)
+Traceback (most recent call last):
+  File "/usr/local/libexec/orbit-spike-caller-test.py", line 12, in <module>
+    s.sendall(open(order_file, 'rb').read())
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+BrokenPipeError: [Errno 32] Broken pipe
+## root, own systemd unit (systemd-run)
+{"reason":"caller","status":"refused"}
+## root, unit named orbit-agent-x.service
+{"reason":"caller","status":"refused"}
+## root running the relay command (not the relay user)
+{"reason":"caller","status":"refused"}

@@ -1,0 +1,19 @@
+Nov 16 15:15:52.769928 nested-app-dev orbit-spike-executor[12567]: refused order op="rwake-a2052f" nonce="61aa8d452c780d678cedf574959c6842" from pid=12578 uid=0 observer: replayed nonce
+Nov 16 15:16:10.141216 nested-app-dev orbit-spike-executor[15954]: refused order op="cwake-8d8f50" nonce="9014ad0fd4909c4b90fb78aa47c80d0e" from pid=15995 uid=982 relay: replayed nonce
+Nov 16 15:16:27.922249 nested-app-dev orbit-spike-executor[15954]: refused order op=null nonce=null from pid=12578 uid=0 observer: bad signature
+Nov 16 15:16:27.938082 nested-app-dev orbit-spike-executor[15954]: refused order op=null nonce=null from pid=12578 uid=0 observer: bad signature
+Nov 16 15:16:27.946674 nested-app-dev orbit-spike-executor[15954]: refused order op=null nonce=null from pid=12578 uid=0 observer: bad signature
+Nov 16 15:16:27.957661 nested-app-dev orbit-spike-executor[15954]: refused order op="op-sec-expired" nonce="e3e02b72d7be1a2faf7d18af55d2a71b" from pid=12578 uid=0 observer: expired
+Nov 16 15:16:27.968300 nested-app-dev orbit-spike-executor[15954]: refused order op="op-sec-unknown" nonce="c0c6bcd1f3f3ae2f263635ab9a901401" from pid=12578 uid=0 observer: unknown action
+Nov 16 15:16:27.981571 nested-app-dev orbit-spike-executor[15954]: refused order op="op-sec-wrongtarget" nonce="05297a93ca0aefed6af91e4ca623d1ff" from pid=12578 uid=0 observer: wrong target
+Nov 16 15:16:28.002339 nested-app-dev orbit-spike-executor[15954]: refused order op="op-sec-wrongnode" nonce="751b697286718b20777a620f320cfd30" from pid=12578 uid=0 observer: wrong node
+Nov 16 15:16:28.011496 nested-app-dev orbit-spike-executor[15954]: refused order op="op-sec-ttl" nonce="daf2b7ef42c6342f91c83f20002e20e1" from pid=12578 uid=0 observer: expiry too far ahead
+Nov 16 15:16:28.024050 nested-app-dev orbit-spike-executor[15954]: refused order op=null nonce=null from pid=12578 uid=0 observer: malformed order
+Nov 16 15:16:28.048161 nested-app-dev orbit-spike-executor[15954]: refused order op="op-sec-replay" nonce="f91e9704bab105d58b19ec82c059f95a" from pid=12578 uid=0 observer: replayed nonce
+Nov 16 15:16:32.306452 nested-app-dev orbit-spike-executor[16023]: refused order op="op-sec-replay-restart" nonce="d6582413ebd42d6be3bff16caeb7d3b3" from pid=12578 uid=0 observer: replayed nonce
+Nov 16 15:16:32.995770 nested-app-dev orbit-spike-executor[16023]: refused caller pid=16033 uid=65534: uid is neither the observer's nor the relay's
+Nov 16 15:16:33.384793 nested-app-dev orbit-spike-executor[16023]: refused caller pid=16038 uid=982: relay user but runs /usr/bin/python3.14, not the relay command
+Nov 16 15:16:33.683786 nested-app-dev orbit-spike-executor[16023]: refused caller pid=16040 uid=0: runs in 0::/.lxc not orbit-agent.service
+Nov 16 15:16:34.026119 nested-app-dev orbit-spike-executor[16023]: refused caller pid=16043 uid=0: runs in 0::/system.slice/orbit-spike-impostor3.service not orbit-agent.service
+Nov 16 15:16:34.351722 nested-app-dev orbit-spike-executor[16023]: refused caller pid=16049 uid=0: runs in 0::/system.slice/orbit-agent-x3.service not orbit-agent.service
+Nov 16 15:16:34.650839 nested-app-dev orbit-spike-executor[16023]: refused caller pid=16054 uid=0: runs in 0::/.lxc not orbit-agent.service

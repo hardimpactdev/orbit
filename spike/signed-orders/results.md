@@ -2,7 +2,7 @@
 
 Task group 5552, subtask 5553, 16 November 2026. Built and measured in this task copy's nested fleet: `nested-gateway` (Node 1) and `nested-app-dev` (Node 3). Nothing merges and nothing touched production. Every spike unit, file, key and process has been removed from the fleet again, and the Node runs its original `orbit-agent` binary.
 
-> **Round 2 is at the end of this page** ([Round 2](#round-2-no-systemd-on-the-orders-path)). It replaces the socket-activated executor with a long-running one that does the action itself. Everything from here to "How to run it again" is round 1.
+> **Round 3** (sleep and wake in-process, under decisions D1–D5) is the last section: [Round 3](#round-3-sleep-and-wake-in-the-executor). **Round 2 is after round 1** ([Round 2](#round-2-no-systemd-on-the-orders-path)). It replaces the socket-activated executor with a long-running one that does the action itself. Everything from here to "How to run it again" is round 1.
 
 ## Summary
 
@@ -390,3 +390,235 @@ Raw files are in `r2-security-*`. Every refusal is in the executor's journal.
    - Start the targets with `systemd-run --unit=orbit-spike-target-<id> python3 …/orbit-spike-target.py <id>`.
 4. Run `bench2.php` in the modes `seq`, `burst`, `same`, `repeat`, `crash` and `ssh`, and `security.php`, as `orbit` from `apps/gateway`.
 5. Undo every step.
+
+## Round 3: sleep and wake in the executor
+
+Nick's decisions for this round:
+
+- **D1.** The executor sleeps and wakes in Rust, in-process.
+- **D2.** The whole container hibernates.
+- **D3.** Every millisecond counts.
+- **D4.** No Node-to-Node traffic.
+- **D5.** Results come back over the WebSocket.
+
+Built and measured on 16 November 2026, 15:07–15:17 UTC, in the same nested fleet. Afterwards these were removed: every spike unit, target cgroup, process, file, user (`orbit-spike-relay`) and Valkey key. The Node's memory limit is back to 3 GiB (raised to 7 GiB for the run), and the original `orbit-agent` runs again. The changes to `apps/` are kept as patches and reverted in the tree.
+
+### The one thing this fleet cannot do: swap
+
+The task copy's own cgroup has `memory.swap.max = 0`, and there is no swap device. That holds for every nested container below it, and it cannot be changed from inside.
+
+So the sleep's reclaim could not move anonymous memory anywhere. While asleep, the target kept 785 MB in `memory.current`, with `swap.current` at 0 in every cycle. The wake's restore therefore touched pages that were still resident.
+
+The restore numbers below are the **CPU floor of the restore engine**: syscalls and page walks for ~255k pages. They are **not swap-in times**. With real swap, the restore is bound by I/O, and the thread count should matter far more than it does here.
+
+Everything else ran for real:
+
+- the whole-subtree freeze, scan and plan;
+- recording, opening and closing the swap limits;
+- the identity check, the restore syscalls, the thaw and the HTTP check;
+- the WebSocket round trip, the hand-off, the relay and the crash recovery.
+
+### What was built
+
+**Executor** ([`executor3/src/main.rs`](executor3/src/main.rs), [`executor3/src/power.rs`](executor3/src/power.rs)). One Rust binary, started by a plain unit ([`systemd/orbit-spike-executor3.service`](systemd/orbit-spike-executor3.service): `Restart=always`, `RestartSec=100ms`). Nothing on the order's path calls systemd, Python or any other helper.
+
+**`sleep` action**, following ADR 0261's rules:
+
+1. **Swap limits.** Record the subtree's swap limits that are not `max` in `<target>.limits`, published atomically (write, fsync, rename, fsync the folder). Only then open them.
+2. **Freeze.** Write `1` to `cgroup.freeze` of the target's root and wait for `frozen 1`.
+3. **Process list.** Walk `cgroup.procs` through the whole subtree, without picking, and deduplicate.
+4. **Scan.** One thread per process reads `/proc/<pid>/maps` and `/proc/<pid>/pagemap`. It records the present pages of every readable mapping as runs, skipping only the kernel special mappings `[vvar]`, `[vdso]`, `[vsyscall]` and `[vvar_vclock]`.
+5. **Plan.** A compact binary plan: magic and version, boot id, the cgroup's inode, then each process as pid, start time and runs of (address, pages). About 20 KB for 255k pages. It is published atomically like the limits record, so a reader sees the old plan or the whole new one, never half of one. A sleep that finds a plan already in place keeps it.
+6. **Reclaim.** Write the current size to `memory.reclaim` (`EAGAIN` is normal) until `memory.current` drops less than 1 MB three times in a row, or 2 s pass.
+
+**`wake` action:**
+
+1. **Identity, before any memory syscall.** Read the plan. Check the boot id and the cgroup inode. For each pid, `pidfd_open` it, then check its start time against the plan. Reading the start time after `pidfd_open` binds the pidfd to the recorded process. There is no Incus or other slow state read: the check took 0.2 ms.
+2. **Restore, still frozen.**
+   - The work is cut into items of at most 2048 pages, so one big process is spread over every thread.
+   - A pool of N threads (from 1 to 64; set per run, not in the order) takes items in turn.
+   - Per item: `process_madvise(MADV_WILLNEED)` over its runs in batches of 512 iovecs. Then `process_vm_readv` with one byte per page, 512 pages per call.
+   - Bounded at 2 s. A restore cut short reports `partial`, and the wake goes on.
+3. **Thaw**, then **close exactly the limits in the record**, then **wait for HTTP 200** on the target's port. Finally delete the plan and the record.
+
+**Per-target lock, and no syncs on the order's path.**
+
+- **Locks.** Each target has its own `tokio::Mutex` over its own done and open Operations. The only shared state is the nonce map, held for one insert, with no I/O under it.
+- **Journal writes.** One append-only `write` per order, holding the nonce, the open order and its action, made before acting. One more `write` holds the result. No `fsync` sits on the path.
+- **Why that is safe.**
+  - A written record survives a crash of the executor, because the kernel's page cache keeps it. The crash test below shows this.
+  - A background thread syncs the journal once a second, off the path, against power loss.
+  - After a Node reboot every order has expired (TTL at most 10 s), and the target's processes and cgroup are gone. So a lost tail can neither allow a replay nor hide an open order that still matters.
+
+**SSH fallback through one fixed relay** (D4: the Gateway goes to the Node, never Node to Node).
+
+- **The command.** The fallback runs `sudo -n -u orbit-spike-relay /usr/local/libexec/orbit-spike-executor3 relay` over SSH, with the same signed envelope on stdin. The relay is the executor binary itself: it copies stdin to the socket and the reply to stdout.
+- **The socket.** Mode `0660 root:orbit-spike-relay`.
+- **Who may connect.** The executor accepts either root in `orbit-agent.service`, or uid `orbit-spike-relay` whose `/proc/<pid>/exe` is exactly the executor binary. Both are checked through `SO_PEERPIDFD`.
+- **One order, one action.** Both paths deliver the same order with the same nonce, so the second arrival is refused as `replayed nonce`. That refusal waits for the target's lock, and once the first arrival has finished it carries the first result (`first_result`).
+
+**Results over the WebSocket, handed off by Operation id** (D5).
+
+- The observer sends each result as a `client-spike-result` client event on `presence-node.{id}` ([`observer2.patch`](observer2.patch), unchanged).
+- On the Gateway, the long-running listener is the existing agent-view subscriber ([`gateway/agent-view-subscriber3.patch`](gateway/agent-view-subscriber3.patch)). It pushes each result to the Valkey key `spike:op:<Operation>`, with a 60 s expiry.
+- The waiting request does `BLPOP spike:op:<Operation>`. Round 2's shared list with a nonce filter is gone.
+
+**Stand-in clone** ([`node/clone-target.sh`](node/clone-target.sh), [`node/clone/`](node/clone)). One delegated cgroup subtree per target (`orbit-spike-target-<id>.service`, `Delegate=yes`), with three child cgroups:
+
+| Cgroup | Processes | Resident |
+| --- | --- | --- |
+| `app/` | one Node.js 24 process: 700k small JS objects plus 300 MB of buffers | ~480 MB |
+| `php/` | a PHP 8.5 worker holding 250 MB, and `php -S` answering the HTTP check | ~275 MB |
+| `small/` | three small Node.js processes and the target's shell | ~90 MB |
+
+- **Size.** 7 processes, 785–889 MB, and **247k–265k recorded pages**, inside a real clone's 220k–270k range.
+- **The big process.** At ~120k pages it is between T3 (~95k) and the top of Vite (102k).
+- **How close it is to a real clone.** A real clone has more processes (Caddy, PHP-FPM workers, Vite, T3, Valkey, its system services), more file-backed pages, and pages that were cold for hours. It also runs inside an Incus container, not a delegated systemd cgroup, and the stand-in had no swap.
+- **Swap limits.** The test closes them (`memory.swap.max = 0`, as Incus keeps a running container). One cycle shows the wake closing exactly what the sleep opened: 3 limits. The subtree root was already `max`, because systemd resets a unit's own `MemorySwapMax` on daemon-reload. So the root was not recorded or touched, and stayed `max` afterwards, as it was.
+
+### Sleep
+
+30 cycles on target 101 ([`r3-cycle-t32.jsonl`](r3-cycle-t32.jsonl)), ms unless stated:
+
+| Measure | Median | p90 | Max |
+| --- | --- | --- | --- |
+| **Sleep total, in the executor** | **65.6** | **113.8** | **235.8** |
+| Record and open the swap limits (incl. fsync of the record) | 13.6 | 50.1 | 143.1 |
+| Freeze the subtree | 0.3 | 0.8 | 2.5 |
+| Scan maps and pagemap (7 processes, threaded) | 29.1 | 39.4 | 49.9 |
+| Write the plan (fsync, rename, folder fsync) | 13.4 | 16.8 | 74.8 |
+| Reclaim until the counters settle | 4.9 | 8.2 | 9.0 |
+| Result in the waiting Gateway request | 74.1 | 119.7 | 241.2 |
+| Processes / pages recorded / runs | 7 / 255,320 / ~1,700–2,000 | | |
+| Plan size | 20.5 KB | | |
+| `memory.current` before → asleep | 785 → 785 MB | | |
+| `swap.current` asleep | **0 MB** (no swap in this fleet) | | |
+| `anon` / `file` asleep | 772 / 2.7 MB | | |
+
+- **The first reclaim.** The first cycle's reclaim took 38 ms and dropped ~23 MB of file pages (890 → 867 MB). After that there was nothing left that could be reclaimed without swap.
+- **A real reclaim is not measured here.** Reclaiming ~1 GB of anonymous memory to swap takes far longer: the ADR 0261 spike measured 291 ms median for its full preparation.
+- **The fsyncs that remain.** Sleep is not inside a visitor's request, so its two fsyncs (limits record and plan) stay. They are most of the sleep's spread.
+
+### Wake
+
+30 wakes with 32 restore threads, from the Gateway's broadcast. The steps are for the 29 wakes that finished inside 300 ms:
+
+| Step (ms from the broadcast) | Median | p90 | Max |
+| --- | --- | --- | --- |
+| Observer receives the order | 4.9 | 7.5 | 13.2 |
+| Executor: caller and order checks pass, open record written | 5.3 | 9.1 | 13.5 |
+| Identity check (inside the wake) | 0.2 | | |
+| **Restore done (still frozen): 255,320 pages, 997 MB** | **146.2** | **184.1** | **248.4** |
+| Thawed | 147.9 | 185.0 | 248.6 |
+| Swap limits closed | 148.0 | 185.0 | 248.7 |
+| **Target answers HTTP** | **148.3** | **185.4** | **249.0** |
+| Result at the Gateway listener | 149.8 | 189.6 | 252.1 |
+| **Result in the waiting request (Valkey `BLPOP`)** | **150.0** | **189.8** | **252.3** |
+| Restore alone | 141.7 | 180.2 | 244.3 |
+| Restore rate | 7,040 MB/s | 7,917 MB/s | 8,030 MB/s |
+| Hand-off, listener → waiting request | 0.13 | 0.20 | 3.9 |
+
+- **Misses: 1 of 30.** Its restore took 367 ms, ready at 380 ms. The fallback sent the same signed order through the SSH relay at 386 ms. The executor refused it as `replayed nonce`, and the wake ran once.
+- **Hand-off.** From the observer's reply to the waiting request took 1.1 ms median in round 3, against 1.2 ms in round 2. The listener-to-request step itself fell from 0.17 to 0.13 ms median (p90 0.23 → 0.20 ms). The gain is the per-Operation key: no nonce filter, and no result that belongs to another request.
+- **Where the time goes.** Outside the restore, the whole path costs ~8 ms: about 5 ms to the executor, about 2 ms for the thaw, limits and HTTP check, and about 2 ms back to the request. **The restore is 95 % of the wake.**
+
+**Compared with today's live numbers.** The live Python helper takes 0.72 s in total: restore 0.39–0.45 s, Incus reads 0.12–0.23 s, start ~0.15 s.
+
+| Part | Live | Spike |
+| --- | --- | --- |
+| Incus reads | 0.12–0.23 s | Replaced by the plan's identity check: **0.2 ms** |
+| Container start | ~0.15 s | A cgroup thaw: **~1.7 ms**. The real wake would go through the Incus unfreeze API, which adds its own cost (not measured). |
+| Dispatch and result | via SSH and outcome files | **~5 ms there, ~2 ms back** |
+| Restore | 0.39–0.45 s, from swap | 0.14 s CPU floor with nothing on disk. **Not comparable**: real swap-in will add I/O time. |
+
+So the spike removes ~0.27–0.38 s of fixed cost. The restore itself is still unproven against real swap.
+
+### Restore thread count
+
+Same target, same pages (255k), from the broadcast:
+
+| Threads | Wakes | Restore median | p90 | Max | MB/s (median) | Target answers, median | p90 | Misses (300 ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 10 | 151.8 | 190.0 | 224.5 | 6,579 | 158.1 | 198.3 | 0/10 |
+| 8 | 10 | **125.2** | **142.6** | 181.5 | **7,968** | **130.1** | **150.0** | 0/10 |
+| 32 | 30 | 142.4 | 198.2 | 367.3 | 7,003 | 149.4 | 202.8 | 1/30 |
+| 64 | 10 | 176.7 | 255.9 | 266.6 | 5,729 | 187.4 | 265.4 | 0/10 |
+
+The nested Node has 2 CPUs, and with resident pages the restore is pure CPU (~0.5 µs per page). So 8 threads is best and 64 is worst: 32–64 threads only oversubscribe two cores. These numbers say nothing about the right count under swap I/O, where more threads keep more reads in flight. Measure it again on a Node with swap and real cores.
+
+### Five targets woken at once
+
+4 rounds. Each round slept 101–105 (five ~830 MB clones, 247k–255k pages each), then broadcast five wakes back to back ([`r3-burst.jsonl`](r3-burst.jsonl)):
+
+| Measure (ms from the first broadcast) | Median | p90 | Max |
+| --- | --- | --- | --- |
+| Observer receives the order | 21.6 | 43.5 | 51.1 |
+| Executor checks pass | 86.7 | 101.2 | 101.4 |
+| Restore alone (per target) | 579.8 | 704.1 | 780.4 |
+| Target answers HTTP | 765.2 | 801.6 | 825.3 |
+| Result in the waiting request | 769.2 | 803.5 | 827.7 |
+| **Last of the 5 targets answers** | **785.4** | **825.3** | **825.3** |
+| Restore rate per target | 1,666 MB/s | | |
+
+- **All 20 woke**, with no failed restore and no partial one.
+- **But all 20 were over 300 ms.** In a real setup the fallback would have fired for every one. Here the bench waited 10 s, so it did not.
+- **The cause: about 1.2 million pages of restore on 2 CPUs, in 160 threads** (5 × 32). Even the order checks waited (87 ms), because the restore threads starved the executor's 4 async workers.
+- **What product form needs:** one restore pool for the whole Node, sized to its cores and I/O depth, shared fairly between targets. Not a pool of 32 per wake.
+
+### Lock, idempotency and the relay
+
+| Test | Result |
+| --- | --- |
+| Wake through the SSH relay only ([`r3-relay.jsonl`](r3-relay.jsonl)) | `done` in 317 ms over SSH, from `uid=982 relay`; 247,113 pages restored |
+| The same signed order then through the WebSocket | Refused, `replayed nonce`, with `first_result`; no second action |
+| WebSocket order late (380 ms), then the fallback relays the same order (cycle 20) | Relay refused, `replayed nonce`; the wake ran once (one `done` in the journal) |
+| The five targets in one burst | Separate per-target locks: lock wait 0 ms for every target |
+
+### Crash test
+
+[`r3-crash.jsonl`](r3-crash.jsonl), [`r3-crash-journal.txt`](r3-crash-journal.txt). Target 105 was put to sleep (246,673 pages). Its wake had a 3 s test pause after the restore, while still frozen.
+
+1. **15:16:08.078.** SIGKILL, with the target **frozen and its pages restored**. The observer saw the socket close and sent an empty result. The waiting request got `null` after 1.48 s.
+2. **15:16:08.415.** systemd started the executor again, 0.34 s later. At 15:16:08.444 it logged `executor ready: 1 open order(s) to finish`, read from the journal that had no fsync.
+3. **15:16:08.448 → 15:16:08.684.** It ran the open wake again: identity passed, because the plan and pids were unchanged. Then it restored 246,673 pages in 235 ms, thawed, closed the 3 limits, got HTTP 200, and recorded `"recovered": true`.
+4. **15:16:10.099.** The same Operation in a new order, over the WebSocket, returned that result with `"repeat": true` and did not act.
+5. **15:16:10.141.** The same signed order through the SSH relay was refused as `replayed nonce`, carrying `first_result`.
+6. **After the test.** `frozen 0`, the HTTP check answered `ready`, and the plan and limits record were gone.
+
+### Security tests against executor3
+
+[`r3-security-orders.jsonl`](r3-security-orders.jsonl), [`r3-security-callers.txt`](r3-security-callers.txt), [`r3-security-journal.txt`](r3-security-journal.txt). Every refusal is in the executor's journal.
+
+| Test | Refused | Reason (journal) |
+| --- | --- | --- |
+| Another user (`nobody`), socket `0660 root:orbit-spike-relay` | Yes | Kernel `EACCES`; the executor never sees it |
+| Another user (`nobody`), socket opened to 0666 for the test | Yes | `uid is neither the observer's nor the relay's` |
+| Root outside the observer unit (`incus exec` shell) | Yes | `runs in 0::/.lxc not orbit-agent.service` |
+| Root in its own unit / a look-alike `orbit-agent-x3.service` | Yes | Wrong cgroup |
+| **New:** the relay user running another program (`python3`) | Yes | `relay user but runs /usr/bin/python3.14, not the relay command` |
+| **New:** root running the relay command (not the relay user) | Yes | Root outside `orbit-agent.service` |
+| Bad signature / changed action / changed target | Yes | `bad signature` |
+| Expired / unknown action / wrong target / wrong Node / expiry too far ahead / garbage | Yes | As named |
+| Replayed order | Yes | `replayed nonce` |
+| Replayed order across an executor restart | Yes | `replayed nonce`: the nonce reached the journal by a plain `write`, with no fsync |
+
+In two of the caller tests the executor refused and closed the connection before the test client finished writing. The client then reported `BrokenPipe` instead of the refusal text, and the refusal is in the journal.
+
+### What product form would need (new in round 3)
+
+- **A Node with swap, and a measurement on it.** This is the deciding number. The restore engine's CPU floor is ~0.5 µs per page per core (140 ms for 255k pages on 2 cores). Real swap-in adds I/O on top. Run the same cycles on a Node with swap, and pick the thread count there.
+- **One restore pool per Node.** Size it to the cores and the swap device's queue depth, share it between targets, and keep the executor's own async workers out of it. The burst showed 5 × 32 threads starving order checks.
+- **Skip pages already resident at wake.** Read pagemap before the restore and skip pages that are already present. This is not "restoring less" (D2): the end state is the same. Without swap here, every page was resident, and the whole 140 ms was spent touching pages that were already in RAM.
+- **The real freezer through Incus.** The unfreeze call goes to the Incus local API, and its cost needs measuring. The spike used `cgroup.freeze` directly, which is what Incus writes underneath.
+- **Plan rules not yet built.** The ADR's `capabilities`, `residual` and `discard` commands; the counter settle in Ansible; an Incus incarnation in the identity check; and the 32 MiB residual-anonymous policy. The spike checks boot id, cgroup inode and every start time.
+- **The relay.** One fixed command, run as one dedicated user, and accepted by its exact binary. The sudoers rule should allow only that command line.
+
+### Which decisions the spike could not fully test
+
+| Decision | Tested? | Why not fully |
+| --- | --- | --- |
+| D1, in-process Rust, no systemd or helper on the path | **Fully** | — |
+| D2, the whole container hibernates | **Partly** | The whole subtree was frozen, scanned, planned, restored and thawed, with no picking. But the task copy has no swap (`memory.swap.max = 0` and no swap device), so memory never left RAM. |
+| D3, every millisecond | **Partly** | Every step was timed, but the restore is a CPU floor, not swap-in. The target is a cgroup stand-in, and the Incus unfreeze API was not in the path. |
+| D4, no Node-to-Node traffic | **Fully** | Everything, the SSH fallback included, goes Gateway → Node. |
+| D5, results over the WebSocket | **Fully, except the fallback** | The fallback's result comes back on its own SSH stdout, as any SSH call's does. |

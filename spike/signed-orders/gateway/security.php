@@ -9,7 +9,7 @@ require '/opt/orbit-spike/order.php';
 $node = 3;
 
 if (($argv[1] ?? '') === 'envelope') {
-    file_put_contents($argv[2], spike_order($node, '101', 'op-caller-test', ttlMs: 8000)['envelope']);
+    file_put_contents($argv[2], spike_order($node, '101', 'op-caller-test-'.bin2hex(random_bytes(3)), action: 'wake', ttlMs: 8000)['envelope']);
     exit;
 }
 
@@ -34,9 +34,11 @@ function tamper(string $envelope, string $field, mixed $value): string
 
 function send(string $envelope): ?array
 {
-    spike_redis()->del('spike:results');
-    spike_broadcast(3, $envelope);
-    $item = spike_redis()->blPop(['spike:results'], 2.0);
+    // Round 3: results come back on the channel, to the Operation's own key when the order names one.
+    $op = json_decode((string) base64_decode(explode('.', $envelope)[0]), true)['operation'] ?? 'none';
+    spike_redis()->del('spike:results', "spike:op:$op");
+    spike_broadcast(3, $envelope, 'channel');
+    $item = spike_redis()->blPop(["spike:op:$op", 'spike:results'], 3.0);
 
     return $item ? json_decode($item[1], true)['body'] : null;
 }
