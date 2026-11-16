@@ -139,8 +139,9 @@
   vars:
     folder: "{{ instances.folders[folder_name] }}"
 
-# The project lets containers mount host folders read-only and idmapped (unshifted on an Instance fleet Node), and publish T3 with a proxy device. Every container gets
-# an isolated ID map and a default-reject NIC policy; each Instance's target paths come with its create flow. Incus refuses
+# The project lets containers mount host folders read-only and idmapped (unshifted on an Instance fleet Node), and publish T3
+# with a proxy device. Every container gets an isolated ID map and a default-reject NIC policy; each Instance's target paths
+# come with its create flow. Incus refuses
 # `shift` on a disk whose source falls under `restricted.devices.disk.paths`, so the project sets no path list: the profile is
 # the one place that names the two folders, and the create flow's device list is the only guard on host paths.
 # Containers get no DNS: the egress proxy resolves every name.

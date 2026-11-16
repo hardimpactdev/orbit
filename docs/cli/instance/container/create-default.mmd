@@ -33,7 +33,7 @@ sequenceDiagram
   GW->>SW: Start run from queue<br/>operation-instance-create
   SW->>N: Launch the container<br/>Ansible · tags container
   %%> What it does:
-  %%> - `incus init` from the Node's image `orbit-instance` with the reserved bridge address, then `incus start`; the project's profile gives `security.port_isolation` and the idmapped, read-only shared folders
+  %%> - `incus init` from the Node's image `orbit-instance` with the reserved bridge address, then `incus start`; the project's profile gives `security.port_isolation` and the idmapped, read-only shared folders (unshifted on an Instance fleet Node)
   %%> - the NIC carries `orbitinst0-proxy` and the container's own ACL, which lets only the Node's Caddy reach port 8080; `orbitinst0-egress` stays on the bridge only
   %%> - the agent folder is mounted too, so its clones have it; nothing in the default runs from it
   %%> - right after the first start and the private names: the presented machine name in `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API, then the kernel hostname at once with `hostname -F`, the one path that sets it live; nothing runs in the container yet

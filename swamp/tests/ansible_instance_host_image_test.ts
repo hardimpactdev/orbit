@@ -82,9 +82,11 @@ Deno.test({
             const kept = boundaries["dir-system"].entries;
             const programs = Object.keys(opened).filter((path) => path === agent || path.startsWith(`${agent}/`));
             assert(programs.length > 1, Object.keys(opened).join("\n"));
-            // An isolated container reads them as nobody's, so the bits for others must open each file and directory.
+            // An isolated container reads them as nobody's, so the bits for others must open each directory and file, and run each program.
             for (const path of programs.filter((path) => !opened[path].link)) {
-                assertEquals(opened[path].mode & (opened[path].directory ? 0o005 : 0o004), opened[path].directory ? 0o005 : 0o004, path);
+                const { mode, directory } = opened[path];
+                const need = directory || (mode & 0o100) !== 0 ? 0o005 : 0o004;
+                assertEquals(mode & need, need, path);
             }
             assertEquals(kept[agent].mode, 0o750);
         } finally { f.cleanup(); }
