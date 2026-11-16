@@ -54,7 +54,7 @@ class CiRunnerHoldTest(unittest.TestCase):
         incus = self.root / 'bin/incus'
         incus.write_text(INCUS.format(python=sys.executable))
         incus.chmod(incus.stat().st_mode | stat.S_IXUSR)
-        self.state = self.root / 'ci-hold'
+        self.state = self.root / 'lib/ci-hold'
         self.runners = self.root / 'runners.json'
         self.log = self.root / 'calls.jsonl'
 
@@ -176,7 +176,10 @@ class CiRunnerHoldTest(unittest.TestCase):
 
         self.call('hold', 'instance-8', '0')
 
+        self.assertEqual(stat.S_IMODE(self.state.stat().st_mode), 0o700)
         self.assertEqual(stat.S_IMODE((self.state / 'holds').stat().st_mode), 0o700)
+        # A parent that the script had to make keeps the caller's mode: other Orbit folders live beside the holds.
+        self.assertEqual(stat.S_IMODE(self.state.parent.stat().st_mode), 0o755)
         self.assertEqual(stat.S_IMODE((self.state / 'stopped.json').stat().st_mode), 0o600)
 
     def test_refuses_a_malformed_call(self):

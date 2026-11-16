@@ -128,6 +128,8 @@ def main(arguments):
     action, copy = arguments[0], arguments[1]
     if not ((action == "hold" and len(arguments) == 3 and arguments[2].isdigit()) or (action == "release" and len(arguments) == 2)):
         sys.exit(usage)
+    # The parent keeps the Node's usual mode; only the folder of holds is root's alone.
+    STATE.parent.mkdir(parents=True, exist_ok=True)
     os.umask(0o077)
     (STATE / "holds").mkdir(parents=True, exist_ok=True)
     with open(STATE / "lock", "w") as lock:
