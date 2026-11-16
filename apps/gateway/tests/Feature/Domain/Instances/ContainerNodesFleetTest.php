@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Models\Node;
@@ -36,4 +37,21 @@ it('puts the fleet\'s app-dev Node on the build list of the nested Gateway of an
     expect($nodes->includes($appDev))->toBeTrue()
         ->and($nodes->includes($appProd))->toBeFalse()
         ->and($nodes->ids())->toBe([]);
+});
+
+it('gives the fleet Node no Instance bridge that holds the fleet\'s egress proxy', function (): void {
+    $environment = $this->marker.'-environment';
+    file_put_contents($environment, "PATH=\"/usr/bin\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\n");
+    config(['instances.fleet_environment' => $environment]);
+    $appDev = fleetNode('app-dev', TaskVmNestedFleet::Layout['app-dev']['address']);
+    $other = fleetNode('app-prod', TaskVmNestedFleet::Layout['app-prod']['address']);
+    expect(app(AllocateInstanceBridgeAction::class)->execute($other))->toBe('10.253.0.0/24');
+    Node::query()->whereKey($other->id)->update(['instance_bridge' => null]);
+
+    touch($this->marker);
+    try {
+        expect(app(AllocateInstanceBridgeAction::class)->execute($appDev))->toBe('10.253.1.0/24');
+    } finally {
+        unlink($environment);
+    }
 });
