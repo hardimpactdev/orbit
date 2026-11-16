@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=10, self_hosted_shards=8, default_cost=30, machinery_canary=[])
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=10, self_hosted_shards=8, default_cost=30, machinery_canary=[], capacity_gap=[])
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -38,7 +38,7 @@ def names(result):
 
 
 def scheduled(result):
-    return units.planned_units(result) + units.unplaced_units(result)
+    return units.planned_units(result) + units.unplaced_units(result) + [u for row in result.get('not_run', []) for u in row['units']]
 
 
 class PlanningTest(unittest.TestCase):
@@ -130,6 +130,43 @@ class PlanningTest(unittest.TestCase):
         self.assertEqual(units.unplaced_units(full), [f'swamp/runner.ts#{k}/4' for k in range(4)])
         self.assertTrue(full['capacity'][0]['self_hosted'])
         self.assertIn('above the self-hosted shard limit', units.plan_summary(full, {f['file']: f for f in fixtures}))
+
+    def test_a_named_capacity_gap_runs_what_fits_names_the_rest_and_never_blocks(self):
+        budget = {**BUDGET, 'self_hosted_shards': 1, 'shard_workers': 1, 'capacity_gap': ['swamp/gap.ts']}
+        gap = fixture('swamp/gap.ts', 180, ['swamp/input'], self_hosted=True, slices=3)
+        other = fixture('swamp/other.py', 100, ['swamp/input'], self_hosted=True)
+        fixtures = [gap, other]
+        result = planned(['swamp/input'], fixtures, budget=budget)
+        # The other file is admitted first even though the gap file comes first in the table.
+        self.assertEqual([u for s in result['self_hosted_shards'] for u in s['units']], ['swamp/other.py'])
+        self.assertEqual(result['not_run'], [{'file': 'swamp/gap.ts', 'units': [f'swamp/gap.ts#{k}/3' for k in range(3)],
+                                              'reason': 'capacity gap per ADR 0262'}])
+        self.assertNotIn('capacity', result)
+        self.assertIn('Not run: `swamp/gap.ts`, 3 units, reason: capacity gap per ADR 0262',
+                      units.plan_summary(result, {f['file']: f for f in fixtures}))
+        # With room, the gap file's units that fit run; an oversized unit is named, not a blocker.
+        roomy = {**budget, 'self_hosted_shards': 2, 'shard_workers': 4}
+        gap.update(cost=300, cases=['a', 'b', 'c'], case_costs={'a': 100, 'b': 160, 'c': 40})
+        result = planned(['swamp/input'], fixtures, budget=roomy)
+        self.assertEqual(sorted(u for s in result['self_hosted_shards'] for u in s['units']),
+                         ['swamp/gap.ts#0/3', 'swamp/gap.ts#2/3', 'swamp/other.py'])
+        self.assertEqual(result['not_run'][0]['units'], ['swamp/gap.ts#1/3'])
+        self.assertNotIn('capacity', result)
+        # Without the name, the same overflow fails Required.
+        result = planned(['swamp/input'], fixtures, budget={**roomy, 'capacity_gap': []})
+        self.assertIn('swamp/gap.ts#1/3', units.unplaced_units(result))
+        self.assertNotIn('not_run', result)
+
+    def test_a_capacity_gap_must_name_registered_self_hosted_files(self):
+        original, inventory = units.registry.load(ROOT)
+        hosted = next(f['file'] for f in original['fixture'] if not f.get('self_hosted'))
+        for gaps in (['swamp/tests/missing_test.ts'], [hosted], 'swamp/tests/ansible_instance_migrate_test.ts',
+                     ['swamp/tests/ansible_instance_migrate_test.ts'] * 2):
+            config = json.loads(json.dumps(original))
+            config['budget']['capacity_gap'] = gaps
+            with self.subTest(gaps=gaps), patch.object(units.registry, 'load', return_value=(config, inventory)):
+                with self.assertRaisesRegex(ValueError, 'capacity_gap must list unique registered self_hosted fixtures'):
+                    units.configuration()
 
     def test_self_hosted_units_follow_the_unit_ceiling_with_startup(self):
         result = planned(['swamp/runner.ts'], [fixture('swamp/runner.ts', 145, cases=['long'], self_hosted=True)])
@@ -358,13 +395,15 @@ class TableTest(unittest.TestCase):
 
     def test_table_files_costs_and_unsliceable_rules(self):
         budget, fixtures, defaults = units.configuration()
-        self.assertEqual({**budget, 'machinery_canary': []}, BUDGET)
+        self.assertEqual({**budget, 'machinery_canary': [], 'capacity_gap': []}, BUDGET)
         self.assertTrue(defaults)
         for f in fixtures.values():
             self.assertTrue((ROOT / f['file']).is_file(), f['file'])
-            # Every unit fits the 150-second lane with its startup; no key keeps a file out of pull requests.
+            # Every unit fits the 150-second lane with its startup, except in a capacity gap that ADR 0262 names;
+            # no key keeps a file out of pull requests.
             for name, cost in units.units_for(f, budget):
-                self.assertLessEqual(cost, budget['shard_seconds'], name)
+                if f['file'] not in budget['capacity_gap']:
+                    self.assertLessEqual(cost, budget['shard_seconds'], name)
             self.assertFalse({'after_merge', 'after_merge_cases', 'reason'} & set(f), f['file'])
         self.assertLessEqual(set(units.fixture_steps()), set(fixtures))
         must = {str(p.relative_to(ROOT)) for p in (ROOT / 'swamp/tests').glob('*instance*') if p.is_file()}
