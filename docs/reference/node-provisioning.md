@@ -579,7 +579,7 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 
 `orbit node:converge <node> [--base | --roles=a,b] [--idempotency-key=KEY] [--json]` repairs one active, managed Linux Node against the release. It never runs `node:add`, changes an Instance, or adds or removes a role assignment, so a Node that owns Instances can converge. Fleet release rollout remains a separate CLI and observer publication path.
 
-With no scope flag, the attempt includes Orbit's base and every recorded role. `--base` selects only the agent, the Node’s CLI state and Orbit-owned files and units. `--roles=a,b` selects the base plus the named existing assignments, and refuses an empty, unknown or unassigned role. The two flags are mutually exclusive. There is no `--force` or `--full` option.
+With no scope flag, the attempt includes Orbit's base and every recorded role. `--base` selects only the agent, the Node’s CLI state and Orbit-owned files and units. `--roles=a,b` selects the base plus the named existing assignments, and refuses an empty, unknown or unassigned role. The two scope flags are mutually exclusive. `--full` runs every phase of the scope, whatever its [digest](#skip-a-phase-whose-input-did-not-change) says.
 
 The Gateway validates recorded state without a live preflight, reserves the target and its first recorded VPN hub until settlement, and captures an immutable intent. Unreachable machines fail during execution, not admission. The CLI validates inputs, calls the SDK and renders the Operation; the Gateway admits, records and projects; Swamp executes.
 
@@ -597,9 +597,37 @@ The native Swamp workflow runs these phases in order. Input preparation writes p
 | `network` | Apply the recorded hub before the Node and wait for the handshake. A target hub is applied once; without peers it needs no handshake. |
 | `check` | Read back selected software, units, role configuration and recorded tunnel state. |
 
-No recorded network in scope means no network mutation. DNS routing domains stay literal, including a domain such as `~orbit` that also names a local account. Every new attempt starts at input and runs all seven phases again, even when recorded intent matches. Matching tasks report zero target changes and the attempt must complete within 120 seconds; hub changes are excluded from that target count. A repeat is not a digest-based admission skip. Reusing an idempotency key follows the [keyed-start contract](/reference/operations#retry-a-start-with-a-key), rather than starting a second attempt.
+No recorded network in scope means no network mutation. DNS routing domains stay literal, including a domain such as `~orbit` that also names a local account. Every new attempt starts at input and runs `input` and `check`. Each other phase runs or skips by the [phase digest rule](#skip-a-phase-whose-input-did-not-change). A phase that runs with matching intent reports zero target changes, and the attempt must complete within 120 seconds; hub changes are excluded from that target count. A repeat is admitted as a new Operation; admission never skips it. Reusing an idempotency key follows the [keyed-start contract](/reference/operations#retry-a-start-with-a-key), rather than starting a second attempt.
 
 A failed phase stops later phases and fails the Operation with its failed step and error code. Completed and partial machine changes remain; there is no rollback. Fix the cause and start a new attempt from input. An individual Tool failure is different: it marks only that Tool failed, lets other Tools continue, and does not alone fail an otherwise successful parent. Temporary private run files are removed after work stops on success or failure. Incomplete cleanup is exposed without replacing the original failure, and interruption proves no cleanup.
+
+### Skip a phase whose input did not change
+
+This is the one rule for a skipped converge phase. The phases `agent`, `software`, `roles`, `tools` and `network` can skip. `input` and `check` always run.
+
+A phase digest is the SHA-256 of four parts:
+
+- the phase name;
+- the phase input, which the Gateway computes at admission (`NodeConvergePhaseDigest`);
+- the secret digest, which Swamp computes when it prepares the input;
+- the code digest, which Swamp also computes then.
+
+The phase input is the attempt's intent, with its Operation ID replaced by a fixed mark. It holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. The secret digest is the SHA-256 of each execution secret's value, so a new secret value moves it. The code digest covers the Ansible bundle and the input behaviour that writes the phase variables. A release that changes a converge playbook, task or variable moves every phase digest.
+
+Every phase reads the whole intent from its variables, so each phase digest covers the whole intent. A change of any recorded input runs every phase again.
+
+Swamp compares each digest with the digest that the Node records for that phase, and skips the phase only when they are equal. A skipped phase does not connect to the Node and does not read its state.
+
+A succeeded `node:converge` records the digest of each phase on the Node (`nodes.converge_digests`), whether the phase ran or skipped. Nothing else writes the record. The admission of any Operation that takes the Node's Operation admission lock clears it: a converge, a role addition, convergence or removal, an enrollment or an agent rekey. So these run a phase in full:
+
+- a changed digest: a changed intent, secret value or release;
+- no record: the first converge, or a converge after a failed or interrupted converge;
+- no record: a converge after any other Operation on the Node;
+- `--full`, which compares with no record.
+
+Drift is not an input. A skipped phase does not see a change that someone made on the Node by hand. The `check` phase always reads the selected software, units, role configuration and tunnel. When it finds drift, the converge fails, the record stays clear, and the next converge runs every phase. Run `node:converge --full` to repair drift that the check does not read.
+
+The Operation steps show a skipped phase as a skipped step. The Operation's `result.phases` and the `node:converge` output show it as `unchanged`, with no changes and no time.
 
 The Tool helper is the TypeScript policy that judges each Tool. It runs on the Swamp Node, with the Deno at `/usr/local/bin/deno`; on its first run for a worker, Deno downloads the helper's two pinned npm imports. A helper that cannot run is not a Tool failure: the `tools` phase fails before it judges a Tool, and no Tool is marked failed. Converge the Swamp Node to install its Deno, then converge the Node again.
 

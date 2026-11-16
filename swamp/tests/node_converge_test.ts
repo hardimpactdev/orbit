@@ -1,9 +1,12 @@
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { convergeResult, phases } from "../extensions/behaviors/operations/ansible-input/converge_result.ts";
-import { convergeInput, unsafeYaml } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
+import { codeDigest, convergeInput, phaseDigests, skippable, unsafeYaml } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
 import { toolState } from "../extensions/behaviors/operations/ansible-input/converge_tool.ts";
 import { behavior as extension } from "../extensions/behaviors/operations/ansible-input/write.ts";
+
+/** The digest fields a converge intent carries (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
+const digestFixture = { phase_input: "0".repeat(64), recorded_digests: [] };
 
 async function reports(folder: string, failure?: string) {
     for (const name of phases) {
@@ -105,10 +108,10 @@ Deno.test("private input is mode-protected, literal and limited to target plus r
     try {
         const ssh = { identity_file: "/test/identity", target: { host: "10.44.0.7", port: 22, user: "orbit", host_keys: ["ssh-ed25519 pinned"] } };
         const secret = "literal $HOME {{ lookup('pipe', 'false') }}\nsecond line\n";
-        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, network: { hub: { hub_id: 2, ssh: { ...ssh, target: { ...ssh.target, host: "10.44.0.2" } } } }, roles: [] }));
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ ...digestFixture, node_id: 7, ssh, network: { hub: { hub_id: 2, ssh: { ...ssh, target: { ...ssh.target, host: "10.44.0.2" } } } }, roles: [] }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
         await Deno.writeTextFile(`${folder}/secret-agent_verifier`, secret);
-        await convergeInput(folder, "/unused", "/shipped/helper.ts");
+        await convergeInput(folder, "/unused", "/shipped/helper.ts", []);
         assertEquals(Object.keys(JSON.parse(await Deno.readTextFile(`${folder}/inventory.json`)).all.hosts), ["target", "hub"]);
         assertEquals(await Deno.readTextFile(`${folder}/known_hosts`), "10.44.0.2 ssh-ed25519 pinned\n10.44.0.7 ssh-ed25519 pinned\n");
         const vars = await Deno.readTextFile(`${folder}/vars.yml`);
@@ -407,4 +410,80 @@ Deno.test("the roles phase takes the intent's roles_seconds, 900 to 1800, as its
     assertEquals(await run(bound({ roles_seconds: 1800 })), { code: 0, first: "1800" });
     assertEquals(await run(bound({})), { code: 0, first: "900" });
     for (const seconds of ["899", "1801", "5000", "", "900; id"]) assertEquals(await run(seconds), { code: 2, first: "" }, seconds);
+});
+
+// docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change
+Deno.test("a phase digest moves with the phase input, a secret value and the code, and equals the record only when none moved", async () => {
+    const intent = { phase_input: "1".repeat(64), recorded_digests: {} };
+    const first = await phaseDigests(intent, { agent_verifier: "a" }, "c".repeat(64));
+    assertEquals(Object.keys(first.digests), [...skippable]);
+    assertEquals(first.unchanged, []);
+    assertEquals(new Set(Object.values(first.digests)).size, skippable.length);
+    const same = await phaseDigests({ ...intent, recorded_digests: { agent: first.digests.agent, roles: first.digests.roles } }, { agent_verifier: "a" }, "c".repeat(64));
+    assertEquals(same.unchanged, ["agent", "roles"]);
+    for (const [secrets, code, input] of [[{ agent_verifier: "b" }, "c".repeat(64), intent.phase_input], [{ agent_verifier: "a" }, "d".repeat(64), intent.phase_input],
+        [{ agent_verifier: "a" }, "c".repeat(64), "2".repeat(64)]] as const) {
+        const moved = await phaseDigests({ phase_input: input, recorded_digests: first.digests }, secrets, code);
+        assertEquals(moved.unchanged, []);
+    }
+    await assertRejects(() => phaseDigests({ phase_input: "short", recorded_digests: {} }, {}, "c"));
+    await assertRejects(() => phaseDigests({ phase_input: "1".repeat(64), recorded_digests: { input: "1".repeat(64) } }, {}, "c"));
+});
+
+Deno.test("the code digest moves with a file's content and name", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        await Deno.mkdir(`${folder}/ansible/tasks`, { recursive: true });
+        await Deno.writeTextFile(`${folder}/ansible/tasks/a.yml`, "one");
+        const before = await codeDigest([`${folder}/ansible`]);
+        assertEquals(await codeDigest([`${folder}/ansible`]), before);
+        await Deno.writeTextFile(`${folder}/ansible/tasks/a.yml`, "two");
+        const changed = await codeDigest([`${folder}/ansible`]);
+        assertEquals(changed === before, false);
+        await Deno.rename(`${folder}/ansible/tasks/a.yml`, `${folder}/ansible/tasks/b.yml`);
+        assertEquals((await codeDigest([`${folder}/ansible`])) === changed, false);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("input preparation writes the phase digests and the unchanged phases", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const ssh = { identity_file: "/test/identity", target: { host: "10.44.0.7", port: 22, user: "orbit", host_keys: ["ssh-ed25519 pinned"] } };
+        const first = await phaseDigests({ phase_input: "1".repeat(64), recorded_digests: {} }, { agent_verifier: "v" }, await codeDigest([]));
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [], phase_input: "1".repeat(64), recorded_digests: { software: first.digests.software } }));
+        await Deno.writeTextFile(`${folder}/plans.json`, "{}");
+        await Deno.writeTextFile(`${folder}/secret-agent_verifier`, "v");
+        const phases = await convergeInput(folder, "/unused", "/shipped/helper.ts", []);
+        assertEquals(phases.unchanged, ["software"]);
+        assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/digests.json`)), phases);
+        assertEquals((await Deno.stat(`${folder}/digests.json`)).mode! & 0o777, 0o600);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("a phase whose digest is unchanged reports unchanged with no work, and the result carries every digest", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        await reports(folder);
+        const digests = Object.fromEntries(skippable.map((phase) => [phase, "a".repeat(64)]));
+        await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify({ digests, unchanged: ["software", "tools"] }));
+        // The workflow skipped these phases, so they left no callback.
+        for (const name of ["software", "tools"]) await Deno.remove(`${folder}/${name}-meta.json`);
+        await Deno.remove(`${folder}/tools-result.json`);
+        const result = await convergeResult(folder);
+        assertEquals(result.phases.map((phase) => phase.status), ["succeeded", "succeeded", "unchanged", "succeeded", "unchanged", "succeeded", "succeeded"]);
+        assertEquals(result.phases.filter((phase) => phase.status === "unchanged").map((phase) => [phase.changed, phase.elapsed_seconds]), [[0, 0], [0, 0]]);
+        assertEquals(result.tools, []);
+        assertEquals(result.digests, digests);
+        assertEquals(result.elapsed_seconds, 5);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("each skippable phase is guarded by the unchanged list of the input preparation; input and check always run", () => {
+    const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-node-converge-direct.yaml", import.meta.url))) as {
+        jobs: { name: string; steps: { name: string; guard?: string }[] }[];
+    };
+    for (const job of workflow.jobs.filter((job) => phases.includes(job.name as typeof phases[number]))) {
+        assertEquals(job.steps[0].guard, (skippable as readonly string[]).includes(job.name)
+            ? `\${{ "${job.name}" in steps["Prepare private input"].outputs.unchanged }}` : undefined);
+    }
 });

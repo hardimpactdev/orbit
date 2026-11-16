@@ -169,7 +169,7 @@ it('rejects invalid scope and removed flags before any operation or private copy
 })->with([
     'conflicting' => [['base' => true, 'roles' => ['app-prod']]],
     'empty' => [['roles' => []]], 'unassigned' => [['roles' => ['app-prod']]], 'unknown' => [['roles' => ['unknown']]],
-    'force' => [['force' => true]], 'full' => [['full' => true]], 'worker credentials' => [['worker_credentials' => true]],
+    'force' => [['force' => true]], 'full not a boolean' => [['full' => 'yes']], 'worker credentials' => [['worker_credentials' => true]],
     'duplicate' => [['roles' => ['app-prod', 'app-prod']]],
 ]);
 
@@ -435,7 +435,7 @@ it('claims local DNS before dispatch and retains cleanup after a later machine f
                 $phases[] = ['name' => $name, 'status' => $index < 3 ? 'succeeded' : ($index === 3 ? 'failed' : 'skipped'), 'changed' => 0, 'elapsed_seconds' => 0];
             }
             app(NodeConvergeProjection::class)->apply($operation, ['run_id' => 'dns-machine-failed', 'status' => 'failed', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-                'result' => ['outcome' => 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => 0, 'tools' => [], 'browser_trust' => [],
+                'result' => ['outcome' => 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => 0, 'tools' => [], 'browser_trust' => [], 'digests' => [],
                     'cleanup_complete' => true, 'failed_phase' => 'roles', 'error_code' => 'operation.native_failed']]);
         }
         expect($operation->refresh()->status)->toBe(OperationStatus::Failed);
@@ -471,4 +471,33 @@ it('bounds the roles phase of an Instance fleet Node\'s app-dev converge at 1800
     } finally {
         unlink($marker);
     }
+});
+
+it('sends the recorded phase digests and a phase input that does not move with the Operation, and clears the record', function (bool $full): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change
+    $recorded = ['agent' => str_repeat('a', 64), 'roles' => str_repeat('b', 64)];
+    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode($recorded)]);
+
+    $this->postJson($this->url, ['base' => true, 'full' => $full])->assertAccepted();
+    $first = Operation::query()->sole();
+    $intent = $first->input['_converge']['intent'];
+    expect($intent['recorded_digests'])->toBe($full ? [] : $recorded)
+        ->and($intent['phase_input'])->toMatch('/\A[0-9a-f]{64}\z/')
+        ->and($this->node->refresh()->converge_digests)->toBeNull();
+
+    $first->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
+    $second = Operation::query()->whereKeyNot($first->id)->sole();
+    expect($second->input['_converge']['intent']['phase_input'])->toBe($intent['phase_input'])
+        ->and($second->input['_converge']['intent']['recorded_digests'])->toBe([]);
+})->with(['recorded' => false, 'full' => true]);
+
+it('clears the recorded phase digests when another Operation takes the Node admission lock', function (): void {
+    $this->node->update(['tld' => 'target.test']);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode(['agent' => str_repeat('a', 64)])]);
+
+    app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::AppDev, true);
+
+    expect($this->node->refresh()->converge_digests)->toBeNull();
 });
