@@ -3,8 +3,8 @@
 
 CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units plans the Swamp fixture units.
 Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
-names for changed SDK fixtures, and the whole SDK suite, which takes seconds. The Gateway, CLI and docs suites
-are left to CI and named as skipped. A change to what CI's own policy tests read (the CI registry and its
+names for changed SDK fixtures, the project's pin test files (PIN_TESTS), and the whole SDK suite, which takes
+seconds. The rest of the Gateway, CLI and docs suites is left to CI and named as skipped. A change to what CI's own policy tests read (the CI registry and its
 fixture tomls, workflows, CI scripts, Swamp test files) adds those tests, tools/test_ci_*.py, before Pest and the fixtures. Every part gets the time left as its limit; a part the budget stops or
 leaves out is named as skipped. The output ends with a summary of at most SUMMARY_BYTES: one line per part with its
 outcome and seconds, then the last lines of each failed part, so the stored tail of the output always holds it.
@@ -75,7 +75,7 @@ OUTPUT_LINES = 80
 SUMMARY_BYTES = 12 * 1024
 # The most bytes of one output or summary line; a longer line keeps its start and names its size.
 LINE_BYTES = 300
-NOT_IN_CHECK = ('Not in this check: Rector, the full PHPStan analysis, the Gateway, CLI and docs Pest suites, web app '
+NOT_IN_CHECK = ('Not in this check: Rector, the full PHPStan analysis, the full Gateway, CLI and docs Pest suites, web app '
                 'checks, Rust formatting, generated contracts, Swamp workflow validation. CI runs them.')
 DEFAULT_BUDGET = 270
 
