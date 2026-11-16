@@ -48,15 +48,16 @@ final class TaskDonePublication
     }
 
     /**
-     * Why the publish of a named check without a pull request text opens no pull request, for a group that has none yet: only the
-     * reviewed done check with the reviewer's text opens it (docs/reference/tasks.md#publish-an-external-group).
+     * Why the publish of a named check without a pull request text opens no pull request, for a group that has none yet, or null when
+     * it opens one: only the reviewed done check with the reviewer's text does (docs/reference/tasks.md#publish-an-external-group).
      */
-    public static function withheld(int $check, ?TaskCheck $done): string
+    public static function withheld(Task $group, int $check, ?TaskCheck $done): ?string
     {
         return match (true) {
-            $done === null => "The group's work is not done, so no pull request opened: it opens when the reviewer approved this check and its subtask is completed.",
+            $done === null => 'The group has no done check now, so no pull request opened: it opens when the reviewer approved this check, its subtask is completed and no other work of the group runs.',
             $done->id !== $check => "Check {$check} is not the group's done check {$done->id}, so no pull request opened.",
-            default => "The reviewer sent no pull request text for check {$check}, so no pull request opened.",
+            TaskGroupDone::prText($group, $done) === null => "The reviewer sent no pull request text for check {$check}, so no pull request opened.",
+            default => null,
         };
     }
 

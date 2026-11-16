@@ -37,8 +37,8 @@ sequenceDiagram
   %%> - a task copy has no earlier turn that may still run (`tasks.copy_turn_unended`)
   %%> - a task copy's last completion did not fail (`tasks.copy_completion_failed`, with its Operation, failed step, error code and the retry `orbit instance:complete ID`), and the copy is `active` (`tasks.copy_not_ready`)
   %%> - check 17 passed for group 42, and required hosted CI passed on its commit, else `tasks.commit_not_checked`
-  %%> - without `--check`: the group's work is done, else `tasks.not_done`; the done check is the check, and the request is the same from here on (docs/reference/tasks.md#when-the-work-is-done)
-  %%> - without `--check`: the reviewer thread's newest turn sent its pull request text on the done check, else `tasks.pr_text_missing`; that text is the title and body, with `Closes #N` added for a group that names issue N and whose body does not close it (docs/reference/tasks.md#the-reviewers-pull-request-text)
+  %%> - without `--check`: the group's work is done, else `tasks.not_done`, also on a group that has its pull request; the done check is the check, and the request is the same from here on (docs/reference/tasks.md#when-the-work-is-done)
+  %%> - without `--check`, on a group without a pull request: the reviewer thread's newest turn sent its pull request text on the done check, else `tasks.pr_text_missing`; that text is the title and body, with `Closes #N` added for a group that names issue N and whose body does not close it (docs/reference/tasks.md#the-reviewers-pull-request-text)
   %%> - no other task runs on group 42; the Gateway holds one lock per group
   %%> - a release, and a `--check` that takes the reviewer's text: the done check is read again under the group lock, else `tasks.not_done`
   %%> What it does:

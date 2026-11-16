@@ -210,7 +210,7 @@ trait FollowsOperations
         }
 
         if ($operation->kind === 'tasks.publish') {
-            foreach (['branch' => 'Branch', 'commit' => 'Commit', 'pull_request_url' => 'Pull request'] as $field => $label) {
+            foreach (['branch' => 'Branch', 'commit' => 'Commit', 'pull_request_url' => 'Pull request', 'pull_request_withheld' => 'No pull request'] as $field => $label) {
                 $value = $operation->result[$field] ?? null;
                 if (is_string($value)) {
                     $this->writeHumanMessage($label.': '.$value);

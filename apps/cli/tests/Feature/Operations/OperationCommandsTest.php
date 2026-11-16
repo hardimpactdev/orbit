@@ -674,6 +674,18 @@ describe('task:publish', function (): void {
         expect($pending->body()->all())->toBe([])->and((string) $pending->body())->toBe('{}');
     });
 
+    it('says why a publish of a check only pushed', function (): void {
+        $seen = [];
+        $identity = ['kind' => 'tasks.publish', 'target_type' => 'task_group'];
+        $why = "Check 31 is not the group's done check 32, so no pull request opened.";
+        $result = ['branch' => 'task-17', 'commit' => str_repeat('a', 40), 'pull_request_number' => null, 'pull_request_url' => null, 'pull_request_withheld' => $why];
+        cli_deploy_gateway([cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result])], $seen, PublishTaskGroupRequest::class, $identity);
+
+        expect(Artisan::call('task:publish', ['task' => '17', '--check' => '31', '--no-interaction' => true]))->toBe(0);
+
+        expect(Artisan::output())->toContain('Branch: task-17', 'No pull request: '.$why)->not->toContain('Pull request: ');
+    });
+
     it('opens the pull request as a draft with --draft', function (): void {
         $seen = [];
         $identity = ['kind' => 'tasks.publish', 'target_type' => 'task_group'];

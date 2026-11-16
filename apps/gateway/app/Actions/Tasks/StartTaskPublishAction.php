@@ -43,11 +43,10 @@ final readonly class StartTaskPublishAction
             && TaskInstanceWorkspace::forGroup($group) !== null) {
             // A named check without a text opens the pull request when it is the reviewed done check, as the release does; any other check only pushes, and the Operation says why.
             $done = $this->done->check($group);
-            if ($done !== null && $done->id === $input->check && TaskGroupDone::prText($group, $done) !== null) {
+            $withheld = TaskDonePublication::withheld($group, $input->check, $done);
+            if ($withheld === null && $done !== null) {
                 $input = TaskDonePublication::for($group, $done);
                 $doneCheck = $done->id;
-            } else {
-                $withheld = TaskDonePublication::withheld($input->check, $done);
             }
         }
 
