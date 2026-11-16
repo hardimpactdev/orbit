@@ -625,7 +625,7 @@ A phase digest is the SHA-256 of the phase name and of what the phases read. Swa
 
 The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies.
 
-Swamp replaces the attempt's Operation ID, and the version that the admission gives each role certificate leaf, with fixed marks before it hashes a file, so two attempts with the same recorded state have the same digest. A leaf version is new at each admission and names only the leaf's folder on the Node. The digests the Node records are not in the variables, so a digest does not read its own record.
+Swamp replaces the values of the attempt with fixed marks before it hashes a file: its Operation ID, the version that the admission gives each role certificate leaf, and the admission time of the Instance bridge. So two attempts with the same recorded state have the same digest. A leaf version names only the leaf's folder on the Node, and the admission time only orders bridge writes. The digests the Node records are not in the variables, so a digest does not read its own record.
 
 Every phase reads the same variables, so all phase digests move together. A change of any recorded input, secret value, plan or shipped converge code runs every phase again.
 

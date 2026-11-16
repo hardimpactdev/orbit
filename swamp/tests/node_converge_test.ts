@@ -441,14 +441,15 @@ Deno.test("the code digest moves with a file's content and name", async () => {
 });
 
 /** Input preparation in a fresh run folder, as one Operation of the given ID; the intent names that Operation, as a role's runtime does. */
-async function prepared(recorded: Record<string, string>, change: { operationId?: number; plans?: string; secret?: string; code?: string[]; leaf?: string } = {}) {
+async function prepared(recorded: Record<string, string>, change: { operationId?: number; plans?: string; secret?: string; code?: string[]; leaf?: string; admitted?: number } = {}) {
     const folder = await Deno.makeTempDir();
     try {
         const operationId = change.operationId ?? 41;
         const ssh = { identity_file: "/test/identity", target: { host: "10.44.0.7", port: 22, user: "orbit", host_keys: ["ssh-ed25519 pinned"] } };
         const certificates = change.leaf === undefined ? {} : { certificates: { leaves: [{ node_id: 7, scope: "role-websocket", domain: "reverb.orbit", version: change.leaf }] } };
+        const instances = change.admitted === undefined ? {} : { instances: { cidr: "10.46.0.0/24", bridge_admitted_at: change.admitted } };
         await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [], container: `orbit-analytics-operation-${operationId}-createdb`,
-            ...certificates, recorded_digests: recorded }));
+            ...certificates, ...instances, recorded_digests: recorded }));
         await Deno.writeTextFile(`${folder}/plans.json`, change.plans ?? JSON.stringify({ ci: { runner: "one" } }));
         await Deno.writeTextFile(`${folder}/secret-agent_verifier`, change.secret ?? "v");
         const phases = await convergeInput(folder, operationId, "/unused", "/shipped/helper.ts", change.code ?? []);
@@ -507,6 +508,12 @@ Deno.test("the version a capture mints for a certificate leaf does not move a di
     assertEquals((await prepared(first.phases.digests, { leaf: "fedcba9876543210", operationId: 42 })).phases.unchanged, [...skippable]);
     assertEquals((await prepared(first.phases.digests, { leaf: "fedcba9876543210" })).phases.unchanged, [...skippable]);
     assertEquals((await prepared({}, { leaf: "0123456789abcdef" })).phases.digests.roles === (await prepared({})).phases.digests.roles, false);
+});
+
+Deno.test("the admission time of the Instance bridge does not move a digest; the bridge does", async () => {
+    const first = await prepared({}, { admitted: 1763330000123456 });
+    assertEquals((await prepared(first.phases.digests, { admitted: 1763330099654321 })).phases.unchanged, [...skippable]);
+    assertEquals((await prepared({}, { admitted: 1763330000123456 })).phases.digests.roles === (await prepared({})).phases.digests.roles, false);
 });
 
 Deno.test("a changed shipped Tool file that the Tool helper imports moves the tools digest", async () => {

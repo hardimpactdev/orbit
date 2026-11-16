@@ -190,3 +190,17 @@ it('gives a role with a certificate leaf the same default digest at each read, t
     expect($leaves()[0]['version'])->not->toBe($leaves()[0]['version'])
         ->and(app(NodeDesiredConvergeInput::class)->defaultDigest($gateway))->toBe(app(NodeDesiredConvergeInput::class)->defaultDigest($gateway));
 });
+
+it('reads the default digest of a build-list Node with no Instance bridge yet as its admission would, and the admission time does not move it', function (): void {
+    // docs/reference/development-containers.md#what-a-refresh-skips: a healthy Node always has a readable digest.
+    config(['swamp.run_token' => 'test-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
+    config(['instances.container_nodes' => [$this->node->id]]);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $first = app(NodeDesiredConvergeInput::class)->defaultDigest($this->node);
+    $this->travel(47)->seconds();
+
+    expect($first)->toMatch('/^[0-9a-f]{64}$/')
+        ->and(app(NodeDesiredConvergeInput::class)->defaultDigest($this->node))->toBe($first)
+        // The bridge the read allocates rolls back with the rest of the capture.
+        ->and(Node::query()->whereKey($this->node->id)->value('instance_bridge'))->toBeNull();
+});

@@ -50,25 +50,26 @@ export async function codeDigest(paths: string[]): Promise<string> {
     return sha256(rows.join("\n"));
 }
 
-/** The version of each certificate leaf in the intent: the Gateway mints a new one at each capture (NodeRoleCertificateInput), so it is a
- * value of the Operation, as its ID is, and not an input. */
-export function leafVersions(intent: unknown): string[] {
-    if (Array.isArray(intent)) return intent.flatMap(leafVersions);
+/** The values the Gateway mints for the Operation at each capture, so they are of the Operation, as its ID is, and not inputs: the version of
+ * each certificate leaf (NodeRoleCertificateInput) and the admission time of the Instance bridge (InstanceHostIntent). */
+export function admissionValues(intent: unknown): string[] {
+    if (Array.isArray(intent)) return intent.flatMap(admissionValues);
     if (intent === null || typeof intent !== "object") return [];
     const record = intent as Record<string, unknown>;
     const leaves = (record.certificates as { leaves?: unknown } | undefined)?.leaves;
-    const own = Array.isArray(leaves) ? leaves.map((leaf) => leaf?.version).filter((version) => typeof version === "string" && /^[a-f0-9]{16}$/.test(version)) : [];
-    return [...own, ...Object.values(record).flatMap(leafVersions)];
+    const versions = Array.isArray(leaves) ? leaves.map((leaf) => leaf?.version).filter((version) => typeof version === "string" && /^[a-f0-9]{16}$/.test(version)) : [];
+    const admitted = Number.isSafeInteger(record.bridge_admitted_at) && (record.bridge_admitted_at as number) > 0 ? [String(record.bridge_admitted_at)] : [];
+    return [...versions, ...admitted, ...Object.values(record).flatMap(admissionValues)];
 }
 
 /**
  * What the phases read (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change): every file written for them, that is
- * the run folder without the Gateway's intent files and the digests, with the values of this Operation (its ID and the versions of its
- * certificate leaves) replaced by fixed marks, and their code.
+ * the run folder without the Gateway's intent files and the digests, with the values of this Operation (its ID, the versions of its
+ * certificate leaves and the admission time of its Instance bridge) replaced by fixed marks, and their code.
  */
 export async function readDigest(folder: string, operationId: number, code: string[]): Promise<string> {
     const mark = new RegExp(`operation-${operationId}(?![0-9])`, "g");
-    const versions = [...new Set(leafVersions(JSON.parse(await Deno.readTextFile(`${folder}/intent.json`))))];
+    const own = [...new Set(admissionValues(JSON.parse(await Deno.readTextFile(`${folder}/intent.json`))))];
     const rows: string[] = [];
     const walk = async (path: string): Promise<void> => {
         const entries = [];
@@ -76,7 +77,7 @@ export async function readDigest(folder: string, operationId: number, code: stri
         for (const entry of entries.sort((a, b) => a.name < b.name ? -1 : 1)) {
             if (entry.isDirectory) await walk(`${path}/${entry.name}`);
             else if (entry.isFile && entry.name !== "intent.json" && entry.name !== "digests.json") {
-                const text = versions.reduce((read, version) => read.replaceAll(version, "leaf-#"),
+                const text = own.reduce((read, value) => read.replaceAll(value, "admitted-#"),
                     (await Deno.readTextFile(`${path}/${entry.name}`)).replace(mark, "operation-#"));
                 rows.push(`${path.slice(folder.length)}/${entry.name}\0${await sha256(text)}`);
             }
