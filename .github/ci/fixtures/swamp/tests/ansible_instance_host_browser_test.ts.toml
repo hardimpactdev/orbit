@@ -17,13 +17,11 @@ cases = [
   "the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib",
 ]
 file = "swamp/tests/ansible_instance_host_browser_test.ts"
-cost = 135
+self_hosted = true
+cost = 275
 # Beast case times * 2.1, rounded up + 1s; startup is added per slice.
-slices = 13
+slices = 15
 # Run 43660983227: this two-converge case took 121.364s and set the main critical path.
-after_merge_cases = [
-  "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container",
-]
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "apps/gateway/resources/machine-software/recipe.json",
@@ -71,3 +69,4 @@ inputs = [
   "a planted symlink, a file where the store folder goes and a folder named like the store are refused and listed; every other step still runs" = 3
   "a container whose libp11-kit0 is not the trust module's version is listed with both versions, and agent takes an Orbit entry out of its store; the step passes" = 3
   "a container whose dpkg status or user output is not UTF-8, or whose store step hangs, is listed and fails nothing" = 3
+"a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container" = 140 # ESTIMATE: hosted 121.364s (run 43660983227) * 1.15, rounded up

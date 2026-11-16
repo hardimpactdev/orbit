@@ -2,11 +2,14 @@ order = 110
 cases = [
   "real frozen policy owns limits and dependencies",
   "stale baseline evidence can be repaired without growing immutable source debt",
+  "bridge transaction contract is enforced by current and immutable base rules",
+  "current and frozen bridge policy enforce closed state custody and import boundaries",
 ]
 file = "swamp/bin/check-swamp-base-policy_test.ts"
-cost = 20
-after_merge = true
-reason = "Repository scanner fixtures create dynamic source inventories; their complete input closure needs a separate mapping."
+self_hosted = true
+# Local run of all four cases, 55s with the gate tools on PATH, rounded up by one second.
+# Self-hosted cost: no pool time (OVER BUDGET); hosted 56 x the median ratio of all passed pool units 1.04.
+cost = 59
 inputs = [
   "swamp/bin/constant-name.ts",
   "swamp/bin/bounded-phase-scripts.ts",

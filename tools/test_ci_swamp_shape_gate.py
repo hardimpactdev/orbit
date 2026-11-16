@@ -37,17 +37,16 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
         for report in ('workflow-validation.json', 'grant-validation.json'):
             self.assertIn('${{ runner.temp }}/' + report, WORKFLOW)
 
-    def test_after_merge_receiver_replaces_the_scheduled_fixtures(self):
+    def test_no_after_merge_stage_runs_fixtures(self):
+        # ADR 0262: fixtures run only on the pull request; no workflow runs them after a merge.
         self.assertNotIn('  fixtures:', WORKFLOW)
         self.assertIn("cron: '17 */3 * * *'", WORKFLOW)  # Validation retains its schedule.
-        receiver = (ROOT / '.github/workflows/ci-full-set.yml').read_text()
-        self.assertIn('name: Main full set', receiver)
-        self.assertIn('uses: ./.github/workflows/ci-deferred.yml', receiver)
-        import yaml
-        consumer = yaml.safe_load((ROOT / '.github/workflows/ci-deferred.yml').read_text())
-        self.assertEqual(['self-hosted', 'orbit-shard'], consumer['jobs']['fixtures']['runs-on'])
-        required = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:', 1)[1]
-        self.assertNotIn('Main full set', required)
+        workflows = {path.name for path in (ROOT / '.github/workflows').glob('*.yml')}
+        self.assertFalse(workflows & {'ci-deferred.yml', 'ci-full-set.yml', 'ci-main-proof.yml', 'ci-main-report.yml'})
+        for path in (ROOT / '.github/workflows').glob('*.yml'):
+            text = path.read_text()
+            for name in ('Main full set', 'Main deferred fixtures', 'Main copy proof', 'ORBIT_PROOF_BLOCKING', 'ORBIT_SLOW_CHECKS_BLOCKING'):
+                self.assertNotIn(name, text, path.name)
 
     def test_the_fixture_tools_cache_key_follows_the_interpreter(self):
         # A venv of another interpreter fails to load its libpython, so a new interpreter must miss the cache.

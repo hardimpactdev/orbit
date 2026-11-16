@@ -48,7 +48,8 @@ class ChangedPathsTest(unittest.TestCase):
         self.assertFalse(result['proof_run'])
         fixtures = self.cli('ci-units', 'plan', '--base', 'main', '--head', 'candidate')
         self.assertEqual([], fixtures['shards'])
-        self.assertEqual([], fixtures['deferred'])
+        self.assertEqual([], fixtures['self_hosted_shards'])
+        self.assertNotIn('capacity', fixtures)
 
     def test_candidate_ci_change_still_selects_checks_and_fixtures(self):
         self.commit('.github/ci/checks.toml', '[budget]\ndefault_cost = 32\n')

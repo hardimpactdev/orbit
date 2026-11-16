@@ -5,13 +5,13 @@ cases = [
   "the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links",
 ]
 file = "swamp/tests/ansible_instance_host_runtime_test.ts"
+self_hosted = true
 host_programs = ["zip", "unzip"]
 # 180.025s, hosted four-worker run 43000765953 (unit cutoff; case unfinished).
-after_merge_cases = ["the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links"]
-cost = 205
+cost = 320
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (115s); these are estimates, not completed measurements.
-slices = 2
+slices = 3
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "apps/gateway/resources/machine-software/recipe.json",
@@ -47,3 +47,4 @@ inputs = [
 [case_costs]
   "the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin" = 90 # completed body 65.337s, run 43010311414; larger completed history retained
   "a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused" = 115 # completed body 85.653s, run 43010311414; larger completed history retained
+"the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links" = 115 # ESTIMATE: the file's observed maximum (115s); unmeasured

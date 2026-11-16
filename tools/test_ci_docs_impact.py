@@ -72,8 +72,7 @@ class DocsImpactPolicyTest(unittest.TestCase):
         for status in ('failure', 'skipped', 'cancelled'):
             needs = needs_for()
             needs['docs']['result'] = status
-            with self.subTest(status=status), patch.dict(os.environ, PROOF_REQUIRED='false',
-                    PROOF_BLOCKING='false', SLOW_CHECKS_BLOCKING='false'), self.assertRaisesRegex(SystemExit, 'docs'):
+            with self.subTest(status=status), patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'), self.assertRaisesRegex(SystemExit, 'docs'):
                 delivery.validate(needs)
 
 

@@ -1,0 +1,68 @@
+"""The orbit-ci project config: the Swamp spec (role converge) and the agent's ci-runner.host carry one map.
+
+The agent must not load extension source (apps/agent/tests/extension_boundary.rs), so this cross-project check lives
+with the CI policy tests, which the plan job runs on every pull request.
+"""
+from pathlib import Path
+import re
+import unittest
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+AGENT = ROOT / 'apps/agent/src/commands/ci_runner.rs'
+SPEC = ROOT / 'swamp/extensions/behaviors/operations/node/ci_host_spec.ts'
+RUNTIME_DISK = {'restricted.devices.disk': 'allow', 'restricted.devices.disk.paths': '/opt/orbit-runtime'}
+
+
+def agent_config(source):
+    network = re.search(r'^const NETWORK: &str = "([^"]+)";$', source, re.M)[1]
+    block = re.search(r'^const PROJECT_CONFIG: \[\(&str, &str\); (\d+)\] = \[\n(.*?)^\];$', source, re.M | re.S)
+    pairs = re.findall(r'^\s*\("([^"]+)", (NETWORK|"[^"]*")\),$', block[2], re.M)
+    assert len(pairs) == int(block[1]), 'every PROJECT_CONFIG entry is one ("key", value) line'
+    return {key: network if value == 'NETWORK' else value.strip('"') for key, value in pairs}
+
+
+def spec_config(source):
+    network = re.search(r'^export const network = "([^"]+)";$', source, re.M)[1]
+    block = re.search(r'^export const projectConfig = \{\n(.*?)^\};$', source, re.M | re.S)[1]
+    lines = [line.strip() for line in block.splitlines() if line.strip() and not line.strip().startswith('//')]
+    config = {}
+    for line in lines:
+        entry = re.fullmatch(r'("[^"]+"|[A-Za-z_]+): ("[^"]*"|network),', line)
+        assert entry, f'unparsed projectConfig line: {line}'
+        config[entry[1].strip('"')] = network if entry[2] == 'network' else entry[2].strip('"')
+    return config
+
+
+class ProjectConfigParityTest(unittest.TestCase):
+    def test_the_spec_and_the_agent_set_one_map_that_admits_only_the_runtime_disk(self):
+        agent, spec = agent_config(AGENT.read_text()), spec_config(SPEC.read_text())
+        self.assertEqual(agent, spec)
+        self.assertEqual({key: agent.get(key) for key in RUNTIME_DISK}, RUNTIME_DISK)
+        self.assertEqual(agent['restricted'], 'true')
+
+    def test_a_side_that_drops_a_runtime_disk_key_breaks_parity(self):
+        agent, spec = AGENT.read_text(), SPEC.read_text()
+        for key in RUNTIME_DISK:
+            line = re.compile(rf'^.*"{re.escape(key)}".*\n', re.M)
+            dropped = re.sub(r'; (\d+)\] = \[', lambda m: f'; {int(m[1]) - 1}] = [', line.sub('', agent, count=1), count=1)
+            with self.subTest(side='agent', key=key):
+                self.assertNotEqual(agent_config(dropped), spec_config(spec))
+            with self.subTest(side='spec', key=key):
+                self.assertNotEqual(agent_config(agent), spec_config(line.sub('', spec, count=1)))
+
+    def test_the_plan_job_runs_this_test_on_every_pull_request(self):
+        # Whichever side changes, the pull request runs every tools/test_ci_*.py; only a main push may reuse a tree.
+        jobs = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
+        plan = jobs['changes']
+        self.assertNotIn('if', plan)
+        steps = {step.get('id') or step.get('name'): step for step in plan['steps']}
+        self.assertIn("refs/heads/main", steps['reuse']['if'])
+        policy = steps['Check CI scope and import fixtures']
+        self.assertEqual(policy['if'], "steps.reuse.outputs.reuse != 'true'")
+        self.assertIn("python3 -m unittest discover -s tools -p 'test_ci_*.py'", policy['run'])
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -14,7 +14,7 @@ const NETWORK: &str = "orbitci0";
 const ACL: &str = "orbit-ci-egress";
 const POOL: &str = "default";
 
-const PROJECT_CONFIG: [(&str, &str); 12] = [
+const PROJECT_CONFIG: [(&str, &str); 14] = [
     ("features.images", "true"),
     ("features.profiles", "true"),
     ("features.storage.volumes", "true"),
@@ -26,6 +26,9 @@ const PROJECT_CONFIG: [(&str, &str); 12] = [
     ("restricted.containers.privilege", "unprivileged"),
     ("restricted.virtual-machines.lowlevel", "block"),
     ("restricted.containers.lowlevel", "allow"),
+    // The one host disk a runner may mount: the Node's runtime folder, read-only (tools/ci-runners/setup.sh).
+    ("restricted.devices.disk", "allow"),
+    ("restricted.devices.disk.paths", "/opt/orbit-runtime"),
     ("limits.virtual-machines", "0"),
 ];
 

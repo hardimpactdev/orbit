@@ -186,18 +186,19 @@
                   seed_base | regex_replace('^base-', 'seed-'), seed_base, '--project', seed_intent.project] }}
           changed_when: true
         # An instance copy does not take its attached custom volumes, so the inner volume goes first, and the container's disk names it.
+        # Each push stops after ProofSeeds::PushSeconds: a first full copy is a few GB over WireGuard; a refresh is small.
         - name: Push the inner volume
           when: seed_intent.source.inner_volume is not none
           ansible.builtin.command:
             argv: >-
-              {{ ['timeout', '3600', 'incus', 'storage', 'volume', 'copy',
+              {{ ['timeout', '1200', 'incus', 'storage', 'volume', 'copy',
                   seed_intent.pool ~ '/' ~ seed_intent.source.inner_volume, remote ~ ':' ~ seed_intent.pool ~ '/' ~ seed_intent.holder_volume,
                   '--refresh', '--mode=push'] + project_args }}
           changed_when: true
         - name: Push the container
           ansible.builtin.command:
             argv: >-
-              {{ ['timeout', '3600', 'incus', 'copy', seed_intent.source.container, remote ~ ':' ~ seed_intent.holder,
+              {{ ['timeout', '1200', 'incus', 'copy', seed_intent.source.container, remote ~ ':' ~ seed_intent.holder,
                   '--refresh', '--mode=push', '--device', 'eth0,ipv4.address=', '--device', 'eth0,security.acls=' ~ seed_intent.holder_nic_acl]
                  + (['--device', 'inner-pool,source=' ~ seed_intent.holder_volume] if seed_intent.source.inner_volume is not none else [])
                  + project_args }}

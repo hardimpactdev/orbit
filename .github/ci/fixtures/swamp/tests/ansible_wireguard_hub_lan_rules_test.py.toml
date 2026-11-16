@@ -15,30 +15,18 @@ cases = [
   "test_an_unchanged_endpoint_is_no_switch_even_as_a_hostname_or_after_the_peer_roamed",
   "test_a_move_that_was_cut_off_is_decided_from_the_file_it_replaced",
   "test_the_endpoint_is_read_on_the_node_so_no_key_in_the_file_leaves_it",
-  "test_a_move_with_a_fresh_handshake_keeps_the_new_files",
-  "test_a_new_handshake_through_the_old_public_address_is_no_proof_of_the_lan",
-  "test_a_move_without_a_handshake_after_it_restores_the_files_and_the_live_configuration",
-  "test_a_move_without_a_previous_peer_file_still_goes_back_to_the_live_configuration",
-  "test_a_rerun_after_a_cut_off_move_keeps_the_files_that_move_replaced",
-  "test_a_failed_move_after_a_cut_off_one_loads_the_previous_files_not_the_live_state",
-  "test_the_node_takes_wireguard_only_from_the_new_endpoint_while_it_moves",
-  "test_a_pin_that_a_killed_move_left_is_removed_first",
-  "test_a_move_that_cannot_pin_changes_nothing",
-  "test_a_hostname_endpoint_pins_nothing",
-  "test_the_new_peers_are_loaded_without_the_interface_section_node_add_wrote",
-  "test_a_move_loads_a_key_file_without_a_final_newline",
-  "test_a_move_whose_new_configuration_does_not_load_goes_back_at_once_with_its_own_outcome",
-  "test_every_load_composed_from_the_key_file_ends_the_key_line_once_with_or_without_a_final_newline",
-  "test_a_refused_load_does_not_print_the_value_wg_refused",
   "test_the_peer_phase_decides_from_the_previous_file_stages_the_files_and_moves_in_one_job",
   "test_the_peer_phase_drops_the_copies_of_a_cut_off_move_when_it_no_longer_moves",
   "test_node_add_refuses_to_move_any_live_tunnel_to_another_hub_endpoint",
 ]
-file = "swamp/tests/ansible_wireguard_hub_lan_test.py"
-cost = 167
-after_merge = true
-reason = "Python file costs 167 seconds and cannot be sliced."
+file = "swamp/tests/ansible_wireguard_hub_lan_rules_test.py"
+self_hosted = true
+# The whole hub LAN file ran 167 s hosted and 155.554 s locally; this part ran 46.228 s locally.
+# ESTIMATE: local time scaled to the hosted whole-file time, x 1.15, rounded up. Python files run whole.
+# Self-hosted cost: pool run 43904342622: cut at 180.1s, a lower bound above hosted 58 x the median ratio of all passed pool units 1.04 = 61.
+cost = 181
 inputs = [
+  "swamp/tests/_support/wireguard_hub_lan.py",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/operation-node-add.yml",

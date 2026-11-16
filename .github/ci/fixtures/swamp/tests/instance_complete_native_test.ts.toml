@@ -10,9 +10,8 @@ cases = [
   "pinned complete: the services step reads the real-size one-line copy through vault.get; a two-part copy fails with Regular expression too large",
 ]
 file = "swamp/tests/instance_complete_native_test.ts"
+self_hosted = true
 cost = 30
-after_merge = true
-reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
 inputs = [
   "swamp/tests/_support/native_auth.ts",
   "swamp/extensions/behaviors/node-worker/config.ts",
