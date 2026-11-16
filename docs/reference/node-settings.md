@@ -16,7 +16,7 @@ covers:
 
 A Node has typed settings for its development apps root (`apps.path`) and, on a CI Node, its [CI places](#ci-places) (`ci`). Set them with `node:add` or [`node:update`](/cli/node/update); only `node:update` sets `ci`.
 
-The Node setting `task_vms` and the `image_refresh_hold` field are removed ([old paths](/reference/old-paths#task-vm-settings)). The API refuses either member like any other unknown member, and the CLI has no option for them. Their columns stay in the database until a later release drops them; nothing reads them.
+The Node setting `task_vms` and the `image_refresh_hold` field are removed ([old paths](/reference/old-paths#task-vm-settings)). The API refuses either member like any other unknown member, and the CLI has no option for them. Their stored values stay in the database until a later release drops them. Three readers of a stored `task_vms` value stay until then; [old paths](/reference/old-paths#task-vm-settings) names them.
 
 A settings change that touches the apps root records a `node.update` Operation and returns HTTP 202. Clearing `apps.path` on a Node without an active `app-dev` role starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/update.mmd) shows both paths.
 

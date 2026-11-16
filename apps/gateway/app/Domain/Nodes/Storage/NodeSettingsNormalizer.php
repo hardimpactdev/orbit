@@ -44,7 +44,7 @@ final readonly class NodeSettingsNormalizer
 
     /**
      * The stored settings with the member this normalizer manages, `apps.path`, set or cleared.
-     * Every other key stays, such as the `t3` connection that T3 Code registration writes, and a `task_vms` value that no code reads.
+     * Every other key stays, such as the `t3` connection that T3 Code registration writes, and a stored `task_vms` value, which no API member writes any more (docs/reference/old-paths.md#task-vm-settings).
      *
      * @return array<string, mixed>|null
      */

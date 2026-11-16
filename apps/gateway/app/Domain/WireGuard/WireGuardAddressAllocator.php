@@ -39,29 +39,6 @@ final readonly class WireGuardAddressAllocator
         );
     }
 
-    /**
-     * The next free address inside a range of the fleet subnet.
-     *
-     * @param  list<string>  $taken  addresses that are reserved but may not belong to a Node yet
-     */
-    public function nextIn(string $cidr, array $taken): string
-    {
-        $range = Ipv4Subnet::from($cidr);
-        $used = [...$this->nodeAddresses(), ...$taken];
-
-        foreach ($range->usableAddresses() as $address) {
-            if (! in_array($address, $used, strict: true)) {
-                return $address;
-            }
-        }
-
-        throw new ResourceOperationException(
-            errorCode: 'vpn.peer_address_exhausted',
-            message: "WireGuard range [{$range->value()}] has no free peer addresses.",
-            status: 409,
-        );
-    }
-
     public function forProvisioning(?string $requestedAddress, ?Node $node = null): string
     {
         if ($requestedAddress === null) {
