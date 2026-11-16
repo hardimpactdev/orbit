@@ -48,7 +48,7 @@ The owner's decisions P1–P10 bind every part of this design. The sections afte
 - **P7. Scripts move.** A custom Python or shell script that runs a Node-local action moves into the executor where it makes sense. The rest becomes an Ansible phase, as decided on 2026-11-06, or stays with a named reason.
 - **P8. The second case is the Node part of an Instance create**, today `instance_clone_launch.py`, `instance_clone.py` and `instance_clone_guest.py`, run by `@swamp/ssh` in `workflow-operation-instance-create`. The executor does the Node part. Route publication and the other multi-Node steps stay in Swamp.
 - **P9. BeautifulRust.** The executor and the observer (`apps/agent`, `orbit-agent`) follow [BeautifulRust](https://www.beautifulrust.dev/): its `rust-best-practices` rules, its `rust-review` tiers, its `rust-port` approach for the Python ports, and its clippy lints in CI.
-- **P10. One executor binary.** There is one executor binary, not one per role. Per-role differences live in code paths and config, never in separate binaries.
+- **P10. One executor binary.** One binary is built from one Cargo workspace under `apps/agent`: a core crate and one crate per action family. It is installed only on Nodes whose roles need any executor action. The role converge writes a per-role action allowlist: `app-prod` enables only `power`; `app-dev` enables `power` and `clone`. The executor refuses an action that its Node's roles do not enable, even with a valid signature. Per-role differences live in code paths and config, never in separate binaries. A change to one family ships a new binary to every Node with the executor; this is accepted. A family moves into its own binary only when a role needs a heavy dependency, and that needs its own ADR.
 
 ### Shared parts
 
@@ -88,7 +88,13 @@ Every action reuses these parts. ADR 0266 defines them; this record makes them g
 
 An agent that works on one family reads only that family's crate and `core`. One binary, `orbit-executor`, is built from `core` and every family. It is installed only on Nodes whose roles need any executor action.
 
-**Per-role allowlist.** The role converge writes `/etc/orbit/executor/enabled`, the action families that the Node's roles enable. `app-prod` enables only `power`. `app-dev` enables `power` and `clone`. Slice C1 adds the family of the shared rules to every role that runs them. A Node with several roles gets the union. The executor refuses an action whose family its Node does not enable, with `action_not_enabled`, even when the signature is valid. The Gateway signs only actions that the Node's roles enable.
+**Per-role allowlist.** The role converge writes the allowlist; `app-prod` enables only `power`, and `app-dev` enables `power` and `clone` (P10). The executor refuses an action that its Node's roles do not enable, even with a valid signature (P10). This record chooses the rest:
+
+- The file is `/etc/orbit/executor/enabled`, one family per line.
+- A Node with several roles enables the union of their families.
+- The refusal code is `action_not_enabled`.
+- Slice C1 adds the family of the shared rules to every role that runs them.
+- The Gateway signs only actions that the Node's roles enable.
 
 ### What this changes
 
@@ -155,7 +161,12 @@ Every Python and shell file under `swamp/` that a Swamp run executes on a Node. 
 
 ### The create case
 
-The Gateway admits the create as today. For a clone it then signs an `instance.clone` order with the public intent of the copy and sends it over the WebSocket (P1). It starts the Swamp run beside it, which keeps the `publication` job (the Route's CSR, site and TLS probe) and the `create` job (register, finish and the failure path). The run's `clone` job becomes one step that hands the same signed order, passed as a workflow input at admission, to the relay. The executor returns the result of the action that the WebSocket order started, or acts once when that order never arrived. The step waits on the executor's target lock, never on Gateway state.
+The Gateway admits the create as today. At admission it signs two orders for the same Operation, action (`instance.clone`) and target, each with the public intent of the copy and its own nonce:
+
+- a **short-lived order**, with ADR 0266's expiry, which it sends over the WebSocket at once (P1);
+- a **run-length order**, which expires at the end of the run budget and goes to the Swamp run as a workflow input.
+
+The Swamp run keeps the `publication` job (the Route's CSR, site and TLS probe) and the `create` job (register, finish and the failure path). Its `clone` job becomes one step that hands the run-length order to the relay. The executor accepts a run-length expiry only from the relay caller, never from the observer. Because the done record's key is the Operation, the action and the target, whichever order arrives second returns the first one's result, or waits on the target lock while the first runs. The action runs once. The step waits on the executor's target lock, never on Gateway state.
 
 The executor runs the copy, the start, the Club key, the checkout beside T3 and the sessions check as one action. It writes one result: the phase reached, the timings, and the checked sessions or the failed part's code. The action repeats safely: a copy that exists for this Operation is not made again, and a half-done copy is removed and made again, as `instance_clone.py` does today.
 
@@ -237,7 +248,7 @@ New:
 14. **"Ends in seconds" for the create.** The measured median is about 10 s for the Node part, but the steps allow 300 s and 240 s, and the checkout fetches from GitHub. The tail is not measured.
 15. **Crash recovery for a half-done copy.** Today's script removes a leftover volume and copies again. Recovery in the executor depends on that staying safe under a repeat.
 16. **Ansible calling the relay for shared rules.** A converge over many Instances then sends one signed order per Instance. The cost of the signing at admission and of the relay calls is not measured.
-17. **The run-bound expiry for relay orders.** It widens ADR 0266's 5 s window to the run budget for relay orders. The executor's clock check needs a second bound for them. ADR 0266's Swamp fallback reads a freshly signed order from the Gateway's bound Operation read instead; the two paths are to become one before G1 lands.
+17. **The run-bound expiry for relay orders.** It widens ADR 0266's 5 s window to the run budget for relay orders, for the shared rules and for the create's second order. A copied run-length create order can start the copy only once for its Operation, and only through the relay. If the short-lived order is lost, the create's Node part starts only when the Swamp step runs, after the Swamp start of about 2 s. The executor's clock check needs a second bound for them. ADR 0266's Swamp fallback reads a freshly signed order from the Gateway's bound Operation read instead; the two paths are to become one before G1 lands.
 18. **Instances that appear during a run.** An Instance created after the admission has no order in the input. The phase refuses it with its own code, and the next converge covers it.
 
 ## Affects
