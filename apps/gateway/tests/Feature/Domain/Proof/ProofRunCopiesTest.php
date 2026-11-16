@@ -9,6 +9,7 @@ use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
 use App\Domain\Instances\ContainerInstanceDestroy;
+use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -44,6 +45,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Jobs\Proof\AdmitProofRun;
 use App\Jobs\Proof\CancelProofGroup;
+use App\Jobs\Tasks\DestroyTaskCopy;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -571,6 +573,9 @@ describe('proof:run in copies: when a copy will never be ready', function (): vo
     })->with([
         'being made' => [static fn (Instance $copy) => null, 'pending'],
         'gone' => [static fn (Instance $copy) => Task::topLevel()->whereKey($copy->task_workspace_owner_id)->update(['taskable_id' => null]), 'failed'],
+        // A proof copy has no later create: a create that ended by its expired budget leaves a copy that is never ready.
+        'create timed out' => [static fn (Instance $copy) => Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)
+            ->update(['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'finished_at' => now(), 'lock_key' => null]), 'failed'],
         'completion failed' => [static function (Instance $copy): void {
             $copy->update(['status' => InstanceState::SourceResolved]);
             Operation::query()->create(['kind' => 'instance.complete', 'target_type' => 'instance', 'target_id' => $copy->id, 'node_id' => $copy->node_id,
@@ -630,6 +635,39 @@ describe('proof:run in copies: every end removes the copy', function (): void {
 
         expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue();
     });
+
+    // A create that fails after `clone-ci-hold` holds the copy's CI place: every end of it destroys the copy with the release
+    // (docs/reference/node-provisioning.md#proof-places-on-a-ci-node).
+    it('destroys a copy whose create ended without success, with the release of its hold, and fails its run', function (string $status, ?string $code): void {
+        copyProofAdmitted();
+        $run = copyProofRuns()->first();
+        $copy = Instance::query()->findOrFail($run->input['instance_id']);
+        $create = Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)->sole();
+        $create->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
+        app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), ['status' => $status, 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'error_code' => $code, 'result' => ['ready' => false, 'instance_id' => $copy->id, 'error_code' => $code]]);
+        if ($code === 'operation.timed_out') {
+            app(OperationStore::class)->change($create->refresh(), ['status' => OperationStatus::Failed, 'error_code' => $code, 'lock_key' => null]);
+        }
+        foreach (Queue::pushed(DestroyTaskCopy::class) as $job) {
+            app()->call([$job, 'handle']);
+        }
+        app(OperationStore::class)->change($run->refresh(), ['state' => [...($run->state ?? []), 'proof_child_start' => ['not_before' => now()->subSecond()->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+
+        expect(app(ProofChildStarts::class)->release($run->refresh()))->toBeFalse()
+            ->and($run->refresh()->status)->toBe(OperationStatus::Failed);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+        // A destroy that the create's end queued holds the copy, and the run's cancel waits for it; without one, the cancel destroys it.
+        if (! Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists()) {
+            app(ProofGroup::class)->cancel($run->refresh());
+        }
+        $destroys = Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->get();
+        expect($destroys)->toHaveCount(1)->and($destroys->sole()->input['container_destroy']['ci_hold'] ?? null)->toBeTrue();
+    })->with([
+        'failed at the copy' => ['failed', 'instance.container_network_unsafe'],
+        'cancelled' => ['cancelled', 'operation.cancelled'],
+        'its budget expired' => ['failed', 'operation.timed_out'],
+    ]);
 
     it('admits a new destroy when the copy\'s destroy failed, so a later cancel is never a replay of the failed one', function (): void {
         copyProofAdmitted();

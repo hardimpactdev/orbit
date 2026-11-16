@@ -11,6 +11,7 @@ use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyLifecycle;
@@ -125,8 +126,10 @@ final readonly class ProofCopies
 
     /**
      * Whether a held run of a copy may start: `ready` when its copy is active, `pending` while the copy's create or completion runs,
-     * `failed` when the copy's completion failed or the copy is gone (a removal ends with the copy gone), and for a run that is not in a
-     * copy: one admitted before the task VM proof path was removed, which nothing can start any more.
+     * `failed` when the copy's create ended without success, its completion failed or the copy is gone (a removal ends with the copy
+     * gone), and for a run that is not in a copy: one admitted before the task VM proof path was removed, which nothing can start any
+     * more. A create whose budget expired leaves its group reserved (TaskCopyLifecycle::createEnded), but no create follows it for a
+     * proof's copy: the run fails, and its group's cancel destroys the copy and releases its CI place.
      */
     public function state(Operation $run): string
     {
@@ -139,6 +142,11 @@ final readonly class ProofCopies
         }
         $copy = TaskInstanceWorkspace::forGroup($group);
         if ($copy === null || TaskCopyLifecycle::completionFailure($copy->instance) !== null) {
+            return 'failed';
+        }
+        $create = Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')->where('target_id', $copy->instance->id)
+            ->orderByDesc('id')->first();
+        if ($create !== null && $create->status->terminal() && $create->status !== OperationStatus::Succeeded) {
             return 'failed';
         }
 
