@@ -332,6 +332,38 @@ jobs:
         nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
         become: false
       inputs: {}
+  - name: Stop the container
+    # A container copy's workers and its other clients hold sessions on its databases, and a session makes the drop refuse with
+    # database.in_use (Operation 25427). The container stops first; one that is stopped or gone already counts as stopped. It takes
+    # the deletion's name of its slot, which the run frees between the two steps.
+    labels: *id004
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("id-delete-the-container-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64)).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags stop "$ORBIT_ANSIBLE/instance-container-destroy.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Prepare container removal"].outputs.assets }}
+          ANSIBLE_CONFIG: ${{ steps["Prepare container removal"].outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts -o StrictHostKeyChecking=yes" }}
+    guard: ${{ !("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps &&
+      steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
+    dependsOn:
+    - step: Prepare container removal
+      condition:
+        type: always
+    - step: Withdraw the Route
+      condition:
+        type: always
+    - step: Remove SQLite files
+      condition:
+        type: always
+    writes: true
   - name: Drop owned databases
     labels:
       role: swamp
@@ -355,6 +387,9 @@ jobs:
       condition:
         type: always
     - step: Remove SQLite files
+      condition:
+        type: always
+    - step: Stop the container
       condition:
         type: always
     guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready)
@@ -577,6 +612,9 @@ jobs:
       condition:
         type: always
     - step: Check it is gone
+      condition:
+        type: always
+    - step: Stop the container
       condition:
         type: always
     - step: Delete the container

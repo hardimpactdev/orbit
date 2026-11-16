@@ -334,6 +334,26 @@ it('records the failed container deletion\'s stderr tail from the removal file, 
         ->and($error['detail'])->toStartWith("Error: storage busy\n")->toEndWith('git.example.test/x.git failed')->toContain('[REDACTED]');
 });
 
+it('records a failed container stop\'s stderr from the removal file, and keeps the removal at the runtime cleanup', function (): void {
+    $clone = destroyClone(destroyDefault());
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    // A failed stop skips the deletion; its refusal is in remove.json, the one file "Read container removal" prints.
+    $result = ['summary' => ['failed_steps' => ['Stop the container']], 'steps' => [
+        'Stop the container' => ['status' => 'failed', 'exit_code' => 2],
+        'Delete the container' => ['status' => 'skipped'],
+        'Read container removal' => ['status' => 'succeeded', 'stdout' => json_encode(['error_code' => 'instance.removal_incomplete',
+            'detail' => 'Stop the container: non-zero return code: Error: Failed shutting down instance'])]]];
+    $terminal = [...destroyTerminal($operation, 'failed', $result),
+        'failure' => ['failed_step' => 'Stop the container', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false]];
+
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, $terminal);
+
+    $error = OperationData::fromModel($operation->fresh())->error;
+    expect($error['stderr_recorded'])->toBeTrue()->and($error['detail'])->toContain('Error: Failed shutting down instance')
+        ->and($operation->fresh()->failed_step)->toBe('Stop the container')
+        ->and(InstanceRemoval::query()->findOrFail($operation->input['removal_id'])->failed_step)->toBe(InstanceRemovalStep::RuntimeCleanup);
+});
+
 it('deletes every execution copy of a removed Instance over one connection', function (): void {
     $clone = destroyClone(destroyDefault());
     foreach (range(1, 60) as $index) {

@@ -106,7 +106,14 @@ Deno.test({ name: "pinned destroy: nine container removals of one Node at once a
             for (const [i, id] of ids.entries()) {
                 const own = calls.filter((c) => new RegExp(`^[a-z-]+(-5)?-9-${id % 64}(-[0-2])?$`).test(c.name)).map((c) => c.step);
                 assertEquals(own.sort(), ["Clean container files", "Delete the container", "Prepare container removal", "Read container removal",
-                    "Remove hibernation files", "Remove hibernation files", "Remove hibernation files", ...(i < 2 ? database : [])].sort());
+                    "Remove hibernation files", "Remove hibernation files", "Remove hibernation files", "Stop the container",
+                    ...(i < 2 ? database : [])].sort());
+                // The container stops before its databases drop, so none of its clients holds a session that refuses the drop.
+                const mine = calls.filter((c) => new RegExp(`^[a-z-]+(-5)?-9-${id % 64}(-[0-2])?$`).test(c.name));
+                const stop = mine.find((c) => c.step === "Stop the container")!;
+                const delete_ = mine.find((c) => c.step === "Delete the container")!;
+                assert(stop.end <= delete_.start, `removal of ${id}: the stop ends before the deletion starts`);
+                if (i < 2) assert(stop.end <= mine.find((c) => c.step === "Fence new clients")!.start, `removal of ${id}: the stop ends before the drop starts`);
             }
             assertEquals(calls.filter((c) => c.name.startsWith("database-destroy-ssh-5-9-")).length, 6);
             // A database:destroy of its own keeps one name per database Node.

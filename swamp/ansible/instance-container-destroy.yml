@@ -20,7 +20,7 @@
   hosts: container_node
   gather_facts: false
   become: true
-  tags: [remove]
+  tags: [stop, remove]
   module_defaults:
     ansible.builtin.command:
       stdin: ""
@@ -41,6 +41,12 @@
         - name: Select the container
           ansible.builtin.set_fact:
             present: "{{ (destroy_inventory.stdout | from_json | selectattr('name', 'equalto', container.name) | list) }}"
+        # Before its databases drop, so no worker or other client in it holds a session that makes the drop refuse. A stopped or
+        # missing container needs nothing.
+        - name: Stop the container
+          when: phase == 'stop' and present | length > 0 and present[0].status != 'Stopped'
+          ansible.builtin.command: { argv: "{{ incus + ['stop', '--force', container.name] }}", stdin: "" }
+          changed_when: true
         - name: Delete the container and its owned network state
           when: phase == 'remove'
           block:
@@ -60,6 +66,8 @@
             # and one per recorded snapshot, lets Incus delete the record its own way. Only this Instance's names; never a zfs destroy.
             - name: Give back the missing datasets of this Instance's records
               when: present | length > 0 or inner_present
+              vars:
+                destroy_missing: "{{ destroy_datasets | default([]) | difference(destroy_existing.stdout_lines | default([])) | sort }}"
               block:
                 - name: Read the storage pool
                   ansible.builtin.command: { argv: [incus, query, --, "/1.0/storage-pools/{{ container.pool }}"], stdin: "" }
@@ -103,13 +111,25 @@
                   register: destroy_existing
                   changed_when: false
                   failed_when: false
-                # A dataset sorts before its own snapshots, so each snapshot finds its dataset.
+                # Never adopt a dataset: a name that another writer took since the read, with data or children, refuses the removal.
+                - name: Read each missing name again with its children
+                  ansible.builtin.command: { argv: [zfs, list, -H, -o, name, -r, -t, all, "{{ item }}"], stdin: "" }
+                  loop: "{{ destroy_missing }}"
+                  register: destroy_taken
+                  changed_when: false
+                  failed_when: false
+                - name: Refuse a name that a dataset holds now
+                  ansible.builtin.assert:
+                    that: destroy_taken.results | default([]) | selectattr('rc', 'equalto', 0) | list | length == 0
+                    fail_msg: instance.removal_dataset_taken
+                    quiet: true
+                # A dataset sorts before its own snapshots, so each snapshot finds its dataset. No `-p`: only this one name is made.
                 - name: Make each missing one empty
                   ansible.builtin.command:
                     argv: >-
-                      {{ ['zfs', 'snapshot', item] if '@' in item else ['zfs', 'create', '-p', '-o', 'mountpoint=legacy', '-o', 'canmount=noauto', item] }}
+                      {{ ['zfs', 'snapshot', item] if '@' in item else ['zfs', 'create', '-o', 'mountpoint=legacy', '-o', 'canmount=noauto', item] }}
                     stdin: ""
-                  loop: "{{ destroy_datasets | default([]) | difference(destroy_existing.stdout_lines | default([])) | sort }}"
+                  loop: "{{ destroy_missing }}"
                   changed_when: true
             - name: Stop and delete the container with its snapshots
               when: present | length > 0
@@ -223,7 +243,8 @@
       rescue:
         # Swamp keeps no stderr of a failed command step, so the refusal names the failed task, its message and the end of its
         # stderr; the Gateway records that as the Operation's stderr. 1,800 characters keep the JSON within the 4,096 bytes of
-        # stdout that the run result keeps of "Read container removal".
+        # stdout that the run result keeps of "Read container removal". A failed stop skips the deletion, so its refusal goes to
+        # remove.json too: the one file that step prints.
         - name: Write the phase refusal
           ansible.builtin.copy:
             content: >-
@@ -232,7 +253,7 @@
                    else ('instance.teardown_step_failed' if phase == 'teardown' else 'instance.removal_incomplete'),
                   'detail': (failure_head ~ ((': ' ~ failure_stderr[-(1800 - failure_head | length):]) if failure_stderr != '' else ''))[:1800]}
                  | to_json }}
-            dest: "{{ run }}/{{ phase }}.json"
+            dest: "{{ run }}/remove.json"
             mode: "0600"
           delegate_to: localhost
           become: false

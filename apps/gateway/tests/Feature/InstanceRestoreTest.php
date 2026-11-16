@@ -77,6 +77,7 @@ beforeEach(function (): void {
             'c3' => ['name' => 'Drop owned databases-0-0', 'job' => 'destroy', 'status' => 'failed'],
             'd4' => ['name' => 'Remove the source', 'job' => 'destroy', 'status' => 'skipped'],
             'e5' => ['name' => 'Delete the container', 'job' => 'destroy', 'status' => 'skipped'],
+            'f6' => ['name' => 'Stop the container', 'job' => 'destroy', 'status' => 'skipped'],
         ]]]]);
     app(RoutePublicationHolds::class)->release($this->destroy->id);
     $this->checkout = function (array $data = []): void {
@@ -248,7 +249,7 @@ it('refuses a removal that deleted data', function (string $step): void {
     $state['native_progress']['steps']['z9'] = ['name' => $step, 'job' => 'destroy', 'status' => 'succeeded'];
     $this->destroy->update(['state' => $state]);
     expectRestoreRefusal($this->restore, 'instance.restore_already_removed');
-})->with(['Remove the source', 'Delete the container', 'Stop, remove Processes-0', 'Run teardown steps-0', 'Remove SQLite files-0-0']);
+})->with(['Remove the source', 'Stop the container', 'Delete the container', 'Stop, remove Processes-0', 'Run teardown steps-0', 'Remove SQLite files-0-0']);
 
 it('refuses what it cannot restore', function (Closure $change, string $code): void {
     $change($this);

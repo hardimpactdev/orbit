@@ -4,7 +4,7 @@ import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 import { helperCalls, installPowerHelper } from "./_support/power_helper.ts";
 // The "Delete the container" step of a normal destroy, its guard and its env evaluated from the shipped workflow.
-type Step = { name: string; guard: string; task: { inputs: { env: Record<string, string> } } };
+type Step = { name: string; guard: string; task: { inputs: { env: Record<string, string>; run?: string } } };
 const deleteStep = (parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-destroy.yaml", import.meta.url))) as {
     jobs: { steps: Step[] }[];
 }).jobs.flatMap((job) => job.steps).find((step) => step.name === "Delete the container")!;
@@ -23,6 +23,23 @@ Deno.test("a normal destroy deletes the container over one pipelined SSH master 
     for (const option of ["ControlMaster=auto", "ControlPersist=60s", `UserKnownHostsFile=/tmp/orbit-ansible-${runId}/known_hosts`, "StrictHostKeyChecking=yes"]) {
         assert(stepEnv.ANSIBLE_SSH_ARGS.includes(`-o ${option}`), option);
     }
+});
+Deno.test("a container removal stops the container before its databases drop and deletes it after them", () => {
+    type Placed = Step & { dependsOn?: { step: string }[] };
+    const all = (parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-destroy.yaml", import.meta.url))) as {
+        jobs: { steps: Placed[] }[];
+    }).jobs.flatMap((job) => job.steps);
+    const named = (name: string) => all.find((step) => step.name === name)!;
+    const after = (name: string) => (named(name).dependsOn ?? []).map((dependency) => dependency.step);
+    assert(after("Drop owned databases").includes("Stop the container"));
+    assert(after("Delete the container").includes("Drop owned databases"));
+    assert(all.findIndex((step) => step.name === "Stop the container") < all.findIndex((step) => step.name === "Drop owned databases"));
+    // The stop runs on the container path only, and like the deletion it stops once a step failed or the withdrawal did not hold.
+    const stop = named("Stop the container");
+    assertEquals(stop.guard, deleteStep.guard);
+    assertEquals(evaluate(stop.guard), false);
+    assertEquals(cel.evaluate(stop.guard.slice(3, -2).trim(), { inputs: { intent: { container_destroy: null } }, steps: settled }), true);
+    assert(String(stop.task.inputs.run).includes("--tags stop"));
 });
 const available =
     new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -411,8 +428,12 @@ Deno.test({
             const inner = (name: string) => ({ pool: "orbit-instances", project: "orbit-instances-nested", snapshots: ["seed-1"], config: { "zfs.block_mode": "true", "volatile.uuid": name } });
             // Instance 3427's shape: the root dataset and its snapshot are gone, the Incus record stays; the inner volume is a clone of a snapshot
             // of a volume Incus deleted, whose dataset Incus keeps under deleted/ for the clone. Instance 8 and the origin must stay.
-            const others = [`${ds}/containers/orbit-instances-nested_instance-8`, `${ds}/custom/orbit-instances-nested_inner-8`,
-                `${ds}/custom/orbit-instances-nested_inner-8@snapshot-seed-1`, `${ds}/deleted/custom/2454-origin`, `${ds}/deleted/custom/2454-origin@snapshot-copy`];
+            // Look-alikes of instance-7's names stay too: another Instance's, an older one's, and the same name in another project.
+            const others = [ds, `${ds}/containers`, `${ds}/custom`, `${ds}/deleted`, `${ds}/deleted/custom`,
+                `${ds}/containers/orbit-instances-nested_instance-8`, `${ds}/custom/orbit-instances-nested_inner-8`,
+                `${ds}/custom/orbit-instances-nested_inner-8@snapshot-seed-1`, `${ds}/deleted/custom/2454-origin`, `${ds}/deleted/custom/2454-origin@snapshot-copy`,
+                `${ds}/containers/orbit-instances-nested_instance-70`, `${ds}/containers/orbit-instances-nested_instance-7-old`,
+                `${ds}/containers/orbit-instances_instance-7`, `${ds}/containers/orbit-instances_instance-7@snapshot-seed`];
             Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({
                 pool: { name: "orbit-instances", driver: "zfs", config: { "zfs.pool_name": ds, source: ds } },
                 datasets: [...others, `${ds}/custom/orbit-instances-nested_inner-7`, `${ds}/custom/orbit-instances-nested_inner-7@snapshot-seed-1`],
@@ -445,9 +466,10 @@ Deno.test({
             assertEquals(Object.keys(state().containers), ["instance-8"]);
             assertEquals(Object.keys(state().volumes), ["inner-8"]);
             assertEquals(state()["network-acls"], []);
-            // Only the two missing names of instance-7 were made, then Incus deleted them with its record; every other dataset stayed.
+            // Only the two missing names of instance-7 were made, from its recorded pool, project and name; then Incus deleted them with
+            // its record. Every other dataset stayed.
             assertEquals(read("zfs-calls").filter((call) => !call.startsWith("list")), [
-                `create -p -o mountpoint=legacy -o canmount=noauto ${ds}/containers/orbit-instances-nested_instance-7`,
+                `create -o mountpoint=legacy -o canmount=noauto ${ds}/containers/orbit-instances-nested_instance-7`,
                 `snapshot ${ds}/containers/orbit-instances-nested_instance-7@snapshot-seed`,
             ]);
             assertEquals(state().datasets, others);
@@ -481,6 +503,77 @@ Deno.test({
                 error_code: "instance.removal_incomplete",
                 detail: "Delete the inner volume: non-zero return code: Error: Storage volume is still in use",
             });
+            // A missing name that another writer takes, with data, after the read: the removal refuses, makes nothing and deletes nothing.
+            const taken = `${ds}/containers/orbit-instances-nested_instance-11`;
+            const again = state();
+            delete again.containers["instance-8"].added.held;
+            again.containers["instance-11"] = { status: "Stopped", snapshots: [], added: {} };
+            again.appears = { [taken]: [`${taken}/data`] };
+            Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify(again));
+            Deno.mkdirSync(`${folder}/containers/instance-11`, { recursive: true });
+            intent.container_destroy = { ...intent.container_destroy, instance_id: 11, name: "instance-11", acl: "instance-11", firewall_prefix: "orbit:instance-11-" };
+            delete intent.container_destroy.inner_volume;
+            Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify(intent));
+            for (const name of ["calls", "zfs-calls"]) Deno.writeTextFileSync(`${folder}/${name}`, "");
+            done = run();
+            assert(!done.ok, done.output);
+            assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/run/remove.json`)).error_code, "instance.removal_dataset_taken");
+            assert(!read("zfs-calls").some((call) => call.startsWith("create") || call.startsWith("snapshot")), JSON.stringify(read("zfs-calls")));
+            assert(!read("calls").some((call) => call.includes("delete")), JSON.stringify(read("calls")));
+            assert(state().containers["instance-11"]);
+            assertEquals(state().datasets.filter((name: string) => name.startsWith(taken)), [taken, `${taken}/data`]);
+        } finally {
+            Deno.removeSync(folder, { recursive: true });
+        }
+    },
+});
+Deno.test({
+    name: "the stop phase stops a running container before its databases drop; a stopped or missing one counts as stopped and nothing changes",
+    ignore: !available,
+    fn() {
+        const folder = Deno.makeTempDirSync();
+        const root = new URL("../ansible/", import.meta.url);
+        try {
+            for (const dir of ["bin", "run", "tasks", "containers/instance-7", "containers/instance-8"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
+            Deno.copyFileSync(new URL("instance-container-destroy.yml", root), `${folder}/instance-container-destroy.yml`);
+            for (const task of ["address-node.yml", "task-copy-base-names.yml"]) Deno.copyFileSync(new URL(`tasks/${task}`, root), `${folder}/tasks/${task}`);
+            Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`);
+            Deno.chmodSync(`${folder}/bin/incus`, 0o755);
+            const container = (name: string, status?: string) => {
+                Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({
+                    containers: { ...(status ? { [name]: { status } } : {}), "instance-8": { status: "Running" } }, "network-acls": [] }));
+                Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
+                    ssh_execution: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
+                    container_destroy: { instance_id: 7, name, project: "orbit-instances", pool: "orbit-instances", acl: name, mirror: `${folder}/mirror.git`, firewall_prefix: `orbit:${name}-` },
+                }));
+                Deno.writeTextFileSync(`${folder}/calls`, "");
+            };
+            const run = () => {
+                const done = new Deno.Command("ansible-playbook", {
+                    args: ["-i", "localhost,", "--tags", "stop", "-e", "ansible_connection=local", "-e", "ansible_become=false",
+                        "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/instance-container-destroy.yml`],
+                    env: { ANSIBLE_CONFIG: stepEnv.ANSIBLE_CONFIG, HOST_FIXTURE: folder, ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
+                        ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1" },
+                }).outputSync();
+                return { ok: done.success, output: new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr) };
+            };
+            const changes = () => Deno.readTextFileSync(`${folder}/calls`).trim().split("\n").filter(Boolean)
+                .map((line) => (JSON.parse(line) as string[]).join(" ")).filter((call) => !call.startsWith("query") && !call.includes(" list "));
+            container("instance-7", "Running");
+            let done = run();
+            assert(done.ok, done.output);
+            // Only the stop: the deletion, its volume, ACL, rules and files wait for the remove phase after the databases.
+            assertEquals(changes(), ["--project orbit-instances stop --force instance-7"]);
+            const state = JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
+            assertEquals([state.containers["instance-7"].status, state.containers["instance-8"].status], ["Stopped", "Running"]);
+            assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/run/stop.json`)), { container_present: true, removed: false });
+            for (const status of ["Stopped", undefined]) {
+                container("instance-7", status);
+                done = run();
+                assert(done.ok, done.output);
+                assertEquals(changes(), [], String(status));
+                assert(/node\s*:.*changed=0/.test(done.output), done.output);
+            }
         } finally {
             Deno.removeSync(folder, { recursive: true });
         }

@@ -205,7 +205,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
     }
 
     /**
-     * A failed container deletion writes its failed task and the end of its stderr into remove.json, because Swamp keeps no stderr of
+     * A failed container stop or deletion writes its failed task and the end of its stderr into remove.json, because Swamp keeps no stderr of
      * a failed command step, and "Read container removal" prints the file. That line becomes the failure's recorded stderr.
      *
      * @param  array<string,mixed>  $data
@@ -216,11 +216,12 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         $native = $data['failure'] ?? null;
         $run = is_array($data['result'] ?? null) ? $data['result'] : [];
         $read = is_array($run['steps'] ?? null) && is_array($run['steps']['Read container removal'] ?? null) ? $run['steps']['Read container removal'] : [];
-        $file = ($result['failed_step'] ?? null) === 'Delete the container' && is_string($read['stdout'] ?? null) ? json_decode(trim($read['stdout']), true) : null;
+        $file = in_array($result['failed_step'] ?? null, ['Stop the container', 'Delete the container'], true) && is_string($read['stdout'] ?? null)
+            ? json_decode(trim($read['stdout']), true) : null;
         if (! is_array($file) || ! is_string($file['detail'] ?? null) || trim($file['detail']) === '') {
             return $native;
         }
-        $step = is_array($native) && is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'Delete the container';
+        $step = is_array($native) && is_string($native['failed_step'] ?? null) ? $native['failed_step'] : ValidatedData::string($result['failed_step']);
 
         return app(NativeStepFailure::class)->written($step, $file['detail'], $operation);
     }
@@ -236,7 +237,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         return match ($step) {
             'Remove the source', 'Check it is gone' => InstanceRemovalStep::SourceFinalization,
             'Withdraw the Route' => InstanceRemovalStep::RouteTargetClear,
-            'Stop, remove Processes', 'Run teardown steps', 'Remove SQLite files', 'Drop owned databases',
+            'Stop, remove Processes', 'Run teardown steps', 'Remove SQLite files', 'Stop the container', 'Drop owned databases',
             'Fence new clients', 'Drop databases and users', 'Check they are gone' => InstanceRemovalStep::RuntimeCleanup,
             default => InstanceRemovalStep::SourcePreparation,
         };

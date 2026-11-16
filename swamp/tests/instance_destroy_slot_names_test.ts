@@ -59,10 +59,12 @@ Deno.test("a container removal names each step from 64 slots per Node, never per
     const perStep = assertPooled(steps);
     assertEquals([...perStep.keys()].filter((key) => key.startsWith("9 ")).sort(), [
         "9 Clean container files", "9 Delete the container", "9 Prepare container removal", "9 Read container removal",
-        "9 Release the Route Nodes", "9 Remove hibernation files",
+        "9 Release the Route Nodes", "9 Remove hibernation files", "9 Stop the container",
     ]);
+    // "Stop the container" takes the deletion's name of its slot, so it adds no family.
+    assertEquals(perStep.get("9 Stop the container"), perStep.get("9 Delete the container"));
     // Five families of 64 names per Node and three hibernation names per slot: 512 names at most, however many Instances a Node has had.
-    assertEquals([...perStep].filter(([key]) => key.startsWith("9 ")).reduce((sum, [, set]) => sum + set.size, 0), 5 * Slots + 3 * Slots);
+    assertEquals(new Set([...perStep].filter(([key]) => key.startsWith("9 ")).flatMap(([, set]) => [...set])).size, 5 * Slots + 3 * Slots);
     // The three hibernation files of one removal each have their own name, so they go side by side (no forEach item shares a name).
     assertEquals([...names(9, 3206)].filter(([step]) => step.startsWith("Remove hibernation files")).map(([, name]) => name).sort(),
         ["instance-destroy-hibernation-9-6-0", "instance-destroy-hibernation-9-6-1", "instance-destroy-hibernation-9-6-2"]);
