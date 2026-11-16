@@ -169,6 +169,42 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual([row['cost'] for row in records], [101, 102])
         self.assertEqual(self.changes(main, 'HEAD'), (([self.files[0]], False), []))
 
+    def test_edits_to_different_cases_of_one_file_merge_and_a_stale_case_list_fails(self):
+        file = 'swamp/cases_test.py'
+        case = 'class CasesTest:\n    def test_{name}(self):\n        assert {value}\n'
+
+        def author(names, edit=None):
+            # The author's procedure: edit the test file, then store what the collector prints.
+            self.write(file, ''.join(case.format(name=name, value='edited' if name == edit else 'True') for name in names))
+            with patch.object(units, 'ROOT', self.root):
+                population = units.collect(file)
+            self.write_record({'file': file, 'cost': 10, 'inputs': [], 'slices': False, 'order': 30, **population,
+                               'case_costs': {name: 5 for name in population['cases']}})
+            return self.commit()
+
+        def load(revision):
+            self.git('checkout', '-q', revision)
+            with patch.object(units, 'ROOT', self.root), patch.object(units, 'fixture_steps', return_value={}):
+                return units.configuration(self.root / registry.TABLE)
+
+        base = author(['first', 'later'])
+        one = author(['first', 'later'], edit='first')
+        self.git('checkout', '-qb', 'two', base)
+        two = author(['first', 'later'], edit='later')
+        metadata = registry.metadata_path(file)
+        self.assertEqual(self.git('diff', '--name-only', base, one), file)
+        self.assertEqual(self.git('diff', '--name-only', base, two), file)
+        tree = self.git('merge-tree', '--write-tree', one, two)
+        self.assertEqual(self.git('rev-parse', f'{tree}:{metadata}'), self.git('rev-parse', f'{base}:{metadata}'))
+        self.assertEqual(load(self.git('commit-tree', tree, '-p', one, '-p', two, '-m', 'merge'))[1][file]['cases'],
+                         ['test_first', 'test_later'])
+        # A renamed case without its registration still fails the plan by name.
+        self.git('checkout', '-q', base)
+        self.write(file, case.format(name='first', value='True') + case.format(name='renamed', value='True'))
+        stale = self.commit()
+        with self.assertRaisesRegex(ValueError, file + ': case_costs must name every retained case'):
+            load(stale)
+
     def test_conflicting_edits_to_same_fixture_still_conflict(self):
         a = self.root / registry.metadata_path(self.files[0])
         a.write_text(a.read_text().replace('cost = 100', 'cost = 101'))
