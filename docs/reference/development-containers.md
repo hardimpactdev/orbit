@@ -309,7 +309,7 @@ The software that the app and the agents run lives once per Node, in two version
 | `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |
 | `/opt/orbit-runtime/vite-plus/<digest>` | The [Vite+ home](/reference/compute-drivers#the-vite-home) that `vp` runs from, linked as `<version>/vite-plus-home` | Everyone |
 | `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex` and `conn-server` ([Container server](#container-server)) | `root:2750`, mode 0750 |
-| `/opt/orbit-agent/<version>/agent/{t3,claude-code,codex}` | The releases | `root:2750`, mode 0750 |
+| `/opt/orbit-agent/<version>/agent/{t3,conn-server,claude-code,codex}` | The releases | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
 
 The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, Claude Code and Codex. The runtime folder holds Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
