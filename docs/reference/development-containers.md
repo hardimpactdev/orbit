@@ -2802,8 +2802,9 @@ The Operation's result has `fleet_refresh`. It holds these fields:
 - `shrink`: `ran`, `relinked`, `failed` or `skipped`. `shrink_reason`: `record`, `packages`, `current` or `unreadable`. See [The inner machines stay small](#the-inner-machines-stay-small).
 - `swamp`: `installed`, `pinned` or `skipped`. `swamp_reason`: `changed`, `unreadable`, `pinned` or `no_key`. `swamp_version`: the release that the refresh read in the recipe (null without a read). See [The pinned Swamp](#the-pinned-swamp).
 - `base`: `retaken` or `kept`. `base_containers`: the containers whose `base` was retaken.
-- `host`: `converged`, `kept` or `skipped_idmap_small`. See [Instance host in the fleet](#instance-host-in-the-fleet). It is the one optional field: a run of an older Ansible names no `host`, and a word not these is left out too, so the field is absent and the other fields are recorded as before.
 - `record`: `present`, `missing` or `unreadable`. `seconds`: the seconds of each part.
+
+It may also hold `host`: `converged`, `kept` or `skipped_idmap_small` ([Instance host in the fleet](#instance-host-in-the-fleet)). This field is optional. A run of an older Ansible names no `host`, so the field is absent and the other fields are recorded as before. A word not these is left out the same way.
 
 The seed is taken while the inner fleet runs, also after a retaken `base`. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
 
