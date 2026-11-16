@@ -42,6 +42,7 @@ additionalFiles:
   - ansible/tasks/node-converge-base.yml
   - ansible/tasks/node-kernel-policy.yml
   - ansible/tasks/node-update-policy.yml
+  - ansible/tasks/node-executor.yml
   - ansible/operation-fleet-reboot.yml
   - ansible/tasks/fleet-reboot-record.yml
   - ansible/tasks/fleet-reboot-read.yml
