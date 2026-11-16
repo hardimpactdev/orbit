@@ -10,7 +10,7 @@ use App\Support\ValidatedData;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
-/** Admission data only: whole batches from trusted YAML, weighted by the latest measured case times. */
+/** Admission data only: batches from trusted YAML, weighted by the latest measured case times, split by case when a split pays. */
 final readonly class ProofBatchPlan
 {
     /** The fixed work of one shard: the claim of its VM, the workspace check, the release of the VM and the report. */
@@ -29,7 +29,7 @@ final readonly class ProofBatchPlan
      * The read-only cases (`read_only: true`) of a batch without setup form a batch of their own, which runs without a reset.
      *
      * @param  list<array{command:string,file:string,only?:list<string>,reasons?:array<string,string>}>  $commands
-     * @return list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only:bool}>
+     * @return list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only:bool,case_seconds:list<float>}>
      */
     public function read(string $commit, array $commands): array
     {
@@ -71,11 +71,9 @@ final readonly class ProofBatchPlan
                 }
                 ksort($grouped[$name]);
                 foreach ($grouped[$name] as $readOnly => $ids) {
-                    $seconds = 0.0;
-                    foreach ($ids as $id) {
-                        $seconds += $times[$command['file'].'#'.$id] ?? $fallback;
-                    }
-                    $batches[] = [...$command, 'batch' => $name, 'cases' => $ids, 'seconds' => $seconds, 'read_only' => $readOnly === 1];
+                    $caseSeconds = array_map(static fn (string $id): float => $times[$command['file'].'#'.$id] ?? $fallback, $ids);
+                    $batches[] = [...$command, 'batch' => $name, 'cases' => $ids, 'seconds' => array_sum($caseSeconds), 'read_only' => $readOnly === 1,
+                        'case_seconds' => $caseSeconds];
                 }
             }
         }
@@ -151,22 +149,47 @@ final readonly class ProofBatchPlan
     }
 
     /**
-     * Deterministic heaviest-first placement on the copy that ends first. No batch is split and every allocated place gets work. A shard
-     * runs its read-only batches first: they leave the fleet at `base`, so the batch after them needs no reset.
+     * Deterministic heaviest-first placement of parts on the copy that ends first. Every allocated place gets work. A shard runs its
+     * read-only parts first: they leave the fleet at `base`, so the part after them needs no reset.
      *
-     * @param  list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool}>  $batches
-     * @return list<list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool}>>
+     * A batch is one part until a split pays (docs/cli/proof/run.mmd). While a place is free, the heaviest part that is not read-only and
+     * has the seconds of two or more cases is cut in two, its cases in file order, where the two sums are closest. The cut stays only when
+     * the heaviest copy gets lighter; then the next cut is tried. A case never splits, so its stages stay on one copy.
+     *
+     * @param  list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds?:list<float>}>  $batches
+     * @return list<list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds?:list<float>}>>
      */
     public static function split(array $batches, int $places): array
     {
-        $places = min($places, count($batches));
-        if ($places < 1) {
+        if ($places < 1 || $batches === []) {
             throw new \InvalidArgumentException('A proof split needs work and at least one place.');
         }
-        $weight = static fn (array $batch): float => $batch['seconds'] + (($batch['read_only'] ?? false) ? 0 : self::BatchSeconds);
-        usort($batches, static fn (array $a, array $b): int => ($weight($b) <=> $weight($a)) ?: ([$a['file'], $a['batch'], $a['read_only'] ?? false] <=> [$b['file'], $b['batch'], $b['read_only'] ?? false]));
-        $shards = array_fill(0, $places, []);
-        foreach ($batches as $batch) {
+        $shards = self::place($batches, $places);
+        while (count($batches) < $places) {
+            $cuttable = array_filter($batches, static fn (array $batch): bool => ! ($batch['read_only'] ?? false) && count($batch['case_seconds'] ?? []) >= 2);
+            if ($cuttable === []) {
+                break;
+            }
+            $heaviest = array_key_first(self::heaviestFirst($cuttable));
+            $parts = [...array_values(array_diff_key($batches, [$heaviest => true])), ...self::cut($batches[$heaviest])];
+            $placed = self::place($parts, $places);
+            if (max(array_map(self::work(...), $placed)) >= max(array_map(self::work(...), $shards))) {
+                break;
+            }
+            [$batches, $shards] = [$parts, $placed];
+        }
+
+        return $shards;
+    }
+
+    /**
+     * @param  list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds?:list<float>}>  $batches
+     * @return list<list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds?:list<float>}>>
+     */
+    private static function place(array $batches, int $places): array
+    {
+        $shards = array_fill(0, min($places, count($batches)), []);
+        foreach (self::heaviestFirst($batches) as $batch) {
             $loads = array_map(static fn (array $shard): float => self::work([...$shard, $batch]), $shards);
             $shards[array_search(min($loads), $loads, true)][] = $batch;
         }
@@ -176,6 +199,46 @@ final readonly class ProofBatchPlan
 
             return $shard;
         }, $shards);
+    }
+
+    /**
+     * The batches by weight, heaviest first, with their keys: a part weighs its case seconds and, unless read-only, one reset with setup.
+     *
+     * @template T of array{file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool}
+     *
+     * @param  array<int,T>  $batches
+     * @return array<int,T>
+     */
+    private static function heaviestFirst(array $batches): array
+    {
+        $weight = static fn (array $batch): float => $batch['seconds'] + (($batch['read_only'] ?? false) ? 0 : self::BatchSeconds);
+        uasort($batches, static fn (array $a, array $b): int => ($weight($b) <=> $weight($a))
+            ?: ([$a['file'], $a['batch'], $a['read_only'] ?? false, $a['cases']] <=> [$b['file'], $b['batch'], $b['read_only'] ?? false, $b['cases']]));
+
+        return $batches;
+    }
+
+    /**
+     * Two parts of one batch: its cases in file order, cut where the sums of their seconds are closest (the first such cut).
+     *
+     * @param  array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds?:list<float>}  $batch
+     * @return list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only?:bool,case_seconds:list<float>}>
+     */
+    private static function cut(array $batch): array
+    {
+        $seconds = $batch['case_seconds'] ?? [];
+        $total = array_sum($seconds);
+        [$at, $gap] = [1, INF];
+        for ($index = 1, $sum = 0.0; $index < count($seconds); $index++) {
+            $sum += $seconds[$index - 1];
+            if (abs(2 * $sum - $total) < $gap) {
+                [$at, $gap] = [$index, abs(2 * $sum - $total)];
+            }
+        }
+        $part = static fn (int $from, ?int $length): array => [...$batch, 'cases' => array_slice($batch['cases'], $from, $length),
+            'case_seconds' => array_slice($seconds, $from, $length), 'seconds' => array_sum(array_slice($seconds, $from, $length))];
+
+        return [$part(0, $at), $part($at, null)];
     }
 
     /**
@@ -202,7 +265,7 @@ final readonly class ProofBatchPlan
     }
 
     /**
-     * Whether a shard is planned beyond the longest shard budget. A shard of one batch cannot be split further; any larger one must
+     * Whether a shard is planned beyond the longest shard budget. A shard of one part cannot be split further; any larger one must
      * wait for another place instead, so that it does not run out of its budget half way.
      *
      * @param  list<array{seconds:float}>  $assignments
@@ -219,9 +282,9 @@ final readonly class ProofBatchPlan
     }
 
     /**
-     * Typed assignments read back from the recorded admission.
+     * Typed assignments read back from the recorded admission. A plan from {@see read} also keeps the seconds of each case, so a retry can split it.
      *
-     * @return list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only:bool}>
+     * @return list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float,read_only:bool,case_seconds?:list<float>}>
      */
     public static function stored(mixed $value): array
     {
@@ -239,9 +302,15 @@ final readonly class ProofBatchPlan
             if (! is_bool($readOnly)) {
                 throw new \InvalidArgumentException('Proof batch read_only must be true or false.');
             }
+            $cases = ValidatedData::stringList($item['cases'] ?? []);
+            $caseSeconds = $item['case_seconds'] ?? null;
+            if ($caseSeconds !== null && (! is_array($caseSeconds) || ! array_is_list($caseSeconds) || count($caseSeconds) !== count($cases)
+                || array_filter($caseSeconds, static fn (mixed $value): bool => ! is_int($value) && ! is_float($value)) !== [])) {
+                throw new \InvalidArgumentException('Proof case times must be one number for each case.');
+            }
             $assignments[] = ['command' => ValidatedData::string($item['command']), 'file' => ValidatedData::string($item['file']),
-                'batch' => ValidatedData::string($item['batch']), 'cases' => ValidatedData::stringList($item['cases'] ?? []), 'seconds' => (float) $seconds,
-                'read_only' => $readOnly];
+                'batch' => ValidatedData::string($item['batch']), 'cases' => $cases, 'seconds' => (float) $seconds,
+                'read_only' => $readOnly, ...($caseSeconds === null ? [] : ['case_seconds' => array_map(floatval(...), $caseSeconds)])];
         }
 
         return $assignments;

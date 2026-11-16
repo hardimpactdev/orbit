@@ -144,6 +144,35 @@ it('plans selected ids only, retains their batch setup and rejects an unknown id
     expect(fn () => $plan->read('head', [[...$selected, 'only' => ['missing']]]))->toThrow(ResourceOperationException::class);
 });
 
+it('splits a batch that changes the fleet by case while a place is free and the cut lightens the heaviest copy', function (): void {
+    $part = static fn (array $seconds, bool $readOnly = false): array => ['command' => 'node:converge', 'file' => 'converge.cases.yaml', 'batch' => 'fresh',
+        'cases' => array_keys($seconds), 'seconds' => array_sum($seconds), 'read_only' => $readOnly, 'case_seconds' => array_values($seconds)];
+    $shards = ProofBatchPlan::split([$part(['a' => 100.0, 'b' => 60.0, 'c' => 40.0])], 3);
+
+    // In file order the closest cut is a | b c: 280 s on each copy instead of 380 s on one. Cutting b | c leaves 280 s, so it is not kept.
+    expect(array_map(static fn (array $shard): array => array_merge(...array_column($shard, 'cases')), $shards))->toBe([['a'], ['b', 'c']])
+        ->and(array_map(ProofBatchPlan::work(...), $shards))->toBe([280.0, 280.0])
+        ->and(array_column(array_merge(...$shards), 'case_seconds'))->toBe([[100.0], [60.0, 40.0]])
+        // No free place, a read-only batch and a batch of one case stay whole.
+        ->and(ProofBatchPlan::split([$part(['a' => 100.0, 'b' => 60.0])], 1))->toHaveCount(1)
+        ->and(ProofBatchPlan::split([$part(['a' => 100.0, 'b' => 60.0], true)], 2))->toHaveCount(1)
+        ->and(ProofBatchPlan::split([$part(['a' => 100.0])], 2))->toHaveCount(1)
+        // A cut of the short batch would not lighten the copy of the long one, so it is not kept.
+        ->and(ProofBatchPlan::split([$part(['a' => 10.0, 'b' => 10.0]), $part(['c' => 300.0])], 3))->toHaveCount(2);
+});
+
+it('keeps the seconds of each case in the recorded plan, so a retry splits the same way', function (): void {
+    $source = Mockery::mock(ProofCommitSource::class);
+    $source->shouldReceive('file')->with('head', 'swamp/proof/batches.yaml')->andReturn("batches: {fresh: {}}\n");
+    $source->shouldReceive('file')->with('head', 'cases.yaml')->andReturn("command: demo:run\ncases: [{id: a, batch: fresh}, {id: b, batch: fresh}, {id: c, batch: fresh}]\n");
+    $batches = (new ProofBatchPlan($source))->read('head', [['command' => 'demo:run', 'file' => 'cases.yaml']]);
+    $stored = ProofBatchPlan::stored(json_decode(json_encode($batches, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR));
+
+    expect($batches[0]['case_seconds'])->toBe([1.0, 1.0, 1.0])
+        ->and(ProofBatchPlan::split($stored, 2))->toEqual(ProofBatchPlan::split($batches, 2))
+        ->and(fn () => ProofBatchPlan::stored([[...$batches[0], 'case_seconds' => [1.0]]]))->toThrow(InvalidArgumentException::class, 'one number for each case');
+});
+
 it('gives a shard the budget of its batches and keeps more batches than one budget fits out of one shard', function (): void {
     // Proof 14651: 17 batches of about 75 measured seconds each, about 81 cases.
     $batches = array_map(static fn (int $index): array => ['command' => 'node:add', 'file' => 'cases.yaml', 'batch' => 'b'.$index, 'cases' => ['c'.$index], 'seconds' => 75.0], range(1, 17));
