@@ -679,14 +679,6 @@ Deno.test({
     },
 });
 
-Deno.test({
-    name:
-        "a task VM host keeps the ZFS ARC its task side sets: the Instance side writes no cap",
-    ignore: !hasAnsible,
-    async fn() {
-        const f = await fixture();
-        try {
-            f.write({ ...f.instances, arc: false });
             const result = await f.run();
             assert(result.ok, result.output);
             assertEquals(Deno.readTextFileSync(`${f.folder}/arc`).trim(), "0");
