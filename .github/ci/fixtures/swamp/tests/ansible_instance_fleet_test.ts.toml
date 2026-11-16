@@ -52,6 +52,7 @@ cases = [
   "an unreadable base intent digest converges, names why, and records no converge digest",
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken",
   "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base",
+  "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only",
   "a fleet without worker c remints at once and names it incomplete",
   "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints",
   "a moved Swamp pin installs the recipe's release on the nested Gateway, retakes its base and names the release; the next refresh only reads",
@@ -74,8 +75,8 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2922
-slices = 72
+cost = 2953
+slices = 73
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
   "swamp/ansible/fleet-converge-inputs.json",
@@ -148,6 +149,7 @@ inputs = [
   "an unreadable base intent digest converges, names why, and records no converge digest" = 43
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken" = 27 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base" = 46 # ESTIMATE: local 21s x 2.1, rounded up, plus 1s
+  "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only" = 31 # ESTIMATE: local 14s x 2.1, rounded up, plus 1s
   "a fleet without worker c remints at once and names it incomplete" = 22 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints" = 6 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a refresh whose migrate applied one keeps base and the fleet running, and a reset after it migrates up to the new schema" = 49

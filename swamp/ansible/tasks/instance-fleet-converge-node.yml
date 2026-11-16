@@ -32,7 +32,8 @@
   until: >-
     ((fleet_converge_wait.stdout | default('{}', true) | from_json).data | default({})).status | default('')
     in ['succeeded', 'failed', 'cancelled', 'interrupted']
-  retries: 180
+  # 900 s; 1800 s while nested-app-dev builds its first Instance host (no `host` in the record): the stock and Instance images too.
+  retries: "{{ 360 if fleet_due.host | default(false) | bool and fleet_recorded.host is not defined else 180 }}"
   delay: "{{ fleet_ready_delay }}"
 - name: Read the base converges of the nested Nodes
   ansible.builtin.set_fact:

@@ -52,6 +52,8 @@ const markerFile = "# Managed by Orbit: this Gateway leads the nested fleet of a
 const instanceHostKeys = { "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true" };
 /** The files each container owns: the egress and size files. The container branch writes nested-app-dev's Incus drop-in. */
 const ownedBy = (_name: string) => owned;
+/** The memory rule of each nested container (NestedFleetIntent::Memory): app-dev hosts Instances, app-prod serves none. */
+const memory: Record<string, string> = { "nested-gateway": "4GiB", "nested-app-dev": "5GiB", "nested-app-prod": "2GiB" };
 /** Each file rule in the order the rules read it: the nested Gateway's drop-ins and marker, then the owned files of each container. */
 const fileRules: [string, string][] = [
   ...units.map((unit): [string, string] => ["nested-gateway", unit]),
@@ -78,11 +80,12 @@ function ruled() {
   for (const name of names) Object.assign(containers[name].config, environment);
   containers["nested-gateway"].files = { ...Object.fromEntries(units.map((unit) => [unit, dropIn])), [marker]: markerFile };
   Object.assign(containers["nested-app-dev"].config, instanceHostKeys);
+  for (const name of names) containers[name].config["limits.memory"] = memory[name];
   for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...ownedBy(name) };
   return containers;
 }
 
-function fixture(containers: Record<string, Record<string, unknown>>, options: { club?: boolean; base?: boolean; bridge?: Record<string, string> } = {}) {
+function fixture(containers: Record<string, Record<string, unknown>>, options: { club?: boolean; base?: boolean; bridge?: Record<string, string>; host?: boolean } = {}) {
   const folder = Deno.makeTempDirSync();
   Deno.mkdirSync(`${folder}/bin`);
   Deno.mkdirSync(`${folder}/tasks`);
@@ -136,10 +139,11 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
     fleet: {
       guests,
       layout: {
-        gateway: { address: "10.232.2.11", wireguard: "10.45.0.1" },
-        "app-dev": { address: "10.232.2.12", wireguard: "10.45.0.2" },
-        "app-prod": { address: "10.232.2.13", wireguard: "10.45.0.3" },
+        gateway: { address: "10.232.2.11", wireguard: "10.45.0.1", memory: "4GiB" },
+        "app-dev": { address: "10.232.2.12", wireguard: "10.45.0.2", memory: "5GiB" },
+        "app-prod": { address: "10.232.2.13", wireguard: "10.45.0.3", memory: "2GiB" },
       },
+      host: options.host ?? true,
       operator: { address: "10.45.0.10", hub: "10.45.0.1", network: "10.45.0.0/24" },
       checkout: { path: "/home/orbit/orbit" },
       proxy,
@@ -331,7 +335,8 @@ Deno.test({
         "incus config device set nested-gateway club-key source=/run/orbit-club path=/home/orbit/.config/swamp/club required=false shift=false",
         "incus config device set nested-app-dev checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         ...["nested-gateway", "nested-app-dev", "nested-app-prod"].flatMap((name) =>
-          [`raw.idmap=${idmap}`, ...proxyKeys, ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : [])]
+          [`raw.idmap=${idmap}`, ...proxyKeys, ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : []),
+            ...(name === "nested-gateway" ? [] : [`limits.memory=${memory[name]}`])]
             .map((key) => `incus config set ${name} ${key}`)),
         "incus network set oe-nested raw.dnsmasq=no-resolv",
         ...fileRules.map(([name, path]) => push(name, path)),
@@ -914,7 +919,8 @@ Deno.test({
       const calls = f.calls();
       const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [marker] : []), ...Object.keys(ownedBy(name))].map((path) => push(name, path)));
       assertEquals(writes(calls).filter((call) => !/ (stop|snapshot) /.test(call)),
-        [...egressWrites, ...names.flatMap((name) => ["boot.autostart=true", ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : [])]
+        [...egressWrites, ...names.flatMap((name) => ["boot.autostart=true", ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : []),
+          ...(name === "nested-gateway" ? [] : [`limits.memory=${memory[name]}`])]
           .map((key) => `incus config set ${name} ${key}`))]);
       assert(calls.indexOf(egressWrites.at(-1)!) < calls.findIndex((call) => call.includes("/converge ")), calls.join("\n"));
       for (const name of names) {
@@ -1776,6 +1782,31 @@ Deno.test({
       const result = f.refreshed()!;
       assertEquals([result.host, result.converge_nodes, f.state().roleConverges], ["converged", ["app-dev"], [2]]);
       assert(JSON.parse(f.state().outer.files[record]).host !== "0".repeat(64));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled(), { club: true, base: true, host: false });
+    f.change((state) => {
+      for (const key of Object.keys(state)) delete state[key];
+      Object.assign(state, structuredClone(refreshedBoundary.state));
+      const { host: _, ...older } = JSON.parse(state.outer.files[record]);
+      state.outer.files[record] = JSON.stringify(currentRecord(older));
+      delete state.roleConverges;
+    });
+    try {
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      // The fleet intent changed (its `host`), so the bases converge; nested-app-dev's role converge does not run.
+      assertEquals([f.refreshed()!.host, f.calls().filter((call) => call.includes('{"roles"')).length, f.state().roleConverges],
+        ["skipped_idmap_small", 0, undefined]);
+      assertEquals(JSON.parse(f.state().outer.files[record]).host, undefined);
     } finally {
       f.cleanup();
     }

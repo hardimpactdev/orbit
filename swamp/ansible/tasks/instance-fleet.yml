@@ -8,6 +8,9 @@
 #   intent.container.workspace            The workspace in the container: the source of the `checkout` device.
 #   intent.fleet.guests                   {gateway, app-dev, app-prod}: the nested containers by role (TaskVmNestedFleet::Guests).
 #   intent.fleet.layout.<role>.address    The address of each nested container on the inner bridge (TaskVmNestedFleet::Layout).
+#   intent.fleet.layout.<role>.memory     Its memory limit, an owned rule (NestedFleetIntent::Memory).
+#   intent.fleet.host                     Whether the refresh builds the Instance host on nested-app-dev: the default's ID map is
+#                                         2,000,000 or more (NestedFleetIntent).
 #   intent.fleet.operator                 {address, hub, network}: the container as operator, the nested Gateway as hub, the
 #                                         fleet's network (TaskVmNestedFleet::operator()).
 #   intent.fleet.checkout.path            Where the three nested Nodes see the workspace (TaskVmNestedFleet::CheckoutPath).
@@ -152,15 +155,15 @@
         devices: >-
           {{ fleet_checkout_device | combine({'club-key': {'type': 'disk', 'source': fleet_club_folder,
              'path': fleet_club_mount, 'required': 'false', 'shift': 'false'}}) }}
-        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, {'limits.memory': intent.fleet.layout.gateway.memory}) }}"
         files: "{{ fleet_unit_files + fleet_marker_files + fleet_egress_files + fleet_size_files }}"
       app-dev:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
-        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_instance_host) }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_instance_host, {'limits.memory': intent.fleet.layout['app-dev'].memory}) }}"
         files: "{{ fleet_egress_files + fleet_size_files }}"
       app-prod:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
-        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, {'limits.memory': intent.fleet.layout['app-prod'].memory}) }}"
         files: "{{ fleet_egress_files + fleet_size_files }}"
     fleet_build_rules: [raw.idmap]
     # The inner bridge's own keys, owned. Its dnsmasq answers the fleet's names and forwards every other name to the Instance

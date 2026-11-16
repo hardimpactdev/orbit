@@ -57,8 +57,8 @@
     fleet_recorded: "{{ (fleet_record_read.stdout | trim | from_json) if fleet_record_valid else {} }}"
     fleet_now: >-
       {{ {} if fleet_ids | length == 0 else {'code': (fleet_ids[0] ~ fleet_ids[1]) | hash('sha256'),
-         'rules': fleet_files | to_json(sort_keys=true) | hash('sha256'),
-         'host': ('host ' ~ fleet_ids[0] ~ ' ' ~ fleet_ids[-1]) | hash('sha256')}
+         'rules': fleet_files | to_json(sort_keys=true) | hash('sha256')}
+         | combine({'host': ('host ' ~ fleet_ids[0] ~ ' ' ~ fleet_ids[-1]) | hash('sha256')} if intent.fleet.host | default(false) | bool else {})
          | combine({'grants': (fleet_ids[0] ~ ' ' ~ fleet_ids[-1]) | hash('sha256')} if fleet_club.rc == 0 else {}) }}
     fleet_swamp_ids: "{{ fleet_ids[2:-1] }}"
     fleet_converge_changed: 0
@@ -78,8 +78,9 @@
       tokens: "{{ fleet_club.rc == 0 and not fleet_tokens_recorded | bool }}"
       rules: "{{ 'rules' not in fleet_now or fleet_recorded.rules | default('') != fleet_now.rules }}"
       # The Instance host on nested-app-dev (docs/reference/development-containers.md#instance-host-in-the-fleet): its `app-dev` role
-      # converge runs the container branch when the nested Gateway's code or Swamp changed, so a seed holds a ready host.
-      host: "{{ 'host' not in fleet_now or fleet_recorded.host | default('') != fleet_now.host }}"
+      # converge runs the container branch when the nested Gateway's code or Swamp changed, so a seed holds a ready host. Only a default
+      # whose ID map leaves room for isolated Instances there (`intent.fleet.host`, 2,000,000 or more) builds it; below that nothing changes.
+      host: "{{ intent.fleet.host | default(false) | bool and ('host' not in fleet_now or fleet_recorded.host | default('') != fleet_now.host) }}"
 
 # The record goes before the first write to a nested disk and comes back as the last task. A run that stops in the middle (a failed
 # step, a failed restore of the old seed, a run by hand) leaves no record, so the next refresh runs every part and retakes all three.
@@ -590,7 +591,8 @@
       # The nested Nodes the converge ran for, in converge order.
       converge_nodes: "{{ fleet_converge_roles }}"
       # `converged`: nested-app-dev's `app-dev` role converge ran the Instance host's container branch; `kept`: the seed's host stayed.
-      host: "{{ 'converged' if fleet_due.host | bool else 'kept' }}"
+      # `skipped_idmap_small`: the default's ID map is below 2,000,000, so no isolated Instance fits on nested-app-dev and none is built.
+      host: "{{ 'skipped_idmap_small' if not intent.fleet.host | default(false) | bool else 'converged' if fleet_due.host | bool else 'kept' }}"
       changed: "{{ fleet_converge_changed | int }}"
       tokens: "{{ 'skipped' if fleet_tokens_reason == 'no_key' else 'young' if fleet_tokens_reason in ['young', 'recorded'] else 'reminted' }}"
       # Why: `age` (one is older than `fleet_token_max_age`), `incomplete` (one is missing, such as worker c's), `unreadable`, `young`,
