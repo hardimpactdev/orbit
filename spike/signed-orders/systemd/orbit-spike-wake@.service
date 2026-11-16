@@ -1,9 +1,0 @@
-# SPIKE(signed-orders): stands in for orbit-instance-wake@<id>. It records its start time and exits.
-[Unit]
-Description=Orbit spike wake %i
-
-[Service]
-Type=oneshot
-RuntimeDirectory=orbit-spike
-RuntimeDirectoryPreserve=yes
-ExecStart=/bin/sh -c 'date +%%s%%N > /run/orbit-spike/started-%i'

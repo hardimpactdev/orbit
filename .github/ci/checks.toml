@@ -420,10 +420,6 @@ default = ["docs"]
 inputs = ["swamp/**"]
 default = ["swamp-shape"]
 
-[roots."spike"]
-inputs = ["spike/**"]
-default = []
-
 [roots."."]
 inputs = [".editorconfig", ".gitattributes", ".gitignore", ".node-version", "composer.json", "composer.lock", "vet.json", "LICENSE", "*.md", "*.mdx", "*.mmd"]
 default = []

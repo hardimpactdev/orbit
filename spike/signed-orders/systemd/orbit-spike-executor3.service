@@ -1,9 +1,0 @@
-# SPIKE(signed-orders) round 3: systemd only starts the executor and restarts it after a crash.
-[Unit]
-Description=Orbit spike executor (round 3, sleep and wake in-process)
-
-[Service]
-ExecStart=/usr/local/libexec/orbit-spike-executor3
-Restart=always
-RestartSec=100ms
-SyslogIdentifier=orbit-spike-executor

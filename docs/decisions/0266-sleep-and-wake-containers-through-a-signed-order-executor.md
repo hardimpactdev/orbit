@@ -23,7 +23,7 @@ Principle: [One way, one name](/mission#principles), [Deterministic first](/miss
 
 Today a wake takes 0.72 s on the Node with the live Python helper: restore 0.39–0.45 s, Incus reads 0.12–0.23 s, start about 0.15 s. A visit reaches the app 1.5 s after it arrives when the Node is warm and 2.4 s when it is cold, behind a waiting page. The Gateway reaches the Node through SSH and files in `/dev/shm`. A path unit, a dispatcher, a systemd template worker and a Python program each add their own start-up time.
 
-Task group 5552 built this design in four rounds on a nested fleet. Its results, raw data and code are in `spike/signed-orders/` on the group's branch, `task-5552`. The numbers that matter:
+**Evidence.** Spike group 5552 built this design on a nested fleet in four rounds. Round 1 used a socket-activated executor that started a systemd unit. Round 2 used a long-running executor that acts itself. Round 3 added whole-subtree sleep and wake in Rust. Round 4 measured sleep and wake with real swap. The full results, raw data and code are in commit `af8f00e4848f27883beba6221a652cd9fa9f2f6e` on the `task-5552` branch, under `spike/signed-orders/`. That folder is not part of this record, so the numbers that matter are copied here. In round 1, the unit started 94 ms median after the broadcast, against 61 ms over a shared SSH connection and 195 ms over a fresh one. Rounds 2–4 gave:
 
 | Measure (rounds 2–4) | Result |
 | --- | --- |
@@ -51,7 +51,7 @@ The owner's decisions D1–D8 bind every part of this design. The sections after
 - **D3. Every millisecond counts.** The wake runs inside the visitor's request. Caddy sends the visit to the Gateway, the Gateway waits a short bound for the wake, and then the original request goes to the app. When the bound passes first, the visitor gets today's waiting page.
 - **D4. No Node-to-Node traffic, ever.** Everything flows through the Gateway, which authorizes and signs.
 - **D5. Orders and results travel over the observer's WebSocket** (Reverb), not SSH or HTTP POSTs. A long-running Gateway listener hands each result to the waiting request by Operation id through Valkey.
-- **D6. The observer only passes bytes.** It stays the only networked part. The executor accepts only the observer and only Gateway-signed Ed25519 orders.
+- **D6. The observer only passes bytes.** It stays the only networked part. The executor accepts a connection only from the observer or from the one fixed relay command, and it acts only on Gateway-signed Ed25519 orders.
 - **D7. Every wake and sleep stays a durable Orbit Operation.**
 - **D8. Idle sleep covers every app container**, clones with T3 included. It has been live since 2026-11-16 14:10Z with `ORBIT_HIBERNATION_CONTAINER_SLEEP=true`. Production follows through ADR 0265 (group 5556).
 
@@ -161,14 +161,18 @@ Slices 1–3 can run before group 5513 lands. Slices 4–8 need a nested `app-de
 - The executor needs its own release asset, built in CI. A task copy cannot change `.github/workflows/`, so slice 1's workflow change goes through a maintainer pull request.
 - The bound, the pool size and the 150 ms `accepted` limit are starting values. Slices 4–6 measure them on a real clone.
 
-### Open risks
+### Open points
 
-1. **The Incus unfreeze and freeze calls are not measured.** The spike wrote `cgroup.freeze` directly. If the Incus API adds tens of milliseconds, the bound must grow.
-2. **A real clone with T3 and Vite is not measured.** It has more processes, more file-backed pages and pages that have been cold for hours. Swap for the spike was host swap files under load from other Instances.
-3. **Bursts exceed the bound.** Three wakes at once ended at 747 ms median for the last. Serving one target at a time helps the first wake only.
-4. **Recording swapped pages costs more at the wake.** A container whose memory was in swap long before the sleep now restores all of it. This is not measured.
-5. **Clock skew is not tested.** Skew over 5 s refuses every order on that Node until it is fixed.
-6. **Root on the Node is trusted**, as above.
+1. **The 500 ms wait is a starting value.** It must be measured on a real clone with T3 and Vite (slice 6). The same holds for the pool size and the 150 ms `accepted` limit.
+2. **The effect of recording swapped pages on wake time is unmeasured.** A container whose memory was in swap long before the sleep now restores all of it (D2).
+3. **The SSH relay is a second allowed caller beside the observer.** The user `orbit-executor-relay`, running the executor binary, may connect to the socket. It serves the SSH fallback and Swamp. It still needs a signed order, but it widens the set of callers that D6 started from.
+4. **Clock skew is untested.** The nested fleet shares one kernel clock. Skew over 5 s refuses every order on that Node until it is fixed.
+5. **The signing key stays readable by the Gateway's `orbit` user.** See Key custody: a separate signer would protect nothing more today, but any `orbit` process can sign orders.
+6. **A result finished after an executor crash reaches the Gateway only when it asks again.** The executor has no outbound path. The Gateway learns the result by sending the same Operation again.
+7. **The Incus unfreeze and freeze calls are not measured.** The spike wrote `cgroup.freeze` directly. If the Incus API adds tens of milliseconds, the bound must grow.
+8. **A real clone with T3 and Vite is not measured.** It has more processes, more file-backed pages and pages that have been cold for hours. Swap for the spike was host swap files under load from other Instances.
+9. **Bursts exceed the bound.** Three wakes at once ended at 747 ms median for the last. Serving one target at a time helps the first wake only.
+10. **Root on the Node is trusted**, as above.
 
 ## Affects
 
