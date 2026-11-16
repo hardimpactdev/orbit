@@ -394,6 +394,9 @@ function normalContainerSinceMain(Instance $instance, InstanceRuntime $runtime):
     // The presented machine name came after main, right after the Incus name (InstanceMachineName).
     $name = array_search('name', array_keys($expected), true) + 1;
     $expected = [...array_slice($expected, 0, $name, true), 'machine_name' => InstanceMachineName::intent($instance), ...array_slice($expected, $name, null, true)];
+    // The CLI-only PHP ini came after main, right after `php`; a Project without PHP has none (InstanceContainer::phpCliIni).
+    $php = array_search('php', array_keys($expected), true) + 1;
+    $expected = [...array_slice($expected, 0, $php, true), 'php_cli_ini' => null, ...array_slice($expected, $php, null, true)];
 
     return $expected;
 }
