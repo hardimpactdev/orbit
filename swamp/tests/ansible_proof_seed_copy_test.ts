@@ -18,18 +18,22 @@ const intent = (inner: string | null) => ({
     targets: [{ node_id: 12, remote: "proof-node-12", listen: "10.44.0.30:8444" }, { node_id: 13, remote: "proof-node-13", listen: "10.44.0.31:8444" }],
 });
 
-/** A folder with a stub incus: `remote list` answers from `remotes.json`, `query` from `snapshots.json`, every other call is logged. */
+/**
+ * A folder with a stub incus: `remote list` answers from `remotes.json`, `query` from `snapshots.json`, every other call is logged. The
+ * volume's snapshots carry the names the Incus API gives them, `<volume>/<snapshot>`; the instance's carry `<snapshot>` alone.
+ */
 async function fixture(remotes: string[], snapshots: string[]) {
     const folder = await Deno.makeTempDir();
     await Deno.mkdir(`${folder}/bin`);
     await Deno.mkdir(`${folder}/servercerts`);
     await Deno.writeTextFile(`${folder}/remotes.json`, JSON.stringify(Object.fromEntries(remotes.map((name) => [name, {}]))));
     await Deno.writeTextFile(`${folder}/snapshots.json`, JSON.stringify(snapshots.map((name) => ({ name }))));
+    await Deno.writeTextFile(`${folder}/volume-snapshots.json`, JSON.stringify(snapshots.map((name) => ({ name: `proof-seed-inner/${name}` }))));
     await Deno.writeTextFile(`${folder}/certificate-12.pem`, certificate);
     await Deno.writeTextFile(`${folder}/bin/incus`, `#!/bin/sh
 case "$1 $2" in
   "remote list") cat '${folder}/remotes.json';;
-  "query --") cat '${folder}/snapshots.json';;
+  "query --") case "$3" in */volumes/custom/*) cat '${folder}/volume-snapshots.json';; *) cat '${folder}/snapshots.json';; esac;;
   "remote add") echo "$*" >> '${folder}/calls'; cp '${folder}/certificate-12.pem' '${folder}/servercerts/'"$3"'.crt';;
   *) echo "$*" >> '${folder}/calls';;
 esac
