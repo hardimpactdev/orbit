@@ -1,4 +1,5 @@
-"""The hub converge prunes only the peer files of Nodes that are gone or being removed, decided when the prune runs."""
+"""The hub converge prunes only the peer files of Nodes that are gone or being removed, decided when the prune runs, and
+removes the task VM hub filter that the removed `task_vm.hub_converge` installed."""
 import json
 import os
 import shutil
@@ -12,6 +13,7 @@ import yaml
 
 ANSIBLE = Path(__file__).resolve().parents[1] / 'ansible'
 PRUNE = ANSIBLE / 'tasks/node-converge-hub-prune.yml'
+FILTER = ANSIBLE / 'tasks/node-converge-hub-filter-absent.yml'
 COMMAND = shutil.which('ansible-playbook') or str(Path(sys.executable).parent / 'ansible-playbook')
 NEEDS_ANSIBLE = unittest.skipUnless(shutil.which('ansible-playbook') or (Path(sys.executable).parent / 'ansible-playbook').exists(),
                                     'ansible-playbook is not installed')
@@ -64,6 +66,110 @@ class HubPruneTest(unittest.TestCase):
         for play, task in (('Add the peer on the hub', 'Apply the hub peers'), ('Set up the tunnel', "Apply the hub's own peers")):
             imported = next(item for item in plays[play] if item['name'] == task)
             self.assertEqual(imported['ansible.builtin.import_tasks'], 'tasks/node-add-hub-peers.yml', play)
+
+
+# Stand-ins answer from marker files in $STUB_DIR: `active`, `enabled` and `table`; each call is logged to `calls.log`.
+SYSTEMCTL = """#!/bin/sh
+echo "systemctl $*" >> "$STUB_DIR/calls.log"
+case "$1" in
+  show)
+    if [ -f "$STUB_DIR/etc/systemd/system/orbit-task-vms-hub.service" ]; then echo LoadState=loaded; else echo LoadState=not-found; fi
+    if [ -f "$STUB_DIR/active" ]; then echo ActiveState=active; else echo ActiveState=inactive; fi ;;
+  is-enabled) if [ -f "$STUB_DIR/enabled" ]; then echo enabled; else echo disabled; exit 1; fi ;;
+  stop) rm -f "$STUB_DIR/active" ;;
+  disable) rm -f "$STUB_DIR/enabled" ;;
+  daemon-reload) ;;
+  *) exit 1 ;;
+esac
+"""
+NFT = """#!/bin/sh
+echo "nft $*" >> "$STUB_DIR/calls.log"
+case "$*" in
+  "list table inet orbit_task_vms") [ -f "$STUB_DIR/table" ] || { echo 'Error: No such file or directory' >&2; exit 1; } ;;
+  "delete table inet orbit_task_vms") rm "$STUB_DIR/table" ;;
+  *) exit 1 ;;
+esac
+"""
+
+
+@NEEDS_ANSIBLE
+class HubFilterAbsentTest(unittest.TestCase):
+    def setUp(self):
+        self.folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.folder)
+        (self.folder / 'bin').mkdir()
+        for name, body in (('systemctl', SYSTEMCTL), ('nft', NFT)):
+            (self.folder / 'bin' / name).write_text(body)
+            (self.folder / 'bin' / name).chmod(0o755)
+        # The task file with its absolute paths moved under the test folder.
+        (self.folder / 'tasks.yml').write_text(FILTER.read_text().replace('/etc/', f'{self.folder}/etc/'))
+
+    def install_filter(self):
+        """The footprint the removed task_vm.hub_converge left on the vpn Node."""
+        for path in ('etc/systemd/system/orbit-task-vms-hub.service', 'etc/orbit/task-vms/hub.nft'):
+            (self.folder / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.folder / path).write_text('managed by Orbit\n')
+        for marker in ('active', 'enabled', 'table'):
+            (self.folder / marker).write_text('')
+
+    def converge(self):
+        """Run the filter tasks on this machine; returns the exit code, the output, the changed count and the stand-in calls."""
+        (self.folder / 'calls.log').write_text('')
+        (self.folder / 'play.yml').write_text(json.dumps([{'hosts': 'hub', 'gather_facts': False, 'tasks': [
+            {'ansible.builtin.import_tasks': str(self.folder / 'tasks.yml')}]}]))
+        (self.folder / 'inventory.yml').write_text(json.dumps({'all': {'hosts': {'hub': {
+            'ansible_connection': 'local', 'ansible_python_interpreter': sys.executable}}}}))
+        result = subprocess.run([COMMAND, '-i', str(self.folder / 'inventory.yml'), str(self.folder / 'play.yml')],
+                                check=False, capture_output=True, text=True, timeout=120, env={
+                                    **os.environ, 'PATH': f"{self.folder / 'bin'}:{os.environ['PATH']}", 'STUB_DIR': str(self.folder),
+                                    'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg'), 'ANSIBLE_FORCE_COLOR': '0'})
+        changed = [line for line in result.stdout.splitlines() if 'changed=' in line]
+        return (result.returncode, result.stdout + result.stderr, int(changed[-1].split('changed=')[1].split()[0]) if changed else -1,
+                (self.folder / 'calls.log').read_text().splitlines())
+
+    def remaining(self):
+        return sorted(str(path.relative_to(self.folder)) for path in self.folder.rglob('*')
+                      if path.relative_to(self.folder).parts[0] in ('etc', 'active', 'enabled', 'table'))
+
+    def test_a_hub_with_the_filter_ends_without_it(self):
+        self.install_filter()
+        (self.folder / 'etc/systemd/system/other.service').write_text('')
+        code, output, changed, calls = self.converge()
+        self.assertEqual(code, 0, output)
+        # Five tasks change: the stop and disable, the two files, the reload, the empty folder and the table.
+        self.assertEqual(changed, 5, output)
+        self.assertEqual(self.remaining(), ['etc', 'etc/orbit', 'etc/systemd', 'etc/systemd/system', 'etc/systemd/system/other.service'])
+        self.assertIn('systemctl daemon-reload', calls)
+        self.assertIn('nft delete table inet orbit_task_vms', calls)
+
+    def test_a_second_run_changes_nothing(self):
+        self.install_filter()
+        self.assertEqual(self.converge()[0], 0)
+        code, output, changed, calls = self.converge()
+        self.assertEqual((code, changed), (0, 0), output)
+        self.assertEqual(calls, ['nft list table inet orbit_task_vms'])
+
+    def test_a_hub_that_never_had_the_filter_changes_nothing(self):
+        code, output, changed, calls = self.converge()
+        self.assertEqual((code, changed), (0, 0), output)
+        # The failing table read is the answer that the table is absent, not an error.
+        self.assertEqual(calls, ['nft list table inet orbit_task_vms'])
+        self.assertEqual(self.remaining(), [])
+
+    def test_a_task_vm_folder_with_other_files_stays(self):
+        self.install_filter()
+        (self.folder / 'etc/orbit/task-vms/notes.txt').write_text('')
+        code, output, _, _ = self.converge()
+        self.assertEqual(code, 0, output)
+        self.assertIn('etc/orbit/task-vms/notes.txt', self.remaining())
+        self.assertNotIn('etc/orbit/task-vms/hub.nft', self.remaining())
+
+    def test_the_hub_converge_removes_the_filter(self):
+        tasks = {task['name']: task for task in yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub.yml').read_text())}
+        self.assertEqual(tasks['Remove the task VM hub filter']['ansible.builtin.import_tasks'], 'node-converge-hub-filter-absent.yml')
+        # The vpn Node's own converge reaches the hub tasks through its network phase in hub mode.
+        network = {task['name']: task for task in yaml.safe_load((ANSIBLE / 'tasks/node-converge-network.yml').read_text())}
+        self.assertEqual(network['Reconcile a target hub exactly once']['ansible.builtin.include_tasks'], 'node-converge-hub.yml')
 
 
 if __name__ == '__main__':
