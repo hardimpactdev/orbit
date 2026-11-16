@@ -6,14 +6,14 @@ Within a selected Pest job, the check runs the project's changed test files, the
 names for changed SDK fixtures, the project's pin test files (PIN_TESTS), and the whole SDK suite, which takes
 seconds, each with the per-test time limit that CI's job passes to Pest. The rest of the Gateway, CLI and docs suites
 is left to CI and named as skipped. CI's policy tests run on every change, as CI's "Select build inputs" job runs them.
-The fixtures part runs every unit of CI's plan that this copy can run, the units of touched files first; the verdicts
-of one candidate tree persist, so the next check of that tree runs only the units that have not passed. Every part
-gets the time left as its limit; a part the budget stops or leaves out is named. The output starts with CI's per-unit
+The fixtures part runs the units of CI's plan that the change touches directly first, then the other planned units
+that fit the time left; it names the rest as deferred to CI. Every part gets the time left as its limit; a part the
+budget stops or leaves out is named. The output starts with CI's per-unit
 time caps and ends with a summary of at most SUMMARY_BYTES: one line per part with its outcome and seconds, then the
 last lines of each failed part, so the stored tail of the output always holds it.
 
 --base REF        the start commit (default: the merge base with origin/main, else main)
---budget SECONDS  wall time of the whole run (default 900)
+--budget SECONDS  wall time of the whole run (default 270)
 --only PARTS      comma-separated part names, such as pest,phpstan"""
 import argparse
 from contextlib import contextmanager
@@ -80,13 +80,7 @@ SUMMARY_BYTES = 12 * 1024
 LINE_BYTES = 300
 NOT_IN_CHECK = ('Not in this check: Rector, the full PHPStan analysis, the full Gateway, CLI and docs Pest suites, web app '
                 'checks, Rust formatting, generated contracts, Swamp workflow validation. CI runs them.')
-# Orbit's tasks.check Operation gives the whole check, setup and deliverables included, about 29 minutes (run_budget_seconds
-# 1740); 15 of them leave the rest that room. Fixture units this budget does not reach run in the next check of the tree.
-DEFAULT_BUDGET = 900
-# The parts whose status fails the check: a failure, and fixture units of CI's plan that have not passed yet.
-BLOCKING = ('FAILED', 'unfinished')
-# The fixture unit verdicts of the last candidate tree, under the Git common directory.
-UNIT_RESULTS = 'orbit/task-check-units.json'
+DEFAULT_BUDGET = 270
 
 
 class Part:
@@ -366,52 +360,17 @@ def missing_programs(planned, table):
     return groups
 
 
-def results_path():
-    return Path(review['git'](ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir')) / UNIT_RESULTS
+def deferral(units_of, costs):
+    """The units the check leaves to CI, with their count and declared seconds."""
+    return (f'deferred to CI: {len(units_of)} units, {sum(costs[unit] for unit in units_of):g}s declared: '
+            + ', '.join(units_of))
 
 
-def unit_results(tree):
-    """The fixture unit verdicts that earlier checks recorded for this candidate tree. Another tree's verdicts do not count."""
-    try:
-        stored = json.loads(results_path().read_text())
-    except (OSError, ValueError):
-        return {}
-    return dict(stored.get('units', {})) if isinstance(stored, dict) and stored.get('tree') == tree else {}
-
-
-def save_unit_results(tree, results):
-    path = results_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({'tree': tree, 'units': results}, indent=2, sort_keys=True) + '\n')
-
-
-def unit_order(runnable, costs, paths):
-    """The units of files the change touched first, then the rest; each group cheapest first."""
-    touched = set(paths)
-    return sorted(runnable, key=lambda unit: (unit.split('#')[0] not in touched, costs[unit], unit))
-
-
-def unit_batches(order, costs, budget, workers):
-    """Consecutive runs of bin/ci-units, in order, each within one CI shard by its pack rule, so no run reaches its shard
-    deadline."""
-    capacity = {**budget, 'pr_shards': 1, 'shard_workers': workers}
-    batches = []
-    for unit in order:
-        try:
-            fits = bool(batches) and units.pack([(name, costs[name], 0) for name in (*batches[-1], unit)], capacity) is not None
-        except ValueError:
-            fits = False
-        if fits:
-            batches[-1].append(unit)
-        else:
-            batches.append([unit])
-    return batches
-
-
-def fixtures(plan, deadline, table, paths, tree):
-    """Run every unit of CI's plan that this copy can run and that has not passed for this tree, the units of touched files
-    first. A unit whose declared host program is missing in this copy is named and does not run: CI has the program. The
-    part passes only when every runnable planned unit passed for this tree; units the budget did not reach remain."""
+def fixtures(plan, deadline, table, paths):
+    """Run the planned units the change touches directly first, by the input mapping of bin/ci-units, then the other
+    planned units that still pack into the time left, by its pack rule. The rest are deferred to CI and named, with their
+    count and declared seconds; they never fail the check. A unit whose declared host program is missing in this copy
+    does not run: CI has the program and runs it."""
     started = time.monotonic()
     planned = units.planned_units(plan)
     if not planned:
@@ -419,58 +378,50 @@ def fixtures(plan, deadline, table, paths, tree):
     lacking = missing_programs(planned, table)
     unrunnable = {unit for units_of in lacking.values() for unit in units_of}
     lacks = '; '.join(f'{len(units_of)} not runnable here: {names} missing in this copy ({", ".join(units_of)})' for names, units_of in lacking.items())
-    runnable = [unit for unit in planned if unit not in unrunnable]
     costs = {unit: plan['units'][unit]['declared_seconds'] for unit in planned}
-    results = {unit: status for unit, status in unit_results(tree).items() if unit in runnable}
-    earlier = sum(status == 'passed' for status in results.values())
+    direct = units.direct_files(paths, table)
     workers = fixture_workers()
-    order = unit_order([unit for unit in runnable if results.get(unit) != 'passed'], costs, paths)
-    failed, not_run, output = [], [], ''
-    for batch in unit_batches(order, costs, plan['budget'], workers):
-        left = deadline - time.monotonic()
-        if left < FIXTURE_SETUP_SECONDS + sum(costs[unit] for unit in batch) / workers:
-            continue
-        with tempfile.TemporaryDirectory(prefix='task-check-units-') as scratch:
-            times = Path(scratch) / 'times.json'
-            code, text = run(['python3', 'bin/ci-units', 'run', '--units', json.dumps(batch), '--times', str(times),
-                              '--workers', str(workers)], timeout=left)
-            rows = json.loads(times.read_text()) if times.is_file() else []
-        outcomes = {row['unit']: row['status'] for row in rows}
-        for unit in batch:
-            outcome = outcomes.get(unit)
-            if outcome == 'passed':
-                results[unit] = 'passed'
-            elif outcome in ('FAILED', 'OVER BUDGET'):
-                results[unit] = 'FAILED'
-                failed.append(unit)
-            elif code is not None and outcome != 'CANCELLED':
-                # Only the check's own timeout stops a unit. A unit that did not run otherwise, such as after a failed
-                # tool setup, fails: CI's job fails on it too.
-                not_run.append(unit)
-        if any(unit in failed or unit in not_run for unit in batch):
-            output += text
-        save_unit_results(tree, results)
-        if code is None:
-            break
-    remaining = [unit for unit in order if results.get(unit) != 'passed' and unit not in failed and unit not in not_run]
-    passed = sum(results.get(unit) == 'passed' for unit in runnable)
-    detail = f'{passed} of {len(runnable)} runnable planned units passed for this tree'
-    if earlier:
-        detail += f' ({earlier} in an earlier check)'
+    capacity = {**plan['budget'], 'shard_seconds': deadline - time.monotonic() - FIXTURE_SETUP_SECONDS, 'pr_shards': 1,
+                'shard_workers': workers}
+    admitted, deferred = [], []
+    # The units of directly touched fixtures first, then the rest; each group cheapest first, so a quick check of the
+    # change runs before a long suite can take the budget.
+    for unit in sorted((unit for unit in planned if unit not in unrunnable),
+                       key=lambda unit: (unit.split('#')[0] not in direct, costs[unit], unit)):
+        try:
+            fits = capacity['shard_seconds'] > 0 and units.pack([(name, costs[name], 0) for name in (*admitted, unit)], capacity) is not None
+        except ValueError:
+            fits = False
+        (admitted if fits else deferred).append(unit)
+    if not admitted:
+        return Part('fixtures', 'skipped', 0, '; '.join(([lacks] if lacks else []) + ([deferral(deferred, costs)] if deferred else [])))
+    with tempfile.TemporaryDirectory(prefix='task-check-units-') as scratch:
+        times = Path(scratch) / 'times.json'
+        code, output = run(['python3', 'bin/ci-units', 'run', '--units', json.dumps(admitted), '--times', str(times),
+                            '--workers', str(workers)],
+                           timeout=max(deadline - time.monotonic(), 1))
+        results = json.loads(times.read_text()) if times.is_file() else []
+    outcomes = {row['unit']: row['status'] for row in results}
+    failed = [unit for unit in admitted if outcomes.get(unit) in ('FAILED', 'OVER BUDGET')]
+    # Only the check's own timeout stops a unit, and CI runs it. A unit that did not run otherwise, such as after a failed
+    # tool setup, fails: CI's job fails on it too.
+    unfinished = [unit for unit in admitted if outcomes.get(unit) not in ('passed', 'FAILED', 'OVER BUDGET')]
+    stopped = [unit for unit in unfinished if code is None or outcomes.get(unit) == 'CANCELLED']
+    not_run = [unit for unit in unfinished if unit not in stopped]
+    passed = [unit for unit in admitted if outcomes.get(unit) == 'passed']
+    detail = f'{len(passed)} of {len(planned)} planned units passed'
     if failed:
         detail += '; failed: ' + ', '.join(failed)
     if not_run:
         detail += '; not run: ' + ', '.join(not_run)
-    if remaining:
-        detail += (f'; {len(remaining)} remain, the next task:check of this tree continues them: ' + ', '.join(remaining))
     if lacks:
         detail += '; ' + lacks
+    if stopped or deferred:
+        detail += '; ' + deferral(stopped + deferred, costs)
     seconds = time.monotonic() - started
-    if failed or not_run:
+    if failed or not_run or (code not in (0, None) and not stopped):
         return Part('fixtures', 'FAILED', seconds, detail, output)
-    if remaining:
-        return Part('fixtures', 'unfinished', seconds, detail)
-    return Part('fixtures', 'passed' if runnable else 'skipped', seconds, detail)
+    return Part('fixtures', 'passed' if passed else 'skipped', seconds, detail)
 
 
 def ci_policy(deadline):
@@ -494,7 +445,7 @@ def ci_plan(base, head):
 def report(parts, base, seconds):
     """The summary, within SUMMARY_BYTES: one line per part, the last lines of each failed part, what CI alone runs,
     and the result. The failed parts share the bytes the other lines leave."""
-    failed = any(part.status in BLOCKING for part in parts)
+    failed = any(part.status == 'FAILED' for part in parts)
     lines = ['', 'Task check summary']
     lines += [clip(f'  {part.status:<12} {part.name} ({part.seconds:.1f}s{"; " + part.detail if part.detail else ""})')
               for part in parts]
@@ -603,11 +554,11 @@ def main(argv=None):
             capacity = capacity_errors(plan, table)
             if capacity:
                 record(Part('fixture-capacity', 'FAILED', 0, f'{len(capacity)} capacity rows of the CI plan', '\n'.join(capacity)))
-            record(fixtures(plan, deadline, table, paths, review['git'](ROOT, 'rev-parse', head + '^{tree}')))
+            record(fixtures(plan, deadline, table, paths))
 
     lines = report(parts, base, time.monotonic() - started)
     print('\n'.join(lines), flush=True)
-    return 1 if any(part.status in BLOCKING for part in parts) else 0
+    return 1 if any(part.status == 'FAILED' for part in parts) else 0
 
 
 if __name__ == '__main__':

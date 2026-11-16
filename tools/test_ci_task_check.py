@@ -139,13 +139,12 @@ class BudgetTest(unittest.TestCase):
         plan = {'shards': [{'units': [f'{runtime}#0/2', load]}], 'self_hosted_shards': [], 'budget': budget,
                 'units': {f'{runtime}#0/2': {'declared_seconds': 60}, load: {'declared_seconds': 60}}}
         present = {'unzip': '/usr/bin/unzip', 'jq': '/usr/bin/jq'}
-        runner = FixtureRunner(self, 'passed')
-        with patch.object(check['shutil'], 'which', side_effect=present.get), runner.patched():
-            part = check['fixtures'](plan, runner.clock.now + 500, table, [], 'tree')
-        self.assertEqual(runner.ran(), [[load]])
-        self.assertEqual(part.status, 'passed')
-        self.assertEqual(part.detail, f'1 of 1 runnable planned units passed for this tree; '
-                                      f'1 not runnable here: zip missing in this copy ({runtime}#0/2)')
+        with patch.object(check['shutil'], 'which', side_effect=present.get), \
+                patch.dict(check['fixtures'].__globals__, {'run': self.fail}):
+            part = check['fixtures'](plan, time.monotonic() + 5, table, [])
+        self.assertEqual(part.status, 'skipped')
+        self.assertEqual(part.detail, f'1 not runnable here: zip missing in this copy ({runtime}#0/2); '
+                                      f'deferred to CI: 1 units, 60s declared: {load}')
 
     def test_the_schedules_fixture_is_named_not_runnable_in_a_copy_without_jq(self):
         budget, table, _defaults = check['units'].configuration()
@@ -154,51 +153,33 @@ class BudgetTest(unittest.TestCase):
         self.assertEqual(table[schedules]['host_programs'], ['jq', 'timeout'])
         plan = {'shards': [{'units': [schedules]}], 'self_hosted_shards': [], 'budget': budget,
                 'units': {schedules: {'declared_seconds': 7}}}
-        runner = FixtureRunner(self, 'passed')
-        with patch.object(check['shutil'], 'which', side_effect={'timeout': '/usr/bin/timeout'}.get), runner.patched():
-            part = check['fixtures'](plan, runner.clock.now + 500, table, [], 'tree')
-        self.assertEqual(runner.ran(), [])
+        with patch.object(check['shutil'], 'which', side_effect={'timeout': '/usr/bin/timeout'}.get), \
+                patch.dict(check['fixtures'].__globals__, {'run': self.fail}):
+            part = check['fixtures'](plan, time.monotonic() + 5, table, [])
         self.assertEqual(part.status, 'skipped')
-        self.assertEqual(part.detail, f'0 of 0 runnable planned units passed for this tree; 1 not runnable here: jq missing in this copy ({schedules})')
+        self.assertEqual(part.detail, f'1 not runnable here: jq missing in this copy ({schedules})')
 
 
-class Clock:
-    """The check's clock in a fixture case: a stubbed unit run advances it by the units' declared seconds."""
+class DirectFixtureTest(unittest.TestCase):
+    """The check finds the directly touched fixtures with the input mapping of bin/ci-units, the planner's own."""
 
-    def __init__(self):
-        self.now = 1000.0
-
-    def monotonic(self):
-        return self.now
-
-
-class FixtureRunner:
-    """A stub of bin/ci-units run: it writes each unit's status to the times file and takes the declared seconds."""
-
-    def __init__(self, case, status, code=0, output='', costs=None, workers=1, store=None):
-        self.case, self.status, self.code, self.output, self.costs, self.workers = case, status, code, output, costs or {}, workers
-        self.clock, self.calls = Clock(), []
-        self.store = store or Path(tempfile.mkdtemp(prefix='task-check-store-')) / 'units.json'
-        case.addCleanup(shutil.rmtree, self.store.parent, ignore_errors=True)
-
-    def run(self, argv, cwd=None, env=None, timeout=None):
-        self.calls.append(argv)
-        units = json.loads(argv[argv.index('--units') + 1])
-        status = self.status if isinstance(self.status, dict) else dict.fromkeys(units, self.status)
-        Path(argv[argv.index('--times') + 1]).write_text(json.dumps([{'unit': unit, 'status': status.get(unit, 'passed')} for unit in units]))
-        self.clock.now += sum(self.costs.get(unit, 0) for unit in units) / self.workers
-        return self.code, self.output
-
-    def ran(self):
-        return [json.loads(argv[argv.index('--units') + 1]) for argv in self.calls]
-
-    def patched(self):
-        return patch.dict(check['fixtures'].__globals__, {'run': self.run, 'fixture_workers': lambda: self.workers,
-                                                          'time': self.clock, 'results_path': lambda: self.store})
+    def test_a_fixture_file_its_input_and_its_metadata_touch_it_directly(self):
+        _budget, table, _defaults = check['units'].configuration()
+        fleet = 'swamp/tests/ansible_instance_fleet_test.ts'
+        units = check['units']
+        self.assertIn(fleet, units.direct_files([fleet], table))
+        self.assertIn(fleet, units.direct_files([f'.github/ci/fixtures/{fleet}.toml'], table))
+        exact = next((file, pattern) for file, fixture in table.items() for pattern in fixture['inputs'] if not any(c in pattern for c in '*?{['))
+        self.assertIn(exact[0], units.direct_files([exact[1]], table))
+        # The machinery selects the canary set, not a fixture directly.
+        self.assertEqual(units.direct_files(['bin/ci-units', 'docs/reference/tasks.md'], table), set())
 
 
 class FixtureRunTest(unittest.TestCase):
     UNITS = ['swamp/tests/a_test.ts', 'swamp/tests/b_test.ts', 'swamp/tests/c_test.ts']
+    # b_test.ts declares a script input, so a change to it touches b directly.
+    TABLE = {'swamp/tests/a_test.ts': {'inputs': []}, 'swamp/tests/b_test.ts': {'inputs': ['swamp/scripts/b.sh']},
+             'swamp/tests/c_test.ts': {'inputs': []}}
 
     def plan(self, seconds=80, costs=None):
         budget, _table, _defaults = check['units'].configuration()
@@ -206,84 +187,66 @@ class FixtureRunTest(unittest.TestCase):
         return {'shards': [{'units': self.UNITS}], 'self_hosted_shards': [], 'budget': budget,
                 'units': {unit: {'declared_seconds': costs[unit]} for unit in self.UNITS}}
 
-    def fixtures(self, plan, left, runner, paths=(), tree='tree-1'):
-        runner.costs = {unit: row['declared_seconds'] for unit, row in plan['units'].items()}
-        with runner.patched():
-            return check['fixtures'](plan, runner.clock.now + left, {}, list(paths), tree)
+    def fixtures(self, plan, left, code, status, output='', workers=1, paths=()):
+        calls = []
 
-    def test_a_planned_unit_the_budget_did_not_reach_blocks_a_pass_and_is_counted(self):
-        # #3909: the check budget-skipped CI's planned units and said PASSED; CI then failed one of them.
-        runner = FixtureRunner(self, 'passed')
-        part = self.fixtures(self.plan(), 110, runner)
-        self.assertEqual(runner.ran(), [['swamp/tests/a_test.ts']])
-        self.assertEqual(part.status, 'unfinished')
-        self.assertEqual(part.detail, '1 of 3 runnable planned units passed for this tree; 2 remain, the next task:check of this '
-                                      'tree continues them: swamp/tests/b_test.ts, swamp/tests/c_test.ts')
-        self.assertIn('Task check FAILED', check['report']([part], 'a' * 40, 1)[-1])
+        def run(argv, cwd=None, env=None, timeout=None):
+            calls.append(argv)
+            units = json.loads(argv[argv.index('--units') + 1])
+            statuses = status if isinstance(status, dict) else dict.fromkeys(units, status)
+            Path(argv[argv.index('--times') + 1]).write_text(json.dumps([{'unit': unit, 'status': statuses.get(unit, 'passed')} for unit in units]))
+            return code, output
 
-    def test_the_next_check_of_the_same_tree_runs_only_the_units_that_have_not_passed(self):
-        runner = FixtureRunner(self, 'passed')
-        self.fixtures(self.plan(), 110, runner)
-        again = FixtureRunner(self, 'passed', store=runner.store)
-        part = self.fixtures(self.plan(), 500, again)
-        self.assertEqual(again.ran(), [['swamp/tests/b_test.ts'], ['swamp/tests/c_test.ts']])
-        self.assertEqual((part.status, part.detail), ('passed', '3 of 3 runnable planned units passed for this tree (1 in an earlier check)'))
-        # Another tree's verdicts do not count.
-        other = FixtureRunner(self, 'passed', store=runner.store)
-        self.fixtures(self.plan(), 500, other, tree='tree-2')
-        self.assertEqual(sum(other.ran(), []), self.UNITS)
+        with patch.dict(check['fixtures'].__globals__, {'run': run, 'fixture_workers': lambda: workers}):
+            return check['fixtures'](plan, time.monotonic() + left, self.TABLE, list(paths)), calls
 
-    def test_a_unit_that_failed_is_run_again(self):
-        runner = FixtureRunner(self, {'swamp/tests/a_test.ts': 'FAILED'}, code=1, output='a failed')
-        part = self.fixtures(self.plan(), 500, runner)
+    def ran(self, calls):
+        return json.loads(calls[0][calls[0].index('--units') + 1])
+
+    def test_the_units_the_change_touches_directly_run_first(self):
+        costs = {'swamp/tests/a_test.ts': 5, 'swamp/tests/b_test.ts': 60, 'swamp/tests/c_test.ts': 70}
+        _part, calls = self.fixtures(self.plan(costs=costs), 500, 0, 'passed', paths=['swamp/tests/c_test.ts', 'swamp/scripts/b.sh'])
+        self.assertEqual(self.ran(calls), ['swamp/tests/b_test.ts', 'swamp/tests/c_test.ts', 'swamp/tests/a_test.ts'])
+        # Without a direct change, the cheapest units run first.
+        _part, calls = self.fixtures(self.plan(costs=costs), 500, 0, 'passed')
+        self.assertEqual(self.ran(calls), self.UNITS)
+
+    def test_the_other_units_that_fit_run_and_the_rest_is_deferred_to_ci_without_failing(self):
+        costs = {'swamp/tests/a_test.ts': 70, 'swamp/tests/b_test.ts': 60, 'swamp/tests/c_test.ts': 5}
+        part, calls = self.fixtures(self.plan(costs=costs), 95, 0, 'passed', paths=['swamp/tests/a_test.ts'])
+        self.assertEqual(self.ran(calls), ['swamp/tests/a_test.ts', 'swamp/tests/c_test.ts'])
+        self.assertEqual((part.status, part.detail), ('passed', '2 of 3 planned units passed; '
+                                                      'deferred to CI: 1 units, 60s declared: swamp/tests/b_test.ts'))
+        self.assertEqual(check['report']([part], 'a' * 40, 1)[-1], 'Task check PASSED against aaaaaaaaaaaa in 1.0s')
+
+    def test_a_unit_that_ran_and_failed_fails_the_check(self):
+        part, _calls = self.fixtures(self.plan(), 110, 1, {'swamp/tests/a_test.ts': 'FAILED'}, 'a failed')
         self.assertEqual((part.status, part.output), ('FAILED', 'a failed'))
-        self.assertIn('2 of 3 runnable planned units passed for this tree; failed: swamp/tests/a_test.ts', part.detail)
-        again = FixtureRunner(self, 'passed', store=runner.store)
-        part = self.fixtures(self.plan(), 500, again)
-        self.assertEqual(again.ran(), [['swamp/tests/a_test.ts']])
-        self.assertEqual(part.status, 'passed')
+        self.assertIn('0 of 3 planned units passed; failed: swamp/tests/a_test.ts; deferred to CI: 2 units, 160s declared', part.detail)
 
-    def test_the_units_of_touched_files_run_first(self):
-        costs = {'swamp/tests/a_test.ts': 5, 'swamp/tests/b_test.ts': 5, 'swamp/tests/c_test.ts': 70}
-        runner = FixtureRunner(self, 'passed')
-        self.fixtures(self.plan(costs=costs), 500, runner, paths=['swamp/tests/c_test.ts'])
-        self.assertEqual(runner.ran(), [['swamp/tests/c_test.ts', 'swamp/tests/a_test.ts', 'swamp/tests/b_test.ts']])
-        # Without a touched unit, the cheapest units run first.
-        runner = FixtureRunner(self, 'passed')
-        self.fixtures(self.plan(costs=costs), 500, runner)
-        self.assertEqual(runner.ran(), [['swamp/tests/a_test.ts', 'swamp/tests/b_test.ts', 'swamp/tests/c_test.ts']])
-
-    def test_every_unit_of_a_large_plan_runs_in_runs_that_each_fit_one_ci_shard(self):
-        # One run of bin/ci-units stops its units at CI's shard deadline, so the check packs consecutive runs.
-        runner = FixtureRunner(self, 'passed')
-        part = self.fixtures(self.plan(), 500, runner)
-        self.assertEqual(runner.ran(), [[unit] for unit in self.UNITS])
-        self.assertEqual(part.status, 'passed')
-
-    def test_a_failed_tool_setup_fails_and_is_no_budget_skip(self):
-        runner = FixtureRunner(self, 'NOT RUN', code=1, output='Fixture tool setup FAILED; every selected case is NOT RUN')
-        part = self.fixtures(self.plan(10), 200, runner)
+    def test_a_failed_tool_setup_fails_and_is_no_deferral(self):
+        part, _calls = self.fixtures(self.plan(10), 200, 1, 'NOT RUN', 'Fixture tool setup FAILED; every selected case is NOT RUN')
         self.assertEqual(part.status, 'FAILED')
         self.assertIn('not run: ' + ', '.join(self.UNITS), part.detail)
-        self.assertNotIn('remain', part.detail)
+        self.assertNotIn('deferred', part.detail)
         self.assertIn('Fixture tool setup FAILED', part.output)
 
-    def test_only_the_checks_own_timeout_leaves_units_to_the_next_check(self):
-        part = self.fixtures(self.plan(10), 200, FixtureRunner(self, 'NOT RUN', code=None))
-        self.assertEqual(part.status, 'unfinished')
-        self.assertIn('3 remain, the next task:check of this tree continues them', part.detail)
-        part = self.fixtures(self.plan(10), 200, FixtureRunner(self, 'CANCELLED', code=1))
-        self.assertEqual(part.status, 'unfinished')
+    def test_units_the_checks_own_timeout_stops_are_deferred_to_ci(self):
+        part, _calls = self.fixtures(self.plan(10), 200, None, 'NOT RUN')
+        self.assertEqual(part.status, 'skipped')
+        self.assertIn('deferred to CI: 3 units, 30s declared: ' + ', '.join(self.UNITS), part.detail)
+        part, _calls = self.fixtures(self.plan(10), 200, 1, 'CANCELLED')
+        self.assertEqual(part.status, 'skipped')
 
-    def test_units_run_with_the_check_process_count(self):
-        runner = FixtureRunner(self, 'passed', workers=1)
-        self.fixtures(self.plan(), 500, runner)
-        self.assertEqual({argv[argv.index('--workers') + 1] for argv in runner.calls}, {'1'})
-        # Four lanes hold three 80 s units in one CI shard.
-        runner = FixtureRunner(self, 'passed', workers=4)
-        self.fixtures(self.plan(), 500, runner)
-        self.assertEqual(runner.ran(), [self.UNITS])
-        self.assertEqual(runner.calls[0][runner.calls[0].index('--workers') + 1], '4')
+    def test_units_pack_into_and_run_with_the_check_process_count(self):
+        # 100 s left for three 80 s units: one worker admits one, four workers admit three.
+        part, calls = self.fixtures(self.plan(), 110, 0, 'passed', workers=1)
+        self.assertEqual(self.ran(calls), ['swamp/tests/a_test.ts'])
+        self.assertEqual(calls[0][calls[0].index('--workers') + 1], '1')
+        self.assertIn('deferred to CI: 2 units, 160s declared: swamp/tests/b_test.ts, swamp/tests/c_test.ts', part.detail)
+        _part, calls = self.fixtures(self.plan(), 110, 0, 'passed', workers=4)
+        self.assertEqual(len(self.ran(calls)), 3)
+        self.assertEqual(calls[0][calls[0].index('--workers') + 1], '4')
 
     def test_the_fixture_workers_follow_orbit_check_processes(self):
         with patch.dict(os.environ, {'ORBIT_CHECK_PROCESSES': '1'}):
@@ -527,7 +490,7 @@ class CiPolicyTest(unittest.TestCase):
                  'ci_policy': lambda _deadline: order.append('ci-policy') or Part('ci-policy', 'passed'),
                  'fixture_population': lambda _plan, _deadline: order.append('fixture-population') or Part('fixture-population', 'passed'),
                  'pest_plan': lambda _jobs, _paths, _base: order.append('pest') or [],
-                 'fixtures': lambda _plan, _deadline, _table, _paths, _tree: order.append('fixtures') or Part('fixtures', 'passed'),
+                 'fixtures': lambda _plan, _deadline, _table, _paths: order.append('fixtures') or Part('fixtures', 'passed'),
                  'capacity_errors': lambda _plan, _table: []}
         output = io.StringIO()
         with patch.dict(check['main'].__globals__, stubs), redirect_stdout(output):

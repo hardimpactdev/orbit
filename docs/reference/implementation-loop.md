@@ -661,12 +661,12 @@ Before it writes, the gate removes the `review-*` directories its own Unix user 
 
 ### The scoped task check
 
-`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks what the task changed since its start commit, and the pin tests of the Pest jobs that change selects, so it catches in the copy what CI would otherwise catch after the push. A passed check means CI passes the same parts: each part runs as CI runs it, with CI's limits. It runs within a 15-minute budget.
+`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks what the task changed since its start commit, and the pin tests of the Pest jobs that change selects, so it catches in the copy what CI would otherwise catch after the push. Each part runs as CI runs it, with CI's limits. It runs in under five minutes. Fixture units it does not reach are deferred to CI and named.
 
 ```bash
 bin/task-check                    # against the start commit
 bin/task-check --base REF         # against another start commit
-bin/task-check --budget 600       # seconds for the whole run (default 900)
+bin/task-check --budget 200       # seconds for the whole run (default 270)
 bin/task-check --only pest,phpstan
 ```
 
@@ -683,7 +683,7 @@ The [start commit](/reference/tasks#start-commit) has one rule, which the tasks 
 | `ci-policy` | Always | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy and budget tests that CI's "Select build inputs" job runs on every PR |
 | `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
 | `pest <project>` | The plan selects the project's Pest job | See below |
-| `fixtures` | `bin/ci-units plan` plans units | Every planned unit that has not passed for this tree, through `bin/ci-units run`. A unit whose declared host program is missing does not run (see below) |
+| `fixtures` | `bin/ci-units plan` plans units | Directly touched planned units, then other planned units that fit the budget, through `bin/ci-units run`; the rest are deferred to CI (see below) |
 
 The `ci-policy` part runs on every change, whatever it touched, as CI runs it. CI's budget tests catch a fixture unit above CI's lane even when no CI input changed. The part runs before Pest and the fixtures, so the budget never leaves it out for them. On a loaded Beast it takes about 65 seconds.
 
@@ -713,23 +713,25 @@ The population check catches a Deno fixture whose registered cases differ from t
 
 The budget is wall time from the start of the run. Each part gets the time left as a hard limit. A part that reaches the end of the budget is stopped and reported as `skipped (budget: stopped after Ns)`. A part with no time left does not start and is reported as skipped.
 
-The default budget is 900 seconds. Orbit gives the `tasks.check` Operation about 29 minutes (`run_budget_seconds` 1740), which also covers the setup steps and the deliverables, so 15 minutes leave them room.
+The default budget is 270 seconds. A copy's check runs on Beast, the scarcest CPU, so it does not try to run every fixture unit of a large plan. CI's fixture shards run them in about five minutes.
 
 A fixture collection starts only with at least 15 seconds left; a collection that outlasts its 15-second limit, such as with a cold Deno cache, is a named budget skip.
 
-The `fixtures` part runs the unit set of CI's plan: the same planner, changed-file rules and not-run rules for capacity gaps, hosted and self-hosted units alike. Only a unit whose declared host program is missing in the copy is left out, and named. The units of files the change touched run first, then the rest, each group cheapest first. The check runs them in consecutive `bin/ci-units run` calls, each within one CI shard by the `pack` rule of `bin/ci-units`, so no call reaches CI's shard deadline. A call starts only when its declared seconds and setup fit the time left.
+The `fixtures` part runs units of CI's plan only: the same planner, changed-file rules and not-run rules for capacity gaps, hosted and self-hosted units alike. A unit whose declared host program is missing in the copy does not run, and is named.
 
-The check keeps each unit's verdict for the candidate tree in `<git-common-dir>/orbit/task-check-units.json`. The next check of the same tree runs only the units that have not passed; a failed unit runs again. A check of another tree starts afresh. While a runnable planned unit has not passed for this tree, the part is `unfinished` and the check fails. Its line names how many units remain, and that the next `task:check` of this tree continues them. A large plan, such as the 97 units of #3909, takes several checks.
+First come the units the change touches directly: the units of a changed fixture file, of a fixture whose declared input changed, or of a fixture whose metadata file under `.github/ci/fixtures/` changed. `bin/ci-units` owns that input mapping, `path_matches`, and its planner uses the same one. A change to the fixture machinery touches no fixture directly. The other planned units follow. Each group runs cheapest first. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
+
+The units that did not join, or that the check's own time limit stopped, are deferred to CI. The `fixtures` line names them with their count and total declared seconds, such as `deferred to CI: 76 units, 3200s declared: …`. A deferral never fails the check: CI runs those units. A unit that ran and failed fails the check.
 
 The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`.
 
-Only the check's own time limit stops a unit; such a unit remains for the next check of the tree. A unit that did not run for another reason, such as a failed tool setup, fails the `fixtures` part, with the end of the output. A capacity row of the CI plan, which `bin/ci-units` marks "Required checks will fail", is a failed `fixture-capacity` line.
+Only the check's own time limit stops a unit; such a unit is deferred to CI. A unit that did not run for another reason, such as a failed tool setup, fails the `fixtures` part, with the end of the output. A capacity row of the CI plan, which `bin/ci-units` marks "Required checks will fail", is a failed `fixture-capacity` line.
 
 Measure the check with `ORBIT_CHECK_PROCESSES=1`. Orbit sets that value for every task check, whatever the copy's CPU count, so PHPStan and Pest run in one process.
 
 #### Output
 
-Each part prints its output when it fails. The run ends with a summary of at most 12 KiB: one line per part, `passed`, `FAILED`, `unfinished`, `skipped` with its reason, or `not selected`, then the last lines of each failed part. The last line names the start commit and the total seconds. The command exits 1 when a part is `FAILED` or `unfinished`. [Stored result](/reference/tasks#stored-result) states the bounds and why the summary always reaches the stored output.
+Each part prints its output when it fails. The run ends with a summary of at most 12 KiB: one line per part, `passed`, `FAILED`, `skipped` with its reason, or `not selected`, then the last lines of each failed part. The last line names the start commit and the total seconds. The command exits 1 when a part failed. [Stored result](/reference/tasks#stored-result) states the bounds and why the summary always reaches the stored output.
 
 A part whose program is missing fails with `<program>: required tool not found`. The command installs nothing.
 
