@@ -1,9 +1,9 @@
 order = 1460
 cases = [
   "a deployment without a step that has inputs reads no skip list, and its steps run with the command they had",
+  "each step runs as agent, the workspace's owner, in the workspace with only its own environment",
   "a step with inputs that the checkout named unchanged is skipped; any other step runs",
   "a step with inputs that runs and passes moves its pending record to done; a failed one keeps it pending",
-  "each step runs as agent, the workspace's owner, in the workspace with only its own environment",
 ]
 file = "swamp/tests/workflow_instance_deploy_steps_test.ts"
 cost = 1
