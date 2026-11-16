@@ -383,6 +383,8 @@ The test for busy is the one that the runner state script uses: the runner is bu
 
 The release is the last step of a proof copy's destroy, after the container is gone. So the stopped runners start again only when the destroy of the last copy on the Node succeeds. A run end of any kind, a pass, a failure, a cancel or a timeout, cancels the group with discard, which destroys the copy.
 
+A copy create that fails after the hold destroys the copy too. A create that fails or is cancelled fails the copy's group and queues the copy's destroy ([removal by Orbit](/reference/tasks#removal-by-orbit)). The run reads such a copy as failed and ends, and its group's cancel destroys the copy if that destroy did not. A create that ends by its expired budget leaves the group reserved, but the run reads its copy as failed all the same, so the same cancel destroys it.
+
 A destroy that fails keeps the copy and its hold, and the runners stay stopped. The watchdog asks again for the cancel of each group that still owns a copy, until `ProofRunWatch::CopyGiveUpHours` after the run's end. After that, the copy shows in the Instance list, and its runners start again only when an operator destroys it. A runner that is gone by the release is skipped. The [runner view](/reference/ci-runner-view) shows a stopped runner as stopped.
 
 The script never registers, deletes or creates a runner, and never stops a container. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) still owns the containers.
