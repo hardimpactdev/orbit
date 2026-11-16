@@ -15,6 +15,8 @@ use App\Domain\Fleet\FleetRebootAlerts;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\InstanceRemovalReaper;
+use App\Domain\Instances\InstanceState;
 use App\Domain\NodeFacts\NodeAgentLiveness;
 use App\Domain\NodeFacts\NodeAgentState;
 use App\Domain\NodeFacts\NodeFactKind;
@@ -22,6 +24,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Instance;
+use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\NodeFact;
 use Carbon\CarbonImmutable;
@@ -80,6 +83,7 @@ final readonly class FactDoctor
             DoctorFamily::Role => $this->roleFamily($inspect($family)),
             DoctorFamily::Process => $this->processFamily($inspect($family)),
             DoctorFamily::Firewall => $this->firewallFamily($inspect($family)),
+            DoctorFamily::Instance => $this->instanceFamily($inspect($family)),
             default => DoctorFamilyReportData::fromIssues($family, 0, []),
         }, $families), $agent);
     }
@@ -290,6 +294,30 @@ final readonly class FactDoctor
                 $check->observed($rule->id, 'firewall.rule_mismatch', 'firewall.rule_missing');
             }
         });
+
+        return $check->report();
+    }
+
+    /**
+     * A failed destroy that the removal reaper started again MaxRetries times and that failed again (InstanceRemovalReaper::stuck).
+     * It reads the Gateway's own records, so it needs no fact; the Instance's deletion resolves its Problem as `resource_gone`.
+     */
+    private function instanceFamily(DoctorFamilyInspection $check): DoctorFamilyReportData
+    {
+        $instances = Instance::query()->where('node_id', $check->node->id)->where('status', InstanceState::Removing)->orderBy('id')->get();
+        foreach ($instances as $instance) {
+            $removal = InstanceRemovalMember::query()->live()->where('instance_id', $instance->id)->with('removal')->first()?->removal;
+            if ($removal === null || $removal->requested_instance_id !== $instance->id) {
+                continue;
+            }
+            if (InstanceRemovalReaper::stuck($removal)) {
+                $step = $removal->failed_step->value ?? 'unknown';
+                $check->issue(InstanceDoctorIssueCode::RemovalStuck->value, $instance->id, $instance->name,
+                    sprintf('Removal %s failed at %s with %s after %d automatic retries.', $removal->id, $step, $removal->error_code ?? 'unknown', $removal->retry_count),
+                    'removed', $step.': '.($removal->error_code ?? 'unknown'));
+            }
+            $check->observed($instance->id, InstanceDoctorIssueCode::RemovalStuck->value);
+        }
 
         return $check->report();
     }
