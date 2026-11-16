@@ -552,6 +552,48 @@ it('sends no thread when --thread is omitted, so a task copy continues the role\
         && json_decode((string) $request->body(), true) === ['role' => 'implementer', 'prompt' => 'Fix the failing test.']);
 });
 
+it('prints the agent thread and the agent\'s reply under the turn\'s outcome, and keeps both in JSON', function (bool $json): void {
+    $seen = [];
+    $result = ['state' => 'done', 'agent_id' => 9, 'reply' => "Committed d867aba2.\nThe tests pass."];
+    cli_deploy_gateway([
+        cli_operation(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'status' => 'succeeded', 'result' => $result, 'poll_after_seconds' => null]),
+    ], $seen, TurnTaskRequest::class, ['kind' => 'tasks.copy_turn', 'target_type' => 'task_group']);
+
+    expect(Artisan::call('task:turn', ['task' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+    $output = Artisan::output();
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toMatchArray(['agent_id' => 9, 'reply' => "Committed d867aba2.\nThe tests pass."]);
+    } else {
+        expect($output)->toContain("Agent thread: 9\nReply\n  Committed d867aba2.\n  The tests pass.\n")
+            ->and(strpos($output, 'Turn succeeded.'))->toBeLessThan((int) strpos($output, 'Agent thread: 9'));
+    }
+})->with(['human' => false, 'JSON' => true]);
+
+it('prints no reply for a turn whose agent wrote none', function (): void {
+    $seen = [];
+    cli_deploy_gateway([
+        cli_operation(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'status' => 'failed', 'error_code' => 'tasks.copy_turn_failed',
+            'result' => ['state' => 'failed', 'agent_id' => 9, 'reply' => null], 'poll_after_seconds' => null]),
+    ], $seen, TurnTaskRequest::class, ['kind' => 'tasks.copy_turn', 'target_type' => 'task_group']);
+
+    expect(Artisan::call('task:turn', ['task' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--no-interaction' => true]))->toBe(1);
+
+    expect(Artisan::output())->toContain('Turn failed.', 'Agent thread: 9', 'Reply: none');
+});
+
+it('prints no agent lines for a turn whose result names no agent thread', function (): void {
+    $seen = [];
+    cli_deploy_gateway([
+        cli_operation(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'status' => 'failed', 'error_code' => 'swamp.run_failed',
+            'result' => ['error_code' => 'swamp.run_failed'], 'poll_after_seconds' => null]),
+    ], $seen, TurnTaskRequest::class, ['kind' => 'tasks.copy_turn', 'target_type' => 'task_group']);
+
+    expect(Artisan::call('task:turn', ['task' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--no-interaction' => true]))->toBe(1);
+
+    expect(Artisan::output())->toContain('Turn failed.')->not->toContain('Agent thread:')->not->toContain('Reply');
+});
+
 describe('task:publish', function (): void {
     beforeEach(function (): void {
         MockClient::global(gateway_fixture_mock());
