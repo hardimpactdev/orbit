@@ -151,9 +151,11 @@ A rollback has no capacity check. No deploy runs beside it, so old runs in the p
 
 **Traffic.** Each request through any Route of the Instance, a Cluster Route included, writes the Instance's access log on the Node's Caddy. A request with `X-Orbit-Probe: 1`, such as readiness, does not count. An uptime check without that header keeps live awake.
 
-**The visitor.** A production visitor never gets the progress page. When a request meets the asleep marker, Caddy holds it, starts or joins the wake, and passes it to live after the wake. The targets are about 1.5 s for a warm wake with the prepared restore, and 2.4 s for a cold one, in which pages come back from swap one fault at a time. After 10 s, or after a failed wake, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance. 
+**The visitor.** A production visitor never gets the progress page. When a request meets the asleep marker, Caddy calls the activation endpoint, and the Gateway admits or joins the wake and answers at once. Then the Node's Caddy holds the request: it tries the live upstream again until the marker is gone, and proxies the request to live.
 
-A failed wake is stored as in development: each later request gets that `503` at once, and only `instance:wake` starts a new wake. The Gateway answers each activation call, so a sleeping live wakes only while the Gateway answers.
+The targets are about 1.5 s for a warm wake with the prepared restore, and 2.4 s for a cold one, in which pages come back from swap one fault at a time. After 10 s, or after a failed wake, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance. 
+
+A failed wake is stored as in development. While it is stored, Caddy answers `503` with `Retry-After: 30` at once. The first request 30 s or more after the failure starts one new wake by itself; `instance:wake` retries at once. The hold takes no Gateway worker, but a wake needs the Gateway to admit it.
 
 **Schedules and workers.**
 

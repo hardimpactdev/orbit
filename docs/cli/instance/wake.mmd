@@ -81,16 +81,20 @@ sequenceDiagram
     %%> - a cancel between Caddy's answer and the Node calls: the Gateway makes no Node call; a cancel during the resume keeps the Operation cancelled, and a late outcome never overwrites it
   end
   opt Caddy, for a production visit, planned
-    GW-->>CL: Pass on after the wake<br/>bound 10 s · else 503
+    GW-->>CL: Admitted, at once<br/>Caddy holds · bound 10 s
     %%> What it does:
-    %%> - Caddy holds the visitor's request; the Gateway answers its activation call once the marker is gone, and Caddy passes the request to live
+    %%> - the Gateway admits or joins the wake and answers at once, as in development; no Gateway worker waits for the wake
+    %%> - Caddy on the Node holds the visitor's request: it tries the live upstream again until the asleep marker is gone, within 10 s, and then proxies the request to live
     %%> - a person, an API client or a webhook sees only a slower first answer; targets about 1.5 s with the prepared restore, 2.4 s without
     %%> - the wake reads the live link after the power lock and acts only on that container; after a switch it finds no marker, `wake: already_running`
     %%> Why:
     %%> - a progress page with status 401 breaks an API client and a webhook (ADR 0265)
     %%> On failure:
-    %%> - after 10 s, or after a failed wake, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance; the wake goes on
-    %%> - a failure is stored as in development: each later request gets that `503` at once and starts no wake; only `instance:wake` starts a new one
+    %%> - after 10 s, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance; the wake goes on
+    %%> - a failure is stored as in development; while it is stored, the Gateway says so and Caddy answers `503` with `Retry-After: 30` and the same page at once
+    %%> Retry:
+    %%> - the first request 30 s or more after the failure starts one new wake by itself: at most one retry each 30 s
+    %%> - `instance:wake` retries at once
     %%> - when the fast wake fell back to the run below, the hold goes on until the run ends or the bound
   end
   GW->>SW: Start run, full intent<br/>operation-instance-wake
@@ -166,6 +170,7 @@ sequenceDiagram
     %%> - the asleep marker stays; the Route shows the failure page with Try again
     %%> Retry:
     %%> - Try again or the same command; a start of a running container changes nothing
+    %%> - planned, a production live: the first visit 30 s or more after the failure starts one new wake by itself; until then Caddy answers `503` with `Retry-After: 30`
   end
   loop until terminal
     CL->>GW: operation:show TASK

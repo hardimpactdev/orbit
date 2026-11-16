@@ -91,9 +91,11 @@ A request with `X-Orbit-Probe: 1` does not count, such as the readiness check an
 
 ### 8. A visitor waits for the wake
 
-A production visitor never gets the development progress page with status 401. When a request meets the asleep marker, Caddy holds it, starts or joins the Instance's `instance.wake`, and passes the request to live once the wake ended. A person, an API client or a webhook only sees a slower first answer. The targets are about 1.5 s for a warm wake, in which the fast wake's [prepared restore](/reference/prepared-restore) reads the recorded pages back, and about 2.4 s for a cold wake, in which the pages come back from swap one fault at a time. The live proof measures them.
+A production visitor never gets the development progress page with status 401. When a request meets the asleep marker, Caddy calls the activation endpoint. The Gateway admits or joins the Instance's `instance.wake` and answers at once, as in development, so a held request takes no Gateway worker. Then the Node's Caddy itself holds the request: it tries the live upstream again until the asleep marker is gone, and then proxies the request to live. A person, an API client or a webhook only sees a slower first answer. The targets are about 1.5 s for a warm wake, in which the fast wake's [prepared restore](/reference/prepared-restore) reads the recorded pages back, and about 2.4 s for a cold wake, in which the pages come back from swap one fault at a time. The live proof measures them.
 
-The hold has a bound of 10 s. After it, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance. The wake goes on, and the next request after it finds live awake. A failed wake answers the same `503` and stores the failure as in development. While the failure is stored, each request gets that `503` at once and starts no new wake. `instance:wake` starts a new one.
+The hold has a bound of 10 s. After it, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance. The wake goes on, and the next request after it finds live awake.
+
+A failed wake stores the failure as in development. While it is stored, the activation endpoint says so, and Caddy answers `503` with `Retry-After: 30` and the same plain page at once. The first request 30 s or more after the failure starts one new wake by itself, so a stored failure gets at most one retry each 30 s. `instance:wake` still retries at once.
 
 The `app-prod` role installs the power helper and the fast wake's worker, as the `app-dev` role does.
 
@@ -139,8 +141,8 @@ The live proof of ADR 0263 changes:
 - An uptime check without the probe header keeps live awake.
 - An Instance with PowerSync never sleeps while its Node service is attached.
 - A Node reboot loses the frozen state. Live boots with its units, and its first visitor waits only for the wake's check.
-- A sleeping live wakes only while the Gateway answers, because Caddy's activation call and the fast wake go through it. A held request takes one Gateway worker for up to 10 s.
-- A failed wake keeps live's Routes on `503` until `instance:wake` succeeds.
+- A sleeping live wakes only while the Gateway answers, because the Gateway admits each wake. The hold itself is in the Node's Caddy and takes no Gateway worker.
+- After a failed wake, live's Routes answer `503` until a retry succeeds. A visit starts one retry each 30 s; `instance:wake` retries at once.
 
 ## Affects
 
