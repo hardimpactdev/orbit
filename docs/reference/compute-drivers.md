@@ -630,9 +630,9 @@ From the VM, the Gateway takes only commit IDs and pack data. A commit ID must b
 
 Native Swamp publication consumes its repository token through the shared private reader on the admitted worker. The separate Composer setup token described above is a narrow exception for dependency downloads.
 
-An `incus` command refuses a command that carries a source Git credential with `task_vm.git_credential_refused` before it runs. The Gateway's SSH executor sends a command without asking whether its target is a task VM, because no task VM exists ([old paths](/reference/old-paths#the-task-vm-readers)). `project:update` reads no task VM either: it sends each checkout's preflight the token of the Project's source access.
+No agent command runs through `incus` any more, so nothing refuses a command for the source Git credential it carries. S10d removed that transport with its refusal `task_vm.git_credential_refused` ([old paths](/reference/old-paths#the-guest-agent-chain)). The Gateway's SSH executor sends a command without asking whether its target is a task VM, because no task VM exists ([old paths](/reference/old-paths#the-task-vm-readers)). `project:update` reads no task VM either: it sends each checkout's preflight the token of the Project's source access.
 
-The refusal knows a credential by the mark that `GitReadScript` puts on its input. A test fails when other code builds the credential header. It also fails when a new file sends remote commands with GitHub access in reach, so each such path gets a review.
+`GitReadScript` still marks its input as one that carries a credential. A test fails when other code builds the credential header. It also fails when a new file sends remote commands with GitHub access in reach, so each such path gets a review.
 
 The checkout keeps the Project repository URL as `origin`. After setup ends, the agent can run Git there, but its environment holds no setup credential. So it cannot fetch from or push to a private repository.
 
@@ -1239,7 +1239,6 @@ Every task VM error code starts with `task_vm.`. The setup commands print the co
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
 | `task_vm.vm_missing` | 502 | A frozen `incus` agent command found the task VM gone from its host |
-| `task_vm.git_credential_refused` | 409 | A command that carries a GitHub credential was about to run through an `incus` command. See [Git on a task VM](#git-on-a-task-vm) |
 
 ### Limits
 
