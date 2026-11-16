@@ -481,8 +481,13 @@ def phase_main(phase, raw):
             )
         # The same CLI-only file as the container phase, such as PCOV for the Project's PHP: `php` and `frankenphp php-cli` (SAPI
         # name `cli`) read php-cli.ini, the FrankenPHP server (SAPI name `frankenphp`) never does. A Project without it has none.
-        cli_ini = c["php_cli_ini"]
-        if cli_ini is not None:
+        # An `extension=` line stays only when the runtime folder, mounted here from the Node, holds its module: a Gateway release
+        # before the Node's converge must not make every PHP CLI call warn. A file with no line left goes, as for a Project without
+        # it. The container phase at the next start or deploy writes the line once the Node holds the module.
+        lines = [line for line in (c["php_cli_ini"] or "").splitlines()
+                 if not line.startswith("extension=") or root(line.removeprefix("extension=")).is_file()]
+        cli_ini = "".join(line + "\n" for line in lines)
+        if cli_ini:
             write(PHP_CLI_INI, cli_ini)
         elif root(PHP_CLI_INI).is_file():
             root(PHP_CLI_INI).unlink()

@@ -48,6 +48,9 @@ function transform(task: Task): Task {
   return task;
 }
 
+/** The container phase read the Node's runtime folder for the PCOV module of the fixture's php-cli.ini. */
+const readsPcov = /Read which CLI-only PHP modules the runtime folder holds\] \*+\nok: \[node\] => \(item=extension=\/opt\/orbit-runtime\/current\/php\/8\.5\/modules\/pcov\.so\)/;
+
 const git = (cwd: string, ...args: string[]) => {
   const done = new Deno.Command("git", {
     args: ["-c", "user.name=Orbit", "-c", "user.email=orbit@example.test", ...args],
@@ -103,6 +106,9 @@ function fixture() {
   Deno.copyFileSync(new URL("tasks/instance-node-runtime.yml", root), `${folder}/tasks/instance-node-runtime.yml`);
   Deno.copyFileSync(new URL("tasks/instance-fleet.yml", root), `${folder}/tasks/instance-fleet.yml`);
   Deno.mkdirSync(`${folder}/run`);
+  // The Node's runtime folder, which the fake shows the container at /opt/orbit-runtime: a converged Node holds PCOV for PHP 8.5.
+  Deno.mkdirSync(`${folder}/orbit-runtime/current/php/8.5/modules`, { recursive: true });
+  Deno.writeTextFileSync(`${folder}/orbit-runtime/current/php/8.5/modules/pcov.so`, "");
   // The Project's repository, with one commit on main.
   const source = `${folder}/source`;
   Deno.mkdirSync(source);
@@ -593,6 +599,8 @@ Deno.test({
       for (const phases of [["start", "fetch"], ["checkout"], ["seed", "check"]]) {
         const result = f.phases(phases);
         assert(result.ok, `${phases}: ${result.output}`);
+        // The start converges the CLI-only PHP settings against the Node's runtime folder.
+        if (phases[0] === "start") assert(readsPcov.test(result.output), result.output);
         // The checkout's repack passed (one that did not names itself in an `orbit-workspace-repack=` line) and rolled the fetched
         // pack into the first one; it removed only the hour-old temporary files.
         if (phases[0] === "checkout") {
@@ -1782,6 +1790,9 @@ Deno.test({
       const clone = `${f.folder}/containers/instance-8`;
       const result = f.run("clone");
       assert(result.ok, result.output);
+      // The clone converges the CLI-only PHP settings against the Node's runtime folder, which holds PCOV.
+      assert(readsPcov.test(result.output), result.output);
+      assertEquals(Deno.readTextFileSync(`${clone}/etc/orbit/php/php-cli.ini`), f.container.php_cli_ini);
       // At its first boot nothing of the default starts: no FrankenPHP on the default's address, no worker on its database.
       assertEquals(f.state().containers["instance-8"].booted, [[]]);
       assertEquals(f.state().containers["instance-8"].bootMachineIds, ["696e7374616e63652d382d2d2d2d2d2d"]);
@@ -1940,7 +1951,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, and a Project without PHP loses php-cli.ini",
+  name: "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, a module the Node lacks leaves its line out until the Node holds it, and a Project without PHP loses php-cli.ini",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1963,23 +1974,32 @@ Deno.test({
       assertEquals(setting("auto_prepend_file"), bridge);
       assertEquals(f.state().files["/etc/orbit/php/conf.d/99-orbit-runtime.ini"], { uid: "0", gid: "0", mode: "0644" });
 
-      // A running unit read the old settings at its start, so a repair restarts the running Orbit units; a rerun does not.
-      const tryRestarts = () =>
-        (f.state().systemctl ?? []).filter((call: string[]) => call[0] === "try-restart").map((call: string[]) => call.join(" "));
-      const before = tryRestarts().length;
-      Deno.writeTextFileSync(settings, "memory_limit = 128M\n");
-      const repaired = f.run("start");
-      assert(repaired.ok, repaired.output);
-      assertEquals(setting("memory_limit"), "1G");
-      assertEquals(setting("auto_prepend_file"), bridge);
-      assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
-
-      // The CLI-only file holds the intent's PCOV line. A queue worker is a PHP CLI too: a repair restarts the running units.
+      // The CLI-only file holds the intent's PCOV line: the Node's runtime folder holds the module.
       const cliPath = "/etc/orbit/php/php-cli.ini";
       const cli = `${rootfs}${cliPath}`;
       const pcov = "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n";
       assertEquals(Deno.readTextFileSync(cli), pcov);
       assertEquals(f.state().files[cliPath], { uid: "0", gid: "0", mode: "0644" });
+
+      // A running unit read the old settings at its start, so a repair restarts the running Orbit units; a rerun does not. The same
+      // start meets a Gateway release before the Node's converge: the runtime folder lacks the module, so its line goes and, with no
+      // line left, the phase removes Orbit's file.
+      const tryRestarts = () =>
+        (f.state().systemctl ?? []).filter((call: string[]) => call[0] === "try-restart").map((call: string[]) => call.join(" "));
+      const before = tryRestarts().length;
+      Deno.writeTextFileSync(settings, "memory_limit = 128M\n");
+      const module = `${f.folder}/orbit-runtime/current/php/8.5/modules/pcov.so`;
+      Deno.removeSync(module);
+      const repaired = f.run("start");
+      assert(repaired.ok, repaired.output);
+      assertEquals(setting("memory_limit"), "1G");
+      assertEquals(setting("auto_prepend_file"), bridge);
+      assertThrows(() => Deno.lstatSync(cli));
+      assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
+
+      // Once the Node holds the module, the next start or deploy writes its line again and repairs a changed file: no other repair is
+      // needed. A queue worker is a PHP CLI too: the write restarts the running units.
+      Deno.writeTextFileSync(module, "");
       Deno.writeTextFileSync(cli, "extension=/tmp/other.so\n");
       const cliRepaired = f.run("start");
       assert(cliRepaired.ok, cliRepaired.output);

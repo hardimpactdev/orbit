@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "4c514be65f2b15c85364835b31e7b71ffb117fe3a33c629f7c4bdc6c296faad0"
+source_sha256 = "68a97a1b599182a451e71da10b2e4cce90ad00b34ed2aad0d30a40f45b472fc3"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -40,7 +40,7 @@ cases = [
   "the workspace stays writable for its group before and after the deploy steps, whoever installed last; Git excludes the .env once, beside the container's own lines",
   "the agent phase trusts only its workspace and preserves other Git settings on reruns",
   "the agent can commit with its default identity and keeps each configured identity value",
-  "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, and a Project without PHP loses php-cli.ini",
+  "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, a module the Node lacks leaves its line out until the Node holds it, and a Project without PHP loses php-cli.ini",
   "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start, never into a running one",
   "start refuses a NIC with missing ACL before starting the container",
   "start refuses a NIC with permissive default before starting the container",
@@ -99,7 +99,7 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 4946
+cost = 4949
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   # The run after a fast wake of its Operation (41s locally, run in full before the PR): a 72nd slice would push the file to 9 hosted
@@ -232,7 +232,7 @@ inputs = [
   "the workspace stays writable for its group before and after the deploy steps, whoever installed last; Git excludes the .env once, beside the container's own lines" = 94 # hosted run 43787856522: 81.3s x 1.15, rounded up
   "the agent phase trusts only its workspace and preserves other Git settings on reruns" = 67 # hosted run 43787856522: 57.6s x 1.15, rounded up
   "the agent can commit with its default identity and keeps each configured identity value" = 92 # hosted run 43787856522: 79.4s x 1.15, rounded up
-  "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, and a Project without PHP loses php-cli.ini" = 93 # hosted run 43787856522: 80.4s x 1.15, rounded up
+  "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, a module the Node lacks leaves its line out until the Node holds it, and a Project without PHP loses php-cli.ini" = 96 # hosted run 43787856522: 80.4s x 1.15, rounded up; plus 3s ESTIMATE for the runtime folder's module check (local mean 29.3s before, 30.3s with it over three runs each: 1s x 2.1, rounded up)
   "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start, never into a running one" = 80 # hosted run 43787856522: 69.4s x 1.15, rounded up
   "start refuses a NIC with missing ACL before starting the container" = 50 # hosted run 43787856522: 43.2s x 1.15, rounded up
   "start refuses a NIC with permissive default before starting the container" = 37 # hosted run 43787856522: 31.4s x 1.15, rounded up
