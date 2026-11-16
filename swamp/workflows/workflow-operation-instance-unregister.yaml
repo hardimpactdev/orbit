@@ -1,0 +1,269 @@
+id: 89c742e4-c4fd-439a-b62e-be7db0a056eb
+name: operation-instance-unregister
+autoContinue: false
+description: Orbit forgets a host checkout Instance and keeps its folder; destroy's Route, Process and hibernation steps, and no source, teardown, database or Git step.
+vaults:
+- orbit-control-inputs
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      const: instance.unregister
+    intent:
+      type: object
+      properties:
+        removal_id:
+          type: string
+        node_id:
+          type: integer
+        instance_id:
+          type: integer
+        project_id:
+          type: integer
+        name:
+          type: string
+        route_withdrawn:
+          type: boolean
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              instance_id:
+                type: integer
+              route_id:
+                type:
+                - integer
+                - 'null'
+            required:
+            - instance_id
+            - route_id
+            additionalProperties: false
+        additional_route_ids:
+          type: array
+          items:
+            type: integer
+        ssh_execution:
+          type: object
+        route_mutations:
+          type: object
+        processes:
+          type: array
+          items:
+            type: object
+            properties:
+              process_id:
+                type: integer
+              runtime:
+                type: string
+              name:
+                type: string
+              on_demand:
+                type: boolean
+              vite:
+                type:
+                - object
+                - 'null'
+            required:
+            - process_id
+            - runtime
+            - name
+            additionalProperties: false
+        hibernation:
+          type: array
+          items:
+            type: object
+            properties:
+              instance_id:
+                type: integer
+              path:
+                type: string
+            required:
+            - instance_id
+            - path
+            additionalProperties: false
+        check_paths:
+          type: array
+          items:
+            type: string
+      required:
+      - removal_id
+      - node_id
+      - instance_id
+      - project_id
+      - name
+      - members
+      - additional_route_ids
+      - ssh_execution
+      - route_mutations
+      - processes
+      - hibernation
+      - check_paths
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^[a-z][a-z0-9_.-]{0,254}$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+# The steps of operation-instance-destroy that run without a source effect (docs/cli/instance/unregister.mmd). Their behaviors keep
+# destroy's names, so an unregister and a destroy on one Node share one bounded set of definitions.
+jobs:
+- name: unregister
+  labels:
+    role: swamp
+  steps:
+  - name: Withdraw the Route
+    labels:
+      role: swamp
+    # A retry whose earlier run withdrew the Route skips it; the Gateway took no Route hold for that retry.
+    guard: '${{ ("route_withdrawn" in inputs.intent && inputs.intent.route_withdrawn == true) || (inputs.intent.members.all(m, m.route_id == null) && size(inputs.intent.additional_route_ids) == 0) }}'
+    task:
+      type: workflow
+      workflowIdOrName: ${{ "route-withdraw" }}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        side: forward
+        intent: ${{ inputs.intent }}
+        execution_secrets: {}
+  - name: Release the Route Nodes
+    # As in destroy: the Route is withdrawn, so the Route-serving Nodes go to the next Route write now. A refused call never fails
+    # the run; its line says whether the release happened.
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    dependsOn:
+    - step: Withdraw the Route
+      condition:
+        type: always
+    guard: ${{ !("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && steps["Withdraw the Route"].outputs.result.ready) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("route-hold-release-withdrawn-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64)).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: "status=$(curl --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --output /dev/null --write-out '%{http_code}' --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\") || status=000\nif [ \"$status\" = 200 ]; then released=true; else released=false; fi\nprintf '{\"route_hold_released\":%s,\"http_status\":\"%s\"}\\n' \"$released\" \"$status\"\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+  - name: Stop, remove Processes
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Withdraw the Route
+      condition:
+        type: always
+    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready)
+      }}
+    forEach:
+      item: process
+      in: ${{ inputs.intent.processes }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-destroy
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.destroy
+        intent:
+          control: ${{ self.process }}
+          ssh_execution: ${{ inputs.intent.ssh_execution }}
+        execution_secrets: {}
+  - name: Remove hibernation files
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Withdraw the Route
+      condition:
+        type: always
+    - step: Stop, remove Processes
+      condition:
+        type: always
+    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready)
+      }}
+    writes: true
+    forEach:
+      item: file
+      in: ${{ inputs.intent.hibernation }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ ("instance-destroy-hibernation-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64) + "-" + string(self._index)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        path: ${{ self.file.path }}
+        ensure: absent
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+  - name: Check units gone
+    # The one end check: every removed unit and hibernation file is absent. It names no checkout path. A withdrawal that did not
+    # hold skipped the steps above, so the check fails the run then too.
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Withdraw the Route
+      condition:
+        type: always
+    - step: Release the Route Nodes
+      condition:
+        type: always
+    - step: Stop, remove Processes
+      condition:
+        type: always
+    - step: Remove hibernation files
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-destroy-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "instance-destroy-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 70
+        argv: '${{ ["/usr/bin/timeout", "60", "/bin/sh", "-c", "[ \"$1\" = held ] || { echo route.withdrawal_failed >&2; exit 1; }; shift; for p; do [ ! -e \"$p\" ] || { echo \"$p still exists\" >&2; exit 1; }; done", "sh",
+          ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) ? "unheld" : "held"] + inputs.intent.check_paths }}'
