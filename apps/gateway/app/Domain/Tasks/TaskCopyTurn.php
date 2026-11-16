@@ -105,9 +105,11 @@ final readonly class TaskCopyTurn
             $candidate = (string) $check->commit_sha;
         }
         $provider = null;
+        $options = [];
         if ($thread === null) {
             $agent = TaskCopyAgent::forNewThread($group, $role);
             $provider = $agent['instance'];
+            $options = $agent['options'];
             $thread = AgentThread::query()->create([
                 'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
                 'driver' => self::Driver, 'runtime_key' => $runtime, 'external_id' => (string) Str::uuid(),
@@ -132,7 +134,8 @@ final readonly class TaskCopyTurn
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
             'turn' => ['t3' => $instance->runtime()->firstOrFail()->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
-                'candidate' => $candidate, 'settle' => $settle, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
+                // A new thread's model options: T3 runs its every turn with them (InstanceContainer::providerOptions).
+                'options' => $options, 'candidate' => $candidate, 'settle' => $settle, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
                 'prompt' => TaskTurnPrompt::compose($task, $prompt, now())],
         ];
     }
