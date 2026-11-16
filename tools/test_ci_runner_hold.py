@@ -13,7 +13,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'apps/gateway/resources/ci-runner/hold.py'
 
-# The fake reads and writes the runners in FIXTURE_RUNNERS: {name: {"running": bool, "service": str, "busy": bool}}. `incus exec`
+# The fake reads and writes the runners in FIXTURE_RUNNERS: {name: {"running": bool, "service": str, "busy": bool}}. A runner with
+# "no_service" has no .service file (every exec exits 3); one with "read_fails" fails its state read. `incus exec`
 # answers the script's read, stop and start commands from that state, and every call is logged.
 INCUS = '''#!{python}
 import json, os, sys
@@ -28,6 +29,10 @@ if sys.argv[1] == 'list':
 name = sys.argv[sys.argv.index('--') - 1]
 script = sys.argv[-1]
 runner = runners[name]
+if runner.get('no_service'):
+    sys.exit(3)
+if 'is-active' in script and runner.get('read_fails'):
+    sys.exit(1)
 if 'is-active' in script:
     print('service=' + runner['service'])
     if runner['busy']:
@@ -103,6 +108,24 @@ class CiRunnerHoldTest(unittest.TestCase):
         self.assertEqual(self.services(), {'ci-a': 'active', 'ci-b': 'active', 'ci-c': 'inactive', 'ci-d': 'inactive'})
         self.assertEqual(self.recorded(), ['ci-c', 'ci-d'])
         self.assertEqual(self.stops(), ['ci-c', 'ci-d'])
+
+    def test_a_runner_whose_state_cannot_be_read_counts_as_running_and_busy(self):
+        self.given(**{'ci-a': {'read_fails': True}, 'ci-b': {}, 'ci-c': {}})
+
+        self.call('hold', 'instance-8', '3')
+
+        # Three places, one hold: two may run. The unread runner counts and is never stopped, so one idle runner stops.
+        self.assertEqual(self.stops(), ['ci-b'])
+        self.assertEqual(self.recorded(), ['ci-b'])
+
+    def test_a_runner_without_a_service_file_is_skipped(self):
+        self.given(**{'ci-a': {'no_service': True}, 'ci-b': {}, 'ci-c': {}})
+
+        self.call('hold', 'instance-8', '2')
+
+        # Two places, one hold: one may run. The runner without a service is no runner: it is neither counted nor stopped.
+        self.assertEqual(self.stops(), ['ci-b'])
+        self.assertEqual(self.recorded(), ['ci-b'])
 
     def test_a_runner_that_turns_busy_before_its_stop_keeps_its_job_and_is_not_recorded(self):
         self.given(**{'ci-a': {}, 'ci-b': {}})
