@@ -131,7 +131,7 @@ final readonly class ContainerDeployOutcome
      * The refresh's own words for each part (docs/reference/development-containers.md#what-a-refresh-skips), or null when the run
      * has no refresh or its words are not these.
      *
-     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,converge_nodes:list<string>,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,shrink:string,shrink_reason:string,swamp:string,swamp_reason:string,swamp_version:?string,seconds:array<string,int>}|null
+     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,converge_nodes:list<string>,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,shrink:string,shrink_reason:string,swamp:string,swamp_reason:string,swamp_version:?string,host?:'converged'|'kept'|'skipped_idmap_small',seconds:array<string,int>}|null
      */
     private static function fleetRefresh(mixed $raw): ?array
     {
@@ -176,6 +176,12 @@ final readonly class ContainerDeployOutcome
             'base' => $refresh['base'], 'base_containers' => $containers, 'record' => $refresh['record'], 'tools' => $refresh['tools'],
             'tools_reason' => $refresh['tools_reason'], 'shrink' => $refresh['shrink'], 'shrink_reason' => $refresh['shrink_reason'],
             'swamp' => $refresh['swamp'], 'swamp_reason' => $refresh['swamp_reason'], 'swamp_version' => $swampVersion];
+        // What it did with the Instance host on nested-app-dev. Unlike the parts above it is optional: a run of an Ansible from before the
+        // part (such as after a rollback) names none, and its other parts are still true, so a missing or unknown word only leaves `host`
+        // out and drops nothing else.
+        if (in_array($raw['host'] ?? null, ['converged', 'kept', 'skipped_idmap_small'], true)) {
+            $refresh['host'] = $raw['host'];
+        }
         $seconds = is_array($raw['seconds'] ?? null) ? $raw['seconds'] : [];
         $refresh['seconds'] = [];
         foreach (['gateway', 'converge', 'ready', 'base', 'tools'] as $part) {
