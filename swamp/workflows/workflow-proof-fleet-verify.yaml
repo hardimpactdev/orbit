@@ -121,7 +121,8 @@ jobs:
         ssh_name: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id) + ("copy" in inputs.intent ? "-" + string(inputs.intent.instance_id) : "")).split(".").join("-") }}'
         batch: ${{ self.batch.batch }}
         setup: ${{ self.batch.setup }}
-        # A task copy whose intent sets `restore_first` resets its fleet before every batch, the first included (docs/cli/proof/proof.mmd).
+        # A task copy whose intent sets `restore_first` resets its fleet before its batch. The Gateway sets it for the first batch of a copy
+        # and after each batch that can change the fleet; a read-only batch leaves it at `base` (docs/cli/proof/run.mmd).
         # The keys of the reset are read only behind `restore_first`: a copy run that an older Gateway admitted has it false and lacks them.
         restore: '${{ self._index > 0 || ("copy" in inputs.intent ? inputs.intent.restore_first : false) }}'
         reset: '${{ ("copy" in inputs.intent ? inputs.intent.restore_first : false) ? {"container": inputs.intent.container, "fleet": inputs.intent.fleet, "ssh_execution": inputs.intent.ssh_execution} : {} }}'
@@ -252,7 +253,8 @@ jobs:
         ssh_name: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id) + ("copy" in inputs.intent ? "-" + string(inputs.intent.instance_id) : "")).split(".").join("-") }}'
         batch: ${{ self.batch.batch }}
         setup: ${{ self.batch.setup }}
-        # A task copy whose intent sets `restore_first` resets its fleet before every batch, the first included (docs/cli/proof/proof.mmd).
+        # A task copy whose intent sets `restore_first` resets its fleet before its batch. The Gateway sets it for the first batch of a copy
+        # and after each batch that can change the fleet; a read-only batch leaves it at `base` (docs/cli/proof/run.mmd).
         # The keys of the reset are read only behind `restore_first`: a copy run that an older Gateway admitted has it false and lacks them.
         restore: '${{ self._index > 0 || ("copy" in inputs.intent ? inputs.intent.restore_first : false) }}'
         reset: '${{ ("copy" in inputs.intent ? inputs.intent.restore_first : false) ? {"container": inputs.intent.container, "fleet": inputs.intent.fleet, "ssh_execution": inputs.intent.ssh_execution} : {} }}'
