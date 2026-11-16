@@ -121,6 +121,23 @@ jobs:
   dependsOn:
   - job: private-analytics_environment
     condition: {type: succeeded}
+- name: digests
+  labels: {role: swamp}
+  steps:
+  - name: Compare phase digests
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ${{ "ansible-input" }}
+      methodName: roleDigests
+      inputs:
+        folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+        operation_id: ${{ inputs.operation_id }}
+  dependsOn:
+  - job: input
+    condition: {type: succeeded}
 - name: phase_0
   labels: {role: swamp}
   steps:
@@ -144,7 +161,7 @@ jobs:
         argv: [cat, /etc/os-release]
         timeoutSec: 20
   dependsOn:
-  - job: input
+  - job: digests
     condition: {type: succeeded}
 - name: phase_1
   labels: {role: swamp}
@@ -296,6 +313,8 @@ jobs:
   labels: {role: swamp}
   steps:
   - name: Apply role prerequisites
+    # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+    guard: '${{ "prerequisites" in steps["Compare phase digests"].outputs.unchanged }}'
     labels: {role: swamp}
     writes: true
     task:
@@ -318,6 +337,8 @@ jobs:
   dependsOn: [{job: prerequisites, condition: {type: succeeded}}]
   steps:
   - name: Read Tool Manager accounts
+    # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+    guard: '${{ "tools" in steps["Compare phase digests"].outputs.unchanged }}'
     labels: {role: swamp}
     writes: true
     task:
@@ -333,6 +354,8 @@ jobs:
   dependsOn: [{job: tools_read, condition: {type: succeeded}}]
   steps:
   - name: Compose tools resources
+    # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+    guard: '${{ "tools" in steps["Compare phase digests"].outputs.unchanged }}'
     writes: true
     labels: {role: swamp}
     task:
@@ -342,6 +365,8 @@ jobs:
       methodName: composeRole
       inputs: {path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}', phase: tools}
   - name: Write tool variables
+    # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+    guard: '${{ "tools" in steps["Compare phase digests"].outputs.unchanged }}'
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Compose tools resources, condition: {type: succeeded}}]
@@ -358,6 +383,8 @@ jobs:
   dependsOn: [{job: tools_plan, condition: {type: succeeded}}]
   steps:
   - name: Set up Tool Managers
+    # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+    guard: '${{ "tools" in steps["Compare phase digests"].outputs.unchanged }}'
     labels: {role: swamp}
     writes: true
     task:
@@ -372,6 +399,8 @@ jobs:
   labels: {role: swamp}
   steps:
   - name: Apply the role on the Node
+    # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+    guard: '${{ "node" in steps["Compare phase digests"].outputs.unchanged }}'
     labels: {role: swamp}
     writes: true
     task:
@@ -391,7 +420,7 @@ jobs:
           ORBIT_PLAYBOOK: '${{ "playbook" in inputs.intent ? inputs.intent.playbook : "operation-node-role-add.yml" }}'
   - name: Read the CI bridge
     labels: {role: swamp}
-    guard: ${{ inputs.intent.role != "ci-runner" }}
+    guard: '${{ inputs.intent.role != "ci-runner" || "node" in steps["Compare phase digests"].outputs.unchanged }}'
     dependsOn: [{step: Apply the role on the Node, condition: {type: always}}]
     allowFailure: true
     task:
@@ -574,6 +603,8 @@ jobs:
   labels: {role: swamp}
   steps:
   - name: Open the firewall
+    # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+    guard: '${{ "firewall" in steps["Compare phase digests"].outputs.unchanged }}'
     labels: {role: swamp}
     writes: true
     task:
@@ -685,6 +716,7 @@ jobs:
   - {job: "private-websocket_environment", condition: *settled}
   - {job: "private-analytics_environment", condition: *settled}
   - {job: "input", condition: *settled}
+  - {job: "digests", condition: *settled}
   - {job: "phase_0", condition: *settled}
   - {job: "phase_1", condition: *settled}
   - {job: "ansible", condition: *settled}

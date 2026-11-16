@@ -47,6 +47,21 @@ class AnsibleInputTest(unittest.TestCase):
             for name in ['inventory.yml', 'vars.yml', 'known_hosts']:
                 self.assertEqual((folder / name).stat().st_mode & 0o777, 0o600)
 
+    def test_role_variables_keep_out_the_recorded_phase_digests(self):
+        # docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            intent = {'node_id': 12, 'ssh': {'identity_file': '/role/identity', 'target': {
+                'host': '192.0.2.12', 'port': 22, 'user': 'orbit', 'host_keys': ['ssh-ed25519 pinned']}},
+                'publications': [], 'exporters': [], 'prometheus': None, 'runtime': {'analytics': None},
+                'recorded_digests': {'node': 'a' * 64}}
+            (folder / 'intent.json').write_text(json.dumps(intent))
+            (folder / 'plans.json').write_text('{}')
+            builder.build(folder, 'node.role_converge')
+            variables = yaml.safe_load((folder / 'vars.yml').read_text().replace('!unsafe ', ''))
+            self.assertNotIn('recorded_digests', variables['intent'])
+            self.assertIn('recorded_digests', json.loads((folder / 'intent.json').read_text()))
+
     def test_seed_listener_addresses_the_default_node_only_while_the_seed_has_a_sender(self):
         # docs/reference/node-provisioning.md#the-seed-listener: the play reads root's Incus client certificate on the default's Node.
         def inventory(seed):

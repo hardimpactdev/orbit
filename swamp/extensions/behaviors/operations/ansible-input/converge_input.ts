@@ -18,6 +18,8 @@ export const toolRuntime = "/usr/local/bin/deno";
 
 /** The phases that skip when their digest is unchanged (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
 export const skippable = ["agent", "software", "roles", "tools", "network"] as const;
+/** The same for a role addition or convergence: the phases that change only the role's Node. */
+export const roleSkippable = ["prerequisites", "tools", "node", "firewall"] as const;
 
 async function sha256(text: string | Uint8Array): Promise<string> {
     const bytes = typeof text === "string" ? new TextEncoder().encode(text) : text;
@@ -70,16 +72,30 @@ export async function readDigest(folder: string, operationId: number, code: stri
     return sha256([...rows, await codeDigest(code)].join("\n"));
 }
 
-/** Each skippable phase's digest, and the phases whose digest equals the one the Node records. */
+/** Each skippable phase's digest, and the phases whose digest equals the one the Node records. The record holds the phases of the last
+ * Operation that wrote it, a converge or a role Operation, so it may name phases of the other kind: they never match. */
 const Hex = z.string().regex(/^[0-9a-f]{64}$/);
 const DigestIntent = z.object({ // PHP sends an empty map as an empty list.
-    recorded_digests: z.preprocess((value) => Array.isArray(value) && value.length === 0 ? {} : value, z.partialRecord(z.enum(skippable), Hex)) });
+    recorded_digests: z.preprocess((value) => Array.isArray(value) && value.length === 0 ? {} : value, z.partialRecord(z.enum([...skippable, ...roleSkippable]), Hex)) });
 
-export async function phaseDigests(raw: unknown, read: string) {
+export async function phaseDigests<Phase extends typeof skippable[number] | typeof roleSkippable[number]>(raw: unknown, read: string, phases: readonly Phase[]) {
     const intent = DigestIntent.parse(raw);
-    const digests: Record<string, string> = {};
-    for (const phase of skippable) digests[phase] = await sha256(`${phase}\0${read}`);
-    return { digests, unchanged: skippable.filter((phase) => intent.recorded_digests[phase] === digests[phase]) };
+    const digests = {} as Record<Phase, string>;
+    for (const phase of phases) digests[phase] = await sha256(`${phase}\0${read}`);
+    return { digests, unchanged: phases.filter((phase) => intent.recorded_digests[phase] === digests[phase]) };
+}
+
+/** A role Operation's code: the converge's, and the plan of its Tool Managers, which runs after the digest. */
+export function rolePhaseCode(builder: string, toolHelper: string, rolePlans: string): string[] {
+    return [...phaseCode(builder, toolHelper), rolePlans];
+}
+
+/** A role Operation's digests, after its playbook input is written; the Gateway records them after a succeeded run. */
+export async function roleDigests(folder: string, operationId: number, code: string[]) {
+    const intent = JSON.parse(await Deno.readTextFile(`${folder}/intent.json`));
+    const phases = await phaseDigests(intent, await readDigest(folder, operationId, code), roleSkippable);
+    await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify(phases), { mode: 0o600 });
+    return phases;
 }
 
 export async function convergeInput(folder: string, operationId: number, builder: string, toolHelper: string, code: string[]) {
@@ -129,7 +145,7 @@ export async function convergeInput(folder: string, operationId: number, builder
         await Deno.chmod(`${path}/vars.yml`, 0o600);
     }
     // After every file the phases read is written.
-    const phases = await phaseDigests(intent, await readDigest(folder, operationId, code));
+    const phases = await phaseDigests(intent, await readDigest(folder, operationId, code), skippable);
     await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify(phases), { mode: 0o600 });
     return phases;
 }
