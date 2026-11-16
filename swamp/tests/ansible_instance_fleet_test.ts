@@ -632,7 +632,7 @@ Deno.test({
   name: "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units",
   ignore: !hasAnsible,
   fn() {
-    // Below 2,000,000: only base converges, side by side.
+    // Below 2,000,000: nested-app-dev keeps the base scope.
     const f = fixture(ruled(), { base: true, host: false });
     try {
       assert(f.run("start").ok);
@@ -642,7 +642,7 @@ Deno.test({
       assert(!failed.ok);
       assertStringIncludes(failed.output, "The converge of the nested Node app-dev (Operation 903) ended failed with node.converge_failed");
       const calls = f.calls();
-      // The three converges run side by side: all are admitted and awaited before the failure fails the refresh.
+      // app-dev converges last, so the three are admitted one at a time and each is awaited before the failure fails the refresh.
       assertEquals(calls.filter(convergeApi), convergeCallsFor([1, 2, 3], false));
       assert(!calls.some((call) => !call.includes(" file pull ") && (call.includes("ansible-playbook") || call.includes("orbit-swamp"))), calls.join("\n"));
       assert(!calls.some((call) => call.includes("snapshot") || call.includes("incus stop") || call === recordWrite), calls.join("\n"));
@@ -655,28 +655,38 @@ Deno.test({
 });
 
 Deno.test({
-  name: "the due Nodes converge side by side, and a failed or refused Node fails the refresh only after every admitted converge has ended",
+  name: "the due Nodes converge one at a time, gateway, app-prod, then app-dev; a refused or failed converge stops the Nodes after it and fails the refresh",
   ignore: !hasAnsible,
   fn() {
-    // Below 2,000,000: only base converges, side by side.
+    // Below 2,000,000: nested-app-dev keeps the base scope.
     const f = fixture(ruled(), { base: true, host: false });
     try {
       assert(f.run("start").ok);
       f.calls();
-      // gateway still runs for two reads, app-dev fails at once, app-prod is refused at its admission.
+      // gateway still runs for two reads, then app-prod is refused at its admission.
       f.change((state) => {
         state.convergeRunning = { 1: 2 };
-        state.convergeStatus = { 2: "failed" };
         state.convergeRefused = [3];
+      });
+      const refused = f.run("refresh");
+      assert(!refused.ok);
+      assertStringIncludes(refused.output, "The nested Gateway did not admit the converge of app-prod");
+      let calls = f.calls();
+      // app-prod is admitted only after gateway has ended; app-dev, after the refusal, is never admitted.
+      assertEquals(calls.filter(convergeApi), [convergeAdmit(1, false), convergeRead(901), convergeRead(901), convergeRead(901), convergeAdmit(3, false)]);
+      assertEquals(f.state().convergeRunning, { 1: 0 });
+      assert(!calls.some((call) => call.includes("snapshot") || call.includes("incus stop") || call === recordWrite), calls.join("\n"));
+      assertEquals(f.state().outer.files[record], undefined);
+      // app-prod is admitted now and fails: app-dev is again never admitted.
+      f.change((state) => {
+        state.convergeRefused = [];
+        state.convergeStatus = { 3: "failed" };
       });
       const failed = f.run("refresh");
       assert(!failed.ok);
-      assertStringIncludes(failed.output, "The nested Gateway did not admit the base converge of app-prod");
-      assertStringIncludes(failed.output, "The converge of the nested Node app-dev (Operation 903) ended failed with node.converge_failed");
-      const calls = f.calls();
-      // All three are admitted before any read; the refresh reads gateway until it has ended, then app-dev.
-      assertEquals(calls.filter(convergeApi), [convergeAdmit(1), convergeAdmit(2), convergeAdmit(3), convergeRead(901), convergeRead(901), convergeRead(901), convergeRead(902)]);
-      assertEquals(f.state().convergeRunning, { 1: 0 });
+      assertStringIncludes(failed.output, "The converge of the nested Node app-prod (Operation 903) ended failed with node.converge_failed");
+      calls = f.calls();
+      assertEquals(calls.filter(convergeApi), [convergeAdmit(1, false), convergeRead(902), convergeAdmit(3, false), convergeRead(903)]);
       assert(!calls.some((call) => call.includes("snapshot") || call.includes("incus stop") || call === recordWrite), calls.join("\n"));
       assertEquals(f.state().outer.files[record], undefined);
     } finally {
