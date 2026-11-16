@@ -36,6 +36,7 @@ use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyStart;
+use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -1055,6 +1056,27 @@ describe('the recorded Incus project', function (): void {
                 ...($clone ? ['t3' => ['type' => 'proxy', 'listen' => 'tcp:10.44.0.7:'.$runtime->t3_port, 'connect' => 'tcp:'.$runtime->bridge_address.':3773', 'nat' => 'true']] : []),
             ]);
     })->with([false, true]);
+
+    // docs/reference/development-containers.md#instance-host-in-the-fleet: an idmapped mount fails a third level below the host.
+    it('admits the shared folders unshifted only on the Instance fleet Node, and idmapped on every other Node', function (string $folder): void {
+        $marker = sys_get_temp_dir().'/orbit-instance-fleet-devices-'.getmypid();
+        config(['instances.fleet_marker' => $marker]);
+        $project = containerDefaultProject();
+        $real = recordedNestedInstance($project, containerDefaultNode());
+        $fleet = recordedNestedInstance($project, containerDefaultNode('app-dev', TaskVmNestedFleet::Layout['app-dev']['address']), 'feature');
+        $device = static fn (Instance $instance): array => app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail())['allowed_devices'][$folder];
+        $path = $folder === 'orbit-runtime' ? '/opt/orbit-runtime' : '/opt/orbit-agent';
+        $idmapped = ['type' => 'disk', 'source' => $path, 'path' => $path, 'readonly' => 'true', 'shift' => 'true'];
+        touch($marker);
+        try {
+            expect($device($fleet))->toBe([...$idmapped, 'shift' => 'false'])
+                ->and($device($real))->toBe($idmapped);
+        } finally {
+            unlink($marker);
+        }
+        // Without the fleet marker the same Node is a real Node.
+        expect($device($fleet))->toBe($idmapped);
+    })->with(['orbit-runtime', 'orbit-agent']);
 });
 
 describe('the root disk size', function (): void {
