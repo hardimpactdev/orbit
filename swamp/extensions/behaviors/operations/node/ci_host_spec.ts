@@ -15,6 +15,9 @@ export const projectConfig = {
     "restricted.containers.privilege": "unprivileged",
     "restricted.virtual-machines.lowlevel": "block",
     "restricted.containers.lowlevel": "allow",
+    // The one host disk a runner may mount: the Node's runtime folder, read-only (tools/ci-runners/setup.sh).
+    "restricted.devices.disk": "allow",
+    "restricted.devices.disk.paths": "/opt/orbit-runtime",
     "limits.virtual-machines": "0",
 };
 export const networkConfig = {

@@ -189,7 +189,7 @@ The self-hosted pool has the tools these files need. The [CI runner role](/refer
 
 | Need | Where it comes from on a CI runner |
 | --- | --- |
-| Pinned FrankenPHP | `setup.sh container` mounts the Node's runtime folder read-only at `/opt/orbit-runtime` and sets `ORBIT_FRANKENPHP` to its FrankenPHP for the recipe's CI PHP version |
+| Pinned FrankenPHP | `setup.sh container` mounts the Node's runtime folder read-only and without `shift` at `/opt/orbit-runtime`, the one host path the `orbit-ci` project permits, and sets `ORBIT_FRANKENPHP` to its FrankenPHP for the recipe's CI PHP version |
 | Pinned Swamp binary | `setup.sh container` installs the recipe's Swamp artifact as `/usr/local/bin/orbit-swamp-proof`, checks its SHA-256 first, and sets `ORBIT_SWAMP_PROOF_BINARY` in the runner `.env` |
 | User systemd manager | `setup.sh container` enables the runner user's manager with lingering; `setup.sh user_manager NAME` repairs it alone |
 

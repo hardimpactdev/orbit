@@ -38,7 +38,7 @@ class RuntimeDeviceTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), f'/opt/orbit-runtime/current/php/{version}/bin/frankenphp')
 
-    def test_adds_a_read_only_shifted_device_once_and_resets_its_keys_on_a_rerun(self):
+    def test_adds_a_read_only_unshifted_device_once_and_resets_its_keys_on_a_rerun(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'incus').write_text(FAKE)
@@ -49,9 +49,11 @@ class RuntimeDeviceTest(unittest.TestCase):
             calls = (root / 'calls').read_text().splitlines()
             adds = [call for call in calls if 'device add' in call]
             self.assertEqual(adds, ['config device add ci-1 orbit-runtime disk source=/opt/orbit-runtime path=/opt/orbit-runtime '
-                                    'readonly=true shift=true --project orbit-ci'])
+                                    'readonly=true --project orbit-ci'])
             sets = [call.split()[5] for call in calls if 'device set' in call]
-            self.assertEqual(sets, ['source=/opt/orbit-runtime', 'path=/opt/orbit-runtime', 'readonly=true', 'shift=true'])
+            self.assertEqual(sets, ['source=/opt/orbit-runtime', 'path=/opt/orbit-runtime', 'readonly=true'])
+            # Incus refuses shift on a restricted source path, the only kind of host disk the orbit-ci project admits.
+            self.assertFalse(any('shift' in call for call in calls))
             self.assertTrue(any(call.startswith('exec ci-1 --project orbit-ci -- test -x /opt/orbit-runtime/current/php/') for call in calls))
 
     def test_a_runtime_folder_without_frankenphp_fails_by_name(self):

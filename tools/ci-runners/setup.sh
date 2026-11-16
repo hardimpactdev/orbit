@@ -204,16 +204,17 @@ SH
   hook "$name"
 }
 
-# A read-only disk device of the Node's runtime folder at the same path. shift maps its root-owned files into the
-# unprivileged container. A rerun sets the same keys on an existing device.
+# A read-only disk device of the Node's runtime folder at the same path. Incus refuses shift on a restricted source
+# path; none is needed: the files are root's with mode 755, so the runner user reads and runs them. The project's
+# restricted.devices.disk.paths admits this one path. A rerun sets the same keys on an existing device.
 runtime_device() {
   local name=$1 key
   if incus config device get "$name" orbit-runtime type --project "$PROJECT" >/dev/null 2>&1; then
-    for key in source="$RUNTIME" path="$RUNTIME" readonly=true shift=true; do
+    for key in source="$RUNTIME" path="$RUNTIME" readonly=true; do
       incus config device set "$name" orbit-runtime "$key" --project "$PROJECT"
     done
   else
-    incus config device add "$name" orbit-runtime disk source="$RUNTIME" path="$RUNTIME" readonly=true shift=true --project "$PROJECT"
+    incus config device add "$name" orbit-runtime disk source="$RUNTIME" path="$RUNTIME" readonly=true --project "$PROJECT"
   fi
   in_ct "$name" test -x "$FRANKENPHP" || { echo "$name: $FRANKENPHP is missing in the runtime folder" >&2; return 1; }
 }
