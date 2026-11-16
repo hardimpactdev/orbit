@@ -1,9 +1,10 @@
 import { beforeAll, describe, expect, it } from "vite-plus/test";
 import type { Fleet } from "../api/queries";
-import type { Process } from "../api/types";
+import type { Deployment, Process } from "../api/types";
 import { demoFleet } from "../demo/fleet";
 import {
     attentionRows,
+    bestEffortWarnings,
     counts,
     instancePlacement,
     listRows,
@@ -127,6 +128,24 @@ describe("schedule health", () => {
         expect(scheduleHealthy(backup!)).toBe(true);
         expect(scheduleHealthy(prune!)).toBe(false);
         expect(scheduleHealthy({ ...backup!, status: "failed" })).toBe(false);
+    });
+});
+
+describe("best-effort steps", () => {
+    it("warns about each one that did not exit 0, and not about one that passed", () => {
+        const deployment = {
+            status: "succeeded",
+            best_effort_steps: [
+                { name: "tia-warm", exit_code: 1 },
+                { name: "cache-warm", exit_code: 0 },
+                { name: "lint-warm", exit_code: null },
+            ],
+        } as Deployment;
+        expect(bestEffortWarnings(deployment)).toEqual([
+            "best-effort step tia-warm exited 1",
+            "best-effort step lint-warm printed no exit code",
+        ]);
+        expect(bestEffortWarnings({ ...deployment, best_effort_steps: null })).toEqual([]);
     });
 });
 
