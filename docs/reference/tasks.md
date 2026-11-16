@@ -204,7 +204,7 @@ Each command runs as `env -C <directory> COMPOSER_NO_INTERACTION=1 ORBIT_CHECK_P
 
 A command marked `fails_on_base` also runs on its start commit, in separate steps: `git archive` of the base commit, `tar -x` into the run's scratch directory, `find … -exec cp -a --parents` of the installed `vendor` and `node_modules` directories, `cp --parents` of only the declared test paths, and `test -d` of its directory. A missing overlay file or directory refuses the check as `tasks.deliverable_invalid`; any other failed step refuses it as `tasks.repository_execution_unknown`.
 
-A changed checked tree returns `changed`; failed commands or unmet deliverables return `failed`. A failed Project check keeps its output and leaves skipped command deliverables unmet; it creates no candidate.
+A changed checked tree returns `changed`; a failed command, an unmet deliverable or a command deliverable that did not run returns `failed`. A failed setup step or Project check keeps its output and runs no command deliverable; it creates no candidate.
 
 A command deliverable stored without `fails_on_base` is admitted with `false`; the subtask keeps it as stored. The check workflows read the value of each command deliverable and never default it.
 
@@ -230,7 +230,14 @@ The scheduled result identifies the admitted repository, check name and exact SH
 
 The native `Check the result` assert fails on an execution error in the push producer receipt. The Gateway captures that receipt in its terminal history read. Scheduled CI reads take their rows directly from `collect`. Neither workflow prints its result through another shell step.
 
-The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tree`, redacted `output` and `ci`. Baselines and review-only deliverables are `not_checked`. `head` identifies the checked snapshot before commit; `commit` identifies the candidate a reviewer or publisher may use. Only a passed check with the matching commit, tree and required CI supplies a checked candidate. The Gateway records native results without rerunning checks or judging their evidence.
+The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tree`, redacted `output` and `ci`. Each deliverable has an `id`, an `outcome` and its `failures`, one line each. Its outcome is one of these:
+
+- `passed`: the checked diff holds the file change, or the command ran and exited 0, and a `fails_on_base` command also failed on its start commit.
+- `failed`: the diff lacks the file change, or the command ran and exited non-zero. A `fails_on_base` command that passed on its start commit is `failed` too.
+- `not_run`: the check holds no run of the command. Its one failure line is `<id>: the command did not run: <reason>`. The reason names the step that failed first (`the step "<name>" failed first`), `the Project check failed first`, or `no evidence was recorded`.
+- `not_checked`: a baseline, or a review deliverable.
+
+A `not_run` deliverable never passes: any `failed` or `not_run` deliverable makes the check `failed`. `head` identifies the checked snapshot before commit; `commit` identifies the candidate a reviewer or publisher may use. Only a passed check with the matching commit, tree and required CI supplies a checked candidate. The Gateway records native results without rerunning checks or judging their evidence.
 
 #### Run a tracked repository script
 

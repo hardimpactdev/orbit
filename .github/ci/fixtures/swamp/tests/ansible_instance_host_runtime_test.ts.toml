@@ -1,5 +1,4 @@
 order = 80
-source_sha256 = "3957c78a49b261324932293cb52a862eef19c016fc6e0c3975da746eb43b1733"
 cases = [
   "the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin",
   "a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused",

@@ -1,5 +1,4 @@
 order = 10
-source_sha256 = "e9e8f2b4dd79f1519d2832b14e9c5d24356bedefbcfc7a55093eb3780c69289e"
 cases = [
   "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
   "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",

@@ -1,5 +1,4 @@
 order = 110
-source_sha256 = "bb97c5f5b46301e2747291bcfb737bf70ddb42ce65fd7c5d2024c0aab59ff129"
 cases = [
   "real frozen policy owns limits and dependencies",
   "stale baseline evidence can be repaired without growing immutable source debt",

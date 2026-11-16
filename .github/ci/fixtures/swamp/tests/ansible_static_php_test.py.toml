@@ -1,5 +1,4 @@
 order = 460
-source_sha256 = "86d9ee6d2294d2486faf022aabe804f61a155fe082d16e6b821dfbac8ecd28c4"
 cases = [
   "test_matching_build_passes",
   "test_a_missing_and_an_extra_extension_fail_for_their_binary",

@@ -1,7 +1,6 @@
 file = "swamp/tests/task_instance_check_test.py"
 slices = false
 cost = 83
-source_sha256 = "cf2cc1174ca8f8b163079aa9810f1a938d1429974c853c6c148d5b8420200a73"
 cases = [
   "test_check_runs_in_the_guest_and_commits_the_exact_candidate",
   "test_only_a_clean_recorded_candidate_makes_no_commit",

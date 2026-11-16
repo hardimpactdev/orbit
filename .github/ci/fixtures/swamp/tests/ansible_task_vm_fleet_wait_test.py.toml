@@ -1,5 +1,4 @@
 order = 550
-source_sha256 = "bc2440968188d700100df3afb055d2dfcd333914d6ed4282b29109b287d0aa21"
 cases = [
   "test_the_waits_use_the_tools_own_retry_and_no_shell",
   "test_the_readiness_intent_is_reached_with_its_pinned_host_key",

@@ -1,5 +1,4 @@
 order = 1470
-source_sha256 = "cb9beb4d01a009d23a6970a97e1956295d968193262c96de93b93f00740e9a12"
 cases = [
   "a publish names its group only for the content check, the import and the push",
   "the publish passes its group to every workspace phase",

@@ -1,5 +1,4 @@
 order = 790
-source_sha256 = "5c983da7ff7f0f3a3f8bdea78501e6bff373a6c9345ca9a605b9dec394dff32b"
 cases = [
   "only the mint workflow and the check push post to the Gateway mint",
   "every mint step names a purpose the Gateway issues and the run it belongs to",

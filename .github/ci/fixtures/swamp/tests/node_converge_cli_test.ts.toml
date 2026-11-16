@@ -1,5 +1,4 @@
 order = 910
-source_sha256 = "61a662b10bd2bd2b289d29e0cec4e62e68ab5a6b12d154251e315ba80cb8daac"
 cases = [
   "converge retires only managed CLI files, is idempotent and detects their return",
 ]

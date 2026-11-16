@@ -1,5 +1,4 @@
 order = 900
-source_sha256 = "67abc0afbd1a28d42ef44feee6ffe9b69e7a774845af1defd652ebe6afc2233a"
 cases = [
   "generated converge vars preserve shell arguments, scalar strings and literal Jinja through Ansible",
   "peer DNS routing domains stay literal and a second application changes nothing",

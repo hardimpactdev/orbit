@@ -1,5 +1,4 @@
 order = 1391
-source_sha256 = "69b64e56d39e9ac2ea32284072b4a2cded94f5e730e763ebebf823ddb2a46eea"
 cases = [
   "test_a_publication_adds_only_its_own_groups_and_keeps_every_other_byte_and_order",
   "test_recorded_clone_sites_publish_beside_production_ingress_and_gateway_sites",

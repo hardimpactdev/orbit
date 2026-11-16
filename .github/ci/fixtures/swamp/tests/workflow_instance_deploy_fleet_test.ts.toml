@@ -1,5 +1,4 @@
 order = 1160
-source_sha256 = "27aa4167186b237f82410ac3931c721a2cd4db2c0b4cdbcc38b4f457ccdb829a"
 cases = [
   "a container deployment runs its phases in two steps, each one play of the phases that share their failure handling",
   "the playbook runs the phases of a merged step in order, and the handlers of one phase before the next phase",

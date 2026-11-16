@@ -1,5 +1,4 @@
 order = 50
-source_sha256 = "16f1f4e1d8f8b685e9ff7871c5ddac9e22af61a2df20167fe1a1ae10d88b07b1"
 cases = [
   "a stuck Instance host playbook throws with its last task and kills a descendant holding stdout",
   "a late playbook gets only the shared command budget left, then no new playbook starts",

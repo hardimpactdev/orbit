@@ -1,5 +1,4 @@
 order = 770
-source_sha256 = "f1be06d83c64a9ec5377f1dbf12a646e7b8dee991ae9752c7dcc3d6c2330d1fd"
 cases = [
   "no release step admits a task VM image refresh: the VM refresh triggers are gone",
   "Swamp load requires the bounded DB busy guard, including forced releases",

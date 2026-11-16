@@ -1,5 +1,4 @@
 order = 1170
-source_sha256 = "2c9bae7667abc1f1291bd9604d0514b53d19819428dbd979c46fa8db74467dad"
 cases = [
   "placement lint rejects an unplaced effect",
   "native workflow and job placement inherit to steps",

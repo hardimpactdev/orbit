@@ -1,5 +1,4 @@
 order = 480
-source_sha256 = "e945c4caef36728af235d06e490e7472da77b6a86814f2aca85f2d7888a78ced"
 cases = [
   "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing",
   "the container bridge gets DHCP and DNS input rules under its own catalog names",

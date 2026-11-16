@@ -1,5 +1,4 @@
 order = 1190
-source_sha256 = "66ba17ee487ffc2931268a7853d19310401c3db23e64a30ad96b8dae2194ab24"
 cases = [
   "test_even_backslashes_before_a_closing_quote_do_not_swallow_the_next_host",
   "test_odd_backslash_parity_preserves_an_escaped_double_quote",

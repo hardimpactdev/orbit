@@ -566,7 +566,7 @@ def collect(file):
             cases = json.loads(output.read_text())
         if not cases:
             raise ValueError(f'{file}: fixture registered zero tests')
-    return {'source_sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'cases': cases}
+    return {'cases': cases}
 
 
 def main():

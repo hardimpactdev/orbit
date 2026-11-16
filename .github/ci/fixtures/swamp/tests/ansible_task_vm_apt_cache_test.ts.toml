@@ -1,5 +1,4 @@
 order = 500
-source_sha256 = "cace6f0927db4905dda287a805064a9b55cbb8d16fce24c2fb79918d15371d75"
 cases = [
   "the software phase starts with the cache, before any read of the snapshot",
   "the index read goes through the cache over plain http; the packages stay a direct download",

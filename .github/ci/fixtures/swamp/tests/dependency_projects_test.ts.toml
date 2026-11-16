@@ -1,5 +1,4 @@
 order = 700
-source_sha256 = "2810ed5e3f118341259d1e7e160517cdc0a08e9b089b519a5a8baef5dd7d2650"
 cases = [
   "dependency project config requires worker paths and rejects the retired script field",
   "worker configuration refuses escaping, duplicate and unconfigured policy paths",

@@ -1,5 +1,4 @@
 order = 1270
-source_sha256 = "e80a89b3af356be731ae0fc7929ac135706b7198dddd3f122eac8c52ffaf27db"
 cases = [
   "a default that moved reports its commit and no T3 server",
   "a non-default Instance that moved reports its T3 server, and needs its registration",

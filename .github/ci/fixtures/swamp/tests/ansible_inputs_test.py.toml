@@ -1,5 +1,4 @@
 order = 340
-source_sha256 = "648301dbb85a2f7ee6d9d67d65d867a4660c1550a847746e4981c7ad986fe0cc"
 cases = [
   "test_admitted_identity_and_secret_file_custody",
   "test_seed_listener_addresses_the_default_node_only_while_the_seed_has_a_sender",

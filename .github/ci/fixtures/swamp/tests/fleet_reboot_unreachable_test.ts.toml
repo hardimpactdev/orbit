@@ -1,5 +1,4 @@
 order = 750
-source_sha256 = "45082ab15a8f9f2fc6885348e702063987fbc64c083805a4cf1c1576759e4f22"
 cases = [
   "fleet reboot retries a first unreachable attempt and succeeds on the second without a failure record",
   "fleet reboot records a persistently unreachable ordinary Node and later Nodes skip halted without SSH",

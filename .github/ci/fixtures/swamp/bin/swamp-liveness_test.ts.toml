@@ -1,5 +1,4 @@
 order = 150
-source_sha256 = "d5a01001f4cb56025f5633f11b6a72ae956a1309bf5ba48434b5b24d2cccbb21"
 cases = [
   "malformed probe responses are refused",
   "duplicate summary kinds are refused",

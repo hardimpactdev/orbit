@@ -1,5 +1,4 @@
 order = 70
-source_sha256 = "6fd7a1411b6d331dc25b8d3546a6fe947810eafef476d0bd77d85d3bd2f3f74a"
 cases = [
   "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart",
   "two Debian packages that give the same library name fail the folder build: one would hide the other",
