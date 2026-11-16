@@ -23,6 +23,8 @@ uncovered:
   "path:no-recorded-network": "Need no-network and peerless-hub fixtures plus phase-result assertions to prove the network phase makes no change without a recorded network in scope and applies a target hub once without a handshake if it has no peers. Every run still visits the phase."
   "tools:isolated-failure": "Need recorded Tool fixtures, a Tool-only install fault and per-Tool result assertions to prove other Tools continue, held role packages stay pinned and the Operation succeeds when only one Tool fails. Current node convergence does not apply recorded Tools."
   "path:cleanup": "Need private-run-file existence checks and cleanup/interruption fault injection to prove run-owned files are removed after work stops, completed changes remain and incomplete cleanup preserves the original failure. Current convergence has no private Ansible run directory or cleanup step."
+  "executor:relay-noop": "Need a proof signing key pinned through ORBIT_EXECUTOR_PUBLIC_KEYS on the nested Gateway and a runner step that signs a proof.noop order and runs `sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay` on app-dev, to prove the accepted and done lines, a replayed nonce refused with the first result, and the same Operation returned as a repeat after `systemctl kill -s KILL orbit-executor`. The Gateway signer is ADR 0266 slice 2; apps/agent/crates/executor/tests/socket.rs runs the same relay against a real socket."
+  "executor:caller-refusals": "Need a runner step that connects to /run/orbit-executor.sock on app-dev as another user, as root outside orbit-agent.service and as the relay user running another program, then reads the executor journal for each refusal code. caller.rs unit tests cover the policy and the kernel read."
   "admission:recorded-only": "Need request-time contact tracing to prove admission uses recorded state and never contacts the Node before starting the Operation, including with missing or stale agent facts. A missing agent report is not an additional eligibility refusal."
 
 cases:
@@ -52,6 +54,16 @@ cases:
     act:
       - cli: {run: [node:converge, "${app-dev.id}", --roles=app-dev], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
     expect: []
+
+  - id: executor-installed
+    batch: fresh-fleet
+    covers: [main, admitted, succeeded]
+    summary: A converge of an app-dev Node installs the pinned executor and leaves its plain service running (ADR 0266 slice 1).
+    fails_today: No converge installs orbit-executor; the base phase has no executor task and the intent has no executor block.
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
+    expect:
+      - service: {on: app-dev, name: orbit-executor.service, state: active}
 
   - id: repeat
     batch: fresh-fleet
