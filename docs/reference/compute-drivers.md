@@ -1266,7 +1266,7 @@ Task VM code reaches the model router only through the core interface `App\Domai
 
 The `tasks` extension depends on `ai-router`, and enabling `tasks` calls `assertReady()`, which refuses with `ai_router.disabled` (409) until the ai-router is set up and has its Node. `ai-router:destroy` refuses only while `tasks` is enabled. See [Teardown](/reference/ai-router#teardown).
 
-The [Node settings field table](/reference/node-settings#task-vm-fields) owns the host configuration. The containing Node supplies host identity. `operator_owned` keeps listed resources out of the [stray report](#report-strays).
+The [Node settings field table](/reference/node-settings#task-vm-fields) owns the host configuration. The containing Node supplies host identity. Nothing reads `operator_owned` any more: Doctor reports no strays.
 
 Placement selects active Nodes with this setting and capacity reads their place budget. Host preparation uses its pool, network, and image alias. The `app-dev` role is not a host marker.
 
@@ -1278,7 +1278,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 
 ### Errors
 
-Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
+Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
