@@ -26,7 +26,10 @@ $retiredPiLoopCopies = [['vault' => 'orbit-control-inputs', 'key_pattern' => '^t
     ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$']];
 
 return ['tasks.maintenance_finish' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'check', 'step' => 'Check the end', 'native' => true]], 'tasks.cancel' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'check', 'step' => 'Check the end', 'native' => true]], 'tasks.provision' => [
-    'workflow' => 'operation-task-provision', 'projection' => TaskProvisionProjection::class,
+    // The request kind of `task:start`, which scopes the route's Idempotency-Key. No Operation of it starts: the start makes a task copy
+    // through an `instance.create` and moves the key there, so the kind names the workflow that runs. The projection and the terminal
+    // result read an old Operation, whose start recorded its own deleted workflow (docs/reference/old-paths.md#the-pi-task-loop).
+    'workflow' => 'operation-instance-create', 'projection' => TaskProvisionProjection::class,
     'workflow_inputs' => true, 'terminal_result' => ['job' => 'provision', 'step' => TaskProvisionProjection::EndCheck, 'native' => true],
     // The slot's identity and the claim with its Pi token and models file, which the task start writes onto its new VM; and the
     // retired patterns of the Pi loop, which this VM-era kind holds until the grants release.
