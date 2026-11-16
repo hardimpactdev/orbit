@@ -173,6 +173,10 @@ No registry entry keeps a fixture or a case out of pull requests: the metadata k
 
 ### Self-hosted fixture shards
 
+Runtime, browser and update fixtures run the named subsystem tasks from the shipped host caller, retaining their variables, loops and conditions. They fail if a selected caller is removed, renamed, duplicated or reordered. Full host and image fixtures retain the integration path; subsystem cases avoid repeating unrelated kernel, network and image preparation.
+
+The nested-fleet caller fixture uses the Gateway's per-guest memory limits. Its tag routing, failure diagnostics and seed checks run as separate cases. Changes to the fleet rules or container phase tasks reserve these cases before capacity-gap admission, so a full plan cannot hide the seed contract.
+
 A fixture file whose metadata sets `self_hosted = true` runs only on the self-hosted CI pool. These are the files that came from the after-merge set: the registry kept them out of pull requests before ADR 0262. The planner puts their units in their own shard jobs, `Self-hosted fixtures (N)`. These jobs use only the shared runner labels `self-hosted`, `hardimpact` and `orbit-shard`, as every CI runner does. An ordinary shard never runs such a unit, and a tool-dependent shard runs no other unit. Other quick checks of the public repository stay on GitHub-hosted runners.
 
 Ordinary `Fixtures (N)` jobs use the same shared runner labels on repository branches, handoffs and main; forks keep the hosted image. The pool has five Sabre runners and four Shark runners. Beast has no general runner containers and keeps its two proof-only places.

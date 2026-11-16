@@ -86,7 +86,10 @@ cases = [
   "a nested-fleet start refuses the key transfer by name, before it reads the value: pipelining turned off",
   "a nested-fleet start refuses a /run that is not a tmpfs, before it reads the value",
   "a normal container's create and deploy start run no Club key task and no Club key command",
-  "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk",
+  "a nested-fleet default dispatches each fleet tag and preserves drift and room refusals",
+  "a failed nested-fleet refresh names its phase and prevents the finish seed",
+  "nested-fleet failures retain Doctor, command, restore and reset diagnostics",
+  "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk",
   "a default with an inner volume seeds the container and the volume under one name, retakes both, and keeps only the current pair",
   "the proof default's retake keeps the seed that a CI Node holds as its one base pair, and a second retake at that commit keeps it",
   "the proof default's retake at a new commit keeps the seed that a CI Node holds as the base and drops every other base pair",
@@ -102,12 +105,12 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 7690
+cost = 7996
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
-# 75 slices give each of the 75 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 99
+# Every registered case has its own slice; startup is added separately.
+slices = 102
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/instance_workspace_owner.py",
@@ -189,7 +192,7 @@ inputs = [
   "a thirty-second Process stop succeeds" = 93 # hosted run 43787856522: 80.3s x 1.15, rounded up
   "nested fleet start gate: raw.lxc" = 34 # hosted run 43787856522: 29.4s x 1.15, rounded up
   "nested fleet start gate: privileged" = 28 # hosted run 43787856522: 24.1s x 1.15, rounded up
-  "nested fleet start gate: kernel-modules" = 25 # hosted run 43787856522: 21.4s x 1.15, rounded up
+"nested fleet start gate: kernel-modules" = 89 # Copy 3499, head-2.json: 70.074s x 1.25, rounded up + 1; CI validation pending.
   "nested fleet start gate: mount-intercept" = 22 # hosted run 43787856522: 19.0s x 1.15, rounded up
   "nested fleet start gate: bpf-intercept" = 36 # hosted run 43787856522: 31.1s x 1.15, rounded up
   "nested fleet start gate: shared-idmap" = 30 # hosted run 43787856522: 25.4s x 1.15, rounded up
@@ -218,7 +221,6 @@ inputs = [
   "a nested-fleet start refuses the key transfer by name, before it reads the value: pipelining turned off" = 12 # hosted run 43787856522: 9.6s x 1.15, rounded up
   "a nested-fleet start refuses a /run that is not a tmpfs, before it reads the value" = 13 # hosted run 43787856522: 11.0s x 1.15, rounded up
   "a normal container's create and deploy start run no Club key task and no Club key command" = 79 # hosted run 43787856522: 68.5s x 1.15, rounded up
-  "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk" = 123 # hosted run 43787856522: 106.2s x 1.15, rounded up
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left" = 96 # hosted run 43787856522: 83.1s x 1.15, rounded up
   "the proof default's retake keeps the seed that a CI Node holds as its one base pair, and a second retake at that commit keeps it" = 98 # LOCAL measure until a hosted run: 49s alone x 2
   "the proof default's retake at a new commit keeps the seed that a CI Node holds as the base and drops every other base pair" = 96 # LOCAL measure until a hosted run: 48s alone x 2
@@ -247,3 +249,14 @@ inputs = [
 "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing" = 67 # ESTIMATE: local 20-31s; 31s * 2.1, rounded up + 1s
 "only a switched-on host prepares the nested project, its profile and the nesting modules" = 165 # local 143s x 1.15; above the 150-second lane, a named capacity gap (ADR 0262)
 "start refuses a NIC without the address filters with its own code, and starts it once the device set adds them" = 110 # ESTIMATE: estimated 52s * 2.1, rounded up + 1s
+
+ # Split caller cases: ESTIMATES pending managed-pool receipts.
+"a nested-fleet default dispatches each fleet tag and preserves drift and room refusals" = 65
+"a failed nested-fleet refresh names its phase and prevents the finish seed" = 110
+"nested-fleet failures retain Doctor, command, restore and reset diagnostics" = 80
+"a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk" = 110
+
+[mandatory_cases]
+"swamp/ansible/tasks/instance-fleet.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]
+"swamp/ansible/tasks/instance-container-*.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]
+"swamp/ansible/instance_nested.py" = ["nested fleet start gate: kernel-modules"]

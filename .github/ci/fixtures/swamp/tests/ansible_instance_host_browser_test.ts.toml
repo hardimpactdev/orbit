@@ -18,10 +18,8 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_host_browser_test.ts"
 self_hosted = true
-cost = 275
-# Beast case times * 2.1, rounded up + 1s; startup is added per slice.
+cost = 260
 slices = 15
-# Run 43660983227: this two-converge case took 121.364s and set the main critical path.
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "apps/gateway/resources/machine-software/recipe.json",
@@ -50,23 +48,25 @@ inputs = [
   "swamp/ansible/transport-exit-codes.json",
   "swamp/tests/_support/fixture_supervisor.py",
   "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/_support/host_task_scope.ts",
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
 
+# Scoped subsystem case costs are ESTIMATES pending managed-pool receipts.
 [case_costs]
-  "a failed read of a machine name file fails that container after its trust work and writes no hosts file from nothing; a renamed running kernel stays an alias, an unreadable one is none" = 5 # ESTIMATE: local 1s * 2.1, rounded up + 1s
-  "the converge writes each named container's machine name files, running, stopped and frozen, keeping other hosts lines; nothing restarts" = 5 # ESTIMATE: local 2s * 2.1, rounded up
-  "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart" = 82 # ESTIMATE: Beast 35-38s * 2.1, rounded up + 1s
-  "two Debian packages that give the same library name fail the folder build: one would hide the other" = 18 # ESTIMATE: Beast 8s * 2.1, rounded up + 1s
-  "a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike" = 2 # ESTIMATE: Beast 0.82s, no Ansible; rounded up
-  "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not" = 1 # ESTIMATE: Beast 0.1s, no Ansible; rounded up
-  "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec" = 4 # ESTIMATE: Beast 1s, no Ansible; rounded up
-  "a Node without a readable Orbit root CA fails the step by name and writes nothing" = 1 # ESTIMATE: Beast 0.1s, no Ansible; rounded up
-  "a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest" = 3
-  "the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib" = 1
-  "only agent writes its NSS store, only in a running container: a new store holds only the entry, an existing one gets it appended once; a stopped or frozen one waits" = 4
-  "a planted symlink, a file where the store folder goes and a folder named like the store are refused and listed; every other step still runs" = 3
-  "a container whose libp11-kit0 is not the trust module's version is listed with both versions, and agent takes an Orbit entry out of its store; the step passes" = 3
-  "a container whose dpkg status or user output is not UTF-8, or whose store step hangs, is listed and fails nothing" = 3
-"a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container" = 140 # ESTIMATE: hosted 121.364s (run 43660983227) * 1.15, rounded up
+"a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart" = 75
+"two Debian packages that give the same library name fail the folder build: one would hide the other" = 40
+"a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike" = 2
+"a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not" = 1
+"a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container" = 110
+"a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec" = 4
+"the converge writes each named container's machine name files, running, stopped and frozen, keeping other hosts lines; nothing restarts" = 5
+"a failed read of a machine name file fails that container after its trust work and writes no hosts file from nothing; a renamed running kernel stays an alias, an unreadable one is none" = 5
+"a Node without a readable Orbit root CA fails the step by name and writes nothing" = 1
+"only agent writes its NSS store, only in a running container: a new store holds only the entry, an existing one gets it appended once; a stopped or frozen one waits" = 4
+"a planted symlink, a file where the store folder goes and a folder named like the store are refused and listed; every other step still runs" = 3
+"a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest" = 3
+"a container whose libp11-kit0 is not the trust module's version is listed with both versions, and agent takes an Orbit entry out of its store; the step passes" = 3
+"a container whose dpkg status or user output is not UTF-8, or whose store step hangs, is listed and fails nothing" = 3
+"the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib" = 1
