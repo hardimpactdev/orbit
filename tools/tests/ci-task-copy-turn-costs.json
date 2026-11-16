@@ -25,16 +25,20 @@
     "the start evidence keeps stderr only when the start failed, and only its last 4096 characters": 16.57080657799996,
     "a run that asks has its question stored before the run is stopped, and the thread is read back after": 20.787183503,
     "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored": 72.575296485,
-    "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing": 52.38123937799997,
     "a refused model while an earlier turn waits to be settled settles nothing, touches no checkout and launches nothing": 3.133063962
   },
   "censored_seconds": {
-    "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing": 26.394,
     "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched": 66.547,
-    "a turn in a Conn Server copy runs the Conn Server's program for every call, and a program outside the agent folder is refused": 7.4
+    "a turn in a Conn Server copy runs the Conn Server's program for every call, and a program outside the agent folder is refused": 7.4,
+    "an earlier turn whose run T3 shows over is settled before the launch, and stops nothing": 19.0,
+    "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing": 29.0,
+    "a turn cut by its bound stops its never-ending run before the read back and reads over; a stop T3 refuses holds": 18.0
   },
   "estimates": {
-    "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched": 120,
-    "a turn in a Conn Server copy runs the Conn Server's program for every call, and a program outside the agent folder is refused": 17
+    "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched": 138,
+    "a turn in a Conn Server copy runs the Conn Server's program for every call, and a program outside the agent folder is refused": 17,
+    "an earlier turn whose run T3 shows over is settled before the launch, and stops nothing": 60,
+    "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing": 80,
+    "a turn cut by its bound stops its never-ending run before the read back and reads over; a stop T3 refuses holds": 45
   }
 }
