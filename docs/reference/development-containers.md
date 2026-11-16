@@ -158,7 +158,7 @@ Every development container has the same layout. The image and the create set it
 | Sudo | None for either user. The image's `sudoers.d` grant is removed. The [nested-fleet image](#the-nested-fleet-image) gives `agent` alone passwordless sudo, so it is root in its own [nested-fleet](#users) container |
 | Workspace | `/srv/workspace` and every entry in it, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others, and `core.sharedRepository=group`. Root's [pass](#who-runs-what) gives `agent` what `orbit` made |
 | Git | `safe.directory=/srv/workspace` in `/etc/gitconfig`, for every user and only that path; the agent part of the T3 step also writes it to `agent`'s own Git config and preserves its other Git settings |
-| Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
+| Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped; unshifted on an [Instance fleet Node](#shared-folders) |
 | T3 unit | `User=agent`, `UMask=0007`, `PATH` from the shared folders, `Requires=nftables.service`, `ConditionPathExists=/etc/orbit/instance`. The unit file is mode 0640. A drop-in names the [container server](#container-server) it starts |
 | `PATH` | The runtime folder's `bin` first, for units, login shells and `incus exec` sessions, so `composer` is on it |
 | `php` | `/usr/local/bin/php` links to the Project's static `php` in the runtime folder. A Project without a PHP version has none. The create and each start set it |
@@ -325,6 +325,8 @@ The folders live on the Node's root filesystem, at the same paths as in the cont
 A folder's version is the first 12 hex digits of a digest of everything in it, the notes included, so any change is a new version. Each program in `bin` links to its path in its part.
 
 The idmapped mount keeps gid 2750 the same in every container, whatever its ID map. The spike proved this with one container; PR 3 proves it with two containers whose ID maps differ. `orbit` sees the folder `agent`, but not what is in it.
+
+**On an Instance fleet Node.** An idmapped mount fails a third level below the host: on `nested-app-dev` Incus tears the shifted mount of `orbit-agent` down at the start of the first container. So the Instance containers there mount both folders with `shift=false` ([Instance host in the fleet](#instance-host-in-the-fleet)). An isolated container then sees every file of a folder as owned by `nobody` and `nogroup`, and only the mode bits for others count. The runtime folder is mode 755 and 644 throughout, so everyone still reads it. Gid 2750 does not reach the container, so on that Node the agent's programs are open to everyone as well: `agent/` and its releases are mode 755, as the rest of the folder. Each folder plan of that Node's intent carries `shift: false`, so its folder versions differ from a real Node's and the host installs them fresh. A real `app-dev` or CI Node keeps the idmapped mounts and gid 2750.
 
 An update installs the new version beside the old one and flips `current`. It runs with the converge of each Node, so a recipe change reaches the Node with its release refresh. Both `agent` and `orbit` have `/opt/orbit-runtime/current/bin` on `PATH`, so a running clone gets added programs, such as Deno, without recreation.
 
@@ -2364,7 +2366,9 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 4. It writes the marker `/etc/orbit/instance-fleet-node`.
 5. It runs the rest of the branch as on any `app-dev` Node: project, bridge, folders, egress proxy and the Instance image.
 
-A real `app-dev` or CI Node gets no `fleet_node`, so its intent and its branch stay as they were.
+The [shared folders](#shared-folders) are the one other difference. An idmapped (`shift=true`) disk fails a third level below the host: the first window at 2,000,000 stopped at the start of the image's build container, and the journal showed the shifted mount of `orbit-agent` torn down at once. So the folder plans in the fleet Node's intent carry `shift: false`, and from them the profile `orbit-instances` mounts `orbit-runtime` and `orbit-agent` with `shift=false`. The start guard and the native clone of a nested-fleet container take the same two devices from the container intent's `allowed_devices`, so each admits only its Node's form: `shift=false` on the fleet Node and `shift=true` on every other Node. `InstanceFolderPlan::shift` is the one rule; it follows `ContainerNodes::fleetNode`. The Instance image does not change.
+
+A real `app-dev` or CI Node gets no `fleet_node` and no folder `shift`, so its intent, its profile and its containers' devices stay as they were.
 
 The fleet's egress proxy lies in the Instance container's own bridge, in `10.253.0.0/16` one level up. The nested Gateway reads its address from `HTTPS_PROXY` in its `/etc/environment`, which the fleet rules write whole. It gives the fleet Node no Instance bridge in that /24: a bridge that holds the proxy address makes `nested-app-dev` dial itself, and its Incus cannot fetch the stock image.
 
@@ -2442,7 +2446,7 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 
 | Rule | Where | Why |
 | --- | --- | --- |
-| The workspace `/srv/workspace` is the disk device `checkout`, with `shift=false` | `nested-gateway`, `nested-app-dev` | An edit reaches them at once. A shifted mount fails two levels below the host |
+| The workspace `/srv/workspace` is the disk device `checkout`, with `shift=false` | `nested-gateway`, `nested-app-dev` | An edit reaches them at once. A shifted mount fails two levels below the host. For the same reason the Instance containers on `nested-app-dev` mount the shared folders with `shift=false` ([Instance host in the fleet](#instance-host-in-the-fleet)) |
 | `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` in the inner Incus | All three nested containers | The workspace is `agent:work` (2750:2760) with files of `orbit` (1000). With only the `orbit` line, nested root cannot resolve the state mounts. The outer container still has no `raw.*` key |
 | The Club key folder device `club-key`: `/run/orbit-club` at `/home/orbit/.config/swamp/club`, `shift=false`, and the link `/home/orbit/.config/swamp/api-key` to `club/swamp-club-api-key` | `nested-gateway` | The nested Swamp reads the [Club key](#the-club-key-of-the-nested-gateway) that Orbit delivers to the outer container's `/run` |
 | A read-only disk device that shows `N` at `/sys/module/apparmor/parameters/enabled`, from `/etc/orbit/apparmor-off` | `nested-app-dev`, `nested-app-prod` | `docker run` fails without it: Docker's own profile cannot load two levels below the host |

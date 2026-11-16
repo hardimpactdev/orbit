@@ -1041,7 +1041,7 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | ACL egress | The VM bridge's rules | Bridge and NIC reject by default; the bridge admits the Node’s endpoint union and proxies, each NIC its own targets and proxies |
 | ACL ingress | The VM bridge's rules | TCP ports 1024 to 65535 from the bridge address, and T3's port 3773 from any source |
 | Bridge DNS | dnsmasq answers on the bridge address | None: `raw.dnsmasq` is `port=0`, so dnsmasq serves DHCP only |
-| Profile | Root disk and `eth0` | Root disk, `eth0` with the common ACL and reject defaults, read-only idmapped shared folders, and proxy settings as `environment.*` keys |
+| Profile | Root disk and `eth0` | Root disk, `eth0` with the common ACL and reject defaults, read-only idmapped shared folders (unshifted on an [Instance fleet Node](/reference/development-containers#instance-host-in-the-fleet)), and proxy settings as `environment.*` keys |
 | Restrictions | Nesting, interception, low-level keys | Isolated ID maps, host disks with no path list (Incus refuses `shift` under one), proxy devices |
 | Input rules | `orbit:task-containers-*`: DHCP and DNS | `orbit:instances-*`: DHCP and the egress proxy, no DNS |
 | Clone probe | Always | On a ZFS pool only; a directory pool makes full copies |
