@@ -67,6 +67,7 @@ One file per command, because the reviewer reads the whole contract of a command
 | `vars` | Named lists that a command line splices with `"@name"`. |
 | `fixtures` | Named lists of steps that cases reuse. |
 | `uncovered` | Chart paths, options or codes that have no case yet, each with a reason. |
+| `waits` | Named reasons that keep cases from running, such as a fleet window that the owner schedules. A case names one with its own `waits`. |
 | `cases` | The cases. |
 
 A case from the draft (its `negative` key is shown [below](#prove-a-case-can-fail)):
@@ -108,6 +109,7 @@ A case from the draft (its `negative` key is shown [below](#prove-a-case-can-fai
 | `fails_today` | no | One line saying why the case fails on the current code. The build removes it. |
 | `negative` | no | How to prove that the case can fail. See [Prove a case can fail](#prove-a-case-can-fail). |
 | `timeout` | no | Seconds for the case. Default 180. |
+| `waits` | no | The name of a reason in the file's `waits`. The case loads and keeps its steps, but the plan and the runner skip it until the reason is gone. Remove the key when it can run. |
 
 A case writes no cleanup. Each batch starts from a restore of the task's `base` snapshot, and each case creates what it needs on its own resources: free ports, its own listeners, a new Instance. So cases in a batch do not touch each other. A case that did not pass triggers no restore; a case that cannot share the batch with others gets its own.
 

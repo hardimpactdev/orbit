@@ -41,8 +41,8 @@ STEPS = {
     'node_fixture': (('setup',), {'kind', 'as'}, {'consumer', 'serving'}),
     'recorded_request': (('act',), {'node', 'caller', 'expect'}, {'agent', 'age'}),
 }
-FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'cases', 'spread', 'parallel'}
-CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'fails_on_base', 'negative', 'timeout', 'node', 'exclusive', 'read_only'}
+FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'waits', 'cases', 'spread', 'parallel'}
+CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'fails_on_base', 'negative', 'timeout', 'node', 'exclusive', 'read_only', 'waits'}
 DEFAULT_PARALLEL = 4
 GLOBAL_STEPS = {'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request'}
 READ_STEPS = {'probe', 'ufw', 'record', 'doctor', 'unchanged', 'package'}
@@ -88,6 +88,7 @@ class Case:
     exclusive: bool = False   # the case asked to run alone
     fails_on_base: bool = False
     read_only: bool = False   # the case changes nothing; checked by `check_read_only`
+    waits: str | None = None  # the reason of the file's `waits` map that keeps the case from running; set by `load`
 
 
 @dataclass
@@ -101,6 +102,8 @@ class Spec:
     batches: dict = field(default_factory=dict)
     spread: list = field(default_factory=list)
     parallel: int = DEFAULT_PARALLEL
+    # The cases that wait for a named reason of the file's `waits` map, by id; they never run (docs/reference/verification-cases).
+    waiting: dict = field(default_factory=dict)
 
     def case(self, case_id):
         for case in self.cases:
@@ -447,13 +450,23 @@ def load(cases_file, batches_file):
     file_vars = data.get('vars') or {}
     fixtures = data.get('fixtures') or {}
     static = {'sources': list(data['sources'])}
-    cases, seen = [], set()
+    waits = data.get('waits') or {}
+    if not isinstance(waits, dict) or not all(isinstance(reason, str) and reason.strip() for reason in waits.values()):
+        raise SpecError(f'{cases_file}: waits maps a name to its reason')
+    cases, seen, waiting = [], set(), {}
     for raw in data['cases']:
-        for case in build_cases(raw, file_vars, fixtures, static, batches):
+        wait = raw.get('waits') if isinstance(raw, dict) else None
+        if wait is not None and wait not in waits:
+            raise SpecError(f"case {raw.get('id')}: waits names no reason of the file's waits")
+        for case in build_cases({key: item for key, item in raw.items() if key != 'waits'} if wait is not None else raw, file_vars, fixtures, static, batches):
             if case.id in seen:
                 raise SpecError(f'case {case.id} appears twice')
             seen.add(case.id)
-            cases.append(case)
+            if wait is not None:
+                case.waits = waits[wait]
+                waiting[case.id] = case
+            else:
+                cases.append(case)
     spread = data.get('spread') or []
     if not isinstance(spread, list) or not set(spread) <= set(NODES):
         raise SpecError(f'{cases_file}: spread is a list of {NODES}')
@@ -461,7 +474,7 @@ def load(cases_file, batches_file):
     if type(parallel) is not int or not 1 <= parallel <= 16:
         raise SpecError(f'{cases_file}: parallel is a whole number from 1 to 16')
     place(cases, data['target'], spread)
-    return Spec(data['command'], data['chart'], data['target'], list(data['sources']), data.get('baseline') or [], cases, batches, spread, parallel)
+    return Spec(data['command'], data['chart'], data['target'], list(data['sources']), data.get('baseline') or [], cases, batches, spread, parallel, waiting)
 
 
 def plan(spec):

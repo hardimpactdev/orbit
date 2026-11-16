@@ -204,3 +204,16 @@ it('plans the worst node selection at its floor, balances the other copies and n
         ->and(array_values(array_map(static fn (array $batch): string => $batch['command'].' '.$batch['batch'], array_filter($batches, static fn (array $batch): bool => $copyEnds([$batch]) > $limit))))
         ->toBe(['node:converge fresh-fleet', 'node:converge no-grant', 'node:role:add fresh-fleet', 'node:role:add ufw-fault', 'node:metrics fresh-fleet', 'node:metrics node-down', 'node:show fresh-fleet']);
 });
+
+it('never plans a case that waits for a named reason, and refuses a wait without one', function (): void {
+    // docs/reference/verification-cases: nested-app-dev's roles phase waits for the 2,000,000 ID map window.
+    $source = Mockery::mock(ProofCommitSource::class);
+    $source->shouldReceive('file')->with('head', 'swamp/proof/batches.yaml')->andReturn("batches: {fresh: {}, other: {}}\n");
+    $source->shouldReceive('file')->with('head', 'cases.yaml')->andReturn("command: demo:run\nwaits: {window: The owner schedules it.}\ncases: [{id: a, batch: fresh}, {id: b, batch: fresh, waits: window}, {id: c, batch: other, waits: window}]\n");
+    $source->shouldReceive('file')->with('head', 'unnamed.yaml')->andReturn("command: demo:run\ncases: [{id: a, batch: fresh}, {id: b, batch: fresh, waits: window}]\n");
+    $plan = new ProofBatchPlan($source);
+
+    expect($plan->read('head', [['command' => 'demo:run', 'file' => 'cases.yaml']]))->toHaveCount(1)
+        ->and($plan->read('head', [['command' => 'demo:run', 'file' => 'cases.yaml']])[0])->toMatchArray(['batch' => 'fresh', 'cases' => ['a']])
+        ->and(fn () => $plan->read('head', [['command' => 'demo:run', 'file' => 'unnamed.yaml']]))->toThrow(ResourceOperationException::class, 'waits for no named reason');
+});

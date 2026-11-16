@@ -100,6 +100,14 @@ final readonly class ProofBatchPlan
                 || ! is_string($case['batch'] ?? null)) {
                 throw new ResourceOperationException('proof.selection_invalid', 'Selected command has an invalid case or batch.', 409);
             }
+            // A case that waits for a named reason of the file's `waits` map is never planned (docs/reference/verification-cases).
+            if (array_key_exists('waits', $case)) {
+                if (! is_string($case['waits']) || ! is_string($spec['waits'][$case['waits']] ?? null)) {
+                    throw new ResourceOperationException('proof.selection_invalid', 'Case '.$case['id'].' waits for no named reason.', 409);
+                }
+
+                continue;
+            }
             $variants = $case['variants'] ?? null;
             if ($variants !== null && (! is_array($variants) || ! array_is_list($variants) || $variants === [])) {
                 throw new ResourceOperationException('proof.selection_invalid', 'Case '.$case['id'].' has invalid variants.', 409);

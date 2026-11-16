@@ -29,6 +29,9 @@ uncovered:
   "path:metrics": "Need exporter scrape and Prometheus membership assertions on recorded Metrics participants to prove conditional enrollment."
   "path:analytics-cleanup": "Need prepared Analytics storage and init-container lifecycle assertions to prove best-effort cleanup after either terminal result, before private run files are removed."
 
+waits:
+  idmap: "app-dev --converge runs nested-app-dev's roles phase, which builds the Instance host's stock image. That needs the default's 2,000,000 ID map; below it the phase fails with too few uid/gid. The owner schedules the ID map window; until then the plan skips this case."
+
 cases:
   - id: required-only
     batch: fresh-fleet
@@ -60,6 +63,7 @@ cases:
 
   - id: application-repeat
     batch: fresh-fleet
+    waits: idmap
     covers: [main, tools, converge-requested, converge-mode, converge, converge-succeeded]
     summary: Converge app-dev and its Tool Managers, then prove an unchanged repeat changes no role resources or manager installation.
     timeout: 1800
