@@ -3,7 +3,7 @@
  * the helper's contract says, on the Incus fixture's state.json and the fixture's cgroup files, so the sleep phase's own steps run for
  * real. The helper's engine has its own tests (instance_power_helper_test.py). `helper` in state.json scripts what the fixture does:
  * `busy` calls answer with systemd's UnitExists refusal first, `crash` names a command that ends with exit code 70, `pause_fails`
- * comes from the Incus fixture. Each call is one JSON line in `calls`, as the Incus fixture writes its own.
+ * comes from the Incus fixture. Each call is one JSON line in `helper-calls`, beside the Incus fixture's `calls`.
  */
 const folder = Deno.env.get("HOST_FIXTURE")!;
 const file = `${folder}/state.json`;
@@ -21,7 +21,7 @@ if ((helper.busy ?? 0) > 0) {
     console.error(`Failed to start transient service unit: Unit ${unit}.service was already loaded or has a fragment file.`);
     Deno.exit(1);
 }
-Deno.writeTextFileSync(`${folder}/calls`, JSON.stringify(command) + "\n", { append: true });
+Deno.writeTextFileSync(`${folder}/helper-calls`, JSON.stringify(command) + "\n", { append: true });
 const stdin = command[0] === "prepare" || command[0] === "restore" ? new TextDecoder().decode(await new Response(Deno.stdin.readable).arrayBuffer()) : "";
 if (stdin !== "") Deno.writeTextFileSync(`${folder}/helper-intent.json`, stdin);
 if (helper.crash === command[0]) {
@@ -33,8 +33,8 @@ const instance = Number(command[2]);
 const intent = stdin === "" ? null : JSON.parse(stdin);
 const project = intent?.incus_project ?? state.helper_project ?? "orbit-instances";
 const cgroup = `${folder}/cgroup/lxc.payload.${project}_instance-${instance}`;
-const container = state.containers[`instance-${instance}`];
-const status = String(container.status).toLowerCase();
+const container = state.containers?.[`instance-${instance}`];
+const status = container ? String(container.status).toLowerCase() : "missing";
 const out = (body: Record<string, unknown>) => console.log(JSON.stringify({ schema_version: 1, command: command[0], instance_id: instance, error_code: null, ...body }));
 const walk = (path: string, relative = ""): string[] =>
     [relative, ...[...Deno.readDirSync(path)].filter((entry) => entry.isDirectory).flatMap((entry) => walk(`${path}/${entry.name}`, relative === "" ? entry.name : `${relative}/${entry.name}`))];
@@ -82,7 +82,15 @@ if (command[0] === "prepare") {
         out({ outcome: "recorded", state_before: "frozen", state_after: "frozen", prepared_restore: state.sleep.prepared_restore });
     }
 } else if (command[0] === "restore") {
-    if (status !== "frozen") {
+    if (status === "missing") {
+        out({ outcome: "missing", state_before: "missing", state_after: "missing", swap_subtree: [], prepared_restore: null });
+    } else if (status !== "frozen") {
+        if (status === "stopped") {
+            state.plan = false;
+            state.opened = [];
+            delete state.sleep;
+            save();
+        }
         out({ outcome: status === "running" ? "already_running" : status, state_before: status, state_after: status, swap_subtree: [],
             prepared_restore: { version: 1, status: "not_applicable" } });
     } else if (state.resume_fails) {
@@ -96,7 +104,8 @@ if (command[0] === "prepare") {
         state.opened = [];
         delete state.sleep;
         save();
-        out({ outcome: "resumed", state_before: "frozen", state_after: "running", swap_subtree: [], prepared_restore: restored });
+        out({ outcome: "resumed", state_before: "frozen", state_after: "running", swap_subtree: [], prepared_restore: restored,
+            seconds: { load: 0.01, resume: 0.02, close: 0.001 } });
     }
 } else if (command[0] === "discard") {
     state.plan = false;

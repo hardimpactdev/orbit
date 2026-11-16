@@ -6,6 +6,7 @@
 import { assert, assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 import { fixture as hostFixture } from "./_support/instance_host.ts";
+import { helperCalls, installPowerHelper } from "./_support/power_helper.ts";
 
 /** The normal host transcript of main; see the case that compares it. */
 // The browser change adds exactly one task (the image's shared files in existing containers) and two Incus calls (its instance
@@ -90,11 +91,13 @@ function fixture() {
     stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`));
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
     "tasks/instance-container-run-phase.yml",
-    "tasks/instance-container-power.yml", "tasks/instance-container-swap.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py",
+    "tasks/instance-container-power.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py",
     "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh", "tasks/instance-proof-checkout.yml"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
+  // The power helper that resumes a Frozen container and discards a Stopped one's plan (_support/power_helper.ts).
+  installPowerHelper(folder, folder);
   // The composed proxy environment goes into the container through instance_node_services.py `proxy`; the fake keeps its value.
   Deno.copyFileSync(new URL("instance_node_services.py", root), `${folder}/instance_node_services.py`);
   Deno.copyFileSync(new URL("tasks/instance-node-runtime.yml", root), `${folder}/tasks/instance-node-runtime.yml`);
@@ -174,6 +177,7 @@ function fixture() {
           ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
           ORBIT_RUN: `${folder}/run`,
           ORBIT_RUN_ID: runId,
+          ORBIT_OPERATION_ID: "31",
           ORBIT_GIT_CREDENTIAL: "",
           ORBIT_ENVIRONMENT: "APP_KEY=base64:secret\n",
           ORBIT_MODEL_ENVIRONMENT: "ORBIT_MODEL_KEY=placeholder\n",
@@ -1372,7 +1376,7 @@ Deno.test({
 
 /** The wake of each state a sleeping container can be in; the cgroup files live in the fixture. */
 function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | "Running",
-  options: { marker?: boolean; web?: number[]; silent?: boolean; nested?: boolean; inner?: Record<string, string>; record?: string; intent?: Record<string, unknown> } = {}) {
+  options: { marker?: boolean; web?: number[]; silent?: boolean; nested?: boolean; inner?: Record<string, string>; opened?: string[]; intent?: Record<string, unknown> } = {}) {
   if (options.nested) {
     f.container.project = "orbit-instances-nested";
     f.write();
@@ -1384,31 +1388,32 @@ function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | 
   const state = f.state();
   state.containers["instance-7"].status = status;
   if (options.silent) state.containers["instance-7"].silent_until_boot = true;
+  // The sleep's plan and the cgroups it opened, as the helper fixture keeps them: "" is the container's own cgroup.
+  Object.assign(state, { plan: true, opened: ["", ...(options.opened ?? [])], helper: {} });
   Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
   const cgroup = `${f.folder}/cgroup/lxc.payload.${f.container.project}_instance-7`;
   Deno.mkdirSync(cgroup, { recursive: true });
   Deno.writeTextFileSync(`${cgroup}/memory.swap.max`, "max");
-  // The inner cgroups as the sleep left them, and its record of those it opened (a vanished one may be named).
+  // The inner cgroups as the sleep left them.
   for (const [path, value] of Object.entries(options.inner ?? {})) {
     Deno.mkdirSync(`${cgroup}/${path.split("/").slice(0, -1).join("/")}`, { recursive: true });
     Deno.writeTextFileSync(`${cgroup}/${path}`, value);
   }
-  Deno.mkdirSync(`${f.folder}/shm`, { recursive: true });
-  const record = `${f.folder}/shm/app-instance-7.swap`;
-  if (options.record !== undefined) Deno.writeTextFileSync(record, options.record);
+  const helperBefore = helperCalls(f.folder).length;
   Object.assign(f.intent, options.intent ?? { marker: sleeping.marker, web: { port: 8080, ready_seconds: 2, settle_seconds: 1, resume_seconds: 2 } });
   f.write();
   const calls = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").length;
-  const run = f.run("start", {}, ["-e", `cgroup_root=${f.folder}/cgroup`, "-e", `swap_record_directory=${f.folder}/shm`]);
+  const run = f.run("start");
   const families = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").slice(calls - 1).filter(Boolean)
     .map((line) => (JSON.parse(line) as string[]).filter((arg, i, all) => arg !== "--project" && all[i - 1] !== "--project")[0]);
   return { run, sleeping, families, swap: Deno.readTextFileSync(`${cgroup}/memory.swap.max`), status: f.state().containers["instance-7"].status as string,
     inner: Object.fromEntries(Object.keys(options.inner ?? {}).map((path) => [path, Deno.readTextFileSync(`${cgroup}/${path}`)])),
-    record: (() => { try { return Deno.readTextFileSync(record); } catch { return null; } })() };
+    helper: helperCalls(f.folder).slice(helperBefore).map((call) => call[0]), plan: f.state().plan as boolean,
+    intent: (() => { try { return JSON.parse(Deno.readTextFileSync(`${f.folder}/helper-intent.json`)); } catch { return null; } })() };
 }
 
 Deno.test({
-  name: "a wake resumes a Frozen container without a boot, closes swap again and removes the marker; its result names the path and seconds",
+  name: "a wake hands a Frozen container to the power helper, which restores and resumes it and closes swap; no boot; the marker goes",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1418,8 +1423,11 @@ Deno.test({
       assertEquals(woken.status, "Running");
       assertEquals(woken.swap, "0");
       assert(!woken.sleeping.present());
-      assert(woken.families.includes("resume"));
-      assert(!woken.families.includes("start") && !woken.families.includes("stop"), woken.families.join(","));
+      // One helper call through the Instance's lock, with the run's Operation and the recorded runtime; no `incus resume` of its own.
+      assertEquals([woken.helper, woken.plan], [["restore"], false]);
+      assertEquals(helperCalls(f.folder).at(-1), ["restore", "--instance", "7", "--operation", "31"]);
+      assertEquals([woken.intent.operation_id, woken.intent.incus_project, woken.intent.incus_name], [31, "orbit-instances", "instance-7"]);
+      assert(!woken.families.some((family) => ["resume", "start", "stop"].includes(family)), woken.families.join(","));
       // A running container converges nothing: no egress read, php link or ini push, no autostart key.
       assert(!woken.families.includes("file") && !woken.families.includes("config"), woken.families.join(","));
       const result = f.result();
@@ -1442,7 +1450,8 @@ Deno.test({
     try {
       const woken = wakeFrom(f, "Frozen", { silent: true });
       assert(woken.run.ok, woken.run.output);
-      assertEquals(woken.families.filter((family) => ["resume", "stop", "start"].includes(family)), ["resume", "stop", "start"]);
+      assertEquals(woken.helper, ["restore"]);
+      assertEquals(woken.families.filter((family) => ["resume", "stop", "start"].includes(family)), ["stop", "start"]);
       assertEquals(woken.status, "Running");
       assert(!woken.sleeping.present());
       assertEquals(f.result().wake, "restarted_after_resume");
@@ -1458,9 +1467,11 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
+      // A Stopped container's plan and swap record go before the boot: the helper discards them, so no later wake reads them.
       const stopped = wakeFrom(f, "Stopped");
       assert(stopped.run.ok, stopped.run.output);
       assert(stopped.families.includes("start") && !stopped.families.includes("resume"));
+      assertEquals([stopped.helper, stopped.plan], [["restore"], false]);
       assert(!stopped.sleeping.present());
       assertEquals(f.result().wake, "started");
 
@@ -1468,6 +1479,7 @@ Deno.test({
       const running = wakeFrom(f, "Running");
       assert(running.run.ok, running.run.output);
       assert(!running.families.some((family) => ["start", "stop", "resume", "config", "file"].includes(family)), running.families.join(","));
+      assertEquals(running.helper, []);
       assert(!running.sleeping.present());
       assertEquals([f.result().wake, f.result().marker_found], ["already_running", true]);
 
@@ -1488,16 +1500,16 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a wake closes the swap of the container and of each recorded inner cgroup that still exists, skips a vanished one, and removes the record",
+  name: "a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
-      // The sleep's record names the inner cgroups it opened: one is still there, one belonged to a unit that ended, one climbs out.
+      // The vanished and climbing-out paths are the helper's own close_swap tests (instance_power_helper_test.py).
       const woken = wakeFrom(f, "Frozen", { inner: { "lxc.payload.nested-gateway/memory.swap.max": "max", "system.slice/polkit.service/memory.swap.max": "33554432" },
-        record: "lxc.payload.nested-gateway/memory.swap.max\nsystem.slice/systemd-hostnamed.service/memory.swap.max\n../escape/memory.swap.max\n" });
+        opened: ["lxc.payload.nested-gateway"] });
       assert(woken.run.ok, woken.run.output);
-      assertEquals([woken.status, woken.swap, woken.record], ["Running", "0", null]);
+      assertEquals([woken.status, woken.swap, woken.helper], ["Running", "0", ["restore"]]);
       assertEquals(woken.inner, { "lxc.payload.nested-gateway/memory.swap.max": "0", "system.slice/polkit.service/memory.swap.max": "33554432" });
       assertEquals(f.result().wake, "resumed");
     } finally {
@@ -1514,13 +1526,15 @@ Deno.test({
     try {
       for (const status of ["Frozen", "Stopped"] as const) {
         const marker = `${f.folder}/hibernation/app-instance-7.asleep`;
-        const started = wakeFrom(f, status, { intent: { asleep_marker: marker }, inner: { "inner.slice/memory.swap.max": "max" }, record: "inner.slice/memory.swap.max\n" });
+        const started = wakeFrom(f, status, { intent: { asleep_marker: marker }, inner: { "inner.slice/memory.swap.max": "max" }, opened: ["inner.slice"] });
         assert(started.run.ok, started.run.output);
         assertEquals(started.status, "Running");
         assert(!started.sleeping.present(), status);
         assertEquals(started.sleeping.webChecks(), 0);
         assertEquals(f.result().wake, undefined);
-        if (status === "Frozen") assertEquals([started.swap, started.inner["inner.slice/memory.swap.max"], started.record], ["0", "0", null]);
+        // The helper consumes or discards the plan before anything of the container changes, and closes what the sleep opened.
+        assertEquals([started.helper, started.plan], [["restore"], false]);
+        if (status === "Frozen") assertEquals([started.swap, started.inner["inner.slice/memory.swap.max"]], ["0", "0"]);
       }
     } finally {
       f.cleanup();
@@ -1534,8 +1548,9 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
-      const frozen = wakeFrom(f, "Frozen", { nested: true, inner: { "lxc.payload.nested-app-dev/memory.swap.max": "max" }, record: "lxc.payload.nested-app-dev/memory.swap.max\n" });
+      const frozen = wakeFrom(f, "Frozen", { nested: true, inner: { "lxc.payload.nested-app-dev/memory.swap.max": "max" }, opened: ["lxc.payload.nested-app-dev"] });
       assert(frozen.run.ok, frozen.run.output);
+      assertEquals([frozen.helper, frozen.intent.incus_project], [["restore"], "orbit-instances-nested"]);
       assertEquals([frozen.status, frozen.swap, frozen.inner["lxc.payload.nested-app-dev/memory.swap.max"]], ["Running", "0", "0"]);
       assert(!frozen.sleeping.present());
 
@@ -1544,6 +1559,8 @@ Deno.test({
       assertEquals(f.result().error_code, "instance.nested_fleet_stopped");
       assertEquals(stopped.status, "Stopped");
       assert(!stopped.families.includes("start"), stopped.families.join(","));
+      // The refusal comes first: a stopped nested fleet's plan and record stay for the start that gives back its key.
+      assertEquals(stopped.helper, []);
       assert(stopped.sleeping.present());
 
       const silent = wakeFrom(f, "Frozen", { nested: true, silent: true });
@@ -1568,10 +1585,16 @@ Deno.test({
       const state = f.state();
       state.containers["instance-7"].status = "Frozen";
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      Object.assign(state, { plan: true, opened: [""], helper: {} });
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
       Deno.mkdirSync(`${f.folder}/cgroup/lxc.payload.orbit-instances_instance-7`, { recursive: true });
-      const result = f.run("start", {}, ["-e", `cgroup_root=${f.folder}/cgroup`]);
+      Deno.writeTextFileSync(`${f.folder}/cgroup/lxc.payload.orbit-instances_instance-7/memory.swap.max`, "max");
+      const result = f.run("start");
       assert(result.ok, result.output);
       assertEquals(f.state().containers["instance-7"].status, "Running");
+      // The helper consumed the pre-deployment plan before the converge, and closed the swap the sleep opened.
+      assertEquals([helperCalls(f.folder).map((call) => call[0]), f.state().plan], [["restore"], false]);
+      assertEquals(Deno.readTextFileSync(`${f.folder}/cgroup/lxc.payload.orbit-instances_instance-7/memory.swap.max`), "0");
       assertEquals(f.result().wake, undefined);
       assert(/Configure the container's PHP settings|Read the container's PHP settings/.test(result.output));
       assert(!/Read the container's PHP settings\]\s*\n\s*skipping/.test(result.output), result.output);

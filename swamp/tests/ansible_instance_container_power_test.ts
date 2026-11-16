@@ -4,6 +4,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { join } from "jsr:@std/path@1";
+import { helperCalls as readHelperCalls, installPowerHelper } from "./_support/power_helper.ts";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 
 type Step = { name: string; dependsOn?: { step: string }[]; task: { behaviorName?: string; inputs: { run?: string; env?: Record<string, string> } } };
@@ -101,33 +102,17 @@ const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-play
 const user = new TextDecoder().decode(new Deno.Command("id", { args: ["-un"] }).outputSync().stdout).trim();
 const group = new TextDecoder().decode(new Deno.Command("id", { args: ["-gn"] }).outputSync().stdout).trim();
 
-/** The shipped playbook with its tasks, the helper's install made fit for an unprivileged user: its folders in the fixture, no owner, no
- * daemon reload, and a probe that writes a manifest without support, as instance_host.ts does for the converge. */
+/** The shipped playbook with its tasks, and the power helper of the test copy (_support/power_helper.ts). */
 function playbook(folder: string): string {
     const copy = `${folder}/ansible`;
     Deno.mkdirSync(`${copy}/tasks`, { recursive: true });
     for (const entry of Deno.readDirSync(shipped)) {
-        if (entry.name !== "tasks") Deno.symlinkSync(join(shipped, entry.name), join(copy, entry.name));
+        if (!["tasks", "files"].includes(entry.name)) Deno.symlinkSync(join(shipped, entry.name), join(copy, entry.name));
     }
     for (const entry of Deno.readDirSync(`${shipped}/tasks`)) {
-        if (entry.name !== "instance-power-helper.yml") Deno.symlinkSync(join(shipped, "tasks", entry.name), join(copy, "tasks", entry.name));
+        if (!["instance-power-helper.yml", "instance-power-call.yml"].includes(entry.name)) Deno.symlinkSync(join(shipped, "tasks", entry.name), join(copy, "tasks", entry.name));
     }
-    const tasks = (parse(Deno.readTextFileSync(`${shipped}/tasks/instance-power-helper.yml`)) as Record<string, unknown>[]).map((task) => {
-        for (const module of ["ansible.builtin.copy", "ansible.builtin.file"]) {
-            const args = task[module] as Record<string, unknown> | undefined;
-            if (args) { delete args.owner; delete args.group; }
-        }
-        if (task["ansible.builtin.systemd_service"]) { delete task["ansible.builtin.systemd_service"]; task["ansible.builtin.debug"] = { msg: "daemon-reload" }; }
-        if (task.name === "Probe the kernel primitives of the power helper") {
-            task["ansible.builtin.command"] = { argv: ["sh", "-c", `echo '{"supported": false}' > /var/lib/orbit/hibernation/capabilities.json && echo '{"capabilities": {}}'`] };
-        }
-        return task;
-    });
-    let text = JSON.stringify(tasks);
-    for (const [from, to] of [["/usr/local/libexec", `${folder}/libexec`], ["/var/lib/orbit/hibernation", `${folder}/state`], ["/etc/systemd/system/", `${folder}/systemd/`]]) {
-        text = text.replaceAll(from, to);
-    }
-    Deno.writeTextFileSync(`${copy}/tasks/instance-power-helper.yml`, text);
+    installPowerHelper(folder, copy);
     return copy;
 }
 
@@ -159,10 +144,8 @@ async function sleep(
         Deno.writeTextFileSync(`${cgroup}/memory.reclaim`, "");
         Deno.writeTextFileSync(`${cgroup}/memory.current`, "524242944\n");
         Deno.writeTextFileSync(`${cgroup}/memory.stat`, `anon ${options.anonAfter ?? 0}\nfile 0\nshmem 0\n`);
-        for (const [name, script] of [["incus", "fixtures/instance-container-incus.ts"], ["systemd-run", "fixtures/instance-power-helper.ts"]]) {
-            Deno.writeTextFileSync(`${folder}/bin/${name}`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL(script, import.meta.url).pathname}' "$@"\n`);
-            Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
-        }
+        Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`);
+        Deno.chmodSync(`${folder}/bin/incus`, 0o755);
         const marker = `${folder}/hibernation/app-instance-7.asleep`;
         const caddy = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, () => new Response(options.caddy ?? loaded));
         servers.push(caddy);
@@ -186,6 +169,7 @@ async function sleep(
                 ANSIBLE_HOME: `${folder}/ansible-home`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
         const lines = (() => { try { return Deno.readTextFileSync(`${folder}/calls`).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]); } catch { return []; } })();
+        const helper = readHelperCalls(folder);
         return {
             ok: done.success,
             output: new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr),
@@ -195,7 +179,7 @@ async function sleep(
             swap: Deno.readTextFileSync(`${cgroup}/memory.swap.max`),
             reclaim: Deno.readTextFileSync(`${cgroup}/memory.reclaim`),
             calls: lines.map((call) => call.filter((arg) => !["--project", project].includes(arg))[0]),
-            helper: lines.filter((call) => ["prepare", "residual", "restore", "discard"].includes(call[0])),
+            helper,
             inner: Object.fromEntries(Object.keys(options.inner ?? {}).map((path) => [path, (() => { try { return Deno.readTextFileSync(`${cgroup}/${path}`); } catch { return "gone"; } })()])),
             intent: (() => { try { return JSON.parse(Deno.readTextFileSync(`${folder}/helper-intent.json`)); } catch { return null; } })(),
             installed: (() => { try { return Deno.statSync(`${folder}/libexec/orbit-instance-power`).isFile; } catch { return false; } })(),
@@ -341,38 +325,3 @@ Deno.test({ name: "a busy lock is tried again; one that stays busy fails `instan
     assertEquals(crashed.result, { error_code: "instance.power_helper_failed" });
     assertEquals([crashed.marker, helperCalls(crashed)], [true, ["prepare"]]);
 } });
-
-Deno.test({ name: "a resume's swap close writes 0 to the container and to each recorded cgroup that still exists, never climbs out, and removes the record", ignore: !available, async fn() {
-    const folder = Deno.makeTempDirSync();
-    try {
-        const cgroup = `${folder}/cgroup/lxc.payload.orbit-instances_instance-7`;
-        const files: Record<string, string> = {
-            [`${cgroup}/memory.swap.max`]: "max",
-            [`${cgroup}/lxc.payload.nested-gateway/memory.swap.max`]: "max",
-            [`${cgroup}/system.slice/polkit.service/memory.swap.max`]: "33554432",
-            [`${folder}/cgroup/escape/memory.swap.max`]: "max",
-        };
-        for (const [path, value] of Object.entries(files)) {
-            Deno.mkdirSync(path.split("/").slice(0, -1).join("/"), { recursive: true });
-            Deno.writeTextFileSync(path, value);
-        }
-        Deno.mkdirSync(`${folder}/shm`);
-        // A short-lived unit's cgroup went while the container slept; a record line that climbs out is never followed.
-        Deno.writeTextFileSync(`${folder}/shm/app-instance-7.swap`,
-            "lxc.payload.nested-gateway/memory.swap.max\nsystem.slice/systemd-hostnamed.service/memory.swap.max\n../escape/memory.swap.max\n");
-        Deno.writeTextFileSync(`${folder}/play.yml`, JSON.stringify([{ hosts: "localhost", gather_facts: false,
-            vars: { container: { instance_id: 7, project: "orbit-instances", name: "instance-7" } },
-            tasks: [{ name: "Close the swap", "ansible.builtin.include_tasks": { file: `${shipped}/tasks/instance-container-swap.yml` }, vars: { swap: "close" } }] }]));
-        const done = await new Deno.Command("ansible-playbook", {
-            args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
-                "-e", `cgroup_root=${folder}/cgroup`, "-e", `swap_record_directory=${folder}/shm`, `${folder}/play.yml`],
-            env: { ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
-        }).output();
-        assert(done.success, new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr));
-        assertEquals(Object.keys(files).map((path) => Deno.readTextFileSync(path)), ["0", "0", "33554432", "max"]);
-        assert(!(() => { try { return Deno.statSync(`${folder}/shm/app-instance-7.swap`).isFile; } catch { return false; } })());
-    } finally {
-        Deno.removeSync(folder, { recursive: true });
-    }
-} });
-

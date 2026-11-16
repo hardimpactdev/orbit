@@ -74,8 +74,8 @@
   when: phase in ['container', 'clone', 'stop', 'start']
 
 # A wake (only its intent names the asleep marker) finds one of four states (docs/reference/development-containers.md#sleep-and-wake):
-# Frozen, the sleep's state: resume it, close swap again, and wait a short time for the web unit; a silent one gets a stop and the
-# boot below, as a visitor would rather wait for a boot than for ever. Stopped (after a host reboot or a sleep that fell back to a
+# Frozen, the sleep's state: the power helper resumes it and closes swap again, then the phase waits a short time for the web
+# unit; a silent one gets a stop and the boot below, as a visitor would rather wait for a boot than for ever. Stopped (after a host reboot or a sleep that fell back to a
 # stop): the boot below. Running: no start and no resume. A Frozen container without its marker is a defect that the result names.
 # A deployment's start resumes a Frozen container too, then converges as usual. A nested-fleet container
 # is never stopped or booted by a wake: only a deployment or a start gives back its Club key and its tunnel `wg-nested`.
@@ -98,18 +98,30 @@
   when: phase == 'start' and intent.marker is defined and start_nested | bool and start_found == 'Stopped'
   ansible.builtin.fail: { msg: instance.nested_fleet_stopped }
 
+# The power helper (docs/reference/prepared-restore.md#lifecycle) owns the resume of a sleeping container for a wake, a deployment
+# and a start alike, through the Instance's lock. Frozen: with a valid plan of the last sleep it reads the recorded pages back while
+# still frozen, unfreezes once and closes every swap limit that sleep opened; a missing, stale or unreadable plan (a changed boot id
+# included) means an ordinary resume. Stopped: it discards the plan and the limits record before the boot below, so no later sleep or
+# wake meets address data of an earlier incarnation.
+- name: Hand a sleeping container to the power helper
+  tags: [start]
+  when: phase == 'start' and start_found in ['Frozen', 'Stopped']
+  block:
+    - name: Install the power helper
+      ansible.builtin.include_tasks: { file: instance-power-helper.yml, apply: {tags: [start]} }
+    - name: Restore and resume the container
+      ansible.builtin.include_tasks: { file: instance-power-call.yml, apply: {tags: [start]} }
+      vars:
+        power_call: ['restore', '--instance', '{{ container.instance_id }}', '--operation', "{{ lookup('ansible.builtin.env', 'ORBIT_OPERATION_ID') }}"]
+        power_call_intent: true
+    - name: Refuse a resume the helper could not make
+      when: power_called.outcome not in ['resumed', 'stopped']
+      ansible.builtin.fail: { msg: "{{ power_called.error_code | default('instance.container_start_failed', true) }}" }
+
 - name: Resume the frozen container
   tags: [start]
   when: phase == 'start' and start_found == 'Frozen'
   block:
-    - name: Resume the container
-      ansible.builtin.command: { argv: "{{ incus_project + ['resume', container.name] }}" }
-      register: container_resume
-      changed_when: true
-    # Pages in swap stay there and come back on use; a running container swaps no more, as before the sleep.
-    - name: Keep the container's memory out of swap
-      ansible.builtin.include_tasks: { file: instance-container-swap.yml, apply: {tags: [start]} }
-      vars: { swap: close }
     - name: Start the web probe clock
       ansible.builtin.set_fact: { resume_probe_started: "{{ now().timestamp() }}" }
     - name: Wait for the resumed web unit
@@ -128,7 +140,7 @@
       ansible.builtin.set_fact:
         start_resumed: "{{ resumed_web is skipped or (resumed_web.rc == 0 and resumed_web.stdout | int > 0) }}"
         start_resume_timing:
-          resume_seconds: "{{ (container_resume.delta.split(':')[1] | int) * 60 + (container_resume.delta.split(':')[2] | float) }}"
+          resume_seconds: "{{ power_called.seconds.resume }}"
           web_probe_seconds: "{{ ((now().timestamp() | float) - (resume_probe_started | float)) | round(3) }}"
     - name: Refuse the wake of a nested-fleet container whose web unit is silent
       when: not start_resumed and start_nested | bool
