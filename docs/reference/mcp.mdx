@@ -119,7 +119,7 @@ The `task-*` tools belong to the Gateway-switched [tasks](/reference/tasks) exte
 
 `task-comment-create` and `task-comment-list` use a numeric `group` and require Gateway access. Create accepts only `type` (`assistance_requested` or `resolution`), nonblank `body`, and `author`; list accepts optional `type` and `limit` filters and returns an array. These are [group-owned assistance comments](/reference/tasks#group-assistance-after-all-children-end), separate from child comments, with the same guards and no-work semantics as the API. A successful create returns 201, not an exact-retry 200 receipt.
 
-`task-status` returns whether the extension is on, the groups asking for assistance, the open review-and-merge pull requests, and the [task places](/reference/tasks#task-places) of each host with the waiting queue.
+`task-status` returns whether the extension is on, the groups asking for assistance and the open review-and-merge pull requests.
 
 ## Connect a client
 

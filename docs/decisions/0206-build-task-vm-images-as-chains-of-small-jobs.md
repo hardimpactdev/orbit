@@ -40,7 +40,7 @@ The table `task_vm_image_builds` has one row for each build. It holds the host, 
 - **Failure.** The row becomes `failed` with the step and the error. Its builder, smoke VM, and published image stay for 24 hours, until the next build on that host, or until explicit discard.
 - **Resume.** `task-vms:build-image --resume <build id>` continues a failed build from its failed step while cleanup has not claimed it and the step's resources still exist. Cleanup atomically claims a failed row before any remote deletion; resume atomically changes an unclaimed failed row to running. The database decides which wins, with no host cache lock.
 - **Submission.** Start and resume write a pending submission marker with the running state before they enqueue. A worker clears it when it claims the build. The host sweep and the next start or resume fail a pending submission older than ten minutes.
-- **Pruning and sweeps.** Pruning protects the fingerprints and dated aliases of running and retained failed builds on that host. The [host sweep](/reference/compute-drivers#report-strays) and the base image sweep claim cleanup on a non-running build before they delete its builder or smoke VM.
+- **Pruning and sweeps.** Pruning protects the fingerprints and dated aliases of running and retained failed builds on that host. The [host sweep](/reference/compute-drivers#sweep-task-vm-hosts) and the base image sweep claim cleanup on a non-running build before they delete its builder or smoke VM.
 - **Reads.** `task-vms:build-image` prints steps as they finish, and `task-vms:image-builds` lists recent builds with their steps and errors.
 
 ### Enrollment trusts the image

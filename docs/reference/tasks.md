@@ -33,7 +33,7 @@ A [Project removal](/reference/projects#remove-a-project) deletes its task group
 
 Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `task:status` and the `task-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
 
-`task:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), `merges`, and `capacity`. `merges` lists each open task whose pull request Orbit reviews and merges: a task with a `pr_url` in a review-and-merge Project, or a task that reviews an incoming pull request. An open task without a pull request, such as one in `backlog`, is absent. `capacity` is described in [Task places](#task-places).
+`task:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), and `merges`. `merges` lists each open task whose pull request Orbit reviews and merges: a task with a `pr_url` in a review-and-merge Project, or a task that reviews an incoming pull request. An open task without a pull request, such as one in `backlog`, is absent.
 
 `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A subtask's assistance flag does not add its parent task to the list unless the parent also requests assistance. The view remains available while tasks is disabled.
 
@@ -147,22 +147,9 @@ Success leaves the group `running` and its workspace `source_resolved`. The task
 
 `image` is `{ recipe_identity, fingerprint, build_id, fallback }`, copied from the VM row. `fallback` is `true` when the VM started from the host's last promoted image instead of the current recipe's; `recipe_identity` then names that older recipe.
 
-#### Task places
+#### Last activity
 
-No admission waits for a task place any more: the task VM admission and its queue are removed. The view still reads every `waiting` Operation on a group that a release before the removal recorded, in Operation ID order; nothing admits it, and it ends at its run budget. Every host shows 0 places.
-
-`task:status` returns `capacity` with two lists:
-
-| Field | Contract |
-| --- | --- |
-| `hosts` | Each active task VM host, in configuration order: `node_id`, `node`, `task_places`, `task_used`, `task_free`, `ci_places`, `ci_used`, `ci_free`, and `holders` |
-| `queue` | Each waiting admission, front first: `position` (from 1), `operation_id`, `kind`, `group_id`, `title`, and `waiting_since` |
-
-A holder is one live task VM: `vm`, `pool` (`task` or `ci`), and the group it serves as `group_id`, `title`, `status`, `last_activity_at` and `active_operation_id`. The group fields are null for a VM that serves no group, such as a CI proof VM. Each live VM holds its place until its deletion is confirmed, so a failed or parked VM counts.
-
-A group's `last_activity_at` is the newest time any Operation on the group was created, started or ended, or null when it has none. `active_operation_id` is the Operation on the group that has not ended, or null. A holder with no active Operation is idle.
-
-A waiting Operation on a group, and `task:show` of its group, return `capacity_wait`: `operation_id`, `position`, and `holders`, the holders of the task pool on every host. `capacity_wait` is null when the group or Operation is not waiting for a task place.
+A group's `last_activity_at` is the newest time any Operation on the group was created, started or ended, or null when it has none.
 
 #### Release an idle task VM
 
@@ -462,7 +449,7 @@ A task moves to `todo`, by create or update, only when it has subtasks and every
 
 A list row has every field of `task:show` except the group's [`publication`](#publication-state) and, on each subtask, `completion_summary`, `fixup_problem` and the latest check's `output`. A summary is stored in full and a check keeps 16 KiB of output, so a page of full rows grows without bound. Publication reads the group's publish Operations and done check, several reads per group. Read one group with `task:show` to get them.
 
-The list reads each row's columns, subtasks, latest checks, task VM, reviewed commits, workspace route and runtime, task group mode, thread tokens, activity and capacity wait in a fixed number of queries per page, whatever the number of groups. `compact` still applies on top of a list row.
+The list reads each row's columns, subtasks, latest checks, task VM, reviewed commits, workspace route and runtime, task group mode, thread tokens and activity in a fixed number of queries per page, whatever the number of groups. `compact` still applies on top of a list row.
 
 ### Change subtasks
 

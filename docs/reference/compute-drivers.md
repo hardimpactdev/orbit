@@ -540,7 +540,7 @@ Every host has two independent fixed pools, configured with `task_places` and `c
 
 The capacity migration sets existing Beast and Shark hosts to two task and two CI places, and Sabre to zero task and two CI places. It removes `max_vms`, `task_max_vms` and `ci_only` while preserving other Node settings.
 
-No entry admits a task VM any more: each answers `tasks.vm_runtime_removed` ([Task runtime](/reference/tasks#task-runtime)), and nothing waits for a place. Every task VM copied the base, which carried only the proof Project's checkout, `task:status` still shows each host's places and their holders ([Task places](/reference/tasks#task-places)). Lowering a pool size deletes no VM.
+No entry admits a task VM any more: each answers `tasks.vm_runtime_removed` ([Task runtime](/reference/tasks#task-runtime)), and nothing waits for a place. Every task VM copied the base, which carried only the proof Project's checkout. No read shows the places any more: the task places view of `task:status` is removed. Lowering a pool size deletes no VM.
 
 A task publishes its PR and releases its VM, workspace, keys and peer. An [idle](/reference/tasks#release-an-idle-task-vm) group releases its VM too. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
@@ -671,15 +671,11 @@ No VM parks or resumes any more: `task_vm.resume` and the Artisan command `task-
 
 No sweep runs any more. The Gateway job `SweepTaskVmHosts`, its 30-minute schedule, the 5-minute [idle release](/reference/tasks#release-an-idle-task-vm) schedule and the per-minute observation of parked VMs are removed with the task VM runtime ([Task runtime](/reference/tasks#task-runtime)). A VM row that a failed start or release left stays until an operator removes the leftovers by hand.
 
-A VM that dies on an Incus host stays in its row until its group ends. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`; the row is not failed by a sweep. Cancel or complete the group of a missing VM to release it, as for [a release](#release-a-task-vm).
+A VM that dies on an Incus host stays in its row until its group ends; no sweep fails the row. Cancel or complete the group of a missing VM to release it, as for [a release](#release-a-task-vm).
 
-[Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it has `settings.task_vms` and is reachable over SSH. The fleet rollout ignores these codes.
+[Doctor](/cli/doctor) does not inspect task VM hosts: it has no code for an orphaned, missing or stray VM. The operator lists a host with `incus list --all-projects` instead.
 
 Doctor does not inspect the Node of a `parked` task VM, because the VM is stopped on purpose. Its `node` family reports one informational `node.task_vm_parked`, and the other families check nothing. So no problem is filed for a parked VM.
-
-### Report strays
-
-Doctor reports no strays on a task VM host. Its host audit had no caller after the task VM runtime was removed, and it is deleted. The codes `node.task_vm_stray_instance`, `node.task_vm_stray_volume`, `node.task_vm_stray_record` and `node.task_vm_stray_node` are never reported; the operator lists a host with `incus list --all-projects` instead.
 
 ### States
 
@@ -1282,27 +1278,18 @@ The reserved range must always be a private network. As soon as task VMs are ena
 
 ### Errors
 
-`IncusTaskVmProvider` reads the host's output: the instance state and its one IPv4 address inside the bridge range. Invalid output fails with `task_vm.invalid_host_output`, and a failed guest command with `task_vm.host_command_failed`. Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
+Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
 | `task_vm.invalid_config` | 500 | A `task_vms` value is invalid. See [Configure task VMs](#configure-task-vms) |
 | `task_vm.unknown_host` | 409 | The Node is not active or has no valid `settings.task_vms` |
-| `task_vm.invalid_gateway_key` | 500 | The Gateway's SSH public key is not one OpenSSH public key line |
 | `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
 | `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
 | `task_vm.access_refused` | 409 | An access grant names a task VM Node as its consumer |
-| `task_vm.project_unsupported` | 409 | A group of a Project other than the proof Project needs a new task VM. The base carries only the proof Project's checkout |
-| `task_vm.range_in_use` | 409 | A Node that is not the Node of a live task VM holds an address in the reserved range |
 | `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
-| `task_vm.setup_unavailable` | 409 | The setup script is missing, or the target Node has no WireGuard address |
 | `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
-| `task_vm.invalid_host_output` | 502 | Incus or a task VM guest returned output that fails these checks |
-| `task_vm.host_command_failed` | 502 | An `incus` command on the host, or a guest command in a task VM, failed |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
-| `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. No refresh can rebuild it any more |
-| `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. No refresh can rebuild it any more |
-| `task_vm.topology_seed_failed` | 502 | The topology seed build was refused. The error includes its bounded diagnostic |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
 The build row records the step and error |
