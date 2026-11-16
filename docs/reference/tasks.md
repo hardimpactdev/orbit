@@ -447,7 +447,7 @@ Subtask create appends a `todo` subtask at the next position. It works while the
 
 Swamp selects the next subtask and records its status through the API.
 
-Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliverables` value replaces the whole list. Positions stay gapless from 1.
+Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliverables` value replaces the whole list. `reason` goes only with a [correction after a failed check](#correct-the-deliverables-of-a-started-subtask). Positions stay gapless from 1.
 
 | Task status | What can change |
 | --- | --- |
@@ -464,6 +464,35 @@ An ended group permits no subtask status move. Completing a subtask clears its a
 
 In a group whose workspace is a task copy, the admission of a [copy turn](/cli/task/turn#in-a-task-copy) of either role moves the current subtask from `todo` to `running`, under the group's row lock and in the turn's own transaction. A refused turn moves nothing. No turn, check or reviewer pass moves the subtask further. The caller completes it with `task:update <subtask> --status=completed` after the reviewer's turn on the done check ended; that move is the approval that [the done rule](#when-the-work-is-done) reads. Since the turn started it, the subtask then keeps its title, brief, position and deliverables, as the next paragraph says.
 
+A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the corrections that the next section lists.
+
+#### Correct the deliverables of a started subtask
+
+One Gateway rule decides whether a started subtask's deliverables may change, and by which correction. It takes the first that applies:
+
+1. The one correction after a failed `invalid_deliverable` step. The subtask asks for assistance. A subtask gets it once, and it takes no reason.
+2. The [path gate fix](#deliverables). The deliverable path gate holds the subtask before its implementer starts.
+3. A correction after a failed check, in a group whose workspace is a task copy.
+
+A wrong deliverable, such as a command that the copy cannot run or a path that a renumber moved, should not force a code change or a new subtask. In a group whose workspace is a task copy, the caller replaces the list with a reason:
+
+```bash
+orbit task:update 5354 --deliverables=deliverables.json --reason="The tools tests need discover -s tools."
+```
+
+Orbit accepts this correction when all of these hold:
+
+- The group has not ended.
+- The subtask is the current subtask, the first open one, and it has started.
+- Its newest handoff check failed.
+- No correction answered that check yet, of either kind.
+
+The reason is required here, 1 to 500 characters; without it the update returns HTTP 422 `validation.failed` on `reason`. The list passes the same validation as at create: base paths, at most five, and the fields of each type. One correction answers one failed check: a second correction before a new check returns `tasks.deliverables_locked`. A refused correction stores nothing.
+
+Task activity records `deliverables corrected` with the old list, the new list, the reason and the failed check's id. `task:show` shows the new list, and the next handoff check runs it. Nothing else changes: the [done rule](#when-the-work-is-done) reads the current list, and a reviewer still reviews the next check.
+
+A `reason` without `deliverables`, on a group update, on a `todo` subtask, or with a correction that takes no reason returns HTTP 422 `tasks.reason_unexpected` and changes nothing. A `reason` with `deliverables` for a started subtask that no correction admits returns `tasks.deliverables_locked`, as without one.
+
 #### Reopen the last subtask
 
 In an open group whose workspace is a task copy, the caller can reopen the last subtask with `task:update <subtask> --status=running`, so that a fix after the review or after the pull request runs as more turns in the same subtask and threads. The move from `completed` back to `running` is allowed only when all of these hold:
@@ -477,13 +506,11 @@ The move takes the group's row lock, as a completion does. Any other move from `
 The reopen adds no state. The existing rules decide what it means:
 
 - The subtask is current again, so implementer and reviewer turns run on it and continue their threads.
-- Its deliverables stay locked, as for every started subtask.
+- Its deliverables stay locked, as for every started subtask, except for the [corrections](#correct-the-deliverables-of-a-started-subtask).
 - The open subtask keeps the group from being [done](#when-the-work-is-done). A `pr_when_done` group does not publish. A `review_before_pr` group leaves `waiting_for_release`.
 - A new handoff check, a reviewer turn on it and a new completion make the group done again, on the new check.
 - A completion without a new check makes the group done again on its earlier done check, as before the reopen. That check holds no commit made after it.
 - A group that has a pull request keeps it. Its next publish updates the same pull request.
-
-A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the one correction after `invalid_deliverable` described below.
 
 Appending a subtask records new work. Swamp decides when to resume the group.
 
@@ -503,7 +530,8 @@ The task and subtask operations return these errors.
 | `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |
 | `tasks.group_closed` | 409 | Subtask create in an ended task |
 | `tasks.not_in_backlog` | 409 | A title or brief update outside `backlog`, or a subtask update or destroy that the table above does not permit |
-| `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started |
+| `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started, when no [correction](#correct-the-deliverables-of-a-started-subtask) applies |
+| `tasks.reason_unexpected` | 422 | A `reason` on an update that is not a [correction after a failed check](#correct-the-deliverables-of-a-started-subtask) |
 | `tasks.deliverable_base_unavailable` | 422 | The repository base or its complete file tree could not be read for path validation |
 | `tasks.already_claimed` | 409 | An attempted move after workspace reservation |
 | `tasks.subtask_not_running` | 409 | A subtask cancel that the rules above do not permit |

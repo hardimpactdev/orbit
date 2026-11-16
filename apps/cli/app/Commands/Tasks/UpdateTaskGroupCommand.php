@@ -16,6 +16,8 @@ final class UpdateTaskGroupCommand extends TaskCommand
 {
     use ReadsTaskAgentOptions;
 
+    public const int REASON_MAX = 500;
+
     #[\Override]
     protected $signature = 'task:update
         {task? : Numeric Task ID}
@@ -26,6 +28,7 @@ final class UpdateTaskGroupCommand extends TaskCommand
         {--no-preview : Allow the parent sandbox to park during review}
         {--position= : Child position, starting at 1}
         {--deliverables= : JSON file replacing the child deliverables}
+        {--reason= : Why a correction after a failed check replaces the deliverables of a started subtask in a task copy}
         {--implementer-provider= : Implementer provider in a task copy, such as claude}
         {--implementer-model= : Implementer model in a task copy, such as claude-opus-5-5}
         {--implementer-effort= : Implementer effort in a task copy: low, medium, high, xhigh, or max}
@@ -48,9 +51,10 @@ final class UpdateTaskGroupCommand extends TaskCommand
         $status = $this->option('status');
         $position = $this->option('position') === null ? null : $this->idOption('position', 'Position', 'position');
         $deliverables = $this->deliverablesFile();
+        $reason = $this->optionalText($this->option('reason'), 'Reason', 'reason', self::REASON_MAX);
         $agents = $this->taskAgentsOption('', 'task', clearable: true);
         $prMode = $this->prModeOption('pr-mode');
-        if (in_array(false, [$taskId, $title, $brief, $position, $deliverables, $agents, $prMode], true)) {
+        if (in_array(false, [$taskId, $title, $brief, $position, $deliverables, $reason, $agents, $prMode], true)) {
             return self::FAILURE;
         }
         if ($status !== null && ! in_array($status, self::GROUP_STATUSES, true)) {
@@ -73,7 +77,7 @@ final class UpdateTaskGroupCommand extends TaskCommand
             $title = $this->promptText('Title', self::TITLE_MAX);
         }
         $task = $this->sendWithProgress($connector, new UpdateTaskRequest(
-            $taskId, $title, $brief, is_string($status) ? $status : null, $preview, $position, $deliverables, $agents, $prMode,
+            $taskId, $title, $brief, is_string($status) ? $status : null, $preview, $position, $deliverables, $agents, $prMode, $reason,
         ), TaskRecordResponse::class, ['Update task', 'Updating task', 'Updated task']);
 
         return $task instanceof SubtaskResponse ? $this->renderSubtask($task) : ($task instanceof TaskGroupResponse ? $this->renderGroup($task) : self::FAILURE);
