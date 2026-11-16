@@ -76,6 +76,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Jobs\Tasks\DestroyTaskCopy;
+use App\Jobs\Tasks\RetryTaskCopyCreate;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -281,6 +282,25 @@ function runningOperation(Operation $operation): Operation
     $operation->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
 
     return $operation->refresh();
+}
+
+/** The copy's create ended failed at `$step` with `$code`, as OperationStore records every end. */
+function failCopyCreate(Operation $create, string $code, string $step): void
+{
+    app(OperationStore::class)->change(runningOperation($create), ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => $code,
+        'failed_step' => $step, 'lock_key' => null]);
+}
+
+/** The queued DestroyTaskCopy of the copy ran, and its destroy succeeded. */
+function removeFailedCopy(int $copyId): void
+{
+    destroyTaskCopy(Instance::query()->findOrFail($copyId));
+    destroySucceeded(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copyId)->sole());
+}
+
+function retryTaskCopy(Task $group, Operation $failed): void
+{
+    app()->call([new RetryTaskCopyCreate($group->id, $failed->id), 'handle']);
 }
 
 describe('the decision point', function (): void {
@@ -765,8 +785,121 @@ describe('the address of a copy (docs/reference/development-containers.md#the-ad
     });
 });
 
+describe('a failed create of the copy retries once', function (): void {
+    it('records the first failure, removes the copy and starts the create once more for the same group', function (string $code, string $step): void {
+        $group = copyGroup(copySource()->project);
+        $first = startCopy($group);
+
+        failCopyCreate($first, $code, $step);
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Todo)
+            ->and($group->taskable_id)->toBe($first->target_id)
+            ->and($group->copy_create_failure)->toBe(['operation_id' => $first->id, 'failed_step' => $step, 'error_code' => $code])
+            ->and($group->assistance_requested)->toBeFalse();
+        Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $first->target_id);
+        Queue::assertNotPushed(RetryTaskCopyCreate::class);
+
+        // The retry waits for the copy to be gone: its name and its isolated range are the new copy's.
+        removeFailedCopy($first->target_id);
+        expect($group->refresh()->taskable_id)->toBeNull()->and(Instance::query()->find($first->target_id))->toBeNull();
+        Queue::assertPushed(RetryTaskCopyCreate::class, static fn (RetryTaskCopyCreate $job): bool => $job->groupId === $group->id && $job->operationId === $first->id);
+
+        retryTaskCopy($group, $first);
+
+        $retry = Operation::query()->where('kind', 'instance.create')->whereKeyNot($first->id)->latest('id')->firstOrFail();
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)
+            ->and($group->taskable_id)->toBe($retry->target_id)
+            ->and($retry->triggered_by)->toBe($first->triggered_by)
+            ->and(Instance::query()->findOrFail($retry->target_id)->name)->toBe('task-'.$group->id);
+    })->with([
+        'a failed run' => ['instance.create_failed', 'clone'],
+        'a register failure' => ['instance.create_register_failed', 'register'],
+        'an unreadable baseline' => ['instance.workspace_baseline_unavailable', 'clone-register'],
+        'a start that Swamp refused' => ['swamp.run_start_refused', 'start'],
+    ]);
+
+    it('puts the group in todo, never failed, with both failures named, and removes the copy without a third create', function (): void {
+        $group = copyGroup(copySource()->project);
+        $first = startCopy($group);
+        failCopyCreate($first, 'instance.workspace_baseline_unavailable', 'clone-register');
+        removeFailedCopy($first->target_id);
+        retryTaskCopy($group, $first);
+        $retry = Operation::query()->where('kind', 'instance.create')->whereKeyNot($first->id)->latest('id')->firstOrFail();
+
+        failCopyCreate($retry, 'instance.create_register_failed', 'register');
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Todo)
+            ->and($group->taskable_id)->toBe($retry->target_id)
+            ->and($group->copy_create_failure)->toBeNull()
+            ->and($group->assistance_kind)->toBe(AssistanceKind::Failure)
+            ->and($group->assistance_reason)->toBe(TaskCopyLifecycle::CreateFailedReason
+                ."Operation {$first->id} ended at step clone-register with instance.workspace_baseline_unavailable, and its retry, Operation {$retry->id}, "
+                ."ended at step register with instance.create_register_failed. Orbit removes the copy; start the task again with `orbit task:start {$group->id}` once it is gone.");
+        Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $retry->target_id);
+
+        removeFailedCopy($retry->target_id);
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Todo)->and($group->taskable_id)->toBeNull()
+            ->and($group->assistance_kind)->toBe(AssistanceKind::Failure);
+        Queue::assertPushed(RetryTaskCopyCreate::class, 1);
+    });
+
+    it('retries only a create that failed: not one whose budget expired, and not a cancelled one', function (): void {
+        $project = copySource(nested: false)->project;
+        [$failed, $expired, $cancelled] = [copyGroup($project), copyGroup($project), copyGroup($project)];
+        $failure = startCopy($failed);
+        $expiry = startCopy($expired);
+        $cancel = startCopy($cancelled);
+
+        failCopyCreate($failure, 'instance.create_failed', 'clone');
+        failCopyCreate($expiry, 'operation.timed_out', 'clone');
+        app(CancelOperationAction::class)->execute($cancel);
+        removeFailedCopy($failure->target_id);
+        removeFailedCopy($cancel->target_id);
+
+        expect([$failed->refresh()->status, $expired->refresh()->status, $cancelled->refresh()->status])
+            ->toBe([TaskGroupStatus::Todo, TaskGroupStatus::Reserved, TaskGroupStatus::Failed])
+            ->and([$expired->copy_create_failure, $cancelled->copy_create_failure])->toBe([null, null]);
+        Queue::assertPushed(RetryTaskCopyCreate::class, 1);
+        Queue::assertPushed(RetryTaskCopyCreate::class, static fn (RetryTaskCopyCreate $job): bool => $job->groupId === $failed->id);
+    });
+
+    it('cancels a todo group that task:cancel ends while it holds its failed copy, and starts no retry', function (): void {
+        $group = copyGroup(copySource()->project);
+        $first = startCopy($group);
+        failCopyCreate($first, 'instance.create_failed', 'clone');
+
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        destroySucceeded(Operation::query()->findOrFail($cancel->result['destroy_operation_id'] ?? $cancel->state['destroy_operation_id']));
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled)->and($group->taskable_id)->toBeNull();
+        Queue::assertNotPushed(RetryTaskCopyCreate::class);
+    });
+
+    it('refuses task:start with tasks.copy_removing while the failed copy is bound, and starts the group again once it is gone', function (): void {
+        $group = copyGroup(copySource()->project);
+        $first = startCopy($group);
+        failCopyCreate($first, 'instance.create_failed', 'clone');
+        removeFailedCopy($first->target_id);
+        retryTaskCopy($group, $first);
+        $retry = Operation::query()->where('kind', 'instance.create')->whereKeyNot($first->id)->latest('id')->firstOrFail();
+        failCopyCreate($retry, 'instance.create_failed', 'clone');
+
+        expect(copyRefusal(fn () => startCopy($group->refresh())))->toBe('tasks.copy_removing 409');
+
+        removeFailedCopy($retry->target_id);
+        $again = startCopy($group->refresh());
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)->and($group->taskable_id)->toBe($again->target_id);
+        // The copy that finally comes up ends the request that named the two failures.
+        Instance::query()->findOrFail($again->target_id)->update(['status' => InstanceState::Active]);
+        app(OperationStore::class)->change($again, ['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->assistance_requested)->toBeFalse();
+    });
+});
+
 describe('the end of the copy\'s create', function (): void {
-    it('fails the group and queues the copy\'s destroy when the create fails; a clone that no group owns changes nothing', function (): void {
+    it('puts the group back in todo and queues the copy\'s destroy when the create fails; a clone that no group owns changes nothing', function (): void {
         $default = copySource();
         $group = copyGroup($default->project);
         $operation = runningOperation(startCopy($group));
@@ -777,7 +910,7 @@ describe('the end of the copy\'s create', function (): void {
         app(DevelopmentInstanceCreateProjection::class)->apply($operation, [...$failed, 'result' => [...$failed['result'], 'instance_id' => $operation->target_id]]);
         app(DevelopmentInstanceCreateProjection::class)->apply($normal, [...$failed, 'result' => [...$failed['result'], 'instance_id' => $normal->target_id]]);
 
-        expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Todo)
             ->and($group->taskable_id)->toBe($operation->target_id)
             ->and($operation->refresh()->status)->toBe(OperationStatus::Failed)
             ->and($normal->refresh()->status)->toBe(OperationStatus::Failed);
@@ -979,14 +1112,14 @@ describe('the end of the copy\'s create', function (): void {
         Queue::assertNotPushed(DestroyTaskCopy::class);
     });
 
-    it('fails the group and queues the destroy when the create\'s run ended without a readable result', function (): void {
+    it('puts the group back in todo and queues the destroy when the create\'s run ended without a readable result', function (): void {
         $group = copyGroup(copySource()->project);
         $operation = runningOperation(startCopy($group));
 
         app(FailUnreadableResultAction::class)->execute($operation, 'run-1', ['status' => 'succeeded', 'completedAt' => now()->toIso8601ZuluString()], 'finish', 'skipped');
 
         expect($operation->refresh()->error_code)->toBe('operation.result_unreadable')
-            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Todo);
         Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $operation->target_id);
     });
 
