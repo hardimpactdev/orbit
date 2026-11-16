@@ -444,7 +444,9 @@ Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliv
 | `reserved` | Nothing. Subtask create still appends |
 | `completed`, `failed`, `cancelled` | Nothing |
 
-For an external group, subtask update also accepts `status`. A subtask moves from `todo` to `running`, between `running` and `reviewing`, and from either active status to `completed` or `failed`. `failed` is final. `completed` is final too, except for the [reopen of the last subtask in a task copy](#reopen-the-last-subtask). Only `task:cancel` sets `cancelled`. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing. An ended group permits no subtask status move. Completing a subtask clears its assistance and reconciles the group request as resolution does. A status update starts no agent or check, advances no other subtask, and does not settle the group. The API, PHP SDK, CLI `--status` option, and MCP expose both status inputs.
+For an external group, subtask update also accepts `status`. A subtask moves from `todo` to `running`, between `running` and `reviewing`, and from either active status to `completed` or `failed`. `failed` is final. `completed` is final too, except for the [reopen of the last subtask in a task copy](#reopen-the-last-subtask). Only `task:cancel` sets `cancelled`. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing.
+
+An ended group permits no subtask status move. Completing a subtask clears its assistance and reconciles the group request as resolution does. A status update starts no agent or check, advances no other subtask, and does not settle the group. The API, PHP SDK, CLI `--status` option, and MCP expose both status inputs.
 
 #### Subtask status in a task copy
 
@@ -464,8 +466,9 @@ The reopen adds no state. The existing rules decide what it means:
 
 - The subtask is current again, so implementer and reviewer turns run on it and continue their threads.
 - Its deliverables stay locked, as for every started subtask.
-- The group is no longer [done](#when-the-work-is-done), because one subtask has not ended. A `pr_when_done` group does not publish, and a `review_before_pr` group leaves `waiting_for_release`.
-- A new handoff check, a reviewer turn on it and a new completion make the group done again, on the new check. A completion without a new check makes the group done again on its earlier done check, as before the reopen. That check does not hold commits made after it.
+- The open subtask keeps the group from being [done](#when-the-work-is-done). A `pr_when_done` group does not publish. A `review_before_pr` group leaves `waiting_for_release`.
+- A new handoff check, a reviewer turn on it and a new completion make the group done again, on the new check.
+- A completion without a new check makes the group done again on its earlier done check, as before the reopen. That check holds no commit made after it.
 - A group that has a pull request keeps it. Its next publish updates the same pull request.
 
 A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the one correction after `invalid_deliverable` described below.
@@ -1213,7 +1216,9 @@ Orbit decides from its own records that a group's work is done. All of these mus
 
 The commit counts, not the check. A re-check of a clean recorded HEAD makes a new check with the same commit, so a reviewer turn on the earlier check of that commit still counts.
 
-A copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval. No clock decides "after": a turn is admitted only on the current subtask, and [`task:update`](/cli/task/update) refuses to complete a task copy's subtask with `tasks.copy_turn_unended` while a copy turn of the group runs. So a reviewer turn on the last subtask always ended before that subtask was completed. A [reopen](#reopen-the-last-subtask) of the last subtask is refused while a copy turn runs too, and a reopened subtask has not ended, so the group is not done until it is completed again.
+A copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval. No clock decides "after": a turn is admitted only on the current subtask, and [`task:update`](/cli/task/update) refuses to complete a task copy's subtask with `tasks.copy_turn_unended` while a copy turn of the group runs. So a reviewer turn on the last subtask always ended before that subtask was completed.
+
+A [reopen](#reopen-the-last-subtask) of the last subtask is refused while a copy turn runs too, and a reopened subtask has not ended, so the group is not done until it is completed again.
 
 For a Project without a task check, a passed handoff check only records the commit: nothing ran on it. The automatic publish still runs. What stands in front of it is the reviewer turn on exactly that commit and the guards of every publish: the [copy publish allow list](#task-copy) and the `.env` content and Club key checks.
 
