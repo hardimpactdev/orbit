@@ -67,10 +67,27 @@ export const Local = z.object({
 export type CheckIntent = z.infer<typeof CheckInput>;
 export type LocalCheck = z.infer<typeof Local>;
 
+/**
+ * Each deliverable's outcome. A command deliverable without a run record is
+ * `not_run`, with the cause the run knows; it never passes.
+ */
 export function deliverableResults(input: CheckIntent, local: LocalCheck) {
+    const notRun = local.failed_step
+        ? `the step "${local.failed_step}" failed first`
+        : local.exit_code !== 0
+        ? "the Project check failed first"
+        : "no evidence was recorded";
     return input.deliverables.map((item) => {
         const failures: string[] = [];
         const checked = input.phase === "handoff" && item.type !== "review";
+        const run = local.evidence?.commands[item.id];
+        if (checked && item.type === "command" && !run) {
+            return {
+                id: item.id,
+                outcome: "not_run",
+                failures: [`${item.id}: the command did not run: ${notRun}.`],
+            };
+        }
         if (checked && item.type === "file") {
             const pattern = globToRegExp(
                 item.path.replace(/^(?:\.\/|\/)+/, ""),
@@ -93,14 +110,13 @@ export function deliverableResults(input: CheckIntent, local: LocalCheck) {
                     `${item.id}: the checked diff does not contain the required file change.`,
                 );
             }
-        } else if (checked) {
-            const run = local.evidence?.commands[item.id];
-            if (!run || run.exit_code !== 0) {
+        } else if (checked && run) {
+            if (run.exit_code !== 0) {
                 failures.push(`${item.id}: the required command did not pass.`);
             }
             if (
                 item.fails_on_base &&
-                (!run?.base_started || run.base_exit_code === undefined ||
+                (!run.base_started || run.base_exit_code === undefined ||
                     [0, 126, 127].includes(run.base_exit_code))
             ) {
                 failures.push(
