@@ -24,8 +24,8 @@ use Illuminate\Support\Facades\Cache;
  * Only the runs of workflows whose file can ask for a self-hosted runner are read; the workflows of a repository are kept for
  * {@see self::WorkflowSeconds}. Run lists and job lists are read to their last page. One answer serves every viewer for
  * {@see self::CacheSeconds}. The jobs of a completed run do not change, so they are kept until the run leaves the window, and only
- * the runs that have not completed are read again. Each answer asks GitHub for at most {@see self::BudgetSeconds}. A repository
- * that the answer did not read to the end is `truncated`, and the next answer starts with it.
+ * the runs that have not completed are read again. Each answer reads workflow files and jobs that are not kept for at most
+ * {@see self::BudgetSeconds}. A repository with a run or a file left unread is `truncated`, and a later answer starts with it.
  */
 final readonly class GitHubActionsJobs
 {
@@ -76,7 +76,7 @@ final readonly class GitHubActionsJobs
         $since = $until->subHours(self::WindowHours);
         $repositories = [];
         $jobs = [];
-        $next = null;
+        $unfinished = [];
 
         foreach (self::rotated(FleetReboot::ciRepositories(), Cache::get(self::NextKey)) as $slug) {
             $repository = GitHubRepository::fromOrigin('https://github.com/'.$slug);
@@ -92,10 +92,12 @@ final readonly class GitHubActionsJobs
             [$repositories[], $found] = $read;
             array_push($jobs, ...$found);
             if ($read[0]->truncated) {
-                $next ??= $slug;
+                $unfinished[] = $slug;
             }
         }
 
+        // The repository that started this answer and is still unfinished goes behind the others that are, so it cannot starve them.
+        $next = $unfinished[count($unfinished) > 1 && $unfinished[0] === Cache::get(self::NextKey) ? 1 : 0] ?? null;
         $next === null ? Cache::forget(self::NextKey) : Cache::forever(self::NextKey, $next);
         usort($repositories, static fn (CiRepositoryData $a, CiRepositoryData $b): int => $a->repository <=> $b->repository);
         usort($jobs, static fn (CiJobData $a, CiJobData $b): int => [$b->created_at, $b->job_id] <=> [$a->created_at, $a->job_id]);
@@ -104,8 +106,7 @@ final readonly class GitHubActionsJobs
     }
 
     /**
-     * The repositories in order, starting with the one the last answer did not finish, so one busy repository cannot keep the others
-     * unread.
+     * The repositories in order, starting with the one that the last answer chose to finish first.
      *
      * @param  list<string>  $slugs
      * @return list<string>
@@ -119,7 +120,7 @@ final readonly class GitHubActionsJobs
 
     /**
      * The self-hosted jobs of one repository's window, or null for a repository that the App is not installed on: its installation
-     * answers 404.
+     * answers 404. Run lists and kept jobs are always read; the budget only stops reads of workflow files and of jobs not kept.
      *
      * @return array{0: CiRepositoryData, 1: list<CiJobData>}|null
      */
@@ -132,16 +133,9 @@ final readonly class GitHubActionsJobs
         };
 
         try {
-            $workflows = $this->workflows($slug, $repository, $actions, $ends);
-            if ($workflows === null) {
-                return [new CiRepositoryData($slug, null, true), []];
-            }
+            [$workflows, $truncated] = $this->workflows($slug, $repository, $actions, $ends);
 
             foreach ($workflows as $workflow) {
-                if (self::spent($ends)) {
-                    return [new CiRepositoryData($slug, null, true), $jobs];
-                }
-
                 foreach ($this->actions->workflowRuns($repository, $actions(), $workflow, $since, $until) as $run) {
                     $id = $run['id'] ?? null;
                     $attempt = $run['run_attempt'] ?? 1;
@@ -160,7 +154,9 @@ final readonly class GitHubActionsJobs
                     }
 
                     if (self::spent($ends)) {
-                        return [new CiRepositoryData($slug, null, true), $jobs];
+                        $truncated = true;
+
+                        continue;
                     }
 
                     $read = $this->jobs($slug, $id, is_string($run['name'] ?? null) ? $run['name'] : '', $this->actions->runJobs($repository, $actions(), $id));
@@ -174,51 +170,63 @@ final readonly class GitHubActionsJobs
             return $exception->status === 404 && $token === null ? null : [new CiRepositoryData($slug, 'github.unavailable', false), $jobs];
         }
 
-        return [new CiRepositoryData($slug, null, false), $jobs];
+        return [new CiRepositoryData($slug, null, $truncated), $jobs];
     }
 
     /**
-     * The ids of the repository's workflows whose file can ask for a self-hosted runner, kept for {@see self::WorkflowSeconds}, or null
-     * when the budget ran out before they were read.
+     * The ids of the repository's workflows whose file can ask for a self-hosted runner, and whether a file was left unread because the
+     * budget was spent. The list is kept for {@see self::WorkflowSeconds}, each file's verdict for as long, and a workflow that once
+     * could ask for a self-hosted runner stays in the list while its runs can be in the window.
      *
      * @param  Closure(): string  $actions
-     * @return list<int>|null
+     * @return array{0: list<int>, 1: bool}
      *
      * @throws GitHubActionsUnavailable
      */
-    private function workflows(string $slug, GitHubRepository $repository, Closure $actions, CarbonImmutable $ends): ?array
+    private function workflows(string $slug, GitHubRepository $repository, Closure $actions, CarbonImmutable $ends): array
     {
         $key = self::WorkflowKey.strtolower($slug);
         $kept = Cache::get($key);
         if (is_array($kept) && array_is_list($kept)) {
-            return array_values(array_filter($kept, is_int(...)));
-        }
-        if (self::spent($ends)) {
-            return null;
+            return [array_values(array_filter($kept, is_int(...))), false];
         }
 
-        $listed = $this->actions->workflows($repository, $actions());
         $contents = null;
         $ids = [];
-        foreach ($listed as $workflow) {
+        $unread = false;
+        foreach ($this->actions->workflows($repository, $actions()) as $workflow) {
             $id = $workflow['id'] ?? null;
             $path = $workflow['path'] ?? null;
             if (! is_int($id)) {
                 continue;
             }
-            if (self::spent($ends)) {
-                return null;
+
+            $verdict = Cache::get($key.':'.$id);
+            if (! is_bool($verdict)) {
+                if (self::spent($ends)) {
+                    $unread = true;
+
+                    continue;
+                }
+                $contents ??= $this->actions->token($repository, 'contents');
+                $file = is_string($path) && $path !== '' ? $this->actions->file($repository, $contents, $path) : null;
+                $verdict = $file === null || GitHubWorkflowFile::canAskForSelfHosted($file);
+                Cache::put($key.':'.$id, $verdict, self::WorkflowSeconds);
+                if ($verdict) {
+                    Cache::put($key.':'.$id.':once', true, (self::WindowHours + 1) * 3600);
+                }
             }
-            $contents ??= $this->actions->token($repository, 'contents');
-            $file = is_string($path) && $path !== '' ? $this->actions->file($repository, $contents, $path) : null;
-            if ($file === null || GitHubWorkflowFile::canAskForSelfHosted($file)) {
+
+            if ($verdict || Cache::get($key.':'.$id.':once') === true) {
                 $ids[] = $id;
             }
         }
 
-        Cache::put($key, $ids, self::WorkflowSeconds);
+        if (! $unread) {
+            Cache::put($key, $ids, self::WorkflowSeconds);
+        }
 
-        return $ids;
+        return [$ids, $unread];
     }
 
     /**

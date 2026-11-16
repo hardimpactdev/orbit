@@ -52,9 +52,12 @@ For each repository, the Gateway lists the workflows and reads each workflow fil
 - a job's `runs-on` names `self-hosted`, also inside `labels` of a runner group;
 - a job's `runs-on` is an expression, such as `${{ matrix.runner }}` or `${{ fromJSON(vars.ORBIT_PROOF_RUNNER) }}`;
 - a job calls another workflow with `uses`;
-- the file does not parse, or the default branch has no such file, for example a workflow that only a branch adds.
+- the file does not parse;
+- GitHub gives no content for the file.
 
-The Gateway keeps this list for an hour. A workflow that starts to ask for a self-hosted runner shows its jobs within the hour; the window still holds its older runs.
+GitHub gives no content when the default branch has no such file or the file is over 1 MB. It gives none for its own workflows either, such as `dynamic/dependabot/dependabot-updates`, so the Gateway reads their runs too.
+
+The Gateway keeps this list, and the verdict on each file, for an hour. A workflow that starts to ask for a self-hosted runner shows its jobs within the hour; the window still holds its older runs. A workflow that could ask for one stays in the list for 49 hours after its file stops asking, so its self-hosted runs stay in the window. The file on the default branch decides: a branch that makes a GitHub-hosted workflow ask for a self-hosted runner is not seen until the change reaches the default branch.
 
 ### Paging
 
@@ -64,7 +67,9 @@ The jobs of a completed run do not change, so the Gateway keeps them until they 
 
 ### Time budget and `truncated`
 
-One answer asks GitHub for at most 20 seconds. When that time runs out, the Gateway stops asking, and each repository that it did not read to the end is `truncated`. The next answer starts with the first repository that the last answer did not finish, then takes the others in order. It goes on from the runs that the Gateway kept, so one busy repository cannot keep the others unread. `truncated` means only that the time ran out.
+One answer reads workflow files and the jobs of runs that it did not keep for at most 20 seconds. The run lists and the kept jobs are always read, so a repository keeps its known jobs when the time ran out. When the time runs out, the Gateway reads no more files or job lists, and each repository with a run or a file left unread is `truncated`.
+
+The next answer starts with the first repository that the last answer did not finish, then takes the others in order. When the repository that started the last answer is still unfinished, the next unfinished one starts instead, so one busy repository cannot keep the others unread. Each answer goes on from the runs and files that the Gateway kept. `truncated` means only that the time ran out.
 
 ### Requests to GitHub
 
@@ -73,13 +78,17 @@ The installations of the App share GitHub's rate limit of 5,000 requests an hour
 | Case | Requests |
 | --- | --- |
 | No workflow can ask for a self-hosted runner, list kept | None. |
-| Steady state | 2 App requests for the `actions: read` token. For each kept workflow, one run list page per 100 runs of the window. One job list page for each run that has not completed. |
+| Steady state | 2 App requests for the `actions: read` token, and the run and job lists below the table. |
 | Once an hour, when the workflow list is read again | 2 more App requests for the `contents: read` token, one workflow list page per 100 workflows, and one read of each workflow file. |
 | A run that completed since the last answer | One job list page per 100 jobs, once. |
 
-For `hardimpactdev/orbit`, with about 1,000 runs of its kept workflows in the window and five runs in progress, steady state is about 10 run list pages and 5 job list pages an answer, about 900 requests an hour while someone watches the view. Repositories without self-hosted workflows add nothing.
+In steady state, each kept workflow costs one run list page per 100 runs of the window, at least one. Each run that has not completed costs one job list page.
 
-The worst case is a start without kept runs, for example after the cache was cleared: each run of a kept workflow needs one job list read. The 20-second budget bounds one answer; at GitHub's usual 0.2 to 0.5 seconds a request, that is 40 to 100 requests. The answers of the next minutes go on from the kept runs, until they cover the window.
+A window with more than 1,000 runs of one workflow costs one more page at each split. The Gateway reads the first page of the whole window, sees the count, drops the page, and reads the halves.
+
+Take `hardimpactdev/orbit` with about 1,000 runs of its kept workflows in the window and five runs in progress. Its steady state is 2 token requests, about 10 run list pages and 5 job list pages. That is about 17 requests an answer, and about 1,000 an hour while someone watches the view. Repositories without self-hosted workflows add nothing.
+
+The worst case is a start without kept runs, for example after the cache was cleared: each run of a kept workflow needs one job list read. The run lists are read in full, and the 20-second budget bounds the file and job list reads; at GitHub's usual 0.2 to 0.5 seconds a request, that is 40 to 100 requests an answer. The answers of the next minutes go on from the kept runs, until they cover the window.
 
 ## What the view never does
 
@@ -112,7 +121,7 @@ A source that cannot answer does not fail the read. The response marks that part
 | `github_error_code` | Null, or the reason that no repository was read. |
 | `jobs` | Every job of the window that asked for a self-hosted runner, newest first. See below. |
 
-In `repositories`, `error_code` is null when the read succeeded. `truncated` is true when the answer's 20 seconds ran out before the Gateway read every run of the repository's window. The next answer starts with that repository. See [Time budget and `truncated`](#time-budget-and-truncated).
+In `repositories`, `error_code` is null when the read succeeded. `truncated` is true when the answer's 20 seconds ran out before the Gateway read every run and workflow file of the repository. The next answer starts with that repository. See [Time budget and `truncated`](#time-budget-and-truncated).
 
 Each entry of `nodes`:
 

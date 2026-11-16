@@ -320,6 +320,48 @@ describe('the CI runner view job read', function (): void {
             ->and($lists->last())->toContain('/repos/acme/a/');
     });
 
+    it('keeps showing kept jobs when the budget is spent and lets a repository that cannot finish go behind the others', function (): void {
+        ciJobsApp();
+        ciJobsRepository('acme/a');
+        ciJobsRepository('acme/b');
+        $running = array_map(static fn (array $run): array => [...$run, 'status' => 'in_progress', 'conclusion' => null], ciJobsRuns(14, 4, 1, '2026-11-16T10:00:00Z'));
+        ciJobsGitHub(['acme/a' => $running, 'acme/b' => ciJobsRuns(20, 1, 1, '2026-11-16T09:00:00Z')],
+            [14 => [ciJobsJob(140)], 13 => [ciJobsJob(130)], 12 => [ciJobsJob(120)], 11 => [ciJobsJob(110)], 20 => [ciJobsJob(200)]], jobSeconds: 4);
+        $jobs = new GitHubActionsJobs(app(GitHubActionsReader::class), app(GitHubAppStore::class), 10.0);
+        $answer = function () use ($jobs): array {
+            $this->travel(61)->seconds();
+
+            return $jobs->read()->toArray();
+        };
+        $truncated = static fn (array $read): array => array_column($read['repositories'], 'truncated', 'repository');
+
+        expect($truncated($answer()))->toBe(['acme/a' => true, 'acme/b' => true])
+            ->and($truncated($answer()))->toBe(['acme/a' => true, 'acme/b' => true]);
+
+        $third = $answer();
+        expect($truncated($third))->toBe(['acme/a' => true, 'acme/b' => false])
+            ->and(array_column($third['jobs'], 'job_id'))->toContain(200);
+
+        $fourth = $answer();
+        expect($truncated($fourth))->toBe(['acme/a' => true, 'acme/b' => false])
+            ->and(array_column($fourth['jobs'], 'job_id'))->toBe([200, 140, 130, 120]);
+    });
+
+    it('keeps a workflow that could ask for a self-hosted runner while its runs can be in the window', function (): void {
+        ciJobsApp();
+        ciJobsRepository('acme/shop');
+        $workflow = ['id' => 2, 'path' => '.github/workflows/fixtures.yml', 'file' => "jobs:\n  fixtures:\n    runs-on: [self-hosted]\n"];
+        ciJobsGitHub(['acme/shop' => ciJobsRuns(5, 1, 2, '2026-11-16T09:00:00Z')], [5 => [ciJobsJob(51)]], workflows: ['acme/shop' => [$workflow]]);
+        app(GitHubActionsJobs::class)->read();
+
+        $this->travel(GitHubActionsJobs::WorkflowSeconds + 1)->seconds();
+        ciJobsGitHub(['acme/shop' => ciJobsRuns(5, 1, 2, '2026-11-16T09:00:00Z')], [5 => [ciJobsJob(51)]],
+            workflows: ['acme/shop' => [[...$workflow, 'file' => "jobs:\n  fixtures:\n    runs-on: ubuntu-26.04\n"]]]);
+
+        expect(array_column(app(GitHubActionsJobs::class)->read()->toArray()['jobs'], 'job_id'))->toBe([51]);
+        Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/contents/'));
+    });
+
     it('treats a workflow file as able to ask for a self-hosted runner unless every job names hosted labels', function (string $file, bool $expected): void {
         expect(GitHubWorkflowFile::canAskForSelfHosted($file))->toBe($expected);
     })->with([

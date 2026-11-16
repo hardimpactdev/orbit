@@ -9,7 +9,7 @@ use Symfony\Component\Yaml\Yaml;
 
 /**
  * Whether a GitHub Actions workflow file can ask for a self-hosted runner, for the CI runner view
- * (docs/reference/ci-runner-view.md#where-each-value-comes-from). Only a file that proves every job runs on GitHub-hosted labels
+ * (docs/reference/ci-runner-view.md#the-workflow-filter). Only a file that proves every job asks for labels without `self-hosted`
  * answers no: a job that calls another workflow, a `runs-on` built from an expression, and a file that does not parse all answer yes.
  */
 final class GitHubWorkflowFile

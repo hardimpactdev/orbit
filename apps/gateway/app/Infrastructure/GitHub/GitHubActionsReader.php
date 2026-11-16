@@ -19,8 +19,8 @@ use SensitiveParameter;
 use Throwable;
 
 /**
- * Reads GitHub Actions runs, jobs and artifacts of one repository with an installation token of the
- * Gateway GitHub App that holds only Actions read.
+ * Reads GitHub Actions workflows, runs, jobs and artifacts of one repository with an installation token of the
+ * Gateway GitHub App that holds only Actions read, and workflow files with one that holds only Contents read.
  * Artifact archives are downloaded from the
  * storage URL GitHub redirects to, without the token. Every failure is a
  * {@see GitHubActionsUnavailable} without detail, so no token or signed URL reaches an error.
@@ -117,7 +117,8 @@ final readonly class GitHubActionsReader
     }
 
     /**
-     * The text of a file on the default branch, read with a `contents: read` token, or null when the branch has no such file.
+     * The text of a file on the default branch, read with a `contents: read` token, or null when the branch has no such file or
+     * GitHub does not give its content, as for a file over 1 MB.
      *
      * @throws GitHubActionsUnavailable
      */
@@ -133,7 +134,11 @@ final readonly class GitHubActionsReader
             throw $exception;
         }
 
-        $text = ($data['encoding'] ?? null) === 'base64' && is_string($data['content'] ?? null) ? base64_decode($data['content'], true) : false;
+        if (($data['encoding'] ?? null) !== 'base64') {
+            return null;
+        }
+
+        $text = is_string($data['content'] ?? null) ? base64_decode($data['content'], true) : false;
 
         if (! is_string($text)) {
             throw new GitHubActionsUnavailable(invalid: true);
