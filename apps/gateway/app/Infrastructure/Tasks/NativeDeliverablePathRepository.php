@@ -11,22 +11,18 @@ use App\Domain\Tasks\DeliverablePathRepository;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\SourceControl\GitRemoteBranchHeads;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\Instance;
 use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Throwable;
 
 /**
- * Read an immutable tree from the task workspace first, because review-and-merge approvals stay local until
- * Orbit pushes. Without a workspace, or when it lacks the commit, read the origin in a disposable bare repository.
- * The tree is only listed, so neither source runs project code.
+ * Reads an immutable tree of the origin in a disposable bare repository. The tree is only listed, so no project code runs.
  */
 final readonly class NativeDeliverablePathRepository implements DeliverablePathRepository
 {
     private const int MaxTreeBytes = 16_777_216;
 
-    public function __construct(private ProcessRunner $processes, private RepositoryReadAccess $access, private Filesystem $filesystem, private TaskWorkspaceExecutor $workspaces, private ?RemoteBranchHeads $heads = null) {}
+    public function __construct(private ProcessRunner $processes, private RepositoryReadAccess $access, private Filesystem $filesystem, private ?RemoteBranchHeads $heads = null) {}
 
     public function defaultBranchCommit(Project $project): string
     {
@@ -37,42 +33,13 @@ final readonly class NativeDeliverablePathRepository implements DeliverablePathR
         }
     }
 
-    public function files(Project $project, string $commit, ?Instance $workspace = null): array
+    public function files(Project $project, string $commit): array
     {
         if (preg_match('/\A[0-9a-f]{7,64}\z/i', $commit) !== 1) {
             throw $this->failure();
         }
-        if ($workspace instanceof Instance && $workspace->checkout_path !== '') {
-            $files = $this->workspaceFiles($workspace, $commit);
-            if ($files !== null) {
-                return $files;
-            }
-        }
 
         return $this->originFiles($project, $commit);
-    }
-
-    /** @return list<string>|null null when the workspace cannot list this commit, so the origin is tried next. */
-    private function workspaceFiles(Instance $workspace, string $commit): ?array
-    {
-        $git = 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout"';
-        try {
-            $result = $this->workspaces->execute($workspace, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $workspace->checkout_path, $commit],
-                input: "checkout=\$1\ncommit=\$2\n{$git} cat-file -e \"\$commit^{commit}\"\n{$git} ls-tree -r -z --full-tree \"\$commit\"\n",
-                maxOutputBytes: self::MaxTreeBytes,
-            ), 'task-deliverable-paths', 'tasks.deliverable_base_unavailable');
-        } catch (Throwable) {
-            return null;
-        }
-        if ($result->truncated) {
-            return null;
-        }
-        try {
-            return $this->parseTree($result->stdout);
-        } catch (ResourceOperationException) {
-            return null;
-        }
     }
 
     /** @return list<string> */
