@@ -15,14 +15,14 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Record a nested-fleet default's converted ID map size, or its old one for a rollback (docs/reference/development-containers.md#convert-a-default).
+ * Record a nested-fleet default's raised ID map size, or its converted one for a rollback (docs/reference/development-containers.md#raise-a-default-to-2000000).
  * The operator changes the container on the Node first. The record clears the seed, so no copy takes the new size from a seed made
  * for the old one: clones refuse until the default's next passed deployment takes a new seed.
  */
 final class InstanceIdMapSizeCommand extends Command
 {
     #[\Override]
-    protected $signature = 'gateway:instance-idmap-size {instance : The numeric ID of a nested-fleet default} {size : 1165536, or 101000000 for a rollback}';
+    protected $signature = 'gateway:instance-idmap-size {instance : The numeric ID of a nested-fleet default} {size : 2000000, or 1165536 for a rollback}';
 
     #[\Override]
     protected $description = 'Record a nested-fleet default\'s ID map size after its conversion on the Node, and clear its seed.';
@@ -31,7 +31,7 @@ final class InstanceIdMapSizeCommand extends Command
     {
         $id = (string) $this->argument('instance');
         $size = (string) $this->argument('size');
-        $sizes = [InstanceHostIntent::NestedIdMapSize, InstanceHostIntent::TaskPlaceIds];
+        $sizes = [InstanceHostIntent::NestedIdMapSize, InstanceHostIntent::ConvertedIdMapSize];
         if (! in_array((int) $size, $sizes, true) || (string) (int) $size !== $size) {
             return $this->refuse('instance.idmap_size_invalid', 'The size must be '.implode(' or ', $sizes).'. The inner range is the outer size minus 1,000,000, so no size below 1,065,536 works.');
         }

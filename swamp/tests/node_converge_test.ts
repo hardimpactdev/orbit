@@ -377,3 +377,34 @@ Deno.test("only hosts with fatal statistics compete in play and task order, with
     report.stats.hub.failures = 0;
     assertEquals((await failureReport(report)).failure, commandFailure);
 });
+
+Deno.test("the roles phase takes the intent's roles_seconds, 900 to 1800, as its timeout, 900 without it, and refuses any other bound before the command", async () => {
+    const { Environment } = await import("npm:@marcbachmann/cel-js@7.6.1");
+    const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-node-converge-direct.yaml", import.meta.url))) as {
+        inputs: { properties: { intent: { properties: Record<string, unknown> } } };
+        jobs: { steps: { name: string; task: { inputs: { run: string; env: Record<string, string> } } }[] }[];
+    };
+    assertEquals(workflow.inputs.properties.intent.properties.roles_seconds, { type: "integer", minimum: 900, maximum: 1800 });
+    const step = workflow.jobs.flatMap((job) => job.steps).find((candidate) => candidate.name === "Converge roles")!;
+    const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false });
+    const bound = (intent: Record<string, unknown>) => String(cel.evaluate(step.task.inputs.env.ORBIT_ROLES_SECONDS.slice(3, -2).trim(), { inputs: { intent } }));
+    const run = async (seconds: string) => {
+        const folder = await Deno.makeTempDir();
+        try {
+            await Deno.mkdir(`${folder}/bin`);
+            // The timeout records its argv instead of running the playbook.
+            await Deno.writeTextFile(`${folder}/bin/timeout`, `#!/bin/sh\nprintf '%s\\n' "$@" > '${folder}/argv'\n`);
+            await Deno.chmod(`${folder}/bin/timeout`, 0o755);
+            const output = await new Deno.Command("sh", { args: ["-c", step.task.inputs.run], env: { PATH: `${folder}/bin:/usr/bin:/bin`,
+                ORBIT_RUN: folder, ORBIT_ANSIBLE: folder, ORBIT_PLAYBOOK: "operation-node-converge.yml", ORBIT_ROLES_SECONDS: seconds } }).output();
+            let argv: string[] = [];
+            try { argv = Deno.readTextFileSync(`${folder}/argv`).trim().split("\n"); } catch { /* not reached */ }
+            return { code: output.code, first: argv[0] ?? "" };
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    };
+    // An Instance fleet Node's app-dev converge (NodeDesiredConvergeInput::FleetHostRolesSeconds) and every other converge.
+    assertEquals([bound({ roles_seconds: 1800 }), bound({})], ["1800", "900"]);
+    assertEquals(await run(bound({ roles_seconds: 1800 })), { code: 0, first: "1800" });
+    assertEquals(await run(bound({})), { code: 0, first: "900" });
+    for (const seconds of ["899", "1801", "5000", "", "900; id"]) assertEquals(await run(seconds), { code: 2, first: "" }, seconds);
+});

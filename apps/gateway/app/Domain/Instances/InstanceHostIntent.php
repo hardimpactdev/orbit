@@ -96,10 +96,18 @@ final readonly class InstanceHostIntent
     public const int TaskPlaceIds = 101000000;
 
     /**
-     * The converted size of a nested-fleet container. The inner Incus takes its range from its own map: 1,000,000 up to this size, so
-     * 165,536 IDs; the floor is 1,065,536 (development-containers.md#the-id-map-size).
+     * The size of a nested-fleet container whose `nested-app-dev` hosts Instances. The inner Incus takes its range from its own map:
+     * 1,000,000 up to this size. `nested-app-dev`'s own Incus then keeps 934,464 IDs above base 65,536: 13 isolated Instances. A size whose
+     * inner range reaches 1,065,536 again, such as 2,165,536, moves that base to 1,000,000 and leaves room for one
+     * (development-containers.md#instance-host-in-the-fleet).
      */
-    public const int NestedIdMapSize = 1165536;
+    public const int NestedIdMapSize = 2000000;
+
+    /**
+     * The converted size before it: 165,536 inner IDs, no isolated Instance on `nested-app-dev`, and the rollback of its window. The floor is
+     * 1,065,536 (development-containers.md#the-id-map-size).
+     */
+    public const int ConvertedIdMapSize = 1165536;
 
     public function __construct(
         private ContainerNodes $nodes,
@@ -138,6 +146,24 @@ final readonly class InstanceHostIntent
         $cidr = $node->exists ? Node::query()->whereKey($node->id)->value('instance_bridge') : null;
 
         return is_string($cidr) ? Ipv4Subnet::from($cidr)->usableRange()[0] : null;
+    }
+
+    /**
+     * The digest of the Node's branch intent as the converge would send it, without the admission time: what the nested-fleet refresh
+     * compares to rebuild the Instance host on nested-app-dev only when the image, the folders, Incus or the rest changed
+     * (docs/reference/development-containers.md#instance-host-in-the-fleet). Null for a Node without the branch, or before the admission
+     * allocated its bridge.
+     */
+    public function digest(Node $node): ?string
+    {
+        try {
+            $intent = $this->for($node);
+        } catch (ResourceOperationException) {
+            return null;
+        }
+
+        return $intent === null ? null
+            : hash('sha256', json_encode(array_diff_key($intent, ['bridge_admitted_at' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
     /** @return array<string, mixed>|null */
@@ -179,6 +205,9 @@ final readonly class InstanceHostIntent
             // A CI-only Node's converge creates the pool; every other Node's operator provides it
             // (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
             ...($ci ? ['create_pool' => true] : []),
+            // An Instance fleet Node installs Incus and creates a directory pool first
+            // (docs/reference/development-containers.md#instance-host-in-the-fleet).
+            ...(ContainerNodes::fleetNode($node) ? ['fleet_node' => true] : []),
             'address' => $gateway.'/'.$subnet->prefixLength(),
             // The image build container takes the bridge's last address, which no Instance gets.
             'build_address' => $last,

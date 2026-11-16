@@ -131,7 +131,7 @@ class CommandOutputTest(unittest.TestCase):
 
     def test_dpkg_installed_held_removed_and_absent(self):
         # F14's parser now uses db:Status-Status rather than the selection abbreviation.
-        tasks = yaml.safe_load((ROOT / 'tasks/task-container-host-system.yml').read_text())
+        tasks = yaml.safe_load((ROOT / 'tasks/incus-install.yml').read_text())
         read = next(task for task in tasks if task.get('register') == 'container_incus_package')
         self.assertEqual(read['ansible.builtin.command']['argv'][3], '${db:Status-Status}')
         install = next(task for task in tasks if task.get('name') == 'Install Incus from the recipe')

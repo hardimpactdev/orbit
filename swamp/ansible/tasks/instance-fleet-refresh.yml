@@ -39,7 +39,7 @@
     argv: >-
       {{ ['timeout', '30'] + fleet_outer + ['git', '-c', 'safe.directory=*', '-C', intent.container.workspace, 'rev-parse',
           'HEAD:apps/gateway', 'HEAD:apps/agent/contract'] + (fleet_converge_inputs.inputs | map('regex_replace', '^', 'HEAD:') | list)
-         + ['HEAD:swamp'] }}
+         + ['HEAD:swamp/ansible', 'HEAD:apps/gateway/resources/machine-software', 'HEAD:swamp'] }}
   register: fleet_digests_read
   changed_when: false
   failed_when: false
@@ -49,7 +49,7 @@
       {{ fleet_record_read.rc == 0 and fleet_record_read.stdout | trim is match('^\{"[a-z_]+": ?"[0-9a-f]+"(, ?"[a-z_]+": ?"[0-9a-f]+")*\}$') }}
     fleet_ids: >-
       {{ fleet_digests_read.stdout_lines if fleet_digests_read.rc == 0
-         and fleet_digests_read.stdout_lines | length == 3 + fleet_converge_inputs.inputs | length else [] }}
+         and fleet_digests_read.stdout_lines | length == 5 + fleet_converge_inputs.inputs | length else [] }}
   ansible.builtin.set_fact:
     fleet_record_state: >-
       {{ 'present' if fleet_record_valid else 'missing' if fleet_record_read.rc != 0 and 'No such file' in fleet_record_read.stderr
@@ -59,7 +59,9 @@
       {{ {} if fleet_ids | length == 0 else {'code': (fleet_ids[0] ~ fleet_ids[1]) | hash('sha256'),
          'rules': fleet_files | to_json(sort_keys=true) | hash('sha256')}
          | combine({'grants': (fleet_ids[0] ~ ' ' ~ fleet_ids[-1]) | hash('sha256')} if fleet_club.rc == 0 else {}) }}
-    fleet_swamp_ids: "{{ fleet_ids[2:-1] }}"
+    fleet_swamp_ids: "{{ fleet_ids[2:-3] }}"
+    # The Instance host's tree inputs: `swamp/ansible` and the machine-software recipe.
+    fleet_host_ids: "{{ fleet_ids[-3:-1] }}"
     fleet_converge_changed: 0
     fleet_converge_changed_roles: []
     fleet_started_at: "{{ now(utc=true).timestamp() }}"
@@ -76,6 +78,8 @@
       grants: "{{ fleet_club.rc == 0 and ('grants' not in fleet_now or fleet_recorded.grants | default('') != fleet_now.grants) }}"
       tokens: "{{ fleet_club.rc == 0 and not fleet_tokens_recorded | bool }}"
       rules: "{{ 'rules' not in fleet_now or fleet_recorded.rules | default('') != fleet_now.rules }}"
+      # The Instance host is decided after the migrate, with the converge.
+      host: false
 
 # The record goes before the first write to a nested disk and comes back as the last task. A run that stops in the middle (a failed
 # step, a failed restore of the old seed, a run by hand) leaves no record, so the next refresh runs every part and retakes all three.
@@ -242,10 +246,30 @@
   ansible.builtin.command:
     argv: >-
       {{ ['timeout', '60'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--cwd', intent.fleet.checkout.path ~ '/apps/gateway', '--']
-         + fleet_as_app_user + ['php', 'artisan', 'orbit:node-converge-digest', '--base'] + fleet_roles }}
+         + fleet_as_app_user + ['php', 'artisan', 'orbit:node-converge-digest', '--host', 'app-dev', '--base'] + fleet_roles }}
   register: fleet_intents_read
   changed_when: false
   failed_when: false
+# The Instance host on nested-app-dev (docs/reference/development-containers.md#instance-host-in-the-fleet): its `app-dev` role converge
+# runs the container branch when what that branch reads changed. That is the `swamp/ansible` tree, the machine-software recipe, and
+# nested-app-dev's branch intent as the nested Gateway renders it (`host` of the read above: the image definition, the folders, Incus
+# and the rest, without the admission time). A test, a workflow or other Gateway code rebuilds nothing. Only a default whose ID map
+# leaves room for isolated Instances there (`intent.fleet.host`, 2,000,000 or more) builds it; below that nothing changes. A host intent
+# that cannot be read, such as before nested-app-dev has its bridge, makes the host due, and no `host` is recorded.
+- name: Name the due Instance host
+  vars:
+    fleet_host_read: >-
+      {%- set read = (fleet_intents_read.stdout_lines | default([]) | last | default('')) -%}
+      {%- set out = read | from_json if fleet_intents_read.rc == 0 and read is match('^\{.*\}$') else {} -%}
+      {{ out.host if out is mapping and out.host | default('') is match('^[0-9a-f]{64}$') else '' }}
+    fleet_host_now: >-
+      {{ {'host': ('host ' ~ fleet_host_ids[0] ~ ' ' ~ fleet_host_ids[1] ~ ' ' ~ fleet_host_read) | hash('sha256')}
+         if intent.fleet.host | default(false) | bool and fleet_host_ids | length == 2 and fleet_host_read | length > 0 else {} }}
+  ansible.builtin.set_fact:
+    fleet_now: "{{ fleet_now | combine(fleet_host_now) }}"
+    fleet_due: >-
+      {{ fleet_due | combine({'host': intent.fleet.host | default(false) | bool
+         and ('host' not in fleet_host_now or fleet_recorded.host | default('') != fleet_host_now.host)}) }}
 # Each nested Node has its own converge digest: the listed `swamp` files, that Node's base intent digest and the fleet intent; the record
 # holds it as `converge_<role>` and the time of that Node's last converge as `converged_<role>` (`-` in a role is `_`). A Node is due
 # when the record is missing or unreadable, a digest cannot be read (all three are then due), its digest differs from the record, or its
@@ -254,7 +278,8 @@
   vars:
     fleet_intents: >-
       {%- set read = (fleet_intents_read.stdout_lines | default([]) | last | default('')) -%}
-      {%- set out = read | from_json if fleet_intents_read.rc == 0 and read is match('^\{.*\}$') else {} -%}
+      {%- set all = read | from_json if fleet_intents_read.rc == 0 and read is match('^\{.*\}$') else {} -%}
+      {%- set out = all | dict2items | rejectattr('key', 'eq', 'host') | items2dict if all is mapping else {} -%}
       {{ out if out is mapping and out.keys() | sort == fleet_roles | sort
               and out.values() | select('match', '^[0-9a-f]{64}$') | list | length == fleet_roles | length else {} }}
     fleet_converge_now: >-
@@ -283,7 +308,9 @@
   ansible.builtin.set_fact:
     fleet_now: "{{ fleet_now | combine(fleet_converge_now) }}"
     # The due Nodes, in converge order.
-    fleet_converge_roles: "{{ fleet_roles | select('in', fleet_converge_reasons | dict2items | rejectattr('value', 'eq', 'unchanged') | map(attribute='key') | list) | list }}"
+    fleet_converge_roles: >-
+      {{ fleet_roles | select('in', fleet_converge_reasons | dict2items | rejectattr('value', 'eq', 'unchanged') | map(attribute='key') | list
+         + (['app-dev'] if fleet_due.host | bool else [])) | list }}
     # The refresh's one word: the first of `record`, `digest_unreadable`, `changed`, `stale` that holds for a Node, else `unchanged`.
     fleet_converge_reason: >-
       {{ (['record', 'digest_unreadable', 'changed', 'stale'] | select('in', fleet_converge_reasons.values() | list) | list + ['unchanged']) | first }}
@@ -372,12 +399,22 @@
   changed_when: false
   loop: "{{ fleet_converge_roles }}"
 # The due Nodes converge side by side: all are admitted, then each is awaited, and a failure fails the refresh only after every
-# admitted converge has ended (instance-fleet-converge-node.yml).
+# admitted converge has ended (instance-fleet-converge-node.yml). When the `host` part is due, nested-app-dev's converge comes after
+# them, alone, with its `app-dev` role: the hub's reservation refuses a converge with roles beside any other converge. Its wait is
+# always 1800 s, as its roles phase's bound (`roles_seconds`): it runs rarely and may build the stock and Instance images.
 - name: Converge the base of the due nested Nodes
   when: fleet_due.converge
   ansible.builtin.include_tasks: instance-fleet-converge-node.yml
   vars:
-    fleet_converge_nodes: "{{ fleet_nodes | selectattr('name', 'in', fleet_converge_roles) | list }}"
+    fleet_converge_nodes: >-
+      {{ fleet_nodes | selectattr('name', 'in', fleet_converge_roles | reject('eq', 'app-dev' if fleet_due.host | bool else '') | list) | list }}
+- name: Converge nested-app-dev's Instance host after the base converges
+  when: fleet_due.host | bool
+  ansible.builtin.include_tasks: instance-fleet-converge-node.yml
+  vars:
+    fleet_converge_nodes: "{{ fleet_nodes | selectattr('name', 'eq', 'app-dev') | list }}"
+    fleet_converge_body: '{"roles":["app-dev"]}'
+    fleet_converge_seconds: 1800
 
 - name: Time the converge
   ansible.builtin.set_fact:
@@ -583,6 +620,9 @@
       converge_reason: "{{ fleet_converge_reason }}"
       # The nested Nodes the converge ran for, in converge order.
       converge_nodes: "{{ fleet_converge_roles }}"
+      # `converged`: nested-app-dev's `app-dev` role converge ran the Instance host's container branch; `kept`: the seed's host stayed.
+      # `skipped_idmap_small`: the default's ID map is below 2,000,000, so no isolated Instance fits on nested-app-dev and none is built.
+      host: "{{ 'skipped_idmap_small' if not intent.fleet.host | default(false) | bool else 'converged' if fleet_due.host | bool else 'kept' }}"
       changed: "{{ fleet_converge_changed | int }}"
       tokens: "{{ 'skipped' if fleet_tokens_reason == 'no_key' else 'young' if fleet_tokens_reason in ['young', 'recorded'] else 'reminted' }}"
       # Why: `age` (one is older than `fleet_token_max_age`), `incomplete` (one is missing, such as worker c's), `unreadable`, `young`,

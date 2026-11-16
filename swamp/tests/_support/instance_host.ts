@@ -145,6 +145,8 @@ function writeTasks(folder: string) {
             "instance-image.yml",
             "artifact-fetch.yml",
             "task-container-host-system.yml",
+            "incus-install.yml",
+            "instance-fleet-node.yml",
             "task-container-host-ids.yml",
             "task-container-host-prepare.yml",
         ]

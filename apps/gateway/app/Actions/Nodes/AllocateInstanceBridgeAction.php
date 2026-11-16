@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Domain\Instances\InstanceFleetGateway;
 use App\Domain\Nodes\NodeBridges;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
@@ -13,7 +14,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Gives a Node its Instance bridge: the first /24 of the fleet range that overlaps no recorded bridge and not the VPN
- * subnet (docs/reference/development-containers.md#nodes). A Node keeps its bridge, so a second call returns it.
+ * subnet (docs/reference/development-containers.md#nodes). On the nested Gateway of an Instance fleet it also leaves out the fleet's
+ * egress proxy, which lies in the same range one level up. A Node keeps its bridge, so a second call returns it.
  */
 final readonly class AllocateInstanceBridgeAction
 {
@@ -32,7 +34,10 @@ final readonly class AllocateInstanceBridgeAction
 
                 return $current;
             }
-            $taken = [$this->vpn->subnet(), ...NodeBridges::recorded()];
+            $egress = InstanceFleetGateway::egressAddress();
+            // The /24 of the egress proxy: the Instance container's own bridge one level up.
+            $outer = $egress === null ? [] : [long2ip((int) ip2long($egress) & ~0xFF).'/'.self::BridgePrefix];
+            $taken = [$this->vpn->subnet(), ...NodeBridges::recorded(), ...$outer];
             $range = Ipv4Subnet::from(self::FleetRange);
             $size = 2 ** (32 - self::BridgePrefix);
             $start = (int) ip2long($range->networkAddress());

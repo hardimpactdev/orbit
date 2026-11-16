@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\CliConvergePlan;
+use App\Domain\Instances\ContainerNodes;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolPackageProtection;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -21,6 +22,9 @@ use App\Support\ValidatedData;
 /** Immutable, recorded desired state. No live reads and no Instance publication payloads. */
 final readonly class NodeDesiredConvergeInput
 {
+    /** The bound of the roles phase on an Instance fleet Node, in seconds. */
+    public const int FleetHostRolesSeconds = 1800;
+
     /** @param list<string> $roles
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
      */
@@ -119,6 +123,9 @@ final readonly class NodeDesiredConvergeInput
             'cli' => app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
             'tools' => $tools, 'network' => $network, 'role_units' => NodeRoleUnits::for($node),
-            ...($playbook === null ? [] : ['playbook' => $playbook])];
+            ...($playbook === null ? [] : ['playbook' => $playbook]),
+            // The roles phase of an Instance fleet Node may build its first Instance host, the stock and Instance images included
+            // (docs/reference/development-containers.md#instance-host-in-the-fleet); every other converge keeps 900 s.
+            ...(ContainerNodes::fleetNode($node) && in_array(RoleName::AppDev->value, $roles, true) ? ['roles_seconds' => self::FleetHostRolesSeconds] : [])];
     }
 }

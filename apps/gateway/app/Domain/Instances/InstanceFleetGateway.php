@@ -15,8 +15,26 @@ final class InstanceFleetGateway
     /** The marker file, as the fleet rules write it. */
     public const string Marker = '/etc/orbit/instance-fleet';
 
+    /** The environment file that the fleet rules write whole, with the egress proxy of the fleet. */
+    public const string Environment = '/etc/environment';
+
     public static function holds(): bool
     {
         return is_file(config()->string('instances.fleet_marker'));
+    }
+
+    /**
+     * The address of the egress proxy the fleet goes out through, as the fleet rules name it in `HTTPS_PROXY`, or null on any other
+     * Gateway. That address lies in the Instance container's own bridge, so no Instance bridge of the fleet may hold it
+     * (docs/reference/development-containers.md#instance-host-in-the-fleet).
+     */
+    public static function egressAddress(): ?string
+    {
+        $file = config()->string('instances.fleet_environment');
+        if (! self::holds() || ! is_readable($file)) {
+            return null;
+        }
+
+        return preg_match('/^HTTPS_PROXY="https?:\/\/(\d{1,3}(?:\.\d{1,3}){3}):\d+"$/m', (string) file_get_contents($file), $match) === 1 ? $match[1] : null;
     }
 }

@@ -13,6 +13,8 @@ additionalFiles:
   - ansible/proof-gateway.yml
   - ansible/proof-observers.yml
   - ansible/proof-observer-facts.php
+  - ansible/tasks/incus-install.yml
+  - ansible/tasks/instance-fleet-node.yml
   - ansible/tasks/proof-gateway-release.yml
   - proof/cli-release.json
   - ansible/library/orbit_route_withdraw.py

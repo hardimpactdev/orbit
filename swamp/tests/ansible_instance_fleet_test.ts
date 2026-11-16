@@ -29,7 +29,12 @@ const proxy = {
 const outerBypass = "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24";
 const dropIn = "[Service]\nEnvironment=" + Object.entries(proxy).map(([key, value]) => `"${key}=${value}"`).join(" ") + "\n";
 const environment = Object.fromEntries(Object.entries(proxy).map(([key, value]) => [`environment.${key}`, value]));
-const units = ["/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf", "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf"];
+const units = ["/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf", "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf",
+  "/etc/systemd/system/orbit-gateway-horizon.service.d/50-inner-fleet-proxy.conf"];
+/** The Gateway's PHP-FPM pool `orbit-gateway` gets the egress proxy from a file of its own: php-fpm merges a repeated pool section. */
+const pool = "/etc/php/8.5/fpm/pool.d/zz-orbit-nested-egress.conf";
+const poolFile = "; Managed by Orbit: the fleet's egress proxy for the Gateway's pool (docs/reference/development-containers.md#fleet-rules).\n[orbit-gateway]\n" +
+  Object.entries(proxy).map(([key, value]) => `env[${key}] = "${value}"`).join("\n") + "\n";
 const idmap = "both 1000 1000\nuid 2750 2750\ngid 2760 2760";
 /** The egress files of every nested container: apt and sudo and SSH sessions reach the internet only through the egress proxy. */
 const aptFile = `Acquire::http::Proxy "${proxy.HTTP_PROXY}";\nAcquire::https::Proxy "${proxy.HTTPS_PROXY}";\n`;
@@ -48,11 +53,18 @@ const owned = { ...egress, ...sizeFiles };
 /** The marker of the nested Gateway of an Instance fleet (InstanceFleetGateway::Marker): its Nodes get no task VM package cache. */
 const marker = "/etc/orbit/instance-fleet";
 const markerFile = "# Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).\n";
+/** nested-app-dev is an Instance host (development-containers.md#instance-host-in-the-fleet): its nesting keys. */
+const instanceHostKeys = { "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true" };
+/** The files each container owns: the egress and size files. The container branch writes nested-app-dev's Incus drop-in. */
+const ownedBy = (_name: string) => owned;
+/** The memory rule of each nested container (NestedFleetIntent::Memory): app-dev hosts Instances, app-prod serves none. */
+const memory: Record<string, string> = { "nested-gateway": "4GiB", "nested-app-dev": "5GiB", "nested-app-prod": "2GiB" };
 /** Each file rule in the order the rules read it: the nested Gateway's drop-ins and marker, then the owned files of each container. */
 const fileRules: [string, string][] = [
   ...units.map((unit): [string, string] => ["nested-gateway", unit]),
+  ["nested-gateway", pool],
   ["nested-gateway", marker],
-  ...names.flatMap((name) => Object.keys(owned).map((path): [string, string] => [name, path])),
+  ...names.flatMap((name) => Object.keys(ownedBy(name)).map((path): [string, string] => [name, path])),
 ];
 /** The inner bridge as the seed's first fleet has it, and with its rule: its dnsmasq has no upstream. */
 const exportedBridge = { "ipv4.address": "10.232.2.1/24", "ipv4.nat": "true", "ipv6.address": "none" };
@@ -72,12 +84,14 @@ function ruled() {
   containers["nested-app-prod"].devices["apparmor-off"] = apparmor;
   for (const name of names) containers[name].config["raw.idmap"] = idmap;
   for (const name of names) Object.assign(containers[name].config, environment);
-  containers["nested-gateway"].files = { ...Object.fromEntries(units.map((unit) => [unit, dropIn])), [marker]: markerFile };
-  for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...owned };
+  containers["nested-gateway"].files = { ...Object.fromEntries(units.map((unit) => [unit, dropIn])), [pool]: poolFile, [marker]: markerFile };
+  Object.assign(containers["nested-app-dev"].config, instanceHostKeys);
+  for (const name of names) containers[name].config["limits.memory"] = memory[name];
+  for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...ownedBy(name) };
   return containers;
 }
 
-function fixture(containers: Record<string, Record<string, unknown>>, options: { club?: boolean; base?: boolean; bridge?: Record<string, string> } = {}) {
+function fixture(containers: Record<string, Record<string, unknown>>, options: { club?: boolean; base?: boolean; bridge?: Record<string, string>; host?: boolean } = {}) {
   const folder = Deno.makeTempDirSync();
   Deno.mkdirSync(`${folder}/bin`);
   Deno.mkdirSync(`${folder}/tasks`);
@@ -131,10 +145,11 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
     fleet: {
       guests,
       layout: {
-        gateway: { address: "10.232.2.11", wireguard: "10.45.0.1" },
-        "app-dev": { address: "10.232.2.12", wireguard: "10.45.0.2" },
-        "app-prod": { address: "10.232.2.13", wireguard: "10.45.0.3" },
+        gateway: { address: "10.232.2.11", wireguard: "10.45.0.1", memory: "4GiB" },
+        "app-dev": { address: "10.232.2.12", wireguard: "10.45.0.2", memory: "5GiB" },
+        "app-prod": { address: "10.232.2.13", wireguard: "10.45.0.3", memory: "2GiB" },
       },
+      host: options.host ?? true,
       operator: { address: "10.45.0.10", hub: "10.45.0.1", network: "10.45.0.0/24" },
       checkout: { path: "/home/orbit/orbit" },
       proxy,
@@ -243,9 +258,9 @@ const record = "/var/lib/orbit/fleet-refresh.json";
 /** What a base converge reads from `swamp/` (fleet-converge-inputs.json): their Git object IDs join the `converge` digest. */
 const convergeInputs: string[] = JSON.parse(Deno.readTextFileSync(new URL("fleet-converge-inputs.json", root))).inputs;
 const recordReads = [`cat ${record}`,
-  `git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract ${convergeInputs.map((path) => `HEAD:${path}`).join(" ")} HEAD:swamp`];
+  `git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract ${convergeInputs.map((path) => `HEAD:${path}`).join(" ")} HEAD:swamp/ansible HEAD:apps/gateway/resources/machine-software HEAD:swamp`];
 /** After the migrate, the nested Gateway prints the digest of each Node's base converge intent; it admits and writes nothing. */
-const intentRead = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan orbit:node-converge-digest --base gateway app-dev app-prod";
+const intentRead = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan orbit:node-converge-digest --host app-dev --base gateway app-dev app-prod";
 /** With the Club key every refresh reads the nested Gateway's Swamp tokens: names and dates, no secret. */
 const tokenRead = "incus exec nested-gateway --cwd /home/orbit/orbit/swamp -- runuser -u orbit -- env HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp " +
   "SWAMP_CONFIG_DIR=/home/orbit/.config/swamp SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1 " +
@@ -277,11 +292,19 @@ const tokenShaped = /[a-z0-9-]+\.[A-Za-z0-9_-]{20,}/;
 const convergeApi = (call: string) => call.startsWith(api) && (call.includes("/converge ") || call.includes("/operations/"));
 /** The due Nodes converge side by side: every one is admitted first, then each Operation is read. The fake numbers each admitted
  * Operation from 901 in admission order. */
-const convergeAdmit = (node: number) =>
-  `${api} --fail -X POST https://10.45.0.1/api/v1/nodes/${node}/converge -H Content-Type: application/json -d {"base":true}`;
+const convergeAdmit = (node: number, host = false) =>
+  `${api} --fail -X POST https://10.45.0.1/api/v1/nodes/${node}/converge -H Content-Type: application/json -d ${
+    host && node === 2 ? '{"roles":["app-dev"]}' : '{"base":true}'}`;
 const convergeRead = (operation: number) => `${api} --fail https://10.45.0.1/api/v1/operations/${operation}`;
-const convergeCallsFor = (nodes: number[]) => [...nodes.map(convergeAdmit), ...nodes.map((_, index) => convergeRead(901 + index))];
-const convergeCalls = convergeCallsFor([1, 2, 3]);
+/** With `host`, the refresh's `host` part is due: nested-app-dev (2) converges its base and its `app-dev` role, the Instance host,
+ * alone and after the other Nodes' base converges have ended, as the hub's reservation admits it. */
+const convergeCallsFor = (nodes: number[], host = false) => {
+  const base = host ? nodes.filter((node) => node !== 2) : nodes;
+  return [...base.map((node) => convergeAdmit(node)), ...base.map((_, index) => convergeRead(901 + index)),
+    ...(host && nodes.includes(2) ? [convergeAdmit(2, true), convergeRead(901 + base.length)] : [])];
+};
+/** A refresh without a record: every Node converges, nested-app-dev with its Instance host. */
+const convergeCalls = convergeCallsFor([1, 2, 3], true);
 /** The record keys of the three nested Nodes' converge digests and last converge times. */
 const convergeKeys = ["gateway", "app_dev", "app_prod"].map((role) => `converge_${role}`);
 const convergedKeys = ["gateway", "app_dev", "app_prod"].map((role) => `converged_${role}`);
@@ -322,7 +345,9 @@ Deno.test({
         "incus config device set nested-gateway club-key source=/run/orbit-club path=/home/orbit/.config/swamp/club required=false shift=false",
         "incus config device set nested-app-dev checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         ...["nested-gateway", "nested-app-dev", "nested-app-prod"].flatMap((name) =>
-          [`raw.idmap=${idmap}`, ...proxyKeys].map((key) => `incus config set ${name} ${key}`)),
+          [`raw.idmap=${idmap}`, ...proxyKeys, ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : []),
+            ...(name === "nested-gateway" ? [] : [`limits.memory=${memory[name]}`])]
+            .map((key) => `incus config set ${name} ${key}`)),
         "incus network set oe-nested raw.dnsmasq=no-resolv",
         ...fileRules.map(([name, path]) => push(name, path)),
         ...reads,
@@ -497,7 +522,8 @@ Deno.test({
   name: "a refresh applies the checkout, converges the three Node bases, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture(ruled(), { club: true, base: true });
+    // Below 2,000,000: the three bases only. The host's own order is the window's first refresh case.
+    const f = fixture(ruled(), { club: true, base: true, host: false });
     try {
       assert(f.run("start").ok);
       f.calls();
@@ -534,7 +560,7 @@ Deno.test({
         `${api} --fail https://10.45.0.1/api/v1/nodes`,
         ...names.map((name) => exec(name, "systemctl stop apt-daily.timer apt-daily-upgrade.timer")),
         ...names.map((name) => exec(name, "systemctl show --property=ActiveState --value apt-daily.service apt-daily-upgrade.service")),
-        ...convergeCalls,
+        ...convergeCallsFor([1, 2, 3]),
         ...names.map((name) => `incus query /1.0/instances/${name}/snapshots?recursion=1`),
         // The shrink check: no package changed since the last shrink, so it adds nothing to `base`.
         shrinkCall + "check " + shrinkArgs,
@@ -611,7 +637,8 @@ Deno.test({
   name: "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture(ruled(), { base: true });
+    // Below 2,000,000: only base converges, side by side.
+    const f = fixture(ruled(), { base: true, host: false });
     try {
       assert(f.run("start").ok);
       f.calls();
@@ -621,7 +648,7 @@ Deno.test({
       assertStringIncludes(failed.output, "The base converge of the nested Node app-dev (Operation 902) ended failed with node.converge_failed");
       const calls = f.calls();
       // The three converges run side by side: all are admitted and awaited before the failure fails the refresh.
-      assertEquals(calls.filter(convergeApi), convergeCalls);
+      assertEquals(calls.filter(convergeApi), convergeCallsFor([1, 2, 3]));
       assert(!calls.some((call) => !call.includes(" file pull ") && (call.includes("ansible-playbook") || call.includes("orbit-swamp"))), calls.join("\n"));
       assert(!calls.some((call) => call.includes("snapshot") || call.includes("incus stop") || call === recordWrite), calls.join("\n"));
       assertEquals(f.state().outer.files[record], undefined);
@@ -636,7 +663,8 @@ Deno.test({
   name: "the due Nodes converge side by side, and a failed or refused Node fails the refresh only after every admitted converge has ended",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture(ruled(), { base: true });
+    // Below 2,000,000: only base converges, side by side.
+    const f = fixture(ruled(), { base: true, host: false });
     try {
       assert(f.run("start").ok);
       f.calls();
@@ -863,6 +891,26 @@ Deno.test({
 });
 
 Deno.test({
+  name: "the nested Gateway's Horizon and PHP-FPM pool get the fleet's egress proxy from files of their own, so a Gateway role converge keeps them",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(structuredClone(shapes), { club: true, bridge: exportedBridge });
+    try {
+      const ruledRun = f.run("rules");
+      assert(ruledRun.ok, ruledRun.output);
+      const files = f.state().containers["nested-gateway"].files;
+      assertEquals([files[units[2]], files[pool]], [dropIn, poolFile]);
+      for (const key of ["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy"]) assertStringIncludes(files[pool], `env[${key}] = "`);
+      // The pool file names the role's own pool; it never touches the role's file.
+      assertStringIncludes(files[pool], "[orbit-gateway]\n");
+      assertEquals(f.calls().filter((call) => call.includes("orbit-gateway.conf")), []);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a fleet built from the rules has the live shape, with boot.autostart true",
   ignore: !hasAnsible,
   fn() {
@@ -875,7 +923,7 @@ Deno.test({
         const want = structuredClone(live[name]);
         want.config["boot.autostart"] = "true";
         // The live fleet was built before the egress files and the marker; they are owned rules, which the refresh writes.
-        want.files = { ...(want.files ?? {}), ...(name === "nested-gateway" ? { [marker]: markerFile } : {}), ...owned };
+        want.files = { ...(want.files ?? {}), ...(name === "nested-gateway" ? { [units[2]]: dropIn, [pool]: poolFile, [marker]: markerFile } : {}), ...ownedBy(name) };
         assertEquals(state[name].devices, want.devices, name);
         assertEquals(state[name].files ?? {}, want.files ?? {}, name);
         const keys = ["raw.idmap", "boot.autostart", ...Object.keys(environment)];
@@ -902,9 +950,11 @@ Deno.test({
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
-      const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [marker] : []), ...Object.keys(owned)].map((path) => push(name, path)));
+      const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [units[2], pool, marker] : []), ...Object.keys(ownedBy(name))].map((path) => push(name, path)));
       assertEquals(writes(calls).filter((call) => !/ (stop|snapshot) /.test(call)),
-        [...egressWrites, ...names.map((name) => `incus config set ${name} boot.autostart=true`)]);
+        [...egressWrites, ...names.flatMap((name) => ["boot.autostart=true", ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : []),
+          ...(name === "nested-gateway" ? [] : [`limits.memory=${memory[name]}`])]
+          .map((key) => `incus config set ${name} ${key}`))]);
       assert(calls.indexOf(egressWrites.at(-1)!) < calls.findIndex((call) => call.includes("/converge ")), calls.join("\n"));
       for (const name of names) {
         assertEquals(f.state().containers[name].snapshots.base.config["boot.autostart"], "true");
@@ -924,7 +974,8 @@ Deno.test({
   name: "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture(withStatus("Running"), { club: true, base: true });
+    // Below 2,000,000: the three base converges run side by side.
+    const f = fixture(withStatus("Running"), { club: true, base: true, host: false });
     f.change((state) => {
       state.tunnel = structuredClone(tunnelUp);
       state.egressNeeded = ["/etc/apt/apt.conf.d/missing-in-this-case"];
@@ -1178,7 +1229,7 @@ Deno.test({
       }
       const result = f.refreshed()!;
       assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped", converge_reason: "unchanged",
-        converge_nodes: [], changed: 0, tokens: "young", tokens_reason: "recorded", base: "kept", base_containers: [], record: "present", tools: "present",
+        converge_nodes: [], host: "kept", changed: 0, tokens: "young", tokens_reason: "recorded", base: "kept", base_containers: [], record: "present", tools: "present",
         tools_reason: "current", shrink: "skipped", shrink_reason: "current", swamp: "pinned", swamp_reason: "pinned",
         swamp_version: "20261114.210101.0-sha.537e03d1", seconds: undefined });
       // Nothing changed in the nested containers' packages: one shrink check, no shrink run.
@@ -1191,7 +1242,7 @@ Deno.test({
       assertEquals(f.state().outer.modes[record], "root:root 0644");
       // The record keeps the time of the last converge that ran; the seeded record of the short cases is the one a refresh writes.
       assertEquals(JSON.parse(f.state().outer.files[record]), { ...written, grants: sha256("a1 e1") });
-      assertEquals(Object.keys(written), ["code", ...convergeKeys.toSorted(), ...convergedKeys.toSorted(), "grants", "rules", "tokens"].toSorted());
+      assertEquals(Object.keys(written), ["code", ...convergeKeys.toSorted(), ...convergedKeys.toSorted(), "grants", "host", "rules", "tokens"].toSorted());
       assertEquals(seededRecord(Number(written.converged_gateway), fixtureFleet, written.tokens), written);
     } finally {
       f.cleanup();
@@ -1599,7 +1650,7 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 const tokenMark = (milliseconds: number) => new Date(milliseconds).toISOString().slice(0, 19).replace(/[^0-9]/g, "");
 /** The fleet files in the order the rules list them, as the refresh's `rules` digest reads them. */
 const fleetFiles = fileRules.map(([container, path]) => ({ container, path,
-  content: units.includes(path) ? dropIn : path === marker ? markerFile : owned[path as keyof typeof owned] }));
+  content: units.includes(path) ? dropIn : path === pool ? poolFile : path === marker ? markerFile : (ownedBy(container) as Record<string, string>)[path] }));
 /**
  * The record a passed refresh of the fixture's default inputs writes, with `converged` at the given time (seconds) and the oldest
  * token made at `tokens` (a day ago by default, as the fake's tokens are).
@@ -1614,6 +1665,8 @@ function seededRecord(converged: number | number[], fleet = fixtureFleet, tokens
     ...Object.fromEntries(convergedKeys.map((key, index) => [key, String(times[index])])),
     grants: sha256("a1 c3"),
     rules: sha256(pythonJson(fleetFiles)),
+    // The Instance host: the `swamp/ansible` tree and the machine-software recipe.
+    host: sha256("host c3 e5 " + "4".repeat(64)),
     tokens,
   };
 }
@@ -1697,7 +1750,8 @@ Deno.test({
       f.change((state) => state.intentDigestFail = true);
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
-      assertEquals(f.calls().filter(convergeApi), convergeCalls);
+      // The same read carries the Instance host intent: unreadable, the host is due too, after the two bases.
+      assertEquals(f.calls().filter(convergeApi), convergeCallsFor([1, 2, 3], true));
       const result = f.refreshed()!;
       assertEquals([result.converge, result.converge_reason, result.record], ["ran", "digest_unreadable", "present"]);
       // Without its digest the next refresh converges again.
@@ -1740,6 +1794,102 @@ Deno.test({
       assert(JSON.parse(f.state().outer.files[record]).tokens >= tokenMark(Date.now() - 60_000));
       assert(f.run("refresh").ok);
       assertEquals([f.calls().includes(tokenRead), f.refreshed()?.tokens_reason], [false, "recorded"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      const kept = f.run("refresh");
+      assert(kept.ok, kept.output);
+      assertEquals([f.refreshed()!.host, f.calls().filter((call) => call.includes("/converge ")).length], ["kept", 0]);
+      f.change((state) => {
+        state.outer.files[record] = JSON.stringify({ ...JSON.parse(state.outer.files[record]), host: "0".repeat(64) });
+        delete state.roleConverges;
+      });
+      const changed = f.run("refresh");
+      assert(changed.ok, changed.output);
+      assertEquals(f.calls().filter((call) => call.includes("/converge ")), [convergeAdmit(2, true)]);
+      const result = f.refreshed()!;
+      assertEquals([result.host, result.converge_nodes, f.state().roleConverges], ["converged", ["app-dev"], [2]]);
+      assert(JSON.parse(f.state().outer.files[record]).host !== "0".repeat(64));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge only after the base converges ended",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      // The window's deployment: the fleet intent changed, so every Node's converge digest differs, and the record holds no `host`.
+      f.change((state) => {
+        const { host: _, ...older } = JSON.parse(state.outer.files[record]);
+        state.outer.files[record] = JSON.stringify({ ...older, ...Object.fromEntries(convergeKeys.map((key) => [key, "0".repeat(64)])) });
+        delete state.roleConverges;
+      });
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      assertEquals(f.calls().filter(convergeApi), convergeCallsFor([1, 2, 3], true));
+      assertEquals([f.refreshed()!.host, f.state().roleConverges], ["converged", [2]]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      // The nested Gateway renders another branch intent for nested-app-dev (InstanceHostIntent::digest), and the converge runs for 200
+      // reads: more than the 180 of a base converge's 900 s, within the 360 of the host's 1800 s (roles_seconds).
+      f.change((state) => {
+        state.hostIntentDigest = "5".repeat(64);
+        state.convergeRunning = { 2: 200 };
+        delete state.roleConverges;
+      });
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      assertEquals(f.calls().filter((call) => call.includes("/converge ")), [convergeAdmit(2, true)]);
+      assertEquals([f.refreshed()!.host, f.state().roleConverges, f.state().convergeRunning], ["converged", [2], { 2: 0 }]);
+      assertEquals(JSON.parse(f.state().outer.files[record]).host, sha256("host c3 e5 " + "5".repeat(64)));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled(), { club: true, base: true, host: false });
+    f.change((state) => {
+      for (const key of Object.keys(state)) delete state[key];
+      Object.assign(state, structuredClone(refreshedBoundary.state));
+      const { host: _, ...older } = JSON.parse(state.outer.files[record]);
+      state.outer.files[record] = JSON.stringify(currentRecord(older));
+      delete state.roleConverges;
+    });
+    try {
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      // The fleet intent changed (its `host`), so the bases converge; nested-app-dev's role converge does not run.
+      assertEquals([f.refreshed()!.host, f.calls().filter((call) => call.includes('{"roles"')).length, f.state().roleConverges],
+        ["skipped_idmap_small", 0, undefined]);
+      assertEquals(JSON.parse(f.state().outer.files[record]).host, undefined);
     } finally {
       f.cleanup();
     }

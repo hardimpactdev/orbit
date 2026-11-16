@@ -68,6 +68,13 @@ final readonly class NestedFleetIntent
             && InstancePlacement::keepsFleet($instance->project, $instance->node, $runtime->incus_project);
     }
 
+    /**
+     * The memory limit of each nested container of an Instance fleet, 11 GiB of the Instance container's 12 GiB: nested-app-dev hosts
+     * Instances, app-prod serves no Instance (docs/reference/development-containers.md#instance-host-in-the-fleet). A task VM's fleet keeps
+     * TaskVmNestedFleet::Layout.
+     */
+    public const array Memory = ['gateway' => '4GiB', 'app-dev' => '5GiB', 'app-prod' => '2GiB'];
+
     /** @return array<string, mixed> */
     private function fleet(Instance $instance): array
     {
@@ -76,9 +83,18 @@ final readonly class NestedFleetIntent
         $local = implode(',', ['localhost', '127.0.0.1', '::1', '.orbit', TaskVmNestedFleet::Layout['gateway']['wireguard'],
             TaskVmNestedFleet::WireGuardSubnet, TaskVmNestedFleet::Subnet]);
 
+        $size = $instance->runtime()->value('idmap_size');
+        $layout = [];
+        foreach (TaskVmNestedFleet::Layout as $role => $guest) {
+            $layout[$role] = ['address' => $guest['address'], 'memory' => self::Memory[$role]];
+        }
+
         return [
             'guests' => TaskVmNestedFleet::Guests,
-            'layout' => array_map(static fn (array $guest): array => ['address' => $guest['address']], TaskVmNestedFleet::Layout),
+            'layout' => $layout,
+            // The refresh builds the Instance host on nested-app-dev only when the default's ID map leaves room for isolated Instances
+            // there (docs/reference/development-containers.md#instance-host-in-the-fleet).
+            'host' => is_int($size) && $size >= InstanceHostIntent::NestedIdMapSize,
             'operator' => TaskVmNestedFleet::operator(),
             'checkout' => ['path' => TaskVmNestedFleet::CheckoutPath],
             'proxy' => ['HTTP_PROXY' => $proxy, 'HTTPS_PROXY' => $proxy, 'http_proxy' => $proxy, 'https_proxy' => $proxy,
