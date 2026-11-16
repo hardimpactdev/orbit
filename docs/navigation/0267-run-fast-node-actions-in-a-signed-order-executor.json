@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 267,
+      "pages": [
+        "decisions/0267-run-fast-node-actions-in-a-signed-order-executor"
+      ]
+    }
+  ]
+}
