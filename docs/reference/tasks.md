@@ -263,7 +263,7 @@ The role `consult` and the field `model` were options of the Pi turn on a task V
 
 No `tasks.provision` Operation starts any more: a task start makes a task copy. An old one that is still open holds its group as every open Operation does, so other work returns `operation.target_busy` until the reconcile pass ends it.
 
-A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission composes the prompt for every role, in this order: the group's title and brief, read from the subtask's parent; the title, brief and deliverables of the subtask; Orbit's copy rules; then the prompt of the caller. It records that text as the admitted prompt. A composed prompt over 100000 characters, the group's brief included, returns 422 `tasks.prompt_too_large`.
+A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission composes the prompt for every role. First come the group's title and brief, read from the subtask's parent, then the title, brief and deliverables of the subtask. Orbit's copy rules and the turn's clock follow, then the prompt of the caller. It records that text as the admitted prompt. A composed prompt over 100000 characters, the group's brief included, returns 422 `tasks.prompt_too_large`.
 
 The copy rules are one fixed text, the same for the implementer and the reviewer. They name no command of one Project:
 
@@ -280,7 +280,9 @@ For a group with a task copy, `task:publish <group>` without `--check` publishes
 
 The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
 
-A step of the run asks the Gateway for the token right before the push (`operation:direct:github-token`, with the run id), so the token is fresh whenever the run reaches that step. The Gateway checks the Operation, the run and the repository. It mints a token for that one repository with `contents: write` and `pull_requests: write`, and writes the two values. The token has no `workflows` permission, so it cannot push a change under `.github/workflows/`; a copy's [base read](#the-base-of-a-copy-publish) refuses a branch whose workflows differ from the default branch before the push. Its Activity row names the repository and these two permissions. The reply holds vault descriptors only.
+A step of the run asks the Gateway for the token right before the push (`operation:direct:github-token`, with the run id), so the token is fresh whenever the run reaches that step. The Gateway checks the Operation, the run and the repository. It mints a token for that one repository with `contents: write` and `pull_requests: write`, and writes the two values. The token has no `workflows` permission, so it cannot push a change under `.github/workflows/`. Its Activity row names the repository and these two permissions. The reply holds vault descriptors only.
+
+A copy's [base read](#the-base-of-a-copy-publish) refuses a workflow change of the copy's own before the push, and merges the default head into a copy that is only behind one.
 
 A worker on Node 209 uses official SSH to verify HEAD and the whole working tree against the checked candidate. Each VM read and command is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Four reads take `git read-tree HEAD`, `git add --all` and `git write-tree` on a per-run index file, and `git rev-parse HEAD`. A moved candidate fails with `tasks.head_moved` before a push.
 
@@ -288,7 +290,9 @@ A worker on Node 209 uses official SSH to verify HEAD and the whole working tree
 
 The chart names every native command and data step. Separate operations stay visible; ordering-only child workflows and result programs are removed.
 
-Swamp pushes the exact candidate to `task-{id}` without force. Git pushes nothing for an identical remote tip and refuses a divergent one, so no tip read runs first. A divergent remote tip fails with `tasks.not_fast_forward`; a GitHub workflow-permission refusal fails with `tasks.workflows_permission`. For a task copy, the base read refuses such a push first, so that code is only a fallback for a reason the read did not see. Other transport failures use `tasks.push_failed`. A lost push reply is reconciled by the next push, which finds the identical tip.
+Swamp pushes the exact candidate to `task-{id}` without force; a task copy pushes its [publish merge](#the-base-of-a-copy-publish) instead when the base read made one. Git pushes nothing for an identical remote tip and refuses a divergent one, so no tip read guards the push. A task copy's base read reads the tip only to decide whether to merge.
+
+A divergent remote tip fails with `tasks.not_fast_forward`; a GitHub workflow-permission refusal fails with `tasks.workflows_permission`. For a task copy, the base read refuses such a push first, so that code is only a fallback for a reason the read did not see. Other transport failures use `tasks.push_failed`. A lost push reply is reconciled by the next push, which finds the identical tip.
 
 Without `pull_request`, publication only pushes. With it, a `gh api` step looks for an open pull request from the admitted branch. TypeScript on 209 plans one update of its title and body when found, or one creation against the admitted default branch, and a second `gh api` step sends it from a private JSON input file. A lost reply fails the operation.
 
@@ -344,7 +348,7 @@ The program prints one line of evidence. It names paths, line numbers and secret
 | Private keys | A `-----BEGIN … PRIVATE KEY-----` block with 100 or more base64 characters. A short test stub passes |
 | Same objects | The worker's content check refuses unless its object digest equals the copy check's |
 
-A plain copy has no outer or inner secrets, so it checks only for private keys. The check does not judge workflow changes: a copy's remote branches show the last main it synced, not the default branch head on GitHub. [The base of a copy publish](#the-base-of-a-copy-publish) judges them against that head.
+A plain copy has no outer or inner secrets, so it checks only for private keys. The check does not judge workflow changes: a copy's remote branches show the last main it synced, not the default branch head on GitHub. [The base of a copy publish](#the-base-of-a-copy-publish) judges them from the merge base with that head.
 
 A secret refuses with `tasks.publish_secret_value`. The publish result lists the items in `refused`: `path:line secret-name`. `refused_more` counts the rest. An error refuses with `tasks.publish_secret_unchecked`. So does a nested-fleet copy that shows no inner machine. In each case nothing is pushed. A hit in a file name names the folder that holds it, and a path that holds a value is never printed.
 
@@ -370,24 +374,44 @@ A copy's publish states the base it publishes against. After the token is minted
 | `behind_by` | The commits of the default branch that the checked commit lacks |
 | `overlapping_paths` | The paths that both the checked commit and the default branch changed since the base |
 | `overlapping_more` | How many overlapping paths lie beyond the listed ones: at most 100 paths in at most 3,000 bytes |
+| `merged_default` | The default head that the worker merged at publish, or null when it pushed the checked commit itself |
 
 `git merge-tree --write-tree` then merges the two inside the scratch repository; no workspace is touched. Of the merge, only a real conflict refuses: `tasks.publish_conflict` names the conflicting paths in `conflicting_paths`, at most 100 in at most 3,000 bytes so the refusal fits the step detail Orbit keeps, with `conflicting_more` counting the rest, and nothing is pushed. Bring main into the copy with [`task:sync`](#bring-main-into-a-copy), merge or rebase, check again and publish. Being behind, with or without overlapping paths, never refuses.
 
-These fields join the result. With `--title` and `--body`, the pull request body gets a fixed `## Base` section after the caller's text and the [waiver lines](#docs-impact-waivers-in-a-copy) the publish adds: the base commit, the default head, how far behind, and the overlapping paths, or none. An Orbit marker opens the section, so a body that carries an earlier one gets it replaced and a re-publish states it once, with any waiver line that followed it kept before the new section.
+These fields join the result. With `--title` and `--body`, the pull request body gets a fixed `## Base` section after the caller's text and the [waiver lines](#docs-impact-waivers-in-a-copy) the publish adds. It states the base commit, the default head and how far behind. After a merge at publish it adds the line `- Merged main <sha> at publish`. Then it lists the overlapping paths, or none. An Orbit marker opens the section, so a body that carries an earlier one gets it replaced and a re-publish states it once, with any waiver line that followed it kept before the new section.
 
 The body stays within its 65,536-character limit: when the path list does not fit, the section names only their count, and when the section does not fit at all, the body has none; the result states the base either way.
 
 A task VM publish states no base. A run that started on the workflow before this step has none of the fields and no `## Base` section.
 
-The base read also judges workflow changes, the way GitHub does. GitHub refuses a push without the `workflows` permission when the pushed branch's tree under `.github/workflows/` differs from the default branch, not only when a new commit changes it (Operation 24460).
-
-So the read lists the paths under `.github/workflows/` that differ between the fetched default head and the checked commit: `git diff --name-only`, the net difference of the two trees. A commit that the default branch already holds is never a change of the copy, whether [`task:sync`](#bring-main-into-a-copy) brought it, even from a main newer than the last release, or it was carried in by hand. A workflow change of the copy that a later commit undoes is no change either.
-
-Two kinds of copy refuse. A copy that is behind a workflow change of the default branch refuses with that path, although none of its commits changes a workflow: bring main into the copy with [`task:sync`](#bring-main-into-a-copy), merge it, check again and publish. A copy whose own commits change a workflow refuses until that change is gone from the branch.
+The base read also judges workflow changes. It lists the copy's own: the paths under `.github/workflows/` that the checked commit changed since the merge base, `git diff --name-only <base> <commit>`, which is `git diff <default>...<commit>`. A commit that the default branch already holds is never a change of the copy, whether [`task:sync`](#bring-main-into-a-copy) brought it, even from a main newer than the last release, or it was carried in by hand. A workflow change of the copy that a later commit undoes is no change either. A merge that keeps the copy's own version of a workflow that the default branch changed is a change of the copy.
 
 Any listed path refuses with `tasks.publish_workflow_change`, before a conflict refuses. The publish result lists the paths in `refused`, at most 100 in at most 3,000 bytes, and `refused_more` counts the rest. Nothing is pushed. The publish token has no `workflows` permission, so GitHub would refuse such a push too. A task cannot change a workflow from a copy: a change of its own under `.github/workflows/` belongs to a person. The agent says what to change, and a person makes that pull request by hand with their own GitHub account. The pipeline lane does the same.
 
-The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone, and adds the five base fields for a copy: `base_commit`, `default_commit`, `behind_by`, `overlapping_paths` and `overlapping_more`. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
+###### Merge main at publish
+
+GitHub judges the pushed branch's tree against the default branch, not its commits. So a copy that has no workflow change of its own but is behind one of the default branch would still be refused, with `tasks.workflows_permission` (Operation 24460). A workflow change merged on main after the copy's sync does this too.
+
+When the own list is empty, the trees under `.github/workflows/` of the fetched head and the checked commit differ, and the merge is clean, the worker merges at publish. In its scratch repository it writes a merge commit:
+
+- its tree is the `git merge-tree` result;
+- its parents are the checked commit, then the fetched head;
+- its message is `Merge main <full head sha> at publish`, with the default branch's name;
+- its author and committer are `Orbit <orbit@users.noreply.github.com>`.
+
+The push sends that merge instead of the checked commit, so the branch's workflows equal the default branch's. `merged_default` names the head. The publication record keeps `commit`, the checked commit. A copy whose workflows already equal the default branch's pushes the checked commit itself, as before.
+
+###### A republish
+
+A merge at publish leaves the task branch at a commit that the copy does not hold, so a plain push of a newer checked commit would fail with `tasks.not_fast_forward`. The base read therefore also fetches the task branch's tip from origin, when it exists.
+
+When that tip is not an ancestor of the checked commit, it must be an earlier publish merge. Its message names the default branch and its second parent. Its first parent is an ancestor of the checked commit, and its second parent is an ancestor of the fetched head.
+
+Then the worker always merges, also when no workflow differs: the parents are the checked commit, the fetched head and that tip, and the tree is the merge of the first two. The push is a fast-forward. When the tip's first two parents already are the checked commit and the fetched head, it is this publish's merge: the push sends it again and pushes nothing.
+
+Any other tip that is not an ancestor fails at the push with `tasks.not_fast_forward`, as before.
+
+The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone, and adds the six base fields for a copy: `base_commit`, `default_commit`, `behind_by`, `overlapping_paths`, `overlapping_more` and `merged_default`. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 
 ### Task lifecycle
 
@@ -454,7 +478,7 @@ Subtask create appends a `todo` subtask at the next position. It works while the
 
 Swamp selects the next subtask and records its status through the API.
 
-Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliverables` value replaces the whole list. Positions stay gapless from 1.
+Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliverables` value replaces the whole list. `reason` goes only with a [correction after a failed check](#correct-the-deliverables-of-a-started-subtask). Positions stay gapless from 1.
 
 | Task status | What can change |
 | --- | --- |
@@ -471,6 +495,35 @@ An ended group permits no subtask status move. Completing a subtask clears its a
 
 In a group whose workspace is a task copy, the admission of a [copy turn](/cli/task/turn#in-a-task-copy) of either role moves the current subtask from `todo` to `running`, under the group's row lock and in the turn's own transaction. A refused turn moves nothing. No turn, check or reviewer pass moves the subtask further. The caller completes it with `task:update <subtask> --status=completed` after the reviewer's turn on the done check ended; that move is the approval that [the done rule](#when-the-work-is-done) reads. Since the turn started it, the subtask then keeps its title, brief, position and deliverables, as the next paragraph says.
 
+A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the corrections that the next section lists.
+
+#### Correct the deliverables of a started subtask
+
+One Gateway rule decides whether a started subtask's deliverables may change, and by which correction. It takes the first that applies:
+
+1. The one correction after a failed `invalid_deliverable` step. The subtask asks for assistance. A subtask gets it once, and it takes no reason.
+2. The [path gate fix](#deliverables). The deliverable path gate holds the subtask before its implementer starts.
+3. A correction after a failed check, in a group whose workspace is a task copy.
+
+A wrong deliverable, such as a command that the copy cannot run or a path that a renumber moved, should not force a code change or a new subtask. In a group whose workspace is a task copy, the caller replaces the list with a reason:
+
+```bash
+orbit task:update 5354 --deliverables=deliverables.json --reason="The tools tests need discover -s tools."
+```
+
+Orbit accepts this correction when all of these hold:
+
+- The group has not ended.
+- The subtask is the current subtask, the first open one, and it has started.
+- Its newest handoff check failed.
+- No correction answered that check yet, of either kind.
+
+The reason is required here, 1 to 500 characters; without it the update returns HTTP 422 `validation.failed` on `reason`. The list passes the same validation as at create: base paths, at most five, and the fields of each type. One correction answers one failed check: a second correction before a new check returns `tasks.deliverables_locked`. A refused correction stores nothing.
+
+Task activity records `deliverables corrected` with the old list, the new list, the reason and the failed check's id. `task:show` shows the new list, and the next handoff check runs it. Nothing else changes: the [done rule](#when-the-work-is-done) reads the current list, and a reviewer still reviews the next check.
+
+A `reason` without `deliverables`, on a group update, on a `todo` subtask, or with a correction that takes no reason returns HTTP 422 `tasks.reason_unexpected` and changes nothing. A `reason` with `deliverables` for a started subtask that no correction admits returns `tasks.deliverables_locked`, as without one.
+
 #### Reopen the last subtask
 
 In an open group whose workspace is a task copy, the caller can reopen the last subtask with `task:update <subtask> --status=running`, so that a fix after the review or after the pull request runs as more turns in the same subtask and threads. The move from `completed` back to `running` is allowed only when all of these hold:
@@ -484,13 +537,11 @@ The move takes the group's row lock, as a completion does. Any other move from `
 The reopen adds no state. The existing rules decide what it means:
 
 - The subtask is current again, so implementer and reviewer turns run on it and continue their threads.
-- Its deliverables stay locked, as for every started subtask.
+- Its deliverables stay locked, as for every started subtask, except for the [corrections](#correct-the-deliverables-of-a-started-subtask).
 - The open subtask keeps the group from being [done](#when-the-work-is-done). A `pr_when_done` group does not publish. A `review_before_pr` group leaves `waiting_for_release`.
 - A new handoff check, a reviewer turn on it and a new completion make the group done again, on the new check.
 - A completion without a new check makes the group done again on its earlier done check, as before the reopen. That check holds no commit made after it.
 - A group that has a pull request keeps it. Its next publish updates the same pull request.
-
-A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the one correction after `invalid_deliverable` described below.
 
 Appending a subtask records new work. Swamp decides when to resume the group.
 
@@ -510,7 +561,8 @@ The task and subtask operations return these errors.
 | `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |
 | `tasks.group_closed` | 409 | Subtask create in an ended task |
 | `tasks.not_in_backlog` | 409 | A title or brief update outside `backlog`, or a subtask update or destroy that the table above does not permit |
-| `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started |
+| `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started, when no [correction](#correct-the-deliverables-of-a-started-subtask) applies |
+| `tasks.reason_unexpected` | 422 | A `reason` on an update that is not a [correction after a failed check](#correct-the-deliverables-of-a-started-subtask) |
 | `tasks.deliverable_base_unavailable` | 422 | The repository base or its complete file tree could not be read for path validation |
 | `tasks.already_claimed` | 409 | An attempted move after workspace reservation |
 | `tasks.subtask_not_running` | 409 | A subtask cancel that the rules above do not permit |
@@ -885,6 +937,10 @@ A turn has a bound of 3,600 seconds. A turn that its bound cuts stops its own ru
 Every earlier turn that is over in Orbit but may still run in the copy, because it was cut, cancelled or lost, is settled by the next turn. That turn's phase first stops the earlier run when T3 still shows it active. It settles the earlier turn once T3 shows its run over and a reviewer's checkout is clean on the task branch. A stop that fails leaves the earlier turn unsettled, and the next turn fails with `tasks.copy_turn_unended`. The work in the copy stays. So `operation:cancel <turn>` and then a new turn stop a running turn's run.
 
 A question ends a turn: Orbit stores it and stops the run, and the role's next turn, or a message to the thread from a T3 client, answers it. The thread and its transcript stay on the Gateway after the copy is gone.
+
+Each turn's prompt gives the agent its clock: the time Orbit admitted the turn and that time plus the one-hour bound, in UTC, with the ask to commit before the end. The turn's result names `agent_id`, the agent thread that [`task:agent:show`](/cli/task/agent-show) reads, and `reply`, the transcript's last entry that the agent wrote, bounded at 16,384 characters with a marker that says how much was cut. The transcript is the whole thread's, so a turn in which the agent wrote nothing shows an earlier turn's reply.
+
+A driver reads a turn from its result alone; the whole transcript stays in the archive ([result fields](/cli/task/turn#a-task-that-runs-in-a-copy)).
 
 [`task:sync`](/cli/task/sync#a-task-copy) brings the Project's newest default branch into it, as [bring main into a copy](#bring-main-into-a-copy) describes. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet.
 

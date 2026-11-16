@@ -1,5 +1,5 @@
 order = 900
-source_sha256 = "ef0a25fe5b374a8402a283a32ada0ed77a4c9bca00a9dc5b4f07d67c63264210"
+source_sha256 = "67abc0afbd1a28d42ef44feee6ffe9b69e7a774845af1defd652ebe6afc2233a"
 cases = [
   "generated converge vars preserve shell arguments, scalar strings and literal Jinja through Ansible",
   "peer DNS routing domains stay literal and a second application changes nothing",
@@ -18,6 +18,7 @@ cases = [
   "the final software check rejects a drifted installed package without writes",
   "repository trust requires exactly one primary fingerprint, not a matching subkey or one of several keys",
   "role phases accept generated extra vars without shadowing each role's intent",
+  "a node.converge of a CI Node reads the certificate of the default's Node, and its roles phase trusts that certificate",
   "JavaScript repair replaces stale extracted runtimes and then skips matching state",
   "node.add and node.converge apply the same kernel policy from the intent",
   "the kernel policy keeps a matching module file, such as one written by hand, and repairs a drifted one once",
@@ -45,8 +46,12 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/swamp-worker-renewal.yml",
   "swamp/ansible/tasks/node-converge-base.yml",
+  "swamp/ansible/tasks/node-converge-role.yml",
   "swamp/ansible/tasks/node-kernel-policy.yml",
+  "swamp/ansible/tasks/node-role-runtime.yml",
   "swamp/ansible/tasks/node-update-policy.yml",
+  "swamp/ansible/tasks/proof-seed-certificate.yml",
+  "swamp/ansible/tasks/proof-seed-listener.yml",
   "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
   "swamp/extensions/behaviors/operations/ansible-input/converge_tool.ts",
   "swamp/extensions/behaviors/operations/tools/constraints.ts",

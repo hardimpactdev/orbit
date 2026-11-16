@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "8574726477a7a39f7564ca4717d1e22076e890d90dd8fd122b6aa5ad643e8053"
+source_sha256 = "68a97a1b599182a451e71da10b2e4cce90ad00b34ed2aad0d30a40f45b472fc3"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -27,10 +27,11 @@ cases = [
   "a wake's start keeps the marker when the web unit never answers",
   "a wake's start removes the marker before the T3 wait: a silent T3 fails the wake while the site serves",
   "a wake's start of a Project without a web unit removes the marker without a web wait",
-  "a wake resumes a Frozen container without a boot, closes swap again and removes the marker; its result names the path and seconds",
+  "a wake hands a Frozen container to the power helper, which restores and resumes it and closes swap; no boot; the marker goes",
+  "a wake that follows the Node's fast wake of its Operation reports that wake's ready file, and no other Operation's",
   "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one",
   "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker",
-  "a wake closes the swap of the container and of each recorded inner cgroup that still exists, skips a vanished one, and removes the record",
+  "a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit",
   "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait",
   "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one",
   "a deployment's start resumes a Frozen container and then converges as usual",
@@ -39,7 +40,7 @@ cases = [
   "the workspace stays writable for its group before and after the deploy steps, whoever installed last; Git excludes the .env once, beside the container's own lines",
   "the agent phase trusts only its workspace and preserves other Git settings on reruns",
   "the agent can commit with its default identity and keeps each configured identity value",
-  "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, and a Project without PHP loses php-cli.ini",
+  "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, a module the Node lacks leaves its line out until the Node holds it, and a Project without PHP loses php-cli.ini",
   "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start, never into a running one",
   "start refuses a NIC with missing ACL before starting the container",
   "start refuses a NIC with permissive default before starting the container",
@@ -98,16 +99,20 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 4946
+cost = 4949
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # The run after a fast wake of its Operation (41s locally, run in full before the PR): a 72nd slice would push the file to 9 hosted
+  # shards. The PR keeps the safety-net race and the late outcome in InstanceSleepWakeTest.php and the worker's outcome files in
+  # instance_container_wake_test.ts.
+  "a wake that follows the Node's fast wake of its Operation reports that wake's ready file, and no other Operation's",
   # The proof checkout of a copy (21s locally, run in full before the PR): the file sits at the 8-shard PR limit. The PR keeps the
   # workflow's expressions in workflow_start_resolution_test.ts and the Gateway's input in ProofRunCopiesTest.php.
   "a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name",
   # The sleep and wake of defaults and nested-fleet Instances in the start part (20s, 56s and 42s locally, run in full before the PR): the
   # file sits at the 8-shard PR limit, so any added cost defers it whole. The PR keeps the swap close (each recorded cgroup that still
   # exists, none outside the container, the record removed) and the nested never-stop of a sleep in ansible_instance_container_power_test.ts.
-  "a wake closes the swap of the container and of each recorded inner cgroup that still exists, skips a vanished one, and removes the record",
+  "a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit",
   "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one",
   "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait",
   # The merged deploy steps' equivalence (two fixtures, separate and merged plays, a phase handler before the seed, a play killed after
@@ -191,6 +196,11 @@ inputs = [
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/instance-container-incus.ts",
   "swamp/tests/fixtures/task-vm-host-incus.ts",
+  "swamp/ansible/tasks/instance-power-call.yml",
+  "swamp/ansible/tasks/instance-power-helper.yml",
+  "swamp/ansible/files/instance-container-power.py",
+  "swamp/tests/fixtures/instance-power-helper.ts",
+  "swamp/tests/_support/power_helper.ts",
 ]
 
 [case_costs]
@@ -213,7 +223,7 @@ inputs = [
   "a wake's start keeps the marker when the web unit never answers" = 49 # ESTIMATE (hosted run 43787856522): 42.2s from its scenario's 27.4 of 95.3 local play seconds of the former case (146.7s), x 1.15, rounded up
   "a wake's start removes the marker before the T3 wait: a silent T3 fails the wake while the site serves" = 88 # hosted run 43787856522: 76.0s x 1.15, rounded up
   "a wake's start of a Project without a web unit removes the marker without a web wait" = 40 # hosted run 43787856522: 34.7s x 1.15, rounded up
-  "a wake resumes a Frozen container without a boot, closes swap again and removes the marker; its result names the path and seconds" = 41 # hosted run 43787856522: 35.3s x 1.15, rounded up
+  "a wake hands a Frozen container to the power helper, which restores and resumes it and closes swap; no boot; the marker goes" = 41 # hosted run 43787856522: 35.3s x 1.15, rounded up
   "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one" = 51 # hosted run 43787856522: 43.7s x 1.15, rounded up
   "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker" = 135 # hosted run 43787856522: 116.7s x 1.15, rounded up
   "a deployment's start resumes a Frozen container and then converges as usual" = 39 # hosted run 43787856522: 33.9s x 1.15, rounded up
@@ -222,7 +232,7 @@ inputs = [
   "the workspace stays writable for its group before and after the deploy steps, whoever installed last; Git excludes the .env once, beside the container's own lines" = 94 # hosted run 43787856522: 81.3s x 1.15, rounded up
   "the agent phase trusts only its workspace and preserves other Git settings on reruns" = 67 # hosted run 43787856522: 57.6s x 1.15, rounded up
   "the agent can commit with its default identity and keeps each configured identity value" = 92 # hosted run 43787856522: 79.4s x 1.15, rounded up
-  "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, and a Project without PHP loses php-cli.ini" = 93 # hosted run 43787856522: 80.4s x 1.15, rounded up
+  "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, a module the Node lacks leaves its line out until the Node holds it, and a Project without PHP loses php-cli.ini" = 96 # hosted run 43787856522: 80.4s x 1.15, rounded up; plus 3s ESTIMATE for the runtime folder's module check (local mean 29.3s before, 30.3s with it over three runs each: 1s x 2.1, rounded up)
   "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start, never into a running one" = 80 # hosted run 43787856522: 69.4s x 1.15, rounded up
   "start refuses a NIC with missing ACL before starting the container" = 50 # hosted run 43787856522: 43.2s x 1.15, rounded up
   "start refuses a NIC with permissive default before starting the container" = 37 # hosted run 43787856522: 31.4s x 1.15, rounded up

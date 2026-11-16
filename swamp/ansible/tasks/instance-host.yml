@@ -332,19 +332,27 @@
       when: (dev_ports_ruleset.changed or dev_ports_live.rc != 0) and not dev_ports_started.changed
       changed_when: true
 
-# The fast wake of a frozen container (docs/reference/development-containers.md#the-node-resumes-a-frozen-container): the Gateway's
-# wake request in /dev/shm/orbit/hibernation (root:caddy 0755, so only root writes there) starts the fixed script below. It runs as
-# root with no capabilities: the Incus socket and the container's cgroup file belong to root, and `incus-admin` is root's equal.
-# The files only add a unit: a converge that changes them restarts nothing that runs.
+- name: Install the power helper
+  ansible.builtin.include_tasks: instance-power-helper.yml
+
+# The fast wake of a frozen container (docs/reference/prepared-restore.md#the-fast-wake): the Gateway's operation-qualified wake
+# request in /dev/shm/orbit/hibernation (root:caddy 0755, so only root writes there) starts the dispatcher, which starts one worker
+# unit per Operation. Both run as root with no capabilities: the Incus socket, systemd's private socket, the helper's state and the
+# outcome folder belong to root, and `incus-admin` is root's equal. The worker calls the power helper through its own unit, which
+# holds the helper's capabilities. The Gateway reads the outcomes in /var/lib/orbit/hibernation/outcomes (root:caddy 0755, status
+# files 0644) and tells a Node with the fast wake by the worker template. The files only add units: a converge that changes them
+# restarts nothing that runs.
 # Only a Node whose Caddy serves the containers' own sites puts a container to sleep and wakes it.
 - name: Install the wake of frozen Instance containers
   when: instances.own_site is defined
   block:
     - name: Make the folder of the wake script
       ansible.builtin.file: { path: /usr/local/libexec, state: directory, owner: root, group: root, mode: "0755" }
+    - name: Make the folder of the wake outcomes
+      ansible.builtin.file: { path: /var/lib/orbit/hibernation/outcomes, state: directory, owner: root, group: caddy, mode: "0755" }
     - name: Write the wake script
       ansible.builtin.copy: { src: files/instance-container-wake.sh, dest: /usr/local/libexec/orbit-instance-wake, owner: root, group: root, mode: "0755" }
-    - name: Write the wake service
+    - name: Write the wake dispatcher
       ansible.builtin.copy:
         dest: /etc/systemd/system/orbit-instance-wake.service
         owner: root
@@ -352,13 +360,37 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=Orbit Instance containers: resume a frozen container on a wake request
+          Description=Orbit Instance containers: hand each wake request to its worker
           # Several Instances may wake at once; the start limit must never switch the wake requests off.
           StartLimitIntervalSec=0
 
           [Service]
           Type=oneshot
-          ExecStart=/usr/local/libexec/orbit-instance-wake
+          ExecStart=/usr/local/libexec/orbit-instance-wake dispatch
+          TimeoutStartSec=10
+          CapabilityBoundingSet=
+          AmbientCapabilities=
+          NoNewPrivileges=yes
+          PrivateTmp=yes
+          PrivateNetwork=yes
+          ProtectSystem=strict
+          ProtectHome=yes
+          ReadWritePaths=-/dev/shm/orbit/hibernation
+      register: wake_service
+    - name: Write the wake worker
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/orbit-instance-wake@.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Orbit Instance containers: the fast wake of Operation %i
+          StartLimitIntervalSec=0
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/libexec/orbit-instance-wake work %i
           TimeoutStartSec=30
           CapabilityBoundingSet=
           AmbientCapabilities=
@@ -367,10 +399,10 @@
           PrivateNetwork=no
           ProtectSystem=strict
           ProtectHome=yes
-          ReadWritePaths=-/dev/shm/orbit/hibernation -/data/caddy/orbit/hibernation /sys/fs/cgroup
-          RuntimeDirectory=orbit-instance-wake
-          Environment=INCUS_CONF=/run/orbit-instance-wake
-      register: wake_service
+          ReadWritePaths=-/dev/shm/orbit/hibernation -/data/caddy/orbit/hibernation /var/lib/orbit/hibernation/outcomes
+          RuntimeDirectory=orbit-instance-wake-%i
+          Environment=INCUS_CONF=/run/orbit-instance-wake-%i
+      register: wake_worker
     - name: Write the wake request watch
       ansible.builtin.copy:
         dest: /etc/systemd/system/orbit-instance-wake.path
@@ -382,18 +414,19 @@
           Description=Orbit Instance containers: wake requests
 
           [Path]
-          PathExistsGlob=/dev/shm/orbit/hibernation/app-instance-*.wake
+          PathExistsGlob=/dev/shm/orbit/hibernation/app-instance-*-op-*.wake
           Unit=orbit-instance-wake.service
 
           [Install]
           WantedBy=paths.target
       register: wake_path
+    # A changed request pattern takes effect when the watch restarts.
     - name: Watch for wake requests
       ansible.builtin.systemd_service:
         name: orbit-instance-wake.path
-        daemon_reload: "{{ wake_service.changed or wake_path.changed }}"
+        daemon_reload: "{{ wake_service.changed or wake_worker.changed or wake_path.changed }}"
         enabled: true
-        state: started
+        state: "{{ 'restarted' if wake_path.changed else 'started' }}"
 
 # A container's own site (docs/reference/development-containers.md#the-own-site-from-inside): UFW admits 443 and the development
 # listener in from the bridge to its gateway address, where the table above sends the development range. Caddy admits only the

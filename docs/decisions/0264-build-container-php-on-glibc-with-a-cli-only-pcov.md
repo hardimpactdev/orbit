@@ -56,6 +56,7 @@ The reasons for glibc:
 - The change of `tools/static-php/craft.yml`, `bin/static-php-build` and the extension lists gives a new build id. The [one pull request flow](/reference/compute-drivers#change-a-static-build) applies: the pull request records the new `build` and `url` with `sha256: null`, a manual run of the workflow from main with the branch as `ref` builds, proves and publishes the build, and the same pull request records its SHA-256. The new build id and its SHA-256 reach main together. A build with `sha256: null` is not in the runtime folder, so the pull request must not merge before its SHA-256 is set, or `php/8.5` leaves the runtime folder of every container. While the branch has `sha256: null`, the Gateway refuses to create or deploy a container for a PHP 8.5 Project, and its tests that do so fail.
 - PCOV on by default costs test time in every CLI run of a container, also for Projects that use no coverage. Queue workers and other CLI Processes load it too.
 - A `php` of another PHP version, started by its full path, reads the same `php-cli.ini`, which names the linked version's `pcov.so`. Only the Project's PHP version is linked, so this does not happen in normal use.
+- `php-cli.ini` names only modules that the Node's runtime folder holds. A Gateway release that reaches a Node before its role converge installs the new runtime folder leaves PCOV out of the file, and the next start or deploy writes it ([PCOV in the CLI only](/reference/php-runtime#pcov-in-the-cli-only)).
 
 ## Affects
 

@@ -1,4 +1,7 @@
-/** The Node's fast wake of a frozen Instance container (ansible/files/instance-container-wake.sh), run against a stub `incus`. */
+/**
+ * The Node's fast wake of a frozen Instance container (ansible/files/instance-container-wake.sh): its dispatcher and its worker,
+ * run against stubs of systemctl, systemd-run (the power helper's unit), curl, sync and incus.
+ */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { fileURLToPath } from "node:url";
@@ -6,145 +9,233 @@ import { fileURLToPath } from "node:url";
 const script = fileURLToPath(new URL("../ansible/files/instance-container-wake.sh", import.meta.url));
 const gateway = (path: string) => Deno.readTextFileSync(new URL(`../../apps/gateway/app/${path}`, import.meta.url));
 
-type Node = { status?: string; marker?: boolean; resumeFails?: boolean; web?: string[] };
+type Node = {
+    marker?: boolean;
+    target?: Record<string, unknown> | null;
+    /** The helper's JSON result; null is a busy lock: exit 1 and nothing on stdout. */
+    helper?: Record<string, unknown> | null;
+    web?: string;
+};
 
-/** A Node folder with the request folder, the marker folder, a cgroup tree and a stub incus that logs each call. */
-async function node(id: string, state: Node) {
+const target = (id: number, extra: Record<string, unknown> = {}) => ({ schema_version: 1, instance_id: id, incus_project: "orbit-instances",
+    incus_name: `instance-${id}`, incarnation: "c0ffee", web: { address: "10.20.0.5", port: 8080 }, ...extra });
+const restored = (id: number, opid: number, status = "complete") => ({ schema_version: 1, command: "restore", instance_id: id, operation_id: opid,
+    outcome: "resumed", error_code: null, state_before: "frozen", state_after: "running", prepared_restore: { status } });
+
+/** A Node folder: requests, markers, the helper's state with the target descriptor, and stubs that log each call to `calls`. */
+async function node(id: number, opid: number, state: Node = {}) {
     const folder = await Deno.makeTempDir();
-    for (const dir of ["bin", "requests", "markers", `cgroup/lxc.payload.orbit-instances_instance-${id}`]) {
-        await Deno.mkdir(`${folder}/${dir}`, { recursive: true });
+    for (const dir of ["bin", "requests", "markers", "state/outcomes", `state/instances/${id}`]) await Deno.mkdir(`${folder}/${dir}`, { recursive: true });
+    const marker = `${folder}/markers/app-instance-${id}.asleep`;
+    if (state.marker ?? true) await Deno.writeTextFile(marker, "");
+    const descriptor = state.target === undefined ? target(id) : state.target;
+    if (descriptor !== null) await Deno.writeTextFile(`${folder}/state/instances/${id}/target.json`, JSON.stringify(descriptor));
+    const helper = state.helper === undefined ? restored(id, opid) : state.helper;
+    const stubs: Record<string, string> = {
+        "systemctl": "",
+        "systemd-run": helper === null
+            ? "echo 'Unit orbit-instance-power-1.service was already loaded or has a fragment file.' >&2; exit 1"
+            : `[ -e '${marker}' ] || echo 'no marker at restore' >> '${folder}/calls'; echo '${JSON.stringify(helper)}'`,
+        "curl": `[ -e '${marker}' ] || echo 'no marker at readiness' >> '${folder}/calls'; printf '%s' '${state.web ?? "200"}'`,
+        // GNU sync fsyncs the files it names; the stub records whether the marker was gone by then.
+        "sync": `[ -e '${marker}' ] && echo 'marker at sync' >> '${folder}/calls'; true`,
+        "incus": "true",
+    };
+    for (const [name, body] of Object.entries(stubs)) {
+        await Deno.writeTextFile(`${folder}/bin/${name}`, `#!/bin/sh\nprintf '%s\\n' "${name} $*" >> '${folder}/calls'\n${body}\n`);
+        await Deno.chmod(`${folder}/bin/${name}`, 0o755);
     }
-    await Deno.writeTextFile(`${folder}/cgroup/lxc.payload.orbit-instances_instance-${id}/memory.swap.max`, "max");
-    if (state.marker ?? true) await Deno.writeTextFile(`${folder}/markers/app-instance-${id}.asleep`, "");
-    await Deno.writeTextFile(`${folder}/status`, state.status ?? "Frozen");
-    await Deno.writeTextFile(`${folder}/web`, (state.web ?? ["200"]).join("\n") + "\n");
-    await Deno.writeTextFile(`${folder}/bin/incus`, `#!/bin/sh
-echo "$*" >> '${folder}/calls'
-case "$1" in
-  query) [ "$(cat '${folder}/status')" = Missing ] && exit 1; printf '{"status": "%s", "status_code": 110}' "$(cat '${folder}/status')";;
-  --project) ${state.resumeFails ? "exit 1" : `echo Running > '${folder}/status'`};;
-  exec) head -n 1 '${folder}/web'; [ "$(wc -l < '${folder}/web')" -gt 1 ] && sed -i 1d '${folder}/web';;
-esac
-exit 0
-`);
-    await Deno.chmod(`${folder}/bin/incus`, 0o755);
     return folder;
 }
 
-async function run(folder: string) {
+async function run(folder: string, ...args: string[]) {
     const result = await new Deno.Command("bash", {
-        args: [script], stdout: "piped", stderr: "piped",
-        env: { PATH: `${folder}/bin:/usr/bin:/bin`, ORBIT_WAKE_REQUESTS: `${folder}/requests`, ORBIT_WAKE_MARKERS: `${folder}/markers`, ORBIT_CGROUP_ROOT: `${folder}/cgroup` },
+        args: [script, ...args], stdout: "piped", stderr: "piped",
+        env: { PATH: `${folder}/bin:/usr/bin:/bin`, ORBIT_WAKE_REQUESTS: `${folder}/requests`, ORBIT_WAKE_MARKERS: `${folder}/markers`, ORBIT_WAKE_STATE: `${folder}/state` },
     }).output();
-    assertEquals(result.code, 0);
+    assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
     return new TextDecoder().decode(result.stdout);
 }
 
 const exists = (path: string) => { try { Deno.lstatSync(path); return true; } catch { return false; } };
 const calls = (folder: string) => exists(`${folder}/calls`) ? Deno.readTextFileSync(`${folder}/calls`).trim().split("\n") : [];
+const outcomes = (folder: string) => [...Deno.readDirSync(`${folder}/state/outcomes`)].map((entry) => entry.name).sort();
+const request = (folder: string, id: number, opid: number, age = 0) => {
+    const path = `${folder}/requests/app-instance-${id}-op-${opid}.taken`;
+    Deno.writeTextFileSync(path, "");
+    if (age > 0) Deno.utimeSync(path, new Date(Date.now() - age), new Date(Date.now() - age));
+};
 
-Deno.test("a request resumes a Frozen container behind its marker, closes swap, waits for FrankenPHP, then removes the marker", async () => {
-    const folder = await node("2650", {});
+Deno.test("the dispatcher renames each operation-qualified request and starts its worker without waiting", async () => {
+    const folder = await node(2650, 41);
     try {
-        await Deno.writeTextFile(`${folder}/requests/app-instance-2650.wake`, "");
-        const log = await run(folder);
-        assertEquals(calls(folder).slice(0, 2), ["query -- /1.0/instances/instance-2650?project=orbit-instances", "--project orbit-instances resume instance-2650"]);
-        assertStringIncludes(calls(folder)[2], "exec --project orbit-instances instance-2650 -- curl");
-        assertStringIncludes(calls(folder)[2], "http://127.0.0.1:8080/");
-        assertEquals(Deno.readTextFileSync(`${folder}/cgroup/lxc.payload.orbit-instances_instance-2650/memory.swap.max`), "0");
-        assert(!exists(`${folder}/markers/app-instance-2650.asleep`), "the marker went");
-        assert(!exists(`${folder}/requests/app-instance-2650.wake`), "the request went");
-        assert(!exists(`${folder}/requests/app-instance-2650.taken`), "the taken request went at the end");
-        assert(exists(`${folder}/requests/app-instance-2650.resumed`), "the Gateway reads this");
-        assertStringIncludes(log, "instance 2650: resumed resume_ms=");
+        await Deno.writeTextFile(`${folder}/requests/app-instance-2650-op-41.wake`, "");
+        await Deno.writeTextFile(`${folder}/requests/app-instance-7-op-9.wake`, "");
+        await run(folder, "dispatch");
+        assertEquals(calls(folder).sort(), ["systemctl start --no-block orbit-instance-wake@2650-41.service", "systemctl start --no-block orbit-instance-wake@7-9.service"]);
+        assertEquals([...Deno.readDirSync(`${folder}/requests`)].map((entry) => entry.name).sort(), ["app-instance-2650-op-41.taken", "app-instance-7-op-9.taken"]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-Deno.test("any other state removes only the request and changes nothing", async () => {
-    for (const state of [{ status: "Stopped" }, { status: "Running" }, { status: "Missing" }, { marker: false }, { status: "Running", marker: false }] as Node[]) {
-        const folder = await node("7", state);
-        try {
-            await Deno.writeTextFile(`${folder}/requests/app-instance-7.wake`, "");
-            await run(folder);
-            assert(!exists(`${folder}/requests/app-instance-7.wake`) && !exists(`${folder}/requests/app-instance-7.taken`));
-            assert(!exists(`${folder}/requests/app-instance-7.resumed`), JSON.stringify(state));
-            assertEquals(exists(`${folder}/markers/app-instance-7.asleep`), state.marker ?? true, JSON.stringify(state));
-            assert(calls(folder).every((call) => call.startsWith("query")), `${JSON.stringify(state)}: ${calls(folder)}`);
-            assertEquals(Deno.readTextFileSync(`${folder}/cgroup/lxc.payload.orbit-instances_instance-7/memory.swap.max`), "max");
-        } finally { await Deno.remove(folder, { recursive: true }); }
-    }
-});
-
-Deno.test("a request whose name is not app-instance-<digits>.wake, a link, or one older than a second is removed and ignored", async () => {
-    const folder = await node("12", {});
+Deno.test("the dispatcher removes a request with an invalid name or a link, and the old unqualified request starts nothing", async () => {
+    const folder = await node(12, 3);
     try {
-        for (const name of ["app-instance-0.wake", "app-instance-012.wake", "app-instance-12a.wake", "app-instance-1.2.wake", "app-instance-.wake", "app-instance-$(id).wake"]) {
+        for (const name of ["app-instance-0-op-3.wake", "app-instance-012-op-3.wake", "app-instance-12-op-03.wake", "app-instance-12-op-0.wake",
+            "app-instance-12a-op-3.wake", "app-instance-1.2-op-3.wake", "app-instance-12-op-3-op-4.wake", "app-instance-$(id)-op-3.wake"]) {
             await Deno.writeTextFile(`${folder}/requests/${name}`, "12");
         }
-        await Deno.symlink(`${folder}/markers/app-instance-12.asleep`, `${folder}/requests/app-instance-12.wake`);
-        await run(folder);
-        assertEquals([...Deno.readDirSync(`${folder}/requests`)].map((entry) => entry.name), []);
-        assertEquals(calls(folder), []);
-
+        await Deno.symlink(`${folder}/markers/app-instance-12.asleep`, `${folder}/requests/app-instance-12-op-3.wake`);
         await Deno.writeTextFile(`${folder}/requests/app-instance-12.wake`, "");
-        await Deno.utime(`${folder}/requests/app-instance-12.wake`, new Date(Date.now() - 3000), new Date(Date.now() - 3000));
-        const log = await run(folder);
-        assertStringIncludes(log, "older than 1 s");
+        await run(folder, "dispatch");
+        assertEquals([...Deno.readDirSync(`${folder}/requests`)].map((entry) => entry.name), ["app-instance-12.wake"]);
         assertEquals(calls(folder), []);
-        assert(exists(`${folder}/markers/app-instance-12.asleep`));
+        assert(exists(`${folder}/markers/app-instance-12.asleep`), "a link's target stays");
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-Deno.test("a silent or 5xx FrankenPHP, or a failed resume, keeps the marker and writes no resumed file", async () => {
-    for (const state of [{ web: ["000"] }, { web: ["503"] }, { resumeFails: true }] as Node[]) {
-        const folder = await node("9", state);
+Deno.test("a worker restores through the helper's lock, checks readiness from the Node, removes the marker, then writes ready and done", async () => {
+    const folder = await node(2650, 41);
+    try {
+        request(folder, 2650, 41);
+        const log = await run(folder, "work", "2650-41");
+        const made = calls(folder);
+        assertEquals(made[0], "systemd-run --unit=orbit-instance-power-2650 --wait --pipe --collect --quiet /usr/local/libexec/orbit-instance-power restore --instance 2650 --operation 41");
+        assertEquals(made[1], "curl --silent --output /dev/null --write-out %{http_code} --max-time 1.5 http://10.20.0.5:8080/");
+        assert(!made.includes("no marker at restore") && !made.includes("no marker at readiness"), "restore and readiness come before the marker goes");
+        assert(!made.includes("marker at sync"), "the marker is gone before an outcome is written");
+        const outcome = `${folder}/state/outcomes/app-instance-2650-op-41`;
+        assertEquals(made.slice(2, 4), [`sync -- ${outcome}.ready-complete ${folder}/state/outcomes`, `sync -- ${outcome}.done ${folder}/state/outcomes`]);
+        assertEquals(outcomes(folder), ["app-instance-2650-op-41.done", "app-instance-2650-op-41.ready-complete"]);
+        assertEquals(Deno.statSync(`${outcome}.ready-complete`).mode! & 0o777, 0o644);
+        assert(!exists(`${folder}/markers/app-instance-2650.asleep`));
+        assert(made.slice(4).every((call) => call.startsWith("incus exec --project orbit-instances instance-2650 -- sh -c")), "maintenance comes after done");
+        assertStringIncludes(log, "instance 2650 op 41: resumed restore=complete restore_ms=");
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the ready file names the helper's restore status; a container without a web unit gets no request", async () => {
+    for (const [status, file] of [["partial", "ready-partial"], ["skipped", "ready-skipped"], ["timed_out", "ready-timed-out"]]) {
+        const folder = await node(5, 8, { helper: restored(5, 8, status), target: target(5, { web: null }) });
         try {
-            await Deno.writeTextFile(`${folder}/requests/app-instance-9.wake`, "");
-            const started = Date.now();
-            await run(folder);
-            assert(Date.now() - started < 2500, "the probe stops at 1.5 s");
-            assert(exists(`${folder}/markers/app-instance-9.asleep`), JSON.stringify(state));
-            assert(!exists(`${folder}/requests/app-instance-9.resumed`));
+            request(folder, 5, 8);
+            await run(folder, "work", "5-8");
+            assertEquals(outcomes(folder), ["app-instance-5-op-8.done", `app-instance-5-op-8.${file}`]);
+            assert(!calls(folder).some((call) => call.startsWith("curl")), status);
         } finally { await Deno.remove(folder, { recursive: true }); }
     }
 });
 
-Deno.test("FrankenPHP is asked once: a later answer is left to the wake's workflow, with the marker kept", async () => {
-    const folder = await node("5", { web: ["000", "302"] });
+Deno.test("a worker declines with failed and keeps the marker, writing no ready or done file it did not earn", async () => {
+    const cases: [string, Node, number, boolean][] = [
+        ["request older than 1 s", {}, 3000, false],
+        ["no asleep marker", { marker: false }, 0, false],
+        ["no target descriptor", { target: null }, 0, false],
+        ["another Instance's descriptor", { target: target(99) }, 0, false],
+        ["a project the helper does not know", { target: target(9, { incus_project: "default" }) }, 0, false],
+        ["a nested-fleet Instance", { target: target(9, { incus_project: "orbit-instances-nested" }) }, 0, false],
+        ["a busy lock", { helper: null }, 0, true],
+        ["a container that already ran", { helper: { ...restored(9, 4), outcome: "already_running", prepared_restore: { status: "not_applicable" } } }, 0, true],
+        ["a restore that failed", { helper: { ...restored(9, 4), outcome: "failed", error_code: "instance.container_start_failed" } }, 0, true],
+        ["a 5xx web unit", { web: "503" }, 0, true],
+        ["a silent web unit", { web: "000" }, 0, true],
+    ];
+    for (const [name, state, age, helped] of cases) {
+        const folder = await node(9, 4, state);
+        try {
+            request(folder, 9, 4, age);
+            await run(folder, "work", "9-4");
+            assertEquals(outcomes(folder), ["app-instance-9-op-4.failed"], name);
+            assertEquals(exists(`${folder}/markers/app-instance-9.asleep`), state.marker ?? true, name);
+            assertEquals(calls(folder).some((call) => call.startsWith("systemd-run")), helped, name);
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    }
+});
+
+Deno.test("a worker whose Operation has an outcome repeats nothing and keeps its times; another Operation's outcome does not count", async () => {
+    const folder = await node(3, 10);
     try {
-        await Deno.writeTextFile(`${folder}/requests/app-instance-5.wake`, "");
-        await run(folder);
-        assertEquals(calls(folder).filter((call) => call.startsWith("exec") && call.includes(" curl ")).length, 1);
-        assert(exists(`${folder}/markers/app-instance-5.asleep`));
-        assert(!Deno.readTextFileSync(script).match(/\bsleep\s/), "no polling in the script (shape gate: custom-control)");
+        const old = new Date(Date.now() - 60_000);
+        const outcome = (name: string) => {
+            Deno.writeTextFileSync(`${folder}/state/outcomes/${name}`, "");
+            Deno.utimeSync(`${folder}/state/outcomes/${name}`, old, old);
+        };
+        const mtime = (name: string) => Deno.statSync(`${folder}/state/outcomes/${name}`).mtime!.getTime();
+        outcome("app-instance-3-op-10.ready-partial");
+        outcome("app-instance-3-op-10.done");
+        request(folder, 3, 10);
+        await run(folder, "work", "3-10");
+        assertEquals(calls(folder), []);
+        assertEquals(mtime("app-instance-3-op-10.ready-partial"), old.getTime());
+
+        // A worker that ended after its ready file: only done is added, and the ready time stays.
+        Deno.removeSync(`${folder}/state/outcomes/app-instance-3-op-10.done`);
+        await run(folder, "work", "3-10");
+        assertEquals(calls(folder).filter((call) => !call.includes("sync")), []);
+        assert(exists(`${folder}/state/outcomes/app-instance-3-op-10.done`));
+        assertEquals(mtime("app-instance-3-op-10.ready-partial"), old.getTime());
+
+        outcome("app-instance-3-op-11.failed");
+        await run(folder, "work", "3-11");
+        assertEquals(calls(folder).filter((call) => !call.includes("sync")), []);
+
+        // Operation 12 finds only the outcomes of 10 and 11: it wakes for itself.
+        request(folder, 3, 12);
+        await run(folder, "work", "3-12");
+        assert(calls(folder).some((call) => call.endsWith("restore --instance 3 --operation 12")));
+        assert(exists(`${folder}/state/outcomes/app-instance-3-op-12.ready-complete`));
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-Deno.test("the script's folders and port are the Gateway's", () => {
+Deno.test("a worker with an invalid unit argument does nothing", async () => {
+    const folder = await node(4, 2);
+    try {
+        request(folder, 4, 2);
+        for (const argument of ["0-2", "4-02", "4", "4-2-3", "../4-2", "4-2 ", ""]) await run(folder, "work", argument);
+        assertEquals(calls(folder), []);
+        assertEquals(outcomes(folder), []);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the script holds no wait loop and no lock of its own (shape gate)", () => {
+    const text = Deno.readTextFileSync(script);
+    for (const pattern of [/\bsleep\s/, /while\s+true/, /\bflock\b/, /\blockfile\b/, /\bwhile\b/]) assert(!text.match(pattern), String(pattern));
+});
+
+Deno.test("the script's folders and files are the Gateway's", () => {
     const text = Deno.readTextFileSync(script);
     const hibernation = gateway("Domain/Hibernation/RuntimeHibernation.php");
     const marker = hibernation.match(/MarkerDirectory = '([^']+)'/)![1];
     const logs = hibernation.match(/AccessLogDirectory = '([^']+)'/)![1];
-    const port = gateway("Domain/Instances/InstanceContainer.php").match(/WebPort = (\d+);/)![1];
     assertStringIncludes(text, `requests=\${ORBIT_WAKE_REQUESTS:-${marker}}`);
     assertStringIncludes(text, `markers=\${ORBIT_WAKE_MARKERS:-${logs}}`);
-    assertStringIncludes(text, `web_port=${port}\n`);
-    // The Gateway tells a Node with the script by this path, which the role writes.
-    const scriptPath = gateway("Domain/Instances/Power/ContainerResume.php").match(/ScriptPath = '([^']+)'/)![1];
-    assertStringIncludes(Deno.readTextFileSync(new URL("../ansible/tasks/instance-host.yml", import.meta.url)), `dest: ${scriptPath},`);
+    const resume = gateway("Domain/Instances/Power/ContainerResume.php");
+    const outcomes = resume.match(/OutcomeDirectory = '([^']+)'/)![1];
+    assertEquals(outcomes, "/var/lib/orbit/hibernation/outcomes");
+    assertStringIncludes(text, "state=${ORBIT_WAKE_STATE:-/var/lib/orbit/hibernation}\noutcomes=$state/outcomes\n");
+    for (const status of ["complete", "partial", "skipped", "timed-out"]) assertStringIncludes(resume, `'${status}'`);
+    // The Gateway tells a Node with the fast wake by the worker template, which the role writes.
+    const worker = resume.match(/WorkerPath = '([^']+)'/)![1];
+    assertStringIncludes(Deno.readTextFileSync(new URL("../ansible/tasks/instance-host.yml", import.meta.url)), `dest: ${worker}\n`);
 });
 
-Deno.test("the app-dev role installs the script as root and a watch on the request folder, with no capabilities", () => {
+Deno.test("the app-dev role installs the script, a dispatcher, a worker template and a watch on qualified requests, with no capabilities", () => {
     const tasks = parse(Deno.readTextFileSync(new URL("../ansible/tasks/instance-host.yml", import.meta.url))) as Record<string, any>[];
     const block = tasks.find((task) => task.name === "Install the wake of frozen Instance containers")!.block as Record<string, any>[];
     const copy = (name: string) => block.find((task) => task.name === name)!["ansible.builtin.copy"];
     assertEquals(copy("Write the wake script"), { src: "files/instance-container-wake.sh", dest: "/usr/local/libexec/orbit-instance-wake", owner: "root", group: "root", mode: "0755" });
-    const service = copy("Write the wake service").content as string;
-    for (const line of ["ExecStart=/usr/local/libexec/orbit-instance-wake", "CapabilityBoundingSet=\n", "NoNewPrivileges=yes", "ProtectSystem=strict", "StartLimitIntervalSec=0"]) {
-        assertStringIncludes(service, line);
+    assertEquals(block.find((task) => task.name === "Make the folder of the wake outcomes")!["ansible.builtin.file"],
+        { path: "/var/lib/orbit/hibernation/outcomes", state: "directory", owner: "root", group: "caddy", mode: "0755" });
+    const dispatcher = copy("Write the wake dispatcher").content as string;
+    const worker = copy("Write the wake worker").content as string;
+    for (const [unit, start] of [[dispatcher, "orbit-instance-wake dispatch"], [worker, "orbit-instance-wake work %i"]]) {
+        for (const line of [`ExecStart=/usr/local/libexec/${start}\n`, "CapabilityBoundingSet=\n", "NoNewPrivileges=yes", "ProtectSystem=strict", "StartLimitIntervalSec=0"]) {
+            assertStringIncludes(unit, line);
+        }
     }
-    assertStringIncludes(copy("Write the wake request watch").content, "PathExistsGlob=/dev/shm/orbit/hibernation/app-instance-*.wake");
-    assertEquals(block.at(-1)!["ansible.builtin.systemd_service"], { name: "orbit-instance-wake.path", daemon_reload: "{{ wake_service.changed or wake_path.changed }}", enabled: true, state: "started" });
+    assertEquals(copy("Write the wake worker").dest, "/etc/systemd/system/orbit-instance-wake@.service");
+    assertStringIncludes(worker, " /var/lib/orbit/hibernation/outcomes\n");
+    assertStringIncludes(copy("Write the wake request watch").content, "PathExistsGlob=/dev/shm/orbit/hibernation/app-instance-*-op-*.wake\n");
+    assertEquals(block.at(-1)!["ansible.builtin.systemd_service"].name, "orbit-instance-wake.path");
     const manifest = Deno.readTextFileSync(new URL("../manifest.yaml", import.meta.url));
     assertStringIncludes(manifest, "  - ansible/files/instance-container-wake.sh\n");
 });
@@ -159,9 +250,9 @@ Deno.test("the Node script and the wake's workflow run the same library check, a
     const refresh = names.indexOf("Refresh a stale library cache after the wake");
     assert(refresh > names.indexOf("Remove the asleep marker") && refresh < names.indexOf("Wait for T3"), names.join(" | "));
     assertEquals(tasks[refresh].failed_when, false);
-    // In the script the check comes after the marker went and the Gateway's resumed file exists.
+    // In the script the check comes after the marker went and the done file exists.
     const text = Deno.readTextFileSync(script);
-    assert(text.indexOf('sh -c "$library_check"') > text.indexOf(': > "$requests/app-instance-$id.resumed"'));
+    assert(text.indexOf('sh -c "$library_check"') > text.indexOf('publish "$base.done"'));
 });
 
 Deno.test("the library check rebuilds the cache only when a soname of the runtime folder is missing at that path, as the converge reads it", async () => {
@@ -200,21 +291,6 @@ Deno.test("the library check rebuilds the cache only when a soname of the runtim
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-Deno.test("a second request is taken before the first container's library check", async () => {
-    const folder = await node("3", {});
-    try {
-        // The stub writes the second request while it answers the first container's probe.
-        const stub = Deno.readTextFileSync(`${folder}/bin/incus`).replace("exec) head", `exec) [ -e '${folder}/second' ] || { touch '${folder}/second'; : > '${folder}/requests/app-instance-4.wake'; }; head`);
-        Deno.writeTextFileSync(`${folder}/bin/incus`, stub);
-        await Deno.writeTextFile(`${folder}/markers/app-instance-4.asleep`, "");
-        await Deno.writeTextFile(`${folder}/requests/app-instance-3.wake`, "");
-        await run(folder);
-        const order = calls(folder).filter((call) => call.startsWith("query") || call.includes("ldconfig -p"));
-        assertEquals(order.map((call) => call.startsWith("query") ? call.split("instance-")[1].split("?")[0] : "check"), ["3", "4", "check"]);
-        assert(!exists(`${folder}/requests/app-instance-4.wake`));
-    } finally { await Deno.remove(folder, { recursive: true }); }
-});
-
 const caCheck = (text: string) => text.match(/r=\/usr\/local\/share\/ca-certificates\/orbit-managed-root-ca\.crt;[^\n']*refreshed; \}/)![0];
 
 Deno.test("the Node script and the wake's workflow run the same CA bundle check, after the library check", () => {
@@ -228,7 +304,6 @@ Deno.test("the Node script and the wake's workflow run the same CA bundle check,
     assertEquals(tasks[ca].failed_when, false);
     assertEquals(tasks[ca].changed_when, "'refreshed' in wake_ca_bundle.stdout");
     assert(text.indexOf('sh -c "$ca_check"') > text.indexOf('sh -c "$library_check"'));
-    assert(!text.match(/\bsleep\s/), "no polling in the script (shape gate)");
 });
 
 Deno.test("the CA bundle check refreshes the bundle only when it lacks the container's Orbit root, and skips a container without it", async () => {
@@ -258,4 +333,17 @@ Deno.test("the CA bundle check refreshes the bundle only when it lacks the conta
         Deno.removeSync(root);
         assertEquals(await run(), "", "a container without the CA file skips the check");
     } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the worker and the wake's run send the same readiness request from the Node, and no run asks the web port through incus exec", () => {
+    const flags = (text: string) => text.replaceAll("'", "").match(/--silent --output \/dev\/null --write-out \S+ --max-time [0-9.]+/)![0];
+    const worker = Deno.readTextFileSync(script).match(/curl (--silent[^\n]*?) "http:\/\/\$address:\$port\/"/)![1];
+    const plays = parse(Deno.readTextFileSync(new URL("../ansible/instance-container.yml", import.meta.url))) as Record<string, any>[];
+    const probe = (plays.find((play) => play.vars?.web_probe)!.vars.web_probe as string).replace(/[\[\],]/g, " ").replace(/\s+/g, " ");
+    assertEquals(flags(worker), flags(probe));
+    assertStringIncludes(probe, "'http://' ~ container.address ~ ':' ~ container.web_port ~ '/'");
+    for (const file of ["instance-container-power.yml", "instance-container-phase.yml"]) {
+        const text = Deno.readTextFileSync(new URL(`../ansible/tasks/${file}`, import.meta.url));
+        assert(!text.match(/127\.0\.0\.1:' ~ intent\.web\.port/), file);
+    }
 });

@@ -138,6 +138,8 @@ describe('omitted and invalid input', function (): void {
         'subtask update without subtask' => ['task:update', ['--title' => 'T'], 'task.task_required'],
         'subtask update without a change' => ['task:update', ['task' => '2'], 'task.update_required'],
         'subtask update with position zero' => ['task:update', ['task' => '2', '--position' => '0'], 'task.position_invalid'],
+        'subtask update with a blank reason' => ['task:update', ['task' => '2', '--position' => '2', '--reason' => '  '], 'task.reason_invalid'],
+        'subtask update with a long reason' => ['task:update', ['task' => '2', '--position' => '2', '--reason' => str_repeat('r', 501)], 'task.reason_invalid'],
         'subtask cancel without consent' => ['task:cancel', ['task' => '2'], 'input.confirmation_required'],
         'subtask cancel with an invalid subtask' => ['task:cancel', ['task' => 'x', '--yes' => true], 'task.task_invalid'],
         'subtask destroy without consent' => ['task:destroy', ['task' => '2'], 'input.confirmation_required'],
@@ -439,6 +441,19 @@ describe('requests', function (): void {
         'true' => [true],
         'false' => [false],
     ]);
+
+    it('sends the reason of a correction after a failed check with the deliverables', function (): void {
+        $path = $this->orbitHome.'/deliverables.json';
+        is_dir($this->orbitHome) || mkdir($this->orbitHome, 0700, true);
+        file_put_contents($path, json_encode([['id' => 'tools-tests', 'type' => 'command', 'description' => 'The tools tests pass',
+            'command' => 'python3 -m unittest discover -s tools']], JSON_THROW_ON_ERROR));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-update/child-updated'));
+
+        expect(Artisan::call('task:update', ['task' => '2', '--deliverables' => $path, '--reason' => 'The tools tests need discover -s tools.', '--json' => true]))->toBe(0);
+
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskRequest
+            && json_decode((string) $request->body(), true, flags: JSON_THROW_ON_ERROR)['reason'] === 'The tools tests need discover -s tools.');
+    });
 
     it('refuses fails_on_base on a deliverable that is not a command', function (string $type, array $extra): void {
         $path = $this->orbitHome.'/deliverables.json';

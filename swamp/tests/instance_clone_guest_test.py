@@ -1402,6 +1402,10 @@ class CloneGuestTest(unittest.TestCase):
             settings = base / "etc/orbit/php/conf.d/99-orbit-runtime.ini"
             settings.parent.mkdir(parents=True)
             settings.write_text("memory_limit = 1G\n")
+            # The Node's runtime folder, mounted in the container, holds PCOV for the Project's PHP.
+            module = base / "opt/orbit-runtime/current/php/8.5/modules/pcov.so"
+            module.parent.mkdir(parents=True)
+            module.write_bytes(b"")
             container = {
                 "workspace": "/srv/workspace",
                 "clone": {},
@@ -1490,6 +1494,27 @@ class CloneGuestTest(unittest.TestCase):
             container["php_cli_ini"] = None
             self.assertIn(restart, workspace())
             self.assertFalse(cli.exists())
+            self.assertNotIn(restart, workspace())
+            # A Gateway release before the Node's converge: the line names a module the runtime folder does not hold. The guest
+            # keeps no such line, so with none left it writes no file and removes Orbit's old one; a rerun changes nothing.
+            pcov = "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n"
+            container["php_cli_ini"] = pcov
+            self.assertIn(restart, workspace())
+            self.assertEqual(cli.read_text(), pcov)
+            module.unlink()
+            self.assertIn(restart, workspace())
+            self.assertFalse(cli.exists())
+            self.assertNotIn(restart, workspace())
+            self.assertFalse(cli.exists())
+            # Only the missing module's line goes; any other line stays.
+            container["php_cli_ini"] = "; CLI only\n" + pcov
+            self.assertIn(restart, workspace())
+            self.assertEqual(cli.read_text(), "; CLI only\n")
+            # Once the Node holds the module, the next run writes its line again.
+            module.write_bytes(b"")
+            container["php_cli_ini"] = pcov
+            self.assertIn(restart, workspace())
+            self.assertEqual(cli.read_text(), pcov)
             self.assertNotIn(restart, workspace())
 
     def test_agent_preserves_unmanaged_json_and_identity_and_repairs_only_managed_keys(

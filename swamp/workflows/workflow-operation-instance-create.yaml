@@ -67,6 +67,7 @@ jobs:
             env:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
               ORBIT_NODE_ID: '${{ string(inputs.node_id) }}'
               ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
               ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
@@ -92,6 +93,7 @@ jobs:
               ORBIT_PHASE: 'container'
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
               ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
               ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
@@ -116,6 +118,7 @@ jobs:
             env:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
               ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
               ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
@@ -167,6 +170,7 @@ jobs:
             env:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
               ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
               ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
@@ -373,6 +377,7 @@ jobs:
             env: &container_phase
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
               # The create's input, or for a failed clone the stop's own (stop-input): a clone has no input step.
               ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : ("stop-input" in steps && steps["stop-input"].status == "succeeded" ? steps["stop-input"].outputs.assets : "") }}'
               ANSIBLE_CONFIG: '${{ ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : ("stop-input" in steps && steps["stop-input"].status == "succeeded" ? steps["stop-input"].outputs.assets : "")) + "/ansible.cfg" }}'

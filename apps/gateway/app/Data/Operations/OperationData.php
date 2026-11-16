@@ -52,6 +52,7 @@ final class OperationData extends Data
         public ?TaskPlaceWaitData $capacityWait = null,
         public ?string $overdueSince = null,
         public ?string $holdWaitReason = null,
+        public ?string $readyAt = null,
     ) {}
 
     /** Public reads retain domain results without returning the execution plan. */
@@ -157,6 +158,7 @@ final class OperationData extends Data
             capacityWait: app(TaskPlaces::class)->waitOf($operation),
             overdueSince: is_string($operation->state['overdue_since'] ?? null) ? $operation->state['overdue_since'] : null,
             holdWaitReason: self::holdWaitReason($operation),
+            readyAt: is_string($operation->result['ready_at'] ?? null) ? $operation->result['ready_at'] : null,
         );
     }
 }

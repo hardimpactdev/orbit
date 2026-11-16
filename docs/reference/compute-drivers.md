@@ -1054,7 +1054,7 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 
 With the [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) on a ZFS pool, the branch also sets `volmode=dev` on the pool's `custom` dataset, once. A copy's [inner volume](/reference/development-containers#the-inner-volume) then gets its device in dev mode.
 
-An Instance container host also gets the [fast wake](/reference/development-containers#the-node-resumes-a-frozen-container): the script `/usr/local/libexec/orbit-instance-wake`, `orbit-instance-wake.service` and the enabled path unit `orbit-instance-wake.path`. Writing them changes no running unit.
+An Instance container host also gets the [fast wake](/reference/development-containers#the-node-resumes-a-frozen-container): the [power helper](/reference/prepared-restore#the-power-helper) `/usr/local/libexec/orbit-instance-power` with its capability manifest, the enabled path unit `orbit-instance-wake.path`, its dispatcher and the worker template `orbit-instance-wake@.service`. Writing them changes no running unit.
 
 The role repeats the [read-only NIC audit](/reference/development-containers#prepare-a-node) at its end. An unsafe NIC fails convergence; bridge egress stays reject. No NIC may reference the bridge union ACL.
 

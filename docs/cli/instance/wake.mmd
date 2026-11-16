@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): resume a sleeping development container, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake.
+  %% Container runtime (ADR 0250 step 8, ADR 0261, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): read a sleeping development container's recorded pages back while it is still frozen, then resume it, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake.
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
@@ -38,39 +38,55 @@ sequenceDiagram
     %%> Result:
     %%> - the visitor never waits for the wake: the Gateway admits or joins it and answers before any Node call or run start
   end
-  opt the last sleep froze a container with no inner swap
+  opt the last sleep froze it, not a nested fleet
     %% path: resume
     GW->>N: Write the wake request<br/>agent · hibernation.marker
     %%> What it does:
     %%> - the Operation is recorded without its run; the Node calls run after its commit
     %%> - a command caller waits for these calls; Caddy's activation call does not: the Gateway answers the progress page first and makes the calls after the answer went
-    %%> - the frozen agent's `hibernation.marker` writes `/dev/shm/orbit/hibernation/app-instance-<id>.wake`; only root writes in that folder
-    %%> - the app-dev role's script, started by a systemd path unit, acts only on `instance-<id>` of `orbit-instances` found Frozen with its asleep marker and a request under 1 s old: `incus resume`, `memory.swap.max` 0 on the container's cgroup, one request to FrankenPHP for an answer below 500 (1.5 s at most), then it removes the marker, writes `app-instance-<id>.resumed`, and rebuilds a stale library cache and CA bundle as the run does
-    %%> - the Gateway reads the request folder and the marker with `hibernation.times` until the resume shows, within 3 s
+    %%> - the frozen agent's `hibernation.marker` writes `/dev/shm/orbit/hibernation/app-instance-<id>-op-<opid>.wake`; only root writes in that folder; the name carries the Operation, so no earlier wake's outcome can answer this one
     %%> When:
-    %%> - not for a nested-fleet Instance, and not when the last sleep opened inner cgroups (its result's `swap_subtree` above 0): the script closes only the container's own cgroup, and a change to it needs an `app-dev` converge; these wakes take the run
+    %%> - the Node has the worker template `/etc/systemd/system/orbit-instance-wake@.service`, which only the role's convergence installs; the first read asks for it, and a Node without it skips this path for 10 minutes
+    %%> - not for a nested-fleet Instance: its prepared fast path waits for a nested-fleet proof
     %%> Why:
-    %%> - measured on a frozen clone: the resume takes 0.02 s and the web probe 0.4 s, but the run's start-up and playbook took 8-13 s of the 9-19 s a visitor waited
+    %%> - measured on a frozen clone: the run's start-up and playbook took 8-13 s of the 9-19 s a visitor waited
     %%> - the agent stays frozen (ADR 0253): two of its existing commands carry the request and the answer
-    %%> Result:
-    %%> - resumed: the Operation succeeds here with `wake: resumed`, `trigger_seconds` and `confirm_seconds`; `power_state` is `running`; Conn's renewal below runs as after a run
-    %%> - Caddy already has the progress page: its poll, every 250 ms, finds the marker gone and loads the app
-    %%> - an API caller gets 202 with the ended Operation
-    %%> - a command caller who joins this wake waits for it up to the bound, then gets the same answer; a visit that joins it gets the progress page at once
+    Note over N: Restore, then resume<br/>orbit-instance-wake@ID-OP
+    %%> What it does:
+    %%> - a path unit's dispatcher renames the request to `.taken` and starts the worker for this Instance and Operation; a slow worker never holds up the next request
+    %%> - the worker acts only on a request under 1 s old, with the asleep marker and a valid target descriptor; it runs `orbit-instance-power restore` as the unit `orbit-instance-power-<id>`, the Instance's lock
+    %%> - restore, still frozen: checks boot id, incarnation, cgroup and every process's identity before any memory call, then `process_madvise` and `process_vm_readv` over the recorded pages in parallel, within 2 s; then one `incus resume`, and swap closes on every cgroup of `limits.json`
+    %%> - then one request from the Node to the web port for an answer below 500, removes the marker, writes one `.ready-complete`, `-partial`, `-skipped` or `-timed-out` and then `.done` in `/var/lib/orbit/hibernation/outcomes`
+    %%> - last, the library cache and CA bundle checks the run also makes
+    %%> Why:
+    %%> - frozen processes cannot change their mappings, so the plan stays exact while it is read
+    %%> - the pages come back in large parallel reads, not one fault at a time after the resume
     %%> On failure:
-    %%> - the Node has no script (its first read also asks for it; the Node then skips this path for 10 minutes), the script declined (another state, FrankenPHP silent), an agent call or the Gateway failed, or the bound passed: the Gateway removes the request, and the same Operation starts the run below
+    %%> - a changed or missing plan: no memory call; an ordinary resume, `.ready-skipped`
+    %%> - a declined request, a busy lock, a failed resume or check: `.failed`, the marker stays
+    GW->>N: Read the outcome<br/>agent · hibernation.times
+    %%> What it does:
+    %%> - reads the request, `.taken`, the outcome files and the marker every 25 ms, for at most 6 s
+    %%> Result:
+    %%> - `.done` with one `.ready-*`: the Operation succeeds here with `wake: resumed`, `trigger_seconds`, `confirm_seconds`, `restore_mode`, `ready_at` from the ready file's time (`ready_at_resolution_seconds` 1) and `prepared_restore.status`; `power_state` is `running`; Conn's renewal below runs as after a run
+    %%> - after the projection, the Gateway removes this Operation's request and outcome files off the visitor's path
+    %%> - Caddy already has the progress page: its poll, every 250 ms, finds the marker gone and loads the app
+    %%> - an API caller gets 202 with the ended Operation; a command caller who joins waits up to the bound; a visit that joins gets the progress page at once
+    %%> On failure:
+    %%> - `.failed`, an agent call that failed or the bound: the Gateway removes the request, and the same Operation starts the run below; the run takes the same lock, so it waits for a worker still at work and goes on from the state the Node reached
     %%> - a Gateway worker that dies here: a delayed start runs the same Operation's run 15 s later
-    %%> - a cancel between Caddy's answer and the Node calls: the Gateway makes no Node call
-    %%> - a cancel during the resume keeps the Operation cancelled
+    %%> - a cancel between Caddy's answer and the Node calls: the Gateway makes no Node call; a cancel during the resume keeps the Operation cancelled, and a late outcome never overwrites it
   end
   GW->>SW: Start run, full intent<br/>operation-instance-wake
   GW-->>CL: 202 Accepted<br/>Operation ID
   SW->>N: Wake the container<br/>Ansible · tags start
   %%> What it does:
-  %%> - Frozen: `incus resume`, `memory.swap.max` back to 0 on the container's cgroup and on each cgroup of the swap record that still exists (a short-lived unit's cgroup may be gone; that never fails the wake), FrankenPHP gets 10 tries 1 s apart; nothing boots and nothing converges, `wake: resumed`
+  %%> - Frozen: `orbit-instance-power restore` as the Instance's lock unit, a busy lock (systemd's `UnitExists` refusal) retried 0.25 s apart, 40 times, else `instance.power_helper_busy`; a helper crash fails with `instance.power_helper_failed`: with a valid plan it reads the recorded pages back within 2 s while still frozen; then one `incus resume`, and `memory.swap.max` back to 0 on each cgroup of `limits.json` that still exists (a short-lived unit's cgroup may be gone; that never fails the wake); FrankenPHP gets 10 tries 1 s apart from the Node to its address; nothing boots and nothing converges, `wake: resumed`
+  %%> - a missing, stale or invalid plan makes no memory call; the resume is ordinary
+  %%> - a run that follows the fast path finds the state the Node reached: a container that already runs is not resumed again, and the run reads this Operation's outcome files for their facts
   %%> - a nested-fleet Instance resumes with its inner fleet, `wg-nested` and the Club key in /run: a freeze keeps them, so the wake starts and checks no fleet
   %%> - Frozen and FrankenPHP silent: `incus stop --force`, then the boot below, `wake: restarted_after_resume`; a nested-fleet Instance is never stopped: the wake fails `instance.web_unready`
-  %%> - Stopped (after a host reboot or a sleep that fell back to a stop): the boot below, `wake: started`; a nested-fleet Instance is never booted here: see the branch below
+  %%> - Stopped (after a host reboot or a sleep that fell back to a stop): the helper discards the plan, then the boot below, `wake: started`; a nested-fleet Instance is never booted here: see the branch below
   %%> - Running (after a reboot with `boot.autostart`): no start and no resume, `wake: already_running`
   %%> - a Frozen container without the marker is resumed; the result says `marker_found: false`
   %%> - before the boot, the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
@@ -94,6 +110,7 @@ sequenceDiagram
     %%> Result:
     %%> - the runtime's `power_state` is `running`; the Conn layer shows the T3 server awake
     %%> - the result names the path, `marker_found`, and a resume's `resume_seconds` and `web_probe_seconds`
+    %%> - `restore_mode` (`prepared` or `ordinary`), `prepared_restore` with its status and reason, and `ready_at`, when the marker went (`ready_at_resolution_seconds` 0.001); Operation list and show return them
     %%> - the progress page loads the original path
     opt the Gateway session ends within 7 days or has ended
       Note over GW: Admit the renewal<br/>conn.environment_renew

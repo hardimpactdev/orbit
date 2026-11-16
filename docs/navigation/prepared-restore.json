@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 33,
+      "pages": [
+        "reference/prepared-restore"
+      ]
+    }
+  ]
+}

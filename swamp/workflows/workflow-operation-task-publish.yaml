@@ -840,9 +840,10 @@ jobs:
     # A task copy states the base it publishes against: the default branch head at publish time, fetched into this run's scratch
     # repository with the push's own authorization, the merge base with the candidate, how far behind, the paths both sides changed
     # and a merge in the repository alone. Nothing reaches the copy. Exit 0: a clean merge; 3: a conflict; any other: an error.
-    # It also lists the .github/workflows/ paths whose tree differs between the head and the candidate: GitHub refuses a push without
-    # the workflows permission on that net diff, not on the commits. A commit the head holds, synced or carried in by hand, is never a
-    # change of the copy; a copy behind a workflow change of the head lists that path too.
+    # It also lists the copy's own .github/workflows/ paths, changed since the merge base (git diff head...candidate): a commit the
+    # head holds, synced or carried in by hand, is never a change of the copy. GitHub judges the pushed tree against the default
+    # branch, so a copy only behind a workflow change gets a merge of the head at publish, which the push sends; a republish over an
+    # earlier publish merge always gets one, with that merge as third parent (docs/reference/tasks.md#merge-main-at-publish).
     # The facts go to the private scratch, which "Remove local scratch" removes; Swamp keeps no stderr of a failed step.
     labels:
       role: swamp
@@ -862,24 +863,64 @@ jobs:
           rm -rf -- "$work"
           mkdir -- "$work"
           repo() { timeout 60 git -C "$ORBIT_REPOSITORY" -c core.hooksPath=/dev/null "$@"; }
+          # Exit 1 of a Git test is its answer "no"; anything above it is an error of the read.
+          asks() { answer=0; repo "$@" || answer=$?; [ "$answer" -le 1 ] || exit 2; return "$answer"; }
           repo fetch --quiet --no-tags --no-write-fetch-head -- "$ORBIT_REMOTE" "+refs/heads/$ORBIT_BASE:refs/orbit/base" 2>/dev/null
           head=$(repo rev-parse --verify 'refs/orbit/base^{commit}')
+          # The task branch's tip on origin, when it exists: exit 2 of ls-remote is no such branch. A tip of an earlier read goes first.
+          repo update-ref -d refs/orbit/published
+          found=0
+          repo ls-remote --exit-code --heads -- "$ORBIT_REMOTE" "refs/heads/$ORBIT_BRANCH" >/dev/null 2>&1 || found=$?
+          case $found in
+            0) repo fetch --quiet --no-tags --no-write-fetch-head -- "$ORBIT_REMOTE" "+refs/heads/$ORBIT_BRANCH:refs/orbit/published" 2>/dev/null ;;
+            2) ;;
+            *) exit 2 ;;
+          esac
           base=$(repo merge-base refs/heads/candidate "$head")
+          candidate=$(repo rev-parse --verify 'refs/heads/candidate^{commit}')
           printf '%s\n' "$head" >"$work/head"
           printf '%s\n' "$base" >"$work/base"
           repo rev-list --count "$base..$head" >"$work/behind"
           repo diff --name-only --no-renames -z "$base" refs/heads/candidate | sort -z >"$work/ours"
           repo diff --name-only --no-renames -z "$base" "$head" | sort -z >"$work/theirs"
           comm -12 -z "$work/ours" "$work/theirs" >"$work/overlap"
-          repo diff --name-only --no-renames -z "$head" refs/heads/candidate -- .github/workflows/ >"$work/workflows"
+          repo diff --name-only --no-renames -z "$base" refs/heads/candidate -- .github/workflows/ >"$work/workflows"
           sort -zu -o "$work/workflows" "$work/workflows"
+          : >"$work/merged"
           code=0
           repo merge-tree --write-tree --name-only --no-messages -z refs/heads/candidate "$head" >"$work/merge" || code=$?
           case $code in
-            0) exit 0 ;;
+            0) ;;
             1) exit 3 ;;
             *) exit 2 ;;
           esac
+          # An own workflow change refuses; no merge is made for it.
+          if [ -s "$work/workflows" ]; then exit 0; fi
+          tree=$(tr '\0' '\n' <"$work/merge" | sed -n 1p)
+          message="Merge $ORBIT_BASE $head at publish"
+          set -- -p "$candidate" -p "$head"
+          if repo rev-parse -q --verify 'refs/orbit/published^{commit}' >/dev/null; then
+            tip=$(repo rev-parse --verify 'refs/orbit/published^{commit}')
+            if ! asks merge-base --is-ancestor "$tip" "$candidate"; then
+              first=$(repo rev-parse -q --verify "$tip^1^{commit}" || true)
+              second=$(repo rev-parse -q --verify "$tip^2^{commit}" || true)
+              # An earlier publish merge of this branch; any other tip leaves the push to refuse it as not a fast-forward.
+              if [ -n "$second" ] && [ "$(repo log -1 --format=%B "$tip")" = "Merge $ORBIT_BASE $second at publish" ] &&
+                asks merge-base --is-ancestor "$first" "$candidate" && asks merge-base --is-ancestor "$second" "$head"; then
+                if [ "$first" = "$candidate" ] && [ "$second" = "$head" ]; then
+                  # This publish's own merge, pushed already: the push sends it again and pushes nothing.
+                  printf '%s\n' "$tip" >"$work/merged"
+                  exit 0
+                fi
+                repo commit-tree "$tree" "$@" -p "$tip" -m "$message" >"$work/merged"
+                exit 0
+              fi
+            fi
+          fi
+          # Only behind a workflow change of the head: GitHub would refuse the candidate's tree, so the push sends a merge.
+          if ! asks diff --quiet "$head" "$candidate" -- .github/workflows/; then
+            repo commit-tree "$tree" "$@" -m "$message" >"$work/merged"
+          fi
         env:
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_NOSYSTEM: '1'
@@ -898,6 +939,12 @@ jobs:
           ORBIT_DIRECTORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
           ORBIT_REMOTE: ${{ inputs.intent.remote }}
           ORBIT_BASE: ${{ inputs.intent.base }}
+          ORBIT_BRANCH: ${{ inputs.intent.branch }}
+          # The fixed identity of a merge at publish.
+          GIT_AUTHOR_NAME: Orbit
+          GIT_AUTHOR_EMAIL: orbit@users.noreply.github.com
+          GIT_COMMITTER_NAME: Orbit
+          GIT_COMMITTER_EMAIL: orbit@users.noreply.github.com
         ignoreExitCode: true
     dependsOn:
     - step: Mint the push token
@@ -905,9 +952,10 @@ jobs:
         type: succeeded
     writes: true
   - name: Check the base
-    # A workflow path fails with tasks.publish_workflow_change and its paths, before the conflict: the token has no workflows permission.
-    # Exit 0 passes the facts, each path list bounded; exit 3 fails with tasks.publish_conflict and the conflicting paths; any other
-    # exit fails with tasks.publish_failed. Being behind or overlapping never refuses.
+    # An own workflow path fails with tasks.publish_workflow_change and its paths, before the conflict: the token has no workflows
+    # permission. Exit 0 passes the facts, each path list bounded, and the merge at publish or ""; exit 3 fails with
+    # tasks.publish_conflict and the conflicting paths; any other exit fails with tasks.publish_failed. Being behind or overlapping
+    # never refuses.
     labels:
       role: swamp
     queueTimeout: 30
@@ -954,7 +1002,8 @@ jobs:
           ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
           ORBIT_DIRECTORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
           ORBIT_REMOTE: ${{ inputs.intent.remote }}
-          ORBIT_REFSPEC: ${{ inputs.intent.refspec }}
+          # A task copy's merge at publish goes instead of the checked candidate (docs/reference/tasks.md#merge-main-at-publish).
+          ORBIT_REFSPEC: '${{ "Check the base" in steps && steps["Check the base"].status == "succeeded" && steps["Check the base"].outputs.merged != "" ? steps["Check the base"].outputs.merged + ":refs/heads/" + inputs.intent.branch : inputs.intent.refspec }}'
         ignoreExitCode: true
     dependsOn:
     - step: Mint the push token

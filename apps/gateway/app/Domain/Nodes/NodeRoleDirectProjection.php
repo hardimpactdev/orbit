@@ -92,6 +92,9 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
             if ($snapshot['role'] === RoleName::CiRunner->value && is_string($ciBridge)) {
                 NodeBridges::recordCiBridge(ValidatedData::integer($operation->node_id), $ciBridge);
             }
+            if ($snapshot['role'] === RoleName::CiRunner->value) {
+                ProofSeeds::recordListener(ValidatedData::integer($operation->node_id), ValidatedData::object($intent['runtime'] ?? []), $proven, opens: true);
+            }
             $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $snapshot['role'])->firstOrFail();
             if ($proven) {
                 $assignment->markConvergenceActive();

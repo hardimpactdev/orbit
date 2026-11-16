@@ -1,5 +1,5 @@
 order = 360
-source_sha256 = "75e2045a9e0e1b38e935259a94fcc73f2f0495bab93570f2172e13df2b2e3e39"
+source_sha256 = "462007b92d7835c063c2452f3b84b758ea26bf950c5ef097353284b11de4f7ea"
 cases = [
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config",
   "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker, mirror and task base scratch; a retry changes nothing",
@@ -14,7 +14,6 @@ inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance-container-destroy.yml",
-  "swamp/ansible/tasks/instance-container-swap.yml",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
@@ -23,6 +22,11 @@ inputs = [
   "swamp/tests/fixtures/instance-container-incus.ts",
   "swamp/tests/fixtures/instance-container-ufw.ts",
   "swamp/workflows/workflow-operation-instance-destroy.yaml",
+  "swamp/ansible/tasks/instance-power-call.yml",
+  "swamp/ansible/tasks/instance-power-helper.yml",
+  "swamp/ansible/files/instance-container-power.py",
+  "swamp/tests/fixtures/instance-power-helper.ts",
+  "swamp/tests/_support/power_helper.ts",
 ]
 
 [case_costs]
