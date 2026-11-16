@@ -955,7 +955,7 @@ The Node with the `vpn` role holds the WireGuard hub: its private key, address, 
 
 The hub keeps one peer file per Node. A hub converge prunes only the files of Nodes that are gone or being removed, and never the file of a Node created after its intent; [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) has the rule.
 
-The hub converge also removes the task VM hub filter that the removed `task_vm.hub_converge` installed, so `node:converge` of the `vpn` Node clears it; [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) lists what it deletes.
+The hub converge also removes the task VM hub filter that the removed `task_vm.hub_converge` installed, and the UFW rules whose comment starts with `orbit:task-vm-`, so `node:converge` of the `vpn` Node clears both; [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) lists what it deletes.
 
 Repeating the same key still projects the hub when it has no collision; after a projection failure, the stored key remains and the operator retries after repairing the hub. A crash can leave either the old or new hub configuration, without guaranteed rollback or automatic reconciliation. [WireGuard key recovery](/cli/node/wireguard-key) explains how to restore an authorized management path and replay the desired key.
 

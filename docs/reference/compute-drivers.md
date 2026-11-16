@@ -1208,9 +1208,9 @@ There is no fallback image. A claim copies the recorded base snapshot of its hos
 
 ### Limit fleet traffic on the hub
 
-Nothing converges the hub filter any more, and nothing configures a task VM host. The artisan command `task-vms:prepare-hub`, the kind `task_vm.hub_converge`, the Node setting `task_vms` and the task VM settings of the Gateway are removed ([old paths](/reference/old-paths#task-vm-settings)). The firewall catalog names neither the VPN Node's UFW rules for the reserved range nor a host's task bridge input rules (`orbit:task-vms-*`, `orbit:task-containers-*`). The next converge of the VPN Node removes its managed rules of that range.
+Nothing converges the hub filter any more, and nothing configures a task VM host. The artisan command `task-vms:prepare-hub`, the kind `task_vm.hub_converge`, the Node setting `task_vms` and the task VM settings of the Gateway are removed ([old paths](/reference/old-paths#task-vm-settings)). The firewall catalog names neither the VPN Node's UFW rules for the reserved range nor a host's task bridge input rules (`orbit:task-vms-*`, `orbit:task-containers-*`). The next converge of the VPN Node deletes the route rules whose comment starts with `orbit:task-vm-`.
 
-A filter that an earlier run loaded (`inet orbit_task_vms` and its systemd unit on the VPN Node) stays for manual removal; it filters only the reserved range, so traffic between other Nodes does not change.
+A filter that an earlier run loaded (`inet orbit_task_vms` and its systemd unit on the VPN Node) goes with the next converge of the VPN Node ([Converge the hub](/reference/wireguard-endpoints#converge-the-hub)). It filtered only the reserved range, so traffic between other Nodes does not change.
 
 The WireGuard address allocator still skips the reserved range `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24`: it never hands an address of it to a Node. A task VM Node has no access grants to other Nodes. No Caddy site refuses the range any more: the `@orbit_task_vms` matcher and its `abort` are gone from every route block ([Caddy configuration](/reference/caddy-configuration#listener-addresses)).
 
