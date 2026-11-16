@@ -328,6 +328,9 @@ Deno.test({
             const deleted = order.findIndex((call) => call === "--project orbit-instances-nested delete --force instance-7");
             const volume = order.findIndex((call) => call === "--project orbit-instances-nested storage volume delete orbit-instances inner-7");
             assert(deleted >= 0 && deleted < volume, JSON.stringify(order));
+            // Incus deleted both at once, so the removal read no pool, snapshot or dataset: as many Incus calls as before the give-back.
+            assert(!order.some((call) => call.includes("/1.0/storage-pools/orbit-instances?") || call.endsWith("/1.0/storage-pools/orbit-instances")
+                || call.includes("/snapshots?")), JSON.stringify(order));
             // A retry finds the container and the volume gone and deletes nothing.
             Deno.writeTextFileSync(`${folder}/calls`, "");
             done = run();
@@ -438,7 +441,8 @@ Deno.test({
                 pool: { name: "orbit-instances", driver: "zfs", config: { "zfs.pool_name": ds, source: ds } },
                 datasets: [...others, `${ds}/custom/orbit-instances-nested_inner-7`, `${ds}/custom/orbit-instances-nested_inner-7@snapshot-seed-1`],
                 containers: {
-                    "instance-7": { status: "Stopped", snapshots: ["seed"], added: {} },
+                    // instance-7 still holds its inner volume, so Incus refuses the volume until the container goes.
+                    "instance-7": { status: "Stopped", snapshots: ["seed"], added: { "inner-pool": { type: "disk", settings: ["pool=orbit-instances", "source=inner-7", "path=/srv/inner-pool"] } } },
                     "instance-8": { status: "Running", added: { "inner-pool": { type: "disk", settings: ["pool=orbit-instances", "source=inner-8", "path=/srv/inner-pool"] } } },
                 },
                 volumes: { "inner-7": inner("inner-7"), "inner-8": inner("inner-8") },
@@ -475,9 +479,10 @@ Deno.test({
             assertEquals(state().datasets, others);
             // The clone went by name: its snapshot, then the volume, after the container; Orbit ran no zfs destroy.
             const order = read("calls");
-            const container = order.indexOf("--project orbit-instances-nested delete --force instance-7");
+            // Incus refused both at first; the second deletions run after the datasets are back.
+            const container = order.lastIndexOf("--project orbit-instances-nested delete --force instance-7");
             const snapshot = order.indexOf("--project orbit-instances-nested storage volume snapshot delete orbit-instances inner-7 seed-1");
-            const volume = order.indexOf("--project orbit-instances-nested storage volume delete orbit-instances inner-7");
+            const volume = order.lastIndexOf("--project orbit-instances-nested storage volume delete orbit-instances inner-7");
             assert(container >= 0 && container < snapshot && snapshot < volume, JSON.stringify(order));
             assert(!read("zfs-calls").some((call) => call.includes("destroy")));
             // Everything is gone now: a retry succeeds, deletes and makes nothing, and changes nothing.
@@ -501,7 +506,7 @@ Deno.test({
             assert(!done.ok, done.output);
             assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/run/remove.json`)), {
                 error_code: "instance.removal_incomplete",
-                detail: "Delete the inner volume: non-zero return code: Error: Storage volume is still in use",
+                detail: "Delete the inner volume again: non-zero return code: Error: Storage volume is still in use",
             });
             // A missing name that another writer takes, with data, after the read: the removal refuses, makes nothing and deletes nothing.
             const taken = `${ds}/containers/orbit-instances-nested_instance-11`;
@@ -519,7 +524,8 @@ Deno.test({
             assert(!done.ok, done.output);
             assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/run/remove.json`)).error_code, "instance.removal_dataset_taken");
             assert(!read("zfs-calls").some((call) => call.startsWith("create") || call.startsWith("snapshot")), JSON.stringify(read("zfs-calls")));
-            assert(!read("calls").some((call) => call.includes("delete")), JSON.stringify(read("calls")));
+            // Only Incus's own first deletion ran, which Incus refused for the missing dataset.
+            assertEquals(read("calls").filter((call) => call.includes("delete")), ["--project orbit-instances-nested delete --force instance-11"]);
             assert(state().containers["instance-11"]);
             assertEquals(state().datasets.filter((name: string) => name.startsWith(taken)), [taken, `${taken}/data`]);
         } finally {

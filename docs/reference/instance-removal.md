@@ -121,14 +121,15 @@ A retry repeats every step; each converges, and a checkout that is already gone 
 
 Each container removal step treats a part that is already gone as done. A retry then finishes a removal whose earlier run, or a person, already removed some of it:
 
+- The step asks Incus to delete the container, then the inner volume. A normal removal needs nothing more.
 - Incus refuses to delete a container or inner volume record whose ZFS dataset is gone. Instance 3427 stayed `removing` for 8 hours that way.
-- The step then makes an empty dataset with the record's own name, and one empty snapshot for each snapshot Incus records. Incus then deletes the record its own way.
+- After a refusal, the step makes an empty dataset and empty snapshots with the record's own names. Incus can then delete the record.
 - It builds each name only from the removal's recorded pool, Incus project and container or volume name. It never runs `zfs destroy`.
 - Right before it makes them, it reads each missing name again with its children.
 - A dataset that holds the name by then refuses the removal with `instance.removal_dataset_taken`. Nothing is made or deleted, so the step never adopts another dataset.
 - The Operation and the removal record that code, and the reaper leaves the removal to a person.
 
-The inner volume goes by name: each of its snapshots, then the volume. A copy's inner volume can be a clone of a snapshot of a volume that Incus already deleted. Incus keeps that origin under `deleted/` for the clone. The removal never names the origin or another Instance's volume. A missing ACL, firewall rule, mail folder, marker or mirror needs no action.
+After a refusal, the step deletes the container again, and the inner volume by name: each of its snapshots, then the volume. A refusal for any other cause fails the second deletion, with Incus's stderr. A copy's inner volume can be a clone of a snapshot of a volume that Incus already deleted. Incus keeps that origin under `deleted/` for the clone. The removal never names the origin or another Instance's volume. A missing ACL, firewall rule, mail folder, marker or mirror needs no action.
 
 The end check `Check the container and volume are gone` stays strict: it reads the container, its root volume and the inner volume by this Instance's names.
 

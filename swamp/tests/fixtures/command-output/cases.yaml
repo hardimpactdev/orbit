@@ -671,8 +671,8 @@ contexts:
       stdout: '[{"name":"inner-7/seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-7/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-16T05:02:17.84470215Z","expires_at":"0001-01-01T00:00:00Z"}]'
   instance-destroy-zfs-datasets:
     container: {name: instance-7, project: orbit-instances-nested, pool: orbit-instances, inner_volume: inner-7}
-    present: [{name: instance-7, status: Stopped}]
-    inner_present: true
+    refused_container: true
+    refused_inner: true
     destroy_pool:
       stdout: '{"config":{"source":"tank/orbit-instances","volatile.initial_source":"tank/orbit-instances","zfs.pool_name":"tank/orbit-instances"},"description":"","name":"orbit-instances","driver":"zfs","used_by":[],"status":"Created","locations":["none"]}'
     destroy_container_snapshots:
@@ -681,8 +681,8 @@ contexts:
       stdout: '[{"name":"inner-7/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-16T05:02:17.84470215Z","expires_at":"0001-01-01T00:00:00Z"}]'
   instance-destroy-zfs-container-only:
     container: {name: instance-7, project: orbit-instances, pool: orbit-instances}
-    present: [{name: instance-7, status: Running}]
-    inner_present: false
+    refused_container: true
+    refused_inner: false
     destroy_pool:
       stdout: '{"config":{"source":"tank/orbit-instances","zfs.pool_name":"tank/orbit-instances"},"name":"orbit-instances","driver":"zfs"}'
     destroy_container_snapshots:

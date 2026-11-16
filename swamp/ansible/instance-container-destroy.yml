@@ -62,11 +62,30 @@
             - name: Select the inner volume
               ansible.builtin.set_fact:
                 inner_present: "{{ container.inner_volume is defined and destroy_inner_volume.rc == 0 }}"
+            # Incus's own deletion first; a normal removal needs nothing more.
+            - name: Stop and delete the container with its snapshots
+              when: present | length > 0
+              ansible.builtin.command: { argv: "{{ incus + ['delete', '--force', container.name] }}", stdin: "" }
+              register: destroy_container_delete
+              changed_when: destroy_container_delete.rc == 0
+              failed_when: false
+            - name: Delete the inner volume
+              when: inner_present
+              ansible.builtin.command:
+                argv: "{{ incus + ['storage', 'volume', 'delete', container.pool, container.inner_volume] }}"
+                stdin: ""
+              register: destroy_inner_delete
+              changed_when: destroy_inner_delete.rc == 0
+              failed_when: false
             # Incus refuses to delete a record whose ZFS dataset went outside it (Instance 3427). An empty dataset with the record's own name,
-            # and one per recorded snapshot, lets Incus delete the record its own way. Only this Instance's names; never a zfs destroy.
-            - name: Give back the missing datasets of this Instance's records
-              when: present | length > 0 or inner_present
+            # and one per recorded snapshot, lets Incus delete the record its own way. Only this Instance's names; never a zfs destroy. The
+            # inner volume then goes by name, each snapshot and then the volume: a copy's volume can be a clone whose origin went with its
+            # Instance. A refusal for any other cause, or on a pool that is not ZFS, fails again in the second deletion with Incus's stderr.
+            - name: Delete what Incus refused once more, after giving back its missing datasets
+              when: refused_container or refused_inner
               vars:
+                refused_container: "{{ (destroy_container_delete.rc | default(0)) != 0 }}"
+                refused_inner: "{{ (destroy_inner_delete.rc | default(0)) != 0 }}"
                 destroy_missing: "{{ destroy_datasets | default([]) | difference(destroy_existing.stdout_lines | default([])) | sort }}"
               block:
                 - name: Read the storage pool
@@ -74,14 +93,14 @@
                   register: destroy_pool
                   changed_when: false
                 - name: Read the container's snapshots
-                  when: present | length > 0 and (destroy_pool.stdout | from_json).driver == 'zfs'
+                  when: refused_container and (destroy_pool.stdout | from_json).driver == 'zfs'
                   ansible.builtin.command:
                     argv: [incus, query, --, "/1.0/instances/{{ container.name }}/snapshots?project={{ container.project }}&recursion=1"]
                     stdin: ""
                   register: destroy_container_snapshots
                   changed_when: false
                 - name: Read the inner volume's snapshots
-                  when: inner_present and (destroy_pool.stdout | from_json).driver == 'zfs'
+                  when: refused_inner
                   ansible.builtin.command:
                     argv:
                       - incus
@@ -98,9 +117,9 @@
                   ansible.builtin.set_fact:
                     destroy_datasets: >-
                       {{ (([own_root] + (destroy_container_snapshots.stdout | from_json | map(attribute='name')
-                           | map('regex_replace', '^', own_root ~ '@snapshot-') | list)) if present | length > 0 else [])
+                           | map('regex_replace', '^', own_root ~ '@snapshot-') | list)) if refused_container else [])
                          + (([own_inner] + (destroy_inner_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '')
-                           | map('regex_replace', '^', own_inner ~ '@snapshot-') | list)) if inner_present else []) }}
+                           | map('regex_replace', '^', own_inner ~ '@snapshot-') | list)) if refused_inner else []) }}
                   vars:
                     own_root: "{{ (destroy_pool.stdout | from_json).config['zfs.pool_name'] }}/containers/{{ container.project }}_{{ container.name }}"
                     own_inner: >-
@@ -131,25 +150,24 @@
                     stdin: ""
                   loop: "{{ destroy_missing }}"
                   changed_when: true
-            - name: Stop and delete the container with its snapshots
-              when: present | length > 0
-              ansible.builtin.command: { argv: "{{ incus + ['delete', '--force', container.name] }}", stdin: "" }
-              changed_when: true
-            # By name, each snapshot and then the volume: a copy's inner volume can be a clone whose origin is gone with its Instance (3427).
-            - name: Delete the inner volume's snapshots
-              when: inner_present
-              ansible.builtin.command:
-                argv: "{{ incus + ['storage', 'volume', 'snapshot', 'delete', container.pool, container.inner_volume, item] }}"
-                stdin: ""
-              # Incus names a volume snapshot `<volume>/<snapshot>`; the snapshot's own name is the last part.
-              loop: "{{ (destroy_inner_snapshots.stdout | default('[]')) | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | list }}"
-              changed_when: true
-            - name: Delete the inner volume
-              when: inner_present
-              ansible.builtin.command:
-                argv: "{{ incus + ['storage', 'volume', 'delete', container.pool, container.inner_volume] }}"
-                stdin: ""
-              changed_when: true
+                - name: Delete the container again
+                  when: refused_container
+                  ansible.builtin.command: { argv: "{{ incus + ['delete', '--force', container.name] }}", stdin: "" }
+                  changed_when: true
+                - name: Delete the inner volume's snapshots
+                  when: refused_inner
+                  ansible.builtin.command:
+                    argv: "{{ incus + ['storage', 'volume', 'snapshot', 'delete', container.pool, container.inner_volume, item] }}"
+                    stdin: ""
+                  # Incus names a volume snapshot `<volume>/<snapshot>`; the snapshot's own name is the last part.
+                  loop: "{{ (destroy_inner_snapshots.stdout | default('[]')) | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | list }}"
+                  changed_when: true
+                - name: Delete the inner volume again
+                  when: refused_inner
+                  ansible.builtin.command:
+                    argv: "{{ incus + ['storage', 'volume', 'delete', container.pool, container.inner_volume] }}"
+                    stdin: ""
+                  changed_when: true
             - name: Read the ACL inventory in the default project
               ansible.builtin.command: { argv: [incus, query, --, "/1.0/network-acls?project=default&recursion=1"], stdin: "" }
               register: destroy_acls
