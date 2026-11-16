@@ -1,12 +1,12 @@
 ---
 title: "ADR 0268: One owner for the workspace"
 sidebarTitle: "0268 One workspace owner"
-description: "In progress. `agent` owns a development container's workspace. It runs Orbit's checkout Git calls and the Project's development deploy steps. `orbit` stays the app user: FrankenPHP, queue workers and every Orbit Process. Root's group pass also makes `agent` the owner of each workspace entry that `orbit` owns. `agent` gets no sudo in any image."
+description: "In progress. `agent` owns a development container's workspace. It runs Orbit's checkout Git calls and the Project's development deploy steps. `orbit` stays the app user: FrankenPHP, queue workers and every Orbit Process. Root's group pass also makes `agent` the owner of each workspace entry that `orbit` owns."
 ---
 
 # ADR 0268: One owner for the workspace
 
-`agent` owns a development container's workspace, `/srv/workspace`. It runs Orbit's checkout Git calls and the Project's development deploy steps. `orbit` stays the app user: FrankenPHP, queue workers and every Orbit Process. Root's pass that keeps the workspace writable for its group also makes `agent` the owner of each entry that `orbit` owns. `agent` gets no sudo in any image.
+`agent` owns a development container's workspace, `/srv/workspace`. It runs Orbit's checkout Git calls and the Project's development deploy steps. `orbit` stays the app user: FrankenPHP, queue workers and every Orbit Process. Root's pass that keeps the workspace writable for its group also makes `agent` the owner of each entry that `orbit` owns.
 
 ## Status
 
@@ -27,7 +27,7 @@ The workspace already gives the group `work` write access: setgid folders with m
 The owner decided these points, and they stay closed:
 
 - **Q1. Keep the names.** `agent` (uid 2750) is the owner of the workspace and runs the steps. `orbit` (uid 1000) is the app user. No user is renamed and no uid changes.
-- **Q2. No sudo for `agent`**, in any image, the nested-fleet image included. `agent` must not read the app's secrets. When root is needed, the fix comes from outside the container: from Orbit or from the outer agent.
+- **Q2. Sudo for `agent`.** Today the normal image gives `agent` no sudo, and the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) gives it passwordless sudo. The owner decided that `agent` gets passwordless sudo in every container, normal and nested, and that membership of `incus-admin` stays as it is. That comes with a security model in which a container holds no production-grade secrets. A separate task group builds it, with its own decision record; this ADR does not change sudo.
 - **Q3. Development deploy steps run as `agent` everywhere**, nested-fleet defaults included.
 
 From those points:
@@ -49,7 +49,7 @@ The nested fleet's guests mount the checkout with `raw.idmap` `both 1000 1000`, 
 
 - **`orbit` owns the workspace and the agent runs as `orbit`.** The agent would read the app's secrets and reach what a public preview reaches. It breaks the user boundary of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers).
 - **More group rights.** The workspace already gives the group full access. The calls that failed are open only to the owner, and no mode or ACL opens them.
-- **Sudo for `agent` to fix the owner itself.** The agent would read the app's secrets (Q2).
+- **Sudo for `agent` to fix the owner itself.** Root's pass already fixes the owner from outside the container, at each deployment and each clone's create. So the agent needs no root for it, and the fix does not depend on the image.
 - **A one-off fix of the existing workspaces.** The pass already runs at each deployment and each clone's create, so they converge without a separate step.
 
 ## Consequences
