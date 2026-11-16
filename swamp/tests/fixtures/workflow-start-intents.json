@@ -166,7 +166,6 @@
                         "source": "instance-1",
                         "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
                         "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
-                        "source_mirror": "/var/lib/orbit/instance-repositories/1.git",
                         "clean_workspace": true,
                         "t3": {
                             "port": 3800,
@@ -618,7 +617,6 @@
                             "source": "instance-1",
                             "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
                             "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
-                            "source_mirror": "/var/lib/orbit/instance-repositories/1.git",
                             "clean_workspace": true,
                             "t3": {
                                 "port": 3800,

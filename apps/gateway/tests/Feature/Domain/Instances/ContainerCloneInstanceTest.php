@@ -243,7 +243,8 @@ describe('a clone of the container default', function (): void {
             ->and($container['branch'])->toBe('feature')
             ->and($clone['source'])->toBe('instance-'.$default->id)
             ->and($clone['snapshot'])->toBe('seed-'.str_repeat('c', 40))
-            ->and($clone['source_mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$default->id.'.git')
+            // A new branch at the seed's commit comes from the seed's own repository: the clone names no mirror of the default.
+            ->and($clone)->not->toHaveKey('source_mirror')
             // Only a task copy drops the default's untracked and modified files; this clone keeps them.
             ->and($clone)->not->toHaveKey('clean_workspace')
             // Only a task copy's T3 gets the Claude provider instances of its turns' efforts.

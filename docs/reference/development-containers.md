@@ -1258,7 +1258,7 @@ A clone starts at the commit of the default's newest seed snapshot, with its dep
 
 A branch that the seed already holds needs no network. A new branch at the seed's commit fetches nothing and fills no Node mirror. The guest checks it out from the seed's own repository, with no bundle.
 
-A proof copy reads no origin branch and no Node mirror. Its clone skips the branch fetch on the Node, and its intent names no `source_mirror`. Its run then fetches the commit under proof by its SHA from the public repository, through the copy's own egress ([proof:run](/cli/proof/run#the-run)). So a proof copy on a CI Node, which has no mirror of the Project, needs none.
+A proof copy's branch is new, and the origin lacks it, so its clone fetches nothing and makes no Node mirror. No clone intent names a mirror of the default. The proof run then fetches the commit under proof by its SHA from the public repository, through the copy's own egress ([proof:run](/cli/proof/run#the-run)). So a proof copy on a CI Node, which has no mirror of the Project, needs none.
 
 The rule is the same on every Node: one way brings the commit in. A carried bundle or a mirror on each CI Node would add a second way and a second copy of the repository, for a commit that the copy fetches anyway.
 

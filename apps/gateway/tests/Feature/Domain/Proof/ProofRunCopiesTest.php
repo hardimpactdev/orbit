@@ -378,7 +378,9 @@ describe('proof:run in copies: admission', function (): void {
             ->and($copies->every(static fn (Instance $copy): bool => $copy->runtime?->clone_source_instance_id === Instance::query()->where('name', 'default')->value('id')))->toBeTrue();
         $onCi = $copies->firstWhere('node_id', $ci->id);
         $clone = app(InstanceContainer::class)->intent($onCi, $onCi->runtime)['clone'] ?? null;
-        expect($clone['source'] ?? null)->toBe('orbit-proof-seed-ci-a')->and($clone['seed_commit'] ?? null)->toBe(str_repeat('c', 40));
+        // The copy needs no Git mirror of the Project on its Node: its run fetches the commit by its SHA.
+        expect($clone['source'] ?? null)->toBe('orbit-proof-seed-ci-a')->and($clone['seed_commit'] ?? null)->toBe(str_repeat('c', 40))
+            ->and($clone)->not->toHaveKey('source_mirror');
     });
 });
 
