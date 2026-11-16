@@ -173,10 +173,11 @@ final readonly class ShowCiRunnersAction
     /** The Node's `ci` setting counts its places; on a proof-only Node a runner job uses none of them. */
     private static function places(?NodeCiData $ci, int $busyRunners, int $proofCopies): CiPlacesData
     {
-        $runnerJobs = $ci?->proof_only === true ? 0 : $busyRunners;
+        $proofOnly = $ci?->proof_only === true;
+        $runnerJobs = $proofOnly ? 0 : $busyRunners;
         $total = $ci?->places;
 
-        return new CiPlacesData($total, $ci?->proof_only ?? false, $runnerJobs, $proofCopies,
+        return new CiPlacesData($total, $proofOnly, $runnerJobs, $proofCopies,
             $total === null ? null : max(0, $total - $runnerJobs - $proofCopies));
     }
 
