@@ -129,17 +129,39 @@ final readonly class ProofSeeds
     public function targets(): array
     {
         $source = $this->source();
-        if ($source === null) {
-            return [];
-        }
+
+        return $source === null ? [] : $this->ready($source, holding: false);
+    }
+
+    /**
+     * The seed that the default keeps as `base-<commit>` at its next retake, for the next seed copy to start from
+     * (docs/reference/development-containers.md#a-retake-keeps-the-seed): the default's current seed while a Node that a copy would target
+     * records it, so it lacks only the new one. Null for any other runtime, or when no such Node holds it; then the retake keeps no base.
+     * Only one base: a Node with an older seed gets the whole pair.
+     */
+    public function base(InstanceRuntime $runtime): ?string
+    {
+        $source = $this->source();
+
+        return $source === null || $source->id !== $runtime->id || $this->ready($source, holding: true) === [] ? null : $source->seed_commit;
+    }
+
+    /**
+     * Each Node that offers proof places, other than the default's Node, whose seed listener trusts the default's Node
+     * ({@see self::recordListener()}), and whose recorded seed is the default's current seed (`$holding`) or not.
+     *
+     * @return list<Node>
+     */
+    private function ready(InstanceRuntime $source, bool $holding): array
+    {
         $ids = NodeRole::query()->where('role', RoleName::CiRunner)->where('node_id', '!=', $source->node_id)->orderBy('node_id')->pluck('node_id')->unique();
         $seeds = ProofSeed::query()->whereIn('node_id', $ids)->get()->keyBy('node_id');
         $ready = Node::query()->whereIn('id', $ids)->where('seed_sender_id', $source->node_id)->orderBy('id')->get();
 
-        return array_values($ready->filter(static function (Node $node) use ($seeds, $source): bool {
+        return array_values($ready->filter(static function (Node $node) use ($seeds, $source, $holding): bool {
             $seed = $seeds->get($node->id);
 
-            return ProofCopyHosts::offersPlaces($node) && ! ($seed instanceof ProofSeed && self::current($seed, $source));
+            return ProofCopyHosts::offersPlaces($node) && ($seed instanceof ProofSeed && self::current($seed, $source)) === $holding;
         })->all());
     }
 
@@ -154,13 +176,15 @@ final readonly class ProofSeeds
     {
         try {
             $source = $this->source();
-            $targets = array_values(array_filter($this->targets(), static fn (Node $node): bool => ! in_array($node->id, $except, true)));
+            $behind = $this->targets();
+            $targets = array_values(array_filter($behind, static fn (Node $node): bool => ! in_array($node->id, $except, true)));
             if ($source === null || $targets === []) {
                 return null;
             }
+            // A copy to every Node behind the seed may release the default's base when all of them pass: no other Node needs it.
             $input = ['default_instance_id' => $source->instance_id, 'commit' => $source->seed_commit,
                 'taken_at' => $source->seed_taken_at?->toIso8601String(),
-                'targets' => array_map(static fn (Node $node): int => $node->id, $targets)];
+                'targets' => array_map(static fn (Node $node): int => $node->id, $targets), 'release_base' => count($targets) === count($behind)];
 
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $source->instance_id, $source->node_id, $input,
                 $trigger, null, lockKey: OperationStore::lockKey('instance_seed_copy', $source->instance_id));
@@ -196,7 +220,7 @@ final readonly class ProofSeeds
 
     /**
      * The workflow intent (docs/cli/instance/seed-copy.mmd): the default's Node, container and inner volume, the seed snapshot that the
-     * run was admitted for, and per target its Node, the remote of root on the default's Node and the listener it names.
+     * run was admitted for, whether the run may release the default's base when every target passes, and per target its Node, the remote of root on the default's Node and the listener it names.
      *
      * @return array<string, mixed>
      */
@@ -210,6 +234,7 @@ final readonly class ProofSeeds
             'project' => InstancePlacement::NestedProject,
             'pool' => InstanceHostIntent::Pool,
             'snapshot' => 'seed-'.ValidatedData::string($operation->input['commit']),
+            'release_base' => ($operation->input['release_base'] ?? false) === true,
             'holder' => self::Holder,
             'holder_volume' => self::HolderVolume,
             // The holder never starts: its NIC gets no static address and only the common ACL, which every Node with the branch has.
