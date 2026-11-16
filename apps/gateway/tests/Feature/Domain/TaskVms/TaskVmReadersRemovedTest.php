@@ -11,12 +11,16 @@ use App\Domain\Nodes\NodeRemovalInput;
 use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\Project;
+use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
@@ -90,4 +94,24 @@ it('plans a Node removal with no task VM, though an old row names the Node', fun
 
     expect($snapshot['task_vm_id'])->toBeNull()
         ->and(data_get($intent, 'intent.task_vm_guest'))->toBeFalse();
+});
+
+it('refuses every owned task workspace with task_vm.workspace_mismatch and reads no task VM row', function (): void {
+    $node = readerNode('guest', '10.44.0.147');
+    $project = Project::query()->create(['name' => 'site', 'slug' => 'site', 'repository_url' => 'https://github.com/acme/site.git', 'default_branch' => 'main', 'root' => 'public']);
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
+    $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
+        'source_layout' => InstanceSourceLayout::Checkout, 'checkout_path' => '/home/orbit/apps/site/workspace', 'task_workspace_owner_id' => $group->id,
+        'status' => InstanceState::SourceResolved]);
+    $refusal = static fn () => TaskVmWorkspaceGuard::assertOwnedWorkspace($workspace);
+    $refused = static fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.workspace_mismatch')
+        ->and($exception->getMessage())->toContain('Task VMs are removed');
+
+    expect($refusal)->toThrow($refused);
+
+    // An old ready row of the group on the workspace Node changes nothing: the guard reads no task VM row.
+    TaskVm::query()->create(['host_node_id' => $node->id, 'node_id' => $node->id, 'group_id' => $group->id, 'provider' => 'incus', 'name' => 'tvm-'.$group->id,
+        'state' => TaskVmState::Ready, 'wireguard_ip' => $node->wireguard_ip]);
+
+    expect($refusal)->toThrow($refused);
 });

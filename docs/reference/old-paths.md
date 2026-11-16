@@ -137,9 +137,12 @@ The code that served only those readers goes too:
 
 The task group field `vm_power` stays and is always `null` ([VM power](/reference/compute-drivers#vm-power)). No other API, agent or Swamp input field changes.
 
-Two readers stay, because they do not guard an empty row:
+`TaskVmWorkspaceGuard` reads no table. It refuses every task workspace command over SSH with `task_vm.workspace_mismatch`, because task VMs are removed and no task workspace lives on one. The refusal `task_vm.parked` is gone.
 
-- `TaskVmWorkspaceGuard::assertOwnedWorkspace` asks for the group's ready task VM before a task workspace command over SSH. No group has one, so it always refuses with `task_vm.workspace_mismatch`.
+The SSH task workspace path still remains, and a later slice removes it: `TaskWorkspaceExecutor` and its callers, which are the check runner (`RemoteTaskCheckRunner`), the workspace diff and state readers, and the workspace file read of the deliverable paths. Each of them fails at the guard.
+
+One reader stays, because it does not guard an empty row:
+
 - `ProblemRecovery` closes an open `recipe-image:` alert from its `task_vm_image_builds` row (`verified_image_build`, `recipe_generation_superseded` or `resource_gone`).
 
 Two cleanup deletes stay until the tables go, because the tables keep foreign keys to `nodes` and `tasks`: Node removal deletes the Node's `task_vms` rows and its finished `task_vm_image_builds` rows, and Project removal deletes the `destroyed` `task_vms` rows of its groups.

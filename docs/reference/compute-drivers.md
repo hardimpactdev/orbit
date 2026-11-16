@@ -1218,7 +1218,7 @@ The WireGuard address allocator still skips the reserved range `10.44.0.128/25`,
 
 No task VM exists, so no Node is a task VM Node. An Instance save, an access grant, the fleet rollout, a metrics exporter and a Node removal do not check for one. The refusals `task_vm.foreign_instance`, `task_vm.access_refused` and `instance.task_vm_node` and the rollout reason `sandbox` are removed ([old paths](/reference/old-paths#the-task-vm-readers)).
 
-A task workspace command over SSH still asks for the group's ready task VM. No group has one, so each such command fails with `task_vm.workspace_mismatch`.
+Every task workspace command over SSH fails with `task_vm.workspace_mismatch`, because task VMs are removed. The guard reads no task VM row ([old paths](/reference/old-paths#the-task-vm-readers)).
 
 ### Configure task VMs
 
@@ -1236,14 +1236,13 @@ Every task VM error code starts with `task_vm.`. The setup commands print the co
 | --- | --- | --- |
 | `task_vm.invalid_config` | 500 | A `task_vms` value is invalid. See [Configure task VMs](#configure-task-vms) |
 | `task_vm.unknown_host` | 409 | The Node is not active or has no valid `settings.task_vms` |
-| `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM. No group has one, so every task workspace command over SSH fails with it |
+| `task_vm.workspace_mismatch` | 409 | A task workspace command over SSH was refused. Task VMs are removed, so every such command fails with it |
 | `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
 | `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
 The build row records the step and error |
-| `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
 | `task_vm.vm_missing` | 502 | The sweep found a `ready` or `parked` task VM gone from its host |
 | `task_vm.git_credential_refused` | 409 | A command that carries a GitHub credential was about to run through an `incus` command. See [Git on a task VM](#git-on-a-task-vm) |
 
