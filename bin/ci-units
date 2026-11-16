@@ -531,10 +531,11 @@ def run(units, budget, fixtures, times):
 
 
 def prepare(shard_deadline):
-    # The same ownership and deadline cover cold pip/collection setup too.
+    # CI runs prepare-tools in its own bounded step first, so here ready tools cost only the readiness check.
     with tempfile.TemporaryDirectory() as scratch:
         receipt = Path(scratch) / 'tools.json'
-        step = gate.Step('shape', 'fixture tool setup', [sys.executable, str(ROOT / 'bin/ci-units'), '--prepare', str(receipt)])
+        step = gate.Step('shape', 'fixture tool setup', [sys.executable, str(ROOT / 'bin/ci-units'), 'prepare-tools',
+                                                         '--tools', str(gate.default_tools()), '--receipt', str(receipt)])
         result = run_unit(step, os.environ.copy(), max(.001, shard_deadline - time.monotonic()), shard_deadline)
         if result['status'] != 'passed':
             raise RuntimeError(f"Fixture tool setup {result['status']}; every selected case is NOT RUN (named in the artifact)")
@@ -542,13 +543,14 @@ def prepare(shard_deadline):
         return {**os.environ, 'PATH': tools['path']}, Path(tools['collections'])
 
 
-def prepare_tools(receipt):
-    tools = gate.default_tools()
+def prepare_tools(tools, receipt=None):
+    """Build the pinned venv and collections, or find them ready."""
     environment = {**os.environ, 'PATH': f'{gate.tool_path(tools)}{os.pathsep}{os.environ["PATH"]}'}
     collections = gate.collections_path(tools)
     setup = gate.plan('', ROOT, ROOT, collections)[0]
     subprocess.run(setup.argv, cwd=gate.SWAMP, env={**environment, **setup.env}, check=True)
-    receipt.write_text(json.dumps({'path': environment['PATH'], 'collections': str(collections)}))
+    if receipt:
+        receipt.write_text(json.dumps({'path': environment['PATH'], 'collections': str(collections)}))
 
 
 def collect(file):
@@ -574,6 +576,9 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     collector = commands.add_parser('collect')
     collector.add_argument('--file', required=True)
+    preparer = commands.add_parser('prepare-tools', help='build the pinned fixture tools, or find them ready')
+    preparer.add_argument('--tools', type=Path, help="tools folder (default: the shape gate's)")
+    preparer.add_argument('--receipt', type=Path, help='write the PATH and collections folder as JSON')
     planner = commands.add_parser('plan')
     planner.add_argument('--base', required=True)
     planner.add_argument('--head', required=True)
@@ -586,6 +591,9 @@ def main():
     args = parser.parse_args()
     if args.command == 'collect':
         print(json.dumps(collect(args.file), indent=2))
+        return 0
+    if args.command == 'prepare-tools':
+        prepare_tools(args.tools or gate.default_tools(), args.receipt)
         return 0
     budget, fixtures, defaults = configuration()
     if args.command == 'run':
@@ -622,9 +630,7 @@ def main():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '--prepare':
-        prepare_tools(Path(sys.argv[2]))
-    elif len(sys.argv) > 1 and sys.argv[1] == '--supervise':
+    if len(sys.argv) > 1 and sys.argv[1] == '--supervise':
         supervise(float(sys.argv[2]), Path(sys.argv[3]), sys.argv[5:],
                   None if sys.argv[4] == 'none' else float(sys.argv[4]))
     else:

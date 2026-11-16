@@ -824,7 +824,32 @@ class PopulationTest(unittest.TestCase):
         self.assertEqual(result['capacity'][0]['oversize'], [{'unit': 'swamp/large.ts', 'seconds': 186, 'cases': ['unresolved large case']}])
         self.assertNotIn('after_merge_cases', f)
 
-    def test_tool_setup_is_inside_the_shard_deadline_and_empty_runs_fail(self):
+    def test_run_after_the_workflow_step_finds_the_tools_ready_and_does_not_rebuild_them(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            tools, log = folder / 'tools', folder / 'calls'
+            venv = tools / units.gate.venv_name()
+            (venv / 'bin').mkdir(parents=True)
+            (venv / '.complete').write_text('')
+            for name in ('ansible-galaxy', 'pip'):
+                (venv / 'bin' / name).write_text(f'#!/bin/sh\necho {name} >> {log}\n')
+                (venv / 'bin' / name).chmod(0o755)
+            # The CI step "Prepare fixture tools".
+            subprocess.run([sys.executable, str(ROOT / 'bin/ci-units'), 'prepare-tools', '--tools', str(tools)],
+                           check=True, capture_output=True, timeout=20)
+            check = (f'import os,shutil; assert shutil.which("ansible-galaxy") == {str(venv / "bin/ansible-galaxy")!r}; '
+                     f'assert os.environ["ANSIBLE_COLLECTIONS_PATH"] == {str(units.gate.collections_path(tools))!r}')
+            steps = {'swamp/ready.py': units.gate.Step('shape', 'ready', [sys.executable, '-c', check])}
+            budget = {**BUDGET, 'shard_deadline_seconds': 20}
+            with patch.object(units.gate, 'default_tools', return_value=tools), \
+                    patch.object(units, 'fixture_steps', return_value=steps), \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(units.run(list(steps), budget, {name: fixture(name) for name in steps}, folder / 'times.json'), 0, output.getvalue())
+            # Each call found the venv complete and ran only the collection install, which has nothing to do.
+            self.assertEqual(log.read_text().split(), ['ansible-galaxy', 'ansible-galaxy'])
+            self.assertTrue((venv / '.complete').exists())
+
+    def test_tool_readiness_is_inside_the_shard_deadline_and_empty_runs_fail(self):
         step = units.gate.Step('shape', 'setup stand-in', [sys.executable, '-c', 'import signal; signal.pause()'])
         with patch.object(units.gate, 'Step', return_value=step), contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaisesRegex(RuntimeError, 'OVER BUDGET'):
