@@ -748,7 +748,7 @@ A failed test puts every written file back before any reload, and keeps no copy.
 
 Some writers take no Node lock, such as the Gateway's whole-file Caddy builds. So right before it writes a file, and again right before it renames the Caddy candidate, the withdrawal checks that the file is still as it read it. A file that changed refuses with `route.live_changed` and every file is put back; run the removal again.
 
-A revision of the Route's own sections that matches no captured state still refuses with `caddy.owned_revision_conflict`, `php.owned_revision_conflict` or `dns.owned_revision_conflict`. A file that a withdrawal would leave unchanged is not written and its service is not reloaded, so a second withdrawal of the same Route changes nothing.
+A revision of the Route's own sections that matches no captured state still refuses with `caddy.owned_revision_conflict`, `php.owned_revision_conflict` or `dns.owned_revision_conflict`. A PHP scope of the Route matches when its `group` names the account's primary group by name or by gid; Orbit before route-create-site wrote the name. A file that a withdrawal would leave unchanged is not written and its service is not reloaded, so a second withdrawal of the same Route changes nothing.
 
 The lock files are regular files owned by root that no group or other may write; a lock that is not refuses with `route.publish_lock_invalid`. The withdrawal sets each to mode `0600`, so only root can open it. They are never replaced or removed. Closing the descriptor releases a lock, including when the process dies. No SSH round trip occurs while a lock is held.
 
