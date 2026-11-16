@@ -2293,6 +2293,8 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 
 A real `app-dev` or CI Node gets no `fleet_node`, so its intent and its branch stay as they were.
 
+The fleet's egress proxy lies in the Instance container's own bridge, in `10.253.0.0/16` one level up. The nested Gateway reads its address from `HTTPS_PROXY` in its `/etc/environment`, which the fleet rules write whole. It gives the fleet Node no Instance bridge in that /24: a bridge that holds the proxy address makes `nested-app-dev` dial itself, and its Incus cannot fetch the stock image.
+
 **Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has the part `host`, a digest of the nested Gateway's code and Swamp trees. When it differs from the record, `nested-app-dev` joins the due converges, and its converge takes `{"roles":["app-dev"]}` instead of the base only. That is the nested Gateway's own `node.converge`, through its Swamp. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own. A refresh with no change keeps the host and adds no time; the result names `host` as `converged` or `kept`.
 
 **The fast wake stays off.** The [power helper](/reference/prepared-restore#the-power-helper) reads `/etc/orbit/instance-fleet-node` and records no plan, with `placement_unproven`, for every Instance on that Node, as for a nested-fleet Instance ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)). Sleep and wake use the normal path.
