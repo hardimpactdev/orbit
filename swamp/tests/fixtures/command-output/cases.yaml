@@ -1096,6 +1096,73 @@ contexts:
     rt:
       swamp:
         workers: [a, b, c]
+  # The proof default's seed before a retake at a new commit: a CI Node holds seed-0ld, so the Gateway names it as the base, and an
+  # older base is left from an earlier retake (docs/reference/development-containers.md#a-retake-keeps-the-seed).
+  seed-base-to-keep:
+    incus_project: [incus, --project, orbit-instances-nested]
+    container:
+      name: instance-41
+      seed_base: 0ld
+      inner_volume: {name: inner-41, pool: orbit-instances}
+    seed_name: seed-abc123
+    seed_keep: base-0ld
+    seed_names: [seed-abc123, seed-0ld]
+    seed_volume_names: [seed-abc123, seed-0ld]
+    seed_bases: [base-older]
+    seed_volume_bases: [base-older]
+    seed_snapshots:
+      stdout: '[{"name":"seed-abc123"},{"name":"seed-0ld"},{"name":"base-older"},{"name":"other"}]'
+    seed_volume_snapshots:
+      stdout: '[{"name":"inner-41/seed-abc123"},{"name":"inner-41/seed-0ld"},{"name":"inner-41/base-older"}]'
+  # The second seed phase of the same deployment: the base is kept already, so the older seed goes.
+  seed-base-kept:
+    incus_project: [incus, --project, orbit-instances-nested]
+    container:
+      name: instance-41
+      seed_base: 0ld
+      inner_volume: {name: inner-41, pool: orbit-instances}
+    seed_name: seed-abc123
+    seed_keep: base-0ld
+    seed_names: [seed-abc123, seed-0ld]
+    seed_volume_names: [seed-abc123, seed-0ld]
+    seed_bases: [base-0ld]
+    seed_volume_bases: [base-0ld]
+  # `incus query` of the default's and the holder's snapshots before a seed copy: the default kept the holder's seed as its base.
+  seed-copy-base:
+    remote: proof-node-12
+    seed_intent:
+      project: orbit-instances-nested
+      pool: orbit-instances
+      holder: proof-seed
+      holder_volume: proof-seed-inner
+      source: {container: instance-41, inner_volume: inner-41}
+    seed_source_snapshots:
+      stdout: '[{"name":"base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
+    seed_base: base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e
+    seed_holder_names: [seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e]
+    seed_holder_volume_names: [seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e]
+    seed_holder_volume_snapshots:
+      rc: 0
+      stdout: '[{"name":"proof-seed-inner/seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
+  # A first copy: the default keeps no base, and the CI Node has no holder yet, so its query fails.
+  seed-copy-no-base:
+    seed_intent:
+      source: {container: instance-41, inner_volume: inner-41}
+    seed_source_snapshots:
+      stdout: '[{"name":"seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
+    seed_holder_volume_snapshots:
+      rc: 1
+      stdout: ''
+  # The default's snapshots at the end of a copy that every Node behind the seed passed.
+  seed-copy-release:
+    seed_intent:
+      project: orbit-instances-nested
+      pool: orbit-instances
+      source: {container: instance-41, inner_volume: inner-41}
+    release_names: [base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac]
+    release_volume_names: [base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac]
+    release_volume_snapshots:
+      stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
 cases:
 - file: tasks/role-swamp.yml
   task: Check Swamp units
@@ -2318,6 +2385,126 @@ cases:
   expected:
     install-root: 6ccb28b9f44de8cdf8af525fb074eeb5a7ca9a9f4c1b82e2245dc0e53ee17baa
     install-web: ''
+- file: tasks/instance-container-phase.yml
+  task: Name the seed
+  field: ansible.builtin.set_fact.seed_bases
+  context: seed-base-to-keep
+  expected: [base-older]
+- file: tasks/instance-container-phase.yml
+  task: Name the seed
+  field: ansible.builtin.set_fact.seed_volume_bases
+  context: seed-base-to-keep
+  expected: [base-older]
+- file: tasks/instance-container-phase.yml
+  task: Name the seed
+  field: ansible.builtin.set_fact.seed_volume_bases
+  context: seed-no-volume
+  expected: []
+- file: tasks/instance-container-phase.yml
+  task: Keep the older seed as the base
+  field: when
+  context: seed-base-to-keep
+  expected: true
+- file: tasks/instance-container-phase.yml
+  task: Keep the older seed as the base
+  field: when
+  context: seed-base-kept
+  expected: false
+- file: tasks/instance-container-phase.yml
+  task: Keep the older seed as the base
+  field: ansible.builtin.command.argv
+  context: seed-base-to-keep
+  expected: [incus, --project, orbit-instances-nested, snapshot, rename, instance-41, seed-0ld, base-0ld]
+- file: tasks/instance-container-phase.yml
+  task: Keep the older seed of the inner volume as the base
+  field: when
+  context: seed-base-to-keep
+  expected: true
+- file: tasks/instance-container-phase.yml
+  task: Keep the older seed of the inner volume as the base
+  field: when
+  context: seed-base-kept
+  expected: false
+- file: tasks/instance-container-phase.yml
+  task: Keep the older seed of the inner volume as the base
+  field: ansible.builtin.command.argv
+  context: seed-base-to-keep
+  expected: [incus, --project, orbit-instances-nested, storage, volume, snapshot, rename, orbit-instances, inner-41, seed-0ld, base-0ld]
+- file: tasks/instance-container-phase.yml
+  task: Delete the older seeds
+  field: loop
+  context: seed-base-to-keep
+  expected: []
+- file: tasks/instance-container-phase.yml
+  task: Delete the older seeds
+  field: loop
+  context: seed-base-kept
+  expected: [seed-0ld]
+- file: tasks/instance-container-phase.yml
+  task: Delete the older seeds of the inner volume
+  field: loop
+  context: seed-base-to-keep
+  expected: []
+- file: tasks/instance-container-phase.yml
+  task: Delete the older seeds of the inner volume
+  field: loop
+  context: seed-base-kept
+  expected: [seed-0ld]
+- file: proof-seed-copy.yml
+  task: Name the base
+  field: ansible.builtin.set_fact.seed_base
+  context: seed-copy-base
+  expected: base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e
+- file: proof-seed-copy.yml
+  task: Name the base
+  field: ansible.builtin.set_fact.seed_base
+  context: seed-copy-no-base
+  expected: ''
+- file: proof-seed-copy.yml
+  task: Name the holder's seeds
+  field: ansible.builtin.set_fact.seed_holder_volume_names
+  context: seed-copy-base
+  expected: [seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e]
+- file: proof-seed-copy.yml
+  task: Name the holder's seeds
+  field: ansible.builtin.set_fact.seed_holder_volume_names
+  context: seed-copy-no-base
+  expected: []
+- file: proof-seed-copy.yml
+  task: Give the holder's seed the base's name
+  field: when
+  context: seed-copy-base
+  expected: true
+- file: proof-seed-copy.yml
+  task: Give the holder's seed the base's name
+  field: ansible.builtin.command.argv
+  context: seed-copy-base
+  expected: [incus, snapshot, rename, 'proof-node-12:proof-seed', seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, --project, orbit-instances-nested]
+- file: proof-seed-copy.yml
+  task: Give the holder volume's seed the base's name
+  field: when
+  context: seed-copy-base
+  expected: true
+- file: proof-seed-copy.yml
+  task: Give the holder volume's seed the base's name
+  field: ansible.builtin.command.argv
+  context: seed-copy-base
+  expected: [incus, storage, volume, snapshot, rename, 'proof-node-12:orbit-instances', proof-seed-inner, seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, --project, orbit-instances-nested]
+- file: proof-seed-copy.yml
+  task: Name the bases
+  field: ansible.builtin.set_fact.release_volume_names
+  context: seed-copy-release
+  expected: [base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac]
+- file: proof-seed-copy.yml
+  task: Delete the default's base
+  field: loop
+  context: seed-copy-release
+  expected: [base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e]
+- file: proof-seed-copy.yml
+  task: Delete the inner volume's base
+  field: loop
+  context: seed-copy-release
+  expected: [base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e]
 non_command_output:
 - file: tasks/gateway-swamp-pin.yml
   task: Remove the other Swamp releases
