@@ -98,9 +98,13 @@ The Ansible builder has no task VM path for the kind `tasks.provision` and reads
 
 The WireGuard range `10.44.0.128/25` stays reserved. The address allocator never hands an address of it to a Node. The guard of the ai-router admits it as before.
 
-Three readers of a stored `settings.task_vms` value stay until that value goes. The Instance bridge allocation keeps clear of a stored task bridge. The agent watch list names a stored host's bridges for the egress fact. The fleet reboot reads a stored host's Incus project.
+A later release drops what nothing read any more. Its migration `2027_03_01_000000_drop_vm_era_columns_and_task_vms_setting` removes the key `task_vms` from every Node's stored `settings` and drops the columns `nodes.image_refresh_hold`, `tasks.topology`, `tasks.idle_saved_commit` and `tasks.idle_saved_at`. Its rollback adds the four columns back empty; it cannot bring the settings key back, so the release takes a backup first. With the stored value go its three readers:
 
-The columns `nodes.image_refresh_hold`, the stored `settings.task_vms` members, `capacity_wait_reason` and the task VM tables stay, unread by the API, until a later release drops them. No migration runs.
+- The Instance bridge allocation keeps clear only of each Node's Instance and CI bridges, not of a stored task bridge.
+- The agent watch list sends `egress: null` for every Node, so no agent reads a task bridge's log for the egress fact. The Gateway refuses every `egress` fact with `agent.fact_not_expected`, and the recorder that added its rows to a task group is deleted. The rows already in `task_group_egress` stay readable through `task:egress`.
+- The fleet reboot intent of a Node has no `task_project`, and the pass has no `task_hosts`. Swamp drains no task guests: the step `Drain the task guests` and its task files `fleet-reboot-drain-tasks.yml` and `fleet-reboot-park.yml` are deleted.
+
+The Operation kind pattern `task_vm.%` leaves the busy check of the fleet reboot, because no `task_vm.*` kind starts. `capacity_wait_reason` and the task VM tables stay, unread by the API, until a later release drops them.
 
 ### What stays
 

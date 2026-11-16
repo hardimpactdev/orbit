@@ -1305,7 +1305,7 @@ The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` s
 
 A subtask declares no topology. The API ignores an empty `topology` list and refuses any other list with `422 tasks.orchestration_unsupported`. A value that is not a list, such as a string or `null`, fails validation with `422 validation.failed`. This holds when a request creates a group, creates a subtask, or updates a subtask. Task responses have no `topology` field, and the CLI has no `--topology` option.
 
-Nothing reads a declaration that a group saved before this rule. The column `tasks.topology` and the columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` stay in the schema, and the Gateway neither reads nor writes them. A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
+Nothing reads a declaration that a group saved before this rule. The column `tasks.topology` is dropped ([old paths](/reference/old-paths#task-vm-settings)). The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` stay in the schema, and the Gateway neither reads nor writes them. A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
 
 ## VM power
 
