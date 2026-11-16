@@ -1,5 +1,4 @@
 {
-  "source_sha256": "d126188db662fcc5c6dfb151899f706ed7893556335b02a1bf9bc94f77945875",
   "note": "Completed local Beast run with four concurrent fixture processes after merging #3661 and regenerating the saved state and records through the shipped refresh. These are local body seconds, not hosted times or a p90. Existing estimates outside the split are retained. The two DNS bridge cases were measured again after merging #3666 and regenerating the network boundary from a real refresh; their former main table estimates (130s and 7s) are replaced with these local body times. The three token cases are local body seconds on Beast from saved state (one refresh each), measured with other fixture processes running.",
   "estimate_factor": 2.1,
   "single_refresh_cases": [

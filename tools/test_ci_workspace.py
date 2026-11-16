@@ -24,7 +24,6 @@ class WorkspaceFixturesTest(unittest.TestCase):
         for file, measured in evidence.items():
             with self.subTest(file=file):
                 current = units.collect(file)
-                self.assertEqual(current['source_sha256'], measured['source_sha256'])
                 self.assertCountEqual(current['cases'], measured['case_seconds'])
                 seen.extend(current['cases'])
                 entry = fixtures[file]

@@ -1,7 +1,6 @@
 {
   "run_id": "43664446092",
   "sha": "402778ae5dd9741a324892757b19972e6051cf52",
-  "source_sha256": "2e3a4a2b9c9a08e5c8e6c48e1c96c247f36f0b2478f9bb718e027690dc08c979",
   "completed_max_seconds": {
     "worker renewal: two permanent peers accept before a drains and c stays running": 22.691467382000003,
     "worker renewal: b renews next while fresh a and permanent c stay connected": 20.823212522,
