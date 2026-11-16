@@ -114,7 +114,7 @@ final readonly class RemoveTaskWorkspaceAction
             return;
         }
         for ($cause = $exception; $cause instanceof Throwable; $cause = $cause->getPrevious()) {
-            if ($cause instanceof TaskVmException && in_array($cause->errorCode, [TaskVmError::WorkspaceMismatch->value, TaskVmError::ForeignInstance->value], true)) {
+            if ($cause instanceof TaskVmException && $cause->errorCode === TaskVmError::WorkspaceMismatch->value) {
                 $prefix = self::OwnershipRefusedPrefix;
                 break;
             }
