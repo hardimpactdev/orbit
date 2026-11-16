@@ -123,7 +123,7 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($ingress[1]['destination_port'])->toBe((string) InstanceHostIntent::T3Port);
     });
 
-    it('keeps the Instance bridge clear of a task bridge that a Node still stores', function (): void {
+    it('reserves no Instance bridge range for a task_vms key in a Node\'s settings', function (): void {
         $node = Node::withoutEvents(fn (): Node => Node::query()->create([
             'name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.7',
             'public_ssh_host' => '10.44.0.7', 'user' => 'orbit', 'settings' => ['task_vms' => ['cidr' => '10.253.0.0/24', 'task_places' => 4, 'ci_places' => 2]],
@@ -133,9 +133,9 @@ describe('the container branch of the app-dev converge', function (): void {
 
         $intent = app(InstanceHostIntent::class)->for($node);
 
-        // The stored task bridge holds the first /24 of the range, so the Instance bridge takes the next one; no task VM term changes the IDs.
+        // Nothing reads the key, so the Instance bridge takes the first /24 of the range; no task VM term changes the IDs.
         expect($intent)->toMatchArray(['project' => 'orbit-instances', 'network' => 'orbitinst0', 'nic_acl' => 'orbitinst0-proxy', 'pool' => 'orbit-instances',
-            'cidr' => '10.253.1.0/24', 'ids' => 201 * 65536])
+            'cidr' => '10.253.0.0/24', 'ids' => 201 * 65536])
             ->and($intent)->not->toHaveKey('arc');
     });
 
@@ -409,7 +409,7 @@ describe('the bridge check and write', function (): void {
         $base = DB::transactionLevel();
 
         $queries = bridgeQueries(fn () => app(AllocateInstanceBridgeAction::class)->execute($node));
-        $read = array_find(array_reverse($queries), static fn (array $q): bool => str_contains($q['sql'], 'select "id", "settings", "instance_bridge", "ci_bridge" from "nodes"'));
+        $read = array_find(array_reverse($queries), static fn (array $q): bool => str_contains($q['sql'], 'select "instance_bridge", "ci_bridge" from "nodes"'));
         $write = array_find($queries, static fn (array $q): bool => str_starts_with($q['sql'], 'update "nodes" set "instance_bridge"'));
 
         expect($read['level'])->toBeGreaterThan($base)->and($write['level'])->toBe($read['level']);

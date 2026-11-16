@@ -63,16 +63,16 @@ describe('Instance bridges', function (): void {
             ->and($beast->refresh()->instance_bridge)->toBe('10.253.0.0/24');
     });
 
-    it('skips a range that a stored task bridge or the VPN subnet overlaps', function (): void {
-        recordsNode('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.253.0.0/23', 'task_places' => 1, 'ci_places' => 0,
+    it('skips a range that the VPN subnet overlaps, and reserves nothing for a task_vms key in a Node\'s settings', function (): void {
+        recordsNode('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.253.1.0/24', 'task_places' => 1, 'ci_places' => 0,
             'containers' => ['cidr' => '10.253.3.0/25', 'task_places' => 1]]]);
-        app(VpnSettings::class)->configure('10.253.2.0/24');
+        app(VpnSettings::class)->configure('10.253.0.0/24');
 
-        expect(app(AllocateInstanceBridgeAction::class)->execute(recordsNode()))->toBe('10.253.4.0/24');
+        expect(app(AllocateInstanceBridgeAction::class)->execute(recordsNode()))->toBe('10.253.1.0/24');
     });
 
     it('refuses when every /24 of the fleet range is taken', function (): void {
-        recordsNode('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.253.0.0/16', 'task_places' => 1, 'ci_places' => 0]]);
+        recordsNode('shark', '10.44.0.11')->forceFill(['ci_bridge' => '10.253.0.0/16'])->save();
         $beast = recordsNode();
 
         expect(fn () => app(AllocateInstanceBridgeAction::class)->execute($beast))

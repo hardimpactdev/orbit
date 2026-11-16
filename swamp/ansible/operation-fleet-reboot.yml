@@ -102,8 +102,8 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
-        # A held Node or a busy task host waits for the next night. So does a Node that cannot finish its drain, guest stops
-        # and reboot inside the window. An operator's pass is not bound to the window.
+        # A Node that admission deferred, such as a held Node, waits for the next night. So does a Node that cannot finish its
+        # drain and reboot inside the window. An operator's pass is not bound to the window.
         - name: Decide whether the Node waits
           ansible.builtin.set_fact:
             wait_reason: >-
@@ -124,13 +124,9 @@
           ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
           vars:
             record_update: { drain_started: true }
-        # CI first: a busy runner defers the Node before any task guest stops.
         - name: Drain the CI runners
           ansible.builtin.import_tasks: tasks/fleet-reboot-drain-ci.yml
           when: target.ci_project is not none
-        - name: Drain the task guests
-          ansible.builtin.import_tasks: tasks/fleet-reboot-drain-tasks.yml
-          when: target.task_project is not none
         - name: Drain the Gateway
           ansible.builtin.import_tasks: tasks/fleet-reboot-drain-gateway.yml
           when: target.gateway is not none

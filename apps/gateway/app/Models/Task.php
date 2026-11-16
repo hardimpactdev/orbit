@@ -100,8 +100,6 @@ use LogicException;
  * @property int|null $watched_pr_number
  * @property string|null $watched_pr_state
  * @property string|null $watched_pr_completion
- * @property string|null $idle_saved_commit the commit the idle release saved to `task-<id>-idle`
- * @property Carbon|null $idle_saved_at
  * @property bool|null $preview
  * @property bool|null $current_recipe
  * @property TaskReviewMode $review_mode
@@ -159,8 +157,6 @@ final class Task extends Model
         'created_by_node_id',
         'orchestration',
         'watched_pr_completion',
-        'idle_saved_commit',
-        'idle_saved_at',
         'watched_pr_url',
         'watched_pr_number',
         'watched_pr_state',
@@ -255,8 +251,6 @@ final class Task extends Model
         'created_by_node_id',
         'orchestration',
         'watched_pr_completion',
-        'idle_saved_commit',
-        'idle_saved_at',
         'watched_pr_url',
         'watched_pr_number',
         'watched_pr_state',
@@ -652,7 +646,6 @@ final class Task extends Model
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',
             'reserved_at' => 'datetime',
-            'idle_saved_at' => 'datetime',
             'tokens' => 'integer',
             'line_diff' => 'integer',
             'lines_added' => 'integer',

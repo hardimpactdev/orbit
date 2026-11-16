@@ -153,7 +153,7 @@ A group's `last_activity_at` is the newest time any Operation on the group was c
 
 #### Release an idle task VM
 
-The idle release and its save, `tasks.idle_save`, are removed with the task VMs. A task copy stays until its group ends, so its work needs no save. The columns `idle_saved_commit` and `idle_saved_at` stay on old groups; nothing reads them. A save branch `task-<id>-idle` that an old save pushed stays on origin until a person deletes it.
+The idle release and its save, `tasks.idle_save`, are removed with the task VMs. A task copy stays until its group ends, so its work needs no save. The columns `idle_saved_commit` and `idle_saved_at` are dropped ([old paths](/reference/old-paths#task-vm-settings)). A save branch `task-<id>-idle` that an old save pushed stays on origin until a person deletes it.
 
 #### Keep command output out of run history
 

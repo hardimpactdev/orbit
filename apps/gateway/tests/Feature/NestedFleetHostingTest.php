@@ -97,7 +97,7 @@ function recordedNestedInstance(Project $project, Node $node, string $name = 'de
 }
 
 /** Task VM host settings with VM places and two task container places. @return array<string, mixed> */
-/** A `task_vms` value as a Node still stores it; no code reads it any more. */
+/** A `task_vms` settings value as Nodes stored it before the migration removed it; no code reads it. */
 function taskVms(int $taskPlaces, int $ciPlaces): array
 {
     return ['cidr' => '10.252.10.0/24', 'task_places' => $taskPlaces, 'ci_places' => $ciPlaces, 'project' => 'orbit-tasks', 'network' => 'orbittask0',
@@ -1224,7 +1224,7 @@ describe('a switched-on Node', function (): void {
             ->and(app(InstanceHostIntent::class)->for($other)['ids'])->toBe(13_172_736 + 2 * 101_000_000);
     });
 
-    it('counts no ID maps for the task container places that a Node still stores in settings.task_vms', function (): void {
+    it('counts no ID maps for the task container places of a task_vms key in a Node\'s settings', function (): void {
         $node = containerDefaultNode();
         $node->update(['settings' => [...$node->settings, 'nested_fleet' => true,
             'task_vms' => taskVms(7, 5)]]);

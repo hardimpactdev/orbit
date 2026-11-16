@@ -348,7 +348,6 @@ CI's `Required checks` needs the Web job, which uploads the artifact before it s
 
 The run must be a run of `.github/workflows/ci.yml` in this repository: a `push` or a `workflow_dispatch` on `main`. There is no merge queue, so a red `main` commit is never released; `main` is fixed forward. A run from a fork, a pull request, another workflow, or another branch does not count. An artifact without a SHA-256 digest is refused.
 
-
 ### Migrations and the snapshot
 
 Before it migrates, the run writes a consistent SQLite copy with `VACUUM INTO` to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes a new file. Retention keeps the newest two snapshots, the current and the previous, and the one a pause names. Snapshots stay on the Gateway; keep a [complete state set](#preserve-a-complete-state-set) elsewhere.
@@ -414,7 +413,6 @@ orbit gateway:auto-release:disable
 ```
 
 A Gateway that ran the release unit still has `orbit-gateway-release.timer` until its [gateway role convergence](/cli/node/role-add) runs. Until then the timer runs the same tick every minute, more often than the scheduler; the release lock and the admission check make the second tick harmless. Its `ExecStopPost` names the removed `gateway:release:settle`, so the unit reports a failed stop step. The convergence stops and disables the timer, then removes it and the release services. Converge only while the current release runs the tick from the scheduler: a rollback to an older release then has no tick until a newer release goes live.
-
 
 ### What a tick does
 
@@ -484,7 +482,6 @@ While it is up to date, the runner reads the branch head at most every 5 minutes
 ### Read the state
 
 `orbit gateway:auto-release:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, the stalls, and the last run result. `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes needs investigation. Check the Gateway scheduler, its logs and, when configured, the queue workers.
-
 
 ## Recover a failed update
 
@@ -751,12 +748,9 @@ The order is the rollout's [risk groups](#rollout-set-and-order), then two more.
 | 5 | The control path: the `vpn` hub, the Gateway Node, and the Node of the Route that serves the Swamp address (`swamp.orbit`) |
 | 6 | The `swamp` Node |
 
-Set a durable per-Node reboot hold with `orbit node:update NODE --reboot-hold=true`; clear it with `--reboot-hold=false`. The default is false. The existing Node update API and MCP accept the boolean `reboot_hold` field. Every Node read shows it. Admission freezes the hold as the existing `defer: operator_hold` intent value, ahead of task-busy deferral. Changes apply to the next pass. Both nightly passes and operator passes with `node_ids` respect the hold. No new intent key is required, so the Gateway and workflow ship in one release: migrate the database, load Swamp, then activate the Gateway. The `drain_started` marker is run-local state, and rescue skips undo when it is absent.
+Set a durable per-Node reboot hold with `orbit node:update NODE --reboot-hold=true`; clear it with `--reboot-hold=false`. The default is false. The existing Node update API and MCP accept the boolean `reboot_hold` field. Every Node read shows it. Admission freezes the hold as the existing `defer: operator_hold` intent value. Changes apply to the next pass. Both nightly passes and operator passes with `node_ids` respect the hold. No new intent key is required, so the Gateway and workflow ship in one release: migrate the database, load Swamp, then activate the Gateway. The `drain_started` marker is run-local state, and rescue skips undo when it is absent.
 
-A task host with an open task Operation on one of its task VMs stays in the pass, but only to be read: it records since when it is due and then `deferred` with `tasks_busy`. While the pass runs, the Gateway holds new task work off every other task host it visits that has no reboot hold:
-
-- task turns, checks, publishes, scripts and proofs for a group on such a host refuse with `409 tasks.host_rebooting`; the caller repeats the call after the pass;
-- task VM placement and the daily image refresh skip such a host.
+No Node is a task host any more. Admission reads no stored `task_vms` Node setting, so the intent of a Node has no `task_project`, the pass has no `task_hosts`, and no Node is deferred with `tasks_busy` or drains task guests ([old paths](/reference/old-paths#task-vm-settings)).
 
 ### One Node of the pass
 
@@ -766,13 +760,13 @@ Each phase keeps its Ansible JSON callback report private. Before the child ends
 
 If the root run ends before reporting any Node records, the Gateway cannot tell which Nodes were attempted: every Node records `unknown` with `run_interrupted`. Missing records without an earlier recorded halt also stay unknown. Unknown outcomes make the pass fail and raise `reboot_halted` once. Without a recorded Node failure, its error code is `fleet.reboot_interrupted`. Only missing Nodes after a recorded halt use `skipped` with `not_reached`.
 
-An `unknown` Node reports uncertainty; it does not recover a drain the pass may have started. The Gateway has no record of what that Node stopped, so it does not mark its stopped task guests `parked`: their task VMs stay `ready` while the guests are down. CI runners stopped before an interrupted reboot can stay stopped. A swamp Node that scheduled its own reboot gets no 30-minute boot confirmation, because that check reads only `scheduled`. After an interrupted pass, an operator reconciles each `unknown` Node by hand: start its stopped task guests or mark them parked, start stopped runners, and check the swamp Node's boot.
+An `unknown` Node reports uncertainty; it does not recover a drain the pass may have started. CI runners stopped before an interrupted reboot can stay stopped. A swamp Node that scheduled its own reboot gets no 30-minute boot confirmation, because that check reads only `scheduled`. After an interrupted pass, an operator reconciles each `unknown` Node by hand: start stopped runners and check the swamp Node's boot.
 
-Only the initial boot-state reads before any Node change retry SSH connection failures (exit 255). They get seven retries after the first attempt, with a 10-second connect timeout and one OpenSSH connection attempt per try. Ansible supplies the pauses: 0, 1, 3, 7, 15, 30 and 30 seconds. Eight timed-out attempts take at most 166 seconds per SSH invocation before process overhead. This covers a two-minute uplink outage, stays within the existing 2,400-second drain phase and leaves room for the 900-second drain and six 75-second guest stops.
+Only the initial boot-state reads before any Node change retry SSH connection failures (exit 255). They get seven retries after the first attempt, with a 10-second connect timeout and one OpenSSH connection attempt per try. Ansible supplies the pauses: 0, 1, 3, 7, 15, 30 and 30 seconds. Eight timed-out attempts take at most 166 seconds per SSH invocation before process overhead. This covers a two-minute uplink outage, stays within the existing 2,400-second drain phase and leaves room for the 900-second drain.
 
 The phase timeouts remain the hard bounds. The window check runs after the read, so connection retries cannot make a Node start draining after the window's cutoff.
 
-The drain, guest and runner stops, recovery and reboot use zero SSH retries. A disconnect after a command started can therefore fail the phase, but cannot replay that command through the SSH retry plugin.
+The drain, runner stops, recovery and reboot use zero SSH retries. A disconnect after a command started can therefore fail the phase, but cannot replay that command through the SSH retry plugin.
 
 The `drain` phase decides first whether the Node goes on:
 
@@ -780,15 +774,13 @@ The `drain` phase decides first whether the Node goes on:
 - Without `/var/run/reboot-required`, the Node records `not_due`.
 - A due Node records its boot ID, its kernel, its failed units and its due time.
 - A due held Node records `deferred` with `operator_hold` and ends before any drain or reboot. A held Node without a due reboot stays `not_due`. Every Node result includes the admitted `reboot_hold`, including in `operation:show`.
-- A busy task host then records `deferred` with `tasks_busy`. A Node whose drain, guest stops and reboot cannot end 45 minutes before 06:00 records `deferred` with `window`.
+- A Node whose drain and reboot cannot end 45 minutes before 06:00 records `deferred` with `window`.
 
 Then the phase drains the Node:
 
 On a CI runner host, the phase drains the runners every 20 seconds, for at most the drain budget. It freezes each runner container and reads the container's processes from the host. It stops a container that runs no `Runner.Worker` and records the runner with the time of its freeze. A runner with a job runs on, and so does a job on a runner of the host itself. When a job still runs at the end, the stopped runners start again, and the Node records `deferred` with `ci_busy`.
 
-On a task host, the phase stops each running task guest cleanly, within a minute, and records its name at once. When the pass reports that record, the Gateway records those task VMs `parked`, and the next task call wakes them.
-
-After the hold and window checks, the phase writes `drain_started` to the Node's run-folder record before the first CI, task guest or Gateway stop. Rescue runs undo only when this marker exists. If writing it fails, nothing has stopped yet and undo is skipped. Once a drain begins, a failure that the Node's own rescue catches keeps the existing recovery: start the Gateway scheduler and Horizon, and start every runner from the initial running inventory that is now stopped. Recovery does not depend on later record writes or on reading the stopped-runner list. Stopped task guests stay parked.
+After the hold and window checks, the phase writes `drain_started` to the Node's run-folder record before the first CI or Gateway stop. Rescue runs undo only when this marker exists. If writing it fails, nothing has stopped yet and undo is skipped. Once a drain begins, a failure that the Node's own rescue catches keeps the existing recovery: start the Gateway scheduler and Horizon, and start every runner from the initial running inventory that is now stopped. Recovery does not depend on later record writes or on reading the stopped-runner list.
 
 On the Gateway Node, the phase stops the scheduler. Then it stops Horizon, which drains on stop, within the drain budget. The reboot ends what is left.
 
@@ -845,7 +837,7 @@ A reboot of the control path or of Node 209 can cut a Swamp run after the drain 
 
 ### What is reported
 
-The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `operator_hold`, `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. A missing Node record without a recorded halt is `unknown` with `run_interrupted`; when the root reports no Nodes, every Node has that outcome. It also holds the kernel before and after, since when the reboot was due, the parked task guests, any newly failed units, the stopped CI runners with their freeze times, and the CI runs it re-ran.
+The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `operator_hold`, `window` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. A missing Node record without a recorded halt is `unknown` with `run_interrupted`; when the root reports no Nodes, every Node has that outcome. It also holds the kernel before and after, since when the reboot was due, any newly failed units, the stopped CI runners with their freeze times, and the CI runs it re-ran.
 
 Doctor reports `node.reboot_due` when the newest pass that read a Node found it due more than 3 days ago and did not reboot it. A record without a due time, such as `halted`, does not count; Doctor looks at the pass before it. A reboot hold does not suppress this warning or alert: the owner still needs to see overdue fixes. When a pass ends with such a Node, the Gateway raises [`reboot_overdue`](#release-alerts) once.
 

@@ -64,15 +64,10 @@ final readonly class AdmitFleetRebootAction
         }
         $nodes = [];
         $order = [];
-        $taskHosts = [];
         foreach ($members as $node) {
             $intent = $this->reboot->node($node);
-            // Deferred Nodes are only read; their work stays unlocked.
             $nodes[(string) $node->id] = $intent;
             $order[] = $node->id;
-            if ($intent['task_project'] !== null && $intent['defer'] === null) {
-                $taskHosts[] = $node->id;
-            }
         }
         if ($order === []) {
             throw new ResourceOperationException('fleet.reboot_not_ready', 'No managed Linux Node to visit.', 409);
@@ -83,7 +78,6 @@ final readonly class AdmitFleetRebootAction
             'intent' => ['window' => [...FleetReboot::Window, 'enforced' => $window], 'drain_seconds' => Config::integer('fleet.reboot_drain_seconds'),
                 'order' => $order, 'nodes' => $nodes, 'ci_repositories' => FleetReboot::ciRepositories()],
             'execution_secrets' => [],
-            'task_hosts' => $taskHosts,
             'participant_node_ids' => array_values(array_unique([$root, SwampNode::id(), ...$order])),
         ], 'swamp', null, lockKey: OperationStore::lockKey('fleet_reboot', $root));
     }

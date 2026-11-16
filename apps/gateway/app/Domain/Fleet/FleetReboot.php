@@ -35,8 +35,8 @@ use Throwable;
  *
  * One `fleet.reboot` pass visits every managed Linux Node, one at a time, in risk order: the rollout's groups, then the
  * control path (the `vpn` hub, the Gateway, the Node that serves `swamp.orbit`), then the `swamp` Node itself. Swamp reads
- * `/var/run/reboot-required` on each Node, so a Node that is not due ends `not_due` at once. A task host with running task
- * work, or a Node on operator hold, is read and reported `deferred`; the pass never cuts its work.
+ * `/var/run/reboot-required` on each Node, so a Node that is not due ends `not_due` at once. A Node on operator hold is read
+ * and reported `deferred`; the pass never cuts its work.
  */
 final readonly class FleetReboot
 {
@@ -132,7 +132,7 @@ final readonly class FleetReboot
         return $group;
     }
 
-    /** Why a task host is left out of a pass now, or null: an open task Operation runs on one of its task VMs. */
+    /** Whether an open task Operation runs on one of the Node's task VMs: `tasks_busy`, or null. No admission asks any more; it goes with `TaskVm`. */
     public function busy(Node $node): ?string
     {
         $vms = TaskVm::query()->where('host_node_id', $node->id)->whereNot('state', TaskVmState::Destroyed)->get(['id', 'group_id']);
@@ -141,14 +141,14 @@ final readonly class FleetReboot
             ->where(static fn ($query) => $query->where(static fn ($vm) => $vm->where('target_type', 'task_vm')->whereIn('target_id', $vms->pluck('id')->all()))
                 ->orWhere(static fn ($group) => $group->where('target_type', 'task_group')->whereIn('target_id', $groups))
                 ->orWhere(static fn ($host) => $host->where('node_id', $node->id)->where(static fn ($kind) => $kind->where('kind', 'like', 'tasks.%')
-                    ->orWhere('kind', 'like', 'task_vm.%')->orWhere('kind', 'like', 'proof.%'))))
+                    ->orWhere('kind', 'like', 'proof.%'))))
             ->exists();
 
         return $busy ? 'tasks_busy' : null;
     }
 
     /**
-     * Freezes operator hold ahead of task-busy deferral in the existing defer field; Swamp reads every deferred Node.
+     * Freezes operator hold in the existing defer field; Swamp reads every deferred Node.
      * What Swamp needs to drain, reboot and check one Node.
      *
      * @return array<string, mixed>
@@ -157,19 +157,15 @@ final readonly class FleetReboot
     {
         $ssh = $this->ssh->forNode($node);
         $roles = $this->roles($node);
-        $settings = is_array($node->settings) ? $node->settings : [];
-        $tasks = is_array($settings['task_vms'] ?? null) ? $settings['task_vms'] : null;
-        $taskProject = is_string($tasks['project'] ?? null) && $tasks['project'] !== '' ? $tasks['project'] : null;
         $gateway = in_array(RoleName::Gateway->value, $roles, true) ? self::gatewayUnits($node) : null;
 
         return ['node_id' => $node->id, 'name' => $node->name, 'group' => $this->group($node),
             'host' => $ssh['target']['host'], 'user' => $ssh['target']['user'], 'port' => $ssh['target']['port'],
             'host_keys' => $ssh['target']['host_keys'], 'identity_file' => $ssh['identity_file'],
             'kind' => in_array(RoleName::Swamp->value, $roles, true) ? 'swamp' : (in_array(RoleName::Gateway->value, $roles, true) ? 'gateway' : 'node'),
-            'task_project' => $taskProject,
             'ci_project' => in_array(RoleName::CiRunner->value, $roles, true) ? 'orbit-ci' : null,
             'gateway' => $gateway, 'services' => self::services($node, $roles, $gateway),
-            'defer' => $node->reboot_hold ? 'operator_hold' : ($taskProject !== null ? $this->busy($node) : null)];
+            'defer' => $node->reboot_hold ? 'operator_hold' : null];
     }
 
     /**
