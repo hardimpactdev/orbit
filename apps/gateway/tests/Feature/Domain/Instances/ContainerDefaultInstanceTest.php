@@ -92,7 +92,7 @@ describe('the first default Instance of a Project on a build-list Node', functio
             'mirror' => '/var/lib/orbit/instance-repositories/'.$operation->target_id.'.git', 'repository' => 'https://github.com/nckrtl/tool.git',
             'branch' => 'main', 'commit' => null, 'workspace' => '/srv/workspace', 'environment_file' => '/srv/workspace/.env', 'mail' => null, 'mail_units' => [], 'units' => [],
             'processes' => [],
-            'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin',
+            'environment' => ['HOME=/home/agent', 'USER=agent', 'LOGNAME=agent', 'PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin',
                 'VP_HOME=/var/lib/orbit/vite-plus-home', 'VP_NO_UPDATE_CHECK=1', 'HTTP_PROXY=http://10.253.0.1:3128',
                 'HTTPS_PROXY=http://10.253.0.1:3128', 'NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1', 'http_proxy=http://10.253.0.1:3128',
                 'https_proxy=http://10.253.0.1:3128', 'no_proxy=localhost,127.0.0.1,::1,10.253.0.1', 'NODE_USE_ENV_PROXY=1',

@@ -5,7 +5,8 @@ declare(strict_types=1);
 // Frozen copies of InstanceHostIntent and InstanceContainer from origin/main 77f6bf5c22, before nested-fleet hosting. The identity
 // tests in NestedFleetHostingTest compare today's normal Node and normal Instance intents with these, byte for byte. Only the class
 // names changed, and Pint formatted the result. Do not edit: a change here weakens the proof that a normal Node and a normal Instance stay as they were.
-// One deliberate edit: the task container side lost its CI places (ADR 0260), so its demand counts task places only.
+// Two deliberate edits: the task container side lost its CI places (ADR 0260), so its demand counts task places only; and the deploy
+// commands' environment names `agent`, who runs them (ADR 0266).
 
 namespace App\Domain\Instances;
 
@@ -376,7 +377,7 @@ final readonly class BaselineNormalInstanceContainer
             'workspace' => $workspace, 'environment_file' => $application.'/.env',
             // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first, the Vite+ home and
             // the egress proxy (docs/reference/development-containers.md#egress-and-dns).
-            'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.self::path($project),
+            'environment' => ['HOME=/home/agent', 'USER=agent', 'LOGNAME=agent', 'PATH='.self::path($project),
                 ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment)],
             ...($nodeServices === [] ? [] : ['node_services' => $nodeServices]),
             'mail' => $mail,
