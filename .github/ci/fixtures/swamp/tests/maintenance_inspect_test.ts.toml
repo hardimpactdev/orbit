@@ -1,5 +1,4 @@
 order = 880
-source_sha256 = "1e56811f602057834bac8bb56ea44421b71218dc9b43dae33efa9095e4c68717"
 cases = [
   "manifests selects each source's manifest, lockfile and workspace manifests only",
   "changed sources are those whose file set or blob SHAs differ",

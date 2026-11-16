@@ -1,5 +1,4 @@
 order = 1510
-source_sha256 = "a1b3f16b755f6ccf6ee63430575b6e91f862f9d9406fd3d491fd6da48b5ee9b4"
 cases = [
   "the launch copy is one line under its cap, and Swamp's redactor registers and masks it as a plain string",
   "release 2079's two-part stage copy is what broke 2080: its first redact throws Regular expression too large",

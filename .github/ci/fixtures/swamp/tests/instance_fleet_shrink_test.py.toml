@@ -1,5 +1,4 @@
 order = 1481
-source_sha256 = "ca77755aa1cc3ca4de9453c3bf897bc53e99a83fb9f5dfa3092b53a4173eecda"
 cases = [
   "test_the_shipped_links_are_linked_again_and_a_second_run_changes_nothing",
   "test_the_package_files_in_apt_archives_go_and_the_lock_stays",

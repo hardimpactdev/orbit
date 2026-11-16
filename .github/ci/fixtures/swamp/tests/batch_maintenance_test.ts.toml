@@ -1,5 +1,4 @@
 order = 660
-source_sha256 = "c1dc27313289ae1e21a19cc246e19b10a15011d1a36d67a9dcf3d40b985005c4"
 cases = [
   "planning copy preserves file and directory symlinks without copying untracked targets",
   "planning copy relocates internal absolute symlinks and preserves dangling internal links",

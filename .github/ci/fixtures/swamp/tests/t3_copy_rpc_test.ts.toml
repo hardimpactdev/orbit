@@ -1,5 +1,4 @@
 order = 1450
-source_sha256 = "a756a281511d9fc81962f543cf5b271a3ede1ea9bc3808aea8cfc646003ed3fe"
 cases = [
   "the read prints every pending question in the result step's shape and stops nothing; free text without options is stored whole",
   "the stop ends the run only while it waits for exactly the stored questions",

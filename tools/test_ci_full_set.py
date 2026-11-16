@@ -132,7 +132,7 @@ class PlanningTest(unittest.TestCase):
     def test_changed_registration_population_uses_live_names_and_new_case_estimate(self):
         result = self.plan([{'file': 'swamp/a.ts', 'cost': 25, 'case_costs': {'old': 25}}],
                            {'swamp/a.ts': ['renamed', 'loop 1', 'loop 2']},
-                           {'swamp/a.ts': {'cases': ['old'], 'source_sha256': 'stale'}})
+                           {'swamp/a.ts': {'cases': ['old']}})
         self.assertEqual(['renamed', 'loop 1', 'loop 2'], result['fixtures']['swamp/a.ts']['cases'])
         self.assertEqual({'renamed': 30, 'loop 1': 30, 'loop 2': 30}, result['fixtures']['swamp/a.ts']['case_costs'])
         self.assertNotIn('old', [name for u in result['units'] for name in u['cases']])

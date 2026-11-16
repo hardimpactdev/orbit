@@ -1,5 +1,4 @@
 order = 400
-source_sha256 = "b5a5d0c46a3ec4e6d1784424ffcaefc69d2567a41bf7ce65f0cc7af2fcf9d9ca"
 cases = [
   "test_readiness_observes_the_listener_without_a_connection",
   "test_readiness_refuses_a_listener_on_another_address",

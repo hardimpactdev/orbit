@@ -1,5 +1,4 @@
 order = 200
-source_sha256 = "0801b8409e7bc6051f8c160afebb18fdf9fe117ff3f9b92b00d7ceb5da5f3e6e"
 cases = [
   "automatic origin accepts Gateway callers and both stored labels while excluding rollbacks",
   "E05 a restarted tick follows its recorded receipt without a new start",

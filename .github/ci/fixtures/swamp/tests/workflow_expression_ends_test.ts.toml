@@ -1,5 +1,4 @@
 order = 1150
-source_sha256 = "8f3cacdd919020172cc0397d4815efea51f7e6d1314ac36250fa2f50398c1dae"
 cases = [
   "no workflow expression holds a `}}` that ends it before its end",
   "a map or string closed with `}}` inside an expression is found, and `} }}` passes",

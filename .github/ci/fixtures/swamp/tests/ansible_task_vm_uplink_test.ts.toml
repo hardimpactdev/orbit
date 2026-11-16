@@ -1,5 +1,4 @@
 order = 620
-source_sha256 = "93b7a1fdd9a9709eb26af2077ed01fa2faed90fd8e925f3509ce26f1d693fdae"
 cases = [
   "the uplink file matches any Ethernet link by name and asks DHCP for IPv4",
   "boot waits online for IPv4 only",

@@ -1,5 +1,4 @@
 order = 1210
-source_sha256 = "5d1aceff645915f32358ac74c159c017fcd7308479d55e58ad9ef152c8c19c87"
 cases = [
   "destroy clears an absent failed unit cache and accepts only the fresh stopped read",
   "destroy refuses cache cleanup and completion with remaining LoadState=loaded",

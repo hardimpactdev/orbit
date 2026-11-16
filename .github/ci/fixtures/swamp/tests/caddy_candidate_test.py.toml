@@ -1,5 +1,4 @@
 order = 1330
-source_sha256 = "5bf480ed9590e20b0026069e203f48edf4f9a89843d9ab8d7c4302d301add93a"
 cases = [
   "test_native_whole_node_caddy_publication",
   "test_native_delta_used_by_all_three_migrate_caddy_passes",

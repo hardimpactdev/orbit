@@ -1,5 +1,4 @@
 order = 870
-source_sha256 = "2d8973c8fc1d050818d965df3ffb0e5bafaabba0362dfbd79a4e5be3a167b28c"
 cases = [
   "the completion's jobs and steps sit in the levels the plan names, by the pinned engine's sort",
   "a plain clone, a clone with a database and a nested-fleet clone read only the keys they have",

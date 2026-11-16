@@ -1,7 +1,6 @@
 file = "swamp/tests/task_copy_publish_base_test.py"
 slices = false
 cost = 52
-source_sha256 = "1b35be96ec604bb76142f86422d49b1a7d26ecda29680aef080ab7bc46cbafaf"
 cases = [
   "test_a_branch_level_with_main_is_zero_behind_and_overlaps_nothing",
   "test_a_branch_behind_without_a_shared_path_is_stated_and_publishes",

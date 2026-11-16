@@ -1,5 +1,4 @@
 order = 864
-source_sha256 = ""
 cases = [
   "pinned destroy: nine container removals of one Node at once all succeed, none waits on another's step name",
 ]

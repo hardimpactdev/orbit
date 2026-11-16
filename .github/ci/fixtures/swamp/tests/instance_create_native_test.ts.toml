@@ -1,5 +1,4 @@
 order = 860
-source_sha256 = "8564b0c2f83b8085e6e6c4f8929b3a078c16d6b39a46c181dc3342b48f9f905f"
 cases = [
   "pinned create: a normal clone ends ready at its registration and runs no step of its completion",
   "pinned create: release 2080's two-part stage copy fails the copy step with Regular expression too large; one line passes",

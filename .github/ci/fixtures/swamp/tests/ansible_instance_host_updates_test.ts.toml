@@ -1,5 +1,4 @@
 order = 90
-source_sha256 = "1c8947042a3c0275fbf40f0e64a779b27b5c394613ccab7a4069564065828a9c"
 cases = [
   "a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old",
   "a Squid configuration that does not parse never replaces the live one, and the run fails",

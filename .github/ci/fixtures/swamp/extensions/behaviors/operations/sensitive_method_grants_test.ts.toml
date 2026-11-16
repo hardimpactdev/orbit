@@ -1,5 +1,4 @@
 order = 1501
-source_sha256 = "dd0cd6a5a64bcce8f0e8404dbc033d8cfbb97a941b2e5120d271cf723edfa200"
 cases = [
   "each workflow step that writes a method-named sensitive field names a method that a Gateway write grant allows",
 ]

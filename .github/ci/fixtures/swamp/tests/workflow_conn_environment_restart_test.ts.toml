@@ -1,4 +1,3 @@
-source_sha256 = "7be1e1a2609b1fefca3498c24cc1de946a9a81d84dd58ae9b1ca27c1debc25a9"
 cases = [
   "the restart runs one tagged phase of the shipped playbook between the input and the result, and takes no secret",
   "an idle running T3 restarts once and answers inside the container with the name; the result has the restart time",

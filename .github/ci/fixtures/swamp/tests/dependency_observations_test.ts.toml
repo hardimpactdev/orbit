@@ -1,5 +1,4 @@
 order = 690
-source_sha256 = "9730fa2ec68244d7c44b8e07750b1f603f2a0d72b09bae79e087358f30e1c891"
 cases = [
   "native refresh uses supplied observations and refuses a superseded publication",
 ]

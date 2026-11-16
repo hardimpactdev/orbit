@@ -1,7 +1,6 @@
 file = "swamp/tests/task_instance_workspace_base_cleanup_test.py"
 slices = false
 cost = 42
-source_sha256 = "2bcef30cda6f9702e6083e733893ca4f14c82cdf3a873957abab6b817e7720b4"
 cases = [
   "test_a_failed_fetch_leaves_no_credential_and_no_bundle",
   "test_a_sync_cancelled_during_the_fetch_leaves_no_credential_and_no_bundle",

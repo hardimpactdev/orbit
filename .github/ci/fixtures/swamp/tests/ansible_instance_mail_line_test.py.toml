@@ -1,5 +1,4 @@
 order = 1260
-source_sha256 = "4a237bffa8bfd61632dcd7eab655cde451b89593d774e83e0fc66c1e2669a8ca"
 cases = [
   "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
   "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",

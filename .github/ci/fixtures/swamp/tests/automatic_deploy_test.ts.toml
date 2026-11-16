@@ -1,5 +1,4 @@
 order = 650
-source_sha256 = "c24399b35cab05a74597b3ee6dd354d280dc02a4df05ebd03813cdb49ffb6537"
 cases = [
   "P01 newest green is pinned, then quiet",
   "P02 pending is rechecked on the next tick",

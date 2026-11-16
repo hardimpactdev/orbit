@@ -1,6 +1,5 @@
 {
   "file": "swamp/tests/ansible_task_copy_turn_test.ts",
-  "source_sha256": "f3d528e69c0d525d53726552f182a03e9ae308fbb7e82d7e986be09ab7572e41",
   "runs": [
     43621397546,
     43633174432

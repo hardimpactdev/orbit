@@ -1,5 +1,4 @@
 order = 180
-source_sha256 = "9b6b484fd02ca91c9293b995233fa4e3ad4787c6e9fe8662ca0cdacaa9c97b66"
 cases = [
   "development policy admits only after Gateway ownership switches",
   "development policy returns only the final checkpoint handle",

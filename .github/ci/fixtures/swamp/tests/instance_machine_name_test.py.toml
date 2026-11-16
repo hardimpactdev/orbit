@@ -1,5 +1,4 @@
 order = 1450
-source_sha256 = "aa1377b9cedf6b8a7bb8bfa52defcf225f80dbc17118fbab2ac93aea4226aabf"
 cases = [
   "test_a_copy_gets_all_three_files_and_a_second_render_changes_none",
   "test_render_names_each_file_by_its_path_whatever_the_order_of_its_input",

@@ -1,5 +1,4 @@
 order = 360
-source_sha256 = "462007b92d7835c063c2452f3b84b758ea26bf950c5ef097353284b11de4f7ea"
 cases = [
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config",
   "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker, mirror and task base scratch; a retry changes nothing",

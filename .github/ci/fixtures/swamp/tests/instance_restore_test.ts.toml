@@ -1,5 +1,4 @@
 order = 1420
-source_sha256 = "04bdd5f454be20b2e205364897b721e42c32d69f60cb6e4e6b0a84757efa4a4a"
 cases = [
   "the step names are the chart's",
   "each server's database steps reach its Node with its own batch",

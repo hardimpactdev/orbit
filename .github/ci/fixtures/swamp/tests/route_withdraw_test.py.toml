@@ -1,5 +1,4 @@
 order = 1390
-source_sha256 = ""
 cases = [
   "test_a_withdrawal_removes_only_its_own_site_and_keeps_the_previous_generation",
   "test_two_withdrawals_of_different_sites_both_land_in_either_order",

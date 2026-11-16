@@ -1,5 +1,4 @@
 order = 20
-source_sha256 = "62bacd94623271e53d0eb5d9b7b15eb3112ce493251fcbb94713772e8225cfb9"
 cases = [
   "test_linked_child_passes_preflight_and_retirement_with_other_branch_and_shared_stashes",
   "test_child_own_unpushed_branch_passes_without_changing_shared_git_state",

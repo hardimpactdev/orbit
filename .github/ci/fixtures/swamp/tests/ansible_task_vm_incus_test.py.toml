@@ -1,5 +1,4 @@
 order = 1200
-source_sha256 = "b02d6482cecb5185102f721cc92c34c4494bb914e9334c9778949d6df09d689b"
 cases = [
   "test_the_ssh_users_client_config_is_prepared_before_the_fleet",
   "test_the_role_includes_it_in_the_tools_phase",

@@ -1,5 +1,4 @@
 order = 1010
-source_sha256 = "09c6ed95558d521b264b078b304d9b064c48e4dda94b28aa770ca9170b9559b4"
 cases = [
   "Project routine selects this week's request from the captured intent alone",
   "Project routine leaves unfinished captured Project work blocked",

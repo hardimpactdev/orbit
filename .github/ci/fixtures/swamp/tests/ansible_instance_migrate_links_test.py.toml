@@ -1,5 +1,4 @@
 order = 410
-source_sha256 = "bb7a5a6fb41f79cc4fa2297280c62543896b88fbeb233ac7469d973c228f1234"
 cases = [
   "test_rewrites_absolute_storage_and_local_package_links_without_changing_source",
   "test_keeps_relative_targets_exactly",

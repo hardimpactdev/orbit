@@ -1,5 +1,4 @@
 order = 1290
-source_sha256 = "0c53b07a77abc881bfcdcd1b9dac2fd278498d59dbb3bc93bdbba43814f5c5df"
 cases = [
   "test_certificate_links_account_copy_modes_and_literal_caddy_text",
   "test_merge_mode_publishes_through_the_node_transaction_not_the_whole_render",

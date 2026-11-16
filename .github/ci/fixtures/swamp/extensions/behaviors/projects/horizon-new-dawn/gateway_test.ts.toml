@@ -1,5 +1,4 @@
 order = 230
-source_sha256 = "2c14c1e48e268153f8a24b3a7836ba5cb09876601d75cd46da58c061d2660918"
 cases = [
   "worker admission checks the current enrollment, package repo and merge policy without changing either",
   "configuration and missing-ledger baseline writes conform to declared resource schemas",
