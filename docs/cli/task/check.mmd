@@ -54,7 +54,7 @@ sequenceDiagram
     %%> - only the copy's own workflow changes refuse at publish (`git diff <merge-base>...<commit>`): the default branch's workflow changes that the merge brings in are never the copy's
     %%> - a conflict refuses with `tasks.check_conflict` and `conflicting_paths`, at most 100 in at most 3,000 bytes, and `conflicting_more`, before the long parts run; the workspace is left exactly as it was
     %%> - every refusal comes before the copy changes: the work and merge commits are objects no ref names; a merge that would add a file over an untracked or ignored one fails with `tasks.workspace_phase_failed`; only then the working tree, the index and the branch move
-    %%> - after a merge, file deliverables and `fails_on_base` runs compare with the subtask's start plus the merged head, so main's changes are never the subtask's work
+    %%> - after the merge step succeeds, HEAD holds the default head, whether this check merged it or an earlier check, or a sync and a hand merge, did; file deliverables and `fails_on_base` runs compare with the subtask's start plus that head, so main's changes are never the subtask's work
     %%> - the base-merge, check, commit and commit-ref phases run as the behavior `task-instance-check-NODE-GROUP`, for up to 900 s, 10,800 s, 600 s and 600 s, so the check of another group's copy on this Node never waits for its lock; its short steps keep their Node names
     %%> Refuses:
     %%> - a changed checkout identity or branch: `tasks.workspace_identity_changed`

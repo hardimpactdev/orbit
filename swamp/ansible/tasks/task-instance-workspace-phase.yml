@@ -176,10 +176,11 @@
 
           record('original', 0, text('rev-parse', 'HEAD') + '\n')
           base = check['base']
-          if base != '' and request.get('merged_default', ''):
-              # The handoff merged the default head: the start with that head merged in is the base, so the default branch's
-              # changes are never the subtask's work. A conflict of the two keeps Git's tree, with its markers.
-              merged = subprocess.run(git_argv + ['merge-tree', '--write-tree', '--no-messages', base, request['merged_default']],
+          if base != '' and request.get('default_commit', ''):
+              # HEAD holds the default head after the base-merge, whether this check merged it or it was there already: the start
+              # with that head merged in is the base, so the default branch's changes are never the subtask's work. A conflict of
+              # the two keeps Git's tree, with its markers.
+              merged = subprocess.run(git_argv + ['merge-tree', '--write-tree', '--no-messages', base, request['default_commit']],
                                       capture_output=True, env=env, check=False, timeout=600)
               if merged.returncode not in [0, 1]:
                   refuse('phase_failed')

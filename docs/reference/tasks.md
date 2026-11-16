@@ -1018,7 +1018,7 @@ The merge commit has the parents HEAD, then the head. Its message is `Merge main
 
 The run checks every refusal before it changes the copy. It builds the work commit and the merge commit as objects that no ref names. It refuses when the merge would add a file where an untracked or ignored file lies, because Git would overwrite that file. Only then does it update the working tree, the index and the branch. A hand merge that is resolved but not committed reads as the work alone, so it conflicts again: commit the merge, then check.
 
-After a merge, the check compares file deliverables and `fails_on_base` runs with the subtask's start plus the merged head, not with the bare start. So the default branch's own changes never count as the subtask's work.
+After the merge step succeeds, HEAD holds the default head. The check then compares file deliverables and `fails_on_base` runs with the subtask's start plus that head, not with the bare start. It does so whether this check merged the head or HEAD held it already, from an earlier check or a sync and a hand merge. So the default branch's own changes never count as the subtask's work. A conflict, or a check without a base, keeps the bare start.
 
 A Project without a GitHub repository or a valid default branch brings in no base, and its result names none of these fields.
 

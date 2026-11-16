@@ -102,7 +102,8 @@
     },
     "swamp/tests/task_instance_check_merge_base_test.py": {
       "case_seconds": {
-        "test_after_a_merge_of_main_the_deliverable_diff_is_the_subtasks_own": 5.339
+        "test_after_a_merge_of_main_the_deliverable_diff_is_the_subtasks_own": 6.377,
+        "test_a_recheck_whose_head_already_holds_main_compares_with_the_start_plus_that_head": 11.866
       }
     }
   }

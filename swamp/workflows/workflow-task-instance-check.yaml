@@ -165,8 +165,9 @@ jobs:
           behaviorName: '${{ "ansible-input" }}'
           methodName: write
           inputs:
-            # The default head the merge brought in, or "": the check compares deliverables with the start plus that head.
-            intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "snapshot_id": inputs.intent.workspace.snapshot_id, "operation_id": inputs.operation_id, "ssh_execution": inputs.intent.ssh_execution, "check": inputs.intent, "merged_default": "merged" in steps && "outputs" in steps.merged && "merged_default" in steps.merged.outputs.evidence && steps.merged.outputs.evidence.merged_default != null ? steps.merged.outputs.evidence.merged_default : ""} }}'
+            # The default head that HEAD holds after a base-merge without error, whether this run merged it, an earlier check did or
+            # a task:sync and a hand merge did; "" without a base. The check compares deliverables with the start plus that head.
+            intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "snapshot_id": inputs.intent.workspace.snapshot_id, "operation_id": inputs.operation_id, "ssh_execution": inputs.intent.ssh_execution, "check": inputs.intent, "default_commit": "merged" in steps && "outputs" in steps.merged && "default_commit" in steps.merged.outputs.evidence && !("error_code" in steps.merged.outputs.evidence) ? steps.merged.outputs.evidence.default_commit : ""} }}'
             path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
       - name: Run the check
         labels: {role: swamp}
