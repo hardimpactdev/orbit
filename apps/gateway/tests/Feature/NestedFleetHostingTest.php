@@ -25,6 +25,7 @@ use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -299,6 +300,25 @@ describe('the seed of the proof default on each Node that offers proof places', 
         $default->runtime()->firstOrFail()->update(['seed_commit' => null]);
 
         expect(app(ProofSeeds::class)->targets())->toBe([]);
+    });
+
+    it('starts a copy from the seed of its own Node: the default\'s pair on its Node, the current holder on another, none on an old seed', function (): void {
+        $default = proofSeedDefault();
+        $runtime = $default->runtime()->firstOrFail();
+        $runtime->update(['inner_volume' => 'inner-'.$default->id]);
+        $node = ciNode();
+        $commit = str_repeat('a', 40);
+
+        expect(TaskCopyStart::seed($runtime->refresh(), $default->node()->firstOrFail()))->toBe(['source' => $runtime->container_name,
+            'snapshot' => 'seed-'.$commit, 'seed_commit' => $commit, 'inner_volume' => 'inner-'.$default->id])
+            ->and(placementRefusal(fn () => TaskCopyStart::seed($runtime, $node)))->toBe('tasks.copy_source_unavailable 409');
+
+        ProofSeed::query()->create(['node_id' => $node->id, 'holder' => 'proof-seed-9', 'commit' => $commit, 'taken_at' => '2026-11-16 00:00:00', 'operation_id' => 9]);
+        expect(TaskCopyStart::seed($runtime, $node))->toBe(['source' => 'proof-seed-9', 'snapshot' => 'seed-'.$commit,
+            'seed_commit' => $commit, 'inner_volume' => 'proof-seed-9-inner']);
+
+        $runtime->update(['seed_taken_at' => '2026-11-16 01:00:00']);
+        expect(placementRefusal(fn () => TaskCopyStart::seed($runtime->refresh(), $node)))->toBe('tasks.copy_source_unavailable 409');
     });
 });
 

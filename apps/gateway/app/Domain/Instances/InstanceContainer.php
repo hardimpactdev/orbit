@@ -11,6 +11,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\Tasks\TaskCopyKey;
+use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
@@ -428,6 +429,7 @@ final readonly class InstanceContainer
         $source = $runtime->clone_source_instance_id === null ? null
             : InstanceRuntime::query()->where('instance_id', $runtime->clone_source_instance_id)->firstOrFail();
         $node = Node::query()->findOrFail($runtime->node_id);
+        $seed = $source === null ? null : TaskCopyStart::seed($source, $node);
         // The seed carries the default's proxy bypass: a remote Node service host, or the private name of its websocket app.
         $resetProxy = $source !== null && (InstanceNodeServiceTarget::query()->where('instance_id', $source->instance_id)
             ->where('node_id', '!=', $source->node_id)->exists()
@@ -442,10 +444,11 @@ final readonly class InstanceContainer
 
         return [
             // The default's mirror on the Node holds the seed's commit: a new branch starts there, without the network.
-            ...($source === null ? [] : ['source' => $source->container_name, 'snapshot' => 'seed-'.ValidatedData::string($source->seed_commit),
-                'seed_commit' => ValidatedData::string($source->seed_commit), 'source_mirror' => self::mirror(Instance::query()->findOrFail($source->instance_id)),
-                // The default's inner volume, whose snapshot of the seed's name the copy's own volume starts from.
-                ...($source->inner_volume === null ? [] : ['inner_volume' => $source->inner_volume])]),
+            // The seed of the copy's own Node (TaskCopyStart::seed): the default's pair on its Node, else that Node's seed holder.
+            ...($seed === null ? [] : ['source' => $seed['source'], 'snapshot' => $seed['snapshot'], 'seed_commit' => $seed['seed_commit'],
+                'source_mirror' => self::mirror(Instance::query()->findOrFail($runtime->clone_source_instance_id)),
+                // The seed's inner volume, whose snapshot of the seed's name the copy's own volume starts from.
+                ...($seed['inner_volume'] === null ? [] : ['inner_volume' => $seed['inner_volume']])]),
             // A task copy starts from its start commit alone: the checkout drops the default's modified and untracked files
             // (docs/reference/development-containers.md#a-task-copy-starts-clean). Every other clone keeps the default's tree, and no key.
             ...($source !== null && $instance->task_workspace_owner_id !== null ? ['clean_workspace' => true] : []),
