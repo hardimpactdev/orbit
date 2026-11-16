@@ -133,7 +133,7 @@ Each read and command on the VM is one official `@swamp/ssh exec` argument list;
 
 Early in the workspace run, beside the clone credential, a step asks the Gateway for a read token (`purpose: dependencies`). Two parallel steps write the Composer and npm configuration of the task account from it, right before the first setup command. After the last setup command, on success or failure, two parallel steps remove both files and revoke the token. The revoke step reports the outcome in the receipt as `dependency_token`. A revoke that could not run says so: `The revoke step could not run.` Any other failed revoke says `The revoke request did not complete.`
 
-Each captured Project setup command runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the [proof club credential](/reference/gateway-environment) reaches the VM on SSH stdin of one more exec; no script runs there either.
+Each captured Project setup command runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the proof club credential reached the VM; the Gateway reads that key no more on SSH stdin of one more exec; no script runs there either.
 
 No refresh candidate proof takes a task VM CI place: the refresh is removed. A [`proof:run`](/cli/proof/run#the-run) never takes a VM place: it runs in copies. Task starts never take it, even when it is idle. See [Place task VMs](/reference/compute-drivers#place-task-vms) for the budget units and place numbers.
 
@@ -866,7 +866,7 @@ A guard proxy runs outside the VM, on the Node that holds the real key. It answe
 | Anything else from an admitted source | 401 |
 | Anything from any other source | 403 |
 
-The admitted sources are the task VM WireGuard network (`task_vms.wireguard_range`) and each agent Node that runs a [container model forwarder](/reference/ai-router#container-model-forwarder), where only containers on its bridge reach the guard. So the real key never leaves its Node and the Gateway, and a leaked placeholder is useless outside those sources. Each further key is one more placeholder-to-real pair in a guard.
+The admitted sources are the reserved WireGuard range `10.44.0.128/25`, which the WireGuard address allocator never hands to a Node, and each agent Node that runs a [container model forwarder](/reference/ai-router#container-model-forwarder), where only containers on its bridge reach the guard. So the real key never leaves its Node and the Gateway, and a leaked placeholder is useless outside those sources. Each further key is one more placeholder-to-real pair in a guard.
 
 The one exception is a short-lived minted token that never stays on the VM, such as a GitHub App token that a step mints for one push.
 
@@ -1665,7 +1665,6 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |
 | `ORBIT_TASKS_PR_MODE` | The [mode](#task-group-modes) of a group whose group and Project set none: `review_before_pr` (default) or `pr_when_done`. Any other value is `tasks.pr_mode_setting_invalid` |
-| `ORBIT_PI_PORT` | The port of the removed [Pi server](/reference/old-paths#the-pi-agent-server), default `3774`. No Node service may use it, and the task VM hub rules name it, until the task VM settings go |
 | `TYPESAFE_API_KEY` | The key for Jev calls |
 | `TYPESAFE_URL`, `TYPESAFE_MODEL` | The TypeSafe endpoint, default `https://api.typesafe.ai/v1`, and the classification model, default `jev-latest` |
 

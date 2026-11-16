@@ -15,7 +15,7 @@ covers:
 
 A Node is a machine that the Gateway manages over SSH and reaches over WireGuard. The `node` family adds a machine, converges it again, updates its name, platform and settings, assigns and moves its roles, records which Node may act on which, and removes it.
 
-[Node provisioning](/reference/node-provisioning) explains what add, converge, role changes, and removal do on the machine. [Node settings](/reference/node-settings) owns the apps root and operator-approved task VM host configuration.
+[Node provisioning](/reference/node-provisioning) explains what add, converge, role changes, and removal do on the machine. [Node settings](/reference/node-settings) owns the apps root and the CI places.
 
 [`node:list`](/cli/node/list) reads the recorded Nodes visible to the caller, including their assignment states and Cluster names. List and show use the same assignment fields as `node:role:list`; they do not refresh the machines.
 
@@ -44,7 +44,7 @@ Removing task-host settings or changing the bridge or CIDR withdraws the owned D
 | [`node:list`](/cli/node/list) | List the Nodes and their agent state. |
 | [`node:show`](/cli/node/show) | Show one Node, with agent liveness. |
 | [`node:metrics`](/cli/node/metrics) | Read the latest agent-reported metrics snapshot and recorded agent state, even while the Node is offline. |
-| [`node:update`](/cli/node/update) | Change the name, platform, apps folder, or task VM host settings of a Node. |
+| [`node:update`](/cli/node/update) | Change the name, platform, LAN address, reboot hold, apps folder, or CI places of a Node. |
 | [`node:wireguard-key`](/cli/node/wireguard-key) | Set an unmanaged Node's WireGuard public key and update its hub peer. |
 | [`node:role:add`](/cli/node/role-add) | Add a role, or converge an existing role. |
 | [`node:role:list`](/cli/node/role-list) | List the roles of a Node. |
@@ -60,7 +60,7 @@ Lists use tables. Below the minimum table width, each row becomes a labeled reco
 
 Destructive commands ask for confirmation. The default answer is No. Declining, Ctrl-C, or end of input exits 1 and changes nothing. Without a terminal, and with `--json`, pass `--force`. `--offline` and `--purge-data` never give consent.
 
-Set `task_vms.task_places` and `task_vms.ci_places` through `node:update --task-vms`. Each live VM holds one place in its pool until deletion. See [Task VM fields](/reference/node-settings#task-vm-fields). The optional `task_vms.containers` member adds [task container places](/reference/node-settings#task-container-fields), counted apart from the VM places. A CI Node's [CI places](/reference/node-settings#ci-places) are a separate setting, `node:update --ci-places`. The live fleet sets 0 task places on every host ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)).
+A CI Node's [CI places](/reference/node-settings#ci-places) are set with `node:update --ci-places`. The Node setting `task_vms` and the image refresh hold are gone ([old paths](/reference/old-paths#task-vm-settings)).
 
 ## Repair managed state
 
@@ -100,12 +100,8 @@ The WireGuard hub and private DNS stay on their original Node. `vpn` is protecte
 
 ### One update for a Node's fields
 
-`node:update` is a partial patch: it changes only the fields you name. The name, platform, LAN address, reboot hold, image refresh hold, and task VM host settings are records, so the Gateway saves them at once. Only the apps folder changes the machine, so only it starts a run. Set or clear a [fleet reboot hold](/reference/gateway-recovery#fleet-reboot) with `node:update NODE --reboot-hold=true` or `false`. Set or clear a [task VM image refresh hold](/reference/compute-drivers#refresh-the-base-snapshot) with `--image-refresh-hold` or `--no-image-refresh-hold`. Every Node read shows both holds. One command keeps one place for a Node's fields. A rename does not touch WireGuard: removing and adding the Node again would delete its WireGuard peer and records.
-
-A host with zero task places and positive CI places serves CI proofs and proofs of its refreshed base. Full pools wait for capacity.
+`node:update` is a partial patch: it changes only the fields you name. The name, platform, LAN address, reboot hold and CI places are records, so the Gateway saves them at once. Only the apps folder changes the machine, so only it starts a run. Set or clear a [fleet reboot hold](/reference/gateway-recovery#fleet-reboot) with `node:update NODE --reboot-hold=true` or `false`. Every Node read shows the hold. One command keeps one place for a Node's fields. A rename does not touch WireGuard: removing and adding the Node again would delete its WireGuard peer and records.
 
 Role addition returns one queued Operation for every mutable role. `node:role:add` follows it to completion and prints any follow-up warning. Its Node selector must be a positive numeric ID; names are refused locally. Analytics storage options apply only to `analytics`, including during convergence. Use `--converge` for an eligible existing assignment and `--idempotency-key` to retry the same request. Add and convergence use the shared target access rule, including for `metrics`; Gateway authority or an explicit target grant permits the caller.
-
-Task VM host settings include `pool_size` for a new loop-backed ZFS pool. Existing pools keep their size. See [task VM host settings](/reference/node-settings#configure-a-task-vm-host).
 
 The API-only `nested_fleet` boolean is the Node's nested-fleet hosting switch. It defaults off, and omitted updates preserve it through storage preparation. On a Node of the build list, the next `app-dev` converge with the switch on prepares the nesting-capable Incus project and builds the nested-fleet image. Provision root's subordinate IDs first; [Node settings](/reference/node-settings#nested-fleet-instance-hosting) has the numbers. Only on such a Node does `instance:create` make Instances of a Project with `nested_fleet` on.

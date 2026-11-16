@@ -975,7 +975,7 @@ Removal captures its role publication, private DNS, hub, Router firewall and Met
 
 `orbit node:remove <node> [--offline] [--force] [--idempotency-key=KEY]` records one `node.remove` Operation. The Gateway captures the full public intent, stored WireGuard addresses and full host pins before starting its native Swamp workflow. Every step runs on Node 209. Host effects use official `@swamp/ssh` with the approved 209 identity; removal needs no worker on the departing Node or its participants.
 
-Remove Instances, Database servers, Schedules, Routes and user firewall rules first, including before offline removal. Use `--force` to consent to shedding the Node’s mutable roles. Protected roles stay with their owning lifecycle. The caller, Gateway, VPN and Swamp control Node are protected. Drain a task VM host and clear `settings.task_vms` before removing it. TaskVM guests stay with their owning lifecycle; standalone removal accepts no provider-deletion assertion.
+Remove Instances, Database servers, Schedules, Routes and user firewall rules first, including before offline removal. Use `--force` to consent to shedding the Node’s mutable roles. Protected roles stay with their owning lifecycle. The caller, Gateway, VPN and Swamp control Node are protected. TaskVM guests stay with their owning lifecycle; standalone removal accepts no provider-deletion assertion.
 
 The parent sheds admitted roles through native workflow children, restores public SSH, removes the obsolete worker and observer footprint, revokes the departing worker credentials, and then removes only its admitted management SSH keys. The hub peer withdrawal follows those target-side actions. It retains user data, package managers and unrelated SSH keys.
 

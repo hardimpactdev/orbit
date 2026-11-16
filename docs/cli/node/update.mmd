@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, task-host input withdrawal and apps.path are Node work, one node:update. docs/reference/node-settings.md.
+  %% Target design: ADR 0244 task, apps.path is Node work, one node:update. docs/reference/node-settings.md.
   %% status: draft
   %% command: node:update
   %% kind: node.update
@@ -16,22 +16,20 @@ sequenceDiagram
   CLI->>GW: node:update NODE<br/>--apps-path=PATH
   %%> Command:
   %%> - `orbit node:update NODE --apps-path=PATH`
-  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--reboot-hold=BOOL] [--image-refresh-hold|--no-image-refresh-hold] [--apps-path=PATH] [--task-vms=JSON] [--ci-places=N] [--ci-proof-only|--no-ci-proof-only] [--no-ci] [--json]`
+  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--reboot-hold=BOOL] [--apps-path=PATH] [--ci-places=N] [--ci-proof-only|--no-ci-proof-only] [--no-ci] [--json]`
   %%> Input:
   %%> - the Node, and at least one setting to change
-  %%> - an apps-folder change or withdrawal of existing task-host input rules needs Node work; other changes are records
-  %%> - an empty value unsets a setting: `--lan-ip=` clears the LAN address, `--apps-path=` unsets the folder, `--task-vms=null` removes the task VM host settings, `--no-ci` clears the CI places
+  %%> - an apps-folder change needs Node work; other changes are records
+  %%> - an empty value unsets a setting: `--lan-ip=` clears the LAN address, `--apps-path=` unsets the folder, `--no-ci` clears the CI places
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   %%> - the API-only boolean `nested_fleet` records the Node hosting switch; absence keeps its value, including a combined asynchronous apps update; the next `app-dev` converge of a build-list Node prepares nested-fleet hosting and builds the nested-fleet image while it is on (node-settings reference)
   Note over GW: Validate, lock the Node
   %%> Requirements:
   %%> - the calling Node has an access grant to the target Node
-  %%> - `task_vms.task_places` and `task_vms.ci_places` are separate VM counts from 0 to 64; one live VM holds one place until deletion is confirmed
-  %%> - the optional `task_vms.containers` member has its own `task_places`, counted apart from the VM places, and its own Incus project, bridge and CIDR; it has no CI places
   %%> - only a Node with an active `ci-runner` role takes CI places; `ci.places` from 0 to 64 is shared by runner jobs and proof copies, and `ci.proof_only` keeps them for proof copies; an omitted member keeps its value
-  %%> - lowering either count removes no claim; task work and operator proofs share FIFO task admission, while authenticated CI proofs and base refresh use CI places
   %%> - every value passes the checks that the Node settings reference lists; a failed check changes nothing
+  %%> - the removed members `task_vms` and `image_refresh_hold` are unknown fields: the Gateway refuses them like any other unknown field
   %%> - a LAN address is IPv4 and no other Node of the same network has it (`cluster.lan_ip_conflict`): every Node on the hub's private network, else the Node's Cluster, or every Node outside a Cluster
   %%> - no other lifecycle change runs for the target; the Gateway holds the Node's name lock, and the new name's lock for a rename
   %%> Decides:
@@ -48,26 +46,18 @@ sequenceDiagram
     %% path: settings-refused
     GW--xCLI: Settings refused<br/>node.settings_invalid
     %%> When:
-    %%> - a field fails its check, or a bridge of the host overlaps the VPN subnet, another bridge of the host, or a bridge of another host
-    %%> - `containers` uses the host's VM project or bridge name
+    %%> - a field fails its check, or the body has an unknown member, such as the removed `task_vms` or `image_refresh_hold`
     %%> - a first CI setting has no `places`
     %%> Result:
     %%> - nothing changes and no run starts
-  else task containers still live
-    %% path: runtime-in-use
-    GW--xCLI: Containers in use<br/>task_vm.runtime_in_use
-    %%> When:
-    %%> - the request removes `containers`, or changes its `project`, `network` or `cidr`, while the host has a task container that is not destroyed
-    %%> Result:
-    %%> - nothing changes; change the container side after its containers are released
-  else apps folder changes or a task host bridge goes or moves
+  else apps folder changes
     %% path: node-work
     GW->>SW: Start run, full intent<br/>operation-node-update
     %%> Inputs:
     %%> - the new apps folder, and the managed user and group that must own it
     %%> - the target's address and SSH host keys; the SSH identity comes from the `swamp` role
     %%> Not stored yet:
-    %%> - the settings stay unchanged until the run succeeds; a new name, platform, LAN address, either hold or CI places in the same request are saved at once
+    %%> - the settings stay unchanged until the run succeeds; a new name, platform, LAN address, reboot hold or CI places in the same request are saved at once
     %%> Unsetting on a Node with an active `app-dev` role:
     %%> - prepares the default folder, `<managed-user-home>/apps`
     GW-->>CLI: 202 Accepted<br/>task ID
@@ -75,14 +65,6 @@ sequenceDiagram
     %%> - the task ID, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    opt a task host bridge goes, or its name or CIDR changes
-      %% path: withdraw-input
-      SW->>N: Withdraw task host input<br/>shared Ansible phase
-      %%> What it does:
-      %%> - removes only rules with the three catalog-owned input comments of each bridge that goes or moves, including duplicates and IPv6 rows
-      %%> - the VM bridge's are `orbit:task-vms-*`; the container bridge's, when `containers` goes or its `network` or `cidr` changes, are `orbit:task-containers-*`
-      %%> - reads the firewall again and asserts none remain; failure keeps the stored settings
-    end
     SW->>N: Create the apps folder<br/>@swamp/cfgmgmt/directory apply
     %%> What it does:
     %%> - only when an apps-folder change needs preparation: creates the folder and any missing folders above it
@@ -100,7 +82,7 @@ sequenceDiagram
       %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
       Note over GW: Save the settings
       %%> Result:
-      %%> - the apps folder is set, and any task VM host change in the same request is saved with it
+      %%> - the apps folder is set
       %%> - the task succeeds
     else a step fails
       %% path: run-failed
@@ -124,8 +106,7 @@ sequenceDiagram
     %% path: records
     Note over GW: Save the records
     %%> What it does:
-    %%> - saves the name, platform, LAN address, reboot hold, image refresh hold, task VM host settings or CI places at once when no apps preparation or task-host input withdrawal is needed; no Node is contacted
-    %%> - `--image-refresh-hold` and `--no-image-refresh-hold` store the image refresh hold; every Node read shows it; nothing reads it since the task VM image refresh was removed
+    %%> - saves the name, platform, LAN address, reboot hold or CI places at once when no apps preparation is needed; no Node is contacted
     %%> - `--reboot-hold=true` or `false` saves a boolean column; every Node read shows it; the next fleet reboot admission freezes it
     %%> - a new LAN address takes effect where Orbit next renders it; a Node on the hub's private network moves to the hub's LAN endpoint at its next `node:converge`
     %%> Skipped:

@@ -15,7 +15,7 @@ Check this page before you build on something. Each row is code that still runs,
 | --- | --- | --- |
 | The `instance-create-stage-`, `instance-create-redact-token-` and `instance-create-redact-model-` key prefixes in the create's declared copies, the Gateway grants, the create workflow's input pattern and `ContainerDestroyExecutionCopies` | The one-line launch copy `instance-create-launch-<operation>`; the bare copies are not written | When no Instance created on release 2079 or 2084 is left (the destroy deletes their copies) |
 | The merge-base replay pieces of the [task VM proof run](#the-task-vm-proof-run) | [`proof:run` in copies](/cli/proof/run#the-run), once it replays flagged cases | When the replay is ported to copies |
-| `GatewayRuntimeFiles::RetiredSettings`, the four `ORBIT_TASK_VMS_UPCLOUD_*` keys and `ORBIT_SWAMP_DIRECT_WRITERS` | Nothing: the `gateway` role's convergence removes them from `shared/gateway.env` | When no Gateway has them |
+| `GatewayRuntimeFiles::RetiredSettings`, every `ORBIT_TASK_VMS_*` key, `ORBIT_PI_PORT`, `ORBIT_SWAMP_PROOF_CLUB_API_KEY` and `ORBIT_SWAMP_DIRECT_WRITERS` | Nothing: the `gateway` role's convergence removes them from `shared/gateway.env` | When no Gateway has them |
 | [`instance:migrate`](/cli/instance/migrate), its kind `instance.migrate`, the workflow `operation-instance-migrate` and the playbook `instance-migrate.yml`; and checkout Instances on an `app-dev` Node, with their PHP-FPM pools | Every new Instance is a [container](/reference/development-containers); the command moves each checkout Instance into one | When the last checkout Instance has moved, with the switch of every `app-dev` Node ([PR 16](/solutions/development-container-runtime#pr-16-switch-every-app-dev-node)) |
 | `bin/e2e-topology`, its harness `apps/e2e` and the per-issue topology it composes, with its virtiofs share of the worktree | The nested fleet ([stage 2](/reference/command-development-pipeline#2-development-environment)) | When its harness is removed: no subtask can [declare a topology](/reference/compute-drivers#declare-a-topology) |
 
@@ -65,7 +65,22 @@ No Node enrollment, certificate signing, VPN or worker material and no Process i
 
 The task VM start installs no Pi server any more. Its fetch and checksum steps, the `pi_path` playbook input, the Ansible task file `task-vm-pi.yml`, the Pi line of the role's end check and the Pi unit of the VM identity are deleted.
 
-The machine recipe pins no Pi build: the tool `pi`, its entry in the task VM profile `base` and its catalog line are deleted, so the recipe identity changed. `ORBIT_PI_PORT` stays reserved: a Node service may not use the port, and the task VM hub rules name it, until the task VM settings are removed. The `pi` fields of the task VM settings, the Pi unit check of `tasks.provision` and the Pi firewall rules of the boot phase stay with the task VM runtime.
+The machine recipe pins no Pi build: the tool `pi`, its entry in the task VM profile `base` and its catalog line are deleted, so the recipe identity changed. `ORBIT_PI_PORT` and the `pi` fields of the task VM settings are removed with those settings ([Task VM settings](#task-vm-settings)), so port 3774 is free for a Node service.
+
+### Task VM settings
+
+The task VM settings and the Node setting `task_vms` are removed:
+
+- `config/task_vms.php` and `TaskVmSettings`, with the Pi fields, the Project size lists, the Caddy guard range and the Swamp hostname.
+- Every `ORBIT_TASK_VMS_*` key, `ORBIT_PI_PORT` (`orbit.pi.port`) and `ORBIT_SWAMP_PROOF_CLUB_API_KEY` are in `GatewayRuntimeFiles::RetiredSettings`, so the `gateway` role's convergence removes them from `shared/gateway.env`.
+- Port 3774 is free: [`instance:node-service:attach`](/cli/instance/node-service-attach) accepts it.
+- The Node setting `task_vms` with its `containers` member, and the field `image_refresh_hold`. The API refuses either member as unknown.
+- `node:update` has no `--task-vms` or `--image-refresh-hold` option. Node reads and the SDK return neither field.
+- The firewall catalog's task bridge input rules (`orbit:task-vms-*`, `orbit:task-containers-*`) and the VPN Node's task VM hub rules. The VPN Node's next converge removes its managed UFW rules of the range.
+- The Caddy guard: every route block of every Node Caddyfile loses its `@orbit_task_vms remote_ip` matcher and its `abort @orbit_task_vms` at the Node's next build.
+- The task VM term of a Node's subordinate-ID demand and the task VM deny rule of an Instance container.
+
+The WireGuard range `10.44.0.128/25` stays reserved: the address allocator never hands an address of it to a Node. The columns `nodes.image_refresh_hold`, the stored `settings.task_vms` members, `capacity_wait_reason` and the task VM tables stay, unread, until a later release drops them. No migration runs.
 
 ### What stays
 

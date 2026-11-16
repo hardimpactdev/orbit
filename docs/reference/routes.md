@@ -873,7 +873,7 @@ A configured LAN address is operator intent. A LAN path that fails shows as a vi
 
 ### WireGuard membership is the private trust boundary
 
-Access grants authorize Orbit commands. They do not describe which services Nodes may reach. Applying grants to private traffic would need a per-port authorization model. Limiting private traffic to Route HTTPS would block the general connectivity that trusted Nodes need. So removing a Node from WireGuard revokes its private network trust. [Task VMs](/reference/compute-drivers#limit-fleet-traffic-on-the-hub) are untrusted peers in a reserved range. Their bridge ACL, hub filter, and Caddy guard limit private traffic. The optional Swamp hostname admits one HTTPS site for worker enrollment and execution, without trusting task VMs to reach other private sites.
+Access grants authorize Orbit commands. They do not describe which services Nodes may reach. Applying grants to private traffic would need a per-port authorization model. Limiting private traffic to Route HTTPS would block the general connectivity that trusted Nodes need. So removing a Node from WireGuard revokes its private network trust. [Task VMs](/reference/compute-drivers#limit-fleet-traffic-on-the-hub) are untrusted peers in a reserved range. Their bridge ACL and hub filter limited private traffic; the task VM path and its Caddy guard are removed, and the WireGuard address allocator still keeps the range off every Node.
 
 ### One publication field and Let's Encrypt on public Ingress
 

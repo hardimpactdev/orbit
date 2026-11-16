@@ -30,7 +30,7 @@ The task board, the navigation task count and an Instance's Tasks tab read every
 
 The generated API schema includes `GET /api/v1/tasks/{task}/agents/{session}` and its `TaskAgentSnapshot` response, the [thread read](/reference/tasks#read-a-thread). The task page's Agents section reads the agent stream, not this operation.
 
-The generated Node settings schema includes nullable `task_vms` alongside `apps`. The Node settings PATCH input accepts the typed host object or null, and Node responses expose its stored host configuration. These types describe [operator-owned task VM hosts](/reference/node-settings#configure-a-task-vm-host); they add no web settings editor and do not make an `app-dev` Node a host.
+The generated Node settings schema has no `task_vms` member and the Node schema no `image_refresh_hold`: both are removed ([Node settings](/reference/node-settings)).
 
 The task group schema includes nullable `vm_power`: `running`, `stopped`, or `destroyed`, separately from task status. The Tasks page keeps its status-based grouping and detail view when power is present, null, or omitted. [VM power](/reference/compute-drivers#vm-power) defines the state mapping.
 

@@ -191,7 +191,7 @@ A request field the API validates as a boolean is a JSON `boolean` in `docs/open
 
 The Instance rename body has optional `branch` and `domain` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. The PHP example supplies a branch rather than sending an empty body; that branch must already be checked out on the Node.
 
-The `node:update` body has optional `name`, `platform`, `apps`, and `task_vms` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. It publishes two success responses: HTTP 200 with the Node for a record-only change, and HTTP 202 with the `node.update` operation for an apps folder change.
+The `node:update` body has optional `name`, `platform`, `lan_ip`, `reboot_hold`, `apps`, `ci` and `nested_fleet` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. It publishes two success responses: HTTP 200 with the Node for a record-only change, and HTTP 202 with the `node.update` operation for an apps folder change.
 
 ### External task status inputs
 
