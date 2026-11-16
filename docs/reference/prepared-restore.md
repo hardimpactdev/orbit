@@ -101,7 +101,7 @@ The unit runs as root with only the capabilities the kernel requires:
 - `CAP_SYS_NICE` for `process_madvise`;
 - `CAP_DAC_OVERRIDE` for cgroup files that the container's root owns.
 
-It also has no new privileges, and a read-only system except its folders and the cgroup tree. Only `/var/lib/orbit/hibernation`, `/dev/shm/orbit/hibernation` and `/sys/fs/cgroup` are writable. Each call opens a new connection to the Incus Unix socket.
+It may hold 16,384 open files, two for each of up to 4,096 processes and room for the rest. It also has no new privileges, and a read-only system except its folders and the cgroup tree. Only `/var/lib/orbit/hibernation`, `/dev/shm/orbit/hibernation` and `/sys/fs/cgroup` are writable. Each call opens a new connection to the Incus Unix socket.
 
 **Capabilities.** `capabilities` checks root access to cgroup v2, `/proc/<pid>/maps` and `pagemap`, `pidfd_open`, `process_madvise` and `process_vm_readv`. It checks them against a child process that it starts and then ends. It writes `/var/lib/orbit/hibernation/capabilities.json` (root, `0644`): the helper's version, the plan schema version, the result of each primitive, and the helper's SHA-256. The shared install task runs it when the helper changed or the manifest is missing. Missing capability means `prepare` records no plan (`unsupported`); swap, pause and resume work as before. The convergence output lists each probe's result. The Gateway learns nothing new from the agent: the fast wake checks only that the role installed its units.
 
@@ -126,7 +126,7 @@ The helper keeps its state in fixed folders. Private files belong to root alone;
 
 **Limits record.** `prepare` opens swap with `max` on each cgroup of the container's subtree whose `memory.swap.max` holds `0`. Before the pause, it writes what it opened to `limits.json`: `host_boot_id`, the container's `cgroup_inode`, and `opened: [{relative_cgroup_path, previous_value: "0"}]`. A cgroup with its own limit, such as 32 MiB, stays as it is. A cgroup that vanishes or refuses the write is not opened.
 
-Every resume writes `0` to the container's own cgroup, the value Incus keeps for every running container, and to each inner path of the record that still exists. Then it removes the record. A resume learns inner paths only from `limits.json`; it reads no other record. A nested-fleet Instance frozen before this release has its inner paths only in the old `/dev/shm` record, so the release wakes each such Instance before it deploys.
+Every resume writes `0` to the container's own cgroup, the value Incus keeps for every running container, and to each inner path of the record that still exists. Then it removes the record. A record whose `host_boot_id` or `cgroup_inode` differs from the live one is stale: the resume closes only the container's own cgroup. A sleep that finds a record no resume closed closes it first, so no inner path stays open. A resume learns inner paths only from `limits.json`; it reads no other record. A nested-fleet Instance frozen before this release has its inner paths only in the old `/dev/shm` record, so the release wakes each such Instance before it deploys.
 
 This record is the only one; the plan does not repeat it.
 
@@ -184,7 +184,7 @@ These are global safety bounds, not settings per app. Hitting one abandons the h
 
 | Bound | Value |
 | --- | --- |
-| Extra time for `prepare` | 30 s, from the pause to the published plan |
+| Extra time for `prepare` | 30 s, from the pause to the published plan; checked before each process and each pagemap chunk of 64 Ki pages |
 | Restore | 2 s from the start of `restore`, metadata load included |
 | Worker threads | `min(32, processes with work)` |
 | Processes | 4,096 |
@@ -222,7 +222,7 @@ A capture that is unsupported, too large or too slow leaves no plan. The sleep c
 
 ## Wake
 
-`restore` takes the lock and reads the container's state from Incus. It compares the plan with the live container before any memory syscall: generation, `host_boot_id`, `incarnation`, cgroup device and inode, the init process, and each process's PID and start time.
+`restore` takes the lock and reads the container's state from Incus. It compares the plan with the live container before any memory syscall: the plan's generation with the one `sleep.json` reports, `host_boot_id`, `incarnation`, cgroup device and inode, the init process, and each process's PID and start time.
 
 | Found | Action | `prepared_restore.status` |
 | --- | --- | --- |
@@ -231,11 +231,16 @@ A capture that is unsupported, too large or too slow leaves no plan. The sleep c
 | Running | No restore and no resume; closes any recorded limits | `not_applicable` |
 | Stopped | Discards the plan and the limits record; the caller's existing start path and nested-fleet rule decide | `not_applicable` |
 | Missing, or a different incarnation | Touches nothing; the existing not-found or lifecycle error | none |
+| Any other state, such as `error` or `freezing` | Touches nothing; `outcome: failed`, `instance.container_start_failed`, with the state it found | none |
 
 **Restore.** The helper opens a pidfd for each process and checks the process's identity again. For each process with work, a worker thread does two passes over the process's ranges, in batches of contiguous iovecs:
 
 1. It calls `process_madvise(MADV_WILLNEED)` over all the ranges.
 2. It calls `process_vm_readv`, reading one byte per page into a scratch buffer that it reuses and never inspects.
+
+A range longer than 1 GiB is advised in pieces of at most 1 GiB, so every recorded byte is advised.
+
+**Residual risk.** `process_vm_readv` takes a PID, not a pidfd; Linux has no pidfd form of it. The pidfd check runs just before each call. A process that exits in that gap, followed by a full PID wrap-around to a new process, would get one discarded one-byte read per page of that batch: no write, and nothing kept.
 
 A batch holds up to `min(512, IOV_MAX)` pages of one process and may span its ranges. Before each batch, the worker checks its pidfd and the process's start time, read from a `stat` file that it opened with the pidfd and that stays bound to that process. It stops when the identity changed or the deadline passed. A range that is unmapped or unreadable, a short advice or read, or `ENOMEM` makes the result `partial` and abandons that batch; the worker goes on with safe work.
 
@@ -256,7 +261,7 @@ The worker never retries a range and never follows a replacement process. Advice
 | `stopped` | The sleep took the stop path |
 | `deadline` | The restore passed its 2 s |
 
-`partial` also names the work that was skipped in the receipt: processes that changed, unreadable ranges, short calls and `ENOMEM`.
+The receipt counts each process's outcome (`complete`, `partial`, `skipped`, `failed`) and the pages read. It does not keep the errno of a short call.
 
 **Readiness.** After `restore`, the caller checks readiness with the existing rule: an answer below 500 from the container's web port. The check goes from the Node straight to the address in the target descriptor, not through `incus exec` and `curl`. A container without a web unit gets no HTTP check. The fast worker sends one bounded request. The run keeps its retries and its stop-and-boot fallback, which a nested-fleet Instance never takes. Only after the check passes does the caller remove the asleep marker. `ready_at` is that moment.
 

@@ -209,12 +209,19 @@ def fsync_dir(path):
         os.close(fd)
 
 
+def write_all(fd, data):
+    """os.write may write less than asked: write until every byte is out."""
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view):]
+
+
 def write_file(path, data, mode=0o600):
     """Write a whole file beside its target, fsync it and rename it into place."""
     temporary = f"{path}.tmp-{uuid.uuid4().hex}"
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
     try:
-        os.write(fd, data)
+        write_all(fd, data)
         os.fsync(fd)
     finally:
         os.close(fd)
@@ -299,7 +306,7 @@ _PRESENT = bytes(1 if value & 0x80 else 0 for value in range(256))
 _RUN = re.compile(b"\x01+")
 
 
-def resident_runs(pagemap, start, end, page_size):
+def resident_runs(pagemap, start, end, page_size, deadline=None):
     """Runs (start, length) of present pages in [start, end). Bit 63 of each 8-byte entry is the present bit; its top byte is
     every eighth byte, so a strided slice and one translate find the runs without a loop per page."""
     runs = []
@@ -307,6 +314,8 @@ def resident_runs(pagemap, start, end, page_size):
     pages = (end - start) // page_size
     offset = 0
     while offset < pages:
+        if deadline is not None and time.monotonic() > deadline:
+            raise Bound("prepare_timeout")
         count = min(PAGEMAP_CHUNK, pages - offset)
         try:
             data = os.pread(pagemap, count * 8, (first + offset) * 8)
@@ -341,7 +350,7 @@ def readable_mappings(maps_text):
     return mappings
 
 
-def capture_process(host, pid, page_size):
+def capture_process(host, pid, page_size, deadline):
     """The process's resident readable runs, or None when it exited during the scan."""
     try:
         with open(os.path.join(host.proc, str(pid), "maps")) as handle:
@@ -352,7 +361,7 @@ def capture_process(host, pid, page_size):
     try:
         runs = []
         for start, end in readable_mappings(maps_text):
-            for run in resident_runs(pagemap, start, end, page_size):
+            for run in resident_runs(pagemap, start, end, page_size, deadline):
                 if runs and runs[-1][0] + runs[-1][1] == run[0]:
                     runs[-1] = (runs[-1][0], runs[-1][1] + run[1])
                 else:
@@ -372,7 +381,7 @@ def capture(host, relative, residency_limit, deadline):
         ticks = start_ticks(host, pid)
         if ticks is None or not in_cgroup(host, pid, relative):
             continue
-        runs = capture_process(host, pid, page_size)
+        runs = capture_process(host, pid, page_size, deadline)
         if runs is None or start_ticks(host, pid) != ticks:
             continue
         if not runs:
@@ -408,7 +417,7 @@ def publish_plan(host, instance_id, manifest, ranges_data):
     for name, data in (("ranges.bin", ranges_data), ("manifest.json", json.dumps(manifest, sort_keys=True).encode())):
         fd = os.open(os.path.join(temporary, name), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         try:
-            os.write(fd, data)
+            write_all(fd, data)
             os.fsync(fd)
         finally:
             os.close(fd)
@@ -538,11 +547,18 @@ def open_swap(host, instance_id, relative, boot_id):
 
 def close_swap(host, instance_id, relative):
     """Write 0 to the container's own cgroup and to each recorded inner path that still exists; then remove the record.
-    A vanished cgroup is not a failure. Returns the inner paths it closed."""
+    A record of another boot or another cgroup of the same name is stale: its paths name cgroups that sleep never opened, so only
+    the container's own cgroup is closed. A vanished cgroup is not a failure. Returns the inner paths it closed."""
     record_path = os.path.join(host.instance_dir(instance_id), "limits.json")
     try:
         record = read_json(record_path, MAX_INPUT * 64) or {}
     except (Invalid, ValueError):
+        record = {}
+    try:
+        inode = os.stat(os.path.join(host.cgroups, relative)).st_ino
+    except FileNotFoundError:
+        inode = None
+    if not isinstance(record, dict) or record.get("host_boot_id") != host.boot_id() or record.get("cgroup_inode") != inode:
         record = {}
     inner = []
     for entry in record.get("opened", []) if isinstance(record.get("opened"), list) else []:
@@ -621,13 +637,16 @@ def _advise(host, target, deadline, iov_max):
             complete = False
         return True
 
-    for _, _, start, length in target.ranges:
+    # A range over MAX_ADVISE_BYTES is split into pieces, so every recorded byte is advised.
+    pieces = ((start + at, min(MAX_ADVISE_BYTES, length - at)) for _, _, start, length in target.ranges
+              for at in range(0, length, MAX_ADVISE_BYTES))
+    for start, length in pieces:
         if batch and (len(batch) == iov_max or batch_bytes + length > MAX_ADVISE_BYTES):
             if submit() is None:
                 return None
             batch, batch_bytes = [], 0
-        batch.append((start, min(length, MAX_ADVISE_BYTES)))
-        batch_bytes += min(length, MAX_ADVISE_BYTES)
+        batch.append((start, length))
+        batch_bytes += length
     if batch and submit() is None:
         return None
     return complete
@@ -944,6 +963,10 @@ def prepare(host, instance_id, operation_id, intent):
     remove(os.path.join(base, "plan"))
     remove(os.path.join(base, "sleep.json"))
     write_target(host, instance_id, intent, live["incarnation"])
+    # A running container with a record left open (a resume that never closed it) gets it closed first, so no inner path stays
+    # at `max` once the new record replaces it.
+    if os.path.lexists(os.path.join(base, "limits.json")):
+        close_swap(host, instance_id, relative)
     boot = host.boot_id()
     result["swap_subtree"] = open_swap(host, instance_id, relative, boot)
     started = time.monotonic()
@@ -1030,6 +1053,13 @@ def stale(host, manifest, live, target, relative):
             or not in_cgroup(host, manifest["init_host_pid"], relative))
 
 
+def sleep_generation(host, instance_id):
+    """The plan generation that the last sleep reported in sleep.json, or None."""
+    sleep = read_json(os.path.join(host.instance_dir(instance_id), "sleep.json"), MAX_INPUT * 4)
+    prepared = sleep.get("prepared_restore") if isinstance(sleep, dict) else None
+    return prepared.get("generation") if isinstance(prepared, dict) else None
+
+
 def restore(host, instance_id, operation_id, intent):
     started = time.monotonic()
     deadline = started + RESTORE_SECONDS
@@ -1060,6 +1090,9 @@ def restore(host, instance_id, operation_id, intent):
         remove(os.path.join(base, "sleep.json"))
         return dict(result, outcome="stopped", state_after="stopped",
                     prepared_restore={"version": 1, "status": "not_applicable"})
+    if live["status"] != "frozen":
+        # Freezing, error or any other state: no memory call and no resume; the caller's existing error path decides.
+        return dict(result, outcome="failed", error_code="instance.container_start_failed", state_after=live["status"])
     prepared = None
     try:
         plan = load_plan(host, instance_id)
@@ -1069,9 +1102,9 @@ def restore(host, instance_id, operation_id, intent):
             prepared = skipped("placement_unproven")
         elif not supported(host):
             prepared = skipped("unsupported")
-        elif stale(host, plan[0], live, target, relative):
+        elif stale(host, plan[0], live, target, relative) or plan[0]["generation"] != sleep_generation(host, instance_id):
             prepared = skipped("plan_stale")
-    except (Invalid, ValueError, TypeError, KeyError, struct.error):
+    except Exception:  # noqa: BLE001 - a plan is a hint: one that cannot be read never keeps the container frozen
         prepared = skipped("plan_invalid")
     result["seconds"]["load"] = round(time.monotonic() - started, 3)
     if prepared is None:
@@ -1088,11 +1121,12 @@ def restore(host, instance_id, operation_id, intent):
     if again is None or again["incarnation"] != live["incarnation"]:
         return dict(result, outcome="missing", state_after="missing" if again is None else again["status"])
     resuming = time.monotonic()
-    if again["status"] == "frozen" and not host.incus.change(project, name, "unfreeze", RESUME_SECONDS):
-        after = host.incus.instance(project, name)
-        if after is None or after["status"] != "running":
-            return dict(result, outcome="failed", error_code="instance.container_start_failed",
-                        state_after=after["status"] if after else "missing")
+    if again["status"] == "frozen":
+        host.incus.change(project, name, "unfreeze", RESUME_SECONDS)
+    after = host.incus.instance(project, name)
+    if after is None or after["incarnation"] != live["incarnation"] or after["status"] != "running":
+        return dict(result, outcome="failed", error_code="instance.container_start_failed",
+                    state_after=after["status"] if after else "missing")
     result["seconds"]["resume"] = round(time.monotonic() - resuming, 3)
     closing = time.monotonic()
     result["swap_subtree"] = close_swap(host, instance_id, relative)

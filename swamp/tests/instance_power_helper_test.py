@@ -59,6 +59,21 @@ class CountingKernel(power.Kernel):
         return {pid for _, pid in self.calls}
 
 
+class AdviceKernel(CountingKernel):
+    """process_madvise answers in full or one page short, so both statuses run on every host, whatever its CAP_SYS_NICE."""
+
+    def __init__(self, short):
+        super().__init__()
+        self.short = short
+        self.advised = []
+
+    def process_madvise(self, pidfd, iovecs, count):
+        self.calls.append(("madvise", self.pid_of(pidfd)))
+        lengths = [iovecs[i].length for i in range(count)]
+        self.advised.extend(lengths)
+        return sum(lengths) - (os.sysconf("SC_PAGESIZE") if self.short else 0), 0
+
+
 class FakeIncus:
     def __init__(self, init_pid):
         self.status, self.incarnation, self.init_pid, self.actions = "running", "uuid-1", init_pid, []
@@ -230,6 +245,15 @@ class CaptureTest(Fixture):
         self.assertEqual(self.incus.actions, ["freeze"])
 
 
+class DeadlineTest(Fixture):
+    def test_the_prepare_deadline_is_checked_for_each_pagemap_chunk(self):
+        pagemap = os.open("/proc/self/pagemap", os.O_RDONLY)
+        self.addCleanup(os.close, pagemap)
+        with self.assertRaises(power.Bound) as bound:
+            power.resident_runs(pagemap, 1 << 30, (1 << 30) + (1 << 20), 4096, time.monotonic() - 1)
+        self.assertEqual(bound.exception.reason, "prepare_timeout")
+
+
 class ResidualTest(Fixture):
     def stat(self, anon, file):
         self.write(os.path.join(self.container, "memory.stat"), f"anon {anon}\nfile {file}\nanon_thp 0\n")
@@ -278,6 +302,25 @@ class SwapTest(Fixture):
             self.assertEqual(power.read_value(os.path.join(self.container, path, "memory.swap.max")), value)
         self.assertFalse(os.path.exists(os.path.join(self.state, "instances", str(ID), "limits.json")))
 
+    def test_a_record_of_another_boot_closes_only_the_container_and_an_open_record_is_closed_before_the_next_sleep(self):
+        self.prepare()
+        self.boot("boot-2")
+        self.incus.status = "running"
+        closed = power.close_swap(self.host, ID, RELATIVE)
+        self.assertEqual(closed, [])
+        self.assertEqual(power.read_value(os.path.join(self.container, "app/worker/memory.swap.max")), "max")
+        self.assertEqual(power.read_value(os.path.join(self.container, "memory.swap.max")), "0")
+
+        self.boot("boot-1")
+        self.write(os.path.join(self.container, "app/worker/memory.swap.max"), "0\n")
+        self.prepare(13)
+        # A record that no resume closed, of a container that runs again: the next sleep closes it first, so the path it
+        # opened is recorded again and the next resume closes it.
+        self.incus.status = "running"
+        self.prepare(15)
+        self.restore(16)
+        self.assertEqual(power.read_value(os.path.join(self.container, "app/worker/memory.swap.max")), "0")
+
     def test_an_empty_subtree_opens_only_the_container(self):
         for path in ("init.scope", "app/worker", "app"):
             self.write(os.path.join(self.container, path, "memory.swap.max"), "max\n")
@@ -301,6 +344,73 @@ class RestoreTest(Fixture):
 
     def madvise_works(self):
         return [power.probe(self.host)["process_madvise"]]
+
+    def test_full_advice_and_reads_are_complete_and_short_advice_is_partial_never_complete(self):
+        for short, status in ((False, "complete"), (True, "partial")):
+            with self.subTest(short=short):
+                self.kernel = self.host.kernel = AdviceKernel(short)
+                self.incus.status = "running"
+                self.prepare()
+                result = self.restore()
+                self.assertEqual(result["prepared_restore"]["status"], status)
+                self.assertEqual({call for call, _ in self.kernel.calls}, {"madvise", "readv"})
+
+    def test_another_incarnation_after_the_restore_is_never_unfrozen(self):
+        self.prepare()
+        reads = []
+        original = self.incus.instance
+
+        def instance(project, name):
+            reads.append(name)
+            live = original(project, name)
+            return dict(live, incarnation="uuid-2") if len(reads) > 1 else live
+
+        self.incus.instance = instance
+        result = self.restore(intent=False)
+        self.assertEqual(result["outcome"], "missing")
+        self.assertEqual(self.incus.actions, ["freeze"])
+        self.assertTrue(self.kernel.calls, "the restore ran while frozen; only the unfreeze is refused")
+
+    def test_a_recreated_cgroup_makes_the_plan_stale_without_memory_calls(self):
+        self.prepare()
+        moved = self.container + ".old"
+        os.rename(self.container, moved)
+        shutil.copytree(moved, self.container)
+        result = self.restore()
+        self.assertEqual(result["prepared_restore"], {"version": 1, "status": "skipped", "reason": "plan_stale"})
+        self.assertEqual(self.kernel.calls, [])
+
+    def test_a_plan_of_another_sleep_is_stale(self):
+        self.prepare()
+        path = os.path.join(self.state, "instances", str(ID), "sleep.json")
+        with open(path) as handle:
+            sleep = json.load(handle)
+        sleep["prepared_restore"]["generation"] = "00000000-0000-4000-8000-000000000000"
+        self.write(path, json.dumps(sleep))
+        self.assertEqual(self.restore()["prepared_restore"]["reason"], "plan_stale")
+        self.assertEqual(self.kernel.calls, [])
+
+    def test_a_container_neither_frozen_running_nor_stopped_gets_no_memory_call_and_no_resume(self):
+        self.prepare()
+        self.incus.status = "error"
+        result = self.restore()
+        self.assertEqual((result["outcome"], result["state_after"]), ("failed", "error"))
+        self.assertEqual(self.incus.actions, ["freeze"])
+        self.assertEqual(self.kernel.calls, [])
+        self.assertTrue(os.path.exists(self.plan()))
+
+    def test_advice_splits_a_range_over_one_gib_instead_of_cutting_it(self):
+        kernel = AdviceKernel(False)
+        host = power.Host(proc="/proc", kernel=kernel, incus=self.incus, helper=HELPER)
+        target = power.Target(0, {"host_pid": os.getpid(), "start_ticks": power.start_ticks(host, os.getpid())},
+                              [(0, 0, 1 << 30, (5 << 29) + 4096)])
+        target.pidfd = kernel.pidfd_open(os.getpid())[0]
+        target.stat_fd = os.open("/proc/self/stat", os.O_RDONLY)
+        self.addCleanup(os.close, target.pidfd)
+        self.addCleanup(os.close, target.stat_fd)
+        self.assertIsNotNone(power._advise(host, target, time.monotonic() + 10, kernel.iov_max))
+        self.assertEqual(sum(kernel.advised), (5 << 29) + 4096)
+        self.assertLessEqual(max(kernel.advised), power.MAX_ADVISE_BYTES)
 
     def test_a_changed_start_time_exited_process_or_other_cgroup_gets_no_memory_call(self):
         self.prepare()
@@ -483,6 +593,30 @@ class PlanValidationTest(Fixture):
         result = self.restore()
         self.assertEqual(result["prepared_restore"], {"version": 1, "status": "skipped", "reason": "plan_invalid"})
         self.assertEqual(result["outcome"], "resumed")
+        self.assertEqual(self.kernel.calls, [])
+
+
+    def test_a_plan_that_cannot_be_read_is_invalid_and_the_wake_still_resumes(self):
+        def link():
+            os.unlink(os.path.join(self.plan(), "manifest.json"))
+            os.symlink(os.path.join(self.root, "elsewhere"), os.path.join(self.plan(), "manifest.json"))
+
+        def folder(name):
+            os.unlink(os.path.join(self.plan(), name))
+            os.mkdir(os.path.join(self.plan(), name))
+
+        cases = {"symlinked manifest": link, "manifest is a folder": lambda: folder("manifest.json"),
+                 "ranges is a folder": lambda: folder("ranges.bin"),
+                 "deeply nested manifest": lambda: self.write(os.path.join(self.plan(), "manifest.json"), "[" * 100000)}
+        for name, damage in cases.items():
+            with self.subTest(name):
+                self.incus.status = "running"
+                self.prepare()
+                damage()
+                result = self.restore()
+                self.assertEqual(result["prepared_restore"], {"version": 1, "status": "skipped", "reason": "plan_invalid"})
+                self.assertEqual(result["outcome"], "resumed")
+                self.assertFalse(os.path.lexists(self.plan()), "the unreadable plan is gone, so no later wake trips on it")
         self.assertEqual(self.kernel.calls, [])
 
 
