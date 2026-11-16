@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -172,15 +173,31 @@ class CiRunnerHoldTest(unittest.TestCase):
         self.assertEqual(list(self.services().values()).count('active'), 2)
 
     def test_the_holds_and_the_record_are_readable_by_root_only(self):
+        # The modes do not depend on the caller's umask. A parent that the script makes gets 0755: other Orbit folders live beside
+        # the holds.
+        for umask in (0o077, 0o022, 0o000):
+            with self.subTest(umask=oct(umask)):
+                shutil.rmtree(self.root / 'lib', ignore_errors=True)
+                self.given(**{'ci-a': {}})
+                previous = os.umask(umask)
+                try:
+                    self.call('hold', 'instance-8', '0')
+                finally:
+                    os.umask(previous)
+
+                self.assertEqual(stat.S_IMODE(self.state.parent.stat().st_mode), 0o755)
+                self.assertEqual(stat.S_IMODE(self.state.stat().st_mode), 0o700)
+                self.assertEqual(stat.S_IMODE((self.state / 'holds').stat().st_mode), 0o700)
+                self.assertEqual(stat.S_IMODE((self.state / 'stopped.json').stat().st_mode), 0o600)
+
+    def test_a_parent_that_exists_keeps_its_mode(self):
         self.given(**{'ci-a': {}})
+        self.state.parent.mkdir()
+        self.state.parent.chmod(0o750)
 
         self.call('hold', 'instance-8', '0')
 
-        self.assertEqual(stat.S_IMODE(self.state.stat().st_mode), 0o700)
-        self.assertEqual(stat.S_IMODE((self.state / 'holds').stat().st_mode), 0o700)
-        # A parent that the script had to make keeps the caller's mode: other Orbit folders live beside the holds.
-        self.assertEqual(stat.S_IMODE(self.state.parent.stat().st_mode), 0o755)
-        self.assertEqual(stat.S_IMODE((self.state / 'stopped.json').stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(self.state.parent.stat().st_mode), 0o750)
 
     def test_refuses_a_malformed_call(self):
         self.given()

@@ -121,6 +121,17 @@ def release(copy):
         raise Refusal("orbit-ci-runner-hold: the start of " + ", ".join(failed) + " failed")
 
 
+def make(folder, mode):
+    """Makes `folder` and each missing parent with `mode`; a folder that exists keeps its mode."""
+    missing = []
+    while not folder.is_dir():
+        missing.append(folder)
+        folder = folder.parent
+    for folder in reversed(missing):
+        folder.mkdir(exist_ok=True)
+        folder.chmod(mode)
+
+
 def main(arguments):
     usage = "usage: orbit-ci-runner-hold hold <copy> <places> | release <copy>"
     if len(arguments) not in (2, 3) or not NAME.fullmatch(arguments[1]):
@@ -128,10 +139,11 @@ def main(arguments):
     action, copy = arguments[0], arguments[1]
     if not ((action == "hold" and len(arguments) == 3 and arguments[2].isdigit()) or (action == "release" and len(arguments) == 2)):
         sys.exit(usage)
-    # The parent keeps the Node's usual mode; only the folder of holds is root's alone.
-    STATE.parent.mkdir(parents=True, exist_ok=True)
+    # A parent that this call makes gets the Node's usual mode; only the folder of holds is root's alone. The modes are set
+    # explicitly, so the caller's umask changes neither.
+    make(STATE.parent, 0o755)
+    make(STATE / "holds", 0o700)
     os.umask(0o077)
-    (STATE / "holds").mkdir(parents=True, exist_ok=True)
     with open(STATE / "lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:
