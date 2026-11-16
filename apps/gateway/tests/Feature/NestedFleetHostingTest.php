@@ -16,19 +16,25 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Proof\ProofCopyHosts;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\WebSocketApp;
@@ -141,6 +147,83 @@ describe('the one placement rule', function (): void {
                 'security.nesting' => 'true', 'security.syscalls.intercept.mknod' => 'true', 'security.syscalls.intercept.setxattr' => 'true',
                 'security.idmap.isolated' => 'true', 'security.idmap.size' => '101000000', 'limits.memory' => '12GiB', 'boot.autostart' => 'false',
             ]);
+    });
+});
+
+/** A CI Node: the `ci-runner` role in the given state, `ci.places` CI places, not on the build list and with no `app-dev` role. */
+function ciNode(int $places = 3, LifecycleStatus $status = LifecycleStatus::Active, string $name = 'ci', string $ip = '10.44.0.30'): Node
+{
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => $ip,
+        'public_ssh_host' => $ip, 'user' => 'orbit', 'settings' => ['ci' => ['places' => $places, 'proof_only' => false]],
+    ]));
+    $node->roles()->create(['role' => RoleName::CiRunner, 'status' => $status]);
+
+    return $node->refresh();
+}
+
+/** @return array<string, mixed> */
+function ciRunnerRuntime(Node $node): array
+{
+    $assignment = $node->roles()->where('role', RoleName::CiRunner)->firstOrFail();
+
+    return app(NativeNodeRoleRuntimeInput::class)->capture($node, $assignment, [], new Operation)['intent'];
+}
+
+describe('a CI Node that hosts proof copies', function (): void {
+    it('is a Node with the ci-runner role, a CI place and no app-dev role; a role being added counts, one being removed does not', function (): void {
+        expect(ProofCopyHosts::includes(ciNode()))->toBeTrue()
+            ->and(ProofCopyHosts::includes(ciNode(1, LifecycleStatus::Provisioning, 'ci-new', '10.44.0.31')))->toBeTrue()
+            ->and(ProofCopyHosts::includes(ciNode(1, LifecycleStatus::Failed, 'ci-failed', '10.44.0.32')))->toBeTrue()
+            ->and(ProofCopyHosts::includes(ciNode(3, LifecycleStatus::Removing, 'ci-gone', '10.44.0.33')))->toBeFalse()
+            ->and(ProofCopyHosts::includes(ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34')))->toBeFalse();
+        $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
+        $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        expect(ProofCopyHosts::includes($both))->toBeFalse()
+            ->and(ProofCopyHosts::includes(containerDefaultNode()))->toBeFalse();
+    });
+
+    it('gives its ci-runner converge the container branch with the nested part, the CI demand and no Caddy parts', function (): void {
+        $node = ciNode();
+        app(NodeRoleRuntimeInput::class)->prepare($node, $node->roles()->sole());
+
+        $host = ciRunnerRuntime($node->refresh())['instances'];
+        expect($node->instance_bridge)->toBe('10.253.0.0/24')
+            ->and($host['project'])->toBe('orbit-instances')
+            ->and($host['cidr'])->toBe('10.253.0.0/24')
+            ->and($host['nested']['project'])->toBe('orbit-instances-nested')
+            ->and($host['nested']['image']['alias'])->toStartWith('orbit-instance-nested-')
+            // Three places, the seed holder and the next holder, each of a new nested default's size while the proof Project has none.
+            ->and($host['ids'])->toBe(13_172_736 + 5 * 101_000_000)
+            ->and($host)->not->toHaveKeys(['dev_ports', 'own_site']);
+
+        $project = otherProject('orbit', true);
+        config(['proof.project' => $project->id]);
+        recordedNestedInstance($project, nestedSwitch(containerDefaultNode(), true))->runtime()->firstOrFail()->update(['idmap_size' => 1_165_536]);
+        expect(ciRunnerRuntime($node)['instances']['ids'])->toBe(13_172_736 + 5 * 1_165_536);
+    });
+
+    it('gives the bridge DHCP and the proxy, and no own-site rules', function (): void {
+        $node = ciNode();
+        app(InstanceHostIntent::class)->prepare($node);
+
+        expect(array_map(static fn ($rule): string => $rule->shape->comment, app(NodeFirewallRuleCatalog::class)->instanceHostInput($node->refresh())))
+            ->toBe(array_slice(NodeFirewallRuleCatalog::InstanceInputComments, 0, 2));
+    });
+
+    it('leaves the ci-runner intent of a CI Node without CI places, or with app-dev beside it, as it was', function (): void {
+        $none = ciNode(0);
+        $before = ciRunnerRuntime($none);
+        $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
+        $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        config(['instances.container_nodes' => [$both->id]]);
+        app(NodeRoleRuntimeInput::class)->prepare($none, $none->roles()->sole());
+
+        expect($before)->not->toHaveKey('instances')
+            ->and(ciRunnerRuntime($none))->toBe($before)
+            ->and($none->refresh()->instance_bridge)->toBeNull()
+            ->and(ciRunnerRuntime($both))->not->toHaveKey('instances')
+            ->and(app(InstanceHostIntent::class)->role($both))->toBe(RoleName::AppDev);
     });
 });
 

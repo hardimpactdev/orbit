@@ -1,6 +1,8 @@
 ---
-# The container branch of the app-dev role on a Node of the build list (docs/reference/compute-drivers.md#prepare-an-instance-container-host).
-# The Gateway sends `instances` only for such a Node, so every other Node runs none of this. It shares the kernel, Incus and container
+# The container branch of the app-dev role on a Node of the build list (docs/reference/compute-drivers.md#prepare-an-instance-container-host),
+# and of the ci-runner role on a CI Node that hosts proof copies (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node). The
+# Gateway sends `instances` only for such a Node, so every other Node runs none of this. A CI Node runs no Caddy: its intent has no
+# `dev_ports` and no `own_site`, so it gets no development port redirect, no own-site rules and no wake of frozen containers. It shares the kernel, Incus and container
 # side with a task container host, then installs the two shared folders and builds the image. It creates no Instance.
 # The Node provides the Incus pool: ZFS, where a copy is a clone, or a directory pool on a nested proof Node, where a copy is a full copy.
 - name: Read the Instance pool
@@ -184,12 +186,13 @@
     # Network-only baseline. Endpoint rules are merged below; NICs use the separate proxy ACL.
     container_acl_rules:
       description: Orbit Instance boundary
-      # The model forwarder, the egress proxy, and a container's own site on 443 and the development listener (InstanceOwnSite).
+      # The model forwarder, the egress proxy, and a container's own site on 443 and the development listener (InstanceOwnSite) where
+      # the Node's Caddy serves it.
       egress: &instance_bridge_egress >-
         {{ [{'action': 'allow', 'destination': instances.address.split('/')[0] ~ '/32', 'protocol': 'tcp',
              'destination_port': instances.forwarder_port | string, 'state': 'enabled'},
             {'action': 'allow', 'destination': instances.address.split('/')[0] ~ '/32', 'protocol': 'tcp',
-             'destination_port': instances.egress.port | string, 'state': 'enabled'}] + instances.own_site.acl }}
+             'destination_port': instances.egress.port | string, 'state': 'enabled'}] + (instances.own_site.acl if instances.own_site is defined else []) }}
       # Incus checks the bridge ACL before a container's own, and its default rejects what the Node sends or forwards to the bridge.
       # So it admits what a container's ACL may admit: the Node's Caddy to FrankenPHP and the development ports, and T3's clients.
       ingress: "{{ instances.ingress }}"
@@ -265,6 +268,7 @@
 # WireGuard peers to a free port of the development range on the Node's WireGuard address go to Caddy's development listener, which
 # routes them by host name to the same port in a clone. The table binds nothing, so a port in use on the Node keeps its program.
 - name: Redirect agent development ports to Caddy
+  when: instances.dev_ports is defined
   vars:
     dev_ports_file: /etc/orbit/instance-dev-ports.nft
   block:
@@ -327,7 +331,9 @@
 # wake request in /dev/shm/orbit/hibernation (root:caddy 0755, so only root writes there) starts the fixed script below. It runs as
 # root with no capabilities: the Incus socket and the container's cgroup file belong to root, and `incus-admin` is root's equal.
 # The files only add a unit: a converge that changes them restarts nothing that runs.
+# Only a Node whose Caddy serves the containers' own sites puts a container to sleep and wakes it.
 - name: Install the wake of frozen Instance containers
+  when: instances.own_site is defined
   block:
     - name: Make the folder of the wake script
       ansible.builtin.file: { path: /usr/local/libexec, state: directory, owner: root, group: root, mode: "0755" }
@@ -388,6 +394,7 @@
 # listener in from the bridge to its gateway address, where the table above sends the development range. Caddy admits only the
 # container that a site belongs to.
 - name: Admit the containers to their own sites
+  when: instances.own_site is defined
   community.general.ufw:
     rule: "{{ item.action }}"
     interface_in: "{{ item.in_interface }}"

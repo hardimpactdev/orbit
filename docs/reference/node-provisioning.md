@@ -254,7 +254,7 @@ Verify each Node with `orbit doctor --node=<numeric-node-id>`. For a failed role
 
 This part is the target design of ADR 0260, build steps 3 and 4.
 
-A CI Node hosts [proof](/cli/proof/run) copies when it has an active `ci-runner` role, at least one CI place, and no `app-dev` role. This is the one rule; the other pages link here. A proof copy takes one CI place. The CI places are the Node's count from ADR 0260.
+A CI Node hosts [proof](/cli/proof/run) copies when it has the `ci-runner` role, at least one CI place, and no `app-dev` role. A `ci-runner` role that is being added or converged counts, so its own converge prepares the Node. A role that is being removed does not count. This is the one rule (`ProofCopyHosts`); the other pages link here. A proof copy takes one CI place. The CI places are the Node's count from ADR 0260.
 
 A Node that also has `app-dev` is not such a CI Node. It hosts Instances through its `app-dev` role, and ADR 0260 build step 5 decides whether its CI places take proof copies. Orbit never adds `app-dev` to a CI Node to host proof copies.
 

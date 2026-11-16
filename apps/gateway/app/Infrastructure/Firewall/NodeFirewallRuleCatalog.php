@@ -11,7 +11,6 @@ use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressPolicy;
-use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceOwnSite;
@@ -39,22 +38,24 @@ final readonly class NodeFirewallRuleCatalog
 
     /**
      * DHCP, the egress proxy and a container's own site for the Instance bridge of a Node on the build list, and no DNS: the proxy
-     * resolves every name (docs/reference/development-containers.md#egress-and-dns, #the-own-site-from-inside).
+     * resolves every name (docs/reference/development-containers.md#egress-and-dns, #the-own-site-from-inside). A CI Node that hosts
+     * proof copies gets DHCP and the proxy only: it runs no Caddy, so a container there has no own site.
      */
     public const array InstanceInputComments = ['orbit:instances-dhcp', InstanceEgress::Comment, ...InstanceOwnSite::Ports];
 
     /** @return list<UfwManagedRule> */
     public function instanceHostInput(Node $node): array
     {
-        if ($node->instance_bridge === null || ! app(ContainerNodes::class)->includes($node)) {
+        $role = $node->instance_bridge === null ? null : app(InstanceHostIntent::class)->role($node);
+        if ($role === null) {
             return [];
         }
-        [$gateway] = Ipv4Subnet::from($node->instance_bridge)->usableRange();
+        [$gateway] = Ipv4Subnet::from((string) $node->instance_bridge)->usableRange();
 
         return [
             $this->dhcpInput(InstanceHostIntent::Network, self::InstanceInputComments[0]),
             InstanceEgress::rule(InstanceHostIntent::Network, $gateway),
-            ...InstanceOwnSite::rules($gateway),
+            ...($role === RoleName::AppDev ? InstanceOwnSite::rules($gateway) : []),
         ];
     }
 

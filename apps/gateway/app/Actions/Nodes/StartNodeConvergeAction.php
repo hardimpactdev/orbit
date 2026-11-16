@@ -10,7 +10,6 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeConvergeScope;
 use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeNetworkReservation;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -40,8 +39,10 @@ final readonly class StartNodeConvergeAction
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
                 'operator', $requestId, lockKey: OperationStore::lockKey('node', $node->id));
             if ($operation->wasRecentlyCreated) {
-                // The one write before the capture: a build-list app-dev Node gets its Instance bridge here, never in the capture.
-                if (in_array(RoleName::AppDev->value, $selected, true)) {
+                // The one write before the capture: the role that runs the Instance container branch on the Node, `app-dev` on a
+                // build-list Node or `ci-runner` on a CI Node that hosts proof copies, gets its Instance bridge here, never in the capture.
+                $host = app(InstanceHostIntent::class)->role($node);
+                if ($host !== null && in_array($host->value, $selected, true)) {
                     app(InstanceHostIntent::class)->prepare($node);
                 }
                 $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $hub);

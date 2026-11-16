@@ -88,7 +88,8 @@
   register: runtime_units
   notify: Reload units
 - { name: Reload units before services start, ansible.builtin.meta: flush_handlers }
-# Only the intent of an app-dev Node on the build list has `instances` (docs/reference/development-containers.md#the-build-list).
+# Only the intent of an app-dev Node on the build list, or of the ci-runner role on a CI Node that hosts proof copies, has `instances`
+# (docs/reference/development-containers.md#the-build-list, docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
 - name: Prepare the Instance container host
   when: rt.instances is defined
   ansible.builtin.include_tasks: instance-host.yml

@@ -57,8 +57,10 @@ final readonly class NativeNodeRoleRuntimeInput
             $runtime['files'][] = ['path' => '/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf',
                 'ensure' => 'absent', 'content' => '', 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
         }
-        // Only a Node on the build list gets the key, so the intent of every other app-dev Node stays as it was.
-        $instances = $assignment->role === RoleName::AppDev ? app(InstanceHostIntent::class)->for($node) : null;
+        // Only the role that runs the branch on the Node gets the key: `app-dev` on a build-list Node, `ci-runner` on a CI Node that
+        // hosts proof copies. So the intent of every other Node and role stays as it was.
+        $hosts = app(InstanceHostIntent::class);
+        $instances = $hosts->role($node) === $assignment->role ? $hosts->for($node) : null;
         if ($instances !== null) {
             $runtime['instances'] = $instances;
         }
