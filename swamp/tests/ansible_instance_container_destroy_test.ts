@@ -574,6 +574,20 @@ Deno.test({
                 assertEquals(changes(), [], String(status));
                 assert(/node\s*:.*changed=0/.test(done.output), done.output);
             }
+            // A failed stop keeps the end of its stderr in whole lines: the cut drops the partial line, which could be half a secret.
+            container("instance-7", "Running");
+            const lines = Array.from({ length: 120 }, (_, i) => `line ${i} https://deploy:secret-${i}@git.example.test/x.git`);
+            const failing = JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
+            Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({ ...failing, stop_stderr: lines.join("\n") }));
+            done = run();
+            assert(!done.ok, done.output);
+            const refusal = JSON.parse(Deno.readTextFileSync(`${folder}/run/remove.json`));
+            const head = "Stop the container: non-zero return code: ";
+            assertEquals(refusal.error_code, "instance.removal_incomplete");
+            assert(refusal.detail.startsWith(head) && refusal.detail.length <= 1800, refusal.detail);
+            const kept = refusal.detail.slice(head.length).split("\n");
+            assertEquals(kept, lines.slice(lines.length - kept.length));
+            assert(kept.length > 1 && kept.length < lines.length, String(kept.length));
         } finally {
             Deno.removeSync(folder, { recursive: true });
         }

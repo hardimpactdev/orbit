@@ -251,7 +251,7 @@
               {{ {'error_code': ansible_failed_result.msg
                    if ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$')
                    else ('instance.teardown_step_failed' if phase == 'teardown' else 'instance.removal_incomplete'),
-                  'detail': (failure_head ~ ((': ' ~ failure_stderr[-(1800 - failure_head | length):]) if failure_stderr != '' else ''))[:1800]}
+                  'detail': (failure_head ~ ((': ' ~ failure_tail) if failure_tail != '' else ''))[:1800]}
                  | to_json }}
             dest: "{{ run }}/remove.json"
             mode: "0600"
@@ -263,9 +263,18 @@
             failure_head: >-
               {{ (ansible_failed_task.name | default('A removal task')) ~ ': '
                  ~ (ansible_failed_result.msg | default('The task failed.') | string | trim) }}
+            # A real newline: this Jinja keeps '\n' in a string literal as two characters.
+            failure_newline: "\n"
             # A loop's failure keeps its stderr per item. ASCII only, so the JSON stays as long as its characters.
             failure_stderr: >-
               {{ (ansible_failed_result.stderr | default(ansible_failed_result.results | default([]) | selectattr('failed', 'defined')
-                 | selectattr('failed') | map(attribute='stderr', default='') | join('\n')) | string | trim) | regex_replace('[^\x00-\x7f]', '?') }}
+                 | selectattr('failed') | map(attribute='stderr', default='') | join(failure_newline)) | string | trim)
+                 | regex_replace('[^\x00-\x7f]', '?') }}
+            failure_room: "{{ [1798 - (failure_head | length), 0] | max }}"
+            # A cut keeps whole lines only: the kept end loses its text up to the first newline, so no half line, such as a cut
+            # secret, escapes the Gateway's redaction.
+            failure_tail: >-
+              {{ failure_stderr if failure_stderr | length <= failure_room | int
+                 else ((failure_stderr[-(failure_room | int):] if failure_room | int > 0 else '').partition(failure_newline)[2]) }}
         - name: Fail the phase
           ansible.builtin.fail: { msg: "{{ ansible_failed_result.msg | default('Container removal failed.') }}" }

@@ -269,6 +269,11 @@ if (family === "list") {
     Deno.exit(0);
   }
   if (family === "stop" && state.stop_fails) fail("Failed shutting down instance");
+  // A stop that fails with the given stderr, such as a long one with many lines.
+  if (family === "stop" && typeof state.stop_stderr === "string") {
+    console.error(state.stop_stderr);
+    Deno.exit(1);
+  }
   if (state.containers[name].status === "Frozen" && !args.includes("--force")) fail("Failed shutting down instance, status is \"Running\"");
   // A boot brings a web unit back that stayed silent after a resume.
   if (family === "start") delete state.containers[name].silent_until_boot;
