@@ -99,7 +99,7 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | Main delivery checks | On main, require the selected jobs and fixture shards with the same capacity and result rules as PRs; a verified tree receipt reuses its passed fixtures. Main runs no proof |
 | Main fixture report | After selected main fixtures finish, report failure, cancellation or capacity to the CI summary and the causal merged PR; report publication never gates delivery |
 
-`Main delivery checks` depends exactly on `php`, `gateway-static`, `gateway-tests`, `cli`, `cli-static`, `cli-tests`, `sdk-static`, `sdk-tests`, `e2e-static`, `docs`, `api-reference`, `web`, `agent`, `proof`, `gateway-release`, `changes`, `swamp` and `fixtures`. These are the existing builds, Pest suites, static checks, contracts and selected fixture shards. It adds no test or build. `Start the CLI release` depends on this result.
+`Main delivery checks` depends exactly on `php`, `gateway-static`, `gateway-tests`, `cli`, `cli-static`, `cli-tests`, `sdk-static`, `sdk-tests`, `e2e-static`, `docs`, `api-reference`, `web`, `agent`, `proof`, `gateway-release`, `changes`, `swamp`, `fixtures` and `self-hosted-fixtures`. `Required checks` depends on the same jobs. These are the existing builds, Pest suites, static checks, contracts and selected fixture shards, hosted and self-hosted. It adds no test or build. `Start the CLI release` depends on this result.
 
 The release resolver verifies a successful delivery job on the exact SHA in this repository's `ci.yml` main push or manual run; it accepts neither a PR check with the same name nor a commit status. The run may still be running or finish red because publishing the fixture report failed; a failed selected fixture blocks delivery. Old commits without this result cannot be backfilled.
 
@@ -173,7 +173,7 @@ No registry entry keeps a fixture or a case out of pull requests: the metadata k
 
 ### Self-hosted fixture shards
 
-A fixture file whose metadata sets `self_hosted = true` runs only on the self-hosted CI pool. These are the 23 files that the registry kept out of pull requests before ADR 0262. The planner puts their units in their own shard jobs, `Self-hosted fixtures (N)`. These jobs use only the shared runner labels `self-hosted`, `hardimpact` and `orbit-shard`, as every CI runner does. A hosted shard never runs such a unit, and a self-hosted shard runs no other unit. The quick checks of the public repository stay on hosted runners.
+A fixture file whose metadata sets `self_hosted = true` runs only on the self-hosted CI pool. These are the files that came from the after-merge set: the registry kept them out of pull requests before ADR 0262. The planner puts their units in their own shard jobs, `Self-hosted fixtures (N)`. These jobs use only the shared runner labels `self-hosted`, `hardimpact` and `orbit-shard`, as every CI runner does. A hosted shard never runs such a unit, and a self-hosted shard runs no other unit. The quick checks of the public repository stay on hosted runners.
 
 The self-hosted shard jobs run only for a pull request whose head repository is the base repository: a branch of `hardimpactdev/orbit`. The job condition states this in full: the event is `pull_request` and `github.event.pull_request.head.repo.full_name == github.repository`. No other event and no fork starts them.
 

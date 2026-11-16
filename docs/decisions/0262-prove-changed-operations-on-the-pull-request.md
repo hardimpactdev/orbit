@@ -70,6 +70,8 @@ The quick checks of a public repository run on GitHub-hosted runners, as today. 
    - `swamp/tests/ansible_instance_container_test.ts`: 8284 declared seconds with startup, about 14 shards, and three cases above the 150-second lane: each runs two or more converges that need a saved state boundary before they can split.
 
    Every phase of a move runs the shared task files `instance-migrate-phase.yml` and `instance-container-phase.yml`, so inputs per task file cannot narrow the move files further. The split by phase shrinks each gap; a file leaves the list when every selection of it fits. The CI runner setup supplies the tools these files need ([Self-hosted fixture shards](/reference/implementation-loop#self-hosted-fixture-shards)). Step 3 then retires them with the other fixtures.
+
+   Follow-up: once this step merges, remove `after_merge`, `after_merge_cases` and `reason` from the scheduling keys in `bin/ci-units`. The step's own pull request still needs them: they make its removal of those keys from the registry a scheduling edit.
 3. Retire the fixtures, file by file: move each realistic uncovered case into a proof case, then delete the file and its registration.
 4. Absorb this ADR into [Implementation loop](/reference/implementation-loop#ci) and the proof pages.
 

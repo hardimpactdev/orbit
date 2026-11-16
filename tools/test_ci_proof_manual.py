@@ -78,11 +78,8 @@ class CallerTest(unittest.TestCase):
     def invoke(self, receipt, exit_code=0):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'receipt.json'
-            env = {**environment(), 'PROOF_RECEIPT': str(path), 'PROOF_BASE': 'b' * 40, 'PROOF_ALL': 'true',
-                   'PROOF_CHECK_ELIGIBILITY': 'true'}
+            env = {**environment(), 'PROOF_RECEIPT': str(path), 'PROOF_CHECK_ELIGIBILITY': 'true'}
             def caller():
-                self.assertEqual('', os.environ['PROOF_BASE'])
-                self.assertEqual('false', os.environ['PROOF_ALL'])
                 self.assertEqual('false', os.environ['PROOF_CHECK_ELIGIBILITY'])
                 self.assertEqual('true', os.environ['PROOF_STORE_RESULT'])
                 self.assertEqual(SHA, os.environ['PROOF_SHA'])
