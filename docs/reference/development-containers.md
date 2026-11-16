@@ -2,10 +2,10 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
+  - apps/gateway/app/{Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
-  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
+  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,24_000000_create_proof_seeds}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
@@ -2710,7 +2710,7 @@ Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each
 
 #### The seed on each CI Node
 
-This is the target design of ADR 0260, build step 4.
+This is the target design of ADR 0260, build step 4. Built: the Gateway records each Node's seed, finds the Nodes that are behind, and starts a copy on a Node from that Node's current seed. Not built yet: the `instance.seed_copy` run and its triggers.
 
 Each Node that [offers proof places](/reference/node-provisioning#proof-copies-on-a-ci-node), other than the default's own Node, keeps its own seed of the proof Project's default: a copy of the default's [seed pair](#the-seed-pair) on the Node. A proof copy on that Node starts from it. The default's Node holds the seed itself, and a copy there clones the default, as before. In this section a CI Node is such a Node. No copy fetches a seed over the network when it starts.
 
@@ -2722,7 +2722,7 @@ The Gateway copies the seed with one Operation, `instance.seed_copy`. Its target
 
 So a seed that moved during a copy reaches every Node. A Node that failed waits for the next trigger.
 
-A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The Gateway records the seed of each CI Node: its holder, its commit and that time.
+A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The default's runtime records both (`seed_commit`, `seed_taken_at`). The Gateway records the seed of each CI Node in `proof_seeds`: its holder, its commit and that time (`ProofSeeds`).
 
 The copy is incremental. The seed stream passes through the Swamp worker, which is on another host than the CI Nodes and is short of CPU, and a full seed pair is large. So each CI Node keeps the last seed it received as the base of the next one, and the copy sends only the change since that base (`zfs send -i`). A full send happens only when the Node has no common seed with the default: the Node's first seed, or after a failure that lost the base.
 
@@ -2751,7 +2751,9 @@ Each target's step may fail alone. A failed step deletes what it made on that No
 
 Before it makes the new holder, the step deletes every holder on the Node that is neither recorded nor its own. So the old holder goes only at the next copy, after the Gateway has checked and recorded the new one. Until then, the old holder's snapshot stays. If the new holder fails, the old one is still the base of the next copy. A run that stopped halfway leaves nothing that a later run does not remove. ZFS keeps the blocks that a newer holder or a proof copy still shares with a deleted holder.
 
-A proof copy on a CI Node is a clone with the same [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd). Its intent names the Node's recorded holder and its volume as the source, in place of the default's container and volume. The fleet start, the Club key and the [reset](#reset) are the same as for a copy on the default's Node. The copy takes the default's [ID map size](#the-id-map-size). The holder does not need to run, as the default does not need to run for a copy on its own Node.
+A proof copy on a CI Node is a clone with the same [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd). Its intent names the Node's recorded holder and its volume as the source, in place of the default's container and volume (`TaskCopyStart::seed`).
+
+A copy on a Node whose seed is not the default's current seed is refused with `tasks.copy_source_unavailable`. Until ADR 0260 build step 5, every copy still goes to the default's Node and clones the default. The fleet start, the Club key and the [reset](#reset) are the same as for a copy on the default's Node. The copy takes the default's [ID map size](#the-id-map-size). The holder does not need to run, as the default does not need to run for a copy on its own Node.
 
 Why a copy of the seed, once per seed and Node:
 
@@ -2956,6 +2958,7 @@ Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each contai
 | `clone_source_instance_id` | The default Instance it was cloned from. Null for the default Instance and for a migrated checkout |
 | `power_state` | `running` or `stopped`. A sleeping container is stopped. The terminal results of create, deploy, migrate, sleep and wake write it |
 | `seed_commit` | A default Instance's commit of its newest `seed-<commit>` snapshot, which clones copy. Null before its first seed |
+| `seed_taken_at` | When the default took that seed. With `seed_commit` it names one seed, because a retake at the same commit keeps the name |
 | `agent_key_hash` | The SHA-256 hash of a task copy's [copy key](#the-copy-key). Null for every other container, and for a task copy made before the copy key existed |
 
 The database keeps these rules:

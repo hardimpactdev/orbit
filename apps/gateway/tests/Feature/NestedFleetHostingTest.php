@@ -16,11 +16,13 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Proof\ProofCopyHosts;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
@@ -36,6 +38,7 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\ProofSeed;
 use App\Models\Schedule;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketAppTarget;
@@ -252,6 +255,51 @@ describe('a CI Node that hosts proof copies', function (): void {
         $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
         expect(placementRefusal(fn () => InstancePlacement::assert($project, $both)))->not->toBe('instance.node_ci_only 409');
     })->with([false, true]);
+});
+
+/** The proof Project's nested default on the build-list Node, active with a seed taken at the given time. */
+function proofSeedDefault(string $takenAt = '2026-11-16 00:00:00'): Instance
+{
+    $project = otherProject('orbit', true);
+    config(['proof.project' => $project->id]);
+    $default = recordedNestedInstance($project, nestedSwitch(containerDefaultNode(), true));
+    $default->update(['status' => InstanceState::Active]);
+    $default->runtime()->firstOrFail()->update(['seed_commit' => str_repeat('a', 40), 'seed_taken_at' => $takenAt]);
+
+    return $default->refresh();
+}
+
+describe('the seed of the proof default on each Node that offers proof places', function (): void {
+    it('targets each other Node that offers proof places and is behind the default\'s current seed, never the default\'s Node', function (): void {
+        $default = proofSeedDefault();
+        $defaultNode = $default->node()->firstOrFail();
+        $defaultNode->update(['settings' => [...$defaultNode->settings, 'ci' => ['places' => 2, 'proof_only' => false]]]);
+        $defaultNode->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+        $behind = ciNode();
+        $both = ciNode(2, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
+        $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        $current = ciNode(2, LifecycleStatus::Active, 'ci-now', '10.44.0.36');
+        ProofSeed::query()->create(['node_id' => $current->id, 'holder' => 'proof-seed-7', 'commit' => str_repeat('a', 40),
+            'taken_at' => '2026-11-16 00:00:00', 'operation_id' => 7]);
+        // A retake at the same commit is a new seed: the time differs.
+        $retaken = ciNode(2, LifecycleStatus::Active, 'ci-old', '10.44.0.37');
+        ProofSeed::query()->create(['node_id' => $retaken->id, 'holder' => 'proof-seed-6', 'commit' => str_repeat('a', 40),
+            'taken_at' => '2026-11-15 00:00:00', 'operation_id' => 6]);
+        ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34');
+
+        expect(array_map(static fn (Node $node): string => $node->name, app(ProofSeeds::class)->targets()))->toBe(['ci', 'ci-app', 'ci-old'])
+            ->and(app(ProofSeeds::class)->holder($current)?->holder)->toBe('proof-seed-7')
+            ->and(app(ProofSeeds::class)->holder($retaken))->toBeNull()
+            ->and(app(ProofSeeds::class)->holder($behind))->toBeNull();
+    });
+
+    it('has no targets while the proof default has no seed', function (): void {
+        $default = proofSeedDefault();
+        ciNode();
+        $default->runtime()->firstOrFail()->update(['seed_commit' => null]);
+
+        expect(app(ProofSeeds::class)->targets())->toBe([]);
+    });
 });
 
 describe('the recorded Incus project', function (): void {
