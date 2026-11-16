@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\CiRunnerStateFiles;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\GatewayPrivateDnsState;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
@@ -270,6 +271,26 @@ it('records the seed listener of a ci-runner converge by the one rule of ProofSe
     'a passed run with a sender and no record' => [['sender'], null, null, false],
     'a run whose roles phase failed' => [['sender'], 0, 'roles', false],
     'a run that failed after its roles phase' => [['sender'], 0, 'network', true],
+]);
+
+it('keeps the hold script record of a ci-runner node:converge only when it is the script of the converge', function (?string $recorded, ?string $failure, bool $kept): void {
+    // docs/reference/node-provisioning.md#proof-places-on-a-ci-node: only a ci-runner add or role converge sets the record.
+    $script = CiRunnerStateFiles::holdScript();
+    $digest = $recorded === 'this' ? hash('sha256', $script) : ($recorded === null ? null : hash('sha256', $recorded));
+    Node::query()->whereKey($this->node->id)->update(['ci_hold_digest' => $digest]);
+    $input = $this->operation->input;
+    $input['_converge']['intent'] = ['tools' => [], 'roles' => [['role' => RoleName::CiRunner->value, 'runtime' => ['proof_seed' => ['present' => false, 'sender' => null],
+        'files' => [['path' => CiRunnerStateFiles::Hold, 'content' => $script]]]]]];
+    $this->operation->update(['input' => $input]);
+
+    app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => $failure === null ? 'succeeded' : 'failed', 'result' => converge_receipt($failure)]);
+
+    expect($this->node->refresh()->ci_hold_digest)->toBe($kept ? $digest : null);
+})->with([
+    'a passed run with the recorded script' => ['this', null, true],
+    'a passed run with another script than the recorded one' => ['an older hold script', null, false],
+    'a passed run and no record' => [null, null, false],
+    'a run whose roles phase failed' => ['this', 'roles', false],
 ]);
 
 it('clears the seed listener record of a ci-runner converge whose result is refused', function (): void {

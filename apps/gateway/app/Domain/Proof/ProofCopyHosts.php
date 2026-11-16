@@ -8,6 +8,7 @@ use App\Data\Nodes\NodeCiData;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Nodes\CiRunnerStateFiles;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Shared\LifecycleStatus;
@@ -16,6 +17,7 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -43,6 +45,51 @@ final readonly class ProofCopyHosts
     {
         return self::places($node) > 0 && NodeRole::query()->where('node_id', $node->id)->where('role', RoleName::CiRunner)
             ->where('status', '!=', LifecycleStatus::Removing)->exists();
+    }
+
+    /**
+     * The Node takes proof copies: it offers proof places, and it records the hold script that this release installs
+     * (docs/reference/node-provisioning.md#proof-places-on-a-ci-node). After a release that adds or changes the script, the Node takes none
+     * until a `ci-runner` add or converge of it passes. The converge itself reads offersPlaces, not this, so it still prepares the Node.
+     */
+    public static function takesCopies(Node $node): bool
+    {
+        return $node->ci_hold_digest === self::holdDigest() && self::offersPlaces($node);
+    }
+
+    /** The SHA-256 digest of the hold script that this release's `ci-runner` role installs. */
+    public static function holdDigest(): string
+    {
+        return hash('sha256', CiRunnerStateFiles::holdScript());
+    }
+
+    /**
+     * Records the hold script on a CI Node, at the end of each run that writes it: a `ci-runner` add or role converge, and a `node:converge`
+     * with the role, which passes here when its roles phase passed. A passed add or role converge (`$installs`) sets the digest of the
+     * script in its intent. A `node:converge` keeps the record only when it is already that digest. Any other end clears it: the run may
+     * have changed the script (docs/reference/node-provisioning.md#proof-places-on-a-ci-node).
+     *
+     * @param  array<string, mixed>  $runtime  the run's role runtime intent
+     */
+    public static function recordHold(int $nodeId, array $runtime, bool $passed, bool $installs): void
+    {
+        $files = array_map(ValidatedData::object(...), is_array($runtime['files'] ?? null) ? $runtime['files'] : []);
+        $script = array_find($files, static fn (array $file): bool => ($file['path'] ?? null) === CiRunnerStateFiles::Hold)['content'] ?? null;
+        $digest = $passed && is_string($script) ? hash('sha256', $script) : null;
+        $node = Node::query()->whereKey($nodeId);
+        if ($digest !== null && ! $installs) {
+            $node->where(static fn (Builder $kept): Builder => $kept->whereNull('ci_hold_digest')->orWhere('ci_hold_digest', '!=', $digest))
+                ->update(['ci_hold_digest' => null]);
+
+            return;
+        }
+        $node->update(['ci_hold_digest' => $digest]);
+    }
+
+    /** The end of a `ci-runner` removal, passed or failed: its phase removes the hold script. */
+    public static function forgetHold(int $nodeId): void
+    {
+        Node::query()->whereKey($nodeId)->update(['ci_hold_digest' => null]);
     }
 
     /** The Node's CI places: its `ci` setting (docs/reference/node-settings.md#ci-places, ADR 0260), 0 while the Node has none. */

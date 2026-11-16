@@ -233,7 +233,8 @@ beforeEach(function (): void {
  */
 function copyProofCiNode(Node $node, int $places, int $busy = 0, int $memory = 64 * 1024 ** 3, int $age = 5): Node
 {
-    $node->update(['settings' => [...($node->settings ?? []), 'ci' => ['places' => $places, 'proof_only' => false]]]);
+    // Its passed ci-runner converge installed this release's hold script (docs/reference/node-provisioning.md#proof-places-on-a-ci-node).
+    $node->forceFill(['settings' => [...($node->settings ?? []), 'ci' => ['places' => $places, 'proof_only' => false]], 'ci_hold_digest' => ProofCopyHosts::holdDigest()])->save();
     if (! $node->roles()->where('role', RoleName::CiRunner)->exists()) {
         $node->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
     }
@@ -397,6 +398,21 @@ describe('proof:run in copies: admission', function (): void {
         $task = Instance::query()->where('name', 'other-1')->firstOrFail();
         expect(app(ContainerInstanceDestroy::class)->capture($task))->not->toHaveKey('ci_hold');
     });
+});
+
+describe('proof:run in copies: the hold script', function (): void {
+    it('places no copy on a Node without this release\'s hold script until its ci-runner converge installs it', function (?string $recorded): void {
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 1);
+        $ci = copyProofCiOnlyNode('ci-a', '10.44.0.21', current: true);
+        Node::query()->whereKey($ci->id)->update(['ci_hold_digest' => $recorded === null ? null : hash('sha256', $recorded)]);
+        copyProofAdmitted();
+
+        expect(Instance::query()->whereNotNull('task_workspace_owner_id')->pluck('node_id')->all())
+            ->toBe([Node::query()->where('name', 'beast')->value('id')]);
+    })->with([
+        'no record: the Node was not converged since the script came' => [null],
+        'a changed script: the Node holds an older one' => ['an older hold script'],
+    ]);
 });
 
 /** Task copies of other groups on the default's Node: each counts as a live task copy, and takes no CI place. */

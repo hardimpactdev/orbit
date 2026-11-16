@@ -36,6 +36,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $instance_bridge
  * @property string|null $ci_bridge
  * @property int|null $seed_sender_id
+ * @property string|null $ci_hold_digest
  * @property int|null $t3_port_last
  * @property string|null $ssh_host_fingerprint
  * @property array<string, mixed>|null $settings

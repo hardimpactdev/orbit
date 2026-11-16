@@ -19,6 +19,7 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\CiRunnerStateFiles;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeBridges;
@@ -839,6 +840,46 @@ describe('the seed of the proof default on each Node that offers proof places', 
             if ($status === 'failed') {
                 expect($node->roles()->sole()->status)->toBe(LifecycleStatus::Failed);
             }
+        }
+    });
+
+    it('records the hold script of a ci-runner add or converge by one rule, and takes proof copies only with this release\'s script', function (): void {
+        // docs/reference/node-provisioning.md#proof-places-on-a-ci-node
+        proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        expect($node->ci_hold_digest)->toBeNull()->and(ProofCopyHosts::offersPlaces($node))->toBeTrue()
+            ->and(ProofCopyHosts::takesCopies($node))->toBeFalse();
+
+        endCiRunnerConverge($node, 'succeeded');
+        expect($node->refresh()->ci_hold_digest)->toBe(hash('sha256', CiRunnerStateFiles::holdScript()))
+            ->and(ProofCopyHosts::takesCopies($node))->toBeTrue();
+
+        // A release that changes the script: the Node takes no copy until a converge installs it.
+        Node::query()->whereKey($node->id)->update(['ci_hold_digest' => hash('sha256', 'an older hold script')]);
+        expect(ProofCopyHosts::takesCopies($node->refresh()))->toBeFalse();
+
+        // A failed converge may have changed the script: the record goes.
+        endCiRunnerConverge($node, 'succeeded');
+        endCiRunnerConverge($node->refresh(), 'failed');
+        expect($node->refresh()->ci_hold_digest)->toBeNull();
+
+        // A ci-runner removal, passed or failed, removes the script.
+        foreach (['failed', 'succeeded'] as $status) {
+            $assignment = $node->roles()->sole();
+            $assignment->update(['status' => LifecycleStatus::Active]);
+            endCiRunnerConverge($node->refresh(), 'succeeded');
+            expect($node->refresh()->ci_hold_digest)->not->toBeNull();
+            $assignment->refresh()->update(['status' => LifecycleStatus::Removing]);
+            $removal = Operation::query()->create(['kind' => 'node.role_remove', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+                'status' => 'running', 'triggered_by' => 'test', 'state' => ['swamp_run_id' => 'run-hold-remove-'.$status],
+                'input' => ['_role_remove' => ['node_id' => $node->id, 'assignment_id' => $assignment->id, 'role' => 'ci-runner'], 'intent' => []]]);
+            app(NodeRoleRemovalProjection::class)->apply($removal, ['run_id' => 'run-hold-remove-'.$status, 'status' => $status,
+                'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => $status === 'succeeded'
+                    ? ['steps' => ['Confirm role removal' => ['status' => 'succeeded']]] : ['failed_step' => 'Remove the role files', 'error_code' => 'node_role.removal_failed']]);
+
+            expect($node->refresh()->ci_hold_digest)->toBeNull();
         }
     });
 

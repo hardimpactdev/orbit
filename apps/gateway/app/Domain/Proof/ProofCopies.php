@@ -58,8 +58,8 @@ final readonly class ProofCopies
     }
 
     /**
-     * The free CI places a proof may take now on each Node, by Node id, Nodes without one left out. A Node counts when it offers proof
-     * places and holds the default's current seed: the default's own Node holds it. Its places are its free CI places
+     * The free CI places a proof may take now on each Node, by Node id, Nodes without one left out. A Node counts when it takes proof
+     * copies (ProofCopyHosts::takesCopies) and holds the default's current seed: the default's own Node holds it. Its places are its free CI places
      * (ProofCopyHosts::freePlaces), and no more than its available memory holds copy peaks. A Node without a fresh runner state or a
      * memory read offers none.
      *
@@ -94,7 +94,7 @@ final readonly class ProofCopies
         $nodes = Node::query()->where('status', LifecycleStatus::Active)
             ->whereHas('roles', static fn ($roles) => $roles->where('role', RoleName::CiRunner)->where('status', '!=', LifecycleStatus::Removing))
             ->orderBy('id')->get()
-            ->filter(static fn (Node $node): bool => ProofCopyHosts::offersPlaces($node)
+            ->filter(static fn (Node $node): bool => ProofCopyHosts::takesCopies($node)
                 && ($node->id === $default->node_id || app(ProofSeeds::class)->holder($node) !== null));
         $copies = ProofCopyHosts::copies()->whereIn('node_id', $nodes->modelKeys())->pluck('node_id')->countBy();
         $fresh = now()->getTimestamp() - ShowCiRunnersAction::StaleSeconds;
