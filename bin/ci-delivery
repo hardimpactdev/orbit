@@ -37,10 +37,9 @@ def validate(needs):
     expected = (set(needs) - {'changes'}) | {'proof-run'}
     if set(selected) != expected or any(type(value) is not bool for value in selected.values()):
         sys.exit('Incomplete build selections')
-    slow_blocking = os.environ['SLOW_CHECKS_BLOCKING'] == 'true'
-    proof_blocking = slow_blocking and os.environ['PROOF_BLOCKING'] == 'true'
     pending = {}
-    if proof_blocking and selected['proof-run'] and os.environ['FORK_PROOF'] != 'true':
+    # A selected proof always gates this result: proof is the test of a changed operation (ADR 0262).
+    if selected['proof-run'] and os.environ['FORK_PROOF'] != 'true':
         pending['CI proof'] = 'proof-run'
     needs['proof-run'] = {'result': 'skipped'}
     # Bound the API wait by the existing longest explicit job budget (CI proof: 275 minutes).
@@ -91,7 +90,7 @@ def validate(needs):
                 sys.exit(f'Timed out waiting for required jobs: {list(pending)}')
             print(f'Waiting for required jobs: {list(pending)}', flush=True)
             time.sleep(15)
-    if proof_blocking and selected['proof-run'] and os.environ['FORK_PROOF'] == 'true':
+    if selected['proof-run'] and os.environ['FORK_PROOF'] == 'true':
         pages = json.loads(subprocess.check_output([
             'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
             f"repos/{os.environ['GH_REPO']}/commits/{os.environ['PROOF_SHA']}/statuses?per_page=100",
@@ -103,9 +102,6 @@ def validate(needs):
         if status is None or status['state'] != 'success':
             sys.exit('The outside proof has not passed on this head. Approve and run it, then rerun Required checks.')
         needs['proof-run']['result'] = 'success'
-    if not proof_blocking:
-        selected['proof-run'] = False
-        needs['proof-run']['result'] = 'skipped'
     failed = {job: needs[job]['result'] for job, touched in selected.items()
               if needs[job]['result'] != 'success' and not (not touched and needs[job]['result'] == 'skipped')}
     if failed:
@@ -199,7 +195,7 @@ def release_summary(run, jobs):
     link = report['html_url'] if report else run['html_url']
     return (f"## Main delivery evidence\n\nCommit: `{run['head_sha']}`\n\n"
             f"[Source CI]({run['html_url']}) · [{REPORT}: {state}]({link})\n\n"
-            'Selected main fixtures must pass unless a verified PR tree receipt reuses them. Main full set and report publication remain independent.\n')
+            'Selected main fixtures must pass unless a verified PR tree receipt reuses them. Report publication remains independent.\n')
 
 
 def causal_prs(pages, repository, sha):

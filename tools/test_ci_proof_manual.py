@@ -120,17 +120,12 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", jobs['preflight']['if'])
         self.assertIn("github.repository == 'hardimpactdev/orbit'", jobs['preflight']['if'])
         self.assertEqual('preflight', jobs['proof']['needs'])
-        main = yaml.safe_load((ROOT / '.github/workflows/ci-main-proof.yml').read_text())
-        self.assertEqual(main['jobs']['proof']['runs-on'], jobs['proof']['runs-on'])
         for job in jobs.values():
             checkout = job['steps'][0]['with']
             self.assertEqual('${{ github.sha }}', checkout['ref'])
             self.assertEqual('hardimpactdev/orbit', checkout['repository'])
             self.assertEqual(0, checkout['fetch-depth'])
             self.assertFalse(checkout['persist-credentials'])
-        text = (ROOT / '.github/workflows/ci-proof-manual.yml').read_text()
-        self.assertNotIn('ci-main-queue', text)
-        self.assertNotIn('ORBIT_MAIN_PROOF_ENABLED', text)
         upload = jobs['proof']['steps'][-1]
         self.assertEqual('always()', upload['if'])
         self.assertEqual('proof-receipt', upload['with']['name'])

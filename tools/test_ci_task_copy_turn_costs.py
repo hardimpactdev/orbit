@@ -2,9 +2,7 @@
 import json
 import math
 import unittest
-from unittest.mock import patch
 
-from test_ci_full_set import full
 from test_ci_units import ROOT, names, units
 
 FILE = 'swamp/tests/ansible_task_copy_turn_test.ts'
@@ -34,15 +32,6 @@ class TaskCopyTurnCostTest(unittest.TestCase):
             self.assertIn(unit, names(planned))
             actual.extend(cases)
         self.assertCountEqual(actual, fixture['cases'])
-
-    def test_full_set_keeps_all_cases_and_does_not_run_the_540_second_whole_file(self):
-        config, inventory = units.registry.load(ROOT)
-        config['fixture'] = [entry for entry in config['fixture'] if entry['file'] == FILE]
-        with patch.object(units, 'fixture_steps', return_value={}):
-            plan = full.build_plan(config, inventory, lambda file: inventory[file], units)
-        self.assertGreater(len(plan['units']), 1)
-        self.assertCountEqual([case for unit in plan['units'] for case in unit['cases']], inventory[FILE]['cases'])
-        self.assertTrue(all(unit['declared_seconds'] <= 300 for unit in plan['units']))
 
 
 if __name__ == '__main__':

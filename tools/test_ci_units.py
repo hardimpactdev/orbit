@@ -975,7 +975,7 @@ class WorkflowTest(unittest.TestCase):
             needs = needs_for('required')
             needs['changes']['outputs']['self_hosted_shards'] = json.dumps(shards)
             needs['self-hosted-fixtures']['result'] = result
-            with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES=mode, PROOF_BLOCKING='false', SLOW_CHECKS_BLOCKING='false'):
+            with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES=mode):
                 delivery.validate(needs)
         with self.assertRaisesRegex(SystemExit, "run only on Orbit's runners.*frankenphp_proxy_test.ts.*push the branch"):
             gate('fork', shards, 'skipped')
@@ -1005,8 +1005,7 @@ class WorkflowTest(unittest.TestCase):
                 needs = needs_for('required')
                 needs['changes']['outputs']['fixture_shards'] = json.dumps(shards)
                 needs['fixtures']['result'] = result
-                with self.subTest(shards=shards, result=result), patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none',
-                        PROOF_BLOCKING='false', SLOW_CHECKS_BLOCKING='false'):
+                with self.subTest(shards=shards, result=result), patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'):
                     if result == 'success' or (result == 'skipped' and not shards):
                         delivery.validate(needs)
                     else:

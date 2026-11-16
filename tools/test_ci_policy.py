@@ -1,4 +1,4 @@
-"""Keep fast required CI gates while slow jobs are paused."""
+"""Required checks: every selected job, and a selected proof, gates the result."""
 import re
 import subprocess
 import unittest
@@ -79,7 +79,7 @@ class RequiredGateTest(unittest.TestCase):
         self.assertNotIn('  native-plan:', SOURCE)
         self.assertNotIn('  native-tests:', SOURCE)
 
-    def run_required(self, *, slow='true', proof_blocking='true', proof_required=False,
+    def run_required(self, *, proof_required=False,
                      fork=False, results=None, statuses=None, snapshots=None, selections=None):
         import json
         import os
@@ -110,8 +110,8 @@ class RequiredGateTest(unittest.TestCase):
             else:
                 rows[name].update(status='in_progress' if result == 'pending' else 'completed', conclusion=result)
         env = {'NEEDS': json.dumps(needs), 'PROOF_REQUIRED': str(proof_required).lower(),
-               'FORK_PROOF': str(fork).lower(), 'SELF_HOSTED_FIXTURES': 'fork' if fork else 'run', 'PROOF_BLOCKING': proof_blocking,
-               'SLOW_CHECKS_BLOCKING': slow, 'CI_RUN_ID': '123',
+               'FORK_PROOF': str(fork).lower(), 'SELF_HOSTED_FIXTURES': 'fork' if fork else 'run',
+               'CI_RUN_ID': '123',
                'PROOF_SHA': 'a' * 40, 'GH_REPO': 'hardimpactdev/orbit',
                'PROOF_RUN_URL_PREFIX': 'https://github.com/hardimpactdev/orbit/actions/runs/'}
         snapshots = iter(snapshots or [list(rows.values())])
@@ -142,62 +142,52 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn('swamp', jobs)
         self.assertNotIn('proof-run', jobs)
         self.assertIn('      actions: read', block)
-        self.assertIn("SLOW_CHECKS_BLOCKING: ${{ vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' }}", block)
-        self.assertIn("PROOF_BLOCKING: ${{ vars.ORBIT_PROOF_BLOCKING != 'false' }}", block)
+        # No switch makes the proof report-only (ADR 0262).
+        self.assertNotIn('BLOCKING', block)
 
     def test_every_other_selected_failure_or_skip_still_blocks(self):
         for component in ('gateway-tests', 'cli-tests', 'sdk-tests', 'agent', 'php', 'swamp'):
-            for slow in ('true', 'false'):
-                for result in ('failure', 'cancelled', 'skipped'):
-                    with self.subTest(component=component, slow=slow, result=result):
-                        error, _, _ = self.run_required(slow=slow, results={component: result})
-                        self.assertIsNotNone(error)
+            for result in ('failure', 'cancelled', 'skipped'):
+                with self.subTest(component=component, result=result):
+                    error, _, _ = self.run_required(results={component: result})
+                    self.assertIsNotNone(error)
 
     def test_gateway_pest_skip_requires_explicit_false_and_complete_boolean_selection(self):
-        for slow in ('true', 'false'):
-            error, _, _ = self.run_required(slow=slow, results={'gateway-tests': 'skipped'},
-                                             selections={'gateway-tests': False})
-            self.assertIsNone(error)
-            for selections in ({'gateway-tests': None}, {'gateway-tests': 'false'},
-                               {'gateway-tests': 0}, {'unexpected-job': True}):
-                with self.subTest(slow=slow, selections=selections):
-                    error, _, _ = self.run_required(slow=slow, selections=selections)
-                    self.assertEqual(error, 'Incomplete build selections')
+        error, _, _ = self.run_required(results={'gateway-tests': 'skipped'},
+                                         selections={'gateway-tests': False})
+        self.assertIsNone(error)
+        for selections in ({'gateway-tests': None}, {'gateway-tests': 'false'},
+                           {'gateway-tests': 0}, {'unexpected-job': True}):
+            with self.subTest(selections=selections):
+                error, _, _ = self.run_required(selections=selections)
+                self.assertEqual(error, 'Incomplete build selections')
         error, _, _ = self.run_required(results={'changes': 'failure'})
         self.assertEqual(error, 'Build input selection failed')
 
     def test_cli_and_sdk_pest_skip_require_explicit_false_and_complete_boolean_selection(self):
         for job in ('cli-tests', 'sdk-tests'):
-            for slow in ('true', 'false'):
-                error, _, _ = self.run_required(slow=slow, results={job: 'skipped'}, selections={job: False})
-                self.assertIsNone(error)
-                for value in (None, 'false', 0):
-                    with self.subTest(job=job, slow=slow, selection=value):
-                        error, _, _ = self.run_required(slow=slow, selections={job: value})
-                        self.assertEqual(error, 'Incomplete build selections')
+            error, _, _ = self.run_required(results={job: 'skipped'}, selections={job: False})
+            self.assertIsNone(error)
+            for value in (None, 'false', 0):
+                with self.subTest(job=job, selection=value):
+                    error, _, _ = self.run_required(selections={job: value})
+                    self.assertEqual(error, 'Incomplete build selections')
 
-    def test_non_blocking_proof_needs_no_api_wait(self):
-        for proof_required in (False, True):
-            for result in ('pending', 'failure', 'cancelled'):
-                error, github, sleep = self.run_required(slow='false', proof_required=proof_required,
-                    results={'CI proof': result})
-                self.assertIsNone(error)
-                self.assertEqual(github.call_count, 0)
-                sleep.assert_not_called()
+    def test_an_unselected_proof_needs_no_api_wait_and_a_selected_one_always_gates(self):
+        for result in ('pending', 'failure', 'cancelled'):
+            error, github, sleep = self.run_required(results={'CI proof': result})
+            self.assertIsNone(error)
+            self.assertEqual(github.call_count, 0)
+            sleep.assert_not_called()
+        for result in ('failure', 'cancelled'):
+            error, _, _ = self.run_required(proof_required=True, results={'CI proof': result})
+            self.assertIsNotNone(error)
 
     def test_default_requires_swamp_and_selected_proof_success(self):
         for component in ('swamp', 'CI proof'):
             for result in ('success', 'failure', 'skipped', 'cancelled'):
                 error, _, _ = self.run_required(proof_required=True, results={component: result})
                 self.assertEqual(error is None, result == 'success', (component, result, error))
-
-    def test_existing_proof_switch_does_not_disable_swamp(self):
-        error, _, sleep = self.run_required(proof_blocking='false', proof_required=True,
-                                            results={'CI proof': 'pending'})
-        self.assertIsNone(error)
-        sleep.assert_not_called()
-        error, _, _ = self.run_required(proof_blocking='false', results={'swamp': 'failure'})
-        self.assertIsNotNone(error)
 
     def test_default_waits_for_jobs_missing_from_the_first_api_response(self):
         rows = [{'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1} for name in (
@@ -222,7 +212,7 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIsNone(error)
         sleep.assert_not_called()
 
-    def test_fork_gate_requires_trusted_status_only_while_proof_blocks(self):
+    def test_fork_gate_requires_the_trusted_outside_proof_status(self):
         good = {'context': 'Orbit outside proof', 'state': 'success',
                 'creator': {'login': 'github-actions[bot]'},
                 'target_url': 'https://github.com/hardimpactdev/orbit/actions/runs/123'}
@@ -231,10 +221,6 @@ class RequiredGateTest(unittest.TestCase):
                                  ([{**good, 'creator': {'login': 'contributor'}}], False)):
             error, _, _ = self.run_required(proof_required=True, fork=True, statuses=statuses)
             self.assertEqual(error is None, passed, error)
-        for settings in ({'slow': 'false'}, {'proof_blocking': 'false'}):
-            error, github, _ = self.run_required(proof_required=True, fork=True, **settings)
-            self.assertIsNone(error)
-            self.assertFalse(any('/statuses?' in call.args[0][-1] for call in github.call_args_list))
 
     def test_intentionally_ineligible_proof_skips_without_waiting_when_blocking(self):
         rows = [{'name': 'CI proof eligibility', 'status': 'completed', 'conclusion': 'success',
@@ -358,13 +344,12 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn('runs-on: ubuntu-26.04', SOURCE.split('\n  validate:\n', 1)[1])
 
     def test_swamp_skip_requires_explicit_false_and_never_uses_the_jobs_api(self):
-        for slow in ('true', 'false'):
-            error, github, _ = self.run_required(slow=slow, results={'swamp': 'skipped'}, selections={'swamp': False})
-            self.assertIsNone(error)
-            github.assert_not_called()
-            for value in (None, 'false', 0):
-                error, _, _ = self.run_required(slow=slow, selections={'swamp': value})
-                self.assertEqual(error, 'Incomplete build selections')
+        error, github, _ = self.run_required(results={'swamp': 'skipped'}, selections={'swamp': False})
+        self.assertIsNone(error)
+        github.assert_not_called()
+        for value in (None, 'false', 0):
+            error, _, _ = self.run_required(selections={'swamp': value})
+            self.assertEqual(error, 'Incomplete build selections')
 
 
 if __name__ == '__main__':
