@@ -119,6 +119,7 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `instance.nested_fleet_host_unavailable` | The Project has `nested_fleet` on, and the Node has nested-fleet hosting off. Orbit records nothing. See [Nested fleet setting](/reference/projects#nested-fleet-setting). |
 | `instance.nested_fleet_container_required` | The Project has `nested_fleet` on, and the result would not be a container: the Node is not on the build list, or the default is a host checkout. Orbit records nothing. |
 | `instance.nested_fleet_image_unavailable` | The Project has `nested_fleet` on, and the Node's last converge failed to build the nested-fleet image. The create of the default makes no container. Converge the Node again; see [The nested-fleet image](/reference/development-containers#the-nested-fleet-image). |
+| `instance.ci_hold_unavailable` | A proof copy's create found no hold script of the `ci-runner` role on its Node. The step calls nothing, and the copy does not start. The detail names the Node. Converge the Node's `ci-runner` role; see [Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node). |
 | `instance.nested_club_key_unsafe_transfer`, `instance.nested_club_key_not_tmpfs`, `instance.nested_club_key_delivery_failed` | A nested-fleet clone could not get its Club key into `/run`. The workspace phase did not run. See [the Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway). |
 
 ## How it works

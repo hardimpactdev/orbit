@@ -81,6 +81,7 @@ sequenceDiagram
     %%> When:
     %%> - first in the clone job, before the copy exists; every other clone skips it
     %%> What it does:
+    %%> - first checks that the `ci-runner` role's hold script is on the Node. When it is missing, the step calls nothing and prints a refusal; the copy does not start, and the create fails with `instance.ci_hold_unavailable`, naming the Node
     %%> - runs the `ci-runner` role's hold script as root: `orbit-ci-runner-hold hold <copy> <places>`, with the Node's `ci_places`
     %%> - records the copy's hold, then stops idle runner services on the Node down to the places left to runners; a busy runner is never stopped (docs/reference/node-provisioning.md#proof-places-on-a-ci-node)
     %%> On failure:

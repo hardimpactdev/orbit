@@ -279,12 +279,13 @@ The [Metrics role](/reference/metrics#exporter-selection)'s node exporter reads 
 
 This part is the target design of [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies), build steps 3, 4 and 5.
 
-Two rules decide what a Node with the `ci-runner` role does for [proof](/cli/proof/run) copies. Both are in one class, `ProofCopyHosts`, and the other pages link here. For both, a `ci-runner` role that is being added or converged counts, so its own converge prepares the Node. A role that is being removed does not count. The CI places are the Node's count from ADR 0260. A proof copy takes one CI place.
+Three rules decide what a Node with the `ci-runner` role does for [proof](/cli/proof/run) copies. All are in one class, `ProofCopyHosts`, and the other pages link here. For the first two, a `ci-runner` role that is being added or converged counts, so its own converge prepares the Node. A role that is being removed does not count. The CI places are the Node's count from ADR 0260. A proof copy takes one CI place.
 
 | Rule | The Node has | What it means |
 | --- | --- | --- |
 | A CI-only Node (`ciOnly`) | `ci-runner`, at least one CI place, and no `app-dev` | Its `ci-runner` converge prepares the Instance container branch, and it takes no Instance but a proof copy |
 | The Node offers proof places (`offersPlaces`) | `ci-runner` and at least one CI place, with or without `app-dev` | It keeps a seed of the proof default and can hold proof copies |
+| The Node takes proof copies (`takesCopies`) | It offers proof places, and records the hold script of this release | [proof:run](/cli/proof/run#the-run) counts its free places ([Proof places on a CI Node](#proof-places-on-a-ci-node)) |
 
 A Node that also has `app-dev`, such as the Node of the proof default, already hosts containers through its `app-dev` role. So it offers proof places, but it is not a CI-only Node: its `app-dev` converge prepares it, and it takes normal Instances. The default's own Node needs no seed copy, because it holds the seed. [proof:run](/cli/proof/run#the-run) decides which Node takes each proof copy: one copy per free place, on every Node that offers proof places. Orbit never adds `app-dev` to a CI Node to host proof copies.
 
@@ -354,6 +355,19 @@ The `ci-runner` role installs the script `/usr/local/libexec/orbit-ci-runner-hol
 | --- | --- | --- |
 | `hold <copy> <places>` | In each proof copy's create on the Node, before the copy starts its inner fleet | Records the hold of the copy, then stops idle runner services in `orbit-ci` down to the places left to runners, and records each one. `<places>` is the Node's `ci_places`, which the Gateway passes. |
 | `release <copy>` | In each proof copy's destroy on the Node, also after a failed create | Removes the hold of the copy. When no hold is left, it starts the service of each recorded runner and clears the record |
+
+The Gateway records the hold script on the Node, in `nodes.ci_hold_digest`: the SHA-256 digest of the script that the Node's last passed `ci-runner` add or role converge installed. A Node offers places to [proof:run](/cli/proof/run#the-run) only while the record is the digest of the script that the running Gateway release installs (`ProofCopyHosts::takesCopies`). So after a release that adds or changes the script, a CI Node offers no place until a `ci-runner` add or converge of the Node passes.
+
+The seed listener and the Instance container branch do not read the record: the converge that installs the script still prepares them. One rule sets and clears the record, at the end of the same runs as `seed_sender_id`:
+
+| The run | `ci_hold_digest` |
+| --- | --- |
+| A passed `ci-runner` add or role converge | The digest of the script in its intent |
+| A `node:converge` whose roles phase passed | Kept when it is the digest of the script in its intent, else cleared |
+| Failed, cancelled or interrupted | Cleared: the run may have changed the script |
+| A `ci-runner` removal, passed or failed | Cleared: its phase removes the script |
+
+A proof copy's create checks the script before it calls it. When the script is missing, the step calls nothing and the create fails with `instance.ci_hold_unavailable`; the detail names the Node. The copy does not start, and its destroy skips the release, because the Node has no script.
 
 An idle runner service is active, and no `Runner.Worker` process runs in its container. Both calls run under one lock file per Node, so two copies never read the holds at the same time. The holds and the record of stopped runners are files under `/var/lib/orbit/ci-hold`, readable by root only. Each call changes nothing when it finds nothing to do, so a rerun is safe.
 

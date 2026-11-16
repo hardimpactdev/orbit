@@ -3086,6 +3086,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.nested_fleet_host_unavailable` | 409 | A new nested-fleet Instance on a Node whose nested-fleet switch is off. Not reachable yet |
 | `instance.nested_fleet_container_required` | 409 | A new nested-fleet Instance would not be a container: the Node is off the build list, or the default is a host checkout. Not reachable yet |
 | `instance.nested_fleet_image_unavailable` | 502 | The create of a nested-fleet default while the Node records a failed build of the [nested-fleet image](#the-nested-fleet-image). Orbit makes no container; converge the Node again |
+| `instance.ci_hold_unavailable` | 502 | A proof copy's Node has no [hold script](/reference/node-provisioning#proof-places-on-a-ci-node). Orbit makes no container; the detail names the Node. Converge its `ci-runner` role |
 | `instance.host_unavailable` | 409 | A container default cannot be placed: the Node has no bridge, the bridge is full, or the runtime folder lacks the Project's PHP build |
 | `instance.browser_trust_mismatch` | 409 | The image build found another `libp11-kit0` than the trust module needs. The image is not published ([Trust](#trust)) |
 | `instance.clone_browser_trust_mismatch` | 502 | A clone's copy holds another `libp11-kit0` than the trust module needs. The create stops before the copy starts |

@@ -53,7 +53,7 @@ sequenceDiagram
   %%> - Waiting more than 7200 seconds from creation fails proof.capacity_timeout, for both operator and CI proofs. No free CI place uses the same allowance.
   GW->>GW: Count free CI places<br/>on every CI Node
   %%> Which Nodes:
-  %%> - Every Node that offers proof places (ProofCopyHosts::offersPlaces) and holds the default's current seed. The default's own Node holds it.
+  %%> - Every Node that offers proof places, records the hold script of this release (ProofCopyHosts::takesCopies) and holds the default's current seed. The default's own Node holds it.
   %%> Places on a Node:
   %%> - Its ci_places minus its busy runners minus the proof copies already on it (any proof's; task copies take no place). No more than its MemAvailable holds whole copy peaks (proof.copy_memory). One rule, in ProofCopyHosts.
   %%> How:
