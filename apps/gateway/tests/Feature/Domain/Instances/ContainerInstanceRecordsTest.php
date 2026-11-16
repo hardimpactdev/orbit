@@ -11,6 +11,7 @@ use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\ProofSeed;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -150,6 +151,23 @@ describe('Instance runtimes', function (): void {
         'a clone of a non-default Instance' => fn () => recordsRuntime(recordsInstance($this->project, $this->node, 'feature'), '10.253.0.3', ['clone_source_instance_id' => recordsInstance($this->project, $this->node, 'other')->id]),
         'a clone of a checkout default' => fn () => recordsRuntime(recordsInstance(recordsProject('mealou'), $this->node, 'feature'), '10.253.0.3', ['clone_source_instance_id' => recordsInstance(Project::query()->where('slug', 'mealou')->sole(), $this->node, 'default')->id]),
         'a clone of another Project\'s default' => fn () => recordsRuntime(recordsInstance(recordsProject('mealou'), $this->node, 'feature'), '10.253.0.3', ['clone_source_instance_id' => $this->default->id]),
+    ]);
+
+    it('records a clone on another Node only when that Node holds the default\'s current seed', function (?array $seed, bool $accepted): void {
+        $this->defaultRuntime->update(['seed_commit' => str_repeat('c', 40), 'seed_taken_at' => '2026-11-16 06:00:00']);
+        $ci = tap(recordsNode('ci', '10.44.0.12'), app(AllocateInstanceBridgeAction::class)->execute(...));
+        if ($seed !== null) {
+            ProofSeed::query()->create(['node_id' => $ci->id, 'holder' => 'orbit-proof-seed', 'operation_id' => 1, ...$seed]);
+        }
+        $clone = fn () => recordsRuntime(recordsInstance($this->project, $ci, 'proof-copy'), '10.253.1.3', ['clone_source_instance_id' => $this->default->id]);
+
+        $accepted ? expect($clone()->clone_source_instance_id)->toBe($this->default->id)
+            : expect($clone)->toThrow(QueryException::class, 'Invalid Instance runtime.');
+    })->with([
+        'no seed on the Node' => [null, false],
+        'an older seed' => [['commit' => str_repeat('b', 40), 'taken_at' => '2026-11-15 06:00:00'], false],
+        'the same commit taken at another time' => [['commit' => str_repeat('c', 40), 'taken_at' => '2026-11-16 05:00:00'], false],
+        'the current seed' => [['commit' => str_repeat('c', 40), 'taken_at' => '2026-11-16 06:00:00'], true],
     ]);
 
     it('refuses a container server that does not match the T3 port, or that is no server', function (array $overrides): void {
