@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "80f131f11778222f48126cfa73807a5cc0dfc8fb8b3da1d213f52e8bf8906e0e"
+source_sha256 = "ed619b0fcb2f84af869d08adb96d09a296883cbf66cd6010a41c15806da6504d"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -24,10 +24,10 @@ cases = [
   "a wake's start removes the marker once the app answers, waits a short time through 5xx, and keeps it when the web unit never answers",
   "a wake's start removes the marker before the T3 wait: a silent T3 fails the wake while the site serves",
   "a wake's start of a Project without a web unit removes the marker without a web wait",
-  "a wake resumes a Frozen container without a boot, closes swap again and removes the marker; its result names the path and seconds",
+  "a wake hands a Frozen container to the power helper, which restores and resumes it and closes swap; no boot; the marker goes",
   "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one",
   "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker",
-  "a wake closes the swap of the container and of each recorded inner cgroup that still exists, skips a vanished one, and removes the record",
+  "a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit",
   "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait",
   "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one",
   "a deployment's start resumes a Frozen container and then converges as usual",
@@ -106,7 +106,7 @@ after_merge_cases = [
   # The sleep and wake of defaults and nested-fleet Instances in the start part (20s, 56s and 42s locally, run in full before the PR): the
   # file sits at the 8-shard PR limit, so any added cost defers it whole. The PR keeps the swap close (each recorded cgroup that still
   # exists, none outside the container, the record removed) and the nested never-stop of a sleep in ansible_instance_container_power_test.ts.
-  "a wake closes the swap of the container and of each recorded inner cgroup that still exists, skips a vanished one, and removes the record",
+  "a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit",
   "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one",
   "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait",
   # The merged deploy steps' equivalence (two fixtures, separate and merged plays, a phase handler before the seed, a play killed after
@@ -191,6 +191,11 @@ inputs = [
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/instance-container-incus.ts",
   "swamp/tests/fixtures/task-vm-host-incus.ts",
+  "swamp/ansible/tasks/instance-power-call.yml",
+  "swamp/ansible/tasks/instance-power-helper.yml",
+  "swamp/ansible/files/instance-container-power.py",
+  "swamp/tests/fixtures/instance-power-helper.ts",
+  "swamp/tests/_support/power_helper.ts",
 ]
 
 [case_costs]
@@ -211,7 +216,7 @@ inputs = [
   "a wake's start removes the marker once the app answers, waits a short time through 5xx, and keeps it when the web unit never answers" = 83 # ESTIMATE: local 39s x 2.1, rounded up, plus 1s
   "a wake's start removes the marker before the T3 wait: a silent T3 fails the wake while the site serves" = 50 # ESTIMATE: local 23s x 2.1, rounded up, plus 1s
   "a wake's start of a Project without a web unit removes the marker without a web wait" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
-  "a wake resumes a Frozen container without a boot, closes swap again and removes the marker; its result names the path and seconds" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s
+  "a wake hands a Frozen container to the power helper, which restores and resumes it and closes swap; no boot; the marker goes" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s
   "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one" = 37 # ESTIMATE: local 17s x 2.1, rounded up, plus 1s
   "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker" = 94 # ESTIMATE: local 44s x 2.1, rounded up, plus 1s
   "a deployment's start resumes a Frozen container and then converges as usual" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s

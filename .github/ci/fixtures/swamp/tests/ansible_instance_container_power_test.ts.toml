@@ -1,7 +1,8 @@
 order = 390
-source_sha256 = "54d99c780a45b2d0fb3dfbe735dea8866fcecde1d323918a42c7e2c0a993e424"
+source_sha256 = "ce52898cfe557dc4ffb931b28682ff9afa4db5e849a340b3013787d341043048"
 cases = [
   "the sleep and the wake each run one charted phase with the shipped Ansible settings; the sleep's names its Operation",
+  "every workflow step that runs instance-container.yml names its Operation, which the power helper's restore records",
   "a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet",
   "a start's result adds the fleet's seconds when the fleet step ran, and is the phases' result as it is when it did not",
   "the start's fleet step writes its milliseconds and keeps the exit code of the phase that failed",
@@ -17,7 +18,6 @@ cases = [
   "a failed pause leaves the container running with its swap closed, removes the marker and fails with the helper's code",
   "a sleep leaves a Frozen container with its earlier result and a Stopped one as it is, without counter reads",
   "a busy lock is tried again; one that stays busy fails `instance.power_helper_busy` and a crash `instance.power_helper_failed`, both behind the marker",
-  "a resume's swap close writes 0 to the container and to each recorded cgroup that still exists, never climbs out, and removes the record",
 ]
 file = "swamp/tests/ansible_instance_container_power_test.ts"
 cost = 145
@@ -30,7 +30,6 @@ inputs = [
   "swamp/ansible/requirements.yml",
   "swamp/ansible/tasks/address-node.yml",
   "swamp/ansible/tasks/instance-container-power.yml",
-  "swamp/ansible/tasks/instance-container-swap.yml",
   "swamp/ansible/tasks/instance-power-call.yml",
   "swamp/ansible/tasks/instance-power-helper.yml",
   "swamp/ansible/files/instance-container-power.py",
@@ -41,10 +40,12 @@ inputs = [
   "swamp/workflows/workflow-operation-instance-start.yaml",
   "swamp/workflows/workflow-operation-instance-complete.yaml",
   "swamp/workflows/workflow-operation-instance-create.yaml",
+  "swamp/tests/_support/power_helper.ts",
 ]
 
 [case_costs]
   "the sleep and the wake each run one charted phase with the shipped Ansible settings; the sleep's names its Operation" = 1
+  "every workflow step that runs instance-container.yml names its Operation, which the power helper's restore records" = 2
   "a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet" = 1
   "a start's result adds the fleet's seconds when the fleet step ran, and is the phases' result as it is when it did not" = 1
   "the start's fleet step writes its milliseconds and keeps the exit code of the phase that failed" = 1
@@ -60,4 +61,3 @@ inputs = [
   "a failed pause leaves the container running with its swap closed, removes the marker and fails with the helper's code" = 7
   "a sleep leaves a Frozen container with its earlier result and a Stopped one as it is, without counter reads" = 11
   "a busy lock is tried again; one that stays busy fails `instance.power_helper_busy` and a crash `instance.power_helper_failed`, both behind the marker" = 38
-  "a resume's swap close writes 0 to the container and to each recorded cgroup that still exists, never climbs out, and removes the record" = 2
