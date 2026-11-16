@@ -63,13 +63,19 @@ final readonly class TaskCopyWork
     {
         $sync = Operation::query()->where('kind', 'tasks.sync')->where('target_type', 'task_group')->where('target_id', $group->id)
             ->where('status', OperationStatus::Succeeded)->latest('id')->first(['input', 'result']);
-        $work = is_array($sync?->result) ? ($sync->result['work'] ?? null) : null;
-        if (! is_array($work) || ! is_string($work['head'] ?? null) || ! is_bool($work['empty'] ?? null) || ! is_int($work['paths']['count'] ?? null)) {
+        if ($sync === null) {
             return null;
         }
-        $approved = is_array($sync->input) && is_array($sync->input['copy'] ?? null) ? ($sync->input['copy']['approved'] ?? '') : '';
+        $work = $sync->result['work'] ?? null;
+        $paths = is_array($work) ? ($work['paths'] ?? null) : null;
+        if (! is_array($work) || ! is_array($paths) || ! is_string($work['head'] ?? null) || ! is_bool($work['empty'] ?? null)
+            || ! is_int($paths['count'] ?? null)) {
+            return null;
+        }
+        $copy = $sync->input['copy'] ?? null;
+        $approved = is_array($copy) ? ($copy['approved'] ?? '') : '';
 
-        return ['head' => $work['head'], 'empty' => $work['empty'], 'paths' => ['count' => $work['paths']['count']],
+        return ['head' => $work['head'], 'empty' => $work['empty'], 'paths' => ['count' => $paths['count']],
             'approved_held' => is_bool($work['approved_held'] ?? null) ? $work['approved_held'] : null,
             'approved' => is_string($approved) ? $approved : ''];
     }
