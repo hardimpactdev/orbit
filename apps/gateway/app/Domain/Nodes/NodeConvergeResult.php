@@ -14,13 +14,22 @@ final class NodeConvergeResult
 {
     private const array Phases = ['input', 'agent', 'software', 'roles', 'tools', 'network', 'check'];
 
+    /** The phases that skip as `unchanged` when their digest equals the Node's record (NodeConvergePhaseDigest). */
+    public const array Skippable = ['agent', 'software', 'roles', 'tools', 'network'];
+
+    /** A phase that ran and passed, or skipped because its digest was unchanged: its earlier pass still holds. */
+    public static function passed(mixed $phase): bool
+    {
+        return is_array($phase) && in_array($phase['status'] ?? null, ['succeeded', 'unchanged'], true);
+    }
+
     /** @return array<string,mixed> */
     public static function parse(mixed $value): array
     {
         if (! is_array($value)) {
             self::invalid();
         }
-        $raw = array_intersect_key($value, array_flip(['outcome', 'phases', 'failed_phase', 'changed', 'elapsed_seconds', 'tools', 'browser_trust', 'error_code', 'cleanup_complete', 'failure']));
+        $raw = array_intersect_key($value, array_flip(['outcome', 'phases', 'failed_phase', 'changed', 'elapsed_seconds', 'tools', 'browser_trust', 'error_code', 'cleanup_complete', 'failure', 'digests']));
         $rules = [
             'failure' => ['sometimes', 'required', 'array:task,host,reason,rc'],
             'failure.task' => ['present_with:failure', 'nullable', 'string', 'min:1', 'max:120', 'regex:/\A[\x20-\x7e]+\z/D'],
@@ -30,7 +39,7 @@ final class NodeConvergeResult
             'outcome' => ['required', Rule::in(['succeeded', 'failed'])],
             'phases' => ['required', 'array', 'list', 'size:7'],
             'phases.*' => ['required', 'array:name,status,changed,elapsed_seconds'],
-            'phases.*.status' => ['required', Rule::in(['succeeded', 'failed', 'skipped'])],
+            'phases.*.status' => ['required', Rule::in(['succeeded', 'failed', 'skipped', 'unchanged'])],
             'phases.*.changed' => ['required', 'integer', 'min:0'],
             'phases.*.elapsed_seconds' => ['required', 'numeric', 'min:0', 'max:86400'],
             'changed' => ['required', 'integer', 'min:0'],
@@ -48,11 +57,15 @@ final class NodeConvergeResult
             'browser_trust.*' => ['required', 'array:container,reason'],
             'browser_trust.*.container' => ['required', 'string', 'regex:/\A[a-z0-9-]{1,63}\/[A-Za-z0-9-]{1,63}\z/D'],
             'browser_trust.*.reason' => ['required', 'string', 'max:160', 'regex:/\A[\x20-\x7e]+\z/D'],
+            'digests' => ['present', 'array'],
         ];
+        foreach (self::Skippable as $phase) {
+            $rules["digests.{$phase}"] = ['sometimes', 'string', 'regex:/\A[0-9a-f]{64}\z/D'];
+        }
         foreach (self::Phases as $index => $phase) {
             $rules["phases.{$index}.name"] = ['required', Rule::in([$phase])];
         }
-        if (Validator::make($raw, $rules)->fails()) {
+        if (Validator::make($raw, $rules)->fails() || array_diff(array_keys(is_array($raw['digests'] ?? null) ? $raw['digests'] : []), self::Skippable) !== []) {
             self::invalid();
         }
         $rows = array_map(ValidatedData::object(...), is_array($raw['phases'] ?? null) ? $raw['phases'] : []);
@@ -65,10 +78,11 @@ final class NodeConvergeResult
         foreach ($rows as $row) {
             $phaseElapsed = $row['elapsed_seconds'];
             if (! is_int($row['changed']) || (! is_int($phaseElapsed) && ! is_float($phaseElapsed)) || ! is_finite((float) $phaseElapsed)
-                || ($row['status'] === 'skipped' && ($row['changed'] !== 0 || $phaseElapsed != 0))) {
+                || (in_array($row['status'], ['skipped', 'unchanged'], true) && ($row['changed'] !== 0 || $phaseElapsed != 0))) {
                 self::invalid();
             }
-            if ($row['status'] !== ($failure === null ? ($row['status'] === 'failed' ? 'failed' : 'succeeded') : 'skipped')) {
+            $unchanged = $failure === null && $row['status'] === 'unchanged' && in_array($row['name'], self::Skippable, true);
+            if (! $unchanged && $row['status'] !== ($failure === null ? ($row['status'] === 'failed' ? 'failed' : 'succeeded') : 'skipped')) {
                 self::invalid();
             }
             if ($row['status'] === 'failed') {
@@ -93,7 +107,7 @@ final class NodeConvergeResult
         }
         foreach (is_array($raw['tools'] ?? null) ? $raw['tools'] : [] as $tool) {
             $observation = ValidatedData::object($tool);
-            if (! is_int($observation['id']) || $rows[4]['status'] === 'skipped'
+            if (! is_int($observation['id']) || in_array($rows[4]['status'], ['skipped', 'unchanged'], true)
                 || ($observation['status'] === 'installed' && ($observation['installed_version'] === null || $observation['installed_version'] === ''))) {
                 self::invalid();
             }

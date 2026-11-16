@@ -76,8 +76,12 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             }
 
             $phases = $result['phases'];
-            self::recordCiRunner($operation, $intent, is_array($phases) && (ValidatedData::object($phases[3])['status'] ?? null) === 'succeeded');
-            if (is_array($phases) && (ValidatedData::object($phases[3])['status'] ?? null) === 'succeeded') {
+            $rolesPassed = is_array($phases) && NodeConvergeResult::passed($phases[3]);
+            self::recordCiRunner($operation, $intent, $rolesPassed);
+            if ($result['outcome'] === 'succeeded') {
+                app(NodeConvergePhaseDigest::class)->record(ValidatedData::integer($operation->node_id), ValidatedData::object($result['digests']));
+            }
+            if ($rolesPassed) {
                 foreach (is_array($intent['roles'] ?? null) ? $intent['roles'] : [] as $role) {
                     $role = ValidatedData::object($role);
                     app(GatewayPrivateDnsState::class)->record(ValidatedData::integer($operation->node_id), ValidatedData::object($role['runtime'] ?? []));

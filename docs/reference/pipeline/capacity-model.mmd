@@ -18,9 +18,9 @@ sequenceDiagram
   T->>TP: Delete the task VM
   Note over T,TP: Later work claims again<br/>base + task branch or save
   PR->>Q: Prove the PR head
-  Q->>CP: Take every free place<br/>at least 1 · up to batches
+  Q->>CP: Take every free place<br/>at least 1 · up to parts
   CP-->>VM: Fresh VMs<br/>from the base
-  Q->>VM: Split whole batches<br/>balance by measured time
+  Q->>VM: Split batches by case<br/>balance by measured time
   VM->>VM: Restore each fleet<br/>run its cases
   VM-->>Q: Verdict per case
   Q->>CP: Delete the proof VMs

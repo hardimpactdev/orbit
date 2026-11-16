@@ -17,7 +17,7 @@ sequenceDiagram
   CLI->>GW: node:converge NODE
   %%> Command:
   %%> - `orbit node:converge NODE`
-  %%> - syntax: `<node> [--base | --roles=a,b] [--idempotency-key=KEY] [--json]`
+  %%> - syntax: `<node> [--base | --roles=a,b] [--full] [--idempotency-key=KEY] [--json]`
   Note over GW: Validate, reserve targets
   %%> Requirements:
   %%> - access follows the [shared Node authority rule](/cli/node) (`NodeAccessAuthorizer`)
@@ -66,6 +66,7 @@ sequenceDiagram
     end
     GW->>SW: Start run, full intent<br/>operation-node-converge
     %%> Inputs:
+    %%> - the phase digests the Node records; admission clears the record, and `--full` or a recorded failed agent pin sends none (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change)
     %%> - target, scope, recorded roles, Tools, network and vault key names; playbooks read release pins
     %%> - the Gateway includes a CLI plan only for a Node with a recorded `ci-runner` assignment that is not being removed; scope flags do not change that decision
     %%> - reserve the Node and its recorded hub until the Operation settles; two base converges of different Nodes pass each other, the hub's own included (a base intent has no network)
@@ -76,6 +77,14 @@ sequenceDiagram
     SW->>SW: Prepare the input<br/>phase: input
     %%> What it does:
     %%> - writes private inventory, vars and known_hosts from schema-validated inputs
+    %%> - after it writes the files for the phases, computes each phase digest from what the phases read: those files with the Operation ID masked, the Ansible bundle and the Tool helper with its Tool files; lists the phases whose digest equals the record
+    opt digest equals the record
+      %% path: phase-unchanged
+      Note over SW: Skip an unchanged phase
+      %%> What it does:
+      %%> - the phase does not run and does not read the Node; the result shows it `unchanged`, with no changes and no time
+      %%> - drift is not an input: the check phase still reads the Node, and `--full` runs every phase
+    end
     SW->>N: Install Orbit's layer<br/>Ansible phase: agent
     %%> What it does:
     %%> - applies the agent, Orbit-owned files and units, and the kernel policy (SCTP blocked, non-local bind); restarts only changed services
@@ -122,7 +131,7 @@ sequenceDiagram
     %%> What it does:
     %%> - checks the selected software, units and role configuration, plus the recorded tunnel; on a target hub, every recorded peer on its interface, with no handshake wait
     %%> - checks the pinned CLI only when the Gateway supplied a CLI plan; otherwise checks that the managed CLI files are absent
-    %%> - all seven phases run in order, idempotently; an empty scope item needs no mutation
+    %%> - the phases run in order, idempotently; an empty scope item needs no mutation; input and check always run
     opt phases completed or failed
       %% path: cleanup
       SW->>SW: Remove private run files
@@ -138,7 +147,8 @@ sequenceDiagram
       %%> - with `ci-runner` in scope, records the seed listener in `nodes.seed_sender_id`: it keeps the sender it names when the intent names the same sender, and clears it otherwise (docs/reference/node-provisioning.md#the-seed-listener)
       %%> - with `ci-runner` in scope, records the hold script in `nodes.ci_hold_digest`: it keeps the digest when it is the digest of the script in the intent, and clears it otherwise; it keeps `nodes.ci_nested_hosting` only when the intent carries the nested branch (docs/reference/node-provisioning.md#proof-places-on-a-ci-node)
       %%> - the result lists each Instance container that got no Chromium trust store, with its reason
-      %%> - a repeat is another full run, not an admission skip; matching tasks report zero changes
+      %%> - records each phase digest on the Node, whether the phase ran or was unchanged
+      %%> - a repeat is another Operation, not an admission skip; its unchanged phases skip; with `--full`, matching tasks report zero changes
     else a phase fails
       %% path: phase-failed
       SW--xGW: Run failed<br/>error_code · failed step
@@ -152,6 +162,6 @@ sequenceDiagram
       %%> On the Node:
       %%> - completed and partial changes remain; no rollback and no Instance or assignment change
       %%> Retry:
-      %%> - a new attempt starts at input and reapplies every phase safely
+      %%> - the Node keeps no phase digest, so a new attempt starts at input and reapplies every phase safely
     end
   end

@@ -621,6 +621,15 @@ if (family === "list") {
     save();
     Deno.exit(file ? 0 : 1);
   }
+  // Root's workspace pass (instance_workspace_owner.py, ADR 0268) gives each entry of `from_uid` (1000) to `to_uid` (2750). Here it runs
+  // as the test user, who owns every fixture file and has no CAP_CHOWN: on a runner of uid 1000 every entry would be taken and its chown
+  // refused. As `incus file push --uid` does, the stand-in records the ownership the pass is asked for, and runs the real program for
+  // its group modes with a `from_uid` that no fixture file has, so the result does not depend on the runner's uid.
+  if (command[0] === "python3" && command.includes("-c") && command[command.indexOf("-c") + 1].startsWith(`"""Root's workspace pass`)) {
+    state.workspace_owner_runs ??= [];
+    state.workspace_owner_runs.push(command.slice(-3));
+    command = [...command.slice(0, -2), "4294967294", command.at(-1)!];
+  }
   const done = new Deno.Command(command[0], {
     args: command.slice(1).map((value) => command[0] === "git" && command[1] === "config" ? value : inside(name, value)),
     cwd: cwd === null ? undefined : inside(name, cwd),

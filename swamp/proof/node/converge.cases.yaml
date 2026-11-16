@@ -9,8 +9,8 @@ parallel: 1
 
 uncovered:
   "cli:caller-only": "Need CLI release publication fault control and managed-file fixtures to prove no-caller convergence succeeds with release_missing, removes the managed link, versioned binaries and root profile, and changes nothing on repeat; a ci-runner Node still requires its pin. Gateway admission tests and swamp/tests/node_converge_cli_test.ts cover these boundaries locally. Task VM proof retains the checkout source CLI."
-  "phases:ordered-desired-state": "Need ordered Operation-phase and Ansible-result assertions to prove input, agent, software, roles, tools, network, check on every run, with recipe.json pins held and no digest gating. Current code uses a digest-selected artifact plan and lacks this phase pipeline, the CLI installation and general role/software/Tool application."
-  "case:drift-repair": "Need a managed-artifact damage fixture plus content, permissions and Instance/role snapshot assertions to prove default converge repairs a damaged Orbit-owned file while Instance files, Instance records and role assignments remain unchanged. This must also exercise a matching previously recorded digest, which must not bypass repair."
+  "phases:ordered-desired-state": "Need ordered Operation-phase and Ansible-result assertions to prove input, agent, software, roles, tools, network, check on every run, with recipe.json pins held and an unchanged phase skipped by its digest. Current code uses a digest-selected artifact plan and lacks this phase pipeline, the CLI installation and general role/software/Tool application."
+  "case:drift-repair": "Need a managed-artifact damage fixture plus content, permissions and Instance/role snapshot assertions to prove default converge repairs a damaged Orbit-owned file while Instance files, Instance records and role assignments remain unchanged. A default converge whose phases are unchanged does not see that drift; the check phase or --full must find it."
   "scope:base": "Need a multi-role Node fixture and before/after artifact, package and Tool snapshots to prove --base changes only the agent, the Node’s CLI state, Orbit-owned files and units, leaving role-owned state and Instances untouched. The base-scope case checks flag admission and the end phase; current code has no scope flag."
   "scope:selected-roles": "Need a multi-role Node fixture and scoped state snapshots to prove --roles=a,b repairs only the base and those recorded roles, never another role, an Instance or an assignment. The selected-roles case checks flag admission and the end phase; current code has no role selection."
   "path:unassigned-role": "Need a fixture with a known but unassigned role to prove the unassigned-role path returns validation.failed without assigning it, starting an Operation or touching the Node. Empty, unknown and conflicting scope inputs have executable cases below."
@@ -25,45 +25,24 @@ uncovered:
   "path:cleanup": "Need private-run-file existence checks and cleanup/interruption fault injection to prove run-owned files are removed after work stops, completed changes remain and incomplete cleanup preserves the original failure. Current convergence has no private Ansible run directory or cleanup step."
   "admission:recorded-only": "Need request-time contact tracing to prove admission uses recorded state and never contacts the Node before starting the Operation, including with missing or stale agent facts. A missing agent report is not an additional eligibility refusal."
 
+waits:
+  idmap: "A converge with the app-dev role runs nested-app-dev's roles phase, which builds the Instance host's stock image. That needs the default's 2,000,000 ID map; below it the phase fails with too few uid/gid. The owner schedules the ID map window; until then the plan skips these cases."
+
 cases:
-  - id: required-only
+  - id: default-scope
     batch: fresh-fleet
+    waits: idmap
     covers: [main, admitted, succeeded]
-    summary: Required arguments alone apply the default scope and reach the final phase.
-    fails_today: The existing artifact workflow has no Check the Node phase and does not apply the seven-phase desired state.
-    act:
-      - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
-    expect: []
-
-  - id: base-scope
-    batch: fresh-fleet
-    covers: [main, admitted, base-scope, succeeded]
-    summary: The base flag admits a converge limited to Orbit's own layer and reaches the final phase.
-    fails_today: The CLI and request have no --base option or base-only intent.
-    act:
-      - cli: {run: [node:converge, "${app-dev.id}", --base], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
-    expect: []
-
-  - id: selected-roles
-    batch: fresh-fleet
-    covers: [main, admitted, selected-roles, succeeded]
-    summary: A recorded role can be selected with the base without adding a role.
-    fails_today: The CLI and request have no --roles option or selected-role intent.
-    act:
-      - cli: {run: [node:converge, "${app-dev.id}", --roles=app-dev], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
-    expect: []
-
-  - id: repeat
-    batch: fresh-fleet
-    covers: [main, admitted, succeeded]
-    summary: An intentional repeat applies the phases again with zero target changes within 120 seconds.
+    summary: One default converge is the main path; a full repeat runs every phase and changes nothing within 120 seconds; a keyed retry creates no Operation.
     stages:
+      # Required arguments alone apply the default scope and reach the final phase.
       - act:
           - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
         expect: []
+      # An intentional repeat is a new Operation. With --full every phase runs on matching intent, with zero target changes within 120 seconds.
       - act:
           - cli:
-              run: [node:converge, "${app-dev.id}"]
+              run: [node:converge, "${app-dev.id}", --full, --idempotency-key=proof-node-converge-retry]
               expect:
                 exit: 0
                 status: succeeded
@@ -72,17 +51,32 @@ cases:
                   - {path: result.changed, equals: 0}
                   - {path: result.elapsed_seconds, at_most: 120}
         expect: []
+      # The same request and key again returns the Operation of the repeat and starts nothing.
+      - act:
+          - cli: {run: [node:converge, "${app-dev.id}", --full, --idempotency-key=proof-node-converge-retry], expect: {exit: 0, status: succeeded, request: none}}
+        expect:
+          - unchanged: {since: act, what: [operations]}
 
-  - id: keyed-retry
+  - id: base-scope
     batch: fresh-fleet
-    covers: []
-    summary: A keyed retry creates no additional Operation; identity and run-count proof is uncovered above.
-    setup:
-      - cli: {run: [node:converge, "${app-dev.id}", --idempotency-key=proof-node-converge-retry], expect: {exit: 0, status: succeeded}}
+    covers: [main, admitted, base-scope, succeeded]
+    summary: The base flag admits a converge limited to Orbit's own layer; --full runs its phases again.
+    stages:
+      - act:
+          - cli: {run: [node:converge, "${app-dev.id}", --base], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
+        expect: []
+      - act:
+          - cli: {run: [node:converge, "${app-dev.id}", --base, --full], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}, json: [{path: result.changed, equals: 0}]}}
+        expect: []
+
+  - id: selected-roles
+    batch: fresh-fleet
+    waits: idmap
+    covers: [main, admitted, selected-roles, succeeded]
+    summary: A recorded role can be selected with the base without adding a role.
     act:
-      - cli: {run: [node:converge, "${app-dev.id}", --idempotency-key=proof-node-converge-retry], expect: {exit: 0, status: succeeded, request: none}}
-    expect:
-      - unchanged: {since: act, what: [operations]}
+      - cli: {run: [node:converge, "${app-dev.id}", --roles=app-dev], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
+    expect: []
 
   - id: unknown-node
     batch: fresh-fleet
@@ -167,16 +161,6 @@ cases:
     expect:
       - unchanged: {since: act}
 
-  - id: no-full-option
-    batch: fresh-fleet
-    read_only: true
-    covers: []
-    summary: There is no full option; required arguments already select every recorded role.
-    act:
-      - cli: {run: [node:converge, "${app-dev.id}", --full], expect: {exit: 1, request: none}}
-    expect:
-      - unchanged: {since: act}
-
   - id: caller-refused
     batch: no-grant
     covers: [main, caller-refused]
@@ -190,6 +174,7 @@ cases:
 
   - id: gateway-authority-without-target-grant
     batch: no-grant
+    waits: idmap
     covers: [main, admitted, succeeded]
     summary: A caller granted Gateway access can converge the target without a direct target grant.
     setup:

@@ -148,3 +148,5 @@ A coalesced proof range selects each intervening commit against its own first pa
 A manual hosted proof checks out trusted workflow code, passes the tested SHA only as data, and preserves the existing caller’s signal forwarding. A successful zero-case selection does not prove hosted execution.
 
 A fixture that replaces a subprocess environment must retain the interpreter's loader paths. Mint-order audits must distinguish a vault name from the resolved key on each live path. Size long fixture files from completed per-case receipts; keep censored estimates explicit and split before the whole-file ceiling.
+
+When moving fixture jobs to one runner pool, bound the sum of all fixture matrices, not each matrix separately. Preserve each class's worker count and mandatory reservations, keep fork code off the pool, and measure from push through Required, including queue and setup time.
