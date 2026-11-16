@@ -6,7 +6,6 @@ namespace App\Models;
 
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskCheckKind;
-use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskPrMode;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
@@ -56,11 +55,6 @@ final class TaskCheck extends Model
     public function task(): BelongsTo
     {
         return $this->belongsTo(Task::class);
-    }
-
-    public function process(): TaskCheckProcess
-    {
-        return new TaskCheckProcess($this->pid, $this->process_started, $this->head_before, $this->tree_before);
     }
 
     /** @return array<string, string> */
