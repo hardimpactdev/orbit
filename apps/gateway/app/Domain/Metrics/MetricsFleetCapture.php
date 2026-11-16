@@ -15,6 +15,7 @@ use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Metrics\MetricsConfigurationRenderer;
+use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsNode;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
@@ -228,7 +229,7 @@ final readonly class MetricsFleetCapture
         $host = $connection['connection'];
         $state = $this->service($node, (string) $metrics->wireguard_ip);
         $address = $target->wireguard_ip;
-        $exporter = "# Managed by Orbit: metrics\n[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={$address}:9100 --collector.systemd --collector.systemd.unit-include=orbit-node-worker[.]service\nRestart=always\nRestartSec=2\n";
+        $exporter = "# Managed by Orbit: metrics\n[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={$address}:9100 --collector.systemd --collector.systemd.unit-include=orbit-node-worker[.]service --collector.textfile.directory=".MetricsFootprint::ExporterTextfileDirectory."\nRestart=always\nRestartSec=2\n";
         $cadvisor = "# Managed by Orbit: metrics-cadvisor\n[Unit]\nDescription=Orbit cAdvisor exporter\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nExecStart=/usr/local/bin/orbit-cadvisor --listen_ip={$address} --port=9102 --store_container_labels=false --docker_only=false --disable_metrics=sched,percpu,memory_numa,cpuLoad,diskIO,disk,network,tcp,advtcp,udp,app,process,hugetlb,referenced_memory,cpu_topology,resctrl,cpuset,oom_event,pressure\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n";
         $files = [
             ['path' => '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf', 'ensure' => $enabled ? 'present' : 'absent', 'content' => $exporter],
