@@ -23,7 +23,7 @@ use LogicException;
  * Each writer calls the entry for its kind: `assert()` where the result can be a container, `checkout()` where it is always a
  * host checkout, `taskCopy()` where a task starts. A nested-fleet Project's Instances are only containers in the nested
  * project, made from the nested-fleet image (docs/reference/development-containers.md#the-nested-fleet-image): `assert()` refuses
- * it early on a Node whose switch is off, `place()` decides once the result is known, and `checkout()` refuses it.
+ * it early on a Node that hosts no nested fleets, `place()` decides once the result is known, and `checkout()` refuses it.
  */
 final readonly class InstancePlacement
 {
@@ -34,7 +34,7 @@ final readonly class InstancePlacement
      * The early check of a writer whose result can be a container, before it writes anything: development create and its admission.
      * A CI-only Node (ProofCopyHosts::ciOnly) takes no Instance of this writer but a proof copy, first: a task group's copy of the proof
      * Project's default (`$taskCopy`; docs/reference/node-provisioning.md#proof-copies-on-a-ci-node). A nested-fleet Project needs a Node
-     * whose switch is on; `place()` decides the rest once the result is known. A missing Node is the writer's own not-found.
+     * that hosts nested fleets; `place()` decides the rest once the result is known. A missing Node is the writer's own not-found.
      */
     public static function assert(Project $project, ?Node $node, bool $taskCopy = false): void
     {
@@ -42,7 +42,7 @@ final readonly class InstancePlacement
             throw new ResourceOperationException('instance.node_ci_only', 'The Node is a CI-only Node: only a proof copy is made there.', 409);
         }
         if ($project->nested_fleet && $node instanceof Node) {
-            self::assertSwitchedOn($node);
+            self::assertHostsNestedFleets($node);
         }
     }
 
@@ -73,14 +73,14 @@ final readonly class InstancePlacement
 
     /**
      * Where a new Instance of the Project lives on the Node: the Incus project of its container, or null for a host checkout. A
-     * nested-fleet Project lives only in a container in the nested project, on a Node whose nested-fleet switch is on.
+     * nested-fleet Project lives only in a container in the nested project, on a Node that hosts nested fleets.
      */
     public static function place(Project $project, Node $node, bool $container): ?string
     {
         if (! $project->nested_fleet) {
             return $container ? InstanceHostIntent::Project : null;
         }
-        self::assertSwitchedOn($node);
+        self::assertHostsNestedFleets($node);
         // A CI-only Node hosts containers without the build list: assert() let only a proof copy through to it.
         if (! $container || ! (app(ContainerNodes::class)->includes($node) || ProofCopyHosts::ciOnly($node))) {
             throw new ResourceOperationException('instance.nested_fleet_container_required',
@@ -92,12 +92,22 @@ final readonly class InstancePlacement
 
     /**
      * Whether a container runtime holds a nested fleet that Orbit keeps: a runtime in the nested project, of a nested-fleet Project, on a
-     * Node whose switch is on. Only then does its intent carry `fleet` (NestedFleetIntent).
+     * Node that hosts nested fleets. Only then does its intent carry `fleet` (NestedFleetIntent).
      */
     public static function keepsFleet(Project $project, Node $node, string $incusProject): bool
     {
-        return $incusProject === self::NestedProject && $project->nested_fleet
-            && app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->nested_fleet === true;
+        return $incusProject === self::NestedProject && $project->nested_fleet && self::hostsNestedFleets($node);
+    }
+
+    /**
+     * Whether the Node hosts nested fleets (docs/reference/projects.md#nested-fleet-setting): its nested-fleet switch is on, or it is a
+     * CI-only Node whose last `ci-runner` converge prepared nested hosting (`ci_nested_hosting`, ProofCopyHosts::recordConverge). A CI
+     * Node gets no switch: its own converge prepares the hosting, and assert() lets only a proof copy through to it.
+     */
+    public static function hostsNestedFleets(Node $node): bool
+    {
+        return app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->nested_fleet === true
+            || ($node->ci_nested_hosting === true && ProofCopyHosts::ciOnly($node));
     }
 
     /** @return list<string> Every Incus project that holds Instance containers. */
@@ -127,10 +137,11 @@ final readonly class InstancePlacement
         ] : [];
     }
 
-    private static function assertSwitchedOn(Node $node): void
+    private static function assertHostsNestedFleets(Node $node): void
     {
-        if (app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->nested_fleet !== true) {
-            throw new ResourceOperationException('instance.nested_fleet_host_unavailable', 'The Node has not switched on nested-fleet hosting.', 409);
+        if (! self::hostsNestedFleets($node)) {
+            throw new ResourceOperationException('instance.nested_fleet_host_unavailable',
+                'The Node hosts no nested fleets: switch on its nested-fleet hosting, or converge the ci-runner role of a CI-only Node.', 409);
         }
     }
 

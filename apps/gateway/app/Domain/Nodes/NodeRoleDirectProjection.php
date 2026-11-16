@@ -10,6 +10,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\NativeOperationProjection;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
@@ -94,6 +95,7 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
             }
             if ($snapshot['role'] === RoleName::CiRunner->value) {
                 ProofSeeds::recordListener(ValidatedData::integer($operation->node_id), ValidatedData::object($intent['runtime'] ?? []), $proven, opens: true);
+                ProofCopyHosts::recordConverge(ValidatedData::integer($operation->node_id), ValidatedData::object($intent['runtime'] ?? []), $proven, sets: true);
             }
             $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $snapshot['role'])->firstOrFail();
             if ($proven) {

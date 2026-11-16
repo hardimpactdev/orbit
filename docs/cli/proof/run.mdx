@@ -88,7 +88,7 @@ Each run of a proof gets a copy of the proof Project's default Instance, the Orb
 
 A proof puts its copies on free [CI places](/reference/node-settings#ci-places) across all CI Nodes ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies)). A place runs one runner job or one proof copy. The proof takes one copy per free place, and at most one copy per batch. Operator and CI proofs follow the same rule. There is no `proof.copies` limit, and a proof does not read `orbit.tasks.copies_max`: task copies do not use CI places.
 
-A Node offers places to a proof when it [offers proof places](/reference/node-provisioning#proof-copies-on-a-ci-node) and holds the default's current seed. The default's own Node holds the seed itself. A Node whose seed is behind offers no place, so one proof never mixes the fleets of two seeds.
+A Node offers places to a proof when it [offers proof places](/reference/node-provisioning#proof-copies-on-a-ci-node), records the [hold script](/reference/node-provisioning#proof-places-on-a-ci-node) that this release installs, and holds the default's current seed. The default's own Node holds the seed itself. A Node whose seed is behind offers no place, so one proof never mixes the fleets of two seeds. A Node whose `ci-runner` role has not installed this release's hold script offers no place until a `ci-runner` add or converge of the Node passes.
 
 The free places of a Node are the smaller of two counts:
 

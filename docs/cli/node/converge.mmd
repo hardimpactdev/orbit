@@ -136,6 +136,7 @@ sequenceDiagram
       %%> Result:
       %%> - the shared reader marks the Operation succeeded and records each Tool's result
       %%> - with `ci-runner` in scope, records the seed listener in `nodes.seed_sender_id`: it keeps the sender it names when the intent names the same sender, and clears it otherwise (docs/reference/node-provisioning.md#the-seed-listener)
+      %%> - with `ci-runner` in scope, records the hold script in `nodes.ci_hold_digest`: it keeps the digest when it is the digest of the script in the intent, and clears it otherwise; it keeps `nodes.ci_nested_hosting` only when the intent carries the nested branch (docs/reference/node-provisioning.md#proof-places-on-a-ci-node)
       %%> - the result lists each Instance container that got no Chromium trust store, with its reason
       %%> - a repeat is another full run, not an admission skip; matching tasks report zero changes
     else a phase fails
@@ -144,6 +145,7 @@ sequenceDiagram
       %%> Result:
       %%> - stop at the failed phase and mark the Operation failed; later phases do not run
       %%> - with `ci-runner` in scope, records the seed listener as on success when the roles phase passed, and clears `nodes.seed_sender_id` when it did not
+      %%> - with `ci-runner` in scope, records the hold script as on success when the roles phase passed, and clears `nodes.ci_hold_digest` and `nodes.ci_nested_hosting` when it did not
       %%> - the result names the earliest fatal task among hosts whose statistics fail: each host contributes its last failed or unreachable record; ties select hub; names are bounded and may be withheld
       %%> - censored-only evidence from a failed host reports a hidden task; missing, malformed or task-free reports leave `failure` absent; private callback output stays private
       %%> - unreachable targets fail here, not at a live admission check

@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolOperation;
@@ -46,7 +47,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
                 throw new ResourceOperationException('operation.result_invalid', 'An unsuccessful native run cannot report success.', 422);
             }
         } catch (ResourceOperationException $error) {
-            self::recordSeedListener($operation, $intent, false);
+            self::recordCiRunner($operation, $intent, false);
 
             return app(DirectOperation::class)->project($operation, [...$data, 'status' => 'failed', 'error_code' => $error->errorCode], ['error_code' => $error->errorCode]);
         }
@@ -75,7 +76,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             }
 
             $phases = $result['phases'];
-            self::recordSeedListener($operation, $intent, is_array($phases) && (ValidatedData::object($phases[3])['status'] ?? null) === 'succeeded');
+            self::recordCiRunner($operation, $intent, is_array($phases) && (ValidatedData::object($phases[3])['status'] ?? null) === 'succeeded');
             if (is_array($phases) && (ValidatedData::object($phases[3])['status'] ?? null) === 'succeeded') {
                 foreach (is_array($intent['roles'] ?? null) ? $intent['roles'] : [] as $role) {
                     $role = ValidatedData::object($role);
@@ -88,17 +89,20 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
     }
 
     /**
-     * The roles phase of a converge with `ci-runner` writes or removes the seed listener's trust, so its end records the listener by the
-     * one rule of {@see ProofSeeds::recordListener()}. It never opens the listener.
+     * The roles phase of a converge with `ci-runner` writes or removes the seed listener's trust, writes the hold script and prepares the
+     * Instance container branch, so its end records the listener by the one rule of {@see ProofSeeds::recordListener()}, and the script and
+     * nested hosting by that of {@see ProofCopyHosts::recordConverge()}.
+     * It never opens the listener.
      *
      * @param  array<string, mixed>  $intent
      */
-    private static function recordSeedListener(Operation $operation, array $intent, bool $rolesPassed): void
+    private static function recordCiRunner(Operation $operation, array $intent, bool $rolesPassed): void
     {
         foreach (is_array($intent['roles'] ?? null) ? $intent['roles'] : [] as $role) {
             $role = ValidatedData::object($role);
             if (($role['role'] ?? null) === RoleName::CiRunner->value) {
                 ProofSeeds::recordListener(ValidatedData::integer($operation->node_id), ValidatedData::object($role['runtime'] ?? []), $rolesPassed, opens: false);
+                ProofCopyHosts::recordConverge(ValidatedData::integer($operation->node_id), ValidatedData::object($role['runtime'] ?? []), $rolesPassed, sets: false);
             }
         }
     }

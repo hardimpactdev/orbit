@@ -23,7 +23,7 @@ sequenceDiagram
   Note over GW: Validate, reserve Instance<br/>address · T3 port · .env
   %%> Requirements:
   %%> - the calling Node has node access to the target Node, an active `app-dev` Node
-  %%> - a Project with `nested_fleet` on is admitted only as a container in the nested Incus project: `instance.nested_fleet_host_unavailable` (409) when the Node has nested-fleet hosting off, `instance.nested_fleet_container_required` (409) when the Node is not on the build list or the result is a host checkout, both before any record; the clone is a copy of its default, in the same Incus project
+  %%> - a Project with `nested_fleet` on is admitted only as a container in the nested Incus project: `instance.nested_fleet_host_unavailable` (409) when the Node hosts no nested fleets (its switch is off, and it is no CI-only Node whose `ci-runner` converge recorded nested hosting), `instance.nested_fleet_container_required` (409) when the Node is not on the build list or the result is a host checkout, both before any record; the clone is a copy of its default, in the same Incus project
   %%> - the Project's `default` Instance runs in a container on this Node, is active and has a seed snapshot, else `instance.default_missing`; an asleep or stopped default is a valid source: the clone copies the seed snapshot and never wakes it
   %%> - a proof copy may go to another Node that offers proof places when that Node's seed is the default's current seed (the same commit and time taken); it clones that seed, and the database refuses any other clone on another Node than its default
   %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
@@ -81,6 +81,7 @@ sequenceDiagram
     %%> When:
     %%> - first in the clone job, before the copy exists; every other clone skips it
     %%> What it does:
+    %%> - first checks that the `ci-runner` role's hold script is on the Node. When it is missing, the step calls nothing and prints a refusal; the copy does not start, and the create fails with `instance.ci_hold_unavailable`, naming the Node
     %%> - runs the `ci-runner` role's hold script as root: `orbit-ci-runner-hold hold <copy> <places>`, with the Node's `ci_places`
     %%> - records the copy's hold, then stops idle runner services on the Node down to the places left to runners; a busy runner is never stopped (docs/reference/node-provisioning.md#proof-places-on-a-ci-node)
     %%> On failure:

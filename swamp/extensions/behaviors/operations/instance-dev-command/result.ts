@@ -31,6 +31,7 @@ export const CreateArgs = z.object({
         register: z.string().default("skipped"),
         server: z.string().nullable().default(null),
         club_key: Step.nullable().default(null),
+        ci_hold: Step.nullable().default(null),
     }).nullable().default(null),
 });
 
@@ -155,7 +156,19 @@ type Container = {
     server?: string | null;
     /** A nested-fleet clone's `club-key` step. */
     club_key?: Phase;
+    /** A proof copy's `clone-ci-hold` step. */
+    ci_hold?: Phase;
 };
+
+/**
+ * The line that a proof copy's `clone-ci-hold` prints when its Node has no hold script of the `ci-runner` role: the step calls nothing,
+ * and the create fails with `instance.ci_hold_unavailable` (docs/reference/node-provisioning.md#proof-places-on-a-ci-node).
+ */
+export const CI_HOLD_UNAVAILABLE = "orbit-ci-hold=unavailable";
+
+function ciHoldUnavailable(step: Phase): boolean {
+    return step?.status === "succeeded" && String(step.outputs?.stdout ?? "").split("\n").includes(CI_HOLD_UNAVAILABLE);
+}
 
 /** The checkout phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
 const COMMIT = /orbit-commit=([0-9a-f]{40}|[0-9a-f]{64})\b/;
@@ -342,11 +355,14 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
                 failed_step: failed[0],
                 // A setup command keeps the public step-list code; T3 that never answers has its own; other phases name themselves.
                 // The T3 step's agent part keeps the agent phase's code, so a failure or a timeout there never reads as T3.
-                error_code: failed[0] === "setup"
+                error_code: failed[0] === "ci_hold"
+                    ? "instance.ci_hold_unavailable"
+                    : failed[0] === "setup"
                     ? "instance.setup_step_failed"
                     : failed[0] === "t3"
                     ? (phases.t3_part === "agent" ? "instance.create_agent_failed" : "instance.t3_unready")
                     : "instance.create_" + failed[0] + "_failed",
+                ...(failed[0] === "ci_hold" ? {detail: `The Node ${ciHoldNode(intent)} has no hold script of its ci-runner role. Converge the role on the Node.`} : {}),
             }
             : {}),
     };
@@ -378,6 +394,12 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     return { ready: failed === undefined, stdout: JSON.stringify(result) };
 }
 
+/** The Node of a proof copy's CI place, as the Gateway names it in the hold intent that runs `clone-ci-hold`. */
+function ciHoldNode(intent: Record<string, unknown>): string {
+    return z.object({ container: z.object({ clone: z.object({ ci_hold: z.object({ node: z.string().min(1) }) }) }) }).parse(intent)
+        .container.clone.ci_hold.node;
+}
+
 /**
  * A container default's phases in order: the container, the workspace with its commit, each development deploy step, the
  * Processes, the Route and the seed snapshot. A clone's create ends when its thread is usable: the copy, the checkout with its commit,
@@ -399,7 +421,9 @@ function containerOutcomes(
     ];
     const clone = (intent.container as { clone?: unknown } | null)?.clone ?? null;
     if (clone !== null) {
+        const unavailable = ciHoldUnavailable(container.ci_hold);
         return [
+            ["ci_hold", !unavailable, unavailable],
             ["clone", container.launch === "succeeded", container.launch === "failed"],
             // One step runs the checkout, T3 and the sessions check; the part it was running names the phase that failed.
             ["workspace", commit !== null, container.workspace?.status === "failed" && phases.t3_part === "checkout"],

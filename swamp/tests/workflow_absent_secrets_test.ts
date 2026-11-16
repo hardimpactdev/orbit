@@ -192,7 +192,8 @@ Deno.test("a clone's create delivers a nested clone's Club key and has no fleet 
   const holdArgv = (intent: Record<string, unknown>) => environment.evaluate(swampExpression(step("clone-ci-hold").task.inputs.argv), { inputs: { intent } });
   assertEquals([holds(held), holds({ ...held, container: { name: "instance-8", clone: { source: "instance-7" } } }), holds({ ...held, container: null })],
     [false, true, true]);
-  assertEquals(holdArgv(held), ["timeout", "240", "/usr/local/libexec/orbit-ci-runner-hold", "hold", "instance-8", "5"]);
+  // The step checks the script before it calls it: a Node without it prints the refusal line and calls nothing.
+  assertEquals(holdArgv(held), ["timeout", "240", "sh", "-c", "[ -x \"$1\" ] || { echo orbit-ci-hold=unavailable; exit 0; }; exec \"$@\"", "orbit-ci-hold", "/usr/local/libexec/orbit-ci-runner-hold", "hold", "instance-8", "5"]);
   assertEquals(holdArgv({ ...held, container: null }), ["true"]);
   // The T3 step runs the checkout part only; the services part is the completion's. Its stdin is the workspace's private JSON.
   assert(step("clone-t3").task.inputs.argv.endsWith(', "t3"] }}'));
@@ -340,7 +341,7 @@ Deno.test("a normal clone succeeds at the registration in about 17 s: no input s
 });
 
 Deno.test("a proof copy's create holds its CI place before the copy; a failed hold copies nothing", () => {
-  const proofIntent = { ...cloneIntent, container: { ...cloneIntent.container, name: "instance-8", clone: { source: "instance-7", ci_hold: { places: 5 } } } };
+  const proofIntent = { ...cloneIntent, container: { ...cloneIntent.container, name: "instance-8", clone: { source: "instance-7", ci_hold: { places: 5, node: "ci-a" } } } };
   const ran = runCreate(proofIntent, { ...cloneOutcomes(), "clone-ci-hold": { duration: 2 } });
   assertEquals([ran["clone-ci-hold"].status, ran["clone-ci-hold"].start], ["succeeded", 0]);
   assertEquals(ran["clone-container"].start, ran["clone-ci-hold"].end);
@@ -348,6 +349,13 @@ Deno.test("a proof copy's create holds its CI place before the copy; a failed ho
   assertEquals(runCreate(cloneIntent, cloneOutcomes())["clone-ci-hold"].status, "skipped");
   const refused = runCreate(proofIntent, { ...cloneOutcomes(), "clone-ci-hold": { status: "failed", duration: 2 } });
   assertEquals([refused["clone-container"].status, refused["clone-t3"].status], ["skipped", "skipped"]);
+  // A Node without the hold script: the step prints its refusal, nothing copies, and the create fails with the named code and Node.
+  const missing = runCreate(proofIntent, { ...cloneOutcomes(), "clone-ci-hold": { duration: 0.2, outputs: { stdout: "orbit-ci-hold=unavailable\n" } } });
+  assertEquals([missing["clone-ci-hold"].status, missing["clone-container"].status, missing["clone-t3"].status], ["succeeded", "skipped", "skipped"]);
+  const result = JSON.parse(String(resultOf(missing).outputs?.stdout));
+  assertEquals([result.ready, result.failed_step, result.error_code], [false, "ci_hold", "instance.ci_hold_unavailable"]);
+  assertEquals(result.detail, "The Node ci-a has no hold script of its ci-runner role. Converge the role on the Node.");
+  assertEquals(missing.accepted.status, "failed");
 });
 
 Deno.test("every create meets clone-ci-hold: each of its expressions resolves at run start, and only a proof copy runs it", () => {
@@ -379,7 +387,7 @@ Deno.test("every create meets clone-ci-hold: each of its expressions resolves at
     default: [true, ["true"]],
     clone: [true, ["true"]],
     plain: [true, ["true"]],
-    proof: [false, ["timeout", "240", "/usr/local/libexec/orbit-ci-runner-hold", "hold", "instance-8", "5"]],
+    proof: [false, ["timeout", "240", "sh", "-c", "[ -x \"$1\" ] || { echo orbit-ci-hold=unavailable; exit 0; }; exec \"$@\"", "orbit-ci-hold", "/usr/local/libexec/orbit-ci-runner-hold", "hold", "instance-8", "5"]],
   });
 });
 

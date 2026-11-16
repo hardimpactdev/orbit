@@ -44,8 +44,14 @@ final class CiRunnerStateFiles
             'owner' => 'root', 'group' => 'root', 'mode' => $mode];
 
         return [$file(self::Script, (string) file_get_contents(resource_path('ci-runner/state.py')), '0755'),
-            $file(self::Hold, (string) file_get_contents(resource_path('ci-runner/hold.py')), '0755'),
+            $file(self::Hold, self::holdScript(), '0755'),
             $file('/etc/systemd/system/'.self::Service, self::service(), '0644')];
+    }
+
+    /** The hold script that this release installs. */
+    public static function holdScript(): string
+    {
+        return (string) file_get_contents(resource_path('ci-runner/hold.py'));
     }
 
     /** @return list<array{name: string, unit: string}> */

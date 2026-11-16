@@ -12,6 +12,7 @@ use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
@@ -233,7 +234,8 @@ beforeEach(function (): void {
  */
 function copyProofCiNode(Node $node, int $places, int $busy = 0, int $memory = 64 * 1024 ** 3, int $age = 5): Node
 {
-    $node->update(['settings' => [...($node->settings ?? []), 'ci' => ['places' => $places, 'proof_only' => false]]]);
+    // Its passed ci-runner converge installed this release's hold script (docs/reference/node-provisioning.md#proof-places-on-a-ci-node).
+    $node->forceFill(['settings' => [...($node->settings ?? []), 'ci' => ['places' => $places, 'proof_only' => false]], 'ci_hold_digest' => ProofCopyHosts::holdDigest()])->save();
     if (! $node->roles()->where('role', RoleName::CiRunner)->exists()) {
         $node->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
     }
@@ -382,6 +384,8 @@ describe('proof:run in copies: admission', function (): void {
             ->and($copies->every(static fn (Instance $copy): bool => $copy->runtime?->clone_source_instance_id === Instance::query()->where('name', 'default')->value('id')))->toBeTrue();
         $onCi = $copies->firstWhere('node_id', $ci->id);
         $clone = app(InstanceContainer::class)->intent($onCi, $onCi->runtime)['clone'] ?? null;
+        // The copy on the CI-only Node keeps its inner fleet: its create intent starts it, so the copy's fleet can be reset.
+        expect(app(NestedFleetIntent::class)->forClone($onCi, $onCi->runtime))->not->toBeNull();
         // The copy needs no Git mirror of the Project on its Node: its run fetches the commit by its SHA.
         expect($clone['source'] ?? null)->toBe('orbit-proof-seed-ci-a')->and($clone['seed_commit'] ?? null)->toBe(str_repeat('c', 40))
             ->and($clone)->not->toHaveKey('source_mirror');
@@ -390,12 +394,37 @@ describe('proof:run in copies: admission', function (): void {
         foreach ($copies as $copy) {
             $create = Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)->sole();
             expect($create->input['direct_provisioning']['container']['clone']['ci_hold'] ?? null)
-                ->toBe(['places' => ProofCopyHosts::places(Node::query()->findOrFail($copy->node_id))])
+                ->toBe(['places' => ProofCopyHosts::places(Node::query()->findOrFail($copy->node_id)), 'node' => Node::query()->findOrFail($copy->node_id)->name])
                 ->and(app(ContainerInstanceDestroy::class)->capture($copy)['ci_hold'] ?? null)->toBeTrue();
         }
         copyProofOtherCopies(1);
         $task = Instance::query()->where('name', 'other-1')->firstOrFail();
         expect(app(ContainerInstanceDestroy::class)->capture($task))->not->toHaveKey('ci_hold');
+    });
+});
+
+describe('proof:run in copies: the hold script', function (): void {
+    it('places no copy on a Node without this release\'s hold script until its ci-runner converge installs it', function (?string $recorded): void {
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 1);
+        $ci = copyProofCiOnlyNode('ci-a', '10.44.0.21', current: true);
+        Node::query()->whereKey($ci->id)->update(['ci_hold_digest' => $recorded === null ? null : hash('sha256', $recorded)]);
+        copyProofAdmitted();
+
+        expect(Instance::query()->whereNotNull('task_workspace_owner_id')->pluck('node_id')->all())
+            ->toBe([Node::query()->where('name', 'beast')->value('id')]);
+    })->with([
+        'no record: the Node was not converged since the script came' => [null],
+        'a changed script: the Node holds an older one' => ['an older hold script'],
+    ]);
+
+    it('places no copy on a CI-only Node whose ci-runner converge did not prepare nested hosting', function (): void {
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 1);
+        $ci = copyProofCiOnlyNode('ci-a', '10.44.0.21', current: true);
+        $ci->forceFill(['ci_nested_hosting' => false])->save();
+        $proof = copyProofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Running)
+            ->and(Instance::query()->whereNotNull('task_workspace_owner_id')->pluck('node_id')->all())->toBe([Node::query()->where('name', 'beast')->value('id')]);
     });
 });
 
@@ -412,12 +441,15 @@ function copyProofOtherCopies(int $count): void
     }
 }
 
-/** A CI-only Node that offers proof places, idle, whose seed of the proof default is current or one seed behind. */
+/**
+ * A CI-only Node that offers proof places, idle, whose seed of the proof default is current or one seed behind. It has no nested-fleet
+ * switch: its ci-runner converge prepared nested hosting and recorded it (docs/reference/projects.md#nested-fleet-setting).
+ */
 function copyProofCiOnlyNode(string $name, string $address, bool $current): Node
 {
     $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'wireguard_ip' => $address, 'public_ssh_host' => $address, 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
-        'settings' => ['nested_fleet' => true]]));
+        'wireguard_ip' => $address, 'public_ssh_host' => $address, 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+    $node->forceFill(['ci_nested_hosting' => true])->save();
     app(AllocateInstanceBridgeAction::class)->execute($node);
     $node = copyProofCiNode($node->refresh(), 2);
     $default = InstanceRuntime::query()->whereHas('instance', static fn ($instance) => $instance->where('name', 'default'))->firstOrFail();

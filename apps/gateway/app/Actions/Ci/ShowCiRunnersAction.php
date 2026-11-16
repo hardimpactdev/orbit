@@ -71,7 +71,7 @@ final readonly class ShowCiRunnersAction
             $views[] = new CiNodeData(
                 node_id: $node->id,
                 node_name: $node->name,
-                places: self::places($this->settings->fromStored($node->settings)?->ci(), $busy, count($own)),
+                places: self::places($node, $this->settings->fromStored($node->settings)?->ci(), $busy, count($own)),
                 proof_copies: $own,
                 resources: $fact instanceof NodeFact ? $this->resources($node, $fact) : null,
                 runner_state: $this->runnerState($state, $now),
@@ -165,10 +165,10 @@ final readonly class ShowCiRunnersAction
     }
 
     /** The Node's `ci` setting counts its places; ProofCopyHosts holds the rule of the free ones. */
-    private static function places(?NodeCiData $ci, int $busyRunners, int $proofCopies): CiPlacesData
+    private static function places(Node $node, ?NodeCiData $ci, int $busyRunners, int $proofCopies): CiPlacesData
     {
         return new CiPlacesData($ci?->places, $ci?->proof_only === true, ProofCopyHosts::runnerJobs($ci, $busyRunners), $proofCopies,
-            $ci === null ? null : ProofCopyHosts::freePlaces($ci, $busyRunners, $proofCopies));
+            $ci === null ? null : ProofCopyHosts::freePlaces($node, $ci, $busyRunners, $proofCopies));
     }
 
     /** @param list<int> $values */

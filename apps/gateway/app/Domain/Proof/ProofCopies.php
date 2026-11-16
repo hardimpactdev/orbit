@@ -58,8 +58,8 @@ final readonly class ProofCopies
     }
 
     /**
-     * The free CI places a proof may take now on each Node, by Node id, Nodes without one left out. A Node counts when it offers proof
-     * places and holds the default's current seed: the default's own Node holds it. Its places are its free CI places
+     * The free CI places a proof may take now on each Node, by Node id, Nodes without one left out. A Node counts when it holds the
+     * default's current seed: the default's own Node holds it. Its places are its free CI places
      * (ProofCopyHosts::freePlaces), and no more than its available memory holds copy peaks. A Node without a fresh runner state or a
      * memory read offers none.
      *
@@ -94,8 +94,7 @@ final readonly class ProofCopies
         $nodes = Node::query()->where('status', LifecycleStatus::Active)
             ->whereHas('roles', static fn ($roles) => $roles->where('role', RoleName::CiRunner)->where('status', '!=', LifecycleStatus::Removing))
             ->orderBy('id')->get()
-            ->filter(static fn (Node $node): bool => ProofCopyHosts::offersPlaces($node)
-                && ($node->id === $default->node_id || app(ProofSeeds::class)->holder($node) !== null));
+            ->filter(static fn (Node $node): bool => ($node->id === $default->node_id || app(ProofSeeds::class)->holder($node) !== null));
         $copies = ProofCopyHosts::copies()->whereIn('node_id', $nodes->modelKeys())->pluck('node_id')->countBy();
         $fresh = now()->getTimestamp() - ShowCiRunnersAction::StaleSeconds;
 
@@ -108,7 +107,7 @@ final readonly class ProofCopies
                 continue;
             }
             $busy = count(array_filter($state['runners'], static fn (array $runner): bool => $runner['busy']));
-            $free = min($allFree ? ProofCopyHosts::freePlaces($ci, 0, 0) : ProofCopyHosts::freePlaces($ci, $busy, $copies->get($node->id, 0)),
+            $free = min($allFree ? ProofCopyHosts::freePlaces($node, $ci, 0, 0) : ProofCopyHosts::freePlaces($node, $ci, $busy, $copies->get($node->id, 0)),
                 ProofCopyHosts::memoryPlaces($memory));
             if ($free > 0) {
                 $places[$node->id] = $free;

@@ -12,6 +12,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketRegistry;
@@ -64,6 +65,7 @@ final readonly class NodeRoleRemovalProjection implements DirectOperationProject
             $node = $assignment->node;
             if ($assignment->role === RoleName::CiRunner) {
                 ProofSeeds::forgetListener($node->id);
+                ProofCopyHosts::forgetConverge($node->id);
             }
             if ($status === OperationStatus::Succeeded) {
                 self::recordCleanup($snapshot);
