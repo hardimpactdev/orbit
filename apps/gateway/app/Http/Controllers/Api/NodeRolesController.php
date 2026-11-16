@@ -56,7 +56,7 @@ final class NodeRolesController extends Controller
 
         try {
             $result = $action->add($node, $role, $request->convergeExisting(), $request->analyticsSettings(),
-                requestId: $request->attributes->getString('orbit.request_id'));
+                requestId: $request->attributes->getString('orbit.request_id'), full: $request->full());
         } catch (RoleAssignmentException $exception) {
             throw new NodeRoleValidationException(
                 message: $exception->getMessage(),

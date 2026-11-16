@@ -31,6 +31,9 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
      */
     private const array StepsBeforeNodeChange = ['Read the OS release', 'Require supported Ubuntu'];
 
+    /** The step that compares the role phase digests; its stdout holds them. */
+    public const string DigestStep = 'Compare phase digests';
+
     public function native(Operation $operation): bool
     {
         return true;
@@ -100,6 +103,12 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
             $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $snapshot['role'])->firstOrFail();
             if ($proven) {
                 $assignment->markConvergenceActive();
+                // The digests of this run (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change); a failed run leaves no record.
+                $phases = ValidatedData::object(ValidatedData::object($raw['steps'] ?? [])[self::DigestStep] ?? [])['stdout'] ?? null;
+                if (is_string($phases)) {
+                    app(NodeConvergePhaseDigest::class)->record(ValidatedData::integer($operation->node_id),
+                        ValidatedData::object(ValidatedData::object(json_decode($phases, true, flags: JSON_THROW_ON_ERROR))['digests'] ?? []));
+                }
                 // A Node that offers proof places gets its seed of the proof default now, not at the next release
                 // (docs/reference/development-containers.md#the-seed-on-each-ci-node).
                 if ($assignment->role === RoleName::CiRunner) {

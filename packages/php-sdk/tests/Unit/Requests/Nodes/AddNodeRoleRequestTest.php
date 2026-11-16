@@ -49,6 +49,12 @@ describe(AddNodeRoleRequest::class, function (): void {
             ->and($response->status)->toBe('queued')->and($response->requestId)->toBe(node_role_request_id());
     });
 
+    it('sends full only when a convergence asks for every phase', function (): void {
+        expect((new AddNodeRoleRequest(13, 'app-prod', true, full: true))->body()->all())
+            ->toBe(['role' => 'app-prod', 'converge_existing' => true, 'full' => true])
+            ->and((new AddNodeRoleRequest(13, 'app-prod', true))->body()->all())->toBe(['role' => 'app-prod', 'converge_existing' => true]);
+    });
+
     it('maps gateway validation failures with safe details and header request id', function (): void {
         $mockClient = new MockClient([
             AddNodeRoleRequest::class => MockResponse::make(

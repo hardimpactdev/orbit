@@ -28,6 +28,7 @@ class AddNodeRoleCommand extends NodeCommand
         {node? : Positive numeric Node ID}
         {role? : Role name}
         {--converge : Converge an existing assignment}
+        {--full : With --converge: run every phase, also a phase whose input did not change}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--postgres-process= : For the analytics role: ID of its PostgreSQL 16 or managed PostgreSQL 18 storage Process}
         {--clickhouse-process= : For the analytics role: ID of its ClickHouse Process on a database Node}
@@ -88,6 +89,12 @@ class AddNodeRoleCommand extends NodeCommand
             }
         }
 
+        if ($this->option('full') === true && $this->option('converge') !== true) {
+            $this->renderGatewayFailure('validation.failed', '--full is only valid with --converge.', details: ['field' => '--full']);
+
+            return self::FAILURE;
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -119,7 +126,7 @@ class AddNodeRoleCommand extends NodeCommand
         }
 
         $request = new AddNodeRoleRequest($nodeId, $role, $this->option('converge') === true, $storage[0], $storage[1],
-            is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null);
+            is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null, $this->option('full') === true);
         $response = $this->sendWithProgress(
             $connector,
             $request,
