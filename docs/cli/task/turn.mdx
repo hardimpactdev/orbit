@@ -13,6 +13,8 @@ orbit task:turn 43 --role=reviewer --prompt="Review the checked commit." --threa
 
 The agent receives the title, brief and deliverables of the subtask, then your prompt, for every role. Send only what this turn adds; do not paste the brief.
 
+The prompt also gives the agent the turn's clock, for every role: `This turn started at 2026-11-16T10:00:00Z and Orbit ends it at 2026-11-16T11:00:00Z. Commit your work before then.` The start is the time Orbit admitted the turn, in UTC; the end is one hour later, the turn's bound.
+
 `--role` is `implementer` or `reviewer`. A turn without `--thread` continues the role's thread, `--thread=new` starts a new thread, and `--thread=ID` names the thread the turn continues. A new thread takes its role's model; a continued thread keeps its model.
 
 The role `consult` and `--model` belonged to the turn on a task VM, which is removed with the Pi task loop ([old paths](/reference/old-paths#the-pi-task-loop)). This CLI does not offer them. A Gateway answers an older CLI that sends either with `validation.failed` (422) on that field.
@@ -28,6 +30,8 @@ A task that owns a [task copy](/reference/tasks#task-copy) runs its turns in it.
 - T3 applies the effort through its own settings: the copy's create gives T3 one Claude provider instance per effort level, and the thread starts on the instance of its provider and effort. That Claude Code takes the instance's `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` T3 passes was verified with Claude Code 2.1.311 and T3 0.1.7. A copy made before this lacks those instances, so T3 refuses its new threads. Cancel it and start the task again.
 - The transcript is the whole thread's message text, the newest kept within its bound.
 - The turn's result names the provider instance, the model and the effort the thread started with, such as `claudeMedium`, `claude-opus-5-5` and `medium`. A refused turn names them too, although nothing was launched.
+- The turn's result holds `agent_id`, the ID of the agent thread that `task:agent:list` lists and [`task:agent:show`](/cli/task/agent-show) reads, and `reply`, the agent's reply: the text of the transcript's last entry that the user did not write. A reply longer than 16,384 characters keeps its first 16,384 and ends with ` [cut: N more characters; read task:agent:show <group> <agent_id>]`. A turn with no transcript, or none but user entries, has `reply: null`. The transcript itself stays out of the result.
+- Human output prints the reply under the outcome. `--json` carries `agent_id` and `reply` in the Operation's `result`.
 - The implementer's prompt says how to ask: with the agent's question tool.
 - A question ends the turn. Orbit first stores the question, then stops the run. The Operation succeeds with the state `asking_for_input`. Its result holds each question with its header and options, in the agent's words, and `task:agent:list` shows them on the thread until its next turn.
 - The role's next turn answers the question. Its prompt quotes the questions first, then your prompt as the answer. A message to the thread from a T3 client answers it too.

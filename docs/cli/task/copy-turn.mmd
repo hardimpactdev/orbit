@@ -2,6 +2,7 @@ sequenceDiagram
   %% Target design (orchestrator, 2026-11-13, plan A; 2026-11-14 one ongoing thread per role, continued by default, effort per role through T3 provider instances; 2026-11-14 provider, model and effort per role from the group, the Project or the Gateway, checked against the copy's offer): a turn of a task that runs in a copy of its Project's default Instance. Swamp runs T3's own CLI in the copy as agent; stock T3 accepts only full-access MCP sessions it issues itself, so no T3 session leaves the container. The implementer and the reviewer each keep one T3 thread that later turns continue. 2026-11-14: a question ends the turn: Orbit stores it, then stops the run through the stock T3 server's own RPC, and the answer comes as the next turn.
   %% Orchestrator 2026-11-15 (step 5, S-Pi b): the Pi turn on a task VM is removed with the Pi task loop; this is the only turn of task:turn.
   %% Orchestrator 2026-11-15 (task small fixes): the admission starts the subtask, todo to running; completion stays the caller's.
+  %% Orchestrator 2026-11-16 (group 5425): the prompt gives the turn's clock, admission time and end; the result names the agent thread's id and the agent's bounded reply, so a driver reads a turn in one call.
   %% status: draft
   %% command: task:turn
   %% kind: tasks.copy_turn
@@ -23,6 +24,7 @@ sequenceDiagram
   %%> What it does:
   %%> - a group that owns a task copy, or whose Project has `nested_fleet` on, turns in its copy as `tasks.copy_turn`. Task VMs are removed: every other group answers `tasks.vm_runtime_removed` (422), and nothing is recorded. A nested-fleet group without a copy refuses here with `tasks.no_workspace`
   %%> - composes the prompt: the title, brief and deliverables of the subtask, then the caller's prompt. A reviewer's prompt also names the checked commit, and says: if you approve, send the pull request title and body to `$ORBIT_COPY_API/pull-request` with the copy key (docs/reference/tasks.md#the-reviewers-pull-request-text)
+  %%> - every prompt, of either role, gives the turn's clock in one line: `This turn started at START and Orbit ends it at END. Commit your work before then.` START is the admission's time in UTC ISO 8601; END is START plus the 3,600 s bound. One place builds the line
   %%> - an implementer's prompt says how to ask: with the question tool; a question ends the turn, and the answer comes as the next turn
   %%> - a turn that continues a thread whose last turn asked quotes that question, each with its options, before the caller's prompt: the prompt is the answer
   %%> - without `--thread`, the turn continues its role's thread: the implementer's thread of the current subtask, or the group's reviewer thread, when it is a `t3` thread of this copy. A role with no such thread starts one. `--thread=new` starts a new one; `--thread=ID` must name the thread the turn would continue
@@ -92,11 +94,13 @@ sequenceDiagram
     %%> - the thread's state and error, T3's thread id as its external id, and the transcript in the Gateway's archive: `task:agent:show` reads it after the copy is gone
     %%> - a turn that asked keeps its question on the thread: `task:agent:list` shows it until the thread's next turn. The answer is the next `task:turn` of the role, or a message to the thread from a T3 client
     %%> - the result names the provider instance, the model and the effort the thread started with, from its record
+    %%> - the result names `agent_id`, the agent thread's row that `task:agent:show GROUP AGENT_ID` reads, and `reply`: the text of the transcript's last entry that the user did not write, its first 16,384 characters, then ` [cut: N more characters; read task:agent:show GROUP AGENT_ID]` when it is longer. No transcript, or one of user entries only: `reply` is null. The transcript stays out of the result
     %%> - token metrics stay null
   else the turn failed or ran past its bound
     SW--xGW: Native failed result<br/>error code
     %%> Result:
     %%> - the thread is `failed` with T3's status as its error, and the transcript T3 had
+    %%> - the result names `agent_id` and `reply` as for a turn that is done
     %%> - a turn cut by its bound, a cancelled turn or a lost phase may still run in the copy; Orbit stops only a run that asks. The next turn settles it once T3 shows its run over and a reviewer's checkout is clean on the task branch, and is refused with `tasks.copy_turn_unended` while it is not. The work stays in the copy. `task:cancel` still ends it with the copy
   end
   loop until terminal
