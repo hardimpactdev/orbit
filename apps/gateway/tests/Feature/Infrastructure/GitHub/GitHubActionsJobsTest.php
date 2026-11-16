@@ -11,6 +11,7 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Support\Facades\Http;
 
 uses(LazilyRefreshDatabase::class);
@@ -37,41 +38,90 @@ function ciJobsJob(int $id, array $overrides = []): array
 }
 
 /**
- * A fake GitHub: the App's installation and Actions read token, the run list and each run's jobs.
+ * A fake GitHub: the App's installation and read tokens, the workflows and their files, the run lists and each run's jobs. Lists
+ * page by `per_page` and `page`, run lists honour `created` and give at most 1,000 results for one query, as GitHub does. A run
+ * without `workflow_id` belongs to workflow 1, and a repository without workflows has workflow 1 with a self-hosted job.
  *
- * @param  array<string, list<array<string, mixed>>>  $runs  repository => its runs
+ * @param  array<string, list<array<string, mixed>>>  $runs  repository => its runs, newest first
  * @param  array<int, list<array<string, mixed>>>  $jobs  run id => its jobs
  * @param  list<string>  $missing  repositories the App is not installed on
  * @param  list<string>  $failing  repositories whose run list fails
+ * @param  array<string, list<array{id: int, path: string, file: ?string}>>  $workflows  repository => its workflows; a null file is not readable
  */
-function ciJobsGitHub(array $runs, array $jobs, array $missing = [], array $failing = []): void
+function ciJobsGitHub(array $runs, array $jobs, array $missing = [], array $failing = [], array $workflows = []): void
 {
-    Http::fake(function (Request $request) use ($runs, $jobs, $missing, $failing) {
+    Http::fake(function (Request $request) use ($runs, $jobs, $missing, $failing, $workflows) {
         $path = (string) parse_url($request->url(), PHP_URL_PATH);
+        $page = static function (array $rows, string $field, ?int $total = null) use ($request): PromiseInterface {
+            $size = (int) ($request['per_page'] ?? 30);
+
+            return Http::response(['total_count' => $total ?? count($rows), $field => array_slice($rows, ((int) ($request['page'] ?? 1) - 1) * $size, $size)]);
+        };
+        $listed = static function (string $repository) use ($runs, $request): array {
+            $created = (string) ($request['created'] ?? '');
+            $from = str_starts_with($created, '>=') ? substr($created, 2) : explode('..', $created)[0];
+            $to = str_contains($created, '..') ? explode('..', $created)[1] : null;
+
+            return array_values(array_filter(array_map(static fn (array $run): array => ['workflow_id' => 1, ...$run], $runs[$repository] ?? []),
+                static fn (array $run): bool => ! isset($run['created_at']) || ($from === '' || $run['created_at'] >= $from) && ($to === null || $run['created_at'] <= $to)));
+        };
+        $workflowsOf = static fn (string $repository): array => $workflows[$repository]
+            ?? [['id' => 1, 'path' => '.github/workflows/ci.yml', 'file' => "jobs:\n  fixtures:\n    runs-on: [self-hosted, hardimpact]\n"]];
+
         if (preg_match('#^/repos/([^/]+/[^/]+)/installation$#', $path, $match) === 1) {
             return in_array($match[1], $missing, true) ? Http::response(['message' => 'Not Found'], 404) : Http::response(['id' => 7]);
         }
         if (str_ends_with($path, '/access_tokens')) {
-            expect($request->data())->toMatchArray(['permissions' => ['actions' => 'read']]);
+            $permissions = $request->data()['permissions'] ?? null;
+            expect($permissions)->toBeIn([['actions' => 'read'], ['contents' => 'read']]);
 
-            return Http::response(['token' => 'actions-token', 'permissions' => ['actions' => 'read']], 201);
+            return Http::response(['token' => key($permissions).'-token', 'permissions' => $permissions], 201);
         }
-        if (preg_match('#^/repos/([^/]+/[^/]+)/actions/runs$#', $path, $match) === 1) {
+        if (preg_match('#^/repos/([^/]+/[^/]+)/actions/(?:workflows/(\d+)/)?runs$#', $path, $match) === 1) {
             if (in_array($match[1], $failing, true)) {
                 return Http::response(['message' => 'Server Error'], 502);
             }
-            $all = $runs[$match[1]] ?? [];
+            $all = $listed($match[1]);
+            if (isset($match[2])) {
+                $all = array_values(array_filter($all, static fn (array $run): bool => $run['workflow_id'] === (int) $match[2]));
+            }
 
-            return Http::response(['total_count' => count($all), 'workflow_runs' => $all]);
+            return $page(array_slice($all, 0, 1000), 'workflow_runs', count($all));
+        }
+        if (preg_match('#^/repos/([^/]+/[^/]+)/actions/workflows$#', $path, $match) === 1) {
+            return $page(array_map(static fn (array $workflow): array => ['id' => $workflow['id'], 'name' => 'W'.$workflow['id'],
+                'path' => $workflow['path'], 'state' => 'active'], $workflowsOf($match[1])), 'workflows');
+        }
+        if (preg_match('#^/repos/([^/]+/[^/]+)/contents/(.+)$#', $path, $match) === 1) {
+            expect($request->header('Authorization'))->toBe(['Bearer contents-token']);
+            foreach ($workflowsOf($match[1]) as $workflow) {
+                if ($workflow['path'] === rawurldecode($match[2]) && $workflow['file'] !== null) {
+                    return Http::response(['type' => 'file', 'encoding' => 'base64', 'content' => chunk_split(base64_encode($workflow['file']), 60, "\n")]);
+                }
+            }
+
+            return Http::response(['message' => 'Not Found'], 404);
         }
         if (preg_match('#/actions/runs/(\d+)/jobs$#', $path, $match) === 1) {
-            $list = $jobs[(int) $match[1]] ?? [];
+            expect($request->header('Authorization'))->toBe(['Bearer actions-token']);
 
-            return Http::response(['total_count' => count($list), 'jobs' => $list]);
+            return $page($jobs[(int) $match[1]] ?? [], 'jobs');
         }
 
         return Http::response(['message' => 'unexpected '.$path], 418);
     });
+}
+
+/**
+ * Runs of one workflow, `$count` of them, newest first, from run `$first` down, created a minute apart from `$newest` back.
+ *
+ * @return list<array<string, mixed>>
+ */
+function ciJobsRuns(int $first, int $count, int $workflow, string $newest): array
+{
+    return array_map(static fn (int $offset): array => ['id' => $first - $offset, 'name' => 'W'.$workflow, 'workflow_id' => $workflow,
+        'status' => 'completed', 'conclusion' => 'success', 'run_attempt' => 1,
+        'created_at' => now()->parse($newest)->subMinutes($offset)->utc()->format('Y-m-d\TH:i:s\Z')], range(0, $count - 1));
 }
 
 describe('the CI runner view job read', function (): void {
@@ -186,5 +236,23 @@ describe('the CI runner view job read', function (): void {
         expect($listed['runs'])->toHaveCount(200)->and($listed['truncated'])->toBeTrue();
         Http::assertSentCount(2);
         Http::assertSent(static fn (Request $request): bool => $request['page'] === '2' && $request->hasHeader('Authorization', 'Bearer token'));
+    });
+    it('lists every self-hosted job of a repository whose self-hosted runs are older than its newest 500 runs', function (): void {
+        ciJobsApp();
+        ciJobsRepository('acme/shop');
+        $hosted = ciJobsRuns(700, 550, 1, '2026-11-16T11:00:00Z');
+        $fixtures = ciJobsRuns(150, 50, 2, '2026-11-15T19:00:00Z');
+        ciJobsGitHub(['acme/shop' => [...$hosted, ...$fixtures]],
+            array_combine(range(101, 150), array_map(static fn (int $run): array => [ciJobsJob($run * 10)], range(101, 150))),
+            workflows: ['acme/shop' => [
+                ['id' => 1, 'path' => '.github/workflows/lint.yml', 'file' => "jobs:\n  lint:\n    runs-on: ubuntu-latest\n"],
+                ['id' => 2, 'path' => '.github/workflows/fixtures.yml', 'file' => "jobs:\n  fixtures:\n    runs-on: [self-hosted, hardimpact, orbit-shard]\n"],
+            ]]);
+
+        $answer = app(GitHubActionsJobs::class)->read()->toArray();
+
+        expect($answer['repositories'])->toBe([['repository' => 'acme/shop', 'error_code' => null, 'truncated' => false]])
+            ->and($answer['jobs'])->toHaveCount(50)
+            ->and(array_unique(array_column($answer['jobs'], 'run_id')))->toEqualCanonicalizing(range(101, 150));
     });
 });
