@@ -297,6 +297,43 @@ it('keeps a failed removal retryable without freeing the port', function (): voi
     expect($clone->fresh())->toBeNull();
 });
 
+it('names the refusal of an owned database server child by the child\'s own code', function (string $dropOut, int $dropExit, string $code, string $step): void {
+    $clone = destroyClone(destroyDefault());
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    // The drop exits 1 on a refusal, which the child allows, so the end check is the step that fails.
+    $failure = ['summary' => ['failed_steps' => ['Check they are gone', 'Drop owned databases-0']],
+        'steps' => ['Drop databases and users' => ['status' => 'succeeded', 'stdout' => $dropOut, 'exit_code' => $dropExit],
+            'Check they are gone' => ['status' => 'failed', 'exit_code' => 1], 'Drop owned databases-0' => ['status' => 'failed']]];
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, destroyTerminal($operation, 'failed', $failure));
+    expect($operation->fresh()->error_code)->toBe($code)->and($operation->fresh()->result['failed_step'] ?? null)->toBe($step)
+        ->and($clone->fresh()->status)->toBe(InstanceState::Removing);
+})->with([
+    'a session blocks the drop' => ["database.in_use\n", 1, 'database.in_use', 'Drop databases and users'],
+    'the drop batch fails' => ['', 1, 'database.server_admin_failed', 'Drop databases and users'],
+    'a name remains' => ['', 0, 'database.destroy_incomplete', 'Check they are gone'],
+]);
+
+it('records the failed container deletion\'s stderr tail from the removal file, redacted and bounded, as recorded stderr', function (): void {
+    $clone = destroyClone(destroyDefault());
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    // Swamp keeps no stderr of a failed command step; the phase writes its failed task and stderr tail into remove.json.
+    $line = 'Stop and delete the container with its snapshots and volume: non-zero return code: '
+        .str_repeat("Error: storage busy\n", 300).'Error: fetch https://deploy:s3cretPassw0rd@git.example.test/x.git failed';
+    $result = ['summary' => ['failed_steps' => ['Delete the container']], 'steps' => [
+        'Delete the container' => ['status' => 'failed', 'exit_code' => 2],
+        'Read container removal' => ['status' => 'succeeded', 'stdout' => json_encode(['error_code' => 'instance.removal_incomplete', 'detail' => $line])]]];
+    $terminal = [...destroyTerminal($operation, 'failed', $result),
+        'failure' => ['failed_step' => 'Delete the container', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false]];
+
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, $terminal);
+
+    $error = OperationData::fromModel($operation->fresh())->error;
+    expect($error['stderr_recorded'])->toBeTrue()->and($operation->fresh()->failed_step)->toBe('Delete the container')
+        ->and(strlen($error['detail']))->toBeLessThanOrEqual(4096)
+        ->and($error['detail'])->not->toContain('s3cretPassw0rd')->not->toContain('non-zero return code')
+        ->and($error['detail'])->toStartWith("Error: storage busy\n")->toEndWith('git.example.test/x.git failed')->toContain('[REDACTED]');
+});
+
 it('deletes every execution copy of a removed Instance over one connection', function (): void {
     $clone = destroyClone(destroyDefault());
     foreach (range(1, 60) as $index) {

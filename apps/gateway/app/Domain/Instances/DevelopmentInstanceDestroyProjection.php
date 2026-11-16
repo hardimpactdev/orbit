@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
+use App\Domain\DatabaseServers\DatabaseDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseOwnedRemoval;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Tasks\TaskCopyLifecycle;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Operation;
@@ -98,7 +100,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             if ($data['status'] === 'succeeded') {
                 $result = [...$result, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at'])];
             }
-            $data = [...$data, 'error_code' => $code];
+            $data = [...$data, 'error_code' => $code, 'failure' => $this->failure($data, $result, $operation)];
             if (! $operation->status->terminal()) {
                 if ($data['status'] === 'succeeded') {
                     // A task's copy lets go of its group before its row goes; any other Instance has no owner and nothing happens.
@@ -172,6 +174,15 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             },
             default => 'instance.removal_incomplete',
         };
+        // A server child's steps are in this run's data. Its drop exits 1 on a blocker, which the child allows, so its end check is
+        // the step that fails: the child's own outcome names the refusal, as it does for database:destroy.
+        if (array_intersect(ValidatedData::stringList($summary['failed_steps'] ?? []), ['Fence new clients', 'Drop databases and users', 'Check they are gone']) !== []) {
+            [$child, $refusal] = DatabaseDestroyProjection::outcome('', $data);
+            $failure = $child['failure'] ?? null;
+            if (is_string($refusal['error_code'] ?? null) && is_array($failure) && is_string($failure['failed_step'] ?? null)) {
+                [$label, $code] = [$failure['failed_step'], $refusal['error_code']];
+            }
+        }
 
         return [$code, ['removed' => false, 'failed_step' => $label, 'error_code' => $code, ...$diagnostics]];
     }
@@ -193,6 +204,27 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             'route_hold_release_status' => is_string($status) && ctype_digit($status) ? (int) $status : 0];
     }
 
+    /**
+     * A failed container deletion writes its failed task and the end of its stderr into remove.json, because Swamp keeps no stderr of
+     * a failed command step, and "Read container removal" prints the file. That line becomes the failure's recorded stderr.
+     *
+     * @param  array<string,mixed>  $data
+     * @param  array<string,mixed>  $result
+     */
+    private function failure(array $data, array $result, Operation $operation): mixed
+    {
+        $native = $data['failure'] ?? null;
+        $run = is_array($data['result'] ?? null) ? $data['result'] : [];
+        $read = is_array($run['steps'] ?? null) && is_array($run['steps']['Read container removal'] ?? null) ? $run['steps']['Read container removal'] : [];
+        $file = ($result['failed_step'] ?? null) === 'Delete the container' && is_string($read['stdout'] ?? null) ? json_decode(trim($read['stdout']), true) : null;
+        if (! is_array($file) || ! is_string($file['detail'] ?? null) || trim($file['detail']) === '') {
+            return $native;
+        }
+        $step = is_array($native) && is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'Delete the container';
+
+        return app(NativeStepFailure::class)->written($step, $file['detail'], $operation);
+    }
+
     /** @param array<string,mixed> $result */
     private function failedStep(array $result): InstanceRemovalStep
     {
@@ -204,7 +236,8 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         return match ($step) {
             'Remove the source', 'Check it is gone' => InstanceRemovalStep::SourceFinalization,
             'Withdraw the Route' => InstanceRemovalStep::RouteTargetClear,
-            'Stop, remove Processes', 'Run teardown steps', 'Remove SQLite files', 'Drop owned databases' => InstanceRemovalStep::RuntimeCleanup,
+            'Stop, remove Processes', 'Run teardown steps', 'Remove SQLite files', 'Drop owned databases',
+            'Fence new clients', 'Drop databases and users', 'Check they are gone' => InstanceRemovalStep::RuntimeCleanup,
             default => InstanceRemovalStep::SourcePreparation,
         };
     }

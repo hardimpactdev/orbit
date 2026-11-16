@@ -127,6 +127,8 @@ Each container removal step treats a part that is already gone as done. A retry 
 
 The end check `Check the container and volume are gone` stays strict: it reads the container, its root volume and the inner volume by this Instance's names.
 
+A session or lock on an owned server database makes its drop refuse before any `DROP`, so the end check `Check they are gone` still finds every name. The removal then fails with the database child's own code, `database.in_use`, not `instance.removal_incomplete`, at the child's step. The same holds for `database.server_admin_failed` and `database.destroy_incomplete`. Orbit never disconnects the clients. A container copy's own workers are still connected while its databases drop, because its container goes after them. The [removal reaper](#the-removal-reaper) runs the removal again once the clients are gone.
+
 A container removal step that fails writes the failed task, its message and the end of its stderr into its result file. Swamp keeps no stderr for a failed command step, so the Gateway takes this text instead. It records the text in `error.detail` with `error.stderr_recorded: true`, redacted and cut to the last 4 KiB like the stderr of other Operations ([Operations](/reference/operations)).
 
 When the removed Instance is a [task copy](/reference/tasks#task-copy), the successful removal also releases its task before the row goes: a task that still runs is `cancelled` with its open subtasks, and an ended task only lets go of the copy. A failed removal leaves the task bound to the copy.
