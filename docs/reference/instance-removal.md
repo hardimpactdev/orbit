@@ -2,10 +2,10 @@
 title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, how to retry an interrupted removal, and how to unregister a host checkout and keep its folder."
 covers:
-  - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,Removal/**}
+  - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction,StartInstanceUnregisterAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,InstanceRemovalKind.php,InstanceUnregisterProjection.php,Removal/**}
   - apps/gateway/app/{Http/Requests/Instances/RemoveInstanceRequest,Models/InstanceRemoval,Models/InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_28_000000_add_kind_to_instance_removals}.php
   - apps/cli/app/Commands/Instances/{DestroyInstanceCommand,UnregisterInstanceCommand}.php
   - swamp/{workflows/workflow-operation-instance-destroy.yaml,workflows/workflow-operation-instance-unregister.yaml,ansible/instance-container-destroy.yml}
 ---
@@ -147,7 +147,7 @@ A registered external database and a SQLite file do not refuse. Orbit deletes th
 
 A production Instance refuses with `operation.kind_unavailable`, as for destroy. The other admission checks are those of destroy that concern records, the Route and the runtime: the access grant, an active Instance, no other lifecycle Operation, open transfer or migration, Reverb attachments, analytics tracking hosts and the Route checks.
 
-Destroy's source checks do not apply. There is no worktree dependency read, no source layout or checkout path check and no GitHub source access check. Destroy has no rule for the default Instance of a host checkout, so a default unregisters like any other.
+Destroy's source checks do not apply: there is no worktree dependency read and no GitHub source access check. The recorded source layout and checkout path checks stay, because admission shares destroy's snapshot; they read records only. Destroy has no rule for the default Instance of a host checkout, so a default unregisters like any other.
 
 Admission removes the Schedule triggers, then records the removal, marked as an unregister, with the Instance `removing` and the Route `retiring`. It holds the Route's Nodes as destroy does.
 
@@ -159,9 +159,9 @@ The run reuses destroy's steps and their children:
 4. `Remove hibernation files`: the awake and cold markers and the Caddy access log.
 5. `Check units gone`: each removed unit file and hibernation file is absent. This is the end check.
 
-The run holds no source path, teardown step, SQLite path, database, git credential or token. There is no record-only path without a run: destroy has none either, and every unregister runs the workflow. The run budget is 60 seconds plus 330 seconds for each withdrawn Route.
+The run holds no source path, teardown step, SQLite path, database, git credential or token. Its intent names the Route withdrawal, the Processes, the hibernation files and `check_paths`: the unit and hibernation files that the end check finds absent. There is no record-only path without a run: destroy has none either, and every unregister runs the workflow. The run budget is destroy's: 60 seconds, 330 seconds for each withdrawn Route, and 180 seconds when the Instance has database records.
 
-On success the Gateway deletes the Instance through the same record projection as destroy: the Instance with its Route, Processes, Schedules, auto-deploy, environment and database records. A failed run keeps every record and marks the removal failed. A fresh `instance:unregister` converges and skips a withdrawal that held. A removal keeps its kind: `instance:destroy` and `instance:restore` refuse an Instance whose unregister failed, and `instance:unregister` refuses one whose destroy failed, each with `instance.removal_conflict`.
+On success the Gateway deletes the Instance through the same record projection as destroy: the Instance with its Route, Processes, Schedules, auto-deploy, environment and database records. A failed run keeps every record and marks the removal failed. A fresh `instance:unregister` converges and skips a withdrawal that held. The removal records its kind, `destroy` or `unregister`, in `instance_removals.kind`. A removal keeps its kind: `instance:destroy` and `instance:restore` refuse an Instance whose unregister failed, and `instance:unregister` refuses one whose destroy failed, each with `instance.removal_conflict`.
 
 ## Removal states and retained history
 
