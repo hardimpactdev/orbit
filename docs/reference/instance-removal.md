@@ -167,6 +167,8 @@ The run reuses destroy's steps and their children:
 
 The run holds no source path, teardown step, SQLite path, database, git credential or token. Its intent names the Route withdrawal, the Processes, the hibernation files and `check_paths`: the unit and hibernation files that the end check finds absent. There is no record-only path without a run: destroy has none either, and every unregister runs the workflow. The run budget is destroy's: 60 seconds, 330 seconds for each withdrawn Route, and 180 seconds when the Instance has database records.
 
+The workflow declares the intent as an opaque object, as destroy does. Swamp refuses null in an input property that the schema declares, and the intent holds null for an Instance without a Route and a Process without Vite; with an opaque intent those runs start.
+
 On success the Gateway deletes the Instance through the same record projection as destroy: the Instance with its Route, Processes, Schedules, auto-deploy, environment and database records. A failed run keeps every record and marks the removal failed. A fresh `instance:unregister` converges and skips a withdrawal that held. The removal records its kind, `destroy` or `unregister`, in `instance_removals.kind`. A removal keeps its kind: `instance:destroy` and `instance:restore` refuse an Instance whose unregister failed, and `instance:unregister` refuses one whose destroy failed, each with `instance.removal_conflict`.
 
 ## Removal states and retained history

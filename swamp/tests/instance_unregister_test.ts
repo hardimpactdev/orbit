@@ -1,6 +1,10 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
+// The pinned Swamp's input validation as source text, cached as a module: its own imports (zod) do not resolve outside Swamp.
+import swampInputValidation from "https://raw.githubusercontent.com/swamp-club/swamp/537e03d18f517965c7a0e49b9f5954365f4da70c/src/domain/inputs/input_validation_service.ts" with {
+    type: "text",
+};
 
 type Step = {
     name: string;
@@ -251,17 +255,16 @@ const swampInputErrors = async (
     const pin = /^swampVersion: \S+-sha\.([0-9a-f]{8})$/m.exec(
         read("../.swamp.yaml"),
     )![1];
-    const commit = "537e03d18f517965c7a0e49b9f5954365f4da70c";
-    assertEquals(commit.slice(0, 8), pin, "move the validation import to the new Swamp pin");
-    const source = await (await fetch(
-        `https://raw.githubusercontent.com/swamp-club/swamp/${commit}/src/domain/inputs/input_validation_service.ts`,
-    )).text();
+    const imported = /swamp-club\/swamp\/([0-9a-f]{40})\/src\/domain\/inputs/.exec(
+        read("./instance_unregister_test.ts"),
+    )![1];
+    assertEquals(imported.slice(0, 8), pin, "move the validation import to the new Swamp pin");
     const imports = [
         /import type \{[^}]*\} from "\.\.\/definitions\/definition\.ts";/,
         'import { stopsAtFirstFailingArgument } from "../untrusted_parse.ts";',
     ];
-    for (const i of imports) assert(source.search(i) >= 0, `Swamp's validation imports ${i}`);
-    const module = source
+    for (const i of imports) assert(swampInputValidation.search(i) >= 0, `Swamp's validation imports ${i}`);
+    const module = swampInputValidation
         .replace(imports[0], "type InputsSchema = any; type JsonSchemaProperty = any;")
         .replace(imports[1], "const stopsAtFirstFailingArgument = () => false;");
     const { InputValidationService } = await import(
