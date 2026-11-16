@@ -34,7 +34,7 @@ final readonly class NodeRoleRemoveInput
     {
         $role = $assignment->role;
         if ($assignment->node_id !== $node->id || $assignment->status !== LifecycleStatus::Removing
-            || ! $this->roles->definition($role)->mutable) {
+            || ! $this->roles->removable($role)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Removal requires its claimed Node role assignment.', 422);
         }
         if ($role === RoleName::AppDev && $node->instances()->exists()) {

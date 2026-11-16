@@ -95,16 +95,16 @@ final class NodeRolesController extends Controller
         RoleRegistry $registry,
     ): JsonResponse {
         $role = $request->role();
-        $this->guardMutable($role, $registry);
+        $this->guardMutable($role, $registry, removing: true);
         $operation = $action->remove($node, $role, $request->force(), $request->purgeData(), $request->offline(),
             requestId: $request->attributes->getString('orbit.request_id'));
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
-    private function guardMutable(RoleName $role, RoleRegistry $registry): void
+    private function guardMutable(RoleName $role, RoleRegistry $registry, bool $removing = false): void
     {
-        if ($registry->definition($role)->mutable) {
+        if ($removing ? $registry->removable($role) : $registry->definition($role)->mutable) {
             return;
         }
 

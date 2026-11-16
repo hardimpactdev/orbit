@@ -75,7 +75,7 @@ final readonly class NativeNodeRoleRemovalInput
     public function capture(Node $node, NodeRole $assignment, array $before, bool $machineDeleted = false, ?NodeRole $desiredAssignment = null, bool $purgeData = false): array
     {
         if ($assignment->node_id !== $node->id || $assignment->status !== LifecycleStatus::Removing
-            || ! app(RoleRegistry::class)->definition($assignment->role)->mutable) {
+            || ! app(RoleRegistry::class)->removable($assignment->role)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Removal requires its claimed mutable role assignment.', 422);
         }
         if ($desiredAssignment !== null && (! $desiredAssignment->exists || $desiredAssignment->id !== $assignment->id

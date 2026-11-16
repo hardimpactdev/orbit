@@ -25,6 +25,12 @@ final readonly class RoleRegistry
         ];
     }
 
+    /** Generic removal takes a mutable role, and a `router` row that StaleRouterAssignment admits; add and relocate keep `mutable`. */
+    public function removable(RoleName $role): bool
+    {
+        return $this->definition($role)->mutable || $role === RoleName::Router;
+    }
+
     public function definition(RoleName $role): RoleDefinition
     {
         return match ($role) {
