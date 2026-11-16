@@ -13,15 +13,10 @@ use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
-use App\Models\Operation;
 use App\Models\Project;
-use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Mockery\MockInterface;
 
@@ -127,24 +122,4 @@ it('keeps the agent origin steps for a Project whose default is a host checkout'
     });
 
     expect(updateRepository($instance->project)->repository_url)->toBe(RepositoryNew);
-});
-
-// No task VM resumes any more (docs/reference/old-paths.md): a checkout on the Node of an old `parked` task VM row goes through the same
-// preflight as every task workspace, with no resume and no `project.task_vm_parked`.
-it('changes the repository of a checkout on a parked task VM row without a resume', function (): void {
-    $instance = repositoryUpdateDefault(container: false);
-    TaskVm::query()->create(['host_node_id' => $instance->node_id, 'node_id' => $instance->node_id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'beast-tvm-1',
-        'state' => TaskVmState::Parked, 'stop_confirmed_at' => now(), 'wireguard_ip' => '10.44.0.133']);
-    $reader = $this->mock(ProjectSourceReader::class);
-    $reader->shouldReceive('read')->once()->with(RepositoryNew, ProjectSourceAccess::GitHubApp, 'main', Mockery::any())
-        ->andReturnUsing(static fn (string $url, ProjectSourceAccess $access, string $branch, array $paths): array => ['head' => str_repeat('a', 40), 'files' => array_fill_keys($paths, null)]);
-    $this->mock(RepositoryDefaultBranchResolver::class)->shouldReceive('verify')->once()->with(RepositoryNew, 'main', ProjectSourceAccess::GitHubApp);
-    $this->mock(ProjectUpdateSourceMutator::class, function (MockInterface $sources) use ($instance): void {
-        $sources->shouldReceive('preflightRepository')->once();
-        $sources->shouldReceive('changeOrigins')->once()
-            ->andReturn([['instance_id' => $instance->id, 'path' => '/srv/site/default', 'previous_url' => RepositoryOld, 'current_url' => RepositoryNew, 'mutated' => true, 'attempted' => true]]);
-    });
-
-    expect(updateRepository($instance->project)->repository_url)->toBe(RepositoryNew)
-        ->and(Operation::query()->where('kind', 'task_vm.resume')->exists())->toBeFalse();
 });

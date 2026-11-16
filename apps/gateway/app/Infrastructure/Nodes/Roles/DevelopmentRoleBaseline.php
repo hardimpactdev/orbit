@@ -16,7 +16,6 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentStep;
-use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -44,15 +43,12 @@ final readonly class DevelopmentRoleBaseline implements RoleBaseline
             $this->storagePaths->validateEffective($settings, $node, $account),
         );
         $this->dns->converge($node);
-        // Task VM enrollment trusts the software in its image.
         $this->prerequisites->converge(
             $node,
             RoleName::AppDev,
             $account,
             'app-dev.prerequisite_failed',
             CaddyRoleFailure::sshLabel(RoleName::AppDev),
-            caddy: ! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::CaddyPackage),
-            packages: ! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::prerequisites(RoleName::AppDev)),
         );
         // Hibernation wake sites log to these directories, and validation opens those logs as `caddy`.
         AgentStep::run(

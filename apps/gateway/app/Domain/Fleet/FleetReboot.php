@@ -12,8 +12,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -23,9 +21,6 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
-use App\Models\Task;
-use App\Models\TaskVm;
-use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Config;
 use Throwable;
@@ -35,8 +30,8 @@ use Throwable;
  *
  * One `fleet.reboot` pass visits every managed Linux Node, one at a time, in risk order: the rollout's groups, then the
  * control path (the `vpn` hub, the Gateway, the Node that serves `swamp.orbit`), then the `swamp` Node itself. Swamp reads
- * `/var/run/reboot-required` on each Node, so a Node that is not due ends `not_due` at once. A task host with running task
- * work, or a Node on operator hold, is read and reported `deferred`; the pass never cuts its work.
+ * `/var/run/reboot-required` on each Node, so a Node that is not due ends `not_due` at once. A Node on operator hold is read
+ * and reported `deferred`; the pass never cuts its work.
  */
 final readonly class FleetReboot
 {
@@ -59,26 +54,6 @@ final readonly class FleetReboot
     }
 
     /**
-     * The task hosts of the open pass. Task work refuses on them until the pass ends, so the drain
-     * finds no turn or check that started after admission.
-     *
-     * @return list<int>
-     */
-    public static function rebootingTaskHosts(): array
-    {
-        return ValidatedData::integerList(self::open()?->input['task_hosts'] ?? []);
-    }
-
-    /** Refuses task work on a group whose task VM host the open pass drains: its reboot would cut the work. */
-    public static function refuseTaskWork(Task $group): void
-    {
-        $host = TaskVm::forGroup($group)?->host_node_id;
-        if ($host !== null && in_array($host, self::rebootingTaskHosts(), true)) {
-            throw new ResourceOperationException('tasks.host_rebooting', 'The task VM host is in a fleet reboot pass. Repeat the call when the pass ends.', 409);
-        }
-    }
-
-    /**
      * The managed Linux Nodes in pass order.
      *
      * @return list<Node>
@@ -86,7 +61,7 @@ final readonly class FleetReboot
     public function members(): array
     {
         $members = Node::query()->with('roles')->where('status', LifecycleStatus::Active)->where('platform', 'linux')->orderBy('id')->get()
-            ->filter(fn (Node $node): bool => ! TaskVm::forNode($node) instanceof TaskVm && $this->eligibility->allows($node))->values()->all();
+            ->filter(fn (Node $node): bool => $this->eligibility->allows($node))->values()->all();
         usort($members, fn (Node $left, Node $right): int => [$this->group($left), $left->id] <=> [$this->group($right), $right->id]);
 
         return $members;
@@ -132,23 +107,8 @@ final readonly class FleetReboot
         return $group;
     }
 
-    /** Why a task host is left out of a pass now, or null: an open task Operation runs on one of its task VMs. */
-    public function busy(Node $node): ?string
-    {
-        $vms = TaskVm::query()->where('host_node_id', $node->id)->whereNot('state', TaskVmState::Destroyed)->get(['id', 'group_id']);
-        $groups = $vms->pluck('group_id')->filter()->values()->all();
-        $busy = Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
-            ->where(static fn ($query) => $query->where(static fn ($vm) => $vm->where('target_type', 'task_vm')->whereIn('target_id', $vms->pluck('id')->all()))
-                ->orWhere(static fn ($group) => $group->where('target_type', 'task_group')->whereIn('target_id', $groups))
-                ->orWhere(static fn ($host) => $host->where('node_id', $node->id)->where(static fn ($kind) => $kind->where('kind', 'like', 'tasks.%')
-                    ->orWhere('kind', 'like', 'task_vm.%')->orWhere('kind', 'like', 'proof.%'))))
-            ->exists();
-
-        return $busy ? 'tasks_busy' : null;
-    }
-
     /**
-     * Freezes operator hold ahead of task-busy deferral in the existing defer field; Swamp reads every deferred Node.
+     * Freezes operator hold in the existing defer field; Swamp reads every deferred Node.
      * What Swamp needs to drain, reboot and check one Node.
      *
      * @return array<string, mixed>
@@ -157,19 +117,15 @@ final readonly class FleetReboot
     {
         $ssh = $this->ssh->forNode($node);
         $roles = $this->roles($node);
-        $settings = is_array($node->settings) ? $node->settings : [];
-        $tasks = is_array($settings['task_vms'] ?? null) ? $settings['task_vms'] : null;
-        $taskProject = is_string($tasks['project'] ?? null) && $tasks['project'] !== '' ? $tasks['project'] : null;
         $gateway = in_array(RoleName::Gateway->value, $roles, true) ? self::gatewayUnits($node) : null;
 
         return ['node_id' => $node->id, 'name' => $node->name, 'group' => $this->group($node),
             'host' => $ssh['target']['host'], 'user' => $ssh['target']['user'], 'port' => $ssh['target']['port'],
             'host_keys' => $ssh['target']['host_keys'], 'identity_file' => $ssh['identity_file'],
             'kind' => in_array(RoleName::Swamp->value, $roles, true) ? 'swamp' : (in_array(RoleName::Gateway->value, $roles, true) ? 'gateway' : 'node'),
-            'task_project' => $taskProject,
             'ci_project' => in_array(RoleName::CiRunner->value, $roles, true) ? 'orbit-ci' : null,
             'gateway' => $gateway, 'services' => self::services($node, $roles, $gateway),
-            'defer' => $node->reboot_hold ? 'operator_hold' : ($taskProject !== null ? $this->busy($node) : null)];
+            'defer' => $node->reboot_hold ? 'operator_hold' : null];
     }
 
     /**

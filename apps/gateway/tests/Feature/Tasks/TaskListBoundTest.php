@@ -166,6 +166,7 @@ describe('the task list', function (): void {
             'publication' => 'private', 'domain' => 'workspace.orbit.test', 'status' => 'pending']));
         $route->targets()->create(['instance_id' => $workspace->id, 'position' => 1]);
         $route->forceFill(['status' => 'active'])->saveQuietly();
+        // An old ready VM row of the group: the Gateway reads no task VM row, so `vm_power` stays null.
         TaskVm::query()->create(['host_node_id' => $node->id, 'node_id' => $node->id, 'group_id' => $group->id, 'provider' => 'incus', 'name' => 'tvm-1', 'state' => 'ready', 'size' => 'normal', 'wireguard_ip' => '10.44.0.137', 'pi_token' => str_repeat('p', 40)]);
         TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('a', 40), 'source' => 'orbit_push']);
         Operation::query()->create(['kind' => 'tasks.provision', 'target_type' => 'task_group', 'target_id' => $group->id, 'input' => [], 'status' => OperationStatus::Waiting]);
@@ -179,7 +180,7 @@ describe('the task list', function (): void {
             return $subtask;
         }, $detail['subtasks'])];
         expect($list->json('data.0'))->toBe($expected)
-            ->and($expected['preview_url'])->toBe('https://workspace.orbit.test')->and($expected['vm_power'])->toBe('running')->and($expected)->not->toHaveKey('capacity_wait')
+            ->and($expected['preview_url'])->toBe('https://workspace.orbit.test')->and($expected)->toHaveKey('vm_power')->and($expected['vm_power'])->toBeNull()->and($expected)->not->toHaveKey('capacity_wait')
             ->and($expected['review_and_merge']['reviewed_commits'])->toHaveCount(1)->and($expected['resolved_agents'])->not->toBe([])
             ->and($expected['pr_mode'])->toBe('pr_when_done')->and($expected['pr_mode_source'])->toBe('group')
             ->and($detail['publication']['state'] ?? null)->toBe('working');

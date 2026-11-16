@@ -31,6 +31,7 @@ CLEANUP_SECONDS = 60
 # The agent reports the firewall at a host tick every 60 s, in a phase the runner cannot know after a restore of the base snapshot.
 # A report that follows the change needs at most one tick plus the time to deliver it: wait until this long after `act`.
 REPORT_SECONDS = 65
+STDERR_TAIL = 160   # the characters a failed CLI call keeps of its stderr
 # The Gateway counts an agent as offline after 15 s without an event.
 OFFLINE_SECONDS = 20
 CLI_EXPECT = {'exit', 'status', 'code', 'skipped', 'request', 'human', 'steps', 'json'}
@@ -292,13 +293,30 @@ def cli(run, args):
             continue
         except fleet_module.FleetError as error:  # the tested CLI could not be made ready on the Node: the fleet, not the command
             raise Infra(str(error)) from error
-        failures.extend(check_result(run, label, form, forms, result, expect))
+        found = check_result(run, label, form, forms, result, expect)
+        if found:
+            run.failed_calls.append(failed_call(argv, result))
+        failures.extend(found)
         if form == 'json':
             for path, name in (args.get('save') or {}).items():
                 run.names[name] = json_value(result['json'], path)
     if before is not None and (created := {number for number in operation_ids(run, args) if number > before}):
         failures.append(f'cli {argv[0]}: created Operation {sorted(created)}, expected no request')
     return failures
+
+
+def error_code(document):
+    """The error code of a CLI JSON document: an Operation's `error_code` or a refusal's `error.code`."""
+    error = document.get('error')
+    return document.get('error_code') or (error.get('code') if isinstance(error, dict) else None)
+
+
+def failed_call(argv, result):
+    """What a verdict keeps of a CLI call that did not do what the case expects: its command, exit code, error code and the end of
+    its stderr on one line. A refusal before admission has no Operation, so this is all that names its cause."""
+    document = result.get('json') if isinstance(result.get('json'), dict) else {}
+    stderr = ' '.join(terminal.plain(result.get('stderr') or '').split())
+    return {'run': argv[0], 'exit': result['rc'], 'code': error_code(document), 'stderr': stderr[-STDERR_TAIL:]}
 
 
 def check_result(run, label, form, forms, result, expect):
@@ -311,7 +329,7 @@ def check_result(run, label, form, forms, result, expect):
         if 'status' in expect and document.get('status') != expect['status']:
             failures.append(f"{label}: status {document.get('status')}, expected {expect['status']}" + ('' if document else ' (no JSON)'))
         if 'code' in expect:
-            code = document.get('error_code') or (document.get('error') or {}).get('code')
+            code = error_code(document)
             if code != expect['code']:
                 failures.append(f"{label}: code {code}, expected {expect['code']}")
         if 'skipped' in expect and expect['skipped'] not in skip_reasons(document):

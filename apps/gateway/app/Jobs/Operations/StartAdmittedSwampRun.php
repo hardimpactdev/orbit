@@ -44,26 +44,21 @@ final class StartAdmittedSwampRun implements ShouldQueue
         if ($operation === null) {
             return;
         }
-        $children = app(ProofChildStarts::class);
-        try {
-            if ($operation->status !== OperationStatus::Queued) {
-                return;
-            }
-            $release = $children->release($operation);
-            if ($release instanceof CarbonImmutable) {
-                Bus::dispatch((new self($operation->id))->delay($release));
+        if ($operation->status !== OperationStatus::Queued) {
+            return;
+        }
+        $release = app(ProofChildStarts::class)->release($operation);
+        if ($release instanceof CarbonImmutable) {
+            Bus::dispatch((new self($operation->id))->delay($release));
 
-                return;
-            }
-            if (! $release) {
-                return;
-            }
-            $operation = $expire->execute($operation);
-            if ($operation->status === OperationStatus::Queued) {
-                $start->start($operation, $jobStarted);
-            }
-        } finally {
-            $children->advance($operation);
+            return;
+        }
+        if (! $release) {
+            return;
+        }
+        $operation = $expire->execute($operation);
+        if ($operation->status === OperationStatus::Queued) {
+            $start->start($operation, $jobStarted);
         }
     }
 
@@ -73,18 +68,14 @@ final class StartAdmittedSwampRun implements ShouldQueue
         if ($operation === null) {
             return;
         }
-        try {
-            if ($operation->status->terminal() || isset($operation->state['swamp_run_id'])) {
-                return;
-            }
-            // A dead worker may have submitted before losing its confirmation. Never release that hold or resubmit.
-            $uncertain = $operation->status === OperationStatus::Running;
-            app(StartSwampRun::class)->refuse($operation, new ResourceOperationException(
-                $uncertain ? 'swamp.start_uncertain' : 'swamp.start_job_failed',
-                $uncertain ? 'The start worker stopped before confirming the native run. A native run may exist.'
-                    : 'The queued native workflow start failed before submission.', 503));
-        } finally {
-            app(ProofChildStarts::class)->advance($operation);
+        if ($operation->status->terminal() || isset($operation->state['swamp_run_id'])) {
+            return;
         }
+        // A dead worker may have submitted before losing its confirmation. Never release that hold or resubmit.
+        $uncertain = $operation->status === OperationStatus::Running;
+        app(StartSwampRun::class)->refuse($operation, new ResourceOperationException(
+            $uncertain ? 'swamp.start_uncertain' : 'swamp.start_job_failed',
+            $uncertain ? 'The start worker stopped before confirming the native run. A native run may exist.'
+                : 'The queued native workflow start failed before submission.', 503));
     }
 }

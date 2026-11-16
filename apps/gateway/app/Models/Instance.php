@@ -10,7 +10,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
-use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Models\Relations\DualSafeMorphMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -107,19 +106,6 @@ final class Instance extends Model
         'registration_detached' => false,
         'status' => 'reserved',
     ];
-
-    /**
-     * A task VM Node serves only its group's workspace, whichever path places the Instance there. The database keeps
-     * a task workspace's owner from changing once it is set.
-     */
-    protected static function booted(): void
-    {
-        self::saving(static function (self $instance): void {
-            if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'task_workspace_owner_id'])) {
-                TaskVmWorkspaceGuard::assertInstance($instance);
-            }
-        });
-    }
 
     /** @var list<string> */
     #[\Override]

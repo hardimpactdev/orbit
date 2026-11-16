@@ -18,6 +18,21 @@ it('reads one row from each verdict line of the report', function (): void {
     ]);
 });
 
+it('keeps the exit code, error code and stderr tail of each failed CLI call of a case, and drops a call it cannot read', function (): void {
+    $report = '{"id": "required-only", "verdict": "failed", "cause": "assertion", "secs": 0.4, "failed": ["act[0] cli node:converge: exit 1, expected 0"], '
+        .'"calls": [{"run": "node:converge", "exit": 1, "code": "operation.target_busy", "stderr": "Another operation holds the Node."}, '
+        .'{"run": "node:converge", "exit": 1, "code": null, "stderr": ""}, {"run": "node:converge", "exit": "1"}, {"exit": 1}, "bare"]}';
+
+    expect(ProofVerdictLines::parse($report))->toBe([[
+        'id' => 'required-only', 'verdict' => 'failed', 'seconds' => 0.4, 'cause' => 'assertion',
+        'failed' => ['act[0] cli node:converge: exit 1, expected 0'],
+        'calls' => [
+            ['run' => 'node:converge', 'exit' => 1, 'code' => 'operation.target_busy', 'stderr' => 'Another operation holds the Node.'],
+            ['run' => 'node:converge', 'exit' => 1, 'code' => null, 'stderr' => ''],
+        ],
+    ]]);
+});
+
 it('drops a line that is not a verdict, so a cut or noisy report never invents a pass', function (): void {
     $report = implode("\n", [
         'Traceback (most recent call last):',

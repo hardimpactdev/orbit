@@ -12,7 +12,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Project;
-use App\Models\TaskVm;
 use Illuminate\Container\Attributes\Tag;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -70,16 +69,6 @@ final readonly class DestroyProjectAction
     private function removeTaskHistory(Project $project): void
     {
         $groupIds = $project->tasks()->pluck('id');
-        $vm = TaskVm::query()->whereIn('group_id', $groupIds)->live()->first();
-
-        if ($vm instanceof TaskVm) {
-            throw new ResourceOperationException(
-                errorCode: 'project.task_vm_not_destroyed',
-                message: "Project [{$project->slug}] still has task VM [{$vm->name}] in state [{$vm->state->value}].",
-                status: 409,
-            );
-        }
-
         $taskIds = DB::table('tasks')->whereIn('id', $groupIds)->orWhereIn('parent_id', $groupIds)->pluck('id');
         // The retired workspace lease tables still hold rows that reference these groups.
         $leases = DB::table('task_workspace_leases')->where(static function (Builder $query) use ($groupIds, $taskIds): void {

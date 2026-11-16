@@ -8,7 +8,6 @@ use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Actions\Tasks\ListAgentWorkspacesAction;
 use App\Data\Tasks\AgentWorkspaceData;
 use App\Domain\Instances\Environment\InstanceEnvironmentFiles;
-use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\ApplicationDirectory;
@@ -27,7 +26,7 @@ final readonly class AgentWatchListAction
 {
     public function __construct(private NodeRoleServiceCatalog $services, private ListAgentWorkspacesAction $workspaces, private NodeToolScopes $tools, private RuntimeDoctorIntent $processes, private InstanceEnvironmentFiles $environments) {}
 
-    /** @return array{services: list<string>, awake_markers: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>, tools: list<array{manager: string, paths: list<string>}>, environments: list<string>, egress: array{network: string, container_network: string|null}|null} */
+    /** @return array{services: list<string>, awake_markers: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>, tools: list<array{manager: string, paths: list<string>}>, environments: list<string>, egress: null} */
     public function execute(Node $node): array
     {
         $services = [];
@@ -59,47 +58,9 @@ final readonly class AgentWatchListAction
             'applications' => $root === null ? [] : $this->applications(),
             'tools' => $this->tools->forNode($node),
             'environments' => $this->environments->forNode($node),
-            'egress' => self::egress($node),
+            // No Node is a task VM host any more, so no agent reads an egress log (docs/reference/node-agent.md#watch-list).
+            'egress' => null,
         ];
-    }
-
-    /**
-     * The bridges of a task VM host, whose logs the agent reads for the egress fact (docs/reference/task-vm-egress-log.md):
-     * `network` of its task VMs and, on a host with task containers, `container_network`. Agents before 0.15.0 read only
-     * `network`. Another Node gets null, and its agent reads nothing. A stored host without its own names used the defaults that the
-     * retired task VM settings held, `orbittask0` and `orbittaskc0`.
-     *
-     * @return array{network: string, container_network: string|null}|null
-     */
-    public static function egress(Node $node): ?array
-    {
-        $task = data_get($node->settings, 'task_vms');
-        if (! is_array($task)) {
-            return null;
-        }
-        $network = self::bridge($task['network'] ?? 'orbittask0');
-        if ($network === null) {
-            return null;
-        }
-        $containers = $task['containers'] ?? null;
-
-        return ['network' => $network, 'container_network' => is_array($containers)
-            ? self::bridge($containers['network'] ?? 'orbittaskc0') : null];
-    }
-
-    /**
-     * The bridges whose `egress` facts the Gateway accepts from `$node`.
-     *
-     * @return list<string>
-     */
-    public static function egressNetworks(Node $node): array
-    {
-        return array_values(array_filter(self::egress($node) ?? [], is_string(...)));
-    }
-
-    private static function bridge(mixed $network): ?string
-    {
-        return is_string($network) && preg_match(NodeFactKind::EgressNetworkPattern, $network) === 1 ? $network : null;
     }
 
     /**

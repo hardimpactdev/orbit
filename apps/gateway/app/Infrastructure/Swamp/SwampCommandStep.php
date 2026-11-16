@@ -811,6 +811,7 @@ final readonly class SwampCommandStep
     private function exchange(SwampConnection $connection, WebSocketEndpoint $endpoint, string $type, array $arguments): array
     {
         $id = bin2hex(random_bytes(16));
+        $answered = false;
         try {
             $socket = $connection->socket($endpoint, 15, $this->socket, SwampCaller::Reconcile);
             $socket->send(['type' => $type, 'id' => $id, 'payload' => $arguments]);
@@ -824,7 +825,10 @@ final readonly class SwampCommandStep
                     if (($message['type'] ?? null) === $type && is_array($payload)) {
                         return ValidatedData::object($payload);
                     }
-                    throw $this->unavailable();
+                    // Serve answered with an error, such as a run whose result it no longer holds. The socket still works, so the
+                    // connection stays for the next read: a burst of such reads must not make one handshake each.
+                    $answered = true;
+                    break 2;
                 }
             }
         } catch (ResourceOperationException $exception) {
@@ -833,6 +837,9 @@ final readonly class SwampCommandStep
         } catch (Throwable $exception) {
             $connection->release();
             throw new SwampTerminalReadUnavailable($exception);
+        }
+        if ($answered) {
+            throw $this->unavailable();
         }
         $connection->release();
         throw new SwampTerminalReadUnavailable;

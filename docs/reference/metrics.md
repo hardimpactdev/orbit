@@ -79,7 +79,7 @@ When the target convergence fails, rollback removes the exporters and cAdvisor, 
 
 ## Exporter selection
 
-A Node can host an exporter only when the Gateway manages it. The Node must be active, run Linux, have a WireGuard address, and have a stored SSH host fingerprint. A [task VM](/reference/compute-drivers#task-vms) Node is never eligible, because the hub filter keeps the Metrics Node from reaching it. Within that set, the Gateway reads the Node's exporter preference and its active or provisioning roles.
+A Node can host an exporter only when the Gateway manages it. The Node must be active, run Linux, have a WireGuard address, and have a stored SSH host fingerprint. Within that set, the Gateway reads the Node's exporter preference and its active or provisioning roles.
 
 | Preference | Node | Result |
 | --- | --- | --- |

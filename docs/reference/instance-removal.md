@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction,StartInstanceUnregisterAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
   - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,InstanceRemovalKind.php,InstanceUnregisterProjection.php,Removal/**}
   - apps/gateway/app/{Http/Requests/Instances/RemoveInstanceRequest,Models/InstanceRemoval,Models/InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_03_01_000000_add_kind_to_instance_removals}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_03_01_000000_add_kind_to_instance_removals,2027_03_02_000000_allow_ci_only_proof_copy_removals}.php
   - apps/cli/app/Commands/Instances/{DestroyInstanceCommand,UnregisterInstanceCommand}.php
   - swamp/{workflows/workflow-operation-instance-destroy.yaml,workflows/workflow-operation-instance-unregister.yaml,ansible/instance-container-destroy.yml}
 ---
@@ -126,6 +126,8 @@ The Gateway records the member set as Removing in the same admission transaction
 
 This parent supports development Instances on managed app-dev Nodes, including their native Process, Schedule and Route withdrawal children. Owned SQLite, managed server databases and registered external database records are supported. Each server child reads the server's admin login from the server's own vault key; the database intent records no password. Production Instances and TaskVM-owned workspaces return `operation.kind_unavailable` before admission. An ordinary development checkout has no fabricated TaskVM identity.
 
+A [proof copy on a CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) is a development Instance too, so its removal takes the same path. The database's removal contract follows the same placement rule: it admits a development removal on a Node with an `app-dev` role, or on a Node with a `ci-runner` role that is not being removed and no app role.
+
 Repository reads use a fresh scoped GitHub App credential or normal anonymous access. Anonymous access requires GitHub to confirm the repository is public; otherwise credential preparation fails with the [source credential error](/reference/github-app#instance-source-credentials) naming the App and repository. A non-forced removal that requires `gh_cli` source access refuses before admission; forced removal needs no fetch or GitHub mint. The Gateway mints the read token when the run starts and pushes it to the vault; no step calls the Gateway for it.
 
 ## Processes and Schedules
@@ -166,6 +168,8 @@ The run reuses destroy's steps and their children:
 `Check units gone` uses the per-Node name `instance-destroy-ssh-<node>` of destroy's SSH steps, not a slot name. It can therefore wait behind a host destroy on the same Node, and Swamp fails it after 60 seconds. The removal then fails with `instance.removal_incomplete`; a rerun of `instance:unregister` completes it.
 
 The run holds no source path, teardown step, SQLite path, database, git credential or token. Its intent names the Route withdrawal, the Processes, the hibernation files and `check_paths`: the unit and hibernation files that the end check finds absent. There is no record-only path without a run: destroy has none either, and every unregister runs the workflow. The run budget is destroy's: 60 seconds, 330 seconds for each withdrawn Route, and 180 seconds when the Instance has database records.
+
+The workflow declares the intent as an opaque object, as destroy does. Swamp refuses null in an input property that the schema declares, and the intent holds null for an Instance without a Route and a Process without Vite; with an opaque intent those runs start.
 
 On success the Gateway deletes the Instance through the same record projection as destroy: the Instance with its Route, Processes, Schedules, auto-deploy, environment and database records. A failed run keeps every record and marks the removal failed. A fresh `instance:unregister` converges and skips a withdrawal that held. The removal records its kind, `destroy` or `unregister`, in `instance_removals.kind`. A removal keeps its kind: `instance:destroy` and `instance:restore` refuse an Instance whose unregister failed, and `instance:unregister` refuses one whose destroy failed, each with `instance.removal_conflict`.
 

@@ -20,6 +20,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
 1. **The Gateway starts a run with the full intent as inputs.**
    - StartSwampRun passes every non-secret field the workflow needs as workflow inputs. Swamp records them in run history.
    - Secrets are never inputs. Pass the vault name and key name, and resolve them in the step.
+   - Swamp refuses a run whose inputs hold null for a property the inputs schema declares, whatever the schema form (`{}`, `nullable`, `anyOf`); only a `default` lets null through. Declare an intent that can hold null as an opaque `type: object`, as `operation-instance-destroy` and `operation-instance-unregister` do.
    - Steps do not call back to the Gateway to read intent or report progress. There is no binding wait.
 2. **The Gateway records the result from the run.** Steps return outputs. The Gateway projects the terminal result of the run. It does not re-validate it.
 3. **Ansible does every action on a machine; Swamp orchestrates.**

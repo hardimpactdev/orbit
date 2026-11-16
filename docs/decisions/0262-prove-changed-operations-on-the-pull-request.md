@@ -57,6 +57,36 @@ The shape-gate fixtures are retired. For each fixture file, a case that a proof 
 
 The Swamp shape gate's linters and validators stay quick checks. They test the source, not an operation's behavior.
 
+### Exception: the code that makes the proof copy
+
+No proof can cover the code that makes, starts, resets or removes the proof copy and its nested fleet. The proof runs inside that copy, and the released code makes the copy, not the candidate. So the fixture cases of this code stay quick checks with stand-ins. Decided by the owner on 2026-11-16.
+
+The exception covers exactly this code:
+
+- The nested fleet in an Instance container: `swamp/ansible/instance_nested.py`, `swamp/ansible/instance_nested_club_key.sh`, `swamp/ansible/instance_fleet_shrink.py`, `swamp/ansible/fleet-converge-inputs.json`, `swamp/ansible/tasks/instance-nested-club-key.yml` and `swamp/ansible/tasks/instance-fleet*.yml`.
+- The nested-fleet preparation of a switched-on Instance host in `swamp/ansible/tasks/instance-host.yml`: the subordinate ID check before nesting, the nested project and profile, and the nested-fleet image build with the record of its failure.
+- The nested-fleet branch of `swamp/ansible/instance-container.yml` and `swamp/ansible/instance-container-destroy.yml`: the start gate, the inner volume and its seed pair, the Club key, the fleet step and the release of the CI place (`swamp/ansible/tasks/task-copy-base-names.yml`). This branch only reads the nested project, profile and image record that the host preparation makes.
+- The nested-fleet sleep and wake: the nested branch of `swamp/ansible/tasks/instance-container-power.yml`, which keeps a nested-fleet container running when its memory stays in RAM; the nested project and the inner cgroups in `swamp/ansible/files/instance-container-power.py`; and the nested-fleet refusal of `swamp/ansible/files/instance-container-wake.sh`.
+- The proof default and its seed: `swamp/ansible/tasks/instance-proof-checkout.yml`, `swamp/ansible/proof-seed-copy.yml`, `swamp/ansible/tasks/proof-seed-*.yml` and `swamp/workflows/workflow-operation-instance-seed-copy.yaml`.
+- The proof copy and its fleet: the fleet step of `swamp/workflows/workflow-operation-instance-start.yaml`, `swamp/workflows/workflow-operation-proof-run-copy.yaml`, `swamp/workflows/workflow-proof-copy-fleet-reset.yaml`, `swamp/workflows/workflow-proof-fleet-*.yaml`, `swamp/ansible/proof-gateway.yml`, `swamp/ansible/proof-observers.yml`, `swamp/ansible/proof-observer-facts.php` and `swamp/ansible/tasks/proof-gateway-release.yml`.
+- The task host and its proof fleet: `swamp/ansible/task-vm-*.yml`, `swamp/ansible/tasks/task-vm-*.yml`, `swamp/ansible/tasks/task-container-host-*.yml`, `swamp/ansible/task-host-firewall-remove.yml` and `swamp/ansible/tasks/task-host-firewall-remove.yml`. An Instance host runs the `task-container-host-*` tasks too; its use of them follows the rule above.
+
+A fixture case that tests only this code stays when it is reasonably expected in normal use. A case for a rare situation of this code follows the rare-case rule above too: it is designed away or dropped. A fixture case that tests other code follows the rule above. When a file holds both kinds, only its other cases move. The [fixture retirement](/reference/fixture-retirement) pages name the cases that stay.
+
+### When a family retires
+
+A family's fixtures retire only when the proof fleet hosts Instances cheaply, so that the proof of a pull request fits in the five minutes it may take ([Implementation loop](/reference/implementation-loop)). Decided by the owner on 2026-11-16. Until then, the fixtures stay.
+
+A pull request's proof fits only when its slowest batch fits. For the Instance cases, that needs all of these together:
+
+- The base snapshot of the copy holds the inner Incus, the prepared Instance image and a `proof-web` default with its seed. A batch then makes only clones in its setup.
+- A batch holds about 4 deployment cases, or about 6 clone, sleep or wake cases.
+- A copy has a second Instance host, so two writers run at the same time.
+- The selection is per phase: a change to one phase of the container playbook selects only the cases of that phase.
+- Each batch of the selection gets one free proof place.
+
+Then a full selection is about eight batches of under five minutes each, and needs about eight free places. A narrow selection needs one or two. [Fixture retirement: instance containers](/reference/fixture-retirement/instance-container#the-five-minute-math) has the detail.
+
 ### Quick checks stay where they run
 
 The quick checks of a public repository run on GitHub-hosted runners, as today. Private repositories run only on Orbit's runners. Code from a fork never runs on Orbit's runners; its proof follows the existing outside-proof rule.
@@ -72,7 +102,7 @@ The quick checks of a public repository run on GitHub-hosted runners, as today. 
    Every phase of a move runs the shared task files `instance-migrate-phase.yml` and `instance-container-phase.yml`, so inputs per task file cannot narrow the move files further. The split by phase shrinks each gap; a file leaves the list when every selection of it fits. The CI runner setup supplies the tools these files need ([Self-hosted fixture shards](/reference/implementation-loop#self-hosted-fixture-shards)). Step 3 then retires them with the other fixtures.
 
    Follow-up: once this step merges, remove `after_merge`, `after_merge_cases` and `reason` from the scheduling keys in `bin/ci-units`. The step's own pull request still needs them: they make its removal of those keys from the registry a scheduling edit.
-3. Retire the fixtures, file by file: move each realistic uncovered case into a proof case, then delete the file and its registration.
+3. Retire the fixtures, file by file: move each realistic uncovered case into a proof case, then delete the file and its registration. A family retires only when its proof fits the condition in [When a family retires](#when-a-family-retires).
 4. Absorb this ADR into [Implementation loop](/reference/implementation-loop#ci) and the proof pages.
 
 ## Rejected alternatives
@@ -88,6 +118,7 @@ The quick checks of a public repository run on GitHub-hosted runners, as today. 
 - A failing proof stops the merge, not main.
 - Orbit deletes about 179 test files, their cost files, and the after-merge workflows and scripts.
 - Rare failure paths lose their stand-in tests. Each one needs a design that makes it impossible, or a proof case if it is realistic.
+- The fixtures of the code that makes the proof copy stay. They are the only test of that code.
 
 ## Affects
 

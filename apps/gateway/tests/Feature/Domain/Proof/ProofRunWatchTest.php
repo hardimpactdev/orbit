@@ -152,14 +152,14 @@ it('leaves a run alone that Swamp may have accepted: its start is uncertain, and
     expect($uncertain->refresh()->status)->toBe(OperationStatus::Running)->and($proof->refresh()->status)->toBe(OperationStatus::Running);
 });
 
-it('ends held children after a lost successor only when the proof is old and every child has been quiet', function (): void {
+it('ends held children after a lost start only when the proof is old and every child has been quiet', function (): void {
     $this->freezeTime();
     Queue::fake();
     $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
     $answered = watchRun($proof, 'firewall:allow', OperationStatus::Failed, 'swamp.start_job_failed');
     $held = watchRun($proof, 'firewall:list', OperationStatus::Queued);
     $held->update(['state' => ['swamp_start' => ['key' => 'operation:'.$held->id, 'workflow' => 'operation-proof-run-copy'],
-        'proof_child_start' => ['not_before' => now()->subSeconds(900)->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+        'proof_child_start' => ['not_before' => now()->subSeconds(900)->toISOString(), 'released_at' => null]]]);
     watchAged($held, 900, 299);
     expect(app(ProofRunWatch::class)->sweep())->toBe(0);
     expect(OperationRunBudgets::deadline($held))->toBeNull();
@@ -189,10 +189,11 @@ it('keeps the existing query count for proofs without holds while repairing held
     $answered = watchRun($repair, 'firewall:allow', OperationStatus::Failed);
     $held = watchRun($repair, 'firewall:list', OperationStatus::Queued);
     foreach ([$answered, $held] as $child) {
-        $child->update(['state' => ['proof_child_start' => ['not_before' => null, 'released_at' => null, 'advanced_at' => null]]]);
+        $child->update(['state' => ['proof_child_start' => ['not_before' => null, 'released_at' => null]]]);
     }
     app(ProofRunWatch::class)->sweep();
-    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $held->id && $job->delay->equalTo(now()->addSeconds(20)));
+    // The watchdog queues a held start that has no job at once, beside its ended sibling.
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $held->id && $job->delay === null);
 })->with(['young' => [60, 2], 'old' => [ProofRunWatch::AdmissionSeconds + 1, 3]]);
 
 /** The reviewer's lost queued start, still held even though its parent has ended. */
@@ -200,7 +201,7 @@ function watchStrandedHeld(Operation $proof, int $age = 90 * 86400): Operation
 {
     $child = watchRun($proof, 'firewall:allow', OperationStatus::Queued);
     $child->update(['state' => ['swamp_start' => ['key' => 'operation:'.$child->id, 'workflow' => 'operation-proof-run-copy'],
-        'proof_child_start' => ['not_before' => now()->subSeconds(20)->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+        'proof_child_start' => ['not_before' => now()->subSeconds(20)->toISOString(), 'released_at' => null]]]);
 
     return watchAged($child, $age);
 }

@@ -58,7 +58,7 @@ A [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) gets th
 
 ### Prepare a Node
 
-This part is built. The `app-dev` role converge of a Node on the [build list](#the-build-list) runs a container branch; a task VM never does. The Gateway sends the branch's intent only for such a Node, so every other Node gets the same intent as before. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; that part is the target design of [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies). [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+This part is built. The `app-dev` role converge of a Node on the [build list](#the-build-list) runs a container branch. The Gateway sends the branch's intent only for such a Node, so every other Node gets the same intent as before. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; that part is the target design of [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies). [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
 - **Allocation.** The admission of a role add or converge allocates the Node's bridge. The captured intent only reads it.
 - **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
@@ -128,7 +128,7 @@ The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253
 
 Each `ci-runner` add and converge reads the subnet of `orbitci0` (`incus network get orbitci0 ipv4.address`), and the Gateway records it on the Node as `ci_bridge`. The node phase reads it twice: before the Instance container branch, so a refused clash is still recorded, and after the CI resources, so a new `orbitci0` is recorded in the same run.
 
-The admission of the first converge allocates before any read. When that bridge overlaps the CI bridge, the branch refuses with `instance.host_unavailable` before it changes anything. The Gateway records the CI bridge from that run and gives back the Node's Instance bridge, when no container uses it yet. The next `ci-runner` converge then allocates a `/24` around the CI bridge. A Node keeps its bridge while a container uses it. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A task VM host's bridges may not overlap an Instance bridge either: `node:update` refuses them with `node.settings_invalid`.
+The admission of the first converge allocates before any read. When that bridge overlaps the CI bridge, the branch refuses with `instance.host_unavailable` before it changes anything. The Gateway records the CI bridge from that run and gives back the Node's Instance bridge, when no container uses it yet. The next `ci-runner` converge then allocates a `/24` around the CI bridge. A Node keeps its bridge while a container uses it. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A `task_vms` key in a Node's stored settings reserved a range once; the migration that removed the key ended that ([old paths](/reference/old-paths#task-vm-settings)).
 
 T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address. The Node records the last T3 port it gave. A new runtime takes the first free port after it and wraps from 3999 to 3800, so a port freed by a destroy is given again only after the Node has used every other free port. A client that saved the destroyed server under its address therefore does not meet a new server there at once. When every port is held, the reservation fails with `instance.host_unavailable` (409).
 
@@ -1567,6 +1567,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | A visit to a frozen container gets the waiting page at once and the app about a second later | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
 | The wake reads the pages that were resident at the freeze back from swap before it resumes | In progress ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)); off for nested-fleet Instances. See [Prepared restore](/reference/prepared-restore) |
 | A long freeze becomes a stop | Planned |
+| A production live sleeps and wakes; Caddy holds its visitor | Planned with production containers ([ADR 0265](/decisions/0265-sleep-idle-production-containers)). See [Production containers](/reference/production-containers#sleep-and-wake) |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
 
 **The idle sleep.** The [runtime hibernator](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) puts a development container to sleep after an idle hour, with the same idle window and sweep as a checkout Instance. A clone, a default and a nested-fleet Instance follow the same rule; no list of names or ids exempts one. `ORBIT_HIBERNATION_CONTAINER_SLEEP` chooses which Instances it acts on:
@@ -1575,19 +1576,21 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | --- | --- |
 | `false`, the default, or any value not in this table | No Instance. A value not in this table is logged as an error once, and again after a cache clear |
 | `without_t3` | Only Instances without a T3 server: the runtime records no T3 port. Today these are the defaults |
-| `true` | Every development container |
+| `true` | Every development container. Planned: also each production live ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) |
 
 An Instance sleeps only when no row of this table keeps it awake. The sweep checks them in this order, and the first match is the reason it reports:
 
 | Reason | The Instance stays awake when |
 | --- | --- |
 | `t3_server` | The value is `without_t3`, and it has a T3 server. |
-| `not_development` | It is not a development Instance. |
-| `never_sleep` | Its id is in `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`. |
+| `not_development` | It is not a development Instance. Planned: this reason goes, and `not_live` takes its place. |
+| `not_live` | Planned: it is a hot or old production release container. |
+| `never_sleep` | Its id is in `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`. Planned: the Instance's `never_sleep` field, which `instance:update` sets and `instance:show` shows, replaces the setting. |
 | `asleep` | It already sleeps. The sweep does not read it. |
 | `busy`, `task` | It is not active, an Operation is open on it or on its Processes, or a task runs in it. |
 | `keep_alive` | One of its Processes is desired-running with `keep_alive`. A frozen container runs no Process, so this keeps the whole container awake. |
 | `node_service` | It uses a [Node service](/cli/instance/node-service-attach), such as PowerSync on another Node. The service may call back into the app, which a frozen app cannot answer. |
+| `swap_full` | Planned: a production live whose last sleep failed within the window because swap could not take its memory. A production sleep never stops live. |
 | `http_unreadable` | Its Node does not answer the read of the access logs. |
 | `watch_starting`, `watching` | The sweep has not yet watched it for one idle window. |
 | `http_active` | Its Route's access log changed within the window. |
@@ -1598,7 +1601,7 @@ An Instance sleeps only when no row of this table keeps it awake. The sweep chec
 | `t3_active` | Its newest user message, turn end, or request that waits for the user is within the window. |
 | `next_run` | The run already started five sleeps. |
 
-The three `t3_` rows apply only to an Instance with a T3 server. An Instance without one, such as a default, has no T3 to read, so the sweep judges it by the other rows alone. A clone whose T3 server cannot be read stays awake, as before. A running turn is preparing, queued, starting or running. Missing data never puts an Instance to sleep.
+The three `t3_` rows apply only to an Instance with a T3 server, so never to a production live. An Instance without one, such as a default, has no T3 to read, so the sweep judges it by the other rows alone. A clone whose T3 server cannot be read stays awake, as before. A running turn is preparing, queued, starting or running. Missing data never puts an Instance to sleep.
 
 **The watch.** The first run that acts on a clone records when it began to watch it, in `idle_watch_started_at` of the Instance's runtime. Until one idle window has passed since then, the clone stays awake with `watch_starting` or `watching`. An access log written before the watch, such as the file a migrated Instance kept from its checkout, proves nothing about the time since. A dry run never starts a watch.
 
@@ -1680,9 +1683,13 @@ The [agent development servers](#agent-development-servers) site on port 444 has
 
 **What wakes an Instance.** A visit to its Route, a deployment of it, and [`instance:wake`](/cli/instance/wake). A default with no visitor stays asleep until one of them comes. A clone or task copy of an asleep default does not wake it: the copy comes from the seed snapshot. A deployment that starts or resumes the container removes the asleep marker once its `start` part passed (the container runs and its units are active; there is no web probe), so the Route serves the app again; its result records `power_state` `running`.
 
+Planned for a production live ([ADR 0265](/decisions/0265-sleep-idle-production-containers)): a deploy does not wake it, and a due native cron Schedule does. That wake does not count as `woke_recently`. The switch removes the marker. See [Production containers](/reference/production-containers#sleep-and-wake).
+
 The end of a deployment counts as activity, like the end of a wake: the Instance stays awake with `deployed_recently` for one idle window, then sleeps when nothing else keeps it awake. An automatic deployment of a default is the exception: it does not count, so the default sleeps again at the next sweep when nothing else keeps it awake.
 
 **While asleep.** Schedules run only while the container runs (decided 2026-11-12): Schedules in the container do not run, and a scheduler or queue Process in a sleeping container waits until the wake. A Process that must keep running gets `keep_alive`, which keeps the whole container awake. At the resume, systemd timers that came due during the freeze run at once. Other Operations that need the running container refuse it with `process.target_inactive` or `schedule.target_inactive`. Env, mail and Node service updates and the task workspace read `power_state`. Process and Schedule work on the Node refuses a container that is not `Running`, and Incus reports a frozen one as `Frozen`.
+
+Planned for a production live: a due native cron Schedule wakes it and waits for the wake instead of a refusal. A container timer that came due during the sleep fires once at the resume.
 
 A connection held open across a freeze meets the server's idle timeout at the resume, and clients reconnect. A deployment's start resumes a frozen container, or boots a stopped one, before it converges. A destroy deletes a frozen container with `incus delete --force` and needs no wake.
 
@@ -2187,6 +2194,10 @@ A copy of such a default copies the volume's seed snapshot with `incus storage v
 When the clone inherited `default`, the kernel made its device in `geom` mode. The change to `dev` makes ZFS remove the device and make a new one in the background. Incus can find the old `/dev/zdNN` and run `btrfs rescue zero-log` or `btrfstune` on it while it goes away. The copy then fails with `cannot open /dev/zdNN`, or reads another volume's device. Copies at the same time, and any other zvol device change on the Node, make this likely: on Beast on 15 November 2026, 30 of 75 copies failed three at a time.
 
 So the host branch sets `volmode=dev` on the `custom` dataset. The clone inherits `dev`, its device is made once, and Incus changes nothing. Volumes that Incus creates or clones by other paths set their own `volmode`. A zvol that Incus receives, imports or copies in full into this subtree now inherits `dev` too: its device appears in dev mode until its first unmount, and Orbit's inner volumes use none of those paths.
+
+After the volume copy, the clone sets the volume's `size` to the intent's size, `container.inner_volume.size`, before the container copy. A volume copied from a snapshot takes the snapshot's Incus config, and a snapshot that a [seed copy](#how-the-seed-moves) moved to a CI Node records `size: 0`.
+
+Incus 7.0.2 writes the `size` of each snapshot that it sends from the size of the snapshot's block device, and it writes 0 for a volume with a file system. Incus cannot change a snapshot's config, so the seed copy cannot correct it. The ZFS volume keeps the full size, so the set changes only the record. The [start guard](#the-container) still requires that exact size.
 
 On this volume a [reset](#reset) of a copy's fleet, which a proof runs before each batch, takes about 16 seconds.
 
@@ -2765,7 +2776,7 @@ Incus moves it, from the default's Node straight to each CI Node over WireGuard.
 - `incus copy <default> proof-node-<id>:proof-seed --refresh --mode=push`, in the project `orbit-instances-nested`;
 - `incus storage volume copy` of the default's inner volume to `proof-seed-inner` on the same remote, with `--refresh --mode=push`.
 
-An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
+An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The holder volume gets the default's `size`, but each snapshot that it receives records `size: 0`; a clone [sets its own size](#the-inner-volume). The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
 
 `--refresh` sends only what changed since the last copy. Incus compares the snapshots on both sides by name and creation time and sends the newer ones as ZFS increments from the newest snapshot that both sides share, so the holder gets the new `seed-<commit>` snapshot natively. The first copy to a Node sends the whole seed pair. The copy reads the default as an instance, not one snapshot of it: a snapshot source carries no snapshots, so `--refresh` could not find a common one and would send the whole pair each time.
 
@@ -2974,7 +2985,8 @@ Step 10 of ADR 0250 moves production Instances into containers on `app-prod` Nod
 - A production container has only the user `orbit`: no T3, no agent and no model route.
 - A production container gets no `php-cli.ini`, so its PHP never loads PCOV ([ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov)).
 - FrankenPHP serves it once it has proved itself in development, by the criteria of the plan's [production gate](/solutions/development-container-runtime#production-gate).
-- Production containers never sleep. Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
+- Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
+- Planned ([ADR 0265](/decisions/0265-sleep-idle-production-containers)): an idle live sleeps and wakes fully ready by the rule of [Sleep and wake](#sleep-and-wake). [Production containers](/reference/production-containers#sleep-and-wake) has the details.
 - Existing production checkouts are migrated, as development checkouts are.
 
 The release flow is planned in [Production containers](/reference/production-containers) ([ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers)): hot builds each new commit as a clone of live's release snapshot, live serves, and old stays stopped for rollback.

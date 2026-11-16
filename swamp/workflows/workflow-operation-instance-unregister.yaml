@@ -17,93 +17,10 @@ inputs:
     kind:
       type: string
       const: instance.unregister
+    # Opaque, as destroy's: Swamp refuses null for every property it declares, whatever the schema form, and the intent holds
+    # null for an Instance without a Route (members[].route_id) and a Process without Vite (processes[].vite).
     intent:
       type: object
-      properties:
-        removal_id:
-          type: string
-        node_id:
-          type: integer
-        instance_id:
-          type: integer
-        project_id:
-          type: integer
-        name:
-          type: string
-        route_withdrawn:
-          type: boolean
-        members:
-          type: array
-          items:
-            type: object
-            properties:
-              instance_id:
-                type: integer
-              # An integer, or null for an Instance without a Route; Swamp's schema allows one type, so it states none.
-              route_id: {}
-            required:
-            - instance_id
-            - route_id
-            additionalProperties: false
-        additional_route_ids:
-          type: array
-          items:
-            type: integer
-        ssh_execution:
-          type: object
-        route_mutations:
-          type: object
-        processes:
-          type: array
-          items:
-            type: object
-            properties:
-              process_id:
-                type: integer
-              runtime:
-                type: string
-              name:
-                type: string
-              on_demand:
-                type: boolean
-              # An object, or null for a Process without Vite.
-              vite: {}
-            required:
-            - process_id
-            - runtime
-            - name
-            additionalProperties: false
-        hibernation:
-          type: array
-          items:
-            type: object
-            properties:
-              instance_id:
-                type: integer
-              path:
-                type: string
-            required:
-            - instance_id
-            - path
-            additionalProperties: false
-        check_paths:
-          type: array
-          items:
-            type: string
-      required:
-      - removal_id
-      - node_id
-      - instance_id
-      - project_id
-      - name
-      - members
-      - additional_route_ids
-      - ssh_execution
-      - route_mutations
-      - processes
-      - hibernation
-      - check_paths
-      additionalProperties: false
     execution_secrets:
       type: object
       additionalProperties:

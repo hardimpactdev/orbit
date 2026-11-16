@@ -14,7 +14,6 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\TaskVm;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -170,11 +169,7 @@ it('projects 200 recorded Nodes in under one second with bounded queries and no 
         $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
         $this->view->putNode($node->id, [], null, 1, CacheAgentStateView::now(), null);
     }
-    TaskVm::query()->create([
-        'node_id' => $node->id, 'provider' => 'incus', 'name' => 'list-worker',
-        'wireguard_ip' => '10.44.9.1', 'state' => 'ready',
-    ]);
-    config()->set('swamp_workers.nodes', Node::query()->pluck('id')->all());
+    config()->set('swamp_workers.nodes', Node::query()->whereKeyNot($node->id)->pluck('id')->all());
     // Warm the request bootstrap, not the collection: the measured request still reads every record.
     $this->getJson('/api/v1/nodes')->assertOk();
     DB::enableQueryLog();

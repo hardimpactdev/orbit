@@ -6,6 +6,7 @@ use App\Domain\Nodes\RoleName;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 
 uses(LazilyRefreshDatabase::class);
@@ -74,9 +75,9 @@ it('rejects a reboot hold that is not a JSON boolean without changing the Node',
     expect($node->refresh()->name)->toBe('enrolled')->and($node->reboot_hold)->toBeFalse();
 })->with(['string' => ['true'], 'number' => [1], 'null' => [null], 'object' => [(object) []]]);
 
-it('refuses the removed task_vms and image_refresh_hold members as it refuses any unknown member, and keeps the stored value', function (string $member, mixed $value): void {
+it('refuses the removed task_vms and image_refresh_hold members as it refuses any unknown member, and stores neither', function (string $member, mixed $value): void {
     $node = unchangedNode();
-    $stored = ['task_vms' => ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2]];
+    $stored = ['t3' => ['url' => 'https://t3.orbit']];
     Node::withoutEvents(fn (): bool => $node->update(['settings' => $stored]));
     $unknown = unchangedPatch($node, ['name' => 'changed', 'colour' => $value])->assertUnprocessable();
 
@@ -87,9 +88,10 @@ it('refuses the removed task_vms and image_refresh_hold members as it refuses an
         ->and($node->refresh()->name)->toBe('enrolled')
         ->and($node->settings)->toBe($stored)
         ->and(Operation::query()->count())->toBe(0);
-    // A later update leaves the stored value, which no code reads, as it is.
+    // A later update keeps the other settings keys, and the Node has no column for the removed field.
     unchangedPatch($node, ['name' => 'changed'])->assertOk()->assertJsonMissingPath('data.settings.task_vms')->assertJsonMissingPath('data.image_refresh_hold');
-    expect($node->refresh()->settings)->toBe($stored);
+    expect($node->refresh()->settings)->toBe($stored)
+        ->and(Schema::hasColumn('nodes', 'image_refresh_hold'))->toBeFalse();
 })->with([
     'task_vms' => ['task_vms', ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2]],
     'image_refresh_hold' => ['image_refresh_hold', true],

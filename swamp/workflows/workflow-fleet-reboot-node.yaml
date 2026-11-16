@@ -21,7 +21,7 @@ jobs:
   labels: {role: swamp}
   steps:
     # Drain: wait for the window and the earlier Nodes, read whether a reboot is due, then stop new work and wait for the work in
-    # flight within the drain budget (900 s) and stop the task guests (75 s each at most); a busy CI host or a closed window defers it.
+    # flight within the drain budget (900 s); a busy CI host or a closed window defers it.
   - name: 'drain'
     labels: {role: swamp}
     writes: true

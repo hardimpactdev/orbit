@@ -26,7 +26,7 @@ The engine is generic. Your agentic development environment (ADE) plans and stee
 
 Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`task` CLI family](/cli/task) runs the same operations from a terminal. There is no web UI to create or change a task. The API, the CLI, and the web app call a child task a subtask.
 
-A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. Every associated task VM row must also be `destroyed`. A VM in `provisioning`, `ready`, `parked`, `destroying`, or `failed` returns HTTP 409 and `project.task_vm_not_destroyed`, with its name and state in the message. Wait until destruction finishes before retrying. Both refusals leave all records unchanged; only `destroyed` VM rows are deleted with the Project.
+A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. The refusal leaves all records unchanged. Removal reads no task VM row; it deletes the `destroyed` task VM rows of its groups with them.
 
 
 ## Extension switch and status
@@ -73,7 +73,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `ended_pr_notice_key` | subtask | Stable send key for the one ended-pull-request notice. Null when that subtask has no notice |
 | `ended_pr_notice_thread_id` | subtask | The implementer or reviewer thread that notice belongs to |
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
-| `vm_power` | task | [VM power](/reference/compute-drivers#vm-power), separate from task status: `running`, `stopped`, `destroyed`, or `null` |
+| `vm_power` | task | [VM power](/reference/compute-drivers#vm-power): always `null`, because no task VM exists |
 | `ready_at`, `ended_at`, `merged_at` | task | [Lifecycle times](#lifecycle-times): when the task first entered `todo`, when it ended, and when GitHub merged its pull request |
 | `tokens`, `line_diff`, `lines_added`, `lines_deleted`, `duration_ms` | both | [Settle metrics](#settle-metrics): distinct-thread tokens, per-subtask usage deltas, recorded whole-branch line counts, and duration |
 
@@ -153,7 +153,7 @@ A group's `last_activity_at` is the newest time any Operation on the group was c
 
 #### Release an idle task VM
 
-The idle release and its save, `tasks.idle_save`, are removed with the task VMs. A task copy stays until its group ends, so its work needs no save. The columns `idle_saved_commit` and `idle_saved_at` stay on old groups; nothing reads them. A save branch `task-<id>-idle` that an old save pushed stays on origin until a person deletes it.
+The idle release and its save, `tasks.idle_save`, are removed with the task VMs. A task copy stays until its group ends, so its work needs no save. The columns `idle_saved_commit` and `idle_saved_at` are dropped ([old paths](/reference/old-paths#task-vm-settings)). A save branch `task-<id>-idle` that an old save pushed stays on origin until a person deletes it.
 
 #### Keep command output out of run history
 

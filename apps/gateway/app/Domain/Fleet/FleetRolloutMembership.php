@@ -10,7 +10,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\NodeRole;
-use App\Models\TaskVm;
 
 /**
  * Which Nodes the fleet rollout visits, and in which order (ADR 0202).
@@ -106,14 +105,10 @@ final readonly class FleetRolloutMembership
     /**
      * Why the rollout leaves the Node out, or null when it is in the rollout set.
      *
-     * @return 'sandbox'|'inactive'|'platform'|'unmanaged'|'gateway'|'roleless'|null
+     * @return 'inactive'|'platform'|'unmanaged'|'gateway'|'roleless'|null
      */
     public function exclusion(Node $node): ?string
     {
-        if (TaskVm::forNode($node) instanceof TaskVm) {
-            return 'sandbox';
-        }
-
         if ($node->status !== LifecycleStatus::Active) {
             return 'inactive';
         }
