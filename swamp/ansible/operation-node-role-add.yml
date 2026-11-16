@@ -15,16 +15,7 @@
     - node
   become: true
   tasks:
-    - name: Make the client certificate of root
-      ansible.builtin.command:
-        argv: [incus, remote, generate-certificate]
-        creates: /root/.config/incus/client.crt
-    - name: Read the client certificate of root
-      ansible.builtin.slurp: { src: /root/.config/incus/client.crt }
-      register: proof_seed_client
-    - name: Keep it for the role Node
-      ansible.builtin.set_fact:
-        proof_seed_certificate: "{{ proof_seed_client.content | b64decode }}"
+    - { name: Read the client certificate, ansible.builtin.import_tasks: tasks/proof-seed-certificate.yml }
 - name: Role resources on the Node
   hosts: role_node
   tags:

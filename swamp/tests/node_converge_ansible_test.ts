@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 // Exercise real Ansible tasks locally, without an installer or a Node connection.
 // Use the shape-gate Ansible environment to run this suite.
 const taskPath = (name: string) => fileURLToPath(new URL(`../ansible/tasks/${name}.yml`, import.meta.url));
+/** The play of the converge on the target Node. Other plays run on the hub and on the default's Node. */
+const targetPlay = async () => (parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<Record<string, unknown>>)
+    .find((play) => play.hosts === "target") as { tasks: Array<Record<string, unknown>> } & Record<string, unknown>;
 const recipe = JSON.parse(await Deno.readTextFile(new URL("../../apps/gateway/resources/machine-software/recipe.json", import.meta.url)));
 
 Deno.test("generated converge vars preserve shell arguments, scalar strings and literal Jinja through Ansible", async () => {
@@ -84,8 +87,7 @@ Deno.test("peer DNS routing domains stay literal and a second application change
 
 for (const state of ["matching", "unavailable", "plan error", "invalid digest", "no caller"]) {
     Deno.test(`input ${state === "no caller" ? "needs no" : state === "matching" ? "accepts the matching" : "rejects the " + state} base CLI without writes`, async () => {
-        const plays = parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<{ tasks: Array<Record<string, unknown>> }>;
-        const input = plays[1].tasks.filter((task) => ["Require the pinned Linux platform", "Require the recorded CLI pin only for a CLI caller"].includes(task.name as string));
+        const input = (await targetPlay()).tasks.filter((task) => ["Require the pinned Linux platform", "Require the recorded CLI pin only for a CLI caller"].includes(task.name as string));
         await localPlay({
             recipe, ansible_facts: { distribution: "Ubuntu", distribution_version: recipe.ubuntu.release, architecture: "x86_64" },
             secrets: { agent_verifier: "b".repeat(64) },
@@ -174,8 +176,7 @@ Deno.test("role phases accept generated extra vars without shadowing each role's
         await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, network: null, user: "unused", recipe: "{}", roles }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
         await convergeInput(folder, fileURLToPath(new URL("../ansible/build_vars.py", import.meta.url)), "/unused");
-        const plays = parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<Record<string, unknown>>;
-        const production = plays[1];
+        const production = await targetPlay();
         const tasks = (production.tasks as Array<Record<string, unknown>>).filter((task) => ["Reconcile selected recorded roles", "Check the selected role runtime"].includes(task.name as string));
         // Run the production includes and play vars through the same -e @vars.yml precedence as Swamp.
         await Deno.writeTextFile(`${folder}/phase.json`, JSON.stringify([{
@@ -196,6 +197,62 @@ Deno.test("role phases accept generated extra vars without shadowing each role's
             if (pass === 2) assertMatch(output, /changed=0\s/);
             for (const id of [1, 2]) assertEquals(await Deno.readTextFile(`${folder}/role-${id}.txt`), `role ${id}\n`);
         }
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("a node.converge of a CI Node reads the certificate of the default's Node, and its roles phase trusts that certificate", async () => {
+    const { convergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
+    const folder = await Deno.makeTempDir();
+    try {
+        const certificate = "-----BEGIN CERTIFICATE-----\nDEFAULT\n-----END CERTIFICATE-----";
+        const ssh = { identity_file: "/unused", target: { host: "localhost", port: 22, user: "unused", host_keys: ["ssh-ed25519 fixture"] } };
+        const sender = { identity_file: "/unused", target: { host: "10.44.0.9", port: 22, user: "orbit", host_keys: ["ssh-ed25519 sender"] } };
+        const seed = { present: true, listen: "10.44.0.7:8444", trust: "orbit-proof-seed", project: "orbit-instances-nested", sender: { node_id: 9, ssh: sender } };
+        const runtime = { analytics: null, websocket: null, gateway: null, gateway_dns: null, metrics: null, swamp: null, ci_host: false,
+            groups: [], users: [], directories: [], files: [], secret_files: [], units: [], probes: [], proof_seed: seed };
+        const role = { assignment_id: 1, role: "ci-runner", node_id: 7, ssh, publications: [], exporters: [], prometheus: null, runtime,
+            php: [], directories: [], services: [], files: [] };
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, network: null, user: "unused", recipe: "{}", roles: [role] }));
+        await Deno.writeTextFile(`${folder}/plans.json`, "{}");
+        await convergeInput(folder, fileURLToPath(new URL("../ansible/build_vars.py", import.meta.url)), "/unused");
+        const inventory = JSON.parse(await Deno.readTextFile(`${folder}/inventory.json`));
+        assertEquals(inventory.all.children, { proof_seed_sender: { hosts: { n9: {} } } });
+        assertMatch(await Deno.readTextFile(`${folder}/known_hosts`), /^10\.44\.0\.9 ssh-ed25519 sender$/m);
+        // Both Nodes run here. A stub `incus` makes root's certificate on the default's Node and keeps each certificate the CI Node trusts.
+        for (const host of Object.values(inventory.all.hosts)) Object.assign(host as Record<string, unknown>, { ansible_connection: "local" });
+        await Deno.writeTextFile(`${folder}/inventory.json`, JSON.stringify(inventory));
+        await Deno.mkdir(`${folder}/bin`);
+        await Deno.writeTextFile(`${folder}/bin/incus`, `#!/bin/sh
+case "$1 $2" in
+  "remote generate-certificate") printf '%s\\n' '${certificate}' > '${folder}/client.crt';;
+  "config get") echo;;
+  "query --") echo '[]';;
+  "config trust") cat "$4" >> '${folder}/trusted'; echo "$*" >> '${folder}/calls';;
+  *) echo "$*" >> '${folder}/calls';;
+esac
+`);
+        await Deno.chmod(`${folder}/bin/incus`, 0o755);
+        // The production plays run beside a copy of their tasks, with root's files moved into the fixture folder.
+        await new Deno.Command("cp", { args: ["-r", fileURLToPath(new URL("../ansible/tasks", import.meta.url)), `${folder}/tasks`] }).output();
+        for (const [file, from, to] of [["proof-seed-certificate", "/root/.config/incus/client.crt", `${folder}/client.crt`],
+            ["proof-seed-listener", "/run/orbit-proof-seed.crt", `${folder}/seed.crt`], ["proof-seed-listener", "owner: root, group: root, ", ""]]) {
+            const path = `${folder}/tasks/${file}.yml`;
+            await Deno.writeTextFile(path, (await Deno.readTextFile(path)).replaceAll(from, to));
+        }
+        await Deno.symlink(fileURLToPath(new URL("../ansible/swamp-worker-renewal.yml", import.meta.url)), `${folder}/swamp-worker-renewal.yml`);
+        const plays = (parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<Record<string, unknown>>)
+            .filter((play) => ["proof_seed_sender", "target"].includes(play.hosts as string)).map((play) => play.hosts === "target"
+                ? { ...play, become: false, tasks: (play.tasks as Array<Record<string, unknown>>).filter((task) => task.name === "Reconcile selected recorded roles"),
+                    handlers: [{ name: "Reload units", "ansible.builtin.debug": { msg: "Fixture has no system services" } }] }
+                : { ...play, become: false });
+        await Deno.writeTextFile(`${folder}/phase.json`, JSON.stringify(plays));
+        const result = await new Deno.Command("sh", {
+            args: ["-c", `umask 022 && exec ansible-playbook -i ${folder}/inventory.json -e @${folder}/vars.yml -e orbit_run=${folder} --tags roles ${folder}/phase.json`],
+            env: { PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" }, stdout: "piped", stderr: "piped",
+        }).output();
+        assertEquals(result.code, 0, new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr));
+        assertEquals(await Deno.readTextFile(`${folder}/trusted`), `${certificate}\n`);
+        assertMatch(await Deno.readTextFile(`${folder}/calls`), /^config trust add-certificate \S+ --name orbit-proof-seed --restricted --projects orbit-instances-nested$/m);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
@@ -327,8 +384,7 @@ async function compiledSwamp(folder: string) {
     return path;
 }
 async function toolsPhase(folder: string, runtime: string) {
-    const plays = parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<{ tasks: Array<Record<string, unknown>> }>;
-    const tasks = structuredClone(plays[1].tasks.filter((task) => (task.tags as string[]).includes("tools")));
+    const tasks = structuredClone((await targetPlay()).tasks.filter((task) => (task.tags as string[]).includes("tools")));
     for (const task of tasks) {
         const include = task["ansible.builtin.include_tasks"] as { file: string } | undefined;
         if (include) include.file = taskPath("node-converge-tool");
@@ -399,8 +455,7 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
 
 /** The roles-tagged tasks of the converge, each role standing in for a container step that kept `list` (none: no Instance host). */
 async function rolesPhase(folder: string, list?: unknown[]) {
-    const plays = parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<{ tasks: Array<Record<string, unknown>> }>;
-    const tasks = structuredClone(plays[1].tasks.filter((task) => (task.tags as string[]).includes("roles")));
+    const tasks = structuredClone((await targetPlay()).tasks.filter((task) => (task.tags as string[]).includes("roles")));
     await Deno.writeTextFile(`${folder}/role.json`, JSON.stringify([list === undefined
         ? { name: "Apply a role without an Instance host", "ansible.builtin.debug": { msg: "no instance host" } }
         : { name: "Keep the containers without the browser trust store", "ansible.builtin.set_fact": { instance_browser_trust: list } }]));

@@ -221,7 +221,7 @@ async function operation(
   };
   const converge = (parse(
     Deno.readTextFileSync(new URL("operation-node-converge.yml", root)),
-  ) as { tasks: Task[] }[])[1];
+  ) as { hosts: string; tasks: Task[] }[]).find((play) => play.hosts === "target")!;
   let tasks: Task[] = [];
   let server: Deno.HttpServer | undefined;
   if (id === 1) {

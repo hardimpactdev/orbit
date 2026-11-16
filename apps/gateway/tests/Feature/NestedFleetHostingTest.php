@@ -23,6 +23,7 @@ use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeBridges;
 use App\Domain\Nodes\NodeRoleDirectProjection;
+use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
@@ -294,6 +295,30 @@ function proofSeedDefault(string $takenAt = '2026-11-16 00:00:00'): Instance
     return $default->refresh();
 }
 
+/** Ends a ci-runner add or converge of the Node, with the role runtime that the Gateway sends now, passed or failed. */
+function endCiRunnerConverge(Node $node, string $status): void
+{
+    $assignment = $node->roles()->where('role', RoleName::CiRunner)->sole();
+    app(NodeRoleRuntimeInput::class)->prepare($node, $assignment);
+    $node->refresh();
+    $run = 'run-converge-'.bin2hex(random_bytes(4));
+    $converge = Operation::query()->create(['kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+        'status' => 'running', 'triggered_by' => 'test', 'state' => ['swamp_run_id' => $run],
+        'input' => ['_role' => ['assignment_id' => $assignment->id, 'role' => 'ci-runner', 'created' => true, 'certificates' => ['leaves' => []]],
+            'native_role' => ['runtime' => ciRunnerRuntime($node), 'publications' => [], 'artifact_digests' => []]]]);
+    $failed = $status === 'failed';
+    app(NodeRoleDirectProjection::class)->apply($converge, ['run_id' => $run, 'status' => $status, 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['steps' => $failed ? ['Apply the role on the Node' => ['status' => 'failed']]
+            : ['Check the role' => ['status' => 'succeeded']], 'summary' => ['failed_steps' => $failed ? ['Apply the role on the Node'] : []]]]);
+}
+
+/** The Nodes' seed listeners trust the proof default's Node, as their passed ci-runner converge recorded it. */
+function seedListening(Node ...$nodes): void
+{
+    $sender = app(ProofSeeds::class)->defaultNode()->id ?? throw new LogicException('The proof Project has no default.');
+    Node::query()->whereKey(array_map(static fn (Node $node): int => $node->id, $nodes))->update(['seed_sender_id' => $sender]);
+}
+
 describe('the CI bridge of a Node (docs/reference/development-containers.md#nodes)', function (): void {
     it('allocates no Instance bridge in a /24 that any Node\'s orbitci0 holds', function (): void {
         $other = ciNode(3, LifecycleStatus::Active, 'ci-other', '10.44.0.31');
@@ -369,7 +394,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
         $retaken = ciNode(2, LifecycleStatus::Active, 'ci-old', '10.44.0.37');
         ProofSeed::query()->create(['node_id' => $retaken->id, 'holder' => 'proof-seed', 'commit' => str_repeat('a', 40),
             'taken_at' => '2026-11-15 00:00:00', 'operation_id' => 6]);
-        ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34');
+        seedListening($behind, $both, $current, $retaken, ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34'));
 
         expect(array_map(static fn (Node $node): string => $node->name, app(ProofSeeds::class)->targets()))->toBe(['ci', 'ci-app', 'ci-old'])
             ->and(app(ProofSeeds::class)->holder($current)?->operation_id)->toBe(7)
@@ -513,6 +538,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
         seedSwampNode();
         $node = ciNode();
         Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($node);
 
         $operation = app(ProofSeeds::class)->admit('seed');
         expect($operation?->kind)->toBe('instance.seed_copy')
@@ -543,6 +569,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
         foreach ([$passed, $failed] as $node) {
             Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
         }
+        seedListening($passed, $failed);
         $operation = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
         $operation->forceFill(['status' => 'running', 'state' => [...($operation->state ?? []), 'swamp_run_id' => 'run-1']])->save();
 
@@ -567,6 +594,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
         seedSwampNode();
         $first = ciNode();
         Node::withoutEvents(fn (): bool => $first->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($first);
         $end = function (Operation $copy): void {
             $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-'.$copy->id]])->save();
             app(ProofSeedCopyProjection::class)->apply($copy, ['status' => 'failed', 'run_id' => 'run-'.$copy->id, 'started_at' => now()->toIso8601String(),
@@ -577,6 +605,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
         // A Node that became a target while the copy held the lock: its own converge was refused as busy.
         $second = ciNode(2, LifecycleStatus::Active, 'ci-two', '10.44.0.31');
         Node::withoutEvents(fn (): bool => $second->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($second);
         $end($copy);
         $next = Operation::query()->where('kind', 'instance.seed_copy')->whereKeyNot($copy->id)->sole();
         expect($next->input['targets'])->toBe([$second->id])
@@ -596,6 +625,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
         $node = static function (string $name, string $ip): Node {
             $node = ciNode(2, LifecycleStatus::Active, $name, $ip);
             Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+            seedListening($node);
 
             return $node;
         };
@@ -630,6 +660,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
         foreach ([$gone, $kept] as $node) {
             Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
         }
+        seedListening($gone, $kept);
         $copy = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
         $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-1']])->save();
         $gone->roles()->delete();
@@ -652,6 +683,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
         seedSwampNode();
         $node = ciNode();
         Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($node);
         $commit = str_repeat('b', 40);
         $deploy = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id,
             'node_id' => $default->node_id, 'status' => 'running', 'triggered_by' => 'release',
@@ -673,16 +705,79 @@ describe('the seed of the proof default on each Node that offers proof places', 
         $node = ciNode(3, LifecycleStatus::Provisioning);
         Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
         $assignment = $node->roles()->sole();
-        $add = Operation::query()->create(['kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
-            'status' => 'running', 'triggered_by' => 'test', 'state' => ['swamp_run_id' => 'run-1'],
-            'input' => ['_role' => ['assignment_id' => $assignment->id, 'role' => 'ci-runner', 'created' => true, 'certificates' => ['leaves' => []]],
-                'native_role' => ['runtime' => [], 'publications' => [], 'artifact_digests' => []]]]);
 
-        app(NodeRoleDirectProjection::class)->apply($add, ['run_id' => 'run-1', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(),
-            'finished_at' => now()->toIso8601String(), 'result' => ['steps' => ['Check the role' => ['status' => 'succeeded']], 'summary' => ['failed_steps' => []]]]);
+        endCiRunnerConverge($node, 'succeeded');
 
         expect($assignment->refresh()->status)->toBe(LifecycleStatus::Active)
             ->and(Operation::query()->where('kind', 'instance.seed_copy')->sole()->input['targets'])->toBe([$node->id]);
+    });
+
+    it('targets only a Node whose passed ci-runner converge opened the seed listener for the default\'s Node, and never marks another tried', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $ready = ciNode();
+        $waiting = ciNode(2, LifecycleStatus::Active, 'ci-two', '10.44.0.31');
+        foreach ([$ready, $waiting] as $node) {
+            Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        }
+        seedListening($ready);
+        $tried = static fn (): array => Operation::query()->where('kind', 'instance.seed_copy')->get()
+            ->flatMap(static fn (Operation $copy): array => $copy->input['targets'])->unique()->values()->all();
+
+        // The Node with places whose converge has not opened the listener yet is no target: no copy fails on it.
+        $copy = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        expect($copy->input['targets'])->toBe([$ready->id]);
+        $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-1']])->save();
+        app(ProofSeedCopyProjection::class)->apply($copy, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['targets' => [['node_id' => $ready->id, 'status' => 'failed', 'detail' => 'no free ID range']]]]);
+        // The end of the copy admits nothing, and the waiting Node is not tried.
+        expect($tried())->toBe([$ready->id]);
+
+        // Its converge passes: the Gateway records the default's Node as its sender, and the converge's own trigger copies to it.
+        endCiRunnerConverge($waiting, 'succeeded');
+        expect($waiting->refresh()->seed_sender_id)->toBe($default->node_id)
+            ->and(Operation::query()->where('kind', 'instance.seed_copy')->latest('id')->firstOrFail()->input['targets'])->toBe([$ready->id, $waiting->id]);
+
+        // A failed converge may have changed the trust: the record goes. So does a record of a former default's Node.
+        endCiRunnerConverge($waiting, 'failed');
+        Node::query()->whereKey($ready->id)->update(['seed_sender_id' => $waiting->id]);
+        expect($waiting->refresh()->seed_sender_id)->toBeNull()
+            ->and(app(ProofSeeds::class)->targets())->toBe([]);
+    });
+
+    it('clears the record when the listener goes: a passed converge without places, and a ci-runner removal, passed or failed', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        $places = static fn (int $count): bool => Node::withoutEvents(fn (): bool => $node->update(['settings' => ['ci' => ['places' => $count, 'proof_only' => false]]]));
+
+        endCiRunnerConverge($node, 'succeeded');
+        expect($node->refresh()->seed_sender_id)->toBe($default->node_id);
+        $places(0);
+        endCiRunnerConverge($node->refresh(), 'succeeded');
+        expect($node->refresh()->seed_sender_id)->toBeNull();
+
+        foreach (['failed', 'succeeded'] as $status) {
+            $places(3);
+            endCiRunnerConverge($node->refresh(), 'succeeded');
+            expect($node->refresh()->seed_sender_id)->toBe($default->node_id);
+            $assignment = $node->roles()->sole();
+            $assignment->update(['status' => LifecycleStatus::Removing]);
+            $removal = Operation::query()->create(['kind' => 'node.role_remove', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+                'status' => 'running', 'triggered_by' => 'test', 'state' => ['swamp_run_id' => 'run-remove-'.$status],
+                'input' => ['_role_remove' => ['node_id' => $node->id, 'assignment_id' => $assignment->id, 'role' => 'ci-runner'], 'intent' => []]]);
+            app(NodeRoleRemovalProjection::class)->apply($removal, ['run_id' => 'run-remove-'.$status, 'status' => $status,
+                'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => $status === 'succeeded'
+                    ? ['steps' => ['Confirm role removal' => ['status' => 'succeeded']]] : ['failed_step' => 'Stop the seed listener', 'error_code' => 'node_role.removal_failed']]);
+
+            // A failed removal leaves the role, which offers places again; its listener may be gone, so it is no target.
+            expect($node->refresh()->seed_sender_id)->toBeNull()
+                ->and(app(ProofSeeds::class)->targets())->toBe([]);
+            if ($status === 'failed') {
+                expect($node->roles()->sole()->status)->toBe(LifecycleStatus::Failed);
+            }
+        }
     });
 
     it('has no targets while the proof default has no seed', function (): void {

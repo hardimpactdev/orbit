@@ -317,13 +317,26 @@ The node phase writes the trust. The firewall phase inserts the two rules and on
 
 The converge reads the default Node's client certificate there. When root has none yet, it makes one with `incus remote generate-certificate`; nothing else changes on that Node. A trust entry of that name with another certificate is replaced. The Gateway sends the default's Node in the intent, so a converge after the default moved to another Node trusts the new one.
 
+A [`node:converge`](/cli/node/converge) of the Node runs the same node phase in its roles phase. It reads the certificate in the same way, writes or removes the trust, and without a sender stops the listener. It has no firewall phase, so it never opens the listener and never changes its two rules.
+
 The default's Node gets no listener and no change to its Incus daemon. Each seed copy adds a client remote of root there for each CI Node, `proof-node-<id>`, when it is missing.
 
 When a converge finds that the Node offers no proof places, or that the proof Project has no default, the converge removes the trust entry `orbit-proof-seed`, unsets `core.https_address` when it is the listener above, and deletes both UFW rules. It can name the allow rule only while the proof Project has a default.
 
 A removal of the `ci-runner` role does the same. It stops the listener and removes the trust in a phase of its own, before the firewall rules go, so the port is never open to every WireGuard member while Incus still listens. The Node finds the trust entry by its name, so the Gateway never needs its fingerprint. The holder stays, as the other Incus resources of the branch do.
 
-The converge makes no seed. When a `ci-runner` add or converge of a Node that offers proof places passes, the Gateway admits a [seed copy](/reference/development-containers#the-seed-on-each-ci-node) to the Node if it is not the default's Node and its seed is not the proof default's current seed.
+The Gateway records the listener on the Node, in `nodes.seed_sender_id`: the Node whose certificate the listener trusts. One rule sets and clears it, at the end of every run that changes the listener: a `ci-runner` add, role converge or removal, and a `node:converge` whose roles include `ci-runner`. A `node:converge` passes for this rule when its roles phase passes:
+
+| The run | `seed_sender_id` |
+| --- | --- |
+| Passed, with a sender in its intent | The sender, the Node of the proof default when the run was admitted |
+| A passed `node:converge`, with a sender in its intent | Kept when it names that sender, else cleared: the run cannot open the listener |
+| Passed, without a sender: the run removed the listener | Cleared |
+| Failed, cancelled or interrupted | Cleared: the run may have changed the trust, so the Gateway does not know the state |
+
+The end of a `ci-runner` removal clears it too, passed or failed, because its phase stops the listener. A [seed copy](/reference/development-containers#the-seed-on-each-ci-node) targets only a Node whose record names the default's current Node. A Node without it, or with the Node of a former default, is not a target and is not marked tried. So when the default moves to another Node, the CI Nodes stay untargeted until a `ci-runner` add or converge of each passes again.
+
+The converge makes no seed. When a `ci-runner` add or converge of a Node that offers proof places passes, the Gateway admits a seed copy to the Node if it is not the default's Node and its seed is not the proof default's current seed.
 
 A CI-only Node takes no other Instance. `instance:create` refuses it with `instance.node_ci_only` (409) before any record. Only a proof copy is made there. A proof copy there gets no Route: the Node runs no Caddy and has no TLD.
 
