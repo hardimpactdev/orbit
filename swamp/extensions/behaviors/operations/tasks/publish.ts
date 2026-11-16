@@ -163,6 +163,8 @@ export const BaseFacts = z.object({
         (paths) => bytes(JSON.stringify(paths)) <= BASE_BYTES,
     ),
     overlapping_more: z.number().int().min(0),
+    // The default head the worker merged at publish, or null when the push sends the candidate itself.
+    merged_default: Sha.nullable(),
 }).strict();
 export type BaseFacts = z.infer<typeof BaseFacts>;
 
@@ -213,6 +215,7 @@ export function baseFacts(
             behind_by: Number(behind),
             overlapping_paths: overlap.shown,
             overlapping_more: overlap.more,
+            merged_default: merged === "" ? null : head,
         }),
         merged,
         error_code: "",
@@ -243,11 +246,11 @@ function withoutBase(body: string): string {
 
 /**
  * The body, then the fixed `## Base` section of a task copy's publish; without facts the body is left as it is. The body is the one
- * the copy's .env content check read: the caller's text and the waiver lines (withWaivers). The whole stays within BodyLimit: a
- * section whose path list does not fit names only their count, and one that does not fit at all is left out; the publish result
- * states the base either way.
+ * the copy's .env content check read: the caller's text and the waiver lines (withWaivers). A merge at publish names the default
+ * branch and its head. The whole stays within BodyLimit: a section whose path list does not fit names only their count, and one
+ * that does not fit at all is left out; the publish result states the base either way.
  */
-export function withBase(body: string, facts: BaseFacts | null): string {
+export function withBase(body: string, facts: BaseFacts | null, branch: string): string {
     if (facts === null) return body;
     const kept = withoutBase(body);
     const code = (text: string) => "`" + text.replaceAll("`", "'") + "`";
@@ -274,6 +277,7 @@ export function withBase(body: string, facts: BaseFacts | null): string {
             `- Behind by: ${facts.behind_by} ${
                 facts.behind_by === 1 ? "commit" : "commits"
             }`,
+            ...(facts.merged_default === null ? [] : [`- Merged ${branch} ${code(facts.merged_default)} at publish`]),
             ...paths,
         ].join("\n") + "\n";
     for (const paths of count === 0 ? [listed] : [listed, counted]) {
@@ -316,7 +320,7 @@ export function pullPlan(raw: unknown) {
             path,
             body: JSON.stringify({
                 ...input.pull_request,
-                body: withBase(input.pull_request.body, facts),
+                body: withBase(input.pull_request.body, facts, input.base),
                 head: input.branch,
                 base: input.base,
             }),
@@ -333,7 +337,7 @@ export function pullPlan(raw: unknown) {
         path: `${path}/${row.number}`,
         body: JSON.stringify({
             title: input.pull_request.title,
-            body: withBase(input.pull_request.body, facts),
+            body: withBase(input.pull_request.body, facts, input.base),
         }),
         number: row.number,
         error_code: "",

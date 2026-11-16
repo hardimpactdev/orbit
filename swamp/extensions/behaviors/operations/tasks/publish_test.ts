@@ -228,6 +228,7 @@ Deno.test("a copy's base is stated, behind or not, and only a real conflict refu
             behind_by: 2,
             overlapping_paths: [],
             overlapping_more: 0,
+            merged_default: null,
         },
         merged: "",
         error_code: "",
@@ -297,7 +298,7 @@ Deno.test("the base path lists stop at their bound and count the rest", () => {
 
 Deno.test("the body ends with one Base section, also on a re-publish", () => {
     const facts = baseFacts(0, files({ overlap: "app/a.php\0" })).facts;
-    const once = withBase("Adds the export.", facts);
+    const once = withBase("Adds the export.", facts, "main");
     assertEquals(
         once,
         [
@@ -314,16 +315,17 @@ Deno.test("the body ends with one Base section, also on a re-publish", () => {
             "",
         ].join("\n"),
     );
-    assertEquals(withBase(once, facts), once);
+    assertEquals(withBase(once, facts, "main"), once);
     assertEquals(
         withBase(
             "Adds the export.",
             baseFacts(0, files({ behind: "1\n" })).facts,
+            "main",
         ).includes("- Behind by: 1 commit\n- Overlapping paths: none"),
         true,
     );
     // A task VM publish, or a run before the base step, leaves the caller's body as it is.
-    assertEquals(withBase("Adds the export.", null), "Adds the export.");
+    assertEquals(withBase("Adds the export.", null, "main"), "Adds the export.");
 });
 
 Deno.test("the planned pull request carries the Base section on creation and update", () => {
@@ -337,7 +339,7 @@ Deno.test("the planned pull request carries the Base section on creation and upd
         });
         assertEquals(
             JSON.parse(plan.body).body,
-            withBase("Adds the export. $(touch inert)", facts),
+            withBase("Adds the export. $(touch inert)", facts, "main"),
         );
     }
     const plain = pullPlan({
@@ -387,12 +389,12 @@ Deno.test("the waiver lines stop where the body would pass the publish limit", (
 Deno.test("waiver lines after an earlier Base section stay, before the one new section", () => {
     const facts = baseFacts(0, files({ overlap: "app/a.php\0" })).facts;
     const waiver = "Docs-unaffected: docs/reference/x.md: no change.";
-    const earlier = withBase("Adds the export.", facts);
+    const earlier = withBase("Adds the export.", facts, "main");
     // A re-publish: the caller's body carries the earlier section, and withWaivers appends a line after it.
     const body = withWaivers(earlier, waiver);
     assertEquals(body.endsWith(waiver), true);
-    const republished = withBase(body, facts);
-    assertEquals(republished, withBase("Adds the export.\n\n" + waiver, facts));
+    const republished = withBase(body, facts, "main");
+    assertEquals(republished, withBase("Adds the export.\n\n" + waiver, facts, "main"));
     assertEquals(republished.split(BASE_MARK).length, 2);
     assertEquals(
         republished.indexOf(waiver) < republished.indexOf(BASE_MARK),
@@ -407,10 +409,10 @@ Deno.test("the Base section keeps the body within its limit", () => {
     );
     const facts = baseFacts(0, files({ overlap: paths.join("\0") + "\0" }))
         .facts;
-    const full = withBase("x", facts);
+    const full = withBase("x", facts, "main");
     // A body that leaves no room for the path list states their count instead.
     const tight = "x".repeat(BodyLimit - (full.length - 1) + 1);
-    const counted = withBase(tight, facts);
+    const counted = withBase(tight, facts, "main");
     assertEquals(counted.length <= BodyLimit, true);
     assertEquals(
         counted.endsWith(
@@ -420,7 +422,7 @@ Deno.test("the Base section keeps the body within its limit", () => {
     );
     // A body at the limit gets no section; the publish result still states the base.
     const limit = "x".repeat(BodyLimit);
-    assertEquals(withBase(limit, facts), limit);
+    assertEquals(withBase(limit, facts, "main"), limit);
 });
 
 Deno.test("a long conflict or overlap stays within its byte bound and counts the rest", () => {
