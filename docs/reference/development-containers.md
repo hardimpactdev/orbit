@@ -1934,7 +1934,7 @@ A reviewer's detach marks the copy with the ref `refs/orbit/review-detach`, at t
 
 Without the mark, the phase never touches the tree. The reviewer's turn is then settled once its run is over, so an implementer's uncommitted work stays.
 
-A check, a publish or a proof of the copy refuses with `tasks.copy_turn_unended` while a turn is not settled. Only a turn settles it. When no turn can run, because the subtask is completed or a reviewer turn needs a check first, `task:cancel` is the only way out: it ends the copy, its work and any run with it.
+A check, a publish or a proof of the copy refuses with `tasks.copy_turn_unended` while a turn is not settled. Only a turn settles it. When the last subtask is completed, the caller [reopens it](/reference/tasks#reopen-the-last-subtask) with `task:update <subtask> --status=running`, and its next turn settles the copy. When no turn can run because a reviewer turn needs a check first, `task:cancel` is the only way out: it ends the copy, its work and any run with it.
 
 The threads and roles, thread state, provider errors, token metrics, retries and transcripts below remain the target. Their MCP and WebSocket calls need a T3 server that gives Swamp its own full-access session.
 
