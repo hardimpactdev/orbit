@@ -1,16 +1,18 @@
 //! The append-only journal: one record before an action and one after it.
 //!
-//! One writer thread owns the file. Connection threads hand it each record over a channel and wait for the
-//! write, so the open record is on file before the action runs, and no lock is held around the I/O. No
-//! record is synced on the order's path: the writer syncs once a second, because the page cache survives an
-//! executor crash and a Node reboot expires every order. The writer also keeps the live records and
-//! compacts the journal while the executor runs (ADR 0266), with the same rule that start-up uses.
+//! One writer thread appends. Connection threads hand it each record over a channel and wait for the write,
+//! so the open record is on file before the action runs, and no lock is held around the I/O. No record waits
+//! for a disk sync: a separate syncer thread syncs the file once a second, because the page cache survives
+//! an executor crash and a Node reboot expires every order. The writer keeps the live records and compacts
+//! the journal while the executor runs (ADR 0266), with the same rule that start-up uses; the syncer writes
+//! and syncs the compacted file, and the writer renames it into place.
 
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead as _, BufReader, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -285,6 +287,12 @@ pub enum JournalError {
     /// The writer thread is gone, so nothing more is written.
     #[error("journal writer stopped")]
     WriterGone,
+    /// The syncer thread is gone, so nothing is synced or compacted.
+    #[error("journal syncer stopped")]
+    SyncerGone,
+    /// A compaction failed; the journal in place is still complete.
+    #[error("journal compaction failed: {0}")]
+    CompactionFailed(String),
 }
 
 fn io_error<'path>(
@@ -320,28 +328,47 @@ pub fn read(path: &Path) -> Result<Vec<Record>, JournalError> {
     Ok(records)
 }
 
-/// Replaces the journal at `path` with `records`, synced, and opens it for appending.
-fn rewrite(path: &Path, records: &[Record]) -> Result<File, JournalError> {
-    let temporary = path.with_extension("compact");
+/// The file a compaction writes before it is renamed over the journal.
+fn compacted_path(path: &Path) -> PathBuf {
+    path.with_extension("compact")
+}
+
+/// Writes `records` to `temporary` and syncs it. The caller renames it into place.
+fn write_synced(temporary: &Path, records: &[Record]) -> Result<(), JournalError> {
     let mut text = Vec::new();
     for record in records {
         serde_json::to_writer(&mut text, record).map_err(JournalError::Encode)?;
         text.push(b'\n');
     }
-    let mut file = File::create(&temporary).map_err(io_error("create", &temporary))?;
+    let mut file = File::create(temporary).map_err(io_error("create", temporary))?;
     file.write_all(&text)
-        .map_err(io_error("write", &temporary))?;
-    file.sync_all().map_err(io_error("sync", &temporary))?;
-    fs::rename(&temporary, path).map_err(io_error("rename", path))?;
-    if let Some(parent) = path.parent() {
-        File::open(parent)
+        .map_err(io_error("write", temporary))?;
+    file.sync_all().map_err(io_error("sync", temporary))
+}
+
+fn sync_folder(path: &Path) -> Result<(), JournalError> {
+    match path.parent() {
+        Some(parent) => File::open(parent)
             .and_then(|dir| dir.sync_all())
-            .map_err(io_error("sync", parent))?;
+            .map_err(io_error("sync", parent)),
+        None => Ok(()),
     }
+}
+
+fn open_append(path: &Path) -> Result<File, JournalError> {
     OpenOptions::new()
         .append(true)
         .open(path)
         .map_err(io_error("open", path))
+}
+
+/// Replaces the journal at `path` with `records`, synced, and opens it for appending. Only start-up calls this, before any order.
+fn rewrite(path: &Path, records: &[Record]) -> Result<File, JournalError> {
+    let temporary = compacted_path(path);
+    write_synced(&temporary, records)?;
+    fs::rename(&temporary, path).map_err(io_error("rename", path))?;
+    sync_folder(path)?;
+    open_append(path)
 }
 
 /// Writes one record. It starts and ends with a newline, so a fragment that a failed earlier write left
@@ -353,83 +380,191 @@ fn write_record(mut file: &File, path: &Path, record: &Record) -> Result<(), Jou
     file.write_all(&line).map_err(io_error("append", path))
 }
 
-/// What the writer thread owns.
-struct Writer {
-    path: PathBuf,
-    file: File,
-    live: Live,
-    compaction: Compaction,
-    clock: fn() -> u64,
-    log: fn(&str),
-    appended: usize,
-    next_sync: Option<Instant>,
-    next_compact: Instant,
+/// Work for the syncer thread, which does every disk sync so that the writer never waits for one.
+enum SyncJob {
+    /// The writer renamed a compacted journal into place: sync it and its folder, and sync this file from now on.
+    Renamed(Arc<File>),
+    /// Write these records to the compaction file and sync it; the writer renames it once this answers.
+    Compact(Vec<Record>, Sender<Result<(), JournalError>>),
 }
 
-impl Writer {
-    fn run(mut self, commands: &Receiver<Command>) {
+/// What the syncer thread owns.
+struct Syncer {
+    path: PathBuf,
+    file: Arc<File>,
+    log: fn(&str),
+}
+
+impl Syncer {
+    fn run(mut self, jobs: &Receiver<SyncJob>) {
         loop {
-            let now = Instant::now();
-            let deadline = self
-                .next_sync
-                .map_or(self.next_compact, |sync| sync.min(self.next_compact));
-            match commands.recv_timeout(deadline.saturating_duration_since(now)) {
-                Ok(Command::Append(record, reply)) => {
-                    let written = write_record(&self.file, &self.path, &record);
-                    if written.is_ok() {
-                        self.live.apply(&record);
-                        self.appended += 1;
-                        self.next_sync
-                            .get_or_insert_with(|| Instant::now() + SYNC_INTERVAL);
+            match jobs.recv_timeout(SYNC_INTERVAL) {
+                Ok(SyncJob::Renamed(file)) => {
+                    self.file = file;
+                    self.sync();
+                    if let Err(error) = sync_folder(&self.path) {
+                        (self.log)(&format!("journal folder sync failed: {error}"));
                     }
-                    // A sender that stopped waiting has nothing left to learn.
-                    let _ = reply.send(written);
                 }
-                Ok(Command::Compact(reply)) => {
-                    let _ = reply.send(self.compact());
+                Ok(SyncJob::Compact(records, reply)) => {
+                    // A writer that stopped waiting has nothing left to learn.
+                    let _ = reply.send(write_synced(&compacted_path(&self.path), &records));
                 }
-                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Timeout) => self.sync(),
                 Err(RecvTimeoutError::Disconnected) => {
                     self.sync();
                     return;
                 }
             }
-            let now = Instant::now();
-            if self.next_sync.is_some_and(|sync| sync <= now) {
-                self.sync();
-            }
-            if self.next_compact <= now || self.appended >= self.compaction.records {
-                if let Err(error) = self.compact() {
-                    (self.log)(&format!("journal compaction failed: {error}"));
-                }
-            }
         }
     }
 
-    fn sync(&mut self) {
-        self.next_sync = None;
+    fn sync(&self) {
         if let Err(error) = self.file.sync_data() {
             (self.log)(&format!("journal sync failed: {error}"));
         }
     }
+}
 
-    fn compact(&mut self) -> Result<(), JournalError> {
+/// A compaction the syncer is writing. Records appended meanwhile go to the old journal and are kept here, so the writer
+/// can add them to the compacted file before it renames that file into place.
+struct InFlight {
+    since: Vec<Record>,
+    written: Receiver<Result<(), JournalError>>,
+    callers: Vec<Sender<Result<(), JournalError>>>,
+}
+
+/// How long the writer waits for a command while a compaction is in flight, before it looks for the syncer's answer.
+const COMPACTION_POLL: Duration = Duration::from_millis(5);
+
+/// What the writer thread owns. It writes and renames; it never syncs.
+struct Writer {
+    path: PathBuf,
+    file: Arc<File>,
+    live: Live,
+    compaction: Compaction,
+    clock: fn() -> u64,
+    log: fn(&str),
+    syncer: Sender<SyncJob>,
+    appended: usize,
+    next_compact: Instant,
+    in_flight: Option<InFlight>,
+}
+
+impl Writer {
+    fn run(mut self, commands: &Receiver<Command>) {
+        loop {
+            let wait = if self.in_flight.is_some() {
+                COMPACTION_POLL
+            } else {
+                self.next_compact.saturating_duration_since(Instant::now())
+            };
+            match commands.recv_timeout(wait) {
+                Ok(Command::Append(record, reply)) => {
+                    let written = write_record(&self.file, &self.path, &record);
+                    if written.is_ok() {
+                        self.live.apply(&record);
+                        self.appended += 1;
+                        if let Some(in_flight) = self.in_flight.as_mut() {
+                            in_flight.since.push(record);
+                        }
+                    }
+                    // A sender that stopped waiting has nothing left to learn.
+                    let _ = reply.send(written);
+                }
+                Ok(Command::Compact(reply)) => {
+                    self.begin_compaction();
+                    match self.in_flight.as_mut() {
+                        Some(in_flight) => in_flight.callers.push(reply),
+                        None => {
+                            let _ = reply.send(Err(JournalError::SyncerGone));
+                        }
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                // The syncer sees its channel close too, syncs once more and ends.
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
+            self.finish_compaction();
+            if self.in_flight.is_none()
+                && (self.next_compact <= Instant::now() || self.appended >= self.compaction.records)
+            {
+                self.begin_compaction();
+            }
+        }
+    }
+
+    fn begin_compaction(&mut self) {
+        if self.in_flight.is_some() {
+            return;
+        }
         self.appended = 0;
         self.next_compact = Instant::now() + self.compaction.interval;
         self.live.prune((self.clock)());
-        self.file = rewrite(&self.path, &self.live.records())?;
-        self.next_sync = None;
-        Ok(())
+        let (reply, written) = mpsc::channel();
+        if self
+            .syncer
+            .send(SyncJob::Compact(self.live.records(), reply))
+            .is_err()
+        {
+            (self.log)("journal compaction skipped: the syncer is gone");
+            return;
+        }
+        self.in_flight = Some(InFlight {
+            since: Vec::new(),
+            written,
+            callers: Vec::new(),
+        });
+    }
+
+    /// Once the syncer has written and synced the compacted file, adds the records appended since, renames it into place and
+    /// hands the new file to the syncer. Until the rename every append went to the old journal, so a crash at any point leaves
+    /// a complete journal.
+    fn finish_compaction(&mut self) {
+        let Some(in_flight) = self.in_flight.as_ref() else {
+            return;
+        };
+        let result = match in_flight.written.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => Err(JournalError::SyncerGone),
+        };
+        let Some(in_flight) = self.in_flight.take() else {
+            return;
+        };
+        let outcome = result.and_then(|()| self.swap(&in_flight.since));
+        if let Err(error) = &outcome {
+            (self.log)(&format!("journal compaction failed: {error}"));
+        }
+        for caller in in_flight.callers {
+            let _ = caller.send(match &outcome {
+                Ok(()) => Ok(()),
+                Err(error) => Err(JournalError::CompactionFailed(error.to_string())),
+            });
+        }
+    }
+
+    fn swap(&mut self, since: &[Record]) -> Result<(), JournalError> {
+        let temporary = compacted_path(&self.path);
+        let file = open_append(&temporary)?;
+        for record in since {
+            write_record(&file, &temporary, record)?;
+        }
+        fs::rename(&temporary, &self.path).map_err(io_error("rename", &self.path))?;
+        self.file = Arc::new(file);
+        self.syncer
+            .send(SyncJob::Renamed(Arc::clone(&self.file)))
+            .map_err(|_| JournalError::SyncerGone)
     }
 }
 
 impl Journal {
-    /// Rewrites the journal at `path` with exactly the `live` records, synced, and starts its writer thread.
+    /// Rewrites the journal at `path` with exactly the `live` records, synced, and starts its writer and syncer threads.
     /// Executor start-up calls this once, after it has read the journal and pruned what it found.
     ///
     /// # Errors
     ///
-    /// Returns [`JournalError`] when the journal cannot be rewritten or the writer cannot be started.
+    /// Returns [`JournalError`] when the journal cannot be rewritten or a thread cannot be started.
     pub fn start(
         path: &Path,
         live: Live,
@@ -437,7 +572,17 @@ impl Journal {
         clock: fn() -> u64,
         log: fn(&str),
     ) -> Result<Self, JournalError> {
-        let file = rewrite(path, &live.records())?;
+        let file = Arc::new(rewrite(path, &live.records())?);
+        let (syncer, jobs) = mpsc::channel();
+        let sync_thread = Syncer {
+            path: path.to_owned(),
+            file: Arc::clone(&file),
+            log,
+        };
+        thread::Builder::new()
+            .name("journal-sync".to_owned())
+            .spawn(move || sync_thread.run(&jobs))
+            .map_err(io_error("start the syncer for", path))?;
         let (commands, received) = mpsc::channel();
         let writer = Writer {
             path: path.to_owned(),
@@ -446,9 +591,10 @@ impl Journal {
             compaction,
             clock,
             log,
+            syncer,
             appended: 0,
-            next_sync: None,
             next_compact: Instant::now() + compaction.interval,
+            in_flight: None,
         };
         thread::Builder::new()
             .name("journal".to_owned())
@@ -457,7 +603,7 @@ impl Journal {
         Ok(Self { commands })
     }
 
-    /// Appends one record and waits until it is written. It does not sync.
+    /// Appends one record and waits until it is written. It never waits for a disk sync.
     ///
     /// # Errors
     ///
@@ -470,11 +616,12 @@ impl Journal {
         answer.recv().map_err(|_| JournalError::WriterGone)?
     }
 
-    /// Compacts the journal now, as the writer does on its own every interval.
+    /// Compacts the journal now, as the writer does on its own every interval, and waits until the compacted journal is in
+    /// place.
     ///
     /// # Errors
     ///
-    /// Returns [`JournalError`] when the compacted journal cannot be written, or the writer is gone.
+    /// Returns [`JournalError`] when the compacted journal cannot be written or renamed, or a thread is gone.
     pub fn compact(&self) -> Result<(), JournalError> {
         let (reply, answer) = mpsc::channel();
         self.commands
@@ -599,7 +746,7 @@ mod tests {
                 })
                 .expect("append");
         }
-        // The third append triggers a compaction before the writer reads the next command.
+        // The third append starts a compaction; this append may land while the syncer writes it, and is kept.
         journal
             .append(&Record::Seen {
                 nonce: nonce(9),
@@ -607,7 +754,12 @@ mod tests {
                 expires_ms: NOW + 1,
             })
             .expect("append");
-        let records = read(&path).expect("read");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut records = read(&path).expect("read");
+        while records.len() > 1 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+            records = read(&path).expect("read");
+        }
         assert_eq!(
             records,
             vec![Record::Seen {
@@ -616,6 +768,51 @@ mod tests {
                 expires_ms: NOW + 1
             }]
         );
+    }
+
+    #[test]
+    fn records_appended_during_a_compaction_are_in_the_compacted_journal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("journal");
+        let journal = start(&path, Compaction::default());
+        let appender = {
+            let journal = journal.clone();
+            thread::spawn(move || {
+                (0..200_u8)
+                    .map(|last| {
+                        let open = Record::Open {
+                            nonce: nonce(last),
+                            key: key(&format!("op-{last}")),
+                            expires_ms: NOW + 5_000,
+                        };
+                        journal.append(&open).expect("append");
+                        open
+                    })
+                    .collect::<Vec<_>>()
+            })
+        };
+        for _ in 0..20 {
+            journal.compact().expect("compact");
+        }
+        let opened = appender.join().expect("appender ends");
+        journal.compact().expect("last compact");
+        drop(journal);
+        // A restart reads exactly what is on file: every open order must still be there to recover.
+        let live = Live::from_records(read(&path).expect("read"));
+        let unfinished: Vec<Nonce> = live
+            .unfinished()
+            .into_iter()
+            .map(|(nonce, _)| nonce)
+            .collect();
+        let mut expected: Vec<Nonce> = opened
+            .iter()
+            .filter_map(|record| match record {
+                Record::Open { nonce, .. } => Some(*nonce),
+                _ => None,
+            })
+            .collect();
+        expected.sort();
+        assert_eq!(unfinished, expected);
     }
 
     #[test]

@@ -69,32 +69,31 @@ fn start(dir: &Path, policy: Policy) -> PathBuf {
     socket
 }
 
+/// The relay is this test process: the core's relay entry point runs here, so the executable the executor checks is the test
+/// binary. The shipped binary has only `orbit-executor relay`, with the fixed socket.
 fn relay_policy() -> Policy {
+    policy_with_relay(std::env::current_exe().expect("own executable"))
+}
+
+/// A policy whose relay executable is another program than this test process.
+fn other_program_policy() -> Policy {
+    policy_with_relay(PathBuf::from(env!("CARGO_BIN_EXE_orbit-executor")))
+}
+
+fn policy_with_relay(relay_exe: PathBuf) -> Policy {
     Policy {
         observer_uid: u32::MAX,
         observer_cgroup: "0::/system.slice/orbit-agent.service".to_owned(),
         relay_uid: Some(own_uid()),
-        relay_exe: PathBuf::from(env!("CARGO_BIN_EXE_orbit-executor")),
+        relay_exe,
     }
 }
 
 fn relay(socket: &Path, order: &str) -> Vec<serde_json::Value> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_orbit-executor"))
-        .args(["relay", "--socket"])
-        .arg(socket)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("relay starts");
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all(order.as_bytes())
-        .expect("order written");
-    let output = child.wait_with_output().expect("relay ends");
-    assert!(output.status.success(), "relay failed");
-    String::from_utf8(output.stdout)
+    let mut reply = Vec::new();
+    orbit_executor_core::relay::relay(socket, order.as_bytes(), &mut reply)
+        .expect("relay hands the order over");
+    String::from_utf8(reply)
         .expect("utf-8")
         .lines()
         .map(|line| serde_json::from_str(line).expect("json line"))
@@ -130,7 +129,7 @@ fn the_relay_hands_over_an_order_and_a_replay_refuses() {
 #[test]
 fn the_relay_user_running_another_program_gets_nothing() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let socket = start(dir.path(), relay_policy());
+    let socket = start(dir.path(), other_program_policy());
     let mut stream = UnixStream::connect(&socket).expect("connect");
     let _ = stream.write_all(order("000000000000000000000000000000b1").as_bytes());
     let _ = stream.shutdown(std::net::Shutdown::Write);
@@ -180,23 +179,29 @@ fn an_order_of_exactly_four_kilobytes_passes_the_size_check() {
         lines[1]["reason"], "order_malformed",
         "4096 bytes reach the form check, not the size check"
     );
-    let mut child = Command::new(env!("CARGO_BIN_EXE_orbit-executor"))
+    let mut reply = Vec::new();
+    let over = orbit_executor_core::relay::relay(&socket, "a".repeat(4097).as_bytes(), &mut reply);
+    assert!(
+        matches!(
+            over,
+            Err(orbit_executor_core::relay::RelayError::OrderTooLarge)
+        ) && reply.is_empty(),
+        "the relay itself refuses an order over 4 KB"
+    );
+}
+
+#[test]
+fn the_shipped_binary_takes_no_socket_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let socket = start(dir.path(), relay_policy());
+    let output = Command::new(env!("CARGO_BIN_EXE_orbit-executor"))
         .args(["relay", "--socket"])
         .arg(&socket)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("relay starts");
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all("a".repeat(4097).as_bytes())
-        .expect("order written");
-    let over = child.wait_with_output().expect("relay ends");
+        .stdin(Stdio::null())
+        .output()
+        .expect("binary runs");
     assert!(
-        !over.status.success() && over.stdout.is_empty(),
-        "the relay itself refuses an order over 4 KB"
+        !output.status.success() && output.stdout.is_empty(),
+        "only `relay`, with the fixed socket, is accepted"
     );
 }

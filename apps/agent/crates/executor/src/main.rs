@@ -55,11 +55,6 @@ fn main() -> ExitCode {
             io::stdout().lock(),
         )
         .map_err(|error| error.to_string()),
-        // Only for the binary's own tests; the relay's sudo rule allows exactly `relay`.
-        ["relay", "--socket", socket] => {
-            relay::relay(Path::new(socket), io::stdin().lock(), io::stdout().lock())
-                .map_err(|error| error.to_string())
-        }
         _ => Err("usage: orbit-executor serve | orbit-executor relay".to_owned()),
     };
     match result {
