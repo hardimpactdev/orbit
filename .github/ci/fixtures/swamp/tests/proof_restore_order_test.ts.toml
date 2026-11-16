@@ -9,6 +9,7 @@ cases = [
   "late app-dev state mounts pass after the boot wait and fail without it",
   "boot wait refuses an unsettled boot, a timeout and an inactive required mount",
   "a copy's batch resets with proof-copy-fleet-reset, which runs fleet_reset; the VM restore is unchanged",
+  "the nested apply and the verify read run as orbit with its groups, never as a bare uid",
 ]
 file = "swamp/tests/proof_restore_order_test.ts"
 cost = 30
