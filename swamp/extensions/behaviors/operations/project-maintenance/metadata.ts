@@ -309,7 +309,6 @@ export const behavior = {
                         url: z.string(),
                         state: z.enum(["OPEN", "CLOSED", "MERGED"]),
                         headRefOid: z.string().regex(/^[a-f0-9]{40,64}$/),
-                        mergedAt: z.string().datetime().nullish(),
                     }).parse(JSON.parse(step.outputs.stdout));
                     if (pr.url !== url || !url.endsWith(`/pull/${pr.number}`)) {
                         throw new Error("pr_identity_mismatch");
@@ -322,8 +321,6 @@ export const behavior = {
                         url,
                         state: pr.state.toLowerCase(),
                         head: pr.headRefOid,
-                        // A copy group settles on merge with this time (docs/reference/tasks.md#a-copy-group-settles-on-merge).
-                        merged_at: pr.state === "MERGED" ? pr.mergedAt ?? null : null,
                     }));
                 });
                 return await output(ctx, {

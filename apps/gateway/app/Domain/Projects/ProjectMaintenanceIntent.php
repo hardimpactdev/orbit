@@ -9,7 +9,6 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCopySettle;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
@@ -40,14 +39,13 @@ final readonly class ProjectMaintenanceIntent
                 throw new ResourceOperationException('project.maintenance_disabled', 'Dependency maintenance is off for this Project; turn it on with project:maintenance:enable.', 409);
             }
             $groups = $kind === 'project.detect' ? collect() : Task::topLevel()->where('project_id', $project->id)->orderBy('id')->get([
-                'id', 'project_id', 'status', 'orchestration', 'brief', 'pr_url', 'watched_pr_url', 'watched_pr_state', 'watched_pr_completion', 'taskable_id', 'maintenance',
+                'id', 'project_id', 'status', 'orchestration', 'brief', 'pr_url', 'watched_pr_url', 'watched_pr_state', 'taskable_id', 'maintenance',
             ]);
             $urls = [];
             if ($kind === 'project.observe') {
                 $repository = GitHubRepository::fromOrigin($project->repository_url);
                 foreach ($groups as $group) {
-                    // A completed copy group whose destroy failed is read again, so the settle on merge retries it (TaskCopySettle).
-                    if (in_array($group->status->value, ['completed', 'cancelled', 'failed'], true) && ! TaskCopySettle::retries($group)) {
+                    if (in_array($group->status->value, ['completed', 'cancelled', 'failed'], true)) {
                         continue;
                     }
                     foreach (array_filter([$group->pr_url, $group->watched_pr_url]) as $url) {

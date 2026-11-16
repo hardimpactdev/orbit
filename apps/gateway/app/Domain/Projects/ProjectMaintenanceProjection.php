@@ -19,7 +19,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCancelIntent;
-use App\Domain\Tasks\TaskCopySettle;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -175,12 +174,7 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                 throw new ResourceOperationException('operation.result_invalid', 'The PR observation differs from its admitted Project.', 422);
             }
             $group->update(['watched_pr_number' => $number, 'watched_pr_state' => $state]);
-            if ($group->maintenance === null) {
-                app(TaskCopySettle::class)->observed($group, $state, isset($observation['merged_at']) ? ValidatedData::string($observation['merged_at']) : null);
-
-                continue;
-            }
-            if (in_array($state, ['merged', 'closed'], true)
+            if ($group->maintenance !== null && in_array($state, ['merged', 'closed'], true)
                 && $group->pr_url === $group->watched_pr_url && ! TaskExecutionHold::active($group)
                 && $group->tasks()->where('status', '!=', TaskStatus::Completed)->doesntExist()
                 && ! $group->assistance_requested) {
