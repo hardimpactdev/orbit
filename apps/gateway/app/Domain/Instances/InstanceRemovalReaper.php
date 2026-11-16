@@ -146,6 +146,6 @@ final readonly class InstanceRemovalReaper
                 'properties' => ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'removal_id' => $removal->id,
                     'retry_count' => $removal->retry_count, 'failed_step' => $removal->failed_step?->value, 'removal_error_code' => $removal->error_code]]);
         });
-        $removal->stuck_at = CarbonImmutable::now();
+        $removal->stuck_at = now();
     }
 }

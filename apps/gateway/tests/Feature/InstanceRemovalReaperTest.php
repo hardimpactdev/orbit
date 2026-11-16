@@ -25,11 +25,14 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -79,7 +82,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    (new Illuminate\Filesystem\Filesystem)->deleteDirectory($this->root);
+    (new Filesystem)->deleteDirectory($this->root);
 });
 
 describe('a failed destroy', function (): void {
@@ -226,7 +229,7 @@ describe('a stuck removal', function (): void {
         // The Instance row goes, as a successful run's projection deletes it; the member contract is not under test here.
         DB::statement('DROP TRIGGER IF EXISTS instance_removal_members_immutable');
         DB::table('instance_removal_members')->where('instance_id', $this->instance->id)->update(['row_deleted_at' => now()]);
-        Illuminate\Support\Facades\Schema::withoutForeignKeyConstraints(fn () => DB::table('instances')->where('id', $this->instance->id)->delete());
+        Schema::withoutForeignKeyConstraints(fn () => DB::table('instances')->where('id', $this->instance->id)->delete());
         expect(($this->stuckIssues)())->toBe([]);
     });
 });
@@ -246,7 +249,7 @@ it('registers the reaper on the schedule every five minutes without overlapping'
 /** @return array<string, mixed> */
 function reaperOpenTransfer(int $nodeId, int $routeId): array
 {
-    return ['id' => (string) Illuminate\Support\Str::uuid(), 'source_node_id' => $nodeId, 'destination_node_id' => $nodeId,
+    return ['id' => (string) Str::uuid(), 'source_node_id' => $nodeId, 'destination_node_id' => $nodeId,
         'destination_name' => 'moved', 'destination_path' => '/srv/moved', 'destination_domain' => 'moved.test', 'source_layout' => 'checkout',
         'source_path' => '/srv/default', 'source_route_id' => $routeId, 'status' => 'running', 'current_step' => 'source-captured'];
 }
