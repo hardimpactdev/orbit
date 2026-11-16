@@ -118,7 +118,7 @@ class DeliveryGateTest(unittest.TestCase):
                 if result != 'success':
                     self.assertIn('Main delivery checks did not pass:', checked.stdout)
         self.assertLess(job['steps'].index(guard), len(job['steps']) - 1)
-        self.assertEqual(JOBS['fixtures']['timeout-minutes'], 4)
+        self.assertEqual(JOBS['fixtures']['timeout-minutes'], 5)
         self.assertEqual(JOBS['delivery']['timeout-minutes'], 2)
         self.assertEqual(job['timeout-minutes'], 2)
 

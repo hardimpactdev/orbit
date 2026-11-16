@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=8, default_cost=30)
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=300, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=8, default_cost=30)
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -884,7 +884,7 @@ class WorkflowTest(unittest.TestCase):
         source = (ROOT / '.github/workflows/ci.yml').read_text()
         block = source.split('  fixtures:\n', 1)[1].split('\n  proof:\n', 1)[0]
         for text in ['needs: changes', "needs.changes.outputs.fixture_shards != '[]'", 'runs-on: ubuntu-26.04',
-                     'timeout-minutes: 4', 'fail-fast: false', 'shard: ${{ fromJSON(needs.changes.outputs.fixture_shards) }}',
+                     'timeout-minutes: 5', 'fail-fast: false', 'shard: ${{ fromJSON(needs.changes.outputs.fixture_shards) }}',
                      'name: Fixtures (${{ matrix.shard.name }})', 'ci-unit-times-${{ matrix.shard.name }}',
                      'bin/ci-units run', "if: steps.tools.outputs.php == 'true'", 'shape-gate-requirements.txt']:
             self.assertIn(text, block)
@@ -900,7 +900,7 @@ class WorkflowTest(unittest.TestCase):
                                ('Cache pinned fixture tools and collections', 'Prepare fixture tools', 'Run fixture units'))
         self.assertEqual((prepare, run), (cache + 1, cache + 2))
         self.assertEqual(steps[prepare]['run'], 'bin/ci-units prepare-tools')
-        self.assertEqual(steps[prepare]['timeout-minutes'], 1)
+        self.assertEqual(steps[prepare]['timeout-minutes'], 2)
 
     def test_required_stays_red_when_whole_file_capacity_is_exceeded(self):
         from test_ci_delivery import delivery, needs_for

@@ -15,6 +15,9 @@ import unittest
 
 from test_ci_build_plan import plan
 
+# The owner's rule: a CI check finishes within five minutes. No job limit or check ceiling may exceed it.
+CHECK_LIMIT_SECONDS = 300
+
 
 class CheckTableTest(unittest.TestCase):
     @classmethod
@@ -30,7 +33,7 @@ class CheckTableTest(unittest.TestCase):
                 self.assertIsInstance(check['cost'], int)
                 self.assertGreater(check['cost'], 0)
                 self.assertLessEqual(check['cost'], check['ceiling'])
-                self.assertLessEqual(check['ceiling'], 240)
+                self.assertLessEqual(check['ceiling'], CHECK_LIMIT_SECONDS)
                 self.assertEqual(240 if name in ('gateway-tests', 'cli-tests', 'agent') else 120, check['ceiling'])
         for root in self.table['roots'].values():
             self.assertLessEqual(set(root['default']), set(checks))
@@ -160,8 +163,8 @@ def budget_errors(workflows, checks, fixture_budget):
             elif type(limit) is not int:
                 reject(label, 'timeout-minutes must be an integer')
             else:
-                if label != 'proof-run' and limit > 4:
-                    reject(label, 'timeout-minutes exceeds 4 minutes')
+                if label != 'proof-run' and limit * 60 > CHECK_LIMIT_SECONDS:
+                    reject(label, f'timeout-minutes exceeds {CHECK_LIMIT_SECONDS // 60} minutes')
                 if expected is not None and limit != expected:
                     reject(label, f'timeout-minutes must equal ceiling rounded up: {expected}, got {limit}')
 
@@ -188,7 +191,7 @@ class CiBudgetTest(unittest.TestCase):
     def test_budget_rejects_missing_excessive_and_different_timeouts_in_both_workflow_levels(self):
         for file, job, label in (('ci.yml', 'docs', 'docs'), ('ci.yml', 'fixtures', 'fixtures'), ('orbit-cli-binary.yml', 'build', 'cli/build'),
                                  ('swamp-shape.yml', 'tests', 'swamp/tests')):
-            for limit, rule in ((None, 'missing timeout'), (5, 'exceeds 4'), (3, 'must equal ceiling')):
+            for limit, rule in ((None, 'missing timeout'), (CHECK_LIMIT_SECONDS // 60 + 1, f'exceeds {CHECK_LIMIT_SECONDS // 60}'), (3, 'must equal ceiling')):
                 with self.subTest(job=label, timeout=limit):
                     changed = copy.deepcopy(self.workflows)
                     block = changed[file]['jobs'][job]
@@ -224,7 +227,7 @@ class CiBudgetTest(unittest.TestCase):
         self.assertEqual([], budget_errors(changed, checks, self.fixture_budget))
 
     def test_fixture_ceiling_is_required_and_its_dependency_cannot_form_a_chain(self):
-        self.assertEqual(240, self.fixture_budget['shard_ceiling_seconds'])
+        self.assertEqual(300, self.fixture_budget['shard_ceiling_seconds'])
         self.assertLess(self.fixture_budget['shard_deadline_seconds'], self.fixture_budget['shard_ceiling_seconds'])
         errors = budget_errors(self.workflows, self.checks, {})
         self.assertIn('fixtures: no entry in .github/ci/checks.toml', errors)

@@ -6,7 +6,7 @@
 [budget]
 shard_seconds = 150
 shard_deadline_seconds = 190
-shard_ceiling_seconds = 240
+shard_ceiling_seconds = 300
 shard_workers = 4
 unit_ceiling_seconds = 180
 slice_seconds = 60

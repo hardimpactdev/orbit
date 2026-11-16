@@ -681,7 +681,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.fixture_shards != '[]' }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 4
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
@@ -719,10 +719,10 @@ jobs:
         with:
           path: ~/.cache/orbit-shape-gate
           key: fixture-tools-${{ runner.os }}-${{ runner.arch }}-py313-${{ hashFiles('swamp/ansible/shape-gate-requirements.txt', 'swamp/ansible/requirements.txt', 'swamp/ansible/requirements.yml') }}
-      # A cold cache returns after every Python or pin change. The build stays out of the units' 190-second deadline;
-      # that deadline leaves 50 s of the job's 4 minutes for all other steps, so one minute is the smallest step bound.
+      # A cold cache returns after every Python or pin change. The build stays out of the units' 190-second deadline.
+      # Two minutes is more than twice the slowest cold build on a hosted runner; the job's five minutes hold both.
       - name: Prepare fixture tools
-        timeout-minutes: 1
+        timeout-minutes: 2
         run: bin/ci-units prepare-tools
       - name: Run fixture units
         env:

@@ -181,7 +181,9 @@ Build, fixture and proof selection compare the candidate with its merge base aga
 
 Every executable check job has a `timeout-minutes` equal to its table `ceiling`, rounded up to minutes. Plan, Gateway release inputs and CLI release dispatch have two-minute limits. Required checks has two minutes unless a selected pull-request proof is blocking; then it retains the proof's 275-minute wait budget. CI proof keeps its own 275-minute exception. [Main full set](/reference/main-full-set) keeps its separate limits and installs its planner's Python prerequisites before checking its workflow policy.
 
-`CiBudgetTest` in `tools/test_ci_table.py` follows the reusable workflows from `ci.yml`. It rejects a pull request job without a timeout or table entry, a timeout above four minutes or different from the ceiling, and a dependency other than the plan. It names the non-check jobs explicitly. Only Required checks, CLI release dispatch and CI proof may have other dependencies; proof is the only long-running exception on the pull request path.
+`CiBudgetTest` in `tools/test_ci_table.py` follows the reusable workflows from `ci.yml`. It rejects a pull request job without a timeout or table entry, a timeout above five minutes or different from the ceiling, and a dependency other than the plan. Five minutes is the rule for every CI check, and the test holds it in one constant. A job takes a ceiling above four minutes only when its own fixed bounds need it; today only a fixture shard does, because its tool step and its unit deadline run one after the other.
+
+`CiBudgetTest` names the non-check jobs explicitly. Only Required checks, CLI release dispatch and CI proof may have other dependencies; proof is the only long-running exception on the pull request path.
 
 Required checks has static dependencies on the selected checks, including Swamp. It accepts success or an unselected skip and checks that the plan's boolean selection keys exactly match its dependencies. Its API wait covers only blocking proof. The two proof switches retain their meaning.
 
@@ -241,11 +243,11 @@ Changes to `swamp/ansible/tasks/instance-host.yml` require the dir, ZFS and nest
 
 The nested-fleet image cases of the Instance host image file run on pull requests, one case per slice. Their costs are Beast estimates until hosted runs measure them.
 
-Each fixture shard has a four-minute job limit. The runner stops the shard at 190 seconds, names running units as `OVER BUDGET` and queued units as `NOT RUN`, and fails the shard.
+Each fixture shard has a five-minute job limit. The runner stops the shard at 190 seconds, names running units as `OVER BUDGET` and queued units as `NOT RUN`, and fails the shard.
 
-The shard deadline counts only the units. Before the units, the job restores the pinned shape tools and Ansible collections from its cache, or builds them, in its own step: `Prepare fixture tools` runs `bin/ci-units prepare-tools` with a one-minute limit.
+The shard deadline counts only the units. Before the units, the job restores the pinned shape tools and Ansible collections from its cache, or builds them, in its own step: `Prepare fixture tools` runs `bin/ci-units prepare-tools` with a two-minute limit.
 
-The units' 190 seconds leave 50 seconds of the job limit for checkout, setup, this step and the artifact upload, so one whole minute is the smallest step limit. A cold cache comes back after every change to the Python version or a pin, and pull requests do not share their caches. A slow or failed build fails this step by name; it does not take time from a unit.
+The two-minute limit is more than twice the slowest cold build on a hosted runner. The job limit holds checkout, setup, a cold build, the 190-second unit deadline and the artifact upload. A cold cache comes back after every change to the Python version or a pin, and pull requests do not share their caches. A slow or failed build fails this step by name; it does not take time from a unit.
 
 `bin/ci-units run` checks the tools again before the first unit, so a local run without the workflow still works. With ready tools, this costs only the readiness check: the venv's `.complete` marker and a collection install that has nothing to do. Without ready tools, `run` builds them inside the shard deadline.
 
