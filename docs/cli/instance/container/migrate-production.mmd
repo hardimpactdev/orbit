@@ -1,0 +1,98 @@
+sequenceDiagram
+  %% Target design, production containers (ADR 0263, docs/reference/production-containers.md#a-checkout-production-instance): instance:migrate moves a checkout production Instance into its first release container, a cold hot built at the commit that `current` selects. The checkout serves until the switch. Its native Schedules move to the live link when the run ends; the first deploy after the move copies the shared paths a last time and removes the home (container/deploy-production.mmd). The command exists only until the last checkout Instance has moved (docs/reference/old-paths.md).
+  %% status: draft
+  %% command: instance:migrate
+  %% kind: instance.migrate
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane C icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-prod Node<br/>reached over ssh
+  participant C as Hot<br/>release container
+  CLI->>GW: instance:migrate INSTANCE
+  %%> Command:
+  %%> - `orbit instance:migrate INSTANCE`
+  %%> - syntax: `<instance> [--idempotency-key=KEY] [--json]`
+  %%> Not included:
+  %%> - no downtime prompt: the checkout serves until one Caddy reload switches the Routes
+  Note over GW: Validate, freeze intent<br/>Instance locked · TASK
+  %%> Requirements:
+  %%> - an active checkout production Instance on an `app-prod` Node with the container setup; no open deployment or Process operation
+  %%> Freezes:
+  %%> - the commit that `current` selects, the steps, the shared paths, the Process and Schedule definitions, the health path and the domain of each Route
+  %%> Result:
+  %%> - the Instance takes no deployment while the run lasts; its storage volume is recorded
+  GW->>SW: Push token and .env<br/>vault: token-TASK, env-TASK
+  %%> Why:
+  %%> - hot fetches the commit and gets the rendered `.env`; both travel only through the vault
+  GW->>SW: Start run, full intent<br/>instance-migrate-production
+  %%> What it does:
+  %%> - one run; secrets only as vault key names
+  GW-->>CLI: 202 Accepted<br/>TASK
+  %%> Next:
+  %%> - the CLI follows the task until it ends
+  SW->>N: Check capacity, launch hot<br/>Ansible · tags admit · hot
+  %%> What it does:
+  %%> - the capacity check of a deploy, then a cold hot from the image with the storage volume, the memory limit when one is set, and the pinned runtime folder version
+  SW->>N: Copy shared paths<br/>Ansible · tags copy
+  %%> What it does:
+  %%> - copies each shared path of the home, and a SQLite database of the home, into the volume; the checkout still serves
+  %%> Why before the steps:
+  %%> - a step that makes keys only when they are missing finds the existing keys
+  SW->>C: Fetch, check out, .env<br/>Ansible · tags source
+  %%> What it does:
+  %%> - the source step of a deploy, at the frozen commit
+  SW->>C: Run before steps<br/>incus exec · as orbit
+  %%> What it does:
+  %%> - each `before_activation` step; `migrate` finds the schema at this commit and changes nothing
+  SW->>C: Install units, snapshot<br/>Ansible · tags release
+  %%> What it does:
+  %%> - disabled units and timers, then the `release` snapshot, as in a deploy
+  SW->>N: Check hot is ready<br/>Ansible · tags ready
+  %%> What it does:
+  %%> - the readiness of a deploy; on failure `deployment.not_ready`
+  SW->>N: Switch the Routes<br/>Ansible · tags switch
+  %%> What it does:
+  %%> - writes the Instance's upstream file and live link, points each Route's site at the upstream file instead of PHP-FPM and reloads Caddy once
+  %%> - requests in progress on PHP-FPM finish there
+  SW->>N: Hand over from the home<br/>Ansible · tags handover
+  %%> What it does:
+  %%> - disables and stops the host Node timers and Process units, with the bounded graceful stop, then the PHP-FPM pool
+  %%> - enables and starts the new live's timers and Processes, and turns `boot.autostart` on
+  SW->>C: Run after steps<br/>incus exec · as orbit
+  %%> What it does:
+  %%> - each `after_activation` step, in the new live
+  SW->>N: Copy changes, read back<br/>Ansible · tags copy · check
+  %%> What it does:
+  %%> - copies only files the volume lacks or holds in an older version, and deletes none: live already writes there
+  %%> - reads back the live link, the upstream file, the commit and the Process states
+  alt all steps pass
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record live release<br/>move Schedules to live link
+    %%> Result:
+    %%> - the Instance runs in containers; its runtime row is live
+    %%> - the Gateway rewrites each native Schedule's workflow for the live link and sets its trigger again, as an Instance transfer does; a fire that started in the home finishes there
+    %%> Next:
+    %%> - the first deploy after the move copies the shared paths a last time and removes the home
+  else a step fails before or at the switch
+    SW->>N: Remove hot<br/>always · checkout serves
+    %%> What it does:
+    %%> - deletes hot; the volume stays and the rerun copies into it again
+    %%> - the checkout, its Processes, timers and pool serve as before
+    SW--xGW: Run failed<br/>failed step, error code
+  else a step fails after the switch
+    SW--xGW: Run failed<br/>failed step, error code
+    %%> Result:
+    %%> - live serves; the home stays unserved
+    %%> Retry:
+    %%> - run the same command again; it repeats only the handover, the after steps and the copy
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end

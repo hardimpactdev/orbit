@@ -6,6 +6,8 @@
 #   copy: on the default's Node, as root, add the remote of the CI Node when it is missing, check its certificate, then push the inner
 #         volume and the container with `--refresh --mode=push`.
 #   check: on the CI Node, the holder and its volume hold the seed snapshot that the run was admitted for.
+#   release: on the default's Node, once for the run, delete the default's base when the intent allows it, every target passed and the
+#            default still holds a seed with the name that the run was admitted for.
 #   result: on the Swamp Node, the outcome of every target in `result.json`, a list of `{node_id, status, ...}`.
 # Each target writes `target-<id>.json` in the run folder: `{"status": "succeeded"}` after its check, or `{"status": "failed",
 # "detail": ...}` at its first failed phase. A later phase of a failed target does nothing.
@@ -13,7 +15,7 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  tags: [certificate, copy, check]
+  tags: [certificate, copy, check, release]
   vars:
     ansible_python_interpreter: "{{ ansible_playbook_python }}"
     run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
@@ -29,7 +31,7 @@
       register: seed_outcome
     - name: Skip a target that failed in an earlier phase
       ansible.builtin.meta: end_play
-      when: seed_outcome.stat.exists
+      when: seed_outcome.stat.exists and 'release' not in ansible_run_tags
     - name: Pin the host keys of both Nodes
       ansible.builtin.known_hosts:
         path: "{{ run }}/known_hosts"
@@ -129,6 +131,60 @@
             that: (seed_stored.content | b64decode | trim) == (lookup('ansible.builtin.file', run ~ '/certificate-' ~ seed_target.node_id ~ '.pem') | trim)
             fail_msg: "The remote {{ remote }} has another server certificate than the CI Node"
             quiet: true
+        # `--refresh` sends from the newest snapshot that both sides share, by name and creation time. The default keeps the seed that
+        # this Node holds as `base-<commit>` (docs/reference/development-containers.md#how-the-seed-moves), so the holder's pair takes
+        # that name too. A rename keeps the creation time. A holder without that seed, or no holder, gets the whole pair.
+        - name: Read the default's base
+          ansible.builtin.command:
+            argv: [incus, query, "--", "/1.0/instances/{{ seed_intent.source.container }}/snapshots?project={{ seed_intent.project }}&recursion=1"]
+          register: seed_source_snapshots
+          changed_when: false
+        - name: Name the base
+          ansible.builtin.set_fact:
+            seed_base: "{{ seed_source_snapshots.stdout | from_json | map(attribute='name') | select('match', '^base-') | first | default('') }}"
+        - name: Read the holder's snapshots
+          when: seed_base != ''
+          ansible.builtin.command:
+            argv: [incus, query, "--", "{{ remote }}:/1.0/instances/{{ seed_intent.holder }}/snapshots?project={{ seed_intent.project }}&recursion=1"]
+          register: seed_holder_snapshots
+          changed_when: false
+          failed_when: false
+        - name: Read the holder volume's snapshots
+          when: seed_base != '' and seed_intent.source.inner_volume is not none
+          ansible.builtin.command:
+            argv: >-
+              {{ ['incus', 'query', '--', remote ~ ':/1.0/storage-pools/' ~ seed_intent.pool ~ '/volumes/custom/' ~ seed_intent.holder_volume
+                  ~ '/snapshots?project=' ~ seed_intent.project ~ '&recursion=1'] }}
+          register: seed_holder_volume_snapshots
+          changed_when: false
+          failed_when: false
+        - name: Name the holder's seeds
+          when: seed_base != ''
+          ansible.builtin.set_fact:
+            seed_holder_names: >-
+              {{ (seed_holder_snapshots.stdout | from_json | map(attribute='name') | list) if seed_holder_snapshots.rc == 0 else [] }}
+            # Incus names a volume snapshot `<volume>/<snapshot>`; the seed name is the last part.
+            seed_holder_volume_names: >-
+              {{ (seed_holder_volume_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | list)
+                 if seed_intent.source.inner_volume is not none and seed_holder_volume_snapshots.rc == 0 else [] }}
+        - name: Give the holder's seed the base's name
+          when: >-
+            seed_base != '' and seed_base not in seed_holder_names
+            and seed_base | regex_replace('^base-', 'seed-') in seed_holder_names
+          ansible.builtin.command:
+            argv: >-
+              {{ ['incus', 'snapshot', 'rename', remote ~ ':' ~ seed_intent.holder, seed_base | regex_replace('^base-', 'seed-'), seed_base,
+                  '--project', seed_intent.project] }}
+          changed_when: true
+        - name: Give the holder volume's seed the base's name
+          when: >-
+            seed_base != '' and seed_intent.source.inner_volume is not none and seed_base not in seed_holder_volume_names
+            and seed_base | regex_replace('^base-', 'seed-') in seed_holder_volume_names
+          ansible.builtin.command:
+            argv: >-
+              {{ ['incus', 'storage', 'volume', 'snapshot', 'rename', remote ~ ':' ~ seed_intent.pool, seed_intent.holder_volume,
+                  seed_base | regex_replace('^base-', 'seed-'), seed_base, '--project', seed_intent.project] }}
+          changed_when: true
         # An instance copy does not take its attached custom volumes, so the inner volume goes first, and the container's disk names it.
         - name: Push the inner volume
           when: seed_intent.source.inner_volume is not none
@@ -186,6 +242,61 @@
           become: false
           vars: *local
       rescue: *failed
+
+# The base serves only the Nodes behind the seed. When the run targeted all of them and each passed, none needs it. A seed with a new
+# name belongs to a retake to a new commit during the run, which keeps or deletes the base itself, so the release then does nothing.
+# The check is by name only: after a retake at the same commit, the release deletes the base that the retake kept, and the next copy
+# sends the whole pair (docs/reference/development-containers.md#how-the-seed-moves).
+- name: Release the default's base
+  hosts: seed_source
+  gather_facts: false
+  become: true
+  tags: [release]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+  tasks:
+    # A lookup reads the run folder on the Swamp Node.
+    - name: Read every target's outcome
+      ansible.builtin.set_fact:
+        passed: >-
+          {{ passed | default(true) | bool and ((lookup('ansible.builtin.file', run ~ '/target-' ~ item.node_id ~ '.json', errors='ignore')
+             or '{}') | from_json).status | default('') == 'succeeded' }}
+      loop: "{{ seed_intent.targets }}"
+      loop_control: { label: "{{ item.node_id }}" }
+    - name: Read the default's snapshots
+      when: seed_intent.release_base and passed | bool
+      ansible.builtin.command:
+        argv: [incus, query, "--", "/1.0/instances/{{ seed_intent.source.container }}/snapshots?project={{ seed_intent.project }}&recursion=1"]
+      register: release_snapshots
+      changed_when: false
+    - name: Read the inner volume's snapshots
+      when: seed_intent.release_base and passed | bool and seed_intent.source.inner_volume is not none
+      ansible.builtin.command:
+        argv: >-
+          {{ ['incus', 'query', '--', '/1.0/storage-pools/' ~ seed_intent.pool ~ '/volumes/custom/' ~ seed_intent.source.inner_volume
+              ~ '/snapshots?project=' ~ seed_intent.project ~ '&recursion=1'] }}
+      register: release_volume_snapshots
+      changed_when: false
+    - name: Name the bases
+      when: seed_intent.release_base and passed | bool
+      ansible.builtin.set_fact:
+        release_names: "{{ release_snapshots.stdout | from_json | map(attribute='name') | list }}"
+        release_volume_names: >-
+          {{ (release_volume_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | list)
+             if seed_intent.source.inner_volume is not none else [] }}
+    - name: Delete the default's base
+      when: seed_intent.release_base and passed | bool and seed_intent.snapshot in release_names
+      ansible.builtin.command: { argv: "{{ ['incus', 'snapshot', 'delete', seed_intent.source.container, item, '--project', seed_intent.project] }}" }
+      loop: "{{ release_names | select('match', '^base-') | list }}"
+      changed_when: true
+    - name: Delete the inner volume's base
+      when: seed_intent.release_base and passed | bool and seed_intent.snapshot in release_names and seed_intent.source.inner_volume is not none
+      ansible.builtin.command:
+        argv: >-
+          {{ ['incus', 'storage', 'volume', 'snapshot', 'delete', seed_intent.pool, seed_intent.source.inner_volume, item,
+              '--project', seed_intent.project] }}
+      loop: "{{ release_volume_names | select('match', '^base-') | list }}"
+      changed_when: true
 
 - name: Report every target
   hosts: localhost

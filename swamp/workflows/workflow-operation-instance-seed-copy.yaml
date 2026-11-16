@@ -92,10 +92,31 @@ jobs:
               ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
-      - name: Report every target
+      - name: Release the base
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: Check the holder, condition: {type: always}}]
+        allowFailure: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-seed-copy-release" }}
+          methodName: execute
+          inputs:
+            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags release "$ORBIT_ANSIBLE/proof-seed-copy.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              # The first target addresses the two Nodes; the release acts on the default's Node only.
+              ORBIT_TARGET: '${{ string(inputs.intent.targets[0].node_id) }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: Report every target
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Release the base, condition: {type: always}}]
         task:
           type: behavior
           behaviorType: command/shell

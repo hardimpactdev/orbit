@@ -1845,7 +1845,6 @@ describe('the server a container records', function (): void {
     });
 
     it('runs the Conn Server in a clone of a Project that chose it, and keeps it after the Project changes back', function (): void {
-        containerServerConnPinned();
         $node = containerDefaultNode();
         $default = seededDefault($node);
         $default->project->update(['container_server' => ContainerServer::Conn]);
@@ -1869,6 +1868,7 @@ describe('the server a container records', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
         // A Project that chose the Conn Server while a recipe pinned it, after a recipe that pins none.
+        containerServerConnUnpinned();
         Project::query()->whereKey($default->project_id)->update(['container_server' => 'conn']);
         $before = ['instances' => Instance::query()->count(), 'runtimes' => InstanceRuntime::query()->count(), 'last_port' => $node->refresh()->t3_port_last];
 

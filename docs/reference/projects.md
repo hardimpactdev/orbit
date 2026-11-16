@@ -47,7 +47,7 @@ Change it alone: a request that sends `nested_fleet` with any other Project sett
 
 `container_server` chooses the server that runs in the Project's Instance containers: `t3`, the T3 server and the default, or `conn`, the Conn Server. Both serve the same client contract and use the same credentials; only the program differs. A container's runtime records the choice when Orbit reserves it, so a change reaches only containers made after it. Existing containers keep their server, because the two servers store threads and pairings differently. To move a container to the other server, destroy it and create it again. [Container server](/reference/development-containers#container-server) describes the program, the unit and the record.
 
-A choice is refused with `project.container_server_unavailable` (409) while the recipe's agent folder does not pin its program. The recipe pins no Conn Server release yet, so `conn` is refused for now. A refused update changes nothing.
+A choice is refused with `project.container_server_unavailable` (409) while the recipe's agent folder does not pin its program. A refused update changes nothing.
 
 ## Project Documents
 

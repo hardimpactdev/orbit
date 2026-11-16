@@ -1,7 +1,7 @@
 ---
 title: "ADR 0258: Choose the container server per Project"
 sidebarTitle: "0258 Container server"
-description: "In progress. A Project chooses which server runs in its Instance containers: the T3 server (default) or the Conn Server. The runtime records the choice when Orbit reserves it, and every later step reads that record. Only the program differs; credentials and the client contract stay. The Conn Server's recipe entry follows once a release exists."
+description: "In progress. A Project chooses which server runs in its Instance containers: the T3 server (default) or the Conn Server. The runtime records the choice when Orbit reserves it, and every later step reads that record. Only the program differs; credentials and the client contract stay. The recipe pins Conn Server 0.1.0."
 ---
 
 # ADR 0258: Choose the container server per Project
@@ -12,7 +12,7 @@ A Project chooses the server that runs in its Instance containers: `t3`, the T3 
 
 In progress.
 
-The owner decided on 2026-11-15. The Conn Server's recipe entry is the open part: `nckrtl/conn` has published no Conn Server release yet, so the agent folder holds no `conn-server` program and Orbit refuses the `conn` choice.
+The owner decided on 2026-11-15. The recipe pins the first Conn Server release, 0.1.0, as the agent folder's part `conn-server`, so Orbit accepts the `conn` choice. A live create and turn on a Node are the open part.
 
 Principle: [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles).
 
@@ -28,7 +28,7 @@ The agent folder is shared by every container on a Node, so the choice cannot li
 - **Record.** When Orbit reserves the runtime of a container with a server (a clone, or a checkout Instance that moves into a container), the runtime records the Project's choice as its own `container_server`. A runtime without a server, the default's, records none. Each step after the reservation reads the runtime's record, never the Project's setting. Existing runtimes record `t3`.
 - **Program.** The record names one program of the agent folder: `bin/t3` or `bin/conn-server`. The create's sessions and `project add`, and a task turn's `thread` commands and RPC helper, run that program.
 - **Unit.** A drop-in, `t3.service.d/20-orbit-server.conf`, sets the unit's `ExecStart` to the recorded program, with the same arguments. A clone gets it before its first start, with T3's other files; a migrated checkout gets it with the agent's files, and the T3 phase reloads systemd before it starts the unit. The image and its unit stay as they are: the unit keeps its name, its `PATH` (the runtime folder's `node`, which the Conn Server's SDK host needs) and its credentials (`model.env` and Codex's `config.toml`).
-- **Refusal.** A choice whose program the recipe's agent folder does not pin is refused: `project:update` and every reservation of a server runtime answer `project.container_server_unavailable` (409) before any record. Until the recipe pins a Conn Server release, `conn` is refused.
+- **Refusal.** A choice whose program the recipe's agent folder does not pin is refused: `project:update` and every reservation of a server runtime answer `project.container_server_unavailable` (409) before any record.
 - **Names.** Orbit's names for the container's server stay: the unit `t3.service`, the T3 port, T3 registration and the `t3` keys of the intents cover both servers.
 
 ## Rejected alternatives
@@ -43,22 +43,7 @@ The agent folder is shared by every container on a Node, so the choice cannot li
 - A Project switches to the Conn Server for its new containers only. Its existing containers keep T3; to move a container to the other server, a person destroys it and creates it again.
 - An agent folder update restarts both servers the same way, with `systemctl try-restart t3.service`.
 - `conn:environment-restart` counts each direct child of the server that is not a provider as busy. The Conn Server's SDK host runs on `node` as such a child, so that restart may answer `busy` for a Conn container until the restart rule names it.
-- Follow-up: once `nckrtl/conn` publishes a Conn Server release, add the part `instances.agent.conn-server` to the recipe, and the `conn` choice works without another change. The release has the tag `conn-server-v<version>` and the asset `conn-server-<version>-linux-x64.tar.gz`, with its digest in the asset `conn-server-<version>-linux-x64.tar.gz.sha256`. The entry:
-
-  ```json
-  "conn-server": {
-      "version": "<version>",
-      "artifacts": {
-          "amd64": {
-              "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v<version>/conn-server-<version>-linux-x64.tar.gz",
-              "sha256": "<the digest from the .sha256 asset>"
-          }
-      },
-      "bin": {
-          "conn-server": "conn-server-<version>-linux-x64/conn-server"
-      }
-  }
-  ```
+- The recipe pins the Conn Server as the agent folder's part `conn-server`. `nckrtl/conn` publishes each release with the tag `conn-server-v<version>` and the asset `conn-server-<version>-linux-x64.tar.gz`, with its digest in the asset `conn-server-<version>-linux-x64.tar.gz.sha256`. The part's `bin` is `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`. A bump changes the part's version, URL and digest.
 
 ## Affects
 

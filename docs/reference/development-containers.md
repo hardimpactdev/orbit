@@ -308,11 +308,11 @@ The software that the app and the agents run lives once per Node, in two version
 | `/opt/orbit-runtime/<version>/{lib,fonts}` | The [browser libraries and fonts](#browser-libraries-and-fonts) | Everyone |
 | `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |
 | `/opt/orbit-runtime/vite-plus/<digest>` | The [Vite+ home](/reference/compute-drivers#the-vite-home) that `vp` runs from, linked as `<version>/vite-plus-home` | Everyone |
-| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex`, and `conn-server` once the recipe pins it ([Container server](#container-server)) | `root:2750`, mode 0750 |
-| `/opt/orbit-agent/<version>/agent/{t3,claude-code,codex}` | The releases | `root:2750`, mode 0750 |
+| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex` and `conn-server` ([Container server](#container-server)) | `root:2750`, mode 0750 |
+| `/opt/orbit-agent/<version>/agent/{t3,conn-server,claude-code,codex}` | The releases | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
 
-The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)): T3, Claude Code and Codex in the agent folder; Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds in the runtime folder. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
+The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, Claude Code and Codex. The runtime folder holds Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
 
 A folder's version is the first 12 hex digits of a digest of everything in it, the notes included, so any change is a new version. Each program in `bin` links to its path in its part.
 
@@ -343,7 +343,7 @@ The record names the program that every call inside the container runs: the crea
 
 The image and its unit do not change. The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
 
-The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins no Conn Server release yet, so `conn` is refused. The releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host. Once the recipe pins a release as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, every agent folder holds both programs. The new folder version only adds files, so no running server restarts.
+The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins the Conn Server as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, so every agent folder holds both programs. Its releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host. A folder version that only adds the part adds files, so no running server restarts.
 
 ## Workspace volumes (draft)
 
@@ -1017,6 +1017,10 @@ A default sleeps like any other development container: after one idle window wit
 
 A retake never leaves the default without a seed. It takes the new snapshot first, beside the old one. It holds the default's seed lock on the Node while it does so. When `seed-<commit>` exists already, the new snapshot waits under `next-<commit>`. Only when the new snapshot exists does the old `seed-<commit>` go, and `next-<commit>` takes its name. Older seeds go last. The seed of a default with an [inner volume](#the-seed-pair) is a pair, and both halves follow the same order.
 
+The proof Project's default can keep one older pair as the base of the next [seed copy](#the-seed-on-each-ci-node). The Gateway names the default's current seed in the seed step's intent (`seed_base`) when a CI Node that is ready for the seed copy records that seed (`ProofSeeds`). Then, after the new seed is whole, the old pair is not deleted but renamed `base-<commit>`, also at the same commit.
+
+Every older `base-` pair goes first, so the default keeps at most one base. Without `seed_base`, the old pair goes as before. A clone and a restore never read a `base-` pair. A rename keeps the snapshot's creation time, and it needs no free ID range. So a retake still needs only one free range, for a moment.
+
 Incus maps a new snapshot as it maps a new container: it needs a free [isolated ID range](#isolated-id-ranges) for a moment, but a delete or a rename needs none. So the step never uses `incus snapshot create --reuse`, which deletes the old snapshot before it creates the new one. On 2026-11-14 a retake with `--reuse` on a host with no free range left Instance 2454 without a seed for seven minutes.
 
 A failed snapshot deletes only what this take made, a new name or `next-<commit>`, and fails the step with `instance.container_seed_failed`. The Operation's error detail names the cause: `No free ID range for the new seed`, or the failed command's error output. The old seed stays, and clones keep copying it. A run that stopped after its new seed was whole, but before the rename, leaves the new seed under `next-<commit>`; the next seed step gives it the seed's name. So does a volume half still under `next-` after its container half took the name. Any other `next-` snapshot goes.
@@ -1049,7 +1053,7 @@ A proof copy's runtime still names the default as its clone source, so the defau
 | Deploy steps | Each runs as `orbit` at `/srv/workspace`, from its own vault copy. Its environment holds only `HOME`, `USER`, `LOGNAME`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, the [proxy settings](#proxy-settings-in-a-container), and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders |
 | FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile` as `orbit` on port 8080. The Route proxies to the bridge address; the Node runs no PHP pool for it |
-| Seed | The first build and each passed deployment, also at the same commit, take `seed-<commit>` with the units stopped. Older seeds go; the runtime row records the commit |
+| Seed | The first build and each passed deployment take `seed-<commit>` with the units stopped. Older seeds go, except the proof default's [base](#a-retake-keeps-the-seed). The runtime row records the commit |
 | Deployment | The variant `container` starts a stopped container and fetches the commit on the Node. It refuses `deployment.checkout_dirty`, `deployment.commit_not_on_branch` and `deployment.branch_diverged` as a checkout does |
 | Processes | The Project's development Process definitions run as `orbit-*` units in the container. [Processes](#processes) has the details |
 
@@ -2759,7 +2763,17 @@ Incus moves it, from the default's Node straight to each CI Node over WireGuard.
 
 An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
 
-`--refresh` sends only what changed since the last copy. Incus compares the snapshots on both sides and sends the newer ones as ZFS increments, so the holder gets the new `seed-<commit>` snapshot natively. The first copy to a Node sends the whole seed pair. The copy reads the default as an instance, not one snapshot of it: a snapshot source carries no snapshots, so `--refresh` could not find a common one and would send the whole pair each time.
+`--refresh` sends only what changed since the last copy. Incus compares the snapshots on both sides by name and creation time and sends the newer ones as ZFS increments from the newest snapshot that both sides share, so the holder gets the new `seed-<commit>` snapshot natively. The first copy to a Node sends the whole seed pair. The copy reads the default as an instance, not one snapshot of it: a snapshot source carries no snapshots, so `--refresh` could not find a common one and would send the whole pair each time.
+
+So the default keeps the base of the copy: its previous seed pair, renamed `base-<commit>` by the [retake](#a-retake-keeps-the-seed). A plain delete would leave no shared snapshot, and a retake at the same commit gives the new seed the old one's name with a new creation time.
+
+Before the refresh, the run renames the holder's `seed-<commit>` pair to `base-<commit>` when the default holds a `base-` pair of that name. Incus then finds the same name and creation time on both sides and sends only the change since that seed. When the default's base is another seed, or none, the refresh sends the whole pair, as a first copy does. A Node whose seed is older than the base gets the whole pair too: the default keeps only one base.
+
+The base goes when no CI Node needs it. The next retake keeps at most the seed that it replaces. A seed copy can drop the base earlier: when it targeted all the Nodes behind the seed and each target passed, its release step deletes every `base-` pair on the default's Node.
+
+The release step first checks that the default still holds a seed with the name that the copy was admitted for. It compares only the name. A retake to a new commit during the copy gives the seed a new name, so the release step leaves the base of that retake alone. A retake at the same commit keeps the name, so the release step deletes the base that the retake kept. Then the next copy to each target sends the whole pair once, as a first copy does.
+
+A failed release changes no target's result; the next retake deletes the base. The holder mirrors the default, so its next refresh drops the base there too.
 
 Push mode means that the source server sends the data to the target server, and only the target listens on the network (`incus copy --help` of the installed Incus client). So the default's Node gets no Incus listener and no change to its daemon config. Its only change is a client remote of root, `proof-node-<id>`, for each CI Node. The run adds the remote when it is missing. It reads the CI Node's server certificate on that Node first, and fails the target when the certificate that root's client stored for the remote is not that one.
 
@@ -2796,6 +2810,7 @@ The copy runs after the release, and nothing in a release or a proof waits for i
 | ID ranges on a CI Node | The holder and the snapshot it receives need a free range of the default's size. The [CI Node's demand](/reference/node-settings#a-ci-node) counts them. Without one, that target fails |
 | A failure shows | Nothing waits for the copy. So each failed target also writes the Activity row `instance.seed_copy_failed` with the Node, the Operation and the detail, as a failed refresh writes `instance.refresh_failed` |
 | A rerun is safe | The next seed, or the Node's own `ci-runner` converge, copies again. `--refresh` makes the holder equal to the default, whatever an earlier run left |
+| One base at a time | The default keeps at most one older seed pair, `base-<commit>`. It keeps it only while a ready CI Node needs it |
 
 ### A clone starts its fleet
 
@@ -2958,7 +2973,7 @@ Step 10 of ADR 0250 moves production Instances into containers on `app-prod` Nod
 - Production containers never sleep. Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
 - Existing production checkouts are migrated, as development checkouts are.
 
-The release flow, with release containers, gets its own specification in the first production PR of the [plan](/solutions/development-container-runtime#production-instances).
+The release flow is planned in [Production containers](/reference/production-containers) ([ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers)): hot builds each new commit as a clone of live's release snapshot, live serves, and old stays stopped for rollback.
 
 ## Records
 

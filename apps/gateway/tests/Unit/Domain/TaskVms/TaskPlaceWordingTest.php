@@ -22,9 +22,14 @@ it('names no workflow job or step after a slot', function (): void {
     expect($named)->toBe([]);
 });
 
-it('names the place in the cancel step that releases one', function (): void {
-    $steps = static fn (string $workflow): array => collect(Yaml::parseFile(dirname(base_path(), 2)."/swamp/workflows/{$workflow}.yaml")['jobs'])
-        ->flatMap(static fn (array $job): array => array_column($job['steps'], 'name'))->all();
+// The place release is deleted (docs/reference/old-paths.md#the-pi-task-loop): the cancel workflow keeps its inputs and its end check, which
+// reads no release step, and calls no other workflow.
+it('keeps no release step in the cancel workflow, and its end check reads none', function (): void {
+    $flow = Yaml::parseFile(dirname(base_path(), 2).'/swamp/workflows/workflow-operation-task-cancel.yaml');
+    $steps = collect($flow['jobs'])->flatMap(static fn (array $job): array => $job['steps'])->keyBy('name');
 
-    expect($steps('workflow-operation-task-cancel'))->toContain('Release the place');
+    expect($steps->keys()->all())->toBe(['Check the end'])
+        ->and($steps->pluck('task.type')->all())->toBe(['assert'])
+        ->and($steps['Check the end']['task']['expr'])->not->toContain('steps[')
+        ->and($flow['inputs']['required'])->toBe(['operation_id', 'node_id', 'kind', 'intent', 'execution_secrets']);
 });

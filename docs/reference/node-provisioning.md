@@ -321,6 +321,8 @@ A [`node:converge`](/cli/node/converge) of the Node runs the same node phase in 
 
 The default's Node gets no listener and no change to its Incus daemon. Each seed copy adds a client remote of root there for each CI Node, `proof-node-<id>`, when it is missing.
 
+Through the trust, a seed copy may also rename the holder's seed snapshots on the CI Node, in `orbit-instances-nested` only. It gives them the name of the default's base, so the refresh sends only the change ([How the seed moves](/reference/development-containers#how-the-seed-moves)).
+
 When a converge finds that the Node offers no proof places, or that the proof Project has no default, the converge removes the trust entry `orbit-proof-seed`, unsets `core.https_address` when it is the listener above, and deletes both UFW rules. It can name the allow rule only while the proof Project has a default.
 
 A removal of the `ci-runner` role does the same. It stops the listener and removes the trust in a phase of its own, before the firewall rules go, so the port is never open to every WireGuard member while Incus still listens. The Node finds the trust entry by its name, so the Gateway never needs its fingerprint. The holder stays, as the other Incus resources of the branch do.
@@ -980,6 +982,8 @@ The Node with the `vpn` role holds the WireGuard hub: its private key, address, 
 
 The hub keeps one peer file per Node. A hub converge prunes only the files of Nodes that are gone or being removed, and never the file of a Node created after its intent; [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) has the rule.
 
+The hub converge also removes the task VM hub filter that the removed `task_vm.hub_converge` installed, so `node:converge` of the `vpn` Node clears it; [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) lists what it deletes.
+
 Repeating the same key still projects the hub when it has no collision; after a projection failure, the stored key remains and the operator retries after repairing the hub. A crash can leave either the old or new hub configuration, without guaranteed rollback or automatic reconciliation. [WireGuard key recovery](/cli/node/wireguard-key) explains how to restore an authorized management path and replay the desired key.
 
 The Gateway runs the [Node agent](/reference/node-agent#commands)'s `wireguard.project-hub` on the `vpn` Node, with the configuration and its private key in the protected input. When the `vpn` and `gateway` roles share a machine, the runner starts it as a local process; otherwise it reaches the `vpn` Node over SSH to its WireGuard address. The command writes a root-only candidate, validates it with `wg-quick strip`, keeps the live file as a backup, and swaps the candidate in. Then it live-syncs a running `wg-quick@orbit` with `wg syncconf`, or enables and starts a stopped one. When activation fails, it puts the backup and the previous enabled and active state back.
@@ -1091,7 +1095,7 @@ Enrollment records its pinned bootstrap connection, candidate placement and gene
 
 Node removal records immutable participants and Route withdrawal intent before its native run. It preserves the departing Node's Route associations through serving cleanup. Swamp decides completion; removal does not restore completed effects after a failure. The Gateway projects the native result without child receipts or runtime proof checks.
 
-A task start (`tasks.provision`) records the Node of its VM at admission; no enrollment child runs, and the release deletes the Node record. Serialized role names are converted to the Node role enum at admission.
+A task start makes a task copy and records no task VM Node. The task VM start and its place release, which deleted the Node record, are deleted ([old paths](/reference/old-paths#the-pi-task-loop)). Serialized role names are converted to the Node role enum at admission.
 
 Cross-family enrollment uses the internal `ProvisionNodeData` field names. TaskVM Node cleanup retains its owning planner and custody checks. Standalone Node removal refuses TaskVM guests and caller-supplied provider-deletion claims.
 

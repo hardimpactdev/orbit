@@ -68,6 +68,7 @@ additionalFiles:
   - ansible/tasks/node-converge-tool-repository.yml
   - ansible/tasks/node-converge-network.yml
   - ansible/tasks/node-converge-hub.yml
+  - ansible/tasks/node-converge-hub-filter-absent.yml
   - ansible/tasks/node-converge-hub-prune.yml
   - ansible/tasks/node-add-hub-peers.yml
   - ansible/tasks/node-hub-lan-proof.yml
@@ -213,7 +214,6 @@ additionalFiles:
   - ansible/tasks/instance-image.yml
   - ansible/library/orbit_incus_images.py
   - ansible/tasks/task-container-host-prepare.yml
-  - ansible/task-vm-start.yml
   - ansible/tasks/task-vm-boot.yml
   - ansible/tasks/task-vm-checkout.yml
   - ansible/tasks/task-vm-branch.yml

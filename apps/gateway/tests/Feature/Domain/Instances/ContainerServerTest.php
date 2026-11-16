@@ -32,15 +32,15 @@ describe('the container server setting', function (): void {
     });
 
     it('refuses conn while the recipe pins no Conn Server, and changes nothing', function (): void {
+        containerServerConnUnpinned();
+
         $this->patchJson('/api/v1/projects/'.$this->project->id, ['container_server' => 'conn'])
             ->assertConflict()->assertJsonPath('error.code', 'project.container_server_unavailable');
 
         expect($this->project->refresh()->container_server)->toBe(ContainerServer::T3);
     });
 
-    it('stores conn once the recipe pins the Conn Server, and t3 again at any time', function (): void {
-        containerServerConnPinned();
-
+    it('stores conn, which the recipe pins, and t3 again at any time', function (): void {
         $this->patchJson('/api/v1/projects/'.$this->project->id, ['container_server' => 'conn'])->assertOk()->assertJsonPath('data.container_server', 'conn');
         expect($this->project->refresh()->container_server)->toBe(ContainerServer::Conn);
 
@@ -61,6 +61,10 @@ describe('the programs of the container servers', function (): void {
     });
 
     it('refuses a server whose program no part of the recipe\'s agent folder names', function (): void {
+        ContainerServer::T3->assertPinned(app(InstanceContainer::class)->folders());
+        ContainerServer::Conn->assertPinned(app(InstanceContainer::class)->folders());
+
+        containerServerConnUnpinned();
         $folders = app(InstanceContainer::class)->folders();
 
         ContainerServer::T3->assertPinned($folders);

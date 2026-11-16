@@ -1724,6 +1724,13 @@
         seed_volume_nexts: >-
           {{ (seed_volume_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | select('match', '^next-') | list)
              if container.inner_volume is defined else [] }}
+        # The proof default keeps the seed that a CI Node holds as the base of the next seed copy, `base-<commit>`; the Gateway names it
+        # (docs/reference/development-containers.md#a-retake-keeps-the-seed). Every other base goes.
+        seed_keep: "{{ ('base-' ~ container.seed_base) if container.seed_base is defined else '' }}"
+        seed_bases: "{{ seed_snapshots.stdout | from_json | map(attribute='name') | select('match', '^base-') | list }}"
+        seed_volume_bases: >-
+          {{ (seed_volume_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | select('match', '^base-') | list)
+             if container.inner_volume is defined else [] }}
     # An earlier retake stopped after its new seed was whole: every half of it is under `next-`. It takes the seed's name now. A new
     # seed that is not whole is dropped, so no seed is ever a pair of two retakes.
     - name: Finish an earlier retake of this seed
@@ -1849,16 +1856,40 @@
                 msg: >-
                   {{ 'instance.seed_volume_flush_failed' if seed_failed_flush | bool
                      else ('instance.seed_volume_snapshot_failed' if seed_failed_volume | bool else 'instance.container_seed_failed') }}
-        # The new seed is whole: the old one goes, and the new one takes its name.
+        # The new seed is whole: the old one goes, or becomes the base when it is the seed a CI Node holds, and the new one takes its name.
+        # A rename keeps the snapshot's creation time and needs no free ID range.
+        - name: Keep the old container half of this name as the base
+          when: seed_take == seed_next and seed_name in seed_names and seed_keep == 'base-' ~ container_commit and seed_keep not in seed_bases
+          ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'rename', container.name, seed_name, seed_keep] }}" }
+          changed_when: true
         - name: Delete the old container half of this name
-          when: seed_take == seed_next and seed_name in seed_names
+          when: >-
+            seed_take == seed_next and seed_name in seed_names
+            and not (seed_keep == 'base-' ~ container_commit and seed_keep not in seed_bases)
           ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, seed_name] }}" }
           changed_when: true
+        - name: Keep the old volume half of this name as the base
+          when: >-
+            seed_take == seed_next and seed_name in seed_volume_names and seed_keep == 'base-' ~ container_commit
+            and seed_keep not in seed_volume_bases
+          ansible.builtin.command:
+            argv: >-
+              {{ incus_project + ['storage', 'volume', 'snapshot', 'rename', container.inner_volume.pool, container.inner_volume.name,
+                                  seed_name, seed_keep] }}
+          changed_when: true
         - name: Delete the old volume half of this name
-          when: seed_take == seed_next and seed_name in seed_volume_names
+          when: >-
+            seed_take == seed_next and seed_name in seed_volume_names
+            and not (seed_keep == 'base-' ~ container_commit and seed_keep not in seed_volume_bases)
           ansible.builtin.command:
             argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'delete', container.inner_volume.pool, container.inner_volume.name, seed_name] }}"
           changed_when: true
+        - name: Count the base that this retake kept
+          ansible.builtin.set_fact:
+            seed_bases: "{{ (seed_bases + [seed_keep]) | unique if seed_take == seed_next and seed_name in seed_names and seed_keep == 'base-' ~ container_commit else seed_bases }}"
+            seed_volume_bases: >-
+              {{ (seed_volume_bases + [seed_keep]) | unique
+                 if seed_take == seed_next and seed_name in seed_volume_names and seed_keep == 'base-' ~ container_commit else seed_volume_bases }}
         - name: Name the new container half
           when: seed_take == seed_next
           ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'rename', container.name, seed_next, seed_name] }}" }
@@ -1884,15 +1915,44 @@
       changed_when: true
     # A clone made from an older seed does not need it: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them. A
     # clone admitted for an older seed and not copied yet refuses with instance.default_seed_moved, and its next create takes the new one.
+    # Every base but the kept one goes first; then the older seed that a CI Node holds becomes the base, unless the base is kept already.
+    - name: Delete the older bases
+      ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, item] }}" }
+      loop: "{{ seed_bases | reject('equalto', seed_keep) | list }}"
+      changed_when: true
+    - name: Delete the older bases of the inner volume
+      when: container.inner_volume is defined
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'delete', container.inner_volume.pool, container.inner_volume.name, item] }}"
+      loop: "{{ seed_volume_bases | reject('equalto', seed_keep) | list }}"
+      changed_when: true
+    - name: Keep the older seed as the base
+      when: seed_keep != '' and seed_keep not in seed_bases and seed_keep | regex_replace('^base-', 'seed-') in (seed_names | reject('equalto', seed_name) | list)
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['snapshot', 'rename', container.name, seed_keep | regex_replace('^base-', 'seed-'), seed_keep] }}"
+      changed_when: true
+    - name: Keep the older seed of the inner volume as the base
+      when: >-
+        container.inner_volume is defined and seed_keep != '' and seed_keep not in seed_volume_bases
+        and seed_keep | regex_replace('^base-', 'seed-') in (seed_volume_names | reject('equalto', seed_name) | list)
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['storage', 'volume', 'snapshot', 'rename', container.inner_volume.pool, container.inner_volume.name,
+                              seed_keep | regex_replace('^base-', 'seed-'), seed_keep] }}
+      changed_when: true
     - name: Delete the older seeds
       ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, item] }}" }
-      loop: "{{ seed_names | reject('equalto', seed_name) | list }}"
+      loop: >-
+        {{ seed_names | reject('equalto', seed_name)
+           | reject('equalto', seed_keep | regex_replace('^base-', 'seed-') if seed_keep not in seed_bases else '') | list }}
       changed_when: true
     - name: Delete the older seeds of the inner volume
       when: container.inner_volume is defined
       ansible.builtin.command:
         argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'delete', container.inner_volume.pool, container.inner_volume.name, item] }}"
-      loop: "{{ seed_volume_names | reject('equalto', seed_name) | list }}"
+      loop: >-
+        {{ seed_volume_names | reject('equalto', seed_name)
+           | reject('equalto', seed_keep | regex_replace('^base-', 'seed-') if seed_keep not in seed_volume_bases else '') | list }}
       changed_when: true
 
 - name: Check the container

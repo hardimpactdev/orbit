@@ -1454,7 +1454,6 @@ function copyCandidate(Task $group): TaskCheck
 
 describe('a turn of a group that owns a copy', function (): void {
     it('runs the turn\'s commands with the server its copy recorded: the Conn Server of a Project that chose it', function (): void {
-        containerServerConnPinned();
         $source = copySource();
         $source->project->update(['container_server' => ContainerServer::Conn]);
         $group = copyGroup($source->project);

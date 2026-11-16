@@ -3223,6 +3223,99 @@ Deno.test({
   },
 });
 
+/** A rename keeps a snapshot's place in the stub's list; the names are what count. */
+const seedPairNames = (f: ReturnType<typeof fixture>) => ({container: [...seedPair(f).container].sort(), volume: [...seedPair(f).volume].sort()});
+
+/** A proof default with an inner volume and its first seed, as the base cases start from; returns the seed's commit. */
+function seededProofDefault(f: ReturnType<typeof fixture>): string {
+  innerVolumeCreate(f);
+  assert(f.run("container").ok);
+  const seeded = f.phases(["workspace", "processes", "seed"]);
+  assert(seeded.ok, seeded.output);
+  return git(f.source, "rev-parse", "HEAD");
+}
+
+/** Adds a base pair that an earlier retake kept, straight into the stub's state. */
+function keptBase(f: ReturnType<typeof fixture>, commit: string) {
+  const state = f.state();
+  state.containers["instance-7"].snapshots.push(`base-${commit}`);
+  state.volumes["inner-7"].snapshots.push(`base-${commit}`);
+  Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+}
+
+Deno.test({
+  name: "the proof default's retake keeps the seed that a CI Node holds as its one base pair, and a second retake at that commit keeps it",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const first = seededProofDefault(f);
+      // docs/reference/development-containers.md#a-retake-keeps-the-seed: a CI Node holds the first seed, so the Gateway names it.
+      (f.container as unknown as Record<string, unknown>).seed_base = first;
+      f.intent.deployment = { variant: "container", steps: [] };
+      f.write();
+      // A retake at the same commit renames the old pair to `base-` instead of deleting it; a rename needs no free ID range.
+      assert(f.phases(["start", "seed"]).ok);
+      assertEquals(seedPairNames(f), {container: [`base-${first}`, `seed-${first}`], volume: [`base-${first}`, `seed-${first}`]});
+      const calls = incusCalls(f).map((call) => call.join(" "));
+      assert(!calls.some((call) => call.includes(" delete ") && call.includes(`seed-${first}`)), "the held seed is not deleted");
+      // A second retake at the same commit, as the second seed phase of a fleet deployment: the kept base stays, the newer seed goes.
+      assert(f.phases(["start", "seed"]).ok);
+      assertEquals(seedPairNames(f), {container: [`base-${first}`, `seed-${first}`], volume: [`base-${first}`, `seed-${first}`]});
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "the proof default's retake at a new commit keeps the seed that a CI Node holds as the base and drops every other base pair",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const first = seededProofDefault(f);
+      // An older seed that an earlier retake kept; the CI Node now holds the first seed, so the Gateway names that one.
+      const older = "0".repeat(40);
+      keptBase(f, older);
+      (f.container as unknown as Record<string, unknown>).seed_base = first;
+      f.intent.deployment = { variant: "container", steps: [] };
+      f.write();
+      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "second");
+      const second = git(f.source, "rev-parse", "HEAD");
+      for (const phases of [["start", "fetch"], ["checkout"], ["seed"]]) assert(f.phases(phases).ok, phases.join(","));
+      // One base only: the held seed becomes it, and the older base goes.
+      assertEquals(seedPairNames(f), {container: [`base-${first}`, `seed-${second}`], volume: [`base-${first}`, `seed-${second}`]});
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "the proof default's retake at a new commit keeps the base it holds while the Gateway names it, and drops it once the Gateway names none",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const first = seededProofDefault(f);
+      // An earlier retake at the first commit kept its pair as the base, and the CI Node still holds it: the Gateway names it again.
+      keptBase(f, first);
+      const container = f.container as unknown as Record<string, unknown>;
+      container.seed_base = first;
+      f.intent.deployment = { variant: "container", steps: [] };
+      f.write();
+      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "second");
+      const second = git(f.source, "rev-parse", "HEAD");
+      for (const phases of [["start", "fetch"], ["checkout"], ["seed"]]) assert(f.phases(phases).ok, phases.join(","));
+      // The base is kept already, so the older seed goes instead of taking its name: one base only.
+      assertEquals(seedPairNames(f), {container: [`base-${first}`, `seed-${second}`], volume: [`base-${first}`, `seed-${second}`]});
+      // No CI Node needs a base: the Gateway names none, and the next seed step drops it, also one that keeps its seed.
+      delete container.seed_base;
+      delete f.intent.deployment;
+      f.write();
+      assert(f.run("seed").ok);
+      assertEquals(seedPairNames(f), {container: [`seed-${second}`], volume: [`seed-${second}`]});
+    } finally { f.cleanup(); }
+  },
+});
+
 /** The order of the seed's calls: each container snapshot, flush and volume snapshot, as `c`, `f` and `v`. */
 const seedOrder = (f: ReturnType<typeof fixture>) => incusCalls(f).map((call) => call.join(" ")).flatMap((call) =>
   /(^| )snapshot create instance-7 /.test(call) && !call.includes("storage") ? ["c"]

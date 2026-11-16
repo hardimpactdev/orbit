@@ -2,6 +2,7 @@ order = 140
 cases = [
   "model IDs are unique",
   "every workflow keeps an interrupted run interrupted",
+  "no workflow names a deleted task VM workflow or an unwritten vault key",
   "workflow queue bounds have measured per-kind budgets",
   "every Ansible file ships with the ansible-input extension",
   "runtime credentials and generated records are ignored",
