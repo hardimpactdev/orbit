@@ -33,6 +33,7 @@ use LogicException;
  * @property int|null $clone_source_instance_id
  * @property InstanceRuntimePowerState $power_state
  * @property string|null $seed_commit
+ * @property Carbon|null $seed_taken_at
  * @property array{heads: list<string>, stashes: list<string>, untracked: list<string>|null}|null $workspace_baseline
  * @property Carbon|null $workspace_baseline_at
  * @property Carbon|null $idle_watch_started_at
@@ -62,6 +63,7 @@ final class InstanceRuntime extends Model
         'clone_source_instance_id',
         'power_state',
         'seed_commit',
+        'seed_taken_at',
         'workspace_baseline',
         'workspace_baseline_at',
         'idle_watch_started_at',
@@ -121,6 +123,7 @@ final class InstanceRuntime extends Model
             'workspace_baseline' => 'array',
             'workspace_baseline_at' => 'datetime',
             'idle_watch_started_at' => 'datetime',
+            'seed_taken_at' => 'datetime',
         ];
     }
 }

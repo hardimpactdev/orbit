@@ -219,7 +219,7 @@ The container fixture uses that rule from 23 hosted pull request runs of 13 Nove
 
 Container host preparation uses one case per unit. Each of its declared body costs uses its largest completed observation, rounded up plus one second, which is stricter than the 90th percentile; paired cases must not receive an equal share of the file total. Deadline cuts are censored observations, not completed measurements.
 
-Task-copy turns also use one case per PR unit. Their costs use completed hosted case times with 25% headroom, rounded up plus one second. The reviewer-detach case has only censored hosted observations and keeps an explicit 120-second estimate until a complete run measures it. The full-set planner uses these costs to split the file instead of running it whole against the 540-second ceiling.
+Task-copy turns also use one case per PR unit. Their costs use completed hosted case times with 25% headroom, rounded up plus one second. The reviewer-detach case has only censored hosted observations and keeps an explicit 138-second estimate until a complete run measures it. A case with no hosted run yet, such as the Conn Server case and the stop cases, keeps an estimate above its local time. `tools/tests/ci-task-copy-turn-costs.json` records each observation and estimate. The full-set planner uses these costs to split the file instead of running it whole against the 540-second ceiling.
 
 Each fixture unit has its own child subreaper. It reaps adopted children while the session leader runs, so exited grandchildren do not remain zombies until the unit ends. The leader alone decides success or failure. Deadlines and cancellation still kill and reap the unit’s remaining descendants before temporary files are removed.
 
@@ -606,7 +606,7 @@ Before it writes, the gate removes the `review-*` directories its own Unix user 
 
 ### The scoped task check
 
-`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks only what the task changed since its start commit, so it catches in the copy what CI would otherwise catch after the push. It runs in under five minutes.
+`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks what the task changed since its start commit, and the pin tests of the Pest jobs that change selects, so it catches in the copy what CI would otherwise catch after the push. It runs in under five minutes.
 
 ```bash
 bin/task-check                    # against the start commit
@@ -615,7 +615,7 @@ bin/task-check --budget 200       # seconds for the whole run (default 270)
 bin/task-check --only pest,phpstan
 ```
 
-The [start commit](/reference/tasks#start-commit) has one rule, which the tasks reference states. The changed paths are those since the start commit, with uncommitted and untracked files, as the candidate gate reads them. The command asks `bin/ci-build-plan --pull-request` which CI jobs those paths select, and `bin/ci-units plan` which Swamp fixture units. When the tree has uncommitted work, both plans read a commit of the working tree that no branch holds. Inside a selected Pest job, it reuses the file-level mapping that the repository already has, `bin/cli-contract`, and adds none. The parts run in this order.
+The [start commit](/reference/tasks#start-commit) has one rule, which the tasks reference states. The changed paths are those since the start commit, with uncommitted and untracked files, as the candidate gate reads them. The command asks `bin/ci-build-plan --pull-request` which CI jobs those paths select, and `bin/ci-units plan` which Swamp fixture units. When the tree has uncommitted work, both plans read a commit of the working tree that no branch holds. Inside a selected Pest job, it reuses the file-level mapping that the repository already has, `bin/cli-contract`, and adds none. It adds the job's pin tests, which the job selection alone chooses. The parts run in this order.
 
 | Part | Runs when | What it runs |
 | --- | --- | --- |
@@ -643,9 +643,13 @@ The Pest jobs are `gateway-tests`, `cli-tests`, `sdk-tests` and `docs` for the d
 
 - `packages/php-sdk` runs its whole suite. It takes about a second.
 - `apps/gateway`, `apps/cli` and `apps/docs` run their changed test files in one Pest run. `apps/cli` also runs the CLI tests that replay a changed SDK fixture, as `bin/cli-contract --changed <start commit>` names them.
+- `apps/gateway` and `apps/cli` also run their pin test files in that run, whatever changed. The `PIN_TESTS` table in `bin/task-check` lists them.
+- The line's detail counts the changed and pin files and names the pins, such as `0 changed or contract-mapped, 1 pin test files: CommandSurfaceTest`.
 - The whole suite of `apps/gateway`, `apps/cli` and `apps/docs` is a `pest <project> suite` line, `skipped` with the reason "CI runs the full suite".
 
 A job that CI does not select is `not selected`.
+
+A pin test checks a whole surface: a whole intent, a digest or every command's approved options. A change far from it can break it, so no file mapping finds it. Gateway: `GatewayRuntimeFilesTest` (the recipe digests), `NestedFleetHostingTest`, `ConnThreadStartTest`, `ProofRunCopiesTest`, `InstanceNodeServiceTargetsTest` and `CollectionAccessContractTest`. CLI: `CommandSurfaceTest`. Add a test to the table when CI's full suite catches a break in it that the check missed, and it fits the budget. Together they take about 37 seconds in a warm copy with one process: 34 for the Gateway and 3 for the CLI.
 
 The Swamp checkers read committed `HEAD` and the tracked files. When the tree has uncommitted work, `swamp-shape` runs in a temporary Git worktree of the candidate commit and removes it afterwards, so an untracked Swamp file is checked too. A SIGTERM, such as Orbit's outer timeout, ends the check through its cleanup, which removes the worktree.
 
@@ -675,7 +679,7 @@ A fixture unit whose fixture declares a host program in `host_programs` does not
 
 #### What it leaves to CI
 
-The scoped check does not run Rector, the full PHPStan analysis or the Gateway, CLI and docs Pest suites. Nor does it run the web app checks, Rust formatting, the Generated contracts job, the Swamp shape fixtures outside the plan, or Swamp workflow validation. It also leaves out a fixture unit whose declared host program the copy lacks. It does not fix files: Pint runs with `--test`. CI runs all of these on the handoff commit.
+The scoped check does not run Rector, the full PHPStan analysis or the Gateway, CLI and docs Pest suites beyond the changed, contract-mapped and pin test files. Nor does it run the web app checks, Rust formatting, the Generated contracts job, the Swamp shape fixtures outside the plan, or Swamp workflow validation. It also leaves out a fixture unit whose declared host program the copy lacks. It does not fix files: Pint runs with `--test`. CI runs all of these on the handoff commit.
 
 #### Its tests
 
@@ -690,9 +694,10 @@ The seeded file holds one change set for each real failure that CI caught after 
 
 - From #3713: an SDK Pest test and a strict docs-lint finding.
 - From #3715: a PHPStan error, a stale fixture case population and a flow chart finding.
+- From #3854: a CLI option added in app code alone, which `CommandSurfaceTest` pins.
 - An uncommitted Swamp file that breaks a shape rule.
 
-Each case applies its change set in a scratch clone of the checkout and runs the part that must fail. The cases need the vendor folders of `packages/php-sdk` and `apps/docs`, Deno and Node.
+Each case applies its change set in a scratch clone of the checkout and runs the part that must fail. The cases need the vendor folders of `packages/php-sdk`, `apps/cli` and `apps/docs`, Deno and Node. A case asserts only its own part: a Pest part whose project has no vendor folder in the clone, such as the Gateway pins that a CLI change selects, fails there too.
 
 ### Gateway test databases
 

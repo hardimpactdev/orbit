@@ -1,14 +1,16 @@
-// Reads a waiting T3 run's question, or interrupts that run, through the stock T3 server's own WebSocket RPC in a task copy
-// (docs/cli/task/copy-turn.mmd). task-copy-turn.yml runs it as agent in the copy, on stdin of the runtime's Node: `node - T3 read THREAD`
-// and `node - T3 interrupt THREAD RUN REQUESTS`, T3 being the admitted path of T3's command and REQUESTS the stored request ids joined by
-// newlines. Stock T3's CLI can neither read a question nor stop a run; its server can, for a session that
+// Reads a waiting T3 run's question, or interrupts that run, or stops a thread's active run, through the stock T3 server's own WebSocket
+// RPC in a task copy (docs/cli/task/copy-turn.mmd). task-copy-turn.yml runs it as agent in the copy, on stdin of the runtime's Node:
+// `node - T3 read THREAD`, `node - T3 interrupt THREAD RUN REQUESTS` and `node - T3 stop THREAD`, T3 being the admitted path of T3's
+// command and REQUESTS the stored request ids joined by newlines. `stop` ends the run of a turn that is over in Orbit: one its bound cut,
+// or an earlier turn's. Both stops take one path: T3's `run.interrupt`, then the wait for the run's end. Stock T3's CLI can neither read
+// a question nor stop a run; its server can, for a session that
 // `t3 auth session issue` grants. The session lives only in this process: it is never written, printed or passed as an argument, and it
 // is revoked before the exit. One JSON object goes to stdout; the phase writes it to the run folder and the result step bounds it.
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-// The shortest session that outlives one read, or one interrupt and its wait for the run to end.
+// The shortest session that outlives one read, or one interrupt or stop and its wait for the run to end.
 const SessionTtl = "1m";
 const PollMs = 1000;
 // Everything fits the phase's 60 s bound: the issue gets 10 s, the RPC work and the wait for the run's end what is left of 42 s, and
@@ -25,8 +27,8 @@ const ReadBytes = 150000;
 const Over = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
 
 const [T3, command, threadId, runId, stored] = process.argv.slice(2);
-if (!T3 || !["read", "interrupt"].includes(command) || !threadId || (command === "interrupt" && (!runId || !stored))) {
-    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS\n");
+if (!T3 || !["read", "interrupt", "stop"].includes(command) || !threadId || (command === "interrupt" && (!runId || !stored))) {
+    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 stop THREAD\n");
     process.exit(64);
 }
 
@@ -78,13 +80,15 @@ const question = (asked) => ({
     ...(asked.required === undefined ? {} : { required: asked.required === true }),
 });
 
-/** The thread's runs that are not over and every pending request with its questions. */
+/** Every run of the thread with its state, the runs that are not over, and every pending request with its questions. */
 async function state(rpc) {
     const projection = await rpc.call("orchestration.getThreadProjection", { threadId });
     const pending = projection.runtimeRequests.filter((request) => request.status === "pending");
     const items = projection.turnItems.filter((item) => item.type === "user_input_request");
+    const all = projection.runs.map((run) => ({ id: run.id, status: run.status }));
     return {
-        runs: projection.runs.filter((run) => !Over.has(run.status)).map((run) => ({ id: run.id, status: run.status })),
+        all,
+        runs: all.filter((run) => !Over.has(run.status)),
         requests: pending.map((request) => ({ request_id: request.id, kind: request.kind,
             questions: (items.find((item) => item.requestId === request.id)?.questions ?? []).map(question) })),
     };
@@ -92,6 +96,23 @@ async function state(rpc) {
 
 /** The run may be stopped only when every pending request is a question Orbit can store whole: no approval, no empty request. */
 const stoppable = (seen) => seen.requests.length > 0 && seen.requests.every((request) => request.kind === "user_input" && request.questions.length > 0);
+const live = (seen, run) => seen.runs.some((open) => open.id === run);
+
+/**
+ * The one stop path of `interrupt` and `stop`: T3's `run.interrupt` for the run, then a wait for its end that takes what is left of the
+ * deadline, keeping one poll's time for its last read. A refused interrupt is not waited for.
+ */
+async function interrupt(rpc, run, reason) {
+    let error = null;
+    await rpc.call("orchestration.dispatchCommand", { type: "run.interrupt", commandId: `orbit:${randomUUID()}`, threadId, runId: run, reason })
+        .catch((cause) => { error = cause.message; });
+    let after = await state(rpc);
+    while (error === null && live(after, run) && left() > 2 * PollMs) {
+        await new Promise((resolve) => setTimeout(resolve, PollMs));
+        after = await state(rpc);
+    }
+    return { error, after };
+}
 
 let raw = "";
 let issued = null;
@@ -109,28 +130,27 @@ try {
     rpc = await connect();
     if (command === "read") {
         const seen = await state(rpc);
-        out = { ...seen, stoppable: stoppable(seen) && Buffer.byteLength(JSON.stringify(seen)) < ReadBytes };
-    } else {
+        const read = { runs: seen.runs, requests: seen.requests };
+        out = { ...read, stoppable: stoppable(seen) && Buffer.byteLength(JSON.stringify(read)) < ReadBytes };
+    } else if (command === "interrupt") {
         // Only the run whose questions the phase stored, while it waits for exactly those: a run that someone answered meanwhile, or that
         // now asks something else, goes on.
-        const live = (seen) => seen.runs.some((run) => run.id === runId);
         const wanted = [...new Set(stored.split("\n"))].sort();
         const before = await state(rpc);
         const asking = before.requests.map((request) => request.request_id).sort();
-        let error = null;
-        if (live(before) && stoppable(before) && JSON.stringify(asking) === JSON.stringify(wanted)) {
-            await rpc.call("orchestration.dispatchCommand", { type: "run.interrupt", commandId: `orbit:${randomUUID()}`, threadId, runId,
-                reason: "Orbit ended the turn at its question; the answer comes as the next turn." }).catch((cause) => { error = cause.message; });
+        const { error, after } = live(before, runId) && stoppable(before) && JSON.stringify(asking) === JSON.stringify(wanted)
+            ? await interrupt(rpc, runId, "Orbit ended the turn at its question; the answer comes as the next turn.")
+            : { error: "The run no longer waits for the stored questions: it was answered, or it asks something else.", after: await state(rpc) };
+        out = { interrupted: error === null && !live(after, runId), error, runs: after.runs, pending: after.requests.length };
+    } else {
+        // The run of a turn that is over in Orbit: whatever it does, it goes. Stopped only once T3 shows the thread with no active run.
+        const active = (await state(rpc)).runs.at(-1);
+        if (active === undefined) {
+            out = { stopped: false, run: null, state: null };
         } else {
-            error = "The run no longer waits for the stored questions: it was answered, or it asks something else.";
+            const { error, after } = await interrupt(rpc, active.id, "Orbit stopped the run: its turn is over in Orbit, cut by its bound, cancelled or lost.");
+            out = { stopped: error === null && after.runs.length === 0, run: active.id, state: after.all.find((run) => run.id === active.id)?.status ?? active.status };
         }
-        // The wait for the run's end takes what is left of the deadline, keeping one poll's time for its last read.
-        let after = await state(rpc);
-        while (error === null && live(after) && left() > 2 * PollMs) {
-            await new Promise((resolve) => setTimeout(resolve, PollMs));
-            after = await state(rpc);
-        }
-        out = { interrupted: error === null && !live(after), error, runs: after.runs, pending: after.requests.length };
     }
 } finally {
     rpc?.close();

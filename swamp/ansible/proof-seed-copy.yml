@@ -1,0 +1,205 @@
+---
+# The seed copy of the proof default to one CI Node (docs/cli/instance/seed-copy.mmd,
+# docs/reference/development-containers.md#the-seed-on-each-ci-node). The workflow runs one tag per step for each target, named by
+# ORBIT_TARGET:
+#   certificate: on the CI Node, read the Incus server certificate and check that Incus listens where the converge put it.
+#   copy: on the default's Node, as root, add the remote of the CI Node when it is missing, check its certificate, then push the inner
+#         volume and the container with `--refresh --mode=push`.
+#   check: on the CI Node, the holder and its volume hold the seed snapshot that the run was admitted for.
+#   result: on the Swamp Node, the outcome of every target in `result.json`, a list of `{node_id, status, ...}`.
+# Each target writes `target-<id>.json` in the run folder: `{"status": "succeeded"}` after its check, or `{"status": "failed",
+# "detail": ...}` at its first failed phase. A later phase of a failed target does nothing.
+- name: Pin the two Nodes and address them
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [certificate, copy, check]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    target: "{{ intent.targets | selectattr('node_id', 'equalto', lookup('ansible.builtin.env', 'ORBIT_TARGET') | int) | first }}"
+    nodes:
+      - {name: seed_source, ssh: "{{ intent.source.ssh_execution }}"}
+      - {name: seed_target, ssh: "{{ target.ssh_execution }}"}
+  tasks:
+    # A target that failed in an earlier phase gets no hosts, so the later plays of this run do nothing for it.
+    - name: Read the outcome so far
+      ansible.builtin.stat: { path: "{{ run }}/target-{{ target.node_id }}.json" }
+      register: seed_outcome
+    - name: Skip a target that failed in an earlier phase
+      ansible.builtin.meta: end_play
+      when: seed_outcome.stat.exists
+    - name: Pin the host keys of both Nodes
+      ansible.builtin.known_hosts:
+        path: "{{ run }}/known_hosts"
+        name: "{{ item.0.ssh.target.host if item.0.ssh.target.port == 22 else '[' ~ item.0.ssh.target.host ~ ']:' ~ item.0.ssh.target.port }}"
+        key: >-
+          {{ item.0.ssh.target.host if item.0.ssh.target.port == 22 else '[' ~ item.0.ssh.target.host ~ ']:' ~ item.0.ssh.target.port }}
+          {{ item.1 }}
+        state: present
+      check_mode: false
+      loop: "{{ nodes | subelements('ssh.target.host_keys') }}"
+      loop_control: { label: "{{ item.0.name }}" }
+    - name: Address both Nodes
+      ansible.builtin.add_host:
+        name: "{{ item.name }}"
+        groups: ["{{ item.name }}"]
+        ansible_host: "{{ item.ssh.target.host }}"
+        ansible_user: "{{ item.ssh.target.user }}"
+        ansible_port: "{{ item.ssh.target.port }}"
+        ansible_ssh_private_key_file: "{{ item.ssh.identity_file }}"
+        seed_intent: "{{ intent }}"
+        seed_target: "{{ target }}"
+      loop: "{{ nodes }}"
+      loop_control: { label: "{{ item.name }}" }
+
+- name: Read the certificate of the CI Node
+  hosts: seed_target
+  gather_facts: false
+  become: true
+  tags: [certificate]
+  vars: &phase
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    outcome: "{{ run }}/target-{{ seed_target.node_id }}.json"
+  tasks:
+    - name: Read the certificate
+      block:
+        - name: Read the Incus listener
+          ansible.builtin.command: { argv: [incus, config, get, core.https_address] }
+          register: seed_listener
+          changed_when: false
+        - name: Require the listener of the seed
+          ansible.builtin.assert:
+            that: seed_listener.stdout | trim == seed_target.listen
+            fail_msg: "Incus does not listen on {{ seed_target.listen }}: a ci-runner converge of the Node adds the listener and the trust"
+            quiet: true
+        - name: Read the server certificate
+          ansible.builtin.slurp: { src: /var/lib/incus/server.crt }
+          register: seed_server
+        - name: Keep it in the run folder
+          ansible.builtin.copy:
+            content: "{{ seed_server.content | b64decode }}"
+            dest: "{{ run }}/certificate-{{ seed_target.node_id }}.pem"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          vars: &local
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue: &failed
+        - name: Record the failed phase
+          ansible.builtin.copy:
+            content: "{{ {'status': 'failed', 'failed_phase': ansible_run_tags | first,
+              'detail': ansible_failed_result.msg | default('') ~ ' ' ~ ansible_failed_result.stderr | default('')} | to_json }}"
+            dest: "{{ outcome }}"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          vars: *local
+        - name: Fail the phase
+          ansible.builtin.fail: { msg: "{{ ansible_failed_result.msg | default('the phase failed') }}" }
+
+- name: Push the seed from the default's Node
+  hosts: seed_source
+  gather_facts: false
+  become: true
+  tags: [copy]
+  vars:
+    <<: *phase
+    project_args: [--project, "{{ seed_intent.project }}", --target-project, "{{ seed_intent.project }}"]
+    remote: "{{ seed_target.remote }}"
+  tasks:
+    - name: Push the seed
+      block:
+        - name: Read the remotes of root
+          ansible.builtin.command: { argv: [incus, remote, list, --format, json] }
+          register: seed_remotes
+          changed_when: false
+        - name: Add the remote of the CI Node
+          when: remote not in (seed_remotes.stdout | from_json)
+          ansible.builtin.command:
+            argv: [incus, remote, add, "{{ remote }}", "https://{{ seed_target.listen }}", --accept-certificate, --auth-type, tls]
+          changed_when: true
+        - name: Read the certificate that root stored for the remote
+          ansible.builtin.slurp: { src: "/root/.config/incus/servercerts/{{ remote }}.crt" }
+          register: seed_stored
+        - name: Require the certificate read on the CI Node
+          ansible.builtin.assert:
+            that: (seed_stored.content | b64decode | trim) == (lookup('ansible.builtin.file', run ~ '/certificate-' ~ seed_target.node_id ~ '.pem') | trim)
+            fail_msg: "The remote {{ remote }} has another server certificate than the CI Node"
+            quiet: true
+        # An instance copy does not take its attached custom volumes, so the inner volume goes first, and the container's disk names it.
+        - name: Push the inner volume
+          when: seed_intent.source.inner_volume is not none
+          ansible.builtin.command:
+            argv: >-
+              {{ ['timeout', '3600', 'incus', 'storage', 'volume', 'copy',
+                  seed_intent.pool ~ '/' ~ seed_intent.source.inner_volume, remote ~ ':' ~ seed_intent.pool ~ '/' ~ seed_intent.holder_volume,
+                  '--refresh', '--mode=push'] + project_args }}
+          changed_when: true
+        - name: Push the container
+          ansible.builtin.command:
+            argv: >-
+              {{ ['timeout', '3600', 'incus', 'copy', seed_intent.source.container, remote ~ ':' ~ seed_intent.holder,
+                  '--refresh', '--mode=push', '--device', 'eth0,ipv4.address=', '--device', 'eth0,security.acls=' ~ seed_intent.holder_nic_acl]
+                 + (['--device', 'inner-pool,source=' ~ seed_intent.holder_volume] if seed_intent.source.inner_volume is not none else [])
+                 + project_args }}
+          changed_when: true
+      rescue: *failed
+
+- name: Check the holder on the CI Node
+  hosts: seed_target
+  gather_facts: false
+  become: true
+  tags: [check]
+  vars: *phase
+  tasks:
+    - name: Check the holder
+      block:
+        - name: Read the holder's snapshots
+          ansible.builtin.command:
+            argv: [incus, query, "--", "/1.0/instances/{{ seed_intent.holder }}/snapshots?project={{ seed_intent.project }}&recursion=1"]
+          register: seed_holder
+          changed_when: false
+        - name: Read the volume's snapshots
+          when: seed_intent.source.inner_volume is not none
+          ansible.builtin.command:
+            argv: >-
+              {{ ['incus', 'query', '--', '/1.0/storage-pools/' ~ seed_intent.pool ~ '/volumes/custom/' ~ seed_intent.holder_volume
+                  ~ '/snapshots?project=' ~ seed_intent.project ~ '&recursion=1'] }}
+          register: seed_volume
+          changed_when: false
+        - name: Require the seed snapshot in both halves
+          ansible.builtin.assert:
+            that:
+              - seed_intent.snapshot in (seed_holder.stdout | from_json | map(attribute='name') | list)
+              - seed_intent.source.inner_volume is none or seed_intent.snapshot in (seed_volume.stdout | from_json | map(attribute='name') | list)
+            fail_msg: "The holder does not hold {{ seed_intent.snapshot }}"
+            quiet: true
+        - name: Record the passed target
+          ansible.builtin.copy: { content: '{"status": "succeeded"}', dest: "{{ outcome }}", mode: "0600" }
+          delegate_to: localhost
+          become: false
+          vars: *local
+      rescue: *failed
+
+- name: Report every target
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [result]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+  tasks:
+    - name: Read each target's outcome
+      ansible.builtin.set_fact:
+        seed_targets: >-
+          {{ seed_targets | default([]) + [{'node_id': item.node_id} | combine((lookup('ansible.builtin.file',
+             run ~ '/target-' ~ item.node_id ~ '.json', errors='ignore') or '{"status": "failed", "detail": "The target did not finish"}') | from_json)] }}
+      loop: "{{ intent.targets }}"
+      loop_control: { label: "{{ item.node_id }}" }
+    - name: Write the result
+      ansible.builtin.copy: { content: "{{ {'targets': seed_targets | default([])} | to_json }}", dest: "{{ run }}/result.json", mode: "0600" }

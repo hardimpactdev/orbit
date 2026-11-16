@@ -7,6 +7,7 @@ namespace App\Infrastructure\Nodes;
 use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Proof\ProofSeeds;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Models\Node;
@@ -36,6 +37,19 @@ final readonly class NodeRoleFirewallInput
                 $desired[] = new UfwManagedRule($rule->shape, ['sudo', 'ufw', 'insert', '1', ...array_slice($rule->arguments, 2)]);
             }
         }
+        if ($role === RoleName::CiRunner) {
+            // The deny goes in first, then the allow in front of it: the allow is the first match for the default's Node.
+            $sender = app(ProofSeeds::class)->sender($node);
+            $listener = $this->catalog->proofSeedListener($node, $sender);
+            $rules = [$listener['deny'], ...($listener['allow'] === null ? [] : [$listener['allow']])];
+            if ($sender === null) {
+                $remove = [...$remove, ...$this->proofSeedRules($node)];
+            } else {
+                foreach ($rules as $rule) {
+                    $desired[] = new UfwManagedRule($rule->shape, ['sudo', 'ufw', 'insert', '1', ...array_slice($rule->arguments, 2)]);
+                }
+            }
+        }
         $arguments = static fn (UfwManagedRule $rule, bool $delete): array => $delete ? $rule->removalArguments() : ['ufw', ...array_slice($rule->arguments, 2)];
 
         return ['desired' => array_map(static fn (UfwManagedRule $rule): array => $arguments($rule, false), $desired),
@@ -52,7 +66,21 @@ final readonly class NodeRoleFirewallInput
     /** @return array<string, mixed> */
     public function remove(Node $node, RoleName $role): array
     {
-        return $this->rules([], $this->roleRules($node, $role, true));
+        return $this->rules([], [...$this->roleRules($node, $role, true), ...($role === RoleName::CiRunner ? $this->proofSeedRules($node) : [])]);
+    }
+
+    /**
+     * The seed listener's rules that a removal deletes: the deny, and the allow of the default's Node while the proof Project has a
+     * default. With no default, no allow can be named.
+     *
+     * @return list<UfwManagedRule>
+     */
+    public function proofSeedRules(Node $node): array
+    {
+        $default = app(ProofSeeds::class)->defaultNode();
+        $listener = $this->catalog->proofSeedListener($node, $default);
+
+        return [$listener['deny'], ...($listener['allow'] === null ? [] : [$listener['allow']])];
     }
 
     /** @return array<string, mixed> */

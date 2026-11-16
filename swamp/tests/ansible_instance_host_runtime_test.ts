@@ -113,6 +113,7 @@ Deno.test({
                                 static_php: {
                                     php_version: "8.5.12",
                                     extensions: ["core", "pdo_pgsql"],
+                                    cli_extensions: [],
                                 },
                             }],
                         },

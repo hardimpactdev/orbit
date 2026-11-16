@@ -18,6 +18,7 @@ use App\Domain\Instances\InstanceRestoreProjection;
 use App\Domain\Instances\NativeInstanceTransferProjection;
 use App\Domain\Instances\NodeServiceTargetOperation;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
+use App\Domain\Proof\ProofSeedCopyProjection;
 
 return [
     // The end check is the Route create child; the journal clear after it fails the run too.
@@ -115,6 +116,10 @@ return [
     // The link read back after the swap is the end check; every step runs on Node 209 over official SSH.
     'instance.rollback' => ['workflow' => 'operation-instance-rollback', 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'rollback', 'step' => 'Check the selection', 'native' => true], 'projection' => InstanceRollbackProjection::class],
+    // The seed of the proof default on each other Node that offers proof places (docs/cli/instance/seed-copy.mmd): the result step
+    // prints each target's outcome, also after a failed pin or target.
+    'instance.seed_copy' => ['workflow' => 'operation-instance-seed-copy', 'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'seed-copy', 'step' => 'result'], 'projection' => ProofSeedCopyProjection::class],
     'instance.run_steps' => ['workflow' => 'operation-instance-setup-direct', 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'setup', 'step' => 'Check every step passed', 'native' => true], 'projection' => InstanceSetupProjection::class],
 ];

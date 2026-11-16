@@ -298,3 +298,18 @@ The converge checks root's largest subordinate range in both `/etc/subuid` and `
 So a Node with no `containers` block and no `ci` setting needs `13,172,736 + S + 2 × 101,000,000` IDs: 215,172,736 with no nested Instance yet, then 101,000,000 more for each full-size runtime and 1,165,536 for each converted one. Incus reads the ranges when its daemon starts; the converge reads the files.
 
 Clearing the switch removes nothing: the nested project, its profile and the module file stay. Runtimes that record `orbit-instances-nested` keep their ID maps in the demand and their project in the shared-folder refresh. Only the two spare maps leave the demand.
+
+### A CI Node
+
+A [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) has nested-fleet hosting on without the switch: its `ci-runner` converge prepares it. Every rule that needs the switch on, such as `InstancePlacement::keepsFleet`, also holds for such a Node. Its demand is:
+
+`13,172,736 + (P + 2) × D`
+
+| Term | Meaning |
+| --- | --- |
+| `13,172,736` | The normal Instance demand, as above: the branch is the same |
+| `P` | The Node's CI places. Each place holds at most one proof copy |
+| `D` | The recorded [ID map size](/reference/development-containers#the-id-map-size) of the proof Project's default, which every copy and every seed holder on the Node takes. 101,000,000 while that Project has no default |
+| `2` | The [seed holder](/reference/development-containers#the-seed-on-each-ci-node), and a snapshot that a seed copy adds to it, which Incus maps for a moment as it maps a new container |
+
+Task IDs, `S` and the two spare maps do not apply: a CI Node has no task container places and no nested default. The converge checks and refuses as above, and it never enlarges a range.

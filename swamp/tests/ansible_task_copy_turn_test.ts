@@ -3,6 +3,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
+import { behavior, type Turn } from "../extensions/behaviors/operations/task-copy-turn/mod.ts";
 
 type Step = { name: string; dependsOn?: { step: string; condition: { type: string } }[]; task: { behaviorName?: string; behaviorType?: string; expr?: string; inputs: Record<string, unknown> & { run?: string; env?: Record<string, string> } } };
 const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-task-copy-turn.yaml", import.meta.url))) as { jobs: { name: string; steps: Step[] }[] };
@@ -24,9 +25,10 @@ Deno.test("the workflow writes only the turn's target into the phase input, runs
     assertEquals(evaluate(input.task.inputs.intent), { runtime: intent.runtime, ssh_execution: ssh, turn });
     assertEquals(evaluate(input.task.inputs.path), `/tmp/orbit-ansible-${runId}/intent.json`);
     assert(run.task.inputs.run!.endsWith('"$ORBIT_ANSIBLE/task-copy-turn.yml"'));
-    // The turn and its kill grace, six T3 or helper calls of up to 60 s (the settle's list, the list of a continued turn, the question's
-    // read and stop, the list and show after it) and sixteen Git commands of up to 20 s (the settle's restore, a reviewer's set-up and restore).
-    assert(Number(/^timeout (\d+) /.exec(run.task.inputs.run!)![1]) > turn.seconds + 30 + 6 * 60 + 16 * 20);
+    // The turn and its kill grace, eight T3 or helper calls of up to 60 s (the settle's list and its stops of two earlier runs, the list of
+    // a continued turn, the question's read and stop or a cut run's list and stop, the list and show after it) and sixteen Git commands of
+    // up to 20 s (the settle's restore, a reviewer's set-up and restore).
+    assert(Number(/^timeout (\d+) /.exec(run.task.inputs.run!)![1]) > turn.seconds + 30 + 8 * 60 + 16 * 20);
     const env = Object.fromEntries(Object.entries(run.task.inputs.env!).map(([key, value]) => [key, String(evaluate(value))]));
     assertEquals([env.ANSIBLE_CONFIG, env.ORBIT_ANSIBLE, env.ORBIT_RUN], [`${shipped}/ansible.cfg`, shipped, `/tmp/orbit-ansible-${runId}`]);
     assertEquals(String(evaluate(run.task.behaviorName)), "task-copy-turn-9-2685");
@@ -53,7 +55,9 @@ const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-play
 
 // Validates the Incus boundary, then answers as T3's CLI, the question helper and Git would. `T3_START` picks the start's or the send's
 // behaviour; `waiting` asks a question, `missing` lists no thread of the turn's title and `listfail` fails the list. `T3_ASK` is the
-// helper's read: `questions`, `none` (no pending request), `approval`, `large` (not stoppable) or `fail`. `T3_TREE` is the checkout: `dirty` has changes before the turn,
+// helper's read: `questions`, `none` (no pending request), `approval`, `large` (not stoppable) or `fail`. `T3_STOP` is the helper's stop:
+// `end` ends the run, `refuse` is a stop T3 refused, `idle` finds no active run. A run whose wait the bound cut (`timeout`), and an earlier
+// turn's run, never end on their own: T3 lists their thread active until a stop ends it. `T3_TREE` is the checkout: `dirty` has changes before the turn,
 // `stuck` keeps changes after the restore, `moved` has the branch at another commit after it, and `locked` fails the reset.
 const SHIM = `#!/usr/bin/env python3
 import json, os, sys
@@ -66,6 +70,10 @@ assert args[7:11] == ['/usr/sbin/runuser', '-u', 'agent', '--'], args
 assert args[11:15] == ['/usr/bin/env', '-i', 'HOME=/home/agent', 'PATH=/usr/local/bin:/usr/bin:/bin'], args
 rest = args[15:]
 thread = 'mcp:66105c2c'
+# The threads whose run an earlier stop ended.
+stopped = [] if os.environ.get('T3_STOP') == 'refuse' else [
+    json.loads(line)['args'][21] for line in list(open(os.environ['T3_CALLS']))[:-1] if json.loads(line)['args'][15:16] == ['/usr/bin/timeout']
+    and json.loads(line)['args'][17:21] == ['/opt/orbit-runtime/current/bin/node', '-', os.environ['T3_PROGRAM'], 'stop']]
 if rest[:5] == ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace']:
     git = rest[5:]
     tree = os.environ.get('T3_TREE', 'clean')
@@ -118,6 +126,12 @@ if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
 if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node', '-']:
     assert stdin == open(os.environ['T3_HELPER']).read(), 'the shipped helper arrives on stdin'
     assert rest[4] == os.environ['T3_PROGRAM'], rest
+    if rest[5] == 'stop':
+        assert rest[6:] in (['earlier'], [thread]), rest
+        run = 'run:earlier' if rest[6] == 'earlier' else 'run:1'
+        print(json.dumps({'end': {'stopped': True, 'run': run, 'state': 'interrupted'}, 'refuse': {'stopped': False, 'run': run, 'state': 'running'},
+                          'idle': {'stopped': False, 'run': None, 'state': None}}[os.environ.get('T3_STOP', 'end')]), end='')
+        sys.exit(0)
     if rest[5:] == ['read', thread]:
         ask = os.environ.get('T3_ASK', 'questions')
         if ask == 'fail':
@@ -164,52 +178,60 @@ if rest[3:5] == ['thread', 'list']:
     if os.environ['T3_START'] == 'garbled':
         print('not json')
         sys.exit(0)
-    earlier = [{'threadId': 'earlier', 'status': os.environ['T3_SETTLE'], 'title': 'Orbit task 4970 thread 76'}] if os.environ.get('T3_SETTLE') else []
-    print(json.dumps([{'threadId': thread, 'status': 'completed', 'title': t} for t in titles] + [{'threadId': 'other', 'status': 'completed', 'title': 'Another'}] + earlier))
+    earlier = [{'threadId': 'earlier', 'status': 'interrupted' if 'earlier' in stopped else os.environ['T3_SETTLE'], 'title': 'Orbit task 4970 thread 76'}] if os.environ.get('T3_SETTLE') else []
+    status = ('interrupted' if thread in stopped else 'running') if os.environ['T3_START'] == 'timeout' else 'completed'
+    print(json.dumps([{'threadId': thread, 'status': status, 'title': t} for t in titles] + [{'threadId': 'other', 'status': 'completed', 'title': 'Another'}] + earlier))
     sys.exit(0)
 assert rest[3:8] == ['thread', 'show', '--messages', '200', '--json'] and rest[8] == thread, rest
 print(json.dumps({'thread': {'threadId': thread, 'status': 'running'}, 'messages': [{'role': 'user', 'runId': 'run:1', 'text': 'Subtask: Doctor note'}]}))
 `;
 
 type Phase = { ok: boolean; output: string; resumed: Record<string, unknown> | null; review: Record<string, unknown> | null; model: Record<string, unknown> | null; detached: boolean; launched: boolean;
-    start: Record<string, unknown> | null; settle: Record<string, unknown> | null; ask: Record<string, unknown> | null; interrupt: Record<string, unknown> | null; read: Record<string, unknown> | null;
-    restore: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[] };
+    start: Record<string, unknown> | null; settle: Record<string, unknown> | null; ask: Record<string, unknown> | null; interrupt: Record<string, unknown> | null;
+    stop: Record<string, unknown> | null; read: Record<string, unknown> | null; restore: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[];
+    // The turn as the result step reads this run folder.
+    result: Turn };
 async function phase(start: string, change: Record<string, unknown> = {}, tree = "clean", ask = "questions", settle = "", copy: Record<string, string> = {}): Promise<Phase> {
     const folder = Deno.makeTempDirSync();
+    // The run folder in the result step's form, so the shipped result step reads what the phase wrote.
+    const run = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
     try {
         Deno.mkdirSync(`${folder}/bin`);
-        Deno.mkdirSync(`${folder}/run`);
+        Deno.mkdirSync(run);
         Deno.writeTextFileSync(`${folder}/calls`, "");
         Deno.writeTextFileSync(`${folder}/bin/incus`, SHIM);
         Deno.chmodSync(`${folder}/bin/incus`, 0o755);
-        Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ runtime: intent.runtime, ssh_execution: ssh, turn: { ...turn, ...change } }));
+        Deno.writeTextFileSync(`${run}/intent.json`, JSON.stringify({ runtime: intent.runtime, ssh_execution: ssh, turn: { ...turn, ...change } }));
         const done = await new Deno.Command("ansible-playbook", {
             args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_become=false", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
                 `${shipped}/task-copy-turn.yml`],
-            env: { ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_ASK: ask, T3_SETTLE: settle, T3_PROGRAM: String(change.t3 ?? turn.t3), ...copy,
+            env: { ORBIT_RUN: run, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_ASK: ask, T3_SETTLE: settle, T3_PROGRAM: String(change.t3 ?? turn.t3), ...copy,
                 T3_HELPER: `${shipped}/t3_copy_rpc.mjs`,
                 ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
         const read = (path: string) => { try { return Deno.readTextFileSync(path); } catch { return null; } };
-        const json = (name: string) => { const text = read(`${folder}/run/${name}`); return text === null ? null : JSON.parse(text); };
+        const json = (name: string) => { const text = read(`${run}/${name}`); return text === null ? null : JSON.parse(text); };
         return {
             ok: done.success,
             output: new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr),
             resumed: json("continue.json"),
             review: json("review.json"),
             model: json("model.json"),
-            detached: read(`${folder}/run/detach.json`) !== null,
-            launched: read(`${folder}/run/launch.json`) !== null,
+            detached: read(`${run}/detach.json`) !== null,
+            launched: read(`${run}/launch.json`) !== null,
             start: json("start.json"),
             ask: json("ask.json"),
             settle: json("settle.json"),
             interrupt: json("interrupt.json"),
+            stop: json("stop.json"),
             read: json("read.json"),
             restore: json("restore.json"),
             calls: (read(`${folder}/calls`) ?? "").split("\n").filter(Boolean).map((line) => JSON.parse(line)),
+            result: (await behavior.methods.result.execute({ folder: run }, { writeResource: () => Promise.resolve() })).turn,
         };
     } finally {
         Deno.removeSync(folder, { recursive: true });
+        Deno.removeSync(run, { recursive: true });
     }
 }
 
@@ -317,6 +339,29 @@ Deno.test({ name: "a turn cut by its bound still reads the thread it started; a 
     const unreachable = await phase("unreachable");
     assert(!unreachable.ok, unreachable.output);
     assertEquals([unreachable.launched, unreachable.start, unreachable.read, unreachable.calls.length], [false, null, null, 1]);
+} });
+
+Deno.test({ name: "a turn cut by its bound stops its never-ending run before the read back and reads over; a stop T3 refuses holds", ignore: !available, async fn() {
+    const cut = await phase("timeout");
+    assert(cut.ok, cut.output);
+    // The thread is found by its title, its run stopped, and only then read back.
+    assertEquals(helper(cut.calls), ["stop mcp:66105c2c"]);
+    assertEquals([cut.stop!.stop_exit, JSON.parse(cut.stop!.stop as string)], [0, { stopped: true, run: "run:1", state: "interrupted" }]);
+    const order = cut.calls.map((call) => call.args.slice(15).join(" "));
+    assert(order.findIndex((args) => args.includes(" stop ")) < order.findIndex((args) => args.includes("thread show")), "the stop precedes the read back");
+    // No active run is left, and the turn is over: it fails with its bound and holds nothing.
+    assertEquals([cut.read!.status, cut.result.state, cut.result.error_code, cut.result.ended, cut.result.error],
+        ["interrupted", "failed", "tasks.turn_timeout", true, "The turn ran longer than its bound. Orbit stopped its run."]);
+    // A stop that T3 refuses leaves the run going: the turn is not over, and the next turn stops it.
+    const refused = await phase("timeout", {}, "clean", "questions", "", { T3_STOP: "refuse" });
+    assert(refused.ok, refused.output);
+    assertEquals([JSON.parse(refused.stop!.stop as string).stopped, refused.read!.status, refused.result.ended, refused.result.error],
+        [false, "running", false, "The turn ran longer than its bound. Orbit could not stop its run; the next turn stops it."]);
+    // A cut reviewer's run is stopped before its checkout is restored.
+    const reviewer = await phase("timeout", { candidate });
+    const steps = reviewer.calls.map((call) => call.args.slice(15).join(" "));
+    assert(steps.findIndex((args) => args.includes(" stop ")) < steps.findIndex((args) => args.includes("reset --quiet --hard")), "the stop precedes the restore");
+    assertEquals([reviewer.restore, reviewer.result.ended], [{ restored: true }, true]);
 } });
 
 Deno.test({ name: "an intent outside the admitted shape runs nothing in the copy", ignore: !available, async fn() {
@@ -429,25 +474,44 @@ Deno.test({ name: "a question the helper cannot read stops nothing; a reviewer t
 
 const earlier = { operation_id: 9, title: "Orbit task 4970 thread 76", branch: null };
 
-Deno.test({ name: "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing", ignore: !available, async fn() {
+Deno.test({ name: "an earlier turn whose run T3 shows over is settled before the launch, and stops nothing", ignore: !available, async fn() {
     // A cut wait whose run T3 later completed, and a run whose stop failed and that later ended, are settled; the turn runs.
     for (const status of ["completed", "interrupted"]) {
         const settled = await phase("completed", { settle: [earlier] }, "clean", "questions", status);
         assert(settled.ok, settled.output);
-        assertEquals([settled.settle, settled.launched], [{ list_exit: 0, settled: [9], open: [] }, true], status);
+        assertEquals([settled.settle, settled.launched, helper(settled.calls)], [{ list_exit: 0, settled: [9], open: [], stopped: [] }, true, []], status);
     }
     // T3 holds no thread of the title: no run can go on.
     const gone = await phase("completed", { settle: [earlier] });
     assertEquals([gone.ok, gone.settle!.settled], [true, [9]]);
-    // A run that still goes on, or still waits for an answer, holds: nothing is launched and the work stays.
-    for (const status of ["running", "waiting"]) {
-        const held = await phase("completed", { settle: [earlier] }, "clean", "questions", status);
-        assert(!held.ok && held.output.includes("tasks.copy_turn_unended"), held.output);
-        assertEquals([held.settle, held.launched, held.start], [{ list_exit: 0, settled: [], open: [9] }, false, null], status);
-    }
-    // A list that fails settles nothing.
+    // A list that fails settles nothing and stops nothing.
     const unread = await phase("listfail", { settle: [earlier] });
-    assertEquals([unread.ok, unread.settle, unread.launched], [false, { list_exit: 1, settled: [], open: [9] }, false]);
+    assertEquals([unread.ok, unread.settle, unread.launched, helper(unread.calls)], [false, { list_exit: 1, settled: [], open: [9], stopped: [] }, false, []]);
+} });
+
+Deno.test({ name: "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing", ignore: !available, async fn() {
+    // A cancelled or cut turn whose run never ends, or still waits for an answer: its turn is over in Orbit, so its run is stopped.
+    for (const status of ["running", "waiting"]) {
+        const stopped = await phase("completed", { settle: [earlier] }, "clean", "questions", status);
+        assert(stopped.ok, stopped.output);
+        assertEquals([stopped.settle, stopped.launched, helper(stopped.calls)],
+            [{ list_exit: 0, settled: [9], open: [], stopped: [{ operation_id: 9, run: "run:earlier" }] }, true, ["stop earlier"]], status);
+        const order = stopped.calls.map((call) => call.args.slice(15).join(" "));
+        assert(order.findIndex((args) => args.includes(" stop earlier")) < order.findIndex((args) => args.includes("--kill-after=30")), "the stop precedes the launch");
+        assertEquals([stopped.result.state, stopped.result.settled], ["done", [9]]);
+        // A stop that T3 refuses leaves the turn unsettled: nothing is touched or launched, and the work stays.
+        const held = await phase("completed", { settle: [earlier] }, "clean", "questions", status, { T3_STOP: "refuse" });
+        assert(!held.ok && held.output.includes("tasks.copy_turn_unended"), held.output);
+        assertEquals([held.settle, held.launched, held.start], [{ list_exit: 0, settled: [], open: [9], stopped: [] }, false, null], status);
+        assertEquals([held.result.error_code, held.result.settled], ["tasks.copy_turn_unended", []]);
+    }
+    // The run ended between the list and the stop: T3 shows no active run, so the turn is settled with no run stopped.
+    const idle = await phase("completed", { settle: [earlier] }, "clean", "questions", "running", { T3_STOP: "idle" });
+    assertEquals([idle.ok, idle.settle], [true, { list_exit: 0, settled: [9], open: [], stopped: [] }]);
+    // Two turns of one thread: its run is stopped once, and both are settled.
+    const two = await phase("completed", { settle: [earlier, { ...earlier, operation_id: 10 }] }, "clean", "questions", "running");
+    assertEquals([two.ok, helper(two.calls), two.settle!.settled, two.settle!.stopped],
+        [true, ["stop earlier"], [9, 10], [{ operation_id: 9, run: "run:earlier" }, { operation_id: 10, run: "run:earlier" }]]);
 } });
 
 Deno.test({ name: "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched", ignore: !available, async fn() {
@@ -464,9 +528,14 @@ Deno.test({ name: "a reviewer's detach the copy still holds is undone once every
         const held = await phase("completed", { settle: [reviewer] }, tree, "questions", "completed", mark);
         assertEquals([held.ok, held.settle!.open, held.launched, git(held.calls).includes("update-ref -d refs/orbit/review-detach")], [false, [9], false, false], tree);
     }
-    // While the run goes on, the checkout is not touched.
-    const running = await phase("completed", { settle: [reviewer] }, "dirty", "questions", "running", mark);
+    // While the run goes on because T3 refused its stop, the checkout is not touched.
+    const running = await phase("completed", { settle: [reviewer] }, "dirty", "questions", "running", { ...mark, T3_STOP: "refuse" });
     assertEquals([running.ok, git(running.calls), running.settle!.open], [false, [], [9]]);
+    // A run the stop ended can no longer write: the checkout is restored after the stop.
+    const ended = await phase("completed", { settle: [reviewer] }, "dirty", "questions", "running", mark);
+    assertEquals([ended.ok, ended.settle!.settled, git(ended.calls).slice(2, 5)], [true, [9], ["reset --quiet --hard", "clean --quiet -fd", "checkout --quiet task-4970"]]);
+    const steps = ended.calls.map((call) => call.args.slice(15).join(" "));
+    assert(steps.findIndex((args) => args.includes(" stop earlier")) < steps.findIndex((args) => args.includes("reset --quiet --hard")), "the stop precedes the restore");
     // (A) A reviewer turn that never detached, cancelled before its result, beside an implementer's uncommitted work: no mark, so the
     // settle touches nothing, the work stays, and the turn is settled once its run is over.
     const kept = await phase("completed", { settle: [earlier, reviewer] }, "dirty", "questions", "completed");

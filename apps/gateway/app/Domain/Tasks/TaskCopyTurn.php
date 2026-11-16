@@ -24,8 +24,9 @@ use Illuminate\Support\Str;
 final readonly class TaskCopyTurn
 {
     /**
-     * The driver of a copy turn's thread. Orbit stops a copy's run only inside a turn's phase, where it stops a run that asks through
-     * the stock T3 server in the copy; the registry holds no driver for it.
+     * The driver of a copy turn's thread. Orbit stops a copy's run only inside a turn's phase, through the stock T3 server in the copy:
+     * a run that asks, a run cut by the turn's bound, and the run of an earlier turn that is over in Orbit. The registry holds no driver
+     * for it.
      */
     public const string Driver = 't3';
 
@@ -121,35 +122,36 @@ final readonly class TaskCopyTurn
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
             'turn' => ['t3' => $instance->runtime()->firstOrFail()->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
                 'candidate' => $candidate, 'settle' => $settle, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
-                'prompt' => TaskTurnPrompt::compose($task, $prompt)],
+                'prompt' => TaskTurnPrompt::compose($task, $prompt, now())],
         ];
     }
 
     /**
-     * Refuses a check, a publish or a proof of the copy while an earlier turn is not settled: none of them can read T3 in the copy. The
-     * next turn settles it in its own phase.
+     * Refuses a check, a publish or a proof of the copy while an earlier turn is not settled: none of them can read T3 in the copy. It
+     * waits for the next turn, which stops the earlier run and settles it in its own phase.
      */
     public static function refuseUnended(Task $group): void
     {
         $unended = self::unsettled($group)[0] ?? null;
         if ($unended instanceof Operation) {
             throw new ResourceOperationException('tasks.copy_turn_unended', 'An earlier turn may still run in the task copy or left its checkout unrestored. '
-                .'The next task:turn settles it once its run ended; task:cancel ends it with the copy.', 409, details: ['operation_id' => $unended->id]);
+                .'A check, publish or proof waits for the next task:turn, which stops that run and settles it. operation:cancel ends a running turn, '
+                .'and the next turn stops its run.', 409, details: ['operation_id' => $unended->id]);
         }
     }
 
     /**
-     * Refuses to complete a subtask of a task copy's group while a copy turn of the group has not ended its Operation. A turn is admitted
-     * only on the current subtask, so a subtask completed after this check was completed after every turn on it ended: the done rule
-     * (docs/reference/tasks.md#when-the-work-is-done) needs no clock for "reviewed before completed".
+     * Refuses to complete or reopen a subtask of a task copy's group while a copy turn of the group has not ended its Operation. A turn is
+     * admitted only on the current subtask, so a subtask completed after this check was completed after every turn on it ended: the done
+     * rule (docs/reference/tasks.md#when-the-work-is-done) needs no clock for "reviewed before completed".
      */
-    public static function refuseCompletionWhileRunning(Task $group): void
+    public static function refuseSubtaskMoveWhileRunning(Task $group): void
     {
         // A group without a task copy has no copy turns, so the query alone is the rule.
         $running = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
             ->where('kind', OperationKinds::TasksCopyTurn)->whereNotIn('status', OperationStatus::terminalValues())->orderBy('id')->first();
         if ($running instanceof Operation) {
-            throw new ResourceOperationException('tasks.copy_turn_unended', 'A turn still runs in the task copy; complete the subtask once it has ended.', 409,
+            throw new ResourceOperationException('tasks.copy_turn_unended', 'A turn still runs in the task copy; complete or reopen the subtask once it has ended.', 409,
                 details: ['operation_id' => $running->id]);
         }
     }

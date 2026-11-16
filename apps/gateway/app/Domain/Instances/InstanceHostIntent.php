@@ -6,7 +6,9 @@ namespace App\Domain\Instances;
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Data\Nodes\NodeTaskVmContainersData;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
@@ -20,7 +22,9 @@ use LogicException;
 /**
  * The container branch of the `app-dev` role converge (docs/reference/development-containers.md#nodes): the Incus project on the
  * Node's pool, the Instance bridge, the image and the two shared folders. Only a Node on the build list gets it, and never a task
- * VM's own Node: a task VM keeps its checkout workspace. A task VM host does get it, beside its task side: the two sides keep their
+ * VM's own Node: a task VM keeps its checkout workspace. A CI-only Node (ProofCopyHosts::ciOnly) gets the same branch through its
+ * `ci-runner` converge, with its nested part and without the parts that its Caddy would serve: it runs no Caddy
+ * (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node). A task VM host does get it, beside its task side: the two sides keep their
  * own Incus projects, bridges, pools and firewall rules, and the task side keeps the ZFS ARC. The admission that writes allocates
  * the Node's bridge first (`prepare`), and the Node keeps it; the intent only reads it. Null for every other Node, whose converge
  * does what it did before.
@@ -109,9 +113,25 @@ final readonly class InstanceHostIntent
     /** Allocates the Node's bridge in the admission transaction of a role add or converge, before the intent is captured. */
     public function prepare(Node $node): void
     {
-        if ($this->applies($node)) {
+        if ($this->role($node) !== null) {
             $this->bridges->execute($node);
         }
+    }
+
+    /**
+     * The role whose converge runs the branch on the Node: `ci-runner` on a CI-only Node (ProofCopyHosts::ciOnly), `app-dev` on a Node of
+     * the build list, and null for every other Node and for a task VM's own Node.
+     */
+    public function role(Node $node): ?RoleName
+    {
+        if (TaskVm::query()->where('node_id', $node->id)->exists()) {
+            return null;
+        }
+        if (ProofCopyHosts::ciOnly($node)) {
+            return RoleName::CiRunner;
+        }
+
+        return $this->nodes->includes($node) ? RoleName::AppDev : null;
     }
 
     /**
@@ -129,9 +149,11 @@ final readonly class InstanceHostIntent
     public function for(Node $node): ?array
     {
         $admittedAt = (int) now()->format('Uu');
-        if (! $this->applies($node)) {
+        $role = $this->role($node);
+        if ($role === null) {
             return null;
         }
+        $ci = $role === RoleName::CiRunner;
         $architecture = MachineRecipe::architecture($node->architecture)
             ?? throw new ResourceOperationException('instance.host_unavailable', 'The Node architecture is unsupported.', 409);
         $recipe = $this->recipes->currentRecipe();
@@ -147,7 +169,8 @@ final readonly class InstanceHostIntent
         $settings = app(NodeSettingsNormalizer::class)->fromStored($node->settings);
         $taskHost = $settings?->task_vms;
         // Each nested-fleet container takes the map its runtime records. A switched-on Node keeps two spare maps of a new default's size.
-        $nested = $settings?->nested_fleet === true;
+        // A CI Node hosts nested-fleet copies without the switch.
+        $nested = $ci || $settings?->nested_fleet === true;
         $nestedMaps = InstanceRuntime::query()->where('node_id', $node->id)->where('incus_project', InstancePlacement::NestedProject)->pluck('idmap_size');
         $nestedRuntimes = $nestedMaps->count();
         $nestedIds = $nestedMaps->sum(static fn (mixed $size): int => is_int($size) ? $size : throw new LogicException('A nested-fleet runtime records its ID map size.'));
@@ -160,6 +183,9 @@ final readonly class InstanceHostIntent
 
         return [
             'project' => self::Project, 'network' => self::Network, 'nic_acl' => self::NicAcl, 'pool' => self::Pool, 'cidr' => $cidr,
+            // A CI-only Node's converge creates the pool; every other Node's operator provides it
+            // (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
+            ...($ci ? ['create_pool' => true] : []),
             'address' => $gateway.'/'.$subnet->prefixLength(),
             // The image build container takes the bridge's last address, which no Instance gets.
             'build_address' => $last,
@@ -173,7 +199,11 @@ final readonly class InstanceHostIntent
             'bridge_admitted_at' => $admittedAt,
             'bridge_endpoints' => app(InstanceContainer::class)->nodeEndpoints($node),
             'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains()),
-            'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds + $nestedIds + ($nested ? 2 : 0) * self::TaskPlaceIds,
+            // A CI Node needs a map of the proof default's size for each CI place, its seed holder and a snapshot that a seed copy adds
+            // (docs/reference/node-settings.md#a-ci-node).
+            'ids' => (self::Containers + 1) * self::IdMapSize + ($ci
+                ? (ProofCopyHosts::places($node) + 2) * ProofCopyHosts::idMapSize()
+                : $taskIds + $nestedIds + ($nested ? 2 : 0) * self::TaskPlaceIds),
             // A task VM host sizes the ARC for its task side, or keeps the Node's own (task-vm-host-prepare.yml): the Instance side
             // never changes it there.
             'arc' => $taskHost === null,
@@ -187,11 +217,14 @@ final readonly class InstanceHostIntent
             'folders' => InstanceFolderPlan::for($folders),
             // The presented machine name of each container on the Node, which the converge writes into its files (InstanceMachineName).
             'machine_names' => InstanceMachineName::forNode($node),
-            // The redirect of agent development ports on the WireGuard address to Caddy's development listener.
-            'dev_ports' => ['table' => InstanceDevPorts::Table, 'unit' => InstanceDevPorts::TableUnit,
-                'ruleset' => app(InstanceDevPorts::class)->ruleset($node)],
-            // The bridge ACL and UFW admit a container to its own site on the bridge's gateway address (InstanceOwnSite).
-            'own_site' => InstanceOwnSite::for($gateway),
+            // What the Node's Caddy serves, which a CI Node does not run: the redirect of agent development ports on the WireGuard
+            // address to Caddy's development listener, and a container's own site on the bridge's gateway address (InstanceOwnSite),
+            // which the bridge ACL and UFW admit. Without them the converge installs no wake of frozen containers either.
+            ...($ci ? [] : [
+                'dev_ports' => ['table' => InstanceDevPorts::Table, 'unit' => InstanceDevPorts::TableUnit,
+                    'ruleset' => app(InstanceDevPorts::class)->ruleset($node)],
+                'own_site' => InstanceOwnSite::for($gateway),
+            ]),
             // `incus exec` sessions get the container environment from the profile; the image gives it to units and login shells.
             'profile_config' => [
                 'environment.PATH' => InstanceImage::Path,
@@ -220,10 +253,5 @@ final readonly class InstanceHostIntent
                 'destination_port' => InstanceDevPorts::First.'-'.InstanceDevPorts::Last, 'state' => 'enabled'],
             ['action' => 'allow', 'protocol' => 'tcp', 'destination_port' => (string) self::T3Port, 'state' => 'enabled'],
         ];
-    }
-
-    private function applies(Node $node): bool
-    {
-        return $this->nodes->includes($node) && ! TaskVm::query()->where('node_id', $node->id)->exists();
     }
 }

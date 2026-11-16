@@ -7,6 +7,8 @@ namespace App\Infrastructure\Firewall;
 use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -59,6 +61,17 @@ final readonly class NodeFirewallDesiredRules
                 }
             } catch (FirewallOperationException) {
                 continue;
+            }
+        }
+
+        // The seed listener of a CI Node, which the ci-runner converge inserts in front of the WireGuard member trust.
+        $sender = $assignments->contains('role', RoleName::CiRunner) ? app(ProofSeeds::class)->sender($node) : null;
+        if ($sender !== null) {
+            $listener = $this->catalog->proofSeedListener($node, $sender);
+            foreach ([$listener['allow'], $listener['deny']] as $rule) {
+                if ($rule !== null) {
+                    $rows[] = new DesiredFirewallRule($rule->shape->comment, RoleName::CiRunner->value, $rule->shape);
+                }
             }
         }
 
