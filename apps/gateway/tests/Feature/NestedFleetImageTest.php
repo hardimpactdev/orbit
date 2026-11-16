@@ -34,10 +34,11 @@ it('keeps the normal image definition byte-identical to the one before the neste
 
     // Captured at 2a-local 7b9e25ba02, again when the image gained the files every container needs (InstanceImage::shared), again
     // when its finish ran `update-ca-certificates` for the Orbit root CA, and again when it gained `agent`'s NSS store for Chromium
-    // (`browser_trust`, with the module's version). The alias is a digest of the rest of the definition, and the second value of the whole of it.
-    expect($normal['alias'])->toBe('orbit-instance-bb2dec7d7d42')
+    // (`browser_trust`, with the module's version), and again when it gained `sudo` and `agent`'s grant (ADR 0268, amendment), which
+    // moved it from orbit-instance-bb2dec7d7d42. The alias is a digest of the rest of the definition, and the second value of the whole of it.
+    expect($normal['alias'])->toBe('orbit-instance-e7621201a4f3')
         ->and(hash('sha256', json_encode($normal, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)))
-        ->toBe('1ac48cc6031a34f93cc885aad4913c701344e5d2ccf3fb3bc84a8014bc5afec1');
+        ->toBe('2d0bc0415351db83cceee6f47c6844be255c094e77874dae3b38fe56b6e99ee3');
 });
 
 it('names the runtime folder\'s trust module in agent\'s NSS store of both images, so Chromium trusts the Orbit root CA', function (): void {
@@ -64,9 +65,10 @@ it('names the runtime folder\'s trust module in agent\'s NSS store of both image
 });
 
 it('keeps the nested image definition of the image built on Beast, so no converge is needed for it', function (): void {
-    // The alias of the nested image that Beast holds since before the ID map size (orbit-instance-nested-6388773554e6). A change of
-    // the definition gives a new alias, which only a converge builds; change this value only with a planned converge.
-    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-6388773554e6');
+    // The alias of the nested image since `agent`'s grant became the normal image's shared file (ADR 0268, amendment); Beast held
+    // orbit-instance-nested-6388773554e6 before. A change of the definition gives a new alias, which only a converge builds; change
+    // this value only with a planned converge.
+    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-27a0fc94aee0');
 });
 
 it('gives a Node without the switch the same host intent members as before, and a switched-on Node only the nested image more', function (): void {
@@ -95,7 +97,7 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
     $files = array_column($nested['files'], null, 'path');
 
     expect($nested['alias'])->toStartWith('orbit-instance-nested-')->toHaveLength(strlen('orbit-instance-nested-') + 12)
-        ->and($nested['packages'])->toBe(['acl', 'git', 'nftables', 'wireguard-tools', 'sqlite3', 'sudo', 'zstd', 'btrfs-progs'])
+        ->and($nested['packages'])->toBe(['acl', 'git', 'nftables', 'sudo', 'wireguard-tools', 'sqlite3', 'zstd', 'btrfs-progs'])
         ->and(array_column($nested['incus'], 'name'))->toBe(['incus-base', 'incus-client'])
         ->and($nested['incus'])->toBe(array_values(array_filter($incus['packages'], fn (array $package): bool => $package['name'] !== 'incus')))
         ->and($nested['prepare'])->toBe($normal['prepare']."usermod --append --groups incus-admin agent\n")
@@ -103,7 +105,8 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
         ->and($files['/etc/subuid'])->toBe(['path' => '/etc/subuid', 'content' => "root:1000000:100000000\nroot:1000:1\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'])
         ->and($files['/etc/subgid']['content'])->toBe("root:1000000:100000000\nroot:1000:1\n")
         ->and($files['/etc/orbit/apparmor-off']['content'])->toBe("N\n")
-        ->and($files['/etc/sudoers.d/orbit-agent'])->toBe(['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440'])
+        // One grant for both images (ADR 0268, amendment): the nested image's is the normal image's shared file.
+        ->and($files[InstanceImage::SudoGrant])->toBe(array_column($normal['files'], null, 'path')[InstanceImage::SudoGrant])
         // The network wait asks only for a route on eth0: the DNS that netplan's wait asks for never comes, and held each start for 120 s.
         ->and($files[InstanceImage::NestedWaitOnline]['content'])
         ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/usr/lib/systemd/systemd-networkd-wait-online --interface=eth0:routable --timeout=30\n")
@@ -113,7 +116,7 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
         ->and($files['/etc/systemd/system/nftables.service.d/90-orbit-own-table.conf']['content'])
         ->toBe("# Managed by Orbit.\n[Service]\nExecStop=\nExecStop=/usr/sbin/nft destroy table inet orbit_agent_guard\n")
         // Every other file and step is the normal image's.
-        ->and(array_values(array_diff_key($files, array_flip(['/etc/nftables.conf', '/etc/subuid', '/etc/subgid', '/etc/orbit/apparmor-off', '/etc/sudoers.d/orbit-agent',
+        ->and(array_values(array_diff_key($files, array_flip(['/etc/nftables.conf', '/etc/subuid', '/etc/subgid', '/etc/orbit/apparmor-off',
             InstanceImage::NestedWaitOnline, '/etc/systemd/system/nftables.service.d/90-orbit-own-table.conf']))))
         ->toBe(array_values(array_filter($normal['files'], fn (array $file): bool => ! in_array($file['path'], ['/etc/nftables.conf', '/etc/sysctl.d/90-orbit-no-userns.conf'], true))))
         ->and($nested['finish'])->toBe($normal['finish']);

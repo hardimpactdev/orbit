@@ -366,8 +366,9 @@ Deno.test({
             // again when the image removed its linker cache last and the converge read the existing containers (two calls more), and
             // when the image took the Node's Orbit root CA (one push, and `update-ca-certificates` in the definition's finish: two calls more);
             // and when the build container's init took the NIC address filters (the same 57 calls, its init has two `--device` keys more);
-            // and when the image named the trust module in agent's NSS store (the library check, the store's folders and its file: three calls more).
-            assertEquals([f.calls().length, digest], [60, "c1591708ab8621124e4131130dcd33a209f0e3ad7d3a38c4bca1242c9fd105ad"]);
+            // and when the image named the trust module in agent's NSS store (the library check, the store's folders and its file: three calls more);
+            // and when the normal image's sudo audit required agent's grant (ADR 0268, amendment: the same 60 calls, one audit text changed).
+            assertEquals([f.calls().length, digest], [60, "8a731e2bc70026c0d1f6e08a2ff6dec71b3247a5fa56687e34480a85ce5b0eb2"]);
             assert(f.calls().some((call) => call.includes("exec") && call.at(-1) === "update-ca-certificates"));
             assert(f.calls().some((call) => call.includes("exec") && call.slice(-3).join(" ") === "rm -f /etc/ld.so.cache"));
             assert(f.calls().some((call) => call[0] === "query" && call.at(-1) === "/1.0/instances?all-projects=true&recursion=1"));
@@ -427,9 +428,14 @@ Deno.test({
                 "runuser -u orbit -- sudo -n true 2>/dev/null && echo orbit:sudo"]) {
                 assertStringIncludes(audit, check);
             }
-            // The normal build audits as before: no grant at all.
+            // The normal build audits the same grant (ADR 0268, amendment), and that it has no `incus-admin` group.
             const normalAudit = f.calls().filter((call) => call.includes("orbit-instances") && call[0] === "exec" && call.at(-1)!.includes("getent passwd ubuntu"));
-            assertEquals(normalAudit.map((call) => call.at(-1)!.includes("orbit-agent")), [false]);
+            assertEquals(normalAudit.length, 1);
+            for (const check of ["/etc/sudoers.d/orbit-agent", "visudo -cqf", "runuser -u agent -- sudo -n true",
+                "runuser -u orbit -- sudo -n true 2>/dev/null && echo orbit:sudo", "getent group incus-admin >/dev/null && echo incus-admin:unexpected"]) {
+                assertStringIncludes(normalAudit[0].at(-1)!, check);
+            }
+            assert(!normalAudit[0].at(-1)!.includes("incus-admin:[^:]*:[0-9]*:agent"));
             assertEquals(nestedRecord(f.folder), null);
             assertEquals(capture(f), boundaries["nested-finish"]);
         } finally {
@@ -545,31 +551,34 @@ Deno.test({
     },
 });
 
-// The shipped nested-fleet audit text, run by a real shell against stand-ins for the image's commands and its sudoers.d.
-const nestedAudit = (() => {
+// The shipped audit texts of both images, run by a real shell against stand-ins for the image's commands and its sudoers.d.
+const auditVars = (() => {
     type Task = { name?: string; block?: Task[]; vars?: Record<string, string> };
     const tasks = parse(Deno.readTextFileSync(new URL("../ansible/tasks/instance-image.yml", import.meta.url))) as Task[];
     const all = (list: Task[]): Task[] => list.flatMap((task) => [task, ...all(task.block ?? [])]);
-    return all(tasks).find((task) => task.name === "Read the sudo paths of the image")!.vars!.image_nested_audit;
+    return all(tasks).find((task) => task.name === "Read the sudo paths of the image")!.vars!;
 })();
+const nestedAudit = auditVars.image_audit + auditVars.image_nested_audit;
+const normalAudit = auditVars.image_audit + auditVars.image_normal_audit;
 
-const runNestedAudit = (visudo: string) => {
+const runAudit = (audit: string, { visudo = 'echo "$2: parsed OK"', incusAdmin = true, grant = "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", orbitSudo = false } = {}) => {
     const folder = Deno.makeTempDirSync();
     try {
         Deno.mkdirSync(`${folder}/bin`);
         Deno.mkdirSync(`${folder}/sudoers.d`);
         Deno.writeTextFileSync(`${folder}/sudoers.d/README`, "");
-        Deno.writeTextFileSync(`${folder}/sudoers.d/orbit-agent`, "agent ALL=(ALL:ALL) NOPASSWD: ALL\n");
+        if (grant !== "") Deno.writeTextFileSync(`${folder}/sudoers.d/orbit-agent`, grant);
         const stubs: Record<string, string> = {
-            getent: '[ "$1 $2" = "group incus-admin" ] && echo incus-admin:x:994:agent; [ "$1" = group ] || exit 2',
-            runuser: '[ "$2" = agent ]',
+            getent: (incusAdmin ? '[ "$1 $2" = "group incus-admin" ] && echo incus-admin:x:994:agent && exit 0; ' : "") +
+                '[ "$1 $2" = "group incus-admin" ] && exit 2; [ "$1" = group ] || exit 2',
+            runuser: orbitSudo ? "true" : '[ "$2" = agent ]',
             visudo,
         };
         for (const [name, body] of Object.entries(stubs)) {
             Deno.writeTextFileSync(`${folder}/bin/${name}`, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
         }
         const output = new Deno.Command("sh", {
-            args: ["-c", nestedAudit.replaceAll("/etc/sudoers.d", `${folder}/sudoers.d`)],
+            args: ["-c", audit.replaceAll("/etc/sudoers.d", `${folder}/sudoers.d`)],
             env: { PATH: `${folder}/bin:/usr/bin:/bin` },
             stdout: "piped",
             stderr: "null",
@@ -580,6 +589,22 @@ const runNestedAudit = (visudo: string) => {
         Deno.removeSync(folder, { recursive: true });
     }
 };
+
+Deno.test({
+    name: "the normal image's audit requires agent's one grant, no sudo for orbit and no incus-admin group",
+    fn() {
+        assertEquals(runAudit(normalAudit, { incusAdmin: false }), "");
+        assertEquals(runAudit(normalAudit, { incusAdmin: true }), "incus-admin:unexpected\n");
+        assertEquals(runAudit(normalAudit, { incusAdmin: false, grant: "" }), "agent:grant\n");
+        assertEquals(runAudit(normalAudit, { incusAdmin: false, grant: "agent ALL=(ALL:ALL) ALL\n" }), "agent:grant\n");
+        assertEquals(runAudit(normalAudit, { incusAdmin: false, orbitSudo: true }), "orbit:sudo\n");
+        // The nested-fleet image keeps its incus-admin check on top of the same grant.
+        assertEquals(runAudit(nestedAudit), "");
+        assertEquals(runAudit(nestedAudit, { incusAdmin: false }), "incus-admin:unexpected\n");
+    },
+});
+
+const runNestedAudit = (visudo: string) => runAudit(nestedAudit, { visudo });
 
 Deno.test({
     name: "the nested-fleet audit judges visudo by its exit code, not by what it prints",

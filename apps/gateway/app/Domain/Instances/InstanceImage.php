@@ -9,12 +9,12 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 
 /**
  * The container image of a development Instance (docs/reference/development-containers.md#inside-a-container): the stock Ubuntu image
- * with the OS packages the runtime needs, the users `agent` and `orbit` in the group `work`, no sudo, the firewall of the model route
+ * with the OS packages the runtime needs, the users `agent` and `orbit` in the group `work`, passwordless sudo for `agent` alone, the firewall of the model route
  * and T3's port, the egress proxy for everything and no DNS, `hidepid`, and the T3 unit, which starts only once the create flow writes `/etc/orbit/instance`. No PHP, Node or agent
  * software: those come from the shared folders. The host builds it once per alias, a digest of this whole definition.
  *
  * A Node with nested-fleet hosting on also builds the nested-fleet variant (docs/reference/development-containers.md#the-nested-fleet-image):
- * the same image with the pinned inner Incus, `agent` in `incus-admin` with passwordless sudo, user namespaces, root's subordinate IDs,
+ * the same image with the pinned inner Incus, `agent` in `incus-admin`, user namespaces, root's subordinate IDs,
  * the AppArmor marker, a firewall rule that keeps `orbit` off the inner fleet's networks and leaves the inner Incus's own tables alone,
  * `zstd` for the inner fleet's archives, and a network wait that does not ask for the DNS the container never gets.
  */
@@ -28,14 +28,23 @@ final readonly class InstanceImage
     public const string NestedWaitOnline = '/etc/systemd/system/systemd-networkd-wait-online.service.d/90-orbit-no-dns.conf';
 
     /**
-     * The nested-fleet variant's packages beyond the normal ones: the tunnel to its fleet, the fleet's database client, sudo,
+     * The nested-fleet variant's packages beyond the normal ones: the tunnel to its fleet, the fleet's database client,
      * `zstd` for the `.tar.zst` archives of an inner fleet's containers, and `btrfs-progs` for the inner Incus's btrfs pool on the
      * inner volume (NestedFleetInnerVolume).
      */
-    public const array NestedPackages = ['wireguard-tools', 'sqlite3', 'sudo', 'zstd', 'btrfs-progs'];
+    public const array NestedPackages = ['wireguard-tools', 'sqlite3', 'zstd', 'btrfs-progs'];
 
-    /** OS packages beyond the stock image: the firewall, ACLs on the workspace, and Git for the workspace repository. */
-    public const array Packages = ['acl', 'git', 'nftables'];
+    /**
+     * OS packages beyond the stock image: the firewall, ACLs on the workspace, Git for the workspace repository, and sudo for
+     * `agent`'s grant (self::SudoGrant). The stock image ships sudo too, so a container of an older image has it.
+     */
+    public const array Packages = ['acl', 'git', 'nftables', 'sudo'];
+
+    /**
+     * `agent`'s passwordless sudo in every container, normal and nested (ADR 0268, amendment): the only sudo path an image keeps.
+     * `orbit` has none. Containers hold only dev-scoped keys, so root in one reads nothing of production grade.
+     */
+    public const string SudoGrant = '/etc/sudoers.d/orbit-agent';
 
     /**
      * The environment of every program from the runtime folder: Vite+ links the prepared runtime from its writable home,
@@ -141,6 +150,8 @@ final readonly class InstanceImage
      *   `x86_64-linux-gnu.conf`, so a system library of the same name always wins: the folder only adds what the image lacks.
      * - Fontconfig, also the copy that Chromium bundles, finds the runtime folder's fonts and maps the generic families to them.
      * - Git trusts the workspace for every user, `agent` and `orbit` alike, and only that path: both users share it by design.
+     * - `agent`'s sudo grant (self::SudoGrant), root-only readable as sudo requires. A container of an older image, and a copy of an
+     *   older seed, get it here; sudo reads it at each call.
      *
      * @return list<array{path: string, content: string, uid: int, gid: int, mode: string, existing: true}>
      */
@@ -154,6 +165,7 @@ final readonly class InstanceImage
             $file('/etc/ld.so.conf.d/zz-orbit-browser.conf', "# Managed by Orbit.\n{$runtime}/lib\n"),
             $file('/etc/fonts/fonts.conf', self::fonts("{$runtime}/fonts")),
             $file('/etc/gitconfig', "# Managed by Orbit.\n[safe]\n\tdirectory = ".InstanceHostIntent::Workspace."\n"),
+            ['path' => self::SudoGrant, 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440', 'existing' => true],
         ];
     }
 
@@ -246,7 +258,7 @@ final readonly class InstanceImage
 
     /**
      * The nested-fleet variant's own files: the inner Incus maps root's range and the outer `orbit` into its containers, Docker in
-     * them reads the AppArmor marker, and `agent` alone has sudo. Its user namespaces stay on, so it has no limit file.
+     * them reads the AppArmor marker. Its user namespaces stay on, so it has no limit file.
      *
      * Two unit drop-ins. The inner Incus wants `network-online.target`, so each start after the first waits for it. Netplan's wait
      * asks for a DNS server on eth0, which the container never gets (self::egress), so it would hold the boot for its full 120 s;
@@ -266,7 +278,6 @@ final readonly class InstanceImage
             ['path' => '/etc/subuid', 'content' => $ids, 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             ['path' => '/etc/subgid', 'content' => $ids, 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             ['path' => '/etc/orbit/apparmor-off', 'content' => "N\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
-            ['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440'],
             ['path' => self::NestedWaitOnline, 'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/usr/lib/systemd/systemd-networkd-wait-online --interface=eth0:routable --timeout=30\n",
                 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             ['path' => '/etc/systemd/system/nftables.service.d/90-orbit-own-table.conf', 'content' => "# Managed by Orbit.\n[Service]\nExecStop=\nExecStop=/usr/sbin/nft destroy table inet orbit_agent_guard\n",

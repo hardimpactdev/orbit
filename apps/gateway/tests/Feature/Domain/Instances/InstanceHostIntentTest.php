@@ -255,7 +255,7 @@ describe('the Instance image', function (): void {
             ->and($part($pending))->toBe([]);
     });
 
-    it('sets up the users, the workspace and no sudo, and turns the Codex update check off', function (): void {
+    it('sets up the users, the workspace and agent\'s sudo alone, and turns the Codex update check off', function (): void {
         $image = InstanceImage::for('10.253.0.1');
         $files = array_column($image['files'], null, 'path');
 
@@ -264,7 +264,11 @@ describe('the Instance image', function (): void {
             "find /etc/sudoers.d -mindepth 1 ! -name README -delete\n", 'install -d -o agent -g work -m 2770 /srv/workspace',
             'd:u::rwX,d:g::rwX,d:g:work:rwX,d:o::---', 'hidepid=invisible',
         )
-            ->and($image['packages'])->toBe(['acl', 'git', 'nftables'])
+            ->and($image['packages'])->toBe(['acl', 'git', 'nftables', 'sudo'])
+            // ADR 0268, amendment: the stock grants go, and `agent`'s one grant is the only sudo path; `orbit` has none.
+            ->and($files[InstanceImage::SudoGrant])->toBe(['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440', 'existing' => true])
+            ->and(array_values(array_filter(array_keys($files), static fn (string $path): bool => str_starts_with($path, '/etc/sudoers'))))->toBe([InstanceImage::SudoGrant])
+            ->and($image['prepare'])->not->toContain('incus-admin')
             ->and($files['/etc/systemd/system/t3.service']['mode'])->toBe('0640')
             ->and($files['/home/agent/.codex/config.toml'])->toMatchArray(['content' => "check_for_update_on_startup = false\n", 'uid' => 2750, 'mode' => '0600'])
             ->and($files)->not->toHaveKey('/home/orbit/.gitconfig')
@@ -275,7 +279,7 @@ describe('the Instance image', function (): void {
         $image = InstanceImage::for('10.253.0.1');
         $shared = array_column(array_filter($image['files'], static fn (array $file): bool => ($file['existing'] ?? false) === true), null, 'path');
 
-        expect(array_keys($shared))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig'])
+        expect(array_keys($shared))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/sudoers.d/orbit-agent'])
             ->and($shared)->toBe(array_column(InstanceImage::shared(), null, 'path'))
             ->and($shared['/etc/ld.so.conf.d/zz-orbit-browser.conf']['content'])->toBe("# Managed by Orbit.\n/opt/orbit-runtime/current/lib\n")
             // ldconfig reads the configuration files in name order, and a system library of the same name wins only when its folder
@@ -283,7 +287,8 @@ describe('the Instance image', function (): void {
             ->and(strcmp('zz-orbit-browser.conf', 'x86_64-linux-gnu.conf'))->toBeGreaterThan(0)
             ->and($shared['/etc/fonts/fonts.conf']['content'])->toContain('<dir>/opt/orbit-runtime/current/fonts</dir>', '<cachedir prefix="xdg">fontconfig</cachedir>',
                 '<family>sans-serif</family>', '<family>serif</family>', '<family>monospace</family>', 'Noto Color Emoji')
-            ->and(array_unique(array_column($shared, 'mode')))->toBe(['0644'])
+            // sudo reads only a grant that is not writable by others; the converge and the clone push it with this mode, root-owned.
+            ->and(array_column($shared, 'mode', 'path'))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf' => '0644', '/etc/fonts/fonts.conf' => '0644', '/etc/gitconfig' => '0644', '/etc/sudoers.d/orbit-agent' => '0440'])
             ->and($image['finish'])->toContain(['rm', '-f', '/etc/ld.so.cache'])
             ->and(array_key_last($image['finish']))->toBe(array_search(['rm', '-f', '/etc/ld.so.cache'], $image['finish'], true))
             ->and(InstanceImage::for('10.253.0.1', app(RecipeImageBuilds::class)->currentRecipe()->incus('amd64'))['files'])->toContain(...InstanceImage::shared());
@@ -410,8 +415,9 @@ describe('the shared folders', function (): void {
         [ProjectType::LaravelPackage, 'package'], [ProjectType::NodePackage, 'package'],
     ]);
 
-    it('states facts only: the users, the workspace, the Instance file, no sudo and no internet', function (string $note): void {
-        expect(InstanceNotes::all()[$note])->toContain('`agent`', '`orbit`', '`/srv/workspace`', '`/etc/orbit/instance`', 'There is no sudo.', 'no direct internet')
+    it('states facts only: the users, the workspace, the Instance file, agent\'s sudo and no internet', function (string $note): void {
+        expect(InstanceNotes::all()[$note])->toContain('`agent`', '`orbit`', '`/srv/workspace`', '`/etc/orbit/instance`', '`agent` has passwordless sudo', '`orbit` has no sudo.', 'no direct internet')
+            ->and(InstanceNotes::all()[$note])->not->toContain('There is no sudo.')
             // The pinned static PHP build and Composer are in the runtime folder, and the note says where.
             ->and(InstanceNotes::all()[$note])->toContain('Composer', '`/opt/orbit-runtime/current/php/<version>/bin`', '`php` and `frankenphp`', '`php` on `PATH`', 'so `composer` works')
             ->and(InstanceNotes::all()[$note])->not->toContain('No `php` is on `PATH`');
