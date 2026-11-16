@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Tasks\UpdateTaskAction;
 use App\Data\Tasks\StartTaskCheckData;
 use App\Data\Tasks\UpdateTaskData;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckIntent;
 use App\Domain\Tasks\TaskCheckKind;
@@ -12,6 +13,7 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Activity;
+use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -140,5 +142,47 @@ describe('a correction after a failed check in a task copy', function (): void {
             ->and($statusOnly->errorCode)->toBe('tasks.reason_unexpected')
             ->and($todo->refresh()->deliverables)->toBe(wrongDeliverables())
             ->and($world->subtask->refresh()->status)->toBe(TaskStatus::Running);
+    });
+});
+
+describe('the reason field of the task update API', function (): void {
+    beforeEach(function (): void {
+        $gateway = Node::withoutEvents(fn (): Node => Node::query()->create([
+            'name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit',
+        ]));
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+    });
+
+    it('carries the reason of a correction into task activity', function (): void {
+        [$world, $failed] = failedCopyCheck();
+
+        $this->patchJson("/api/v1/tasks/{$world->subtask->id}", ['deliverables' => rightDeliverables(), 'reason' => 'The tools tests need discover -s tools.'])
+            ->assertOk()->assertJsonPath('data.deliverables.0.command', 'python3 -m unittest discover -s tools');
+
+        expect(Activity::query()->where('subject_id', $world->subtask->id)->where('description', 'deliverables corrected')->sole()->properties->all())
+            ->toMatchArray(['check_id' => $failed->id, 'reason' => 'The tools tests need discover -s tools.']);
+    });
+
+    it('refuses a correction without a reason or with a reason over 500 characters', function (array $reason): void {
+        [$world] = failedCopyCheck();
+
+        $this->patchJson("/api/v1/tasks/{$world->subtask->id}", ['deliverables' => rightDeliverables(), ...$reason])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonValidationErrors(['reason'], 'error.details');
+
+        expect($world->subtask->refresh()->deliverables)->toBe(wrongDeliverables());
+    })->with([
+        'no reason' => [[]],
+        'an empty reason' => [['reason' => '']],
+        'a reason over 500 characters' => [['reason' => str_repeat('r', 501)]],
+    ]);
+
+    it('refuses a reason on a group update', function (): void {
+        [$world] = failedCopyCheck();
+
+        $this->patchJson("/api/v1/tasks/{$world->group->id}", ['title' => 'Renamed', 'reason' => 'No reason here.'])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'tasks.reason_unexpected');
+
+        expect($world->group->refresh()->title)->toBe('Add the export');
     });
 });
