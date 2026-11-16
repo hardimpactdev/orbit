@@ -2868,16 +2868,24 @@ A CI Node is ready when the Gateway records, from its last `ci-runner` converge,
 - at the end of a seed copy during which the default's seed moved: for every Node behind the new seed;
 - at the end of a seed copy at the same seed: for the Nodes that no seed copy has tried at that seed.
 
+One seed copy takes at most as many targets as its [run budget](/reference/operations) can hold, and it leaves the other Nodes behind the seed untried. So its end admits the next copy for them. A copy that a `ci-runner` add or converge admits always takes that Node: the Node may have failed a copy at this seed, so the end of another copy would not admit it.
+
 So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own `ci-runner` converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no free ID range, does not repeat with a new Operation each time.
 
 A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The default's runtime records both (`seed_commit`, `seed_taken_at`). The Gateway records the seed of each CI Node in `proof_seeds`: its holder, its commit and that time (`ProofSeeds`).
 
 ##### How the seed moves
 
-Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for each target side by side:
+Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for one target at a time:
 
 - `incus copy <default> proof-node-<id>:proof-seed --refresh --mode=push`, in the project `orbit-instances-nested`;
 - `incus storage volume copy` of the default's inner volume to `proof-seed-inner` on the same remote, with `--refresh --mode=push`.
+
+The copies to the targets never overlap. Each push of the inner volume takes a snapshot of it on the default's Node. The volume is mounted in the default, so Incus freezes its file system (`fsfreeze --freeze`) for that snapshot. A second freeze of a frozen file system fails with `Device or resource busy`. So two copies of one source side by side can fail a target.
+
+The certificate reads and the checks run on the CI Nodes, and they still run side by side. Because the copies run one at a time, the run time grows with the number of targets, and the Gateway captures the run budget from it at admission. Each `incus` push stops after 1,200 seconds: a first full copy of the seed pair is a few GB over WireGuard, and a refresh is small.
+
+A retake of the default and a seed copy can still freeze the same volume at the same time. The seed-copy lock is not the default's Instance lock, so a deployment of the default can run beside a copy.
 
 An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The holder volume gets the default's `size`, but each snapshot that it receives records `size: 0`; a clone [sets its own size](#the-inner-volume). The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
 

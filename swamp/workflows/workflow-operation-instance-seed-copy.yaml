@@ -55,14 +55,18 @@ jobs:
         writes: true
         dependsOn: [{step: Read its Incus certificate, condition: {type: always}}]
         forEach: {item: target, in: '${{ inputs.intent.targets }}'}
+        # Each push snapshots the default's mounted inner volume, and Incus freezes its file system for that; a second freeze of a
+        # frozen file system fails with EBUSY. So the copies of one source run one target at a time (docs/cli/instance/seed-copy.mmd).
+        concurrency: 1
         allowFailure: true
+        # ProofSeeds::CopySeconds: two pushes of up to 1,200 s and their reads; the run budget counts one per target.
         task:
           type: behavior
           behaviorType: command/shell
           behaviorName: '${{ "instance-seed-copy-copy-" + string(self.target.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 7300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags copy "$ORBIT_ANSIBLE/proof-seed-copy.yml"
+            run: timeout 2500 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags copy "$ORBIT_ANSIBLE/proof-seed-copy.yml"
             env:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ANSIBLE_FORCE_COLOR: '0'
