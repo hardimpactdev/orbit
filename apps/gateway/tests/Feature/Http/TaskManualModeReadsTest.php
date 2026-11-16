@@ -8,11 +8,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSettings;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -20,14 +15,13 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
-use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Testing\TestResponse;
 
 uses(LazilyRefreshDatabase::class);
 
-/** docs/reference/tasks.md#task-places and the manual-mode reads of 9 November 2026. */
+/** docs/reference/tasks.md#last-activity and the manual-mode reads of 9 November 2026. */
 function manual_node(string $name, string $ip): Node
 {
     return Node::withoutEvents(function () use ($name, $ip): Node {
@@ -41,12 +35,6 @@ function manual_node(string $name, string $ip): Node
 function manual_group(Project $project, string $title, TaskGroupStatus $status, array $attributes = []): Task
 {
     return Task::query()->create(['project_id' => $project->id, 'title' => $title, 'brief' => 'Brief', 'status' => $status, ...$attributes]);
-}
-
-function manual_vm(Node $host, string $name, string $pool, ?Task $group, int $slot): TaskVm
-{
-    return TaskVm::query()->create(['host_node_id' => $host->id, 'group_id' => $group?->id, 'provider' => TaskVmProviderKind::Incus, 'name' => $name,
-        'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.'.(140 + $slot), 'size' => TaskVmSize::Large, 'capacity_pool' => $pool, 'slot_number' => $slot]);
 }
 
 function manual_operation(Task $group, OperationStatus $status, array $attributes = []): Operation
@@ -65,23 +53,17 @@ beforeEach(function (): void {
     $this->gateway = manual_node('gateway', '10.44.0.2');
     $this->gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
     $this->host = manual_node('beast', '10.44.0.10');
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25',
-        [new TaskVmHost(nodeId: $this->host->id, project: 'orbit-tasks', network: 'orbittask0', cidr: '10.251.77.0/24', taskPlaces: 2, cpus: 6, memory: '12GiB', disk: '60GiB', ciPlaces: 2)],
-        '/pi', str_repeat('a', 64), ['gpt-6']));
     $this->project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
     app(TaskExtensionState::class)->enable();
 
-    // Two groups hold both task places: one idle since 10:00, one with a turn running. A CI proof VM holds one CI place.
+    // One group idle since 10:00, one with a turn running.
     $this->idle = manual_group($this->project, 'Idle group', TaskGroupStatus::Running);
     $this->busy = manual_group($this->project, 'Busy group', TaskGroupStatus::Running);
-    manual_vm($this->host, 'beast-tvm-1', 'task', $this->idle, 1);
-    manual_vm($this->host, 'beast-tvm-2', 'task', $this->busy, 2);
-    manual_vm($this->host, 'beast-tvm-3', 'ci', null, 3);
     Carbon::setTestNow('2026-11-09 09:00:00');
     manual_operation($this->idle, OperationStatus::Succeeded, ['started_at' => '2026-11-09 09:00:05', 'finished_at' => '2026-11-09 10:00:00']);
     Carbon::setTestNow('2026-11-09 11:50:00');
     $this->running = manual_operation($this->busy, OperationStatus::Running, ['started_at' => '2026-11-09 11:50:00']);
-    // The group of the outside agent waits behind them.
+    // A waiting admission that a release before the removal of the task VM admission recorded.
     Carbon::setTestNow('2026-11-09 11:55:00');
     $this->waiting = manual_group($this->project, 'Manual group', TaskGroupStatus::Todo, ['capacity_wait_reason' => 'capacity']);
     $this->wait = Operation::query()->create(['kind' => 'tasks.provision', 'target_type' => 'task_group', 'target_id' => $this->waiting->id, 'node_id' => null,
@@ -89,24 +71,10 @@ beforeEach(function (): void {
     Carbon::setTestNow('2026-11-09 12:00:00');
 });
 
-$holders = [
-    ['vm' => 'beast-tvm-1', 'pool' => 'task', 'title' => 'Idle group', 'status' => 'running', 'last_activity_at' => '2026-11-09T10:00:00+00:00', 'active_operation_id' => null],
-    ['vm' => 'beast-tvm-2', 'pool' => 'task', 'title' => 'Busy group', 'status' => 'running', 'last_activity_at' => '2026-11-09T11:50:00+00:00'],
-];
-
-describe('task:status capacity', function () use ($holders): void {
-    it('shows the places of each host, who holds them with their last activity, and the task queue', function () use ($holders): void {
-        $capacity = manual_read($this->gateway, '/api/v1/tasks/status')->assertOk()->json('data.capacity');
-
-        expect($capacity['hosts'])->toHaveCount(1)
-            ->and($capacity['hosts'][0])->toMatchArray(['node_id' => $this->host->id, 'node' => 'beast', 'task_places' => 2, 'task_used' => 2, 'task_free' => 0,
-                'ci_places' => 2, 'ci_used' => 1, 'ci_free' => 1])
-            ->and($capacity['hosts'][0]['holders'][0])->toMatchArray([...$holders[0], 'group_id' => $this->idle->id])
-            ->and($capacity['hosts'][0]['holders'][1])->toMatchArray([...$holders[1], 'group_id' => $this->busy->id, 'active_operation_id' => $this->running->id])
-            ->and($capacity['hosts'][0]['holders'][2])->toBe(['vm' => 'beast-tvm-3', 'pool' => 'ci', 'group_id' => null, 'title' => null, 'status' => null,
-                'last_activity_at' => null, 'active_operation_id' => null])
-            ->and($capacity['queue'])->toBe([['position' => 1, 'operation_id' => $this->wait->id, 'kind' => 'tasks.provision', 'group_id' => $this->waiting->id,
-                'title' => 'Manual group', 'waiting_since' => '2026-11-09T11:55:00+00:00']]);
+describe('task:status', function (): void {
+    it('returns no task places view', function (): void {
+        expect(manual_read($this->gateway, '/api/v1/tasks/status')->assertOk()->json('data'))
+            ->toHaveKeys(['enabled', 'assistance', 'merges', 'releases'])->not->toHaveKey('capacity');
     });
 
     it('lists only open groups with a review-and-merge pull request under merges', function (): void {
@@ -127,23 +95,13 @@ describe('task:status capacity', function () use ($holders): void {
         expect(array_column(manual_read($this->gateway, '/api/v1/tasks/status')->assertOk()->json('data.merges'), 'id'))->toBe([$incoming->id]);
     });
 
-    it('names the newest open Operation of a holder', function (): void {
-        $newer = manual_operation($this->busy, OperationStatus::Queued, ['kind' => 'tasks.check']);
-
-        $holders = manual_read($this->gateway, '/api/v1/tasks/status')->assertOk()->json('data.capacity.hosts.0.holders');
-
-        expect($holders[1]['active_operation_id'])->toBe($newer->id);
-    });
 });
 
-describe('task:show', function () use ($holders): void {
-    it('gives a waiting group its queue position, the holders of the task places, and its last activity', function () use ($holders): void {
+describe('task:show', function (): void {
+    it('gives a waiting group its last activity and no queue position', function (): void {
         $data = manual_read($this->gateway, "/api/v1/tasks/{$this->waiting->id}")->assertOk()->json('data');
 
-        expect($data['capacity_wait']['operation_id'])->toBe($this->wait->id)
-            ->and($data['capacity_wait']['position'])->toBe(1)
-            ->and($data['capacity_wait']['holders'])->toHaveCount(2)
-            ->and($data['capacity_wait']['holders'][1])->toMatchArray($holders[1])
+        expect($data)->not->toHaveKey('capacity_wait')
             ->and($data['last_activity_at'])->toBe('2026-11-09T11:55:00+00:00')
             ->and($data['preview_url'])->toBeNull();
     });
@@ -153,10 +111,6 @@ describe('task:show', function () use ($holders): void {
 
         expect($groups[$this->idle->id]['last_activity_at'])->toBe('2026-11-09T10:00:00+00:00')
             ->and($groups[$this->busy->id]['last_activity_at'])->toBe('2026-11-09T11:50:00+00:00');
-    });
-
-    it('gives a group that waits for nothing no capacity_wait', function (): void {
-        expect(manual_read($this->gateway, "/api/v1/tasks/{$this->idle->id}")->assertOk()->json('data.capacity_wait'))->toBeNull();
     });
 
     it('returns the preview URL once the workspace has an active Route', function (string $status, ?string $url): void {
@@ -181,29 +135,25 @@ describe('task:show', function () use ($holders): void {
 
 describe('operation:show', function (): void {
     // No admission retries a wait any more (the task VM admission is removed), so a leftover wait polls like any Operation that has not started.
-    it('keeps the waiting request as input, polls it as not started, and gives the queue position', function (): void {
-        $first = manual_read($this->gateway, "/api/v1/operations/{$this->wait->id}")->assertOk()->json('data');
-        $second = manual_read($this->gateway, "/api/v1/operations/{$this->wait->id}")->assertOk()->json('data');
+    it('summarizes a leftover wait like any input, polls it as not started, and gives no queue position', function (): void {
+        $data = manual_read($this->gateway, "/api/v1/operations/{$this->wait->id}")->assertOk()->json('data');
 
-        expect($first['input'])->toBe(['capacity_request' => ['commit' => str_repeat('c', 40)]])
-            ->and($second['input'])->toBe($first['input'])
-            ->and($first['poll_after_seconds'])->toBe(2)
-            ->and($first['capacity_wait']['position'])->toBe(1)
-            ->and($first['capacity_wait']['holders'])->toHaveCount(2);
+        expect($data['input'])->toBe([])
+            ->and($data['poll_after_seconds'])->toBe(2)
+            ->and($data)->not->toHaveKey('capacity_wait');
     });
 
     it('polls a wait that is not for a place by its run time', function (): void {
         $hold = manual_operation($this->idle, OperationStatus::Waiting, ['kind' => 'route.create', 'started_at' => '2026-11-09 11:59:00']);
 
         expect(manual_read($this->gateway, "/api/v1/operations/{$hold->id}")->assertOk()->json('data'))
-            ->toMatchArray(['poll_after_seconds' => 7, 'capacity_wait' => null]);
+            ->toMatchArray(['poll_after_seconds' => 7]);
     });
 
     it('computes poll_after_seconds from the status and the run time', function (OperationStatus $status, ?string $started, ?int $seconds): void {
         $operation = manual_operation($this->idle, $status, ['started_at' => $started]);
 
-        expect(manual_read($this->gateway, "/api/v1/operations/{$operation->id}")->assertOk()->json('data.poll_after_seconds'))->toBe($seconds)
-            ->and(manual_read($this->gateway, "/api/v1/operations/{$operation->id}")->json('data.capacity_wait'))->toBeNull();
+        expect(manual_read($this->gateway, "/api/v1/operations/{$operation->id}")->assertOk()->json('data.poll_after_seconds'))->toBe($seconds);
     })->with([
         'queued' => [OperationStatus::Queued, null, 2],
         'first ten seconds' => [OperationStatus::Running, '2026-11-09 11:59:52', 2],
