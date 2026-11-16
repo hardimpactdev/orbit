@@ -9,6 +9,11 @@ use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
+// These migrations ran on the task VM tables, which a later migration drops. Its rollback creates them as these migrations found them.
+beforeEach(function (): void {
+    (require database_path('migrations/2027_03_03_000000_drop_task_vm_tables.php'))->down();
+});
+
 it('drops the per-VM model key and its router origin, and runs again after a run that stopped half way', function (): void {
     // The state before the release: both columns exist and a row holds a key.
     Schema::table('task_vms', static function (Blueprint $table): void {

@@ -8,7 +8,6 @@ use App\Actions\Operations\FailUnreadableResultAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampConnection;
@@ -16,7 +15,6 @@ use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 
@@ -285,20 +283,16 @@ it('moves the records of a family that leaves its in-progress state at a timeout
         ->and($node->failed_step)->toBe('remove:operation');
 });
 
-// No cancel starts a run since the task VM release left (docs/reference/old-paths.md). An old cancel run that released a task VM still
-// settles; its `task_vms` row is history and keeps its state: nothing reads a `releasing` row to act on it.
-it('settles an old cancel run that released a task VM without a readable result, and leaves the VM row as it is', function (): void {
+// No cancel starts a run since the task VM release left (docs/reference/old-paths.md). An old cancel run still settles; its input
+// keeps `task_vm_id: null`.
+it('settles an old cancel run without a readable result', function (): void {
     $operation = unreadablePublish(startedMinutesAgo: 2);
-    $vm = TaskVm::query()->create(['host_node_id' => $operation->node_id, 'group_id' => $operation->target_id, 'name' => 'beast-tvm-1',
-        'state' => TaskVmState::Releasing, 'wireguard_ip' => '10.44.0.152', 'provider' => 'incus', 'capacity_pool' => 'task']);
-    $operation->update(['kind' => 'tasks.cancel', 'input' => ['group_id' => $operation->target_id, 'task_vm_id' => $vm->id]]);
+    $operation->update(['kind' => 'tasks.cancel', 'input' => ['group_id' => $operation->target_id, 'task_vm_id' => null]]);
 
     app(FailUnreadableResultAction::class)->execute($operation, UNREADABLE_RUN, ['status' => 'succeeded', 'completedAt' => now()->toIso8601ZuluString()],
         'Check the end', 'skipped');
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
         ->and($operation->error_code)->toBe('operation.result_unreadable')
-        ->and($operation->lock_key)->toBeNull()
-        ->and($vm->refresh()->state)->toBe(TaskVmState::Releasing)
-        ->and($vm->error_code)->toBeNull();
+        ->and($operation->lock_key)->toBeNull();
 });

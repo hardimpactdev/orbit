@@ -23,7 +23,6 @@ use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskReviewedCommit;
-use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -35,7 +34,6 @@ const TaskListHeavyColumns = [
     'tasks' => ['completion_summary', 'fixup_problem', 'pending_resolution_reason', 'pending_resolution_message', 'handoff_reopen_reason', 'provider_retry', 'maintenance', 'deliverable_correction_resume'],
     'task_checks' => ['output', 'deliverable_evidence'],
     'agent_threads' => ['questions', 'error', 'observation_error'],
-    'task_vms' => ['pi_token', 'wireguard_private_key', 'ssh_host_private_key', 'agent_secret', 'topology'],
 ];
 
 beforeEach(function (): void {
@@ -166,8 +164,6 @@ describe('the task list', function (): void {
             'publication' => 'private', 'domain' => 'workspace.orbit.test', 'status' => 'pending']));
         $route->targets()->create(['instance_id' => $workspace->id, 'position' => 1]);
         $route->forceFill(['status' => 'active'])->saveQuietly();
-        // An old ready VM row of the group: the Gateway reads no task VM row, so `vm_power` stays null.
-        TaskVm::query()->create(['host_node_id' => $node->id, 'node_id' => $node->id, 'group_id' => $group->id, 'provider' => 'incus', 'name' => 'tvm-1', 'state' => 'ready', 'size' => 'normal', 'wireguard_ip' => '10.44.0.137', 'pi_token' => str_repeat('p', 40)]);
         TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('a', 40), 'source' => 'orbit_push']);
         Operation::query()->create(['kind' => 'tasks.provision', 'target_type' => 'task_group', 'target_id' => $group->id, 'input' => [], 'status' => OperationStatus::Waiting]);
 

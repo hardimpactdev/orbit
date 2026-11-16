@@ -9,6 +9,11 @@ use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
+// These migrations ran on the task VM tables, which a later migration drops. Its rollback creates them as these migrations found them.
+beforeEach(function (): void {
+    (require database_path('migrations/2027_03_03_000000_drop_task_vm_tables.php'))->down();
+});
+
 it('retires cloud state without changing an Incus slot and resumes after partial drops', function (): void {
     Schema::create('upcloud_task_vm_image_builds', static function (Blueprint $table): void {
         $table->id();
