@@ -40,7 +40,7 @@ The Pi task loop ran on task VMs with the Pi agent server. It is removed with th
 
 `task:prep`, `task:prep-fix`, the build and the review round (`tasks.prep`, `tasks.prep_fix`, `tasks.build`, `tasks.review_round`) are removed. Their routes and MCP tools are gone, and the [gate check](/reference/tasks#gate-check) starts none of them. The rows of `task_review_rounds` stay, and nothing reads them.
 
-The maintenance run, the package install, the repository script, the idle save and the Pi turn (`tasks.maintenance`, `tasks.package`, `tasks.script`, `tasks.idle_save`, `tasks.turn`) are removed too. The routes `package` and `script` and their MCP tools are gone. `task:turn` runs only the [copy turn](/cli/task/turn#in-a-task-copy); its role `consult` and its `--model` option are gone. The Gateway registers no `pi` agent driver. Project maintenance still admits its groups and their copies, but no maintenance run follows. The columns `idle_saved_commit` and `idle_saved_at` stay, and nothing reads them.
+The maintenance run, the package install, the repository script, the idle save and the Pi turn (`tasks.maintenance`, `tasks.package`, `tasks.script`, `tasks.idle_save`, `tasks.turn`) are removed too. The routes `package` and `script` and their MCP tools are gone. `task:turn` runs only the [copy turn](/cli/task/turn#in-a-task-copy); its role `consult` and its `--model` option are gone. The Gateway registers no `pi` agent driver. Project maintenance still admits its groups and their copies, but no maintenance run follows. The columns `idle_saved_commit` and `idle_saved_at` are dropped with the [task VM settings](#task-vm-settings).
 
 ### The task VM lifecycle
 
@@ -106,7 +106,7 @@ A later release drops what nothing read any more. Its migration `2027_03_01_0000
 - The rows already in `task_group_egress` stay readable through `task:egress`.
 - The fleet reboot intent of a Node has no `task_project`, and the pass has no `task_hosts`. Swamp drains no task guests: the step `Drain the task guests` and its task files `fleet-reboot-drain-tasks.yml` and `fleet-reboot-park.yml` are deleted.
 
-The Operation kind pattern `task_vm.%` leaves the busy check of the fleet reboot, because no `task_vm.*` kind starts. `capacity_wait_reason` and the task VM tables stay, unread by the API, until a later release drops them.
+The busy check of the fleet reboot, `FleetReboot::busy`, drops the Operation kind pattern `task_vm.%`, because no `task_vm.*` kind starts. No admission calls the check any more. It reads `TaskVm` rows, as `rebootingTaskHosts` and `refuseTaskWork` do, and they go with the task VM tables. `capacity_wait_reason` and the task VM tables stay, unread by the API, until a later release drops them.
 
 ### What stays
 

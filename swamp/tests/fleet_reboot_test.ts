@@ -45,7 +45,7 @@ Deno.test("each Node runs drain, reboot and check in order, each phase bounded a
     assertEquals(Number(steps[0].task.inputs.run.split(" ")[1]) > 900 + 300, true);
 });
 
-Deno.test("a Node waits outside the window or when admission found its task work busy, and an operator's pass ignores the window", async () => {
+Deno.test("a Node waits outside the window or when admission deferred it, and an operator's pass ignores the window", async () => {
     const decide = drainBlock.find((t) => t.name === "Decide whether the Node waits")!;
     const folder = await Deno.makeTempDir();
     try {
@@ -58,11 +58,11 @@ Deno.test("a Node waits outside the window or when admission found its task work
         };
         assertEquals(await reason("03:10", true), "");
         assertEquals(await reason("02:59", true), "window");
-        // 05:15 leaves 45 minutes: the 15-minute drain plus 30 minutes for the guest stops, the reboot and the check.
+        // 05:15 leaves 45 minutes: the 15-minute drain plus 30 minutes for the reboot and the check.
         assertEquals(await reason("05:16", true), "window");
         assertEquals(await reason("05:15", true), "");
         assertEquals(await reason("14:00", false), "");
-        assertEquals(await reason("03:10", true, "tasks_busy"), "tasks_busy");
+        assertEquals(await reason("03:10", true, "operator_hold"), "operator_hold");
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 

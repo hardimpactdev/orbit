@@ -110,7 +110,7 @@ it('keeps a normal Node\'s managed firewall rules as main had them', function ()
     expect(array_map(static fn ($rule): array => [$rule->name, $rule->role, $rule->shape->toAgentInput()], $desired))->toBe(FirewallSnapshot);
 });
 
-it('adds no rule for a task_vms value that a Node still stores', function (): void {
+it('adds no rule for a task_vms key in a Node\'s settings', function (): void {
     $plain = app(NodeFirewallDesiredRules::class)->forNode(firewallSnapshotNode());
     $stored = app(NodeFirewallDesiredRules::class)->forNode(firewallSnapshotNode(['task_vms' => ['network' => 'proofbr0', 'cidr' => '10.252.42.0/24', 'task_places' => 2,
         'containers' => ['cidr' => '10.252.43.0/24', 'task_places' => 1]]], 'task-host', '10.44.0.4'));

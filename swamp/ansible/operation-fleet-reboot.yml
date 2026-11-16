@@ -102,8 +102,8 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
-        # A held Node or a busy task host waits for the next night. So does a Node that cannot finish its drain, guest stops
-        # and reboot inside the window. An operator's pass is not bound to the window.
+        # A Node that admission deferred, such as a held Node, waits for the next night. So does a Node that cannot finish its
+        # drain and reboot inside the window. An operator's pass is not bound to the window.
         - name: Decide whether the Node waits
           ansible.builtin.set_fact:
             wait_reason: >-

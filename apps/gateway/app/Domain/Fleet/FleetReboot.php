@@ -132,7 +132,7 @@ final readonly class FleetReboot
         return $group;
     }
 
-    /** Why a task host is left out of a pass now, or null: an open task Operation runs on one of its task VMs. */
+    /** Whether an open task Operation runs on one of the Node's task VMs: `tasks_busy`, or null. No admission asks any more; it goes with `TaskVm`. */
     public function busy(Node $node): ?string
     {
         $vms = TaskVm::query()->where('host_node_id', $node->id)->whereNot('state', TaskVmState::Destroyed)->get(['id', 'group_id']);
