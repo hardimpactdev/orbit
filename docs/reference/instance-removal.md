@@ -126,6 +126,8 @@ The Gateway records the member set as Removing in the same admission transaction
 
 This parent supports development Instances on managed app-dev Nodes, including their native Process, Schedule and Route withdrawal children. Owned SQLite, managed server databases and registered external database records are supported. Each server child reads the server's admin login from the server's own vault key; the database intent records no password. Production Instances and TaskVM-owned workspaces return `operation.kind_unavailable` before admission. An ordinary development checkout has no fabricated TaskVM identity.
 
+A [proof copy on a CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) is a development Instance too, so its removal takes the same path. The database's removal contract follows the same placement rule: it admits a development removal on a Node with an `app-dev` role, or on a Node with a `ci-runner` role that is not being removed and no app role.
+
 Repository reads use a fresh scoped GitHub App credential or normal anonymous access. Anonymous access requires GitHub to confirm the repository is public; otherwise credential preparation fails with the [source credential error](/reference/github-app#instance-source-credentials) naming the App and repository. A non-forced removal that requires `gh_cli` source access refuses before admission; forced removal needs no fetch or GitHub mint. The Gateway mints the read token when the run starts and pushes it to the vault; no step calls the Gateway for it.
 
 ## Processes and Schedules
