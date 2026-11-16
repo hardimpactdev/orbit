@@ -36,7 +36,7 @@ Without old, the only way back after the handover is a new build. An Incus snaps
 
 Today a production Instance is a checkout home on an `app-prod` Node ([Instance releases](/reference/deployments#the-production-home)). Each deploy clones a release into `releases/<name>`, links shared paths into the home, runs the steps, swaps the `current` link and reloads a dedicated PHP-FPM pool. The home keeps three releases. A rollback swaps `current` back. Processes run on the Node as the Project account, and per-minute schedulers keep Node timers.
 
-ADR 0250 moves every Instance into an Incus container. [Instance containers](/reference/development-containers#production-instances) holds the decided basics for production: the `app-prod` role installs the container setup and the runtime folder, not PHP-FPM; a production container has only the user `orbit`; FrankenPHP serves it after its [production gate](/solutions/development-container-runtime#production-gate); production containers never sleep; existing checkouts are migrated.
+ADR 0250 moves every Instance into an Incus container. [Instance containers](/reference/development-containers#production-instances) holds the decided basics for production: the `app-prod` role installs the container setup and the runtime folder, not PHP-FPM; a production container has only the user `orbit`; FrankenPHP serves it after its [production gate](/solutions/development-container-runtime#production-gate); existing checkouts are migrated. [ADR 0265](/decisions/0265-sleep-idle-production-containers) lets an idle live sleep and wake fully ready.
 
 The development side proved the machinery: a ZFS clone of a snapshot takes about a second and copies no file, and a default Instance's [seed](/reference/development-containers#the-default-instance) carries warm dependencies to its clones. An earlier production spike proved a warm deploy in containers with a clone, a candidate and a Route switch. Its proposal had a separate preparation container that stayed between deploys.
 
@@ -211,7 +211,8 @@ During every case, a load loop sends a request to the health path and to one pag
 | Capacity refusal | A memory limit set above the Node's free memory, then removed | The tick's results | `deployment.node_capacity` with nothing made; the commit is not blocked; the tick deploys it after the limit is removed |
 | Rollback and forward | `instance:rollback`, then `instance:rollback` again | Time to the first response of each release, failed requests | Each switch has no failed request; the workers and timers run only in the new live; automatic deploys are paused and the commit is blocked |
 | Node reboot | A reboot of the Node between deploys | The containers and units after the boot | Only live starts, with its Processes and timers; old stays stopped |
-| One fire | Every case above, read from the fire records | Fires per Schedule per minute | Each Schedule fired once each minute: no minute twice and none skipped, except while the Node rebooted |
+| One fire | Every case above, read from the fire records | Fires per Schedule per minute | Each Schedule fired once each minute: no minute twice and none skipped, except while the Node rebooted and while live slept ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) |
+| Sleep and wake | Live sleeps after its idle window. Then a visit, a due native Schedule and a queued job meet it asleep ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) | How long Caddy holds the visit; the fire and job records | No request fails, and the visit is held for at most 10 s; the native Schedule wakes live and runs once; the worker resumes and runs the queued job |
 | Jobs across the switch | Jobs dispatched without pause through a deploy and a rollback | Jobs run, and the drain time | Every job ran once; the drain ended within 120 s |
 | Uploads survive | An upload before a deploy, one in hot's time and one after a rollback | The files in the volume | Every upload reads back from live after each deploy and rollback; the Passport keys did not change |
 | WebSocket | The page stays open through a deploy | Reconnect time, and the event after the switch | The client reconnects by itself and gets the event |
@@ -266,6 +267,6 @@ mealou moves after hauzer's first container deploy passed. Neither waits for a w
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
-- ADRs: [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers), [0253](/decisions/0253-patch-nodes-and-reboot-them-drained)
+- ADRs: [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers), [0253](/decisions/0253-patch-nodes-and-reboot-them-drained), [0265](/decisions/0265-sleep-idle-production-containers)
 - Detail: [Production containers](/reference/production-containers), [Instance releases](/reference/deployments), [Instance cloning](/reference/instance-cloning), [Schedules](/reference/schedules)
 - Verify: Gateway Pest tests of the records, admission and projections; the cases of the production charts; the live proof on a fixture production Project
