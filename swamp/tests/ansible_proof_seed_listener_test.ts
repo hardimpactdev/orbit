@@ -101,7 +101,7 @@ Deno.test("without a sender the trust and the seed listener go, and another list
     } finally { await Deno.remove(kept, { recursive: true }); }
 });
 
-Deno.test("a converge opens the seed listener only in the firewall phase, after the rules of its port exist", async () => {
+Deno.test("a converge opens the seed listener only in the firewall phase, after the rules of its port exist", () => {
     assertEquals(Deno.readTextFileSync(tasks).includes("core.https_address, \"{{ seed.listen }}\""), false);
     // The playbook holds a tag that the YAML reader here does not parse, so the firewall play is read as text.
     const book = Deno.readTextFileSync(new URL("../ansible/operation-node-role-add.yml", import.meta.url));
