@@ -1,5 +1,4 @@
 order = 1300
-source_sha256 = "1010ada43464b0c71382e3daa0a80ece2b1dca68618049083684592c0a1a83ed"
 cases = [
   "test_confirmed_registered_and_moved_dependents_are_found_even_with_force",
   "test_existing_owner_registration_refuses_without_reading_candidate_git",

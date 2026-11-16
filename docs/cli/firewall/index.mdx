@@ -129,6 +129,7 @@ The port is one number from 1 through 65535, such as `25`, or an ordered range, 
 
 UFW stops at the first rule that matches, so Orbit sets the order of every operator rule it writes:
 
+- On a CI Node that receives the proof seed, Orbit inserts `orbit:proof-seed` (allow the default's Node) and `orbit:proof-seed-deny` above `orbit:wireguard-members`, so only the default's Node reaches the Incus port ([The seed listener](/reference/node-provisioning#the-seed-listener)).
 - Orbit places new operator rules above its own `orbit:` rules. A deny on a port therefore also applies to WireGuard peers that `orbit:wireguard-members` would admit.
 - A narrower rule sits above a broader one, allow or deny alike: one address above a CIDR above anywhere.
 

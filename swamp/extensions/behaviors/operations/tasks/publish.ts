@@ -148,6 +148,13 @@ function bounded(paths: string[], budget: number) {
     }
     return { shown, more: paths.length - shown.length };
 }
+
+/** One refusal line: its code, then the quoted items that fit BASE_BYTES, then how many more there were. */
+function refusal(prefix: string, items: string[], extra: number) {
+    const total = items.length + extra;
+    const { shown, more } = bounded(items, BASE_BYTES - bytes(prefix) - bytes(` and ${total} more`));
+    return prefix + shown.map((item) => JSON.stringify(item)).join(", ") + (more + extra > 0 ? ` and ${more + extra} more` : "");
+}
 export const BaseFacts = z.object({
     base_commit: Sha,
     default_commit: Sha,
@@ -156,6 +163,8 @@ export const BaseFacts = z.object({
         (paths) => bytes(JSON.stringify(paths)) <= BASE_BYTES,
     ),
     overlapping_more: z.number().int().min(0),
+    // The default head the worker merged at publish, or null when the push sends the candidate itself.
+    merged_default: Sha.nullable(),
 }).strict();
 export type BaseFacts = z.infer<typeof BaseFacts>;
 
@@ -165,37 +174,38 @@ const names = (
 ) => [...new Set(text.split("\0").filter((name) => name !== ""))];
 
 /**
- * The files "Read the base" wrote: the default head, the merge base, how far behind, the overlapping paths and the merge-tree
- * reply. Exit 0 states the base; exit 3 is a real conflict, refused with its paths; anything else is an error of the read.
+ * The files "Read the base" wrote: the default head, the merge base, how far behind, the overlapping paths, the copy's own workflow
+ * paths, the merge-tree reply and the merge at publish. A path under .github/workflows/ that the candidate changed since the merge
+ * base refuses first, because the token has no workflows permission; then exit 0 states the base and passes the merge at publish,
+ * or "" when the push sends the candidate; exit 3 is a real conflict, refused with its paths; anything else is an error of the read.
+ * A workflow list or merge file the read did not write is an error, never an empty one.
  */
 export function baseFacts(
     exitCode: number,
-    files: Record<"head" | "base" | "behind" | "overlap" | "merge", string>,
+    files: Record<"head" | "base" | "behind" | "overlap" | "merge", string> & { workflows: string | null; merged: string | null },
 ) {
     const head = files.head.trim(),
         base = files.base.trim(),
         behind = files.behind.trim();
     const read = Sha.safeParse(head).success && Sha.safeParse(base).success &&
-        /^[0-9]+$/.test(behind);
+        /^[0-9]+$/.test(behind) && files.workflows !== null;
+    const none = { facts: null, merged: "" };
+    if (read && (exitCode === 0 || exitCode === 3)) {
+        const workflows = names(files.workflows ?? "");
+        if (workflows.length > 0) {
+            return { ...none, error_code: refusal("tasks.publish_workflow_change: ", workflows, 0) };
+        }
+    }
     if (exitCode === 3 && read) {
         // merge-tree --name-only -z: the tree, then each conflicted path.
         const conflicts = names(files.merge).slice(1);
         if (conflicts.length > 0) {
-            // The prefix and the widest count take their bytes first.
-            const prefix = "tasks.publish_conflict: ";
-            const room = BASE_BYTES - bytes(prefix) -
-                bytes(` and ${conflicts.length} more`);
-            const { shown, more } = bounded(conflicts, room);
-            return {
-                facts: null,
-                error_code: prefix +
-                    shown.map((path) => JSON.stringify(path)).join(", ") +
-                    (more > 0 ? ` and ${more} more` : ""),
-            };
+            return { ...none, error_code: refusal("tasks.publish_conflict: ", conflicts, 0) };
         }
     }
-    if (exitCode !== 0 || !read) {
-        return { facts: null, error_code: "tasks.publish_failed" };
+    const merged = (files.merged ?? "").trim();
+    if (exitCode !== 0 || !read || files.merged === null || (merged !== "" && !Sha.safeParse(merged).success)) {
+        return { ...none, error_code: "tasks.publish_failed" };
     }
     const overlap = bounded(names(files.overlap), BASE_BYTES);
     return {
@@ -205,7 +215,9 @@ export function baseFacts(
             behind_by: Number(behind),
             overlapping_paths: overlap.shown,
             overlapping_more: overlap.more,
+            merged_default: merged === "" ? null : head,
         }),
+        merged,
         error_code: "",
     };
 }
@@ -234,11 +246,11 @@ function withoutBase(body: string): string {
 
 /**
  * The body, then the fixed `## Base` section of a task copy's publish; without facts the body is left as it is. The body is the one
- * the copy's .env content check read: the caller's text and the waiver lines (withWaivers). The whole stays within BodyLimit: a
- * section whose path list does not fit names only their count, and one that does not fit at all is left out; the publish result
- * states the base either way.
+ * the copy's .env content check read: the caller's text and the waiver lines (withWaivers). A merge at publish names the default
+ * branch and its head. The whole stays within BodyLimit: a section whose path list does not fit names only their count, and one
+ * that does not fit at all is left out; the publish result states the base either way.
  */
-export function withBase(body: string, facts: BaseFacts | null): string {
+export function withBase(body: string, facts: BaseFacts | null, branch: string): string {
     if (facts === null) return body;
     const kept = withoutBase(body);
     const code = (text: string) => "`" + text.replaceAll("`", "'") + "`";
@@ -265,6 +277,7 @@ export function withBase(body: string, facts: BaseFacts | null): string {
             `- Behind by: ${facts.behind_by} ${
                 facts.behind_by === 1 ? "commit" : "commits"
             }`,
+            ...(facts.merged_default === null ? [] : [`- Merged ${branch} ${code(facts.merged_default)} at publish`]),
             ...paths,
         ].join("\n") + "\n";
     for (const paths of count === 0 ? [listed] : [listed, counted]) {
@@ -307,7 +320,7 @@ export function pullPlan(raw: unknown) {
             path,
             body: JSON.stringify({
                 ...input.pull_request,
-                body: withBase(input.pull_request.body, facts),
+                body: withBase(input.pull_request.body, facts, input.base),
                 head: input.branch,
                 base: input.base,
             }),
@@ -324,7 +337,7 @@ export function pullPlan(raw: unknown) {
         path: `${path}/${row.number}`,
         body: JSON.stringify({
             title: input.pull_request.title,
-            body: withBase(input.pull_request.body, facts),
+            body: withBase(input.pull_request.body, facts, input.base),
         }),
         number: row.number,
         error_code: "",
@@ -375,8 +388,6 @@ const CopyHit = z.object({
 const CopyScan = z.object({
     secrets: z.array(CopyHit),
     secrets_more: z.number().int().min(0),
-    workflows: z.array(z.string()),
-    workflows_more: z.number().int().min(0),
     sources: z.array(z.string()),
     values: z.number().int().min(0),
     short_skipped: z.record(z.string(), z.number().int().min(0)),
@@ -385,17 +396,10 @@ const CopyScan = z.object({
     seconds: z.number().min(0),
 }).strict();
 
-/** One refusal line: its code, then the quoted items that fit BASE_BYTES, then how many more there were. */
-function refusal(prefix: string, items: string[], extra: number) {
-    const total = items.length + extra;
-    const { shown, more } = bounded(items, BASE_BYTES - bytes(prefix) - bytes(` and ${total} more`));
-    return prefix + shown.map((item) => JSON.stringify(item)).join(", ") + (more + extra > 0 ? ` and ${more + extra} more` : "");
-}
-
 /**
  * The copy check of a publication (docs/reference/tasks.md#the-copy-check), as its workspace phase recorded it. A secret of the copy in
- * the range refuses with its paths, lines and secret names; then a workflow change refuses with its paths; an error of the check refuses
- * as unchecked. A pass keeps the public facts: what was read, what was skipped, and the digest of the objects the check read.
+ * the range refuses with its paths, lines and secret names; an error of the check refuses as unchecked. Workflow changes are judged by
+ * baseFacts, against the real default head. A pass keeps the public facts: what was read, what was skipped, and the digest of the objects the check read.
  */
 export function copyCheck(raw: unknown) {
     const evidence = z.object({ phase: z.literal("scan"), evidence: z.unknown() }).parse(raw).evidence;
@@ -417,9 +421,6 @@ export function copyCheck(raw: unknown) {
             ),
         };
     }
-    if (scan.workflows.length > 0) {
-        return { checked: false, error_code: refusal("tasks.publish_workflow_change: ", scan.workflows, scan.workflows_more) };
-    }
-    const { secrets: _s, secrets_more: _m, workflows: _w, workflows_more: _x, ...facts } = scan;
+    const { secrets: _s, secrets_more: _m, ...facts } = scan;
     return { checked: true, error_code: "", ...facts };
 }

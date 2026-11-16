@@ -439,7 +439,7 @@ This PR lets Swamp drive a container's T3 for `task:turn`, as [Swamp drives T3](
 
 - **Gateway.** The task driver `t3` for groups in a container. Its thread row records the T3 thread id, the Node and the driver. It accepts Claude models.
 - **Pi.** The `pi` driver stays for task VM groups.
-- **Swamp.** The container branch of `operation-task-turn` with the calls of the contract: `t3_project_list`, `t3_thread_launch`, `t3_thread_send`, `t3_thread_wait`, `t3_thread_read` and `t3_thread_interrupt` over MCP, and `orchestration.getThreadProjection` and `orchestration.forceStopThread` over the WebSocket.
+- **Swamp.** The container branch of the removed Pi turn workflow with the calls of the contract: `t3_project_list`, `t3_thread_launch`, `t3_thread_send`, `t3_thread_wait`, `t3_thread_read` and `t3_thread_interrupt` over MCP, and `orchestration.getThreadProjection` and `orchestration.forceStopThread` over the WebSocket.
 - **Projection.** State, the provider error, token metrics and the redacted transcript, by the mappings of the contract.
 - **Sessions.** The step reads the Instance's `Orbit Swamp` session from the vault.
 

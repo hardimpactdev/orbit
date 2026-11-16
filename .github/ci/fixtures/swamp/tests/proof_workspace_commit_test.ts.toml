@@ -1,5 +1,4 @@
 order = 1050
-source_sha256 = "64a10b89742b6903e5239c2caf16e263e2dc32a4a85d371b107e720da33a86ad"
 cases = [
   "assigned batches use the old runner plan interface and filter its whole batch lines",
   "merge-base replay fails a flagged case that passes on base and rejects missing or infrastructure verdicts",

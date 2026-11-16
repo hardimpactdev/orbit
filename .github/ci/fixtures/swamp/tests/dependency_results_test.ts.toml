@@ -1,5 +1,4 @@
 order = 720
-source_sha256 = "158d9d8723bbb4ed800807de4ccd10ea380a787dee6ecaa098d2f7e57bbe9a5c"
 cases = [
   "producer schemas accept frozen canonical fixture success",
   "producer schemas accept frozen canonical fixture running-partial",

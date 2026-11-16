@@ -74,8 +74,8 @@
   when: phase in ['container', 'clone', 'stop', 'start']
 
 # A wake (only its intent names the asleep marker) finds one of four states (docs/reference/development-containers.md#sleep-and-wake):
-# Frozen, the sleep's state: resume it, close swap again, and wait a short time for the web unit; a silent one gets a stop and the
-# boot below, as a visitor would rather wait for a boot than for ever. Stopped (after a host reboot or a sleep that fell back to a
+# Frozen, the sleep's state: the power helper resumes it and closes swap again, then the phase waits a short time for the web
+# unit; a silent one gets a stop and the boot below, as a visitor would rather wait for a boot than for ever. Stopped (after a host reboot or a sleep that fell back to a
 # stop): the boot below. Running: no start and no resume. A Frozen container without its marker is a defect that the result names.
 # A deployment's start resumes a Frozen container too, then converges as usual. A nested-fleet container
 # is never stopped or booted by a wake: only a deployment or a start gives back its Club key and its tunnel `wg-nested`.
@@ -98,26 +98,36 @@
   when: phase == 'start' and intent.marker is defined and start_nested | bool and start_found == 'Stopped'
   ansible.builtin.fail: { msg: instance.nested_fleet_stopped }
 
+# The power helper (docs/reference/prepared-restore.md#lifecycle) owns the resume of a sleeping container for a wake, a deployment
+# and a start alike, through the Instance's lock. Frozen: with a valid plan of the last sleep it reads the recorded pages back while
+# still frozen, unfreezes once and closes every swap limit that sleep opened; a missing, stale or unreadable plan (a changed boot id
+# included) means an ordinary resume. Stopped: it discards the plan and the limits record before the boot below, so no later sleep or
+# wake meets address data of an earlier incarnation.
+- name: Hand a sleeping container to the power helper
+  tags: [start]
+  when: phase == 'start' and start_found in ['Frozen', 'Stopped']
+  block:
+    - name: Install the power helper
+      ansible.builtin.include_tasks: { file: instance-power-helper.yml, apply: {tags: [start]} }
+    - name: Restore and resume the container
+      ansible.builtin.include_tasks: { file: instance-power-call.yml, apply: {tags: [start]} }
+      vars:
+        power_call: ['restore', '--instance', '{{ container.instance_id }}', '--operation', "{{ lookup('ansible.builtin.env', 'ORBIT_OPERATION_ID') }}"]
+        power_call_intent: true
+    # `already_running`: the Node's fast wake of this Operation resumed it while this run waited for the lock.
+    - name: Refuse a resume the helper could not make
+      when: power_called.outcome not in ['resumed', 'already_running', 'stopped']
+      ansible.builtin.fail: { msg: "{{ power_called.error_code | default('instance.container_start_failed', true) }}" }
+
 - name: Resume the frozen container
   tags: [start]
   when: phase == 'start' and start_found == 'Frozen'
   block:
-    - name: Resume the container
-      ansible.builtin.command: { argv: "{{ incus_project + ['resume', container.name] }}" }
-      register: container_resume
-      changed_when: true
-    # Pages in swap stay there and come back on use; a running container swaps no more, as before the sleep.
-    - name: Keep the container's memory out of swap
-      ansible.builtin.include_tasks: { file: instance-container-swap.yml, apply: {tags: [start]} }
-      vars: { swap: close }
     - name: Start the web probe clock
       ansible.builtin.set_fact: { resume_probe_started: "{{ now().timestamp() }}" }
     - name: Wait for the resumed web unit
       when: intent.web is defined and container.web_config | default(none) is not none
-      ansible.builtin.command:
-        argv: >-
-          {{ as_root + ['curl', '--silent', '--output', '/dev/null', '--write-out', '%{http_code}', '--max-time', '1',
-                        'http://127.0.0.1:' ~ intent.web.port ~ '/'] }}
+      ansible.builtin.command: { argv: "{{ web_probe }}" }
       register: resumed_web
       until: resumed_web.rc == 0 and resumed_web.stdout | int > 0
       retries: "{{ intent.web.resume_seconds }}"
@@ -127,9 +137,10 @@
     - name: Record the resume
       ansible.builtin.set_fact:
         start_resumed: "{{ resumed_web is skipped or (resumed_web.rc == 0 and resumed_web.stdout | int > 0) }}"
-        start_resume_timing:
-          resume_seconds: "{{ (container_resume.delta.split(':')[1] | int) * 60 + (container_resume.delta.split(':')[2] | float) }}"
-          web_probe_seconds: "{{ ((now().timestamp() | float) - (resume_probe_started | float)) | round(3) }}"
+        # A container that the fast wake resumed has no resume seconds of this run.
+        start_resume_timing: >-
+          {{ {'web_probe_seconds': ((now().timestamp() | float) - (resume_probe_started | float)) | round(3)}
+             | combine({'resume_seconds': power_called.seconds.resume} if power_called.seconds.resume is defined else {}) }}
     - name: Refuse the wake of a nested-fleet container whose web unit is silent
       when: not start_resumed and start_nested | bool
       ansible.builtin.fail: { msg: instance.web_unready }
@@ -144,8 +155,18 @@
     - name: Use the state after the resume
       ansible.builtin.set_fact: { container_read: "{{ resumed_read }}" }
 
+# A wake may follow the Node's fast wake of the same Operation, which the Gateway gave up on: the worker's one ready file then holds
+# the facts that this run reports (docs/reference/prepared-restore.md#the-fast-wake).
+- name: Read the fast wake's outcome of this Operation
+  tags: [start]
+  when: phase == 'start' and intent.marker is defined and start_found in ['Running', 'Frozen']
+  ansible.builtin.find:
+    paths: "{{ wake_outcomes | default('/var/lib/orbit/hibernation/outcomes') }}"
+    patterns: "app-instance-{{ container.instance_id }}-op-{{ lookup('ansible.builtin.env', 'ORBIT_OPERATION_ID') }}.ready-*"
+  register: wake_fast_outcome
+
 # A wake of a container that runs (resumed now, or running already) boots nothing, so it converges nothing: the keys below were
-# applied at its last boot. The wake's result names its path and, for a resume, its seconds.
+# applied at its last boot. The wake's result names its path, the helper's restore status and, for a resume, its seconds.
 - name: Note the wake's path
   tags: [start]
   when: phase == 'start' and intent.marker is defined
@@ -156,7 +177,15 @@
                   else 'restarted_after_resume' if start_found == 'Frozen'
                   else 'already_running' if start_found == 'Running' else 'started',
           'marker_found': wake_marker.stat.exists}
-         | combine(start_resume_timing | default({})) }}
+         | combine(start_resume_timing | default({}))
+         | combine({'prepared_restore': {'status': wake_fast_ready.path.split('.ready-')[-1] | replace('-', '_')},
+                    'ready_at': '%Y-%m-%dT%H:%M:%SZ' | strftime(wake_fast_ready.mtime | int, utc=true),
+                    'ready_at_resolution_seconds': 1}
+                   if wake_fast_outcome.matched | default(0) == 1
+                   else {'prepared_restore': power_called.prepared_restore} if start_found == 'Frozen'
+                   else {'prepared_restore': {'status': 'not_applicable'}} if start_found in ['Stopped', 'Running'] else {}) }}
+  vars:
+    wake_fast_ready: "{{ wake_fast_outcome.files[0] | default({}) }}"
 
 # A nested-fleet container (only its intent has `allowed_devices`) is made from the nested-fleet image. While the Node's last
 # converge recorded a failed build of that image, the stable alias may name an older image or none: the create refuses before any
@@ -525,6 +554,13 @@
   vars:
     container_php_ini_path: /etc/orbit/php/conf.d/99-orbit-runtime.ini
     container_php_ini_content: "memory_limit = 1G\nauto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n"
+    container_php_cli_ini_path: /etc/orbit/php/php-cli.ini
+    container_php_cli_ini_lines: "{{ (container.php_cli_ini | default(none) or '').splitlines() }}"
+    # The wanted lines without those whose module the runtime folder lacks; no line left is no file.
+    container_php_cli_ini_kept: >-
+      {{ container_php_cli_ini_lines | reject('in', container_php_cli_modules.results | selectattr('rc', 'defined')
+      | rejectattr('rc', 'eq', 0) | map(attribute='item') | list) | list }}
+    container_php_cli_ini_content: "{{ (container_php_cli_ini_kept | join('\n') ~ '\n') if container_php_cli_ini_kept else '' }}"
   block:
     - name: Read the container's PHP settings
       ansible.builtin.command: { argv: "{{ as_root + ['cat', '--', container_php_ini_path] }}" }
@@ -539,6 +575,42 @@
           container.name ~ container_php_ini_path] }}
         stdin: "{{ container_php_ini_content }}"
         stdin_add_newline: false
+      notify: Restart the running Orbit units after changed PHP settings
+      changed_when: true
+    # The CLI-only file: the Gateway renders one `extension=` line for each CLI-only extension of the Project's static build, such
+    # as PCOV, or none (docs/reference/php-runtime.md#pcov-in-the-cli-only). PHP reads `php-<SAPI name>.ini` in the config path
+    # (main/php_ini.c), and reads `php.ini` there only when it finds none; Orbit writes no `php.ini`. `php` and `frankenphp php-cli`
+    # have the SAPI name `cli`, so both read the file. Only the FrankenPHP server, with the SAPI name `frankenphp`, never does.
+    # A line stays only when the Node's runtime folder, mounted at /opt/orbit-runtime, holds its module: a Gateway release before
+    # the Node's converge must not make every PHP CLI call warn "Unable to load dynamic library". This phase runs again at each
+    # start and deploy, so the line returns by itself once the Node holds the module.
+    - name: Read which CLI-only PHP modules the runtime folder holds
+      when: item.startswith('extension=')
+      loop: "{{ container_php_cli_ini_lines }}"
+      ansible.builtin.command: { argv: "{{ as_root + ['timeout', '5', 'test', '-f', item.removeprefix('extension=')] }}" }
+      register: container_php_cli_modules
+      changed_when: false
+      failed_when: container_php_cli_modules.rc not in [0, 1] or container_php_cli_modules.stderr != ''
+    - name: Read the container's CLI-only PHP settings
+      ansible.builtin.command: { argv: "{{ as_root + ['cat', '--', container_php_cli_ini_path] }}" }
+      register: container_php_cli_ini_read
+      changed_when: false
+      failed_when: container_php_cli_ini_read.rc != 0 and 'No such file or directory' not in container_php_cli_ini_read.stderr
+    - name: Write the changed CLI-only PHP settings
+      when: >-
+        container_php_cli_ini_content != ''
+        and (container_php_cli_ini_read.rc != 0 or container_php_cli_ini_read.stdout ~ '\n' != container_php_cli_ini_content)
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0644', '-',
+          container.name ~ container_php_cli_ini_path] }}
+        stdin: "{{ container_php_cli_ini_content }}"
+        stdin_add_newline: false
+      notify: Restart the running Orbit units after changed PHP settings
+      changed_when: true
+    - name: Remove the CLI-only PHP settings of a Project without them
+      when: container_php_cli_ini_content == '' and container_php_cli_ini_read.rc == 0
+      ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_php_cli_ini_path] }}" }
       notify: Restart the running Orbit units after changed PHP settings
       changed_when: true
     # Finish the restart dispatch before any readiness check later in the phase.

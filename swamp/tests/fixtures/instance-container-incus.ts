@@ -581,6 +581,16 @@ if (family === "list") {
     command[2] = command[2].replaceAll("/var/lib/orbit/vite-plus-home", rootfs(name) + "/var/lib/orbit/vite-plus-home")
       .replaceAll("/usr/local/libexec", rootfs(name) + "/usr/local/libexec");
   }
+  // The orbit-runtime disk device shows the Node's runtime folder at /opt/orbit-runtime: here the fixture's own `orbit-runtime`
+  // folder, so a test decides which PHP modules the Node holds.
+  if (command[0] === "test" && command[1] === "-f" && command[2].startsWith("/opt/orbit-runtime/")) {
+    let file = false;
+    try {
+      file = Deno.statSync(folder + command[2].slice("/opt".length)).isFile;
+    } catch { /* not in the runtime folder */ }
+    save();
+    Deno.exit(file ? 0 : 1);
+  }
   const done = new Deno.Command(command[0], {
     args: command.slice(1).map((value) => command[0] === "git" && command[1] === "config" ? value : inside(name, value)),
     cwd: cwd === null ? undefined : inside(name, cwd),

@@ -1,8 +1,0 @@
-manifestVersion: 1
-name: "@nckrtl/task-vm-lifecycle"
-version: 2026.11.07.1
-visibility: private
-license: MIT
-description: Public Incus lifecycle intent and result decoding; official SSH owns effects.
-behaviors:
-  - operations/task-vm-lifecycle/metadata.ts

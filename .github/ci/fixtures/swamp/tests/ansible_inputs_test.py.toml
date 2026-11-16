@@ -1,7 +1,7 @@
 order = 340
-source_sha256 = "3b675ae68761c049ce7800ffdbfc18a5973400e69417c8c04afc14fa834a261b"
 cases = [
   "test_admitted_identity_and_secret_file_custody",
+  "test_seed_listener_addresses_the_default_node_only_while_the_seed_has_a_sender",
   "test_metrics_container_plan_preserves_the_admitted_state",
   "test_every_ansible_step_sends_its_failed_task_to_stderr",
   "test_required_machine_phases_use_the_existing_ansible_entry_point",

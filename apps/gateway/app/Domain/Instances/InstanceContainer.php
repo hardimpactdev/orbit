@@ -11,9 +11,11 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\Tasks\TaskCopyKey;
+use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
+use App\Infrastructure\MachineSoftware\StaticPhpBuild;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -280,6 +282,7 @@ final readonly class InstanceContainer
         $environment = [...$environment, ...$proxy];
         $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url, $proxy, $ownProxy);
         ['vite' => $vitePort, 'server' => $devServerPort] = app(ContainerProcesses::class)->ports($instance);
+        $webConfig = $this->webConfig($instance, $runtime);
 
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
@@ -337,9 +340,13 @@ final readonly class InstanceContainer
             'mail' => $mail,
             'mail_units' => $mail === null ? [] : app(DevelopmentMail::class)->units($mail),
             'units' => $this->units($instance, $runtime, $application, $devServerPort),
-            'web_config' => $this->webConfig($instance, $runtime),
+            'web_config' => $webConfig,
+            // The power helper's readiness target (docs/reference/prepared-restore.md#the-power-helper): only a container with a web unit has one.
+            'web_port' => $webConfig === null ? null : self::WebPort,
             // `php` on every PATH in the container is the Project's static build, so `composer` runs for `agent` and `orbit` alike.
             'php' => $this->php($project),
+            // Only the PHP CLI reads it, so the FrankenPHP server never loads PCOV; null removes Orbit's file.
+            'php_cli_ini' => $this->phpCliIni($project),
             'clone' => $clone,
             // The Project's development Processes; a deployment's new seed restarts the running ones on the new commit.
             'processes' => app(ContainerProcesses::class)->units($instance),
@@ -391,12 +398,34 @@ final readonly class InstanceContainer
     /** The Project's `php` in the runtime folder, through `current`, or null when the Project has no PHP version the folder holds. */
     private function php(Project $project): ?string
     {
-        $version = $project->php_version;
-        if (! is_string($version) || ($this->folders()->php[$version]->artifact ?? null) === null) {
+        $build = $this->phpBuild($project);
+
+        return $build === null ? null : InstanceHostIntent::RuntimeFolder.'/current/php/'.$build->version.'/'.StaticPhpBuild::Bin['php'];
+    }
+
+    /**
+     * The CLI-only `php-cli.ini` of the Project's PHP: one `extension=` line for each CLI-only extension of its static build, such as
+     * PCOV, through `current`. Null when the Project has no PHP version the folder holds, or its build has no CLI-only extension
+     * (docs/reference/php-runtime.md#pcov-in-the-cli-only).
+     */
+    private function phpCliIni(Project $project): ?string
+    {
+        $build = $this->phpBuild($project);
+        if ($build === null || $build->cliExtensions === []) {
             return null;
         }
 
-        return InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin/php';
+        return implode('', array_map(static fn (string $name): string => 'extension='.InstanceHostIntent::RuntimeFolder.'/current/php/'
+            .$build->version."/modules/{$name}.so\n", $build->cliExtensions));
+    }
+
+    /** The Project's static PHP build, or null when the Project has no PHP version or the runtime folder does not hold it yet. */
+    private function phpBuild(Project $project): ?StaticPhpBuild
+    {
+        $version = $project->php_version;
+        $build = is_string($version) ? ($this->folders()->php[$version] ?? null) : null;
+
+        return $build?->artifact === null ? null : $build;
     }
 
     /**
@@ -428,6 +457,7 @@ final readonly class InstanceContainer
         $source = $runtime->clone_source_instance_id === null ? null
             : InstanceRuntime::query()->where('instance_id', $runtime->clone_source_instance_id)->firstOrFail();
         $node = Node::query()->findOrFail($runtime->node_id);
+        $seed = $source === null ? null : TaskCopyStart::seed($source, $node);
         // The seed carries the default's proxy bypass: a remote Node service host, or the private name of its websocket app.
         $resetProxy = $source !== null && (InstanceNodeServiceTarget::query()->where('instance_id', $source->instance_id)
             ->where('node_id', '!=', $source->node_id)->exists()
@@ -442,10 +472,11 @@ final readonly class InstanceContainer
 
         return [
             // The default's mirror on the Node holds the seed's commit: a new branch starts there, without the network.
-            ...($source === null ? [] : ['source' => $source->container_name, 'snapshot' => 'seed-'.ValidatedData::string($source->seed_commit),
-                'seed_commit' => ValidatedData::string($source->seed_commit), 'source_mirror' => self::mirror(Instance::query()->findOrFail($source->instance_id)),
-                // The default's inner volume, whose snapshot of the seed's name the copy's own volume starts from.
-                ...($source->inner_volume === null ? [] : ['inner_volume' => $source->inner_volume])]),
+            // The seed of the copy's own Node (TaskCopyStart::seed): the default's pair on its Node, else that Node's seed holder.
+            ...($seed === null ? [] : ['source' => $seed['source'], 'snapshot' => $seed['snapshot'], 'seed_commit' => $seed['seed_commit'],
+                'source_mirror' => self::mirror(Instance::query()->findOrFail($runtime->clone_source_instance_id)),
+                // The seed's inner volume, whose snapshot of the seed's name the copy's own volume starts from.
+                ...($seed['inner_volume'] === null ? [] : ['inner_volume' => $seed['inner_volume']])]),
             // A task copy starts from its start commit alone: the checkout drops the default's modified and untracked files
             // (docs/reference/development-containers.md#a-task-copy-starts-clean). Every other clone keeps the default's tree, and no key.
             ...($source !== null && $instance->task_workspace_owner_id !== null ? ['clean_workspace' => true] : []),

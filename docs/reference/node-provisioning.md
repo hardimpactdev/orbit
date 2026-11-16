@@ -228,13 +228,19 @@ Each failure names the check or step that stopped the request.
 
 ## CI runner role
 
-`orbit node:role:add <node> ci-runner` prepares a Linux Node to host GitHub Actions runners in unprivileged Incus containers. The role is not a singleton or relocatable. Add it to an enrolled Node through the normal role-add path; `node:add --role` does not accept it. It can share every role except `gateway` and `vpn`, which hold fleet trust anchors. A Node that serves CI alone needs no app role, TLD, or Cluster. Beast can keep its app and database roles. Shark needs only `ci-runner` for CI; removing its existing roles is a separate operator decision.
+`orbit node:role:add <node> ci-runner` prepares a Linux Node to host GitHub Actions runners in unprivileged Incus containers. The role is not a singleton or relocatable. Add it to an enrolled Node through the normal role-add path; `node:add --role` does not accept it. It can share every role except `gateway` and `vpn`, which hold fleet trust anchors. A Node that serves CI alone needs no app role, TLD, or Cluster. A Node can keep its app and database roles beside `ci-runner`; removing them is a separate operator decision.
 
 The role installs Incus, and the agent's `ci-runner.host` prepares the restricted `orbit-ci` project, the `orbitci0` bridge, the `orbit-ci-egress` ACL, and the default runner profile. The profile sets 6 CPUs, 12 GiB of memory, 8192 processes, and autostart, with privilege and nesting disabled. The project permits only that bridge and forbids VMs and host disk devices. The role uses the existing `default` storage pool, or creates a directory pool when it is absent. It never changes an existing pool or bridge IPv4 subnet. Incus chooses a subnet for a new bridge.
 
 The ACL permits public IPv4 egress and rejects private, CGNAT, loopback, link-local, multicast, reserved IPv4, and all IPv6. Incus permits bridge DNS and DHCP before the ACL; this boundary does not claim to block those services. The normal managed firewall catalog owns the routed allowance on `orbitci0`, including adoption of the existing `orbit-ci-runners` comment. Role convergence repairs the project, profile, ACL, bridge settings, and managed firewall rule. Doctor checks their projection, packages, service, and firewall. Task VM stray checks recognize the role's project without an `operator_owned` entry.
 
-The role owns the host boundary. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) creates, updates, registers, and verifies containers. Run its container step only while the runner is idle. Adoption has no container-count or running-state requirement: it preserves clones and stopped containers without starting, deleting, recreating, or registering them. Each active runner carries `hardimpact,orbit-shard`, plus `sabre` on Sabre. The Gateway holds no organization registration token. A token stays with the operator and never enters role input or settings.
+Each CI Node has one pool of [CI places](/reference/node-settings#ci-places), set with `orbit node:update <node> --ci-places=N`. One place runs one runner job or one proof copy. `--ci-proof-only` keeps the places for proof copies, so a Node with other work can keep its CI small. Only a Node with an active `ci-runner` role takes the setting. The operator sets the count from the CPU pressure of the full Node.
+
+The role owns the host boundary. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) creates, updates, registers, and verifies containers. Run its container step only while the runner is idle. Adoption has no container-count or running-state requirement: it preserves clones and stopped containers without starting, deleting, recreating, or registering them.
+
+Every runner carries the same labels: `self-hosted,Linux,X64,hardimpact,orbit-shard`. No runner carries a host label, so all CI Nodes form one pool. A workflow never names a host: it names only the shared labels. Only the Node and its runner setup differ per host, never the workflow.
+
+The Gateway holds no organization registration token. A token stays with the operator and never enters role input or settings.
 
 A Node with only this role appears in the web app's workload table with CPU, memory, and disk meters. It selects the normal role-default exporter and joins fleet rollout group 2. Explicit exporter preferences still apply. Its role selects the recipe's `ci-runner` tool set; a recorded recipe profile does not grant fleet participation. The container installer alone purges extra PHP packages.
 
@@ -243,12 +249,98 @@ Remove all containers and their GitHub registrations before removing the role. R
 After merge and deployment, an operator runs these commands; this feature does not run them. Adding the first role to a roleless Node closes the normal `orbit:public-ssh-recovery` firewall rule. Confirm WireGuard access before adding it:
 
 ```bash
-orbit node:role:add Sabre ci-runner
-orbit node:role:add Shark ci-runner
-orbit node:role:add Beast ci-runner
+orbit node:role:add <node> ci-runner
 ```
 
+Run it once for each CI Node.
+
 Verify each Node with `orbit doctor --node=<numeric-node-id>`. For a failed role add, repair the reported cause and retry with `orbit node:role:add <node> ci-runner --converge`. Existing runners and registrations stay in place.
+
+### Runner state for the runner view
+
+The role installs the Node's part of the [CI runner view](/reference/ci-runner-view): the script `/usr/local/libexec/orbit-ci-runner-state`, the service `orbit-ci-runner-state.service` and the timer `orbit-ci-runner-state.timer`, which starts the service every 15 seconds. Role convergence first creates `/usr/local/libexec` as root with mode `0755`, because a Node that hosts no Instance does not have that folder. It then writes and repairs all three and enables the timer. Role removal stops the timer and removes the three files and the script's output, so Prometheus drops the series.
+
+The script only reads. For each container in the Incus project `orbit-ci`, it reads the state from Incus. Inside a running container it reads, under `/home/runner/actions-runner`, the runner version from the `bin` link and the state of the runner service that `.service` names. The runner is busy while a `Runner.Worker` process runs. A container that does not run reports the service as `unknown`. The script starts, stops and registers nothing.
+
+It writes the result in the node exporter's text format to `/var/lib/prometheus/node-exporter/orbit_ci_runners.prom`. The service's `StateDirectory=prometheus/node-exporter` makes that folder, owned by root, when no exporter package made it. It writes a temporary file in the same folder first and renames it, so the exporter never reads half a file.
+
+| Series | Labels | Value |
+| --- | --- | --- |
+| `orbit_ci_runner_info` | `runner`, `state`, `service`, `version` (empty when unreadable) | `1` |
+| `orbit_ci_runner_busy` | `runner` | `1` when busy, else `0` |
+| `orbit_ci_runners_observed_timestamp_seconds` | none | The Unix time of the read |
+| `orbit_ci_runners_read_ok` | none | `0` when Incus did not answer, else `1` |
+
+The service runs as root, because the Incus socket belongs to root; membership of `incus-admin` would give the same power. It has no new privileges and a read-only file system, except the output folder and a runtime folder for the Incus client's configuration. Each run has a 10-second limit. Each Incus call has its own shorter limit, and the script starts no call after 8 seconds.
+
+The [Metrics role](/reference/metrics#exporter-selection)'s node exporter reads the folder with its textfile collector. Without a selected exporter on the Node, or without a Metrics role, the script still runs, and the view reports `ci_runner.state_unavailable` for the Node.
+
+### Proof copies on a CI Node
+
+This part is the target design of [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies), build steps 3 and 4.
+
+Two rules decide what a Node with the `ci-runner` role does for [proof](/cli/proof/run) copies. Both are in one class, `ProofCopyHosts`, and the other pages link here. For both, a `ci-runner` role that is being added or converged counts, so its own converge prepares the Node. A role that is being removed does not count. The CI places are the Node's count from ADR 0260. A proof copy takes one CI place.
+
+| Rule | The Node has | What it means |
+| --- | --- | --- |
+| A CI-only Node (`ciOnly`) | `ci-runner`, at least one CI place, and no `app-dev` | Its `ci-runner` converge prepares the Instance container branch, and it takes no Instance but a proof copy |
+| The Node offers proof places (`offersPlaces`) | `ci-runner` and at least one CI place, with or without `app-dev` | It keeps a seed of the proof default and can hold proof copies |
+
+A Node that also has `app-dev`, such as the Node of the proof default, already hosts containers through its `app-dev` role. So it offers proof places, but it is not a CI-only Node: its `app-dev` converge prepares it, and it takes normal Instances. The default's own Node needs no seed copy, because it holds the seed. ADR 0260 build step 5 decides which Node takes each proof copy. Orbit never adds `app-dev` to a CI Node to host proof copies.
+
+On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent, with its `nested` part, for two kinds of Node: an `app-dev` Node on the build list, and a CI-only Node. The role runtime runs the branch for either one. The CI Node gets no `app-dev` role for this.
+
+The branch prepares:
+
+- the Incus projects `orbit-instances` and `orbit-instances-nested`, the bridge `orbitinst0`, the ACLs, the egress proxy and the two shared folders;
+- the nested project's profile, the kernel modules `wireguard` and `overlay`, and `volmode=dev` for [inner volumes](/reference/development-containers#the-inner-volume) on the pool;
+- the normal image and the [nested-fleet image](/reference/development-containers#the-nested-fleet-image);
+- first, a check of root's subordinate IDs against a [CI Node's demand](/reference/node-settings#a-ci-node), before any nesting change.
+
+The intent leaves out the parts that serve a Route or a sleep through the Node's Caddy: the own-site rules, the redirect of agent development ports and the wake of frozen containers. The tasks are the same; the intent decides. The admission of the role add or converge allocates the Node's Instance bridge, as for an `app-dev` Node.
+
+A CI-only Node gets its Incus pool `orbit-instances` from its own converge. When the pool is missing, the converge reads the Node's ZFS Incus pools and the zpool behind each one. With exactly one zpool, it creates the pool on a new dataset of that zpool: `incus storage create orbit-instances zfs source=<zpool>/orbit-instances`. With no ZFS Incus pool, or with more than one zpool to choose from, it refuses with `instance.host_unavailable` and the reason, and creates nothing. An existing pool `orbit-instances` stays as it is. An `app-dev` Node keeps the rule of [Prepare a Node](/reference/development-containers#prepare-a-node): the operator provides the pool.
+
+The Instance bridge range must not overlap `orbitci0`. The branch refuses an overlap with `instance.host_unavailable` before it changes anything. The runner side (`orbit-ci`, `orbitci0`, its ACL and its profile) stays as it is. The two sides share Incus and the Node, and nothing else.
+
+#### The seed listener
+
+A Node that offers proof places, other than the proof default's own Node, receives its [seed](/reference/development-containers#the-seed-on-each-ci-node) from the default's Node with `incus copy --refresh --mode=push`. In push mode only the target listens. So its `ci-runner` add and converge also prepare the Incus side of that copy:
+
+| On the CI Node | Value |
+| --- | --- |
+| Incus listener | `core.https_address` is `<WireGuard address>:8444`. Never a LAN or public address |
+| Trust | One restricted client certificate, named `orbit-proof-seed`: root's Incus client certificate on the proof default's Node, with `restricted` on and the project `orbit-instances-nested` only |
+| Firewall | Two UFW rules on the WireGuard interface for TCP port 8444, both inserted at the top. `orbit:proof-seed` allows the WireGuard address of the default's Node. `orbit:proof-seed-deny` denies every other source |
+
+The node phase writes the trust. The firewall phase inserts the two rules and only then sets the listener, so the port is never reachable before its rules exist. The rule `orbit:wireguard-members` admits every port from every WireGuard member. So the deny must come before it, and the allow before the deny: UFW uses the first rule that matches. The converge inserts the deny first and the allow last.
+
+The converge reads the default Node's client certificate there. When root has none yet, it makes one with `incus remote generate-certificate`; nothing else changes on that Node. A trust entry of that name with another certificate is replaced. The Gateway sends the default's Node in the intent, so a converge after the default moved to another Node trusts the new one.
+
+A [`node:converge`](/cli/node/converge) of the Node runs the same node phase in its roles phase. It reads the certificate in the same way, writes or removes the trust, and without a sender stops the listener. It has no firewall phase, so it never opens the listener and never changes its two rules.
+
+The default's Node gets no listener and no change to its Incus daemon. Each seed copy adds a client remote of root there for each CI Node, `proof-node-<id>`, when it is missing.
+
+When a converge finds that the Node offers no proof places, or that the proof Project has no default, the converge removes the trust entry `orbit-proof-seed`, unsets `core.https_address` when it is the listener above, and deletes both UFW rules. It can name the allow rule only while the proof Project has a default.
+
+A removal of the `ci-runner` role does the same. It stops the listener and removes the trust in a phase of its own, before the firewall rules go, so the port is never open to every WireGuard member while Incus still listens. The Node finds the trust entry by its name, so the Gateway never needs its fingerprint. The holder stays, as the other Incus resources of the branch do.
+
+The Gateway records the listener on the Node, in `nodes.seed_sender_id`: the Node whose certificate the listener trusts. One rule sets and clears it, at the end of every run that changes the listener: a `ci-runner` add, role converge or removal, and a `node:converge` whose roles include `ci-runner`. A `node:converge` passes for this rule when its roles phase passes:
+
+| The run | `seed_sender_id` |
+| --- | --- |
+| Passed, with a sender in its intent | The sender, the Node of the proof default when the run was admitted |
+| A passed `node:converge`, with a sender in its intent | Kept when it names that sender, else cleared: the run cannot open the listener |
+| Passed, without a sender: the run removed the listener | Cleared |
+| Failed, cancelled or interrupted | Cleared: the run may have changed the trust, so the Gateway does not know the state |
+
+The end of a `ci-runner` removal clears it too, passed or failed, because its phase stops the listener. A [seed copy](/reference/development-containers#the-seed-on-each-ci-node) targets only a Node whose record names the default's current Node. A Node without it, or with the Node of a former default, is not a target and is not marked tried. So when the default moves to another Node, the CI Nodes stay untargeted until a `ci-runner` add or converge of each passes again.
+
+The converge makes no seed. When a `ci-runner` add or converge of a Node that offers proof places passes, the Gateway admits a seed copy to the Node if it is not the default's Node and its seed is not the proof default's current seed.
+
+A CI-only Node takes no other Instance. `instance:create` refuses it with `instance.node_ci_only` (409) before any record. Only a proof copy is made there. A proof copy there gets no Route: the Node runs no Caddy and has no TLD.
+
+When the Node stops being CI-only, the converge sends no branch, and nothing is removed. This is the same as when the [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is cleared.
 
 ## macOS Nodes
 
@@ -366,7 +458,19 @@ An `app-dev` Node on the Gateway's build list of [development containers](/refer
 
 Each such converge also writes every Instance container's [presented machine name](/reference/development-containers#the-machine-name) into its `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts`, through the Incus file API, whether the container runs, is stopped or is frozen. Nothing restarts: the kernel hostname follows at the container's next start, and T3's label at T3's next start.
 
-A sleeping container's asleep marker lives in the role's hibernation directory, `/data/caddy/orbit/hibernation`, which [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation#host-directories) lists. A sleep writes it before it freezes the container; the start part of a wake removes it once the app answers. The sleep opens swap only for the frozen container's own cgroup, and the wake closes it again: the role changes no host swap or Incus setting.
+A sleeping container's asleep marker lives in the role's hibernation directory, `/data/caddy/orbit/hibernation`, which [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation#host-directories) lists. A sleep writes it before it freezes the container; the start part of a wake removes it once the app answers. The sleep opens swap only for the frozen container's own cgroup subtree, and the wake closes exactly what it opened: the role changes no host swap or Incus setting.
+
+The same converge installs the [power helper](/reference/prepared-restore#the-power-helper), `/usr/local/libexec/orbit-instance-power`, with the task file `swamp/ansible/tasks/instance-power-helper.yml`. It writes the helper and its private folder `/var/lib/orbit/hibernation/instances` (`0700`), and the properties of every `orbit-instance-power-<id>` unit as one drop-in, `/etc/systemd/system/orbit-instance-power-.service.d/orbit.conf`.
+
+When the helper changed or its manifest is missing, the converge runs `orbit-instance-power capabilities` as the unit `orbit-instance-power-probe`, with the drop-in's properties, and prints each probe's result. The probe tests cgroup v2, `/proc/<pid>/maps` and `pagemap`, `pidfd_open` with the pidfd liveness poll, `process_madvise` and `process_vm_readv`. Its target is `orbit-power-probe-target.service`, which systemd starts as `nobody` and stops after the probe, so the probe meets another uid as a restore does ([Capabilities](/reference/prepared-restore#the-power-helper)). It records the results in `/var/lib/orbit/hibernation/capabilities.json`. A missing primitive does not fail the converge: the Node's sleeps then record no plan, and they freeze and reclaim as before. The helper's result reports a failure with one of these error codes:
+
+| Code | Meaning |
+| --- | --- |
+| `instance.container_freeze_failed` | `prepare` could not pause the container, or its reclaim failed |
+| `instance.container_start_failed` | `restore` could not unfreeze the container |
+| `instance.power_helper_failed` | The helper refused its input or crashed; it exits 70 |
+
+A [CI-only Node](#proof-copies-on-a-ci-node) gets the same branch through its `ci-runner` role.
 
 When the Node's [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on, the same converge first checks root's subordinate IDs for the larger demand, then also prepares the Incus project `orbit-instances-nested`, its profile, its stock image and two kernel modules: `wireguard` and `overlay`. After the normal image, it builds the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) in that project. A Node with the switch off runs the same tasks and commands as before.
 
@@ -542,7 +646,7 @@ On a base snapshot refresh or a task start the role first waits until SSH answer
 
 The role reads the package indexes of the Ubuntu snapshot with the `apt` module's own retry (`update_cache_retries`: twelve attempts, backing off to 30 seconds, about four minutes). It installs packages with the task keywords `retries`, `until` and `delay`: four retries, 30 seconds apart. The retries also apply to a permanent failure such as a missing pin, which then fails after two more minutes. The snapshot service answers 503 now and then, for an index and for a package. Rule 6 of the Swamp shape allows this tool-native retry and no shell loop.
 
-The playbook reads the pins of `recipe.json` from the intent and names none. The `software` phase adds `python3-venv` and `jq` from the same Ubuntu snapshot: the shape gate linters need the first, and its Swamp load test needs the second. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
+The playbook reads the pins of `recipe.json` from the intent and names none. The `software` phase adds `python3-venv` and `jq` from the same Ubuntu snapshot: the shape gate linters need the first, and its Swamp load test needs the second. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
 
 The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a directory storage pool and the default profile's root disk, so a VM made from the image can launch nested containers. A task VM that names a nested subnet also gets the nested bridge, with the first address of the subnet and NAT on. It reads the pools and networks first and applies a preseed only for what is missing, so a repeat changes nothing.
 
@@ -851,6 +955,8 @@ The Node with the `vpn` role holds the WireGuard hub: its private key, address, 
 
 The hub keeps one peer file per Node. A hub converge prunes only the files of Nodes that are gone or being removed, and never the file of a Node created after its intent; [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) has the rule.
 
+The hub converge also removes the task VM hub filter that the removed `task_vm.hub_converge` installed, so `node:converge` of the `vpn` Node clears it; [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) lists what it deletes.
+
 Repeating the same key still projects the hub when it has no collision; after a projection failure, the stored key remains and the operator retries after repairing the hub. A crash can leave either the old or new hub configuration, without guaranteed rollback or automatic reconciliation. [WireGuard key recovery](/cli/node/wireguard-key) explains how to restore an authorized management path and replay the desired key.
 
 The Gateway runs the [Node agent](/reference/node-agent#commands)'s `wireguard.project-hub` on the `vpn` Node, with the configuration and its private key in the protected input. When the `vpn` and `gateway` roles share a machine, the runner starts it as a local process; otherwise it reaches the `vpn` Node over SSH to its WireGuard address. The command writes a root-only candidate, validates it with `wg-quick strip`, keeps the live file as a backup, and swaps the candidate in. Then it live-syncs a running `wg-quick@orbit` with `wg syncconf`, or enables and starts a stopped one. When activation fails, it puts the backup and the previous enabled and active state back.
@@ -962,7 +1068,7 @@ Enrollment records its pinned bootstrap connection, candidate placement and gene
 
 Node removal records immutable participants and Route withdrawal intent before its native run. It preserves the departing Node's Route associations through serving cleanup. Swamp decides completion; removal does not restore completed effects after a failure. The Gateway projects the native result without child receipts or runtime proof checks.
 
-A task start (`tasks.provision`) records the Node of its VM at admission; no enrollment child runs, and the release deletes the Node record. Serialized role names are converted to the Node role enum at admission.
+A task start makes a task copy and records no task VM Node. The task VM start and its place release, which deleted the Node record, are deleted ([old paths](/reference/old-paths#the-pi-task-loop)). Serialized role names are converted to the Node role enum at admission.
 
 Cross-family enrollment uses the internal `ProvisionNodeData` field names. TaskVM Node cleanup retains its owning planner and custody checks. Standalone Node removal refuses TaskVM guests and caller-supplied provider-deletion claims.
 

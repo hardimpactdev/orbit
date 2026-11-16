@@ -4,6 +4,8 @@ sequenceDiagram
   %% Task copy (2026-11-14): a group whose workspace is a task copy exports through its container's workspace phase; the push stays on the worker. The .env Orbit wrote never leaves a copy: the range from the copy's start is checked before the mint. docs/reference/tasks.md#task-copy.
   %% Task group modes (ADR 0257): a copy group's done check publishes without --check, by a person's release or by the task:pr-when-done tick (docs/cli/task/pr-when-done.mmd), with the same admission and run. docs/reference/tasks.md#task-group-modes.
   %% Base (2026-11-14): a copy's run fetches the default branch into its scratch repository after the mint and before the push, states the checked base, how far it is behind and the overlapping paths, and refuses only a real merge conflict. It reads only intent keys the publish already has. docs/reference/tasks.md#the-base-of-a-copy-publish.
+  %% Workflows (2026-11-16): the workflow judgement moved from the copy check to the base read, against the real default head that the publish fetches, not the copy's own remote refs (Operation 24405): a commit that head holds, synced or carried in by hand, is never a change of the copy. It is the net tree diff of `.github/workflows/` between that head and the candidate, the comparison GitHub makes, not the copy's commits (Operation 24460): a copy behind a workflow change of the head refuses too. docs/reference/tasks.md#the-base-of-a-copy-publish.
+  %% Own change, merge at publish (2026-11-16, group 5429): a workflow change merged on main after the copy's sync refused copies (#3867), so only the copy's own change refuses: the workflow paths it changed since the merge base (`git diff head...candidate`). GitHub still judges the pushed tree against the default branch (Operation 24460), so a copy only behind a workflow change publishes through a clean merge the worker makes at publish, `Merge main <sha> at publish`; a republish adds the earlier publish merge as a third parent, so its push is a fast-forward. docs/reference/tasks.md#merge-main-at-publish.
   %% status: migrated
   %% command: task:publish
   %% kind: tasks.publish
@@ -75,11 +77,10 @@ sequenceDiagram
     %%> - the workspace phase `scan` runs `task_copy_scan.py` in the container as root; root reads the copy's secrets, Git runs as `agent` (docs/reference/tasks.md#the-copy-check)
     %%> - the secrets: the Club key in `/run/orbit-club`, the operator WireGuard key, and of each inner machine its Gateway `.env` values, Swamp tokens, Orbit tokens and WireGuard keys; values under 16 bytes and values the start tree holds are skipped and counted
     %%> - every object new from the copy's start to the candidate, and the proposed body, are searched for each value and for a private key block with a real body
-    %%> - commits that no remote branch of the copy holds are read for a change under `.github/workflows/`; a merge counts a path only when it differs from every parent
     %%> - the evidence names paths, lines, secret names and the digest of the objects read, never a value; a nested-fleet copy without its inner machines is unchecked
     SW->>SW: Read the copy check
     %%> How:
-    %%> - typed data reads the evidence: a secret refuses with `tasks.publish_secret_value`, then a workflow change with `tasks.publish_workflow_change`, each naming its items; an error refuses with `tasks.publish_secret_unchecked`
+    %%> - typed data reads the evidence: a secret refuses with `tasks.publish_secret_value`, naming its items; an error refuses with `tasks.publish_secret_unchecked`
   else a task VM
     SW->>N: Read the index
     %%> How:
@@ -144,12 +145,19 @@ sequenceDiagram
     %%> - one bounded fetch of the default branch head into the scratch repository, with the minted token as an extra header, so the head is the one at publish time
     %%> - `git merge-base` of the candidate and that head is the checked base; `git rev-list --count candidate..<default>` is `behind_by`
     %%> - the overlapping paths are the paths that both the candidate and the default branch changed since the base
+    %%> - the copy's own workflow paths are the paths under `.github/workflows/` that the candidate changed since the merge base (`git diff --name-only <base> candidate`, which is `git diff head...candidate`); a commit that head holds, synced or carried in by hand, is never a change of the copy
     %%> - `git merge-tree --write-tree` merges the two in the repository alone; no checkout and no workspace is touched
-    %%> - of the intent it reads only `remote`, `base` and `node_id`, which the publish intent already had; the candidate is the bundle it imported
+    %%> - it also fetches the task branch's tip on origin, when it exists
+    %%> - with no own workflow path and a clean merge, it writes a merge commit in the scratch repository when the trees under `.github/workflows/` of the head and the candidate differ: the merge-tree result, parents the candidate then the head, message `Merge main <head sha> at publish` with the default branch's name, author and committer `Orbit <orbit@users.noreply.github.com>`; the push sends it, because GitHub judges the pushed tree against the default branch
+    %%> - a republish: a tip that is not an ancestor of the candidate, but an earlier publish merge whose first parent is an ancestor of the candidate and whose second parent is an ancestor of the head, always gets a merge with parents the candidate, the head and that tip, so the push is a fast-forward; a tip whose first two parents already are the candidate and the head is pushed again as it is
+    %%> - with no workflow difference and no such tip, it makes no merge and the push sends the candidate
+    %%> - of the intent it reads only `remote`, `base`, `branch` and `node_id`, which the publish intent already had; the candidate is the bundle it imported
     %%> - it writes its statement and exit code to the private scratch; Swamp keeps no stderr of a failed command step
     Note over SW: Check the base
     %%> How:
-    %%> - typed data reads the statement: `base_commit`, `default_commit`, `behind_by` and `overlapping_paths`, at most 100 paths in at most 3,000 bytes, with `overlapping_more` counting the rest
+    %%> - typed data reads the statement: `base_commit`, `default_commit`, `behind_by` and `overlapping_paths`, at most 100 paths in at most 3,000 bytes, with `overlapping_more` counting the rest, and `merged_default`, the head of a merge at publish or null
+    %%> - an own workflow path fails with `tasks.publish_workflow_change`, naming the paths in the same bounds and the count beyond, before the conflict check and the push: the token has no `workflows` permission
+    %%> - it passes the merge commit to the push, when the read made one
     %%> - a conflict of the merge fails with `tasks.publish_conflict`, naming at most 100 conflicting paths in at most 3,000 bytes, so the line fits the 4,096 bytes of detail the Gateway keeps, and the count beyond, before the push; any other error fails with `tasks.publish_failed`
     %%> - a copy pushes only after this step succeeded; a skip of it is never a pass
     %%> - `behind_by` and overlapping paths never refuse on their own
@@ -157,9 +165,10 @@ sequenceDiagram
   SW->>GH: Push the branch
   %%> How:
   %%> - one bounded push without force; authorization is a vault-backed extra header in the environment
+  %%> - a task copy's merge at publish is pushed instead of the candidate: `<merge>:refs/heads/task-42`
   Note over SW: Read push result
   %%> How:
-  %%> - typed data reads private replies and preserves fast-forward and Workflows refusal codes
+  %%> - typed data reads private replies and preserves fast-forward and Workflows refusal codes; for a task copy the Workflows refusal is only a fallback, for a reason the base read did not see
   opt --title and --body
     SW->>GH: Read open PRs
     %%> How:
@@ -168,7 +177,7 @@ sequenceDiagram
     %%> How:
     %%> - typed data selects an open PR or creation and writes unchanged caller prose into a JSON input file
     %%> - with `--draft` the creation carries `draft: true`; an update of an open PR sends only title and body, so a PR keeps its state
-    %%> - for a task copy, a fixed `## Base` section follows the caller's body: the base commit, the default head, how far behind, and the overlapping paths or none
+    %%> - for a task copy, a fixed `## Base` section follows the caller's body: the base commit, the default head, how far behind, `- Merged main <sha> at publish` after a merge at publish, and the overlapping paths or none
     %%> - an Orbit marker opens the section, so a caller body that carries an earlier one gets it replaced: a re-publish states it once
     %%> - the section follows the text the .env check read: the caller's body and its waiver lines; the whole stays within 65,536 characters, naming only the count of the paths when their list does not fit
     SW->>GH: Write the PR
@@ -200,7 +209,7 @@ sequenceDiagram
     GH-->>SW: Branch pushed · head sha
     %%> Returns:
     %%> - the branch, commit, and the PR number and URL, or null PR fields for a push alone
-    %%> - for a task copy also `base_commit`, `default_commit`, `behind_by`, `overlapping_paths` and `overlapping_more`; a run that started on the workflow before the base step has none of them and no `## Base` section
+    %%> - for a task copy also `base_commit`, `default_commit`, `behind_by`, `overlapping_paths`, `overlapping_more` and `merged_default`; `commit` stays the checked candidate after a merge at publish; a run that started on the workflow before the base step has none of them and no `## Base` section
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
@@ -218,7 +227,8 @@ sequenceDiagram
     %%> - a commit of a task copy holds the `.env` content or one of its values under any name: `tasks.publish_secret_content`; remove it from the branch history and check again
     %%> - the content check or the copy check could not run: `tasks.publish_secret_unchecked`; nothing is pushed
     %%> - a commit or the proposed body holds a secret value of the copy or a private key block: `tasks.publish_secret_value`, with `refused` (path:line and secret name) and `refused_more`; nothing is pushed; remove it from the branch history and check again
-    %%> - a commit new to the repository changes `.github/workflows/`: `tasks.publish_workflow_change`, with the paths in `refused`; nothing is pushed; a person makes that change in a pull request of their own (docs/reference/tasks.md#the-copy-check)
+    %%> - a task copy's candidate changed a path under `.github/workflows/` since the merge base: `tasks.publish_workflow_change`, with the paths in `refused` and `refused_more`; nothing is pushed; a person makes a workflow change of the copy's own in a pull request of their own (docs/reference/tasks.md#the-base-of-a-copy-publish)
+    %%> - the task branch's tip is neither an ancestor of the candidate nor an earlier publish merge of it: `tasks.not_fast_forward`; nothing is pushed
     %%> - a task copy's candidate conflicts with the default branch head: `tasks.publish_conflict`, with `conflicting_paths` and `conflicting_more`; nothing is pushed; merge or rebase in the copy, check again and publish
     %%> - a step waited 60 s for a behavior lock that another run held: `tasks.publish_lock_timeout`; a step after the push can fail so too, so the branch may be pushed already
     SW--xGW: Run failed<br/>error_code, failed step

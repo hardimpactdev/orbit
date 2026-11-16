@@ -1,5 +1,4 @@
 order = 680
-source_sha256 = "96bae22479d2fb4b6bdd80408b427a59731a2ea482f1100727a4580bb7195cd0"
 cases = [
   "Composer inventory retains transitive and both-scope resolutions, path and git provenance",
   "npm inventory preserves multiple resolutions, workspace links and shared scopes without installs",

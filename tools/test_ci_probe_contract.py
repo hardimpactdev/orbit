@@ -1,5 +1,4 @@
 """The host-profile caller proof runs before merge even when other fixtures fill the plan."""
-import hashlib
 import json
 import unittest
 
@@ -16,8 +15,8 @@ class HostProbeAdmissionTest(unittest.TestCase):
     def test_each_caller_and_guard_change_reserves_the_live_contract_under_pressure(self):
         budget, fixtures, defaults = units.configuration()
         contract = fixtures[FILE]
-        self.assertEqual(contract['source_sha256'], hashlib.sha256((ROOT / FILE).read_bytes()).hexdigest())
-        self.assertEqual(units.collect(FILE)['cases'], [CASE])
+        self.assertEqual(units.collect(FILE)['cases'], contract['cases'])
+        self.assertEqual(contract['cases'], [CASE])
         self.assertEqual(contract['mandatory_cases'], {path: [CASE] for path in INPUTS})
         self.assertLessEqual(contract['cost'], 15)
         self.assertFalse(contract['slices'])

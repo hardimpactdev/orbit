@@ -1,5 +1,4 @@
 order = 60
-source_sha256 = "9031cba878dd71e0b13ed0e505e45eb50d305f036fee915ae86b1b1ee2de667c"
 cases = [
   "the saved dir host system boundary matches the shipped tasks",
   "the saved dir host prepare boundary matches the shipped tasks",

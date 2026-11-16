@@ -1,5 +1,4 @@
 order = 960
-source_sha256 = "a93b38118308555b1d7a2bf1d4fba0bdb87639447be8a214a5040cc691ab252d"
 cases = [
   "operation workflows never schedule Gateway claims",
   "Gateway discovery and slot models cannot claim work",

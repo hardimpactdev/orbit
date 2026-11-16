@@ -3,12 +3,12 @@
 
   bin/static-php-build definition [--github-output FILE]  # each version's build id, release tag, asset and URL, as JSON
   bin/static-php-build verify-pins                         # exit 1 when a recorded build id is not the definition's
-  bin/static-php-build build --version X.Y --output DIR    # one static-php-cli build of both binaries, packed with SHA256SUMS
-  bin/static-php-build check --version X.Y --bin DIR       # exit 1 unless both binaries load exactly the recipe's extensions
+  bin/static-php-build build --version X.Y --output DIR    # one static-php-cli build of both binaries and the CLI-only extensions, packed with SHA256SUMS
+  bin/static-php-build check --version X.Y --bin DIR       # exit 1 unless both binaries, and the CLI with modules/, load exactly the recipe's extensions
 
-The recipe's instances.php section names the PHP release, FrankenPHP, the static-php-cli commit and the extensions left out.
-The build id is a digest of those, the extension list, tools/static-php/craft.yml and this script, so any change to them
-needs a new build. static-php-cli resolves the library and extension sources at build time; sources.json in the archive
+The recipe's instances.php section names the PHP release, FrankenPHP, the static-php-cli commit, the extensions left out and
+the CLI-only extensions. The build id is a digest of those, the extension lists, tools/static-php/craft.yml and this script,
+so any change to them needs a new build. static-php-cli resolves the library and extension sources at build time; sources.json in the archive
 records each one. The published archive's SHA-256, which a later reviewed commit records in the pin, fixes the bytes.
 """
 import argparse
@@ -30,6 +30,9 @@ CRAFT = ROOT / 'tools/static-php/craft.yml'
 CHECK = runpy.run_path(str(ROOT / 'swamp/ansible/library/orbit_static_php.py'))
 RELEASES = 'https://github.com/hardimpactdev/orbit/releases/download'
 PLATFORM = 'linux-x86_64'
+# static-php-cli's Zig toolchain links everything statically except glibc, against glibc 2.17, so the binaries run on Ubuntu
+# 26.04 and every newer glibc. The named CPU keeps the baseline x86_64 instructions; a native target would use the runner's.
+TARGET = 'x86_64-linux-gnu.2.17'
 
 
 class BuildError(Exception):
@@ -44,9 +47,10 @@ def definitions(recipe=None):
     script = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     builds = {}
     for version, pin in section['versions'].items():
-        extensions = [name for name in recipe['php']['versions'][version]['extensions'] if name not in section['without']]
+        cli_extensions = section['cli_extensions']
+        extensions = [name for name in recipe['php']['versions'][version]['extensions'] if name not in section['without'] + cli_extensions]
         inputs = {'php_version': pin['php_version'], 'frankenphp': section['frankenphp'], 'static_php_cli': section['static_php_cli'],
-                  'extensions': extensions, 'craft_sha256': craft, 'script_sha256': script}
+                  'extensions': extensions, 'cli_extensions': cli_extensions, 'craft_sha256': craft, 'script_sha256': script}
         build = hashlib.sha256(json.dumps(inputs, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         tag = f'static-php-{pin["php_version"]}-{build[:12]}'
         asset = f'{tag}-{PLATFORM}.tar.gz'
@@ -79,7 +83,7 @@ def fetch(repository, ref, destination):
 def craft(item, frankenphp):
     text = CRAFT.read_text()
     for key, value in {'PHP_VERSION': item['php_version'], 'EXTENSIONS': ','.join(spc_names(item['extensions'])),
-                       'FRANKENPHP_SOURCE': str(frankenphp)}.items():
+                       'SHARED_EXTENSIONS': ','.join(spc_names(item['cli_extensions'])), 'FRANKENPHP_SOURCE': str(frankenphp)}.items():
         text = text.replace(f'@{key}@', value)
     if re.search(r'@[A-Z_]+@', text):
         raise BuildError('tools/static-php/craft.yml has a value the build does not fill.')
@@ -92,6 +96,11 @@ def spc_names(extensions):
     return [{'zend opcache': 'opcache'}.get(name, name) for name in extensions if name not in builtin]
 
 
+def build_env(environ):
+    """The environment of `spc craft`: static-php-cli picks its toolchain from SPC_TARGET before it reads craft.yml."""
+    return {**environ, 'SPC_TARGET': TARGET, 'SPC_TOOLCHAIN': ''}
+
+
 def build(version, output):
     item = definitions()[version]
     output = output.resolve()
@@ -102,15 +111,17 @@ def build(version, output):
     fetch('php/frankenphp', f'refs/tags/v{item["frankenphp"]}', work / 'frankenphp')
     run(['composer', 'install', '--no-dev', '--no-interaction', '--prefer-dist', '--working-dir', work / 'static-php-cli'])
     (work / 'craft.yml').write_text(craft(item, work / 'frankenphp'))
-    # A fully static musl binary for the baseline CPU, as FrankenPHP's own static build makes it.
-    env = {**os.environ, 'SPC_TARGET': 'x86_64-linux-musl', 'SPC_TOOLCHAIN': ''}
-    run(['php', work / 'static-php-cli/bin/spc', 'craft', work / 'craft.yml'], cwd=work, env=env)
+    run(['php', work / 'static-php-cli/bin/spc', 'craft', work / 'craft.yml'], cwd=work, env=build_env(os.environ))
 
     stage = work / 'stage'
     (stage / 'bin').mkdir(parents=True)
     for name in ('php', 'frankenphp'):
         shutil.copy2(work / 'buildroot/bin' / name, stage / 'bin' / name)
-    manifest = {key: item[key] for key in ('version', 'php_version', 'frankenphp', 'static_php_cli', 'extensions', 'build', 'tag')}
+    # static-php-cli writes each shared extension to buildroot/modules; the part keeps them beside bin/.
+    (stage / 'modules').mkdir()
+    for name in item['cli_extensions']:
+        shutil.copy2(work / 'buildroot/modules' / f'{name}.so', stage / 'modules' / f'{name}.so')
+    manifest = {key: item[key] for key in ('version', 'php_version', 'frankenphp', 'static_php_cli', 'extensions', 'cli_extensions', 'build', 'tag')}
     (stage / 'build.json').write_text(json.dumps(manifest, indent=2) + '\n')
     # static-php-cli's record of each source it fetched: the version, file or Git commit, and its hash.
     shutil.copy2(work / 'downloads/.cache.json', stage / 'sources.json')
@@ -135,10 +146,12 @@ def build(version, output):
 def check(version, folder):
     item = definitions()[version]
     folder = folder.resolve()
-    problems = CHECK['check'](str(folder / 'php'), str(folder / 'frankenphp'), item['php_version'], item['extensions'])
+    problems = CHECK['check'](str(folder / 'php'), str(folder / 'frankenphp'), item['php_version'], item['extensions'],
+                              str(folder.parent / 'modules'), item['cli_extensions'])
     if problems:
         raise BuildError('The static PHP build does not match the recipe:\n  ' + '\n  '.join(problems))
-    print(f'php and frankenphp report PHP {item["php_version"]} with the {len(item["extensions"])} recipe extensions.')
+    print(f'php and frankenphp report PHP {item["php_version"]} with the {len(item["extensions"])} static extensions;'
+          f' the CLI also loads {", ".join(item["cli_extensions"]) or "nothing"} from modules/.')
 
 
 def main():

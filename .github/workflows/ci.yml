@@ -694,6 +694,7 @@ jobs:
         with:
           deno-version: v2.9.8
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: python
         with:
           python-version: '3.13'
       - name: Select fixture tools
@@ -714,11 +715,12 @@ jobs:
         if: steps.tools.outputs.php == 'true'
         with:
           coverage: none
+      # A venv runs only with the interpreter that built it, so the key covers that interpreter, as the venv name does.
       - name: Cache pinned fixture tools and collections
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/orbit-shape-gate
-          key: fixture-tools-${{ runner.os }}-${{ runner.arch }}-py313-${{ hashFiles('swamp/ansible/shape-gate-requirements.txt', 'swamp/ansible/requirements.txt', 'swamp/ansible/requirements.yml') }}
+          key: fixture-tools-${{ runner.os }}-${{ runner.arch }}-${{ steps.python.outputs.python-version }}-${{ steps.python.outputs.python-path }}-${{ hashFiles('swamp/ansible/shape-gate-requirements.txt', 'swamp/ansible/requirements.txt', 'swamp/ansible/requirements.yml') }}
       - name: Run fixture units
         env:
           UNITS: ${{ toJSON(matrix.shard.units) }}
@@ -856,8 +858,8 @@ jobs:
       tests: ${{ fromJSON(needs.changes.outputs.swamp_checks).tests }}
       base-ref: ${{ needs.changes.outputs.swamp_base_ref }}
     secrets:
-      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_API_KEY || '' }}
-      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_API_KEY || '' }}
+      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
   gateway-release:
     name: Gateway release inputs
     needs: changes

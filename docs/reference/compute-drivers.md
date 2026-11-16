@@ -79,7 +79,7 @@ An `internal` tool is an Orbit-built binary pinned by `source_commit` (12 to 40 
 
 Internal pins do not require publishing HTTPS releases. Third-party tools still require HTTPS artifact pins. Online validation fails clearly if a local file is missing or its digest differs. It never executes the binary. Existing installers keep their pre-install hash verification.
 
-The Pi pin came from `apps/pi-server`, which is [removed](/reference/old-paths#the-pi-agent-server), at source commit `23e7198f7c98`, file `pi-server-23e7198f7c98-linux-x64`, SHA-256 `df3aa5aea1788c3bcfdd576d0124b252b640c66c2bfa78e69b985bca9f39f438`. It is an `amd64` build, like every recipe artifact. It must equal `task_vms.pi.artifact_sha256`: the enrolment check compares the Pi build of the image with that setting. The first pin was `e5933d4c8696`.
+No catalogued tool is `internal` today: the Pi build, its last user, [left the recipe](/reference/old-paths#the-pi-agent-server).
 
 A profile's effective set is the union of `common` and its own list, sorted by tool identifier. A `php:<version>` entry expands to that version's PHP set. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's set is the union of its roles, not the base image set.
 
@@ -91,8 +91,8 @@ A part that pins its own artifact may leave `bin` out: it gives the folder files
 
 | Folder | Parts |
 | --- | --- |
-| `runtime` | `node`, `bun` and `deno`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `php-data-bridge`, with no program; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>` |
-| `agent` | `t3`, the release tarball; `claude-code` and `codex`, the npm packages of the Linux x64 builds |
+| `runtime` | `node`, `bun` and `deno`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `php-data-bridge`, with no program; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>`, with `bin/` and `modules/` |
+| `agent` | `t3` and `conn-server`, the release tarballs; `claude-code` and `codex`, the npm packages of the Linux x64 builds |
 
 #### The Vite+ home
 
@@ -320,7 +320,7 @@ The standalone recipe CLI uses `python3`, `gpg` and `gpgv`. Run `php artisan orb
 
 ### Static PHP build
 
-The runtime folder of a [development container](/reference/development-containers#php) holds a static PHP CLI and FrankenPHP for each PHP version. Both come from one [static-php-cli](https://static-php.dev) build, so web requests and commands run the same PHP with the same extensions. No published release ships both binaries from one build, so Orbit builds them.
+The runtime folder of a [development container](/reference/development-containers#php) holds a static PHP CLI and FrankenPHP for each PHP version. Both come from one [static-php-cli](https://static-php.dev) build, so web requests and commands run the same PHP with the same static extensions. The same build gives the CLI-only extensions as shared files, which only the PHP CLI loads. No published release ships both binaries from one build, so Orbit builds them. [ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov) moves the build from musl to glibc and adds the CLI-only PCOV.
 
 The recipe's `instances.php` section defines the builds:
 
@@ -328,17 +328,20 @@ The recipe's `instances.php` section defines the builds:
 | --- | --- |
 | `static_php_cli` | The full static-php-cli commit that runs the build, on its `v3` line, which FrankenPHP's own static build uses |
 | `frankenphp` | The exact FrankenPHP release, such as `1.13.5` |
-| `without` | Extensions of the [PHP build](#php-build) that the static build leaves out: `ffi` and `pcov`. A fully static musl binary cannot load shared code, and static-php-cli builds `pcov` only as a shared extension |
+| `without` | Extensions of the [PHP build](#php-build) that the static build leaves out: `ffi` |
+| `cli_extensions` | Extensions of the PHP build that the build makes shared, for the PHP CLI only: `pcov` |
 | `versions.<X.Y>.php_version` | The exact PHP release, such as `8.5.12`. It can differ from the Node pin's patch release for a while, because a new release needs a new build |
-| `versions.<X.Y>.build` | The build id: a SHA-256 over the PHP release, FrankenPHP, the static-php-cli commit, the extension list, `tools/static-php/craft.yml` and `bin/static-php-build` |
+| `versions.<X.Y>.build` | The build id: a SHA-256 over the PHP release, FrankenPHP, the static-php-cli commit, the static and CLI-only extension lists, `tools/static-php/craft.yml` and `bin/static-php-build` |
 | `versions.<X.Y>.url` | The release asset `static-php-<php_version>-<build id prefix>-linux-x86_64.tar.gz` under the `static-php-<php_version>-<build id prefix>` release |
-| `versions.<X.Y>.sha256` | The asset's SHA-256, or `null` until main has published the build |
+| `versions.<X.Y>.sha256` | The asset's SHA-256, or `null` until the build is published |
 
 static-php-cli resolves the sources of the libraries and PECL extensions when it builds, so two builds of one id can differ. The archive's `sources.json`, static-php-cli's download record, names each source's version and hash. The published SHA-256 is what fixes the bytes a Node installs.
 
-A build's extensions are its PHP version's `extensions` less `without`, so the Node build and the static build share one list. Today that is every extension Orbit's Laravel projects require, from their `composer.json` files and locks: `intl`, `exif`, `sodium`, `pcntl`, `sockets` and the rest, with `pdo_pgsql`, `pdo_mysql`, `pdo_sqlite`, `redis`, `igbinary`, `imagick`, `gd` and `opentelemetry`. Both binaries load OpenTelemetry, because they share one build; on a Node only PHP-FPM loads it. The section is not part of the [recipe identity](#recipe-identity): no Node profile or task image holds the static build.
+A build's static extensions are its PHP version's `extensions` less `without` and less `cli_extensions`, so the Node build and the static build share one list. Today that is every extension Orbit's Laravel projects require, from their `composer.json` files and locks: `intl`, `exif`, `sodium`, `pcntl`, `sockets` and the rest, with `pdo_pgsql`, `pdo_mysql`, `pdo_sqlite`, `redis`, `igbinary`, `imagick`, `gd` and `opentelemetry`. Both binaries load OpenTelemetry, because they share one build; on a Node only PHP-FPM loads it. The section is not part of the [recipe identity](#recipe-identity): no Node profile or task image holds the static build.
 
-`tools/static-php/craft.yml` is the static-php-cli build definition. It builds the `cli` and `frankenphp` SAPIs together with ZTS, as a fully static musl binary for the baseline x86_64 CPU, without static-php-cli's suggested extensions. Its libraries give `gd` its image formats and `curl` HTTP/2 and HTTP/3. PHP reads its configuration from `/etc/orbit/php` and `/etc/orbit/php/conf.d`.
+static-php-cli builds `pcov` only as a shared extension, so it is a CLI-only extension. The archive holds each CLI-only extension as `modules/<name>.so`. Only the PHP CLI loads it, through [`php-cli.ini`](/reference/php-runtime#pcov-in-the-cli-only).
+
+`tools/static-php/craft.yml` is the static-php-cli build definition. It builds the `cli` and `frankenphp` SAPIs together with ZTS, for the baseline x86_64 CPU, without static-php-cli's suggested extensions. Each binary links everything statically except glibc. `bin/static-php-build` sets static-php-cli's target `SPC_TARGET=x86_64-linux-gnu.2.17`: its Zig toolchain links against glibc 2.17, which is older than Ubuntu 26.04's, so the binaries run in every container. It builds the `cli_extensions` as shared extensions. Its libraries give `gd` its image formats and `curl` HTTP/2 and HTTP/3. PHP reads its configuration from `/etc/orbit/php` and `/etc/orbit/php/conf.d`.
 
 `bin/static-php-build` runs the build:
 
@@ -346,25 +349,44 @@ A build's extensions are its PHP version's `extensions` less `without`, so the N
 | --- | --- |
 | `definition` | Prints each version's build id, release tag, asset and URL |
 | `verify-pins` | Fails when a recorded `build` or `url` is not the definition's |
-| `build --version X.Y --output DIR` | Fetches the pinned static-php-cli and FrankenPHP sources, runs `spc craft`, and packs `bin/php`, `bin/frankenphp`, `build.json` and `sources.json` with a `SHA256SUMS` file |
-| `check --version X.Y --bin DIR` | Fails unless both binaries report the pinned PHP release and load exactly the build's extensions |
+| `build --version X.Y --output DIR` | Fetches the pinned static-php-cli and FrankenPHP sources, runs `spc craft`, and packs `bin/php`, `bin/frankenphp`, `modules/pcov.so` (one `modules/<name>.so` for each of the `cli_extensions`), `build.json` and `sources.json` with a `SHA256SUMS` file |
+| `check --version X.Y --bin DIR` | Fails unless both binaries report the pinned PHP release and load exactly the build's static extensions, and the CLI, given the `cli_extensions`, loads exactly the static extensions and those |
 
-The check is the Ansible module `orbit_static_php`. The [runtime folder](/reference/development-containers#shared-folders) holds each published build as the part `php/<version>`, unpacked to `php/<version>/bin`, and its install runs the check on each one before the folder version is whole. A build whose `sha256` is still `null` is not in the folder. FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with `php -n`. FrankenPHP's own SAPI module, such as `frankenphp-cli`, is not an extension, so the check leaves it out for FrankenPHP only.
+The check is the Ansible module `orbit_static_php`. The [runtime folder](/reference/development-containers#shared-folders) holds each published build as the part `php/<version>`, unpacked to `php/<version>/bin` and `php/<version>/modules`, and its install runs the check on each one before the folder version is whole. A build whose `sha256` is still `null` is not in the folder.
+
+FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with `php -n`: both must load exactly the static extensions. The CLI then runs the probe with `php -n` and `-d extension=<part>/modules/<name>.so` for each of the `cli_extensions`, and must load exactly the static extensions and those. FrankenPHP's own SAPI module, such as `frankenphp-cli`, is not an extension, so the check leaves it out for FrankenPHP only.
+
+`frankenphp php-cli` takes the SAPI name `cli`, so it reads `php-cli.ini` and the `conf.d` scan directory, and it has no `-n`. The probe prints the ini files that PHP read, and the check fails when one binary read any. So the check runs only where the build's config path, `/etc/orbit/php`, does not exist: on a Node and on the CI runner, not in a container. The probe runs in an empty folder, because `frankenphp php-cli` also looks for its ini file in the working folder. Output that PHP prints at startup, such as a warning that it cannot load an extension, also fails the check.
 
 #### The static PHP workflow
 
 The `Static PHP build` workflow runs when the recipe, the build files or the workflow change. It requires every pin to name its definition. Compilation exceeds the [CI budget](/reference/implementation-loop#ci-budget), so a pull request only validates the pins. On main, a push or a manual run builds the versions whose release does not exist yet. The proof job keeps each archive it proved in the Actions cache under its build id, so a change to the proof alone does not build again.
 
-A proof job unpacks the archive, checks its SHA-256, refuses a binary that is not fully static, and runs the extension check. It then runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan and Pest with `php -d memory_limit=1G vendor/bin/pest`, and serves the Gateway's `/up` with `frankenphp php-server`.
+A proof job unpacks the archive, checks its SHA-256 and runs the extension check. Then `tools/static-php/prove.py` proves the build. It runs from the run's own commit, so a manual run from main uses main's copy, not the built branch's. A branch's change to its own proof is never what proves it. The branch's own code still runs in the job, so run only a reviewed ref.
+
+The proof has four parts:
+
+- **Linkage.** `php`, `frankenphp` and each CLI-only extension in `modules/` may need only glibc's own libraries, no newer than Ubuntu 26.04's glibc. A fully static binary also passes.
+- **CLI only.** The proof writes the `php-cli.ini` that a container has. It holds one `extension=` line for each CLI-only extension in the archive's `build.json`. `php -m` with it must list each one.
+- **Not in FrankenPHP.** `frankenphp php-server` serves a page with the same configuration. The page must run under the `frankenphp` SAPI and load no CLI-only extension.
+- **Coverage.** After the Gateway install, Pest runs with that `php-cli.ini`. It runs `tests/Unit/Infrastructure/MachineSoftware` with a clover report. The report must cover lines of `StaticPhpBuild.php`.
+
+The job also runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan, and serves the Gateway's `/up` with `frankenphp php-server`. A build whose `build.json` names no `cli_extensions`, such as a fully static musl build, fails the proof.
 
 On main, from a push or a manual run, the publish job creates the release with the archive and `SHA256SUMS`. It never replaces a release: a published SHA-256 may already be pinned. Pull requests never build, prove or publish.
 
+A manual run from main takes an optional `ref`: a branch of this repository or a full commit SHA. The run resolves it to one commit, then builds, proves and publishes that commit's definition, and the release targets that commit. The workflow file is always main's. Without `ref` the run builds its own commit.
+
+So a pull request that changes a build records the published SHA-256 before it merges, and the new build id and its SHA-256 reach main together. After the merge, main's push run finds the release and builds nothing. Its code publishes from main, so run only a ref you have reviewed. Only main's own commits fill the cache.
+
 #### Change a static build
 
+A build whose `sha256` is `null` is not in the runtime folder. A release of a new build id without its SHA-256 would remove that PHP version from every container. So one pull request records both:
+
 1. Change the definition: the `instances.php` section, the PHP build's extensions, `tools/static-php/craft.yml` or `bin/static-php-build`.
-2. Run `bin/static-php-build definition`. Record each changed version's `build` and `url`, and set its `sha256` to `null`.
-3. The pull request's workflow validates the pins. After merge, main builds, proves and publishes the definition.
-4. A second pull request records the published SHA-256 from the release's `SHA256SUMS`. Only then can a Node install the build.
+2. Run `bin/static-php-build definition`. Record each changed version's `build` and `url`, set its `sha256` to `null`, and push the branch. The pull request's workflow validates the pins.
+3. Run the workflow from main with the branch as `ref`: `gh workflow run static-php.yml --ref main -f ref=<branch>`. It builds, proves and publishes the new definition.
+4. Record the published SHA-256 from the release's `SHA256SUMS` in the same pull request. Every `sha256` must be set before the merge.
 
 ### Recipe identity
 
@@ -467,7 +489,7 @@ The template builder verifies the guest account before it becomes a template. Cl
 
 ### From claim to workspace
 
-A task start (`tasks.provision`, [command](/cli/task/start)) takes the lowest free place of a host and mints the identity of its VM. It copies the host's [base snapshot](#claims-copy-the-base-snapshot), writes the identity and the claim, and adds the hub peer. Then it converges the VM to the commit and starts the task branch. There is no provision, enrollment or bootstrap kind; the Node, its `app-dev` role and its `pi-server` Process are recorded at admission.
+No task start claims a place any more: a [task start](/cli/task/start) makes a task copy. The workflows that took a place, copied the [base snapshot](#claims-copy-the-base-snapshot), added the hub peer and converged the VM (`operation-task-provision`, `task-vm-start`, `task-vm-hub-peer`), and the ones that released it (`operation-task-vm-slot-release`, `task-vm-slot-phase`, `task-vm-hub-peer-remove`), are deleted ([old paths](/reference/old-paths#the-pi-task-loop)). The steps below describe the old claim.
 
 1. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 2. The claim starts the baseline check. Then the same claim projects the Route.
@@ -522,7 +544,7 @@ No entry admits a task VM any more: each answers `tasks.vm_runtime_removed` ([Ta
 
 A task publishes its PR and releases its VM, workspace, keys and peer. An [idle](/reference/tasks#release-an-idle-task-vm) group releases its VM too. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
-A host with a [`containers` setting](/reference/node-settings#task-container-fields) also has container task and CI places. Each live row records its runtime, `vm` or `container`, and holds a place of that runtime only, so container places never count against VM places. Normal placement takes container places only while `task_vms.container_placement` is on, and then only on a host with a recorded container base. The setting is off by default, so a host's task VMs keep their task groups. A base refresh takes a VM CI place. The host keeps one recorded base per runtime.
+A host with a [`containers` setting](/reference/node-settings#task-container-fields) also has container task places. Each live row records its runtime, `vm` or `container`, and holds a place of that runtime only, so container places never count against VM places. Normal placement takes container places only while `task_vms.container_placement` is on, and then only on a host with a recorded container base. The setting is off by default, so a host's task VMs keep their task groups. A base refresh takes a VM CI place. The host keeps one recorded base per runtime.
 
 Every new VM copies the base and has the Large profile: 6 vCPU, 12 GiB of memory and a 60 GiB disk. VM size does not multiply its capacity charge.
 
@@ -617,23 +639,22 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Converge a running task VM
 
-The common converge brings a task VM to the pins of the release. A [base snapshot refresh](#refresh-the-base-snapshot) runs it on the base VM, and every task start runs it on the new VM, in one Ansible run with the host part (`swamp/ansible/task-vm-start.yml`). It has no kind or command of its own. Swamp runs the phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH, so a base and a started VM end in the same state. These are the `software`, `tools` and `check` phases.
+The common converge brings a task VM to the pins of the release. A [base snapshot refresh](#refresh-the-base-snapshot) runs it on the base VM, and a task start ran it on the new VM until the task VM start was deleted. It has no kind or command of its own. Swamp runs the phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH, so a base and a started VM end in the same state. These are the `software`, `tools` and `check` phases.
 
 The Gateway puts these in the intent:
 
 - The `recipe.json` of the release and the Vite+ lock.
 - The VM's SSH target with its recorded host key.
-- The Pi server digest and its place on the Gateway host.
 
 No task file names a version.
 
-The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` and `jq` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust, the Swamp binary and the Pi server follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
+The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` and `jq` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust and the Swamp binary follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
 
 The `tools` phase installs the shape gate linters and prepares the Incus client config for the SSH user `orbit` with one serial read. Existing client configs stay in place. Task copies inherit the config, so later parallel Incus calls, including proof restores, cannot race on its first-use write. Incus creates or truncates that file before writing its YAML. The nested fleet is Incus system containers that take the checkout as a disk device, so the VM serves nothing to them.
 
 - The intent names the nested subnet and the interface `nested` (`TaskVmNestedFleet`), so the VM leads the nested network of that subnet.
 - UFW then allows DHCP, DNS and the package cache from the nested bridge, and routes it out.
-- The linters build into `/opt/orbit-shape-gate`, named by the digest of the pins in `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`.
+- The linters build into `/opt/orbit-shape-gate`. The venv name covers the pins and the interpreter that builds it, by the rule of [the shape gate](/reference/implementation-loop#run-the-swamp-shape-gate-before-you-push).
 - `bin/swamp-shape-gate` finds the folder by that name. The handoff check then runs offline.
 
 The `check` phase is the one end check. It asserts every package at its pin, every runtime and tool at its version, and the package cache active.
@@ -701,7 +722,7 @@ Admission captures live VM names and the highest allocated VM and build IDs befo
 
 Swamp runs task VM effects through recorded Operations. Each effect fixes its host, guest identity and command input before execution. The Gateway admits the effect and requires a matching successful command receipt before recording completion. A retry uses the same Operation and effect key. A lost reply does not authorize a second VM or a different target.
 
-No provider class is left in the Gateway: the observation provider and its host reader had no caller and are deleted. A task start copies the base snapshot with the Ansible phases of `task-vm-host.yml`.
+No provider class is left in the Gateway: the observation provider and its host reader had no caller and are deleted. No task start copies the base snapshot any more: the `start` and `delete` play of `task-vm-host.yml` is deleted with the task VM start and release ([old paths](/reference/old-paths#the-pi-task-loop)).
 
 A [medium VM](#incus-provider) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. A task copy inherits the boot config of its base snapshot.
 
@@ -945,7 +966,7 @@ The system file sets up the kernel and Incus side of the host.
 - **SCTP.** The `sctp` module cannot load, as described below.
 - **Kernel modules.** `wireguard`, `overlay` and `br_netfilter` go in `/etc/modules-load.d/orbit-task-containers.conf` and load now. A container cannot load a module itself.
 - **Sysctls.** `/etc/sysctl.d/60-orbit-task-containers.conf` holds the floors in the table below. They apply now.
-- **Subordinate IDs.** Root's range in `/etc/subuid` and `/etc/subgid` must hold `(containers.task_places + containers.ci_places + 1) × 101,000,000` IDs: one isolated range per place and one for the base. A smaller range fails the phase with both numbers and changes nothing.
+- **Subordinate IDs.** Root's range in `/etc/subuid` and `/etc/subgid` must hold `(containers.task_places + 1) × 101,000,000` IDs: one isolated range per task container place and one for the base. A smaller range fails the phase with both numbers and changes nothing.
 - **ZFS ARC.** It sizes the ARC cap, which never rises. See [the ARC cap](#the-arc-cap-of-a-container-host) below.
 
 A host without Incus gets `incus`, `incus-base` and `incus-client` from the recipe's [pinned packages](#incus-lts-packages-and-upgrades). They are the packages of its architecture, checked by SHA-256. The package's `db:Status-Status` must be `installed`; a hold does not cause a reinstall, and config files left after removal do not count as installed. A host with Incus must run a server on the recipe's line, such as 7.0. The inner Incus of the base uses the same line. The phase never upgrades a running Incus.
@@ -1033,7 +1054,7 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 
 With the [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) on a ZFS pool, the branch also sets `volmode=dev` on the pool's `custom` dataset, once. A copy's [inner volume](/reference/development-containers#the-inner-volume) then gets its device in dev mode.
 
-An Instance container host also gets the [fast wake](/reference/development-containers#the-node-resumes-a-frozen-container): the script `/usr/local/libexec/orbit-instance-wake`, `orbit-instance-wake.service` and the enabled path unit `orbit-instance-wake.path`. Writing them changes no running unit.
+An Instance container host also gets the [fast wake](/reference/development-containers#the-node-resumes-a-frozen-container): the [power helper](/reference/prepared-restore#the-power-helper) `/usr/local/libexec/orbit-instance-power` with its capability manifest, the enabled path unit `orbit-instance-wake.path`, its dispatcher and the worker template `orbit-instance-wake@.service`. Writing them changes no running unit.
 
 The role repeats the [read-only NIC audit](/reference/development-containers#prepare-a-node) at its end. An unsafe NIC fails convergence; bridge egress stays reject. No NIC may reference the bridge union ACL.
 
@@ -1087,13 +1108,11 @@ A new host gets its base VM in the first phase of its first refresh, `base-start
 
 Until a snapshot is proved and recorded, each refresh discards any unpromoted base VM and seed before building from stock. Cloud-init can mark its package module as run even when the first boot fails to install the SSH server; restarting that VM does not run the module again. A host with a recorded snapshot keeps its existing base unless `--from-stock` is requested.
 
-The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The Pi server is fetched for it. The refresh then stops the VM, snapshots it and proves the snapshot like any other.
+The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
 The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs. The base is identified by the recipe identity that its refresh converged to, recorded on the build row. Image freshness counts a path when it belongs to a carried folder or matches any carried lock-file pattern.
 
 The converge of a refresh installs the recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and installs with the `apt` module with `APT_CONFIG` pointing at it, and `allow_downgrade` because the pins are exact. The index read goes over plain http through the `apt-cacher-ng` of the VM (`localhost:3142`, no request pipelining, signatures still checked), which the first software task installs; the packages stay a direct download over https. The cache stays in the base VM, and the nested Nodes of a task VM read the snapshot indexes from it. The `check` phase asserts every package at its pin.
-
-The converge copies the pinned Pi build from the Gateway Node to 209 with official SSH and checks its SHA-256 there. The `software` phase copies it to `~orbit/.local/bin/pi-server` on the guest when the digest differs from the pin, and checks the digest again. The refresh fetches it only when the recipe of the base is older than the release's.
 
 #### The topology seed
 
@@ -1109,7 +1128,7 @@ The host part that logged task VM egress is removed with the base snapshot refre
 
 No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`, its intent and projection, and the artisan command `task-vms:image-builds` are removed; its triggers went before them. It is replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates the default Instance of each nested-fleet Project. A recorded base snapshot stays the base of a task start until the rest of the task VM path leaves.
 
-The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`. The parts `host-prepare` and `base-*` stay while tests of shared files load them; nothing runs them. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
+The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`, and later its task start and release parts `start` and `delete`. The parts `host-prepare` and `base-*` stay while tests of shared files load them; nothing runs them. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
 
 The Node column `image_refresh_hold` and `orbit node:update NODE --image-refresh-hold` / `--no-image-refresh-hold` remain until the task VM settings leave. Nothing reads the hold.
 

@@ -215,7 +215,9 @@
                 "mail_units": [],
                 "units": [],
                 "web_config": null,
+                "web_port": null,
                 "php": null,
+                "php_cli_ini": null,
                 "clone": {
                     "source": "instance-1",
                     "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
@@ -653,7 +655,9 @@
                 "mail_units": [],
                 "units": [],
                 "web_config": null,
+                "web_port": null,
                 "php": null,
+                "php_cli_ini": null,
                 "clone": {
                     "source": "instance-1",
                     "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",

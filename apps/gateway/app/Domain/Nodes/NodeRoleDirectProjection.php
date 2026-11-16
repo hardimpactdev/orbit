@@ -10,6 +10,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\NativeOperationProjection;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\NativeRunResult;
@@ -86,9 +87,22 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
             if (NativeRunResult::stepStatus($raw, 'Apply Analytics runtime-0') === 'succeeded') {
                 app(NodeRoleRuntimeProjection::class)->record($snapshot);
             }
+            // The ci-runner converge reads its CI bridge, also when the run then fails on a clash with the Instance bridge.
+            $ciBridge = ValidatedData::object(ValidatedData::object($raw['steps'] ?? [])[NodeBridges::CiBridgeStep] ?? [])['stdout'] ?? null;
+            if ($snapshot['role'] === RoleName::CiRunner->value && is_string($ciBridge)) {
+                NodeBridges::recordCiBridge(ValidatedData::integer($operation->node_id), $ciBridge);
+            }
+            if ($snapshot['role'] === RoleName::CiRunner->value) {
+                ProofSeeds::recordListener(ValidatedData::integer($operation->node_id), ValidatedData::object($intent['runtime'] ?? []), $proven, opens: true);
+            }
             $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $snapshot['role'])->firstOrFail();
             if ($proven) {
                 $assignment->markConvergenceActive();
+                // A Node that offers proof places gets its seed of the proof default now, not at the next release
+                // (docs/reference/development-containers.md#the-seed-on-each-ci-node).
+                if ($assignment->role === RoleName::CiRunner) {
+                    DB::afterCommit(static fn (): ?Operation => app(ProofSeeds::class)->admit('node_role'));
+                }
                 $digests = ValidatedData::stringMap($intent['artifact_digests']);
                 if ($digests !== []) {
                     $entries = [];

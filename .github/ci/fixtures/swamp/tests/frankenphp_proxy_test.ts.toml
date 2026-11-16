@@ -1,5 +1,4 @@
 order = 760
-source_sha256 = "592ce7ae0e6606805f5abeeed8fca6f89d6cb675f304ae071c359ea8a099f088"
 cases = [
   "FrankenPHP translates CGI only for the trusted Node peer with forwarded HTTPS",
 ]

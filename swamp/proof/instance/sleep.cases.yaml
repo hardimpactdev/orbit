@@ -4,7 +4,7 @@ target: app-dev
 sources: [gateway]
 baseline: [operations]
 uncovered:
-  main: "The proof fleet lacks Instance containers. Pest covers admission, the projection of power_state and the Caddy rule; real-Ansible fixtures cover the marker phase; the live proof runs on a fixture clone."
+  main: "The proof fleet lacks Instance containers. Pest covers admission, the projection of power_state, prepared_restore and the Caddy rule; real-Ansible fixtures cover the one sleep phase with the power helper fixture; the helper's own tests cover its engine; the live proof runs on a fixture clone."
   failed: "A failed sleep keeps power_state; Pest covers the projection of a failed run."
 cases:
   - id: invalid-id

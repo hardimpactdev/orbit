@@ -1,0 +1,78 @@
+sequenceDiagram
+  %% Target design, ADR 0260 build step 4 (docs/reference/development-containers.md#the-seed-on-each-ci-node): each Node that offers proof places, other than the default's own Node, keeps its own seed of the proof Project's default. One run per seed of the default sends the seed to every CI Node whose seed is behind; each target may fail alone.
+  %% Decided by the main orchestrator (2026-11-16): Incus moves the seed, `incus copy --refresh --mode=push` from the default's Node to each CI Node over WireGuard. Push mode needs a listener on the target only, so the default's Node gets a client remote and no daemon change. Each CI Node listens on its WireGuard address and trusts the default Node's client certificate for `orbit-instances-nested` only (docs/reference/node-provisioning.md#the-seed-listener). `--refresh` sends only the snapshots that changed. Rejected: one seed that every copy fetches over the network at its start (ADR 0260), a seed Instance per CI Node that refreshes its own fleet, and a ZFS stream through the Swamp worker with bookmarks of Orbit's own.
+  %% status: draft
+  %% command: none · after the proof default records a seed, or a CI Node's ci-runner add or converge passes
+  %% kind: instance.seed_copy
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane C icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as Default Node<br/>holds the default
+  participant C as CI Node<br/>each target
+  Note over GW: Admit the seed copy<br/>CI Nodes behind the seed
+  %%> Started by:
+  %%> - the proof default records a new seed: the refresh after a release, or an `instance:deploy` of the default
+  %%> - a `ci-runner` add or converge of a Node that offers proof places passes
+  %%> - a seed copy ends, only when the default's seed moved during it (all Nodes behind the new seed), or for Nodes that no seed copy has tried at the same seed (a Node that became a target while the copy held the lock)
+  %%> Never started by:
+  %%> - the end of a copy for a Node that any seed copy has tried at the same seed: it waits for the next seed or for its own `ci-runner` converge, so lasting failures do not repeat, also not two Nodes for each other
+  %%> Requirements:
+  %%> - the proof Project's default is active and has a seed; a seed is its commit and the time the default took it
+  %%> - targets: every Node that offers proof places (`ci-runner`, CI places, with or without `app-dev`), other than the default's Node, whose recorded seed is not that seed (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node), and whose seed listener is ready: its `nodes.seed_sender_id` names the default's Node; with none, nothing is admitted
+  %%> - every run that changes the listener records `seed_sender_id` by one rule: a `ci-runner` add, role converge or removal, and a `node:converge` with the role; a passed add or role converge sets the sender, a `node:converge` whose roles phase passed keeps only the sender it already names, and any other end clears it (docs/reference/node-provisioning.md#the-seed-listener)
+  %%> - when the default moves to another Node, no CI Node is a target until its `ci-runner` role is converged again
+  %%> Not a target:
+  %%> - a Node whose listener is not ready: no copy fails on it and no copy marks it tried; its next passed `ci-runner` converge makes it a target
+  %%> - one copy at a time: an open copy holds the default's seed-copy lock, `operation.target_busy`
+  %%> Result:
+  %%> - a task is recorded with the full intent: the default's Node, container and inner volume, and per target its Node and WireGuard address
+  GW->>SW: Start run, full intent<br/>instance-seed-copy
+  loop each CI Node, side by side
+    SW->>C: Read its Incus certificate<br/>Ansible · tags certificate
+    %%> What it does:
+    %%> - reads the Incus server certificate of the CI Node and checks that the Node listens on its WireGuard address
+    %%> On failure:
+    %%> - no listener: this target fails; a `ci-runner` converge of the Node adds the listener and the trust
+    SW->>N: Copy the seed<br/>Ansible · tags copy
+    %%> What it does:
+    %%> - adds the client remote `proof-node-ID` of root when it is missing, and refuses when the certificate that root's client stored for it is not the one read on the CI Node
+    %%> - `incus copy DEFAULT proof-node-ID:proof-seed --refresh --mode=push` in `orbit-instances-nested`, then `incus storage volume copy` of the inner volume to `proof-seed-inner` with the same flags
+    %%> Why push:
+    %%> - the source server sends the data and only the target listens, so the default's Node needs no listener and no daemon change
+    %%> Why refresh:
+    %%> - Incus compares the snapshots on both sides and sends only the newer ones; the holder gets `seed-COMMIT` natively; the first copy to a Node sends the whole pair
+    %%> Why the whole instance:
+    %%> - a snapshot source carries no snapshots, so a refresh from it could not find a common one
+    %%> On failure:
+    %%> - this target fails with `instance.seed_copy_failed`; the other targets go on
+    SW->>C: Check the holder<br/>Ansible · tags check
+    %%> What it does:
+    %%> - the holder `proof-seed` has the snapshot `seed-COMMIT` that the run was admitted for, and its volume has the snapshot of the same name
+    %%> - the holder's config and devices match the default's, as the start guard checks them; the volume has exactly the inner volume's keys
+  end
+  SW-->>GW: Run ended<br/>result per target
+  %%> How the Gateway learns it:
+  %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+  Note over GW: Record each new seed
+  %%> Result:
+  %%> - each Node whose target passed records the seed it was admitted for: its commit and its time; it offers proof places again
+  %%> - a proof copy on that Node clones `proof-seed/seed-COMMIT` with the clone step of every copy
+  opt a target failed
+    Note over GW: Keep the old seed<br/>Activity per failed Node
+    %%> Result:
+    %%> - the failed Node keeps its recorded seed and offers no proof places until a copy passes; copies made earlier keep running
+    %%> - the Activity row `instance.seed_copy_failed` names the Node, the Operation and the detail
+    %%> - the release and the default are unchanged; the next seed or the Node's own `ci-runner` converge copies again, and a rerun is safe
+  end
+  opt seed moved, or new targets
+    Note over GW: Admit the next copy<br/>Nodes not at the seed
+    %%> When:
+    %%> - the default took a newer seed while the copy ran: every Node behind it is a target
+    %%> - the seed is the same, and a Node that no seed copy has tried at this seed is behind it: only such Nodes are targets; the Gateway reads which Nodes were tried from the targets of the recorded `instance.seed_copy` Operations of that seed
+    %%> Not:
+    %%> - for a Node that failed at the same seed
+  end

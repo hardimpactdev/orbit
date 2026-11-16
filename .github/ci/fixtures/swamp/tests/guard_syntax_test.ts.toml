@@ -1,5 +1,4 @@
 order = 800
-source_sha256 = "b8667e49cc3957f2ab80773f99bf2846b27279092daa7a1af1e58ffcf6dff725"
 cases = [
   "every step guard is one ${{ }} expression",
   "a step that waits for a guarded step with `completed` also accepts `skipped`",

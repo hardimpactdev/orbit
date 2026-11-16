@@ -660,6 +660,24 @@ contexts:
     restore_seed: seed-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     restore_volume_snapshots:
       stdout: '[{"name":"seed-ffffffffffffffffffffffffffffffffffffffff","created_at":"2026-11-13T09:53:00Z"}]'
+  # `incus query /1.0/storage-pools/<pool>/volumes/custom/<volume>/snapshots?recursion=1` names each snapshot `<volume>/<snapshot>`.
+  seed-copy-volume-holds:
+    seed_intent:
+      snapshot: seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac
+      source: { inner_volume: inner-41 }
+    seed_volume:
+      stdout: '[{"name":"proof-seed-inner/seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"proof-seed-inner/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-16T05:02:17.84470215Z","expires_at":"0001-01-01T00:00:00Z"}]'
+  seed-copy-volume-half-missing:
+    seed_intent:
+      snapshot: seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac
+      source: { inner_volume: inner-41 }
+    seed_volume:
+      stdout: '[{"name":"proof-seed-inner/seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
+  seed-copy-no-volume:
+    seed_intent:
+      snapshot: seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac
+      source: { inner_volume: null }
+    seed_volume: { skipped: true, changed: false }
   restore-seeds:
     restore_snapshots:
       stdout: '[{"name":"seed-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","created_at":"2026-11-13T12:40:00.123456789Z"},{"name":"before-migrate","created_at":"2026-11-13T13:00:00Z"},{"name":"seed-ffffffffffffffffffffffffffffffffffffffff","created_at":"2026-11-13T09:53:00.5Z"}]'
@@ -858,16 +876,6 @@ contexts:
     moved_process_ready:
       rc: 0
       stdout_lines: [ActiveState=active, Job=, MainPID=1742, NRestarts=0invalid]
-  freeze-memory-running:
-    power: freeze
-    intent: {freeze: {resident_anon_mib: 32}}
-    freeze_stat:
-      content: YW5vbiA2NzgxMzM3NgpmaWxlIDU2NzQ1OTg0Cmtlcm5lbCA5OTc3ODU2Cmtlcm5lbF9zdGFjayA1ODk4MjQKcGFnZXRhYmxlcyAxNjI2MTEyCnNlY19wYWdldGFibGVzIDAKcGVyY3B1IDgwNjQ3Mgpzb2NrIDAKdm1hbGxvYyA2ODgxMjgKc2htZW0gMzEwODg2NDAKenN3YXAgMAp6c3dhcHBlZCAwCmZpbGVfbWFwcGVkIDM4NjU4MDQ4CmZpbGVfZGlydHkgMApmaWxlX3dyaXRlYmFjayAwCnN3YXBjYWNoZWQgODE5Mgphbm9uX3RocCAwCmZpbGVfdGhwIDAKc2htZW1fdGhwIDAKaW5hY3RpdmVfYW5vbiAzMTUzMTAwOAphY3RpdmVfYW5vbiA2NzM2MjgxNgppbmFjdGl2ZV9maWxlIDE2MzM4OTQ0CmFjdGl2ZV9maWxlIDkzMzQ3ODQKdW5ldmljdGFibGUgMApzbGFiX3JlY2xhaW1hYmxlIDI5NDQzNDQKc2xhYl91bnJlY2xhaW1hYmxlIDMxOTI1NjgKc2xhYiA2MTM2OTEyCndvcmtpbmdzZXRfcmVmYXVsdF9hbm9uIDAKd29ya2luZ3NldF9yZWZhdWx0X2ZpbGUgNzU4MQp3b3JraW5nc2V0X2FjdGl2YXRlX2Fub24gMAp3b3JraW5nc2V0X2FjdGl2YXRlX2ZpbGUgMTM0MQp3b3JraW5nc2V0X3Jlc3RvcmVfYW5vbiAwCndvcmtpbmdzZXRfcmVzdG9yZV9maWxlIDE2NQp3b3JraW5nc2V0X25vZGVyZWNsYWltIDE1MzkKcGdkZW1vdGVfa3N3YXBkIDAKcGdkZW1vdGVfZGlyZWN0IDAKcGdkZW1vdGVfa2h1Z2VwYWdlZCAwCnBnZGVtb3RlX3Byb2FjdGl2ZSAwCnBncHJvbW90ZV9zdWNjZXNzIDAKcGdzY2FuIDE5MDczNgpwZ3N0ZWFsIDE4OTQ3NQpwc3dwaW4gMApwc3dwb3V0IDIKcGdzY2FuX2tzd2FwZCAxNzM2MTEKcGdzY2FuX2RpcmVjdCAxNzEyNApwZ3NjYW5fa2h1Z2VwYWdlZCAxCnBnc2Nhbl9wcm9hY3RpdmUgMApwZ3N0ZWFsX2tzd2FwZCAxNzI0MzAKcGdzdGVhbF9kaXJlY3QgMTcwNDQKcGdzdGVhbF9raHVnZXBhZ2VkIDEKcGdzdGVhbF9wcm9hY3RpdmUgMApwZ2ZhdWx0IDM5MzYxNDgKcGdtYWpmYXVsdCAyNTA3MTIKcGdyZWZpbGwgMzkxMDMKcGdhY3RpdmF0ZSAxMzMwCnBnZGVhY3RpdmF0ZSAwCnBnbGF6eWZyZWUgMApwZ2xhenlmcmVlZCAwCnN3cGluX3plcm8gMApzd3BvdXRfemVybyAwCnpzd3BpbiAwCnpzd3BvdXQgMAp6c3dwd2IgMAp0aHBfZmF1bHRfYWxsb2MgNjgKdGhwX2NvbGxhcHNlX2FsbG9jIDAKdGhwX3N3cG91dCAwCnRocF9zd3BvdXRfZmFsbGJhY2sgMApudW1hX3BhZ2VzX21pZ3JhdGVkIDAKbnVtYV9wdGVfdXBkYXRlcyAwCm51bWFfaGludF9mYXVsdHMgMAo=
-  freeze-memory-reclaimed:
-    power: freeze
-    intent: {freeze: {resident_anon_mib: 32}}
-    freeze_stat:
-      content: YW5vbiAwCmZpbGUgMApzaG1lbSAwCg==
   fleet-record-present:
     fleet_record_read:
       rc: 0
@@ -2127,6 +2135,21 @@ cases:
   field: ansible.builtin.assert.that
   context: restore-volume-half-missing
   expected: false
+- file: proof-seed-copy.yml
+  task: Require the seed snapshot in both halves
+  field: ansible.builtin.assert.that[1]
+  context: seed-copy-volume-holds
+  expected: true
+- file: proof-seed-copy.yml
+  task: Require the seed snapshot in both halves
+  field: ansible.builtin.assert.that[1]
+  context: seed-copy-volume-half-missing
+  expected: false
+- file: proof-seed-copy.yml
+  task: Require the seed snapshot in both halves
+  field: ansible.builtin.assert.that[1]
+  context: seed-copy-no-volume
+  expected: true
 - file: tasks/instance-container-phase.yml
   task: Name the newest seed
   field: ansible.builtin.set_fact.restore_seed
@@ -2137,16 +2160,6 @@ cases:
   field: ansible.builtin.set_fact.restore_seed
   context: restore-no-seed
   expected: ''
-- file: tasks/instance-container-power.yml
-  task: Note whether the memory stayed in RAM
-  field: ansible.builtin.set_fact.freeze_held
-  context: freeze-memory-running
-  expected: true
-- file: tasks/instance-container-power.yml
-  task: Note whether the memory stayed in RAM
-  field: ansible.builtin.set_fact.freeze_held
-  context: freeze-memory-reclaimed
-  expected: false
 - file: tasks/instance-fleet-refresh.yml
   task: Read what the tools step did
   field: vars.fleet_tools_out
@@ -2310,10 +2323,6 @@ non_command_output:
   task: Remove the other Swamp releases
   field: loop
   reason: Keeps the paths of the find module's own result that are one release folder deep under the Swamp root; it parses no command output.
-- file: tasks/instance-container-swap.yml
-  task: Note the recorded inner cgroups
-  field: ansible.builtin.set_fact.swap_paths
-  reason: Drops lines of the sleep's own swap record (a root-only file) that are absolute or climb out of the container's cgroup; it parses no command output.
 - file: tasks/instance-fleet-refresh.yml
   task: Read the digests of the checkout
   field: ansible.builtin.command.argv

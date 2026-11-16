@@ -1,5 +1,4 @@
 order = 730
-source_sha256 = "83fbcb2821765b479b280e76c2d96149e78924b457d03ed685be8f58423377ef"
 cases = [
   "retention keeps latest index and exact reports of all retained versions, removes seven-day orphans",
 ]

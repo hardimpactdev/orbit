@@ -1,7 +1,6 @@
 file = "swamp/tests/task_instance_workspace_test.py"
 slices = false
 cost = 32
-source_sha256 = "e5725169ece009ac29fa941bb2e4b5b4d28a4cf731f02fed67f17934b50fb828"
 cases = [
   "test_tagged_playbook_pins_target_and_writes_failure_without_node_execution",
   "test_exact_checkout_trust_survives_isolated_git_config",

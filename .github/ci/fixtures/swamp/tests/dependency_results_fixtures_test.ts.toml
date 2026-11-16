@@ -1,5 +1,4 @@
 order = 710
-source_sha256 = "92b414265891f35ab86ba9493abe6a40252749afceda9635c5bb16895f4819a9"
 cases = [
   "canonical dependency fixture: success",
   "canonical dependency fixture: running-partial",

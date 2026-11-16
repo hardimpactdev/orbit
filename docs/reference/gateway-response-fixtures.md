@@ -21,6 +21,8 @@ The `operations/operation-show/overdue` fixture records a timed-out Operation of
 
 The `operations/operation-show/fleet-reboot-unreachable` fixture records a failed Node with its redacted SSH diagnostic, a later halted Node and an unvisited Node. The `fleet-reboot-interrupted` fixture records unknown Node outcomes when the root delivered no Node report. The CLI replays both in human and JSON output. [Fleet reboot](/reference/gateway-recovery#one-node-of-the-pass) owns those outcomes.
 
+Operation show and list responses carry a nullable `ready_at`. Only an `instance.wake` result sets it; every other recorded Operation fixture holds `null`. When this field changes, re-record the `operation-show` fixtures and regenerate OpenAPI and the web API types. [Prepared restore](/reference/prepared-restore) owns its meaning.
+
 Node enrollment fixtures record the real HTTP 202 admission and a separate terminal Operation read. The CLI replays both, so a queued response cannot be mistaken for an active Node. Native identity observations supply the completion fixture.
 
 The `node-show` and `project-show` fixtures hold the record, and for a Node its `access`. They carry no exclusion lists. Node list and show keep `roles` as a list of names and also carry `cluster_name` and the same `assignments` projection as `node:role:list`. `NodeQueryFixturesTest` records these two responses from the Gateway; the CLI contract tests replay them.
@@ -148,7 +150,12 @@ The change cycle is: change the Gateway, re-record the fixtures, review the fixt
 
 ## Web app fixtures
 
-The web app's demo mode and its tests run against the files under `apps/web/fixtures/fleet`. These files use the same format without a request class. They are written by hand as one coherent fleet, because a recorded fixture covers one route and the web app needs records that refer to each other. The Gateway Node runs a release, so it is the only Node with an `updating` value. `bin/api-fixtures --check` validates them together with the recorded fixtures. One file, `firewall-list.json`, answers `GET /api/v1/firewall-rules` for every Node; the demo Gateway derives the one-Node, `managed` and `live` forms from it.
+The web app's demo mode and its tests run against the files under `apps/web/fixtures/fleet`. These files use the same format without a request class. They are written by hand as one coherent fleet, because a recorded fixture covers one route and the web app needs records that refer to each other. The Gateway Node runs a release, so it is the only Node with an `updating` value. `bin/api-fixtures --check` validates them together with the recorded fixtures.
+
+Two files need a note:
+
+- `firewall-list.json` answers `GET /api/v1/firewall-rules` for every Node. The demo Gateway derives the one-Node, `managed` and `live` forms from it.
+- `ci-runners.json` answers `GET /api/v1/ci/runners` with one CI Node, its runners and the jobs of its window.
 
 The demo fleet has one tool inventory for each active Node. Node 1 is an empty Linux read: `brew` completed with no packages, `brew-cask` unsupported, and `vp` not observed. Node 2 is a partial Linux read: `brew` not observed, `brew-cask` unsupported, and `vp` not observed, so none of those empty arrays is an inventory. Node 3 is unreachable and has no inventory fixture; the demo refuses a scan with `tool.node_inactive`.
 
@@ -165,4 +172,4 @@ Notes for some families:
 - Node update fixtures under `nodes/node-update` record an unmanaged peer set to `ipados` and the `node.platform_managed` refusal. The SDK and `node:update` CLI tests replay both responses.
 - The `instances/instance-show/attached-targets` fixture records attached targets with and without the `shared` mark. The Gateway's attached-target test records it, and the `instance:show` CLI contract test replays it.
 - Automatic Gateway release fixtures use the `gateway-auto-release-*` directories under `gateway-releases`, matching the public commands.
-- Task publication fixtures cover deletion of the VM and its identity. The public `task:park` command has no response fixture. Node host settings expose separate `task_places` and `ci_places` counts.
+- Task publication fixtures cover deletion of the VM and its identity. The public `task:park` command has no response fixture. Node host settings expose separate VM `task_places` and `ci_places` counts. A CI Node's [CI places](/reference/node-settings#ci-places) are a separate `settings.ci` member.

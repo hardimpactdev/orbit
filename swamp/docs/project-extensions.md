@@ -42,12 +42,10 @@ Project maintenance admits the Project repository, default branch, check, curren
 
 Routine and batch selection produce typed requests in the terminal result. The Gateway applies those requests through its normal group and Operation admissions. Swamp does not create groups, post task Operations or start nested CLI processes. Native failures keep their original status; they do not fabricate a successful downstream admission.
 
-The shared workspace child only prepares a directory. VM provider, bootstrap, hub and model/Pi composition require the canonical TaskVM provision child. Workspace readiness alone cannot admit provision completion or mark a group running.
-
 The frozen Orbit rule accepts vault values in command environments, so acquisition uses a fixed native `command/shell` Git invocation with its authorization header in the Git environment. The Gateway derives that header from the same scoped token before writing its execution copy. Native PR reads receive the token through a separate execution copy. This adds no Git transport or credential helper.
 
 ## Scheduled producer boundary
 
 Scheduled maintenance carries no Project or task group data in its trigger. The native schedule only ticks: its step lists the configured Projects with the request keys of the fire, and the Projects family selects the work from its own tables when it projects the fire, then uses normal guarded admission. Steps never POST downstream admissions to the Gateway. The existing shared schedule subscriber activates the publication of the fixed trigger, which is sent once, and delivers native terminal results. Only this declared producer requests exact workflow-write authority for its native trigger.
 
-Maintenance execution uses the canonical TaskVM provision root, the shared `task-vm-workspace` directory child, and separate official SSH actions from209 for package and routine work. Native results admit check, at most one Pi repair, checked publication and parking. No-change completion and ended-PR completion use the owning native cleanup root. A capacity-refused Todo group can be selected again by a later native observation without creating another group. See [the maintained contract](../../docs/reference/instance-dependency-contracts.md).
+Project maintenance admits its groups and their task copies. No maintenance run follows: the task VM run and its workspace child are removed with the Pi task loop. See [old paths](../../docs/reference/old-paths.md#the-pi-task-loop) and [the maintained contract](../../docs/reference/instance-dependency-contracts.md).

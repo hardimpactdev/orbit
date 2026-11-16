@@ -748,6 +748,7 @@ export function createDemoGateway() {
                     ),
             ],
             ["GET", /^\/api\/v1\/tasks(?:\?.*)?$/, () => ok(taskGroups)],
+            ["GET", /^\/api\/v1\/ci\/runners$/, () => ok(byRoute.get("GET /api/v1/ci/runners#"))],
             [
                 "GET",
                 /^\/api\/v1\/task-insights(?:\?.*)?$/,
@@ -1257,6 +1258,7 @@ export function createDemoGateway() {
             finished_at: null,
             overdue_since: null,
             hold_wait_reason: null,
+            ready_at: null,
             // The demo has no worker to wait for, so the page reads again at once.
             poll_after_seconds: 0,
             capacity_wait: null,

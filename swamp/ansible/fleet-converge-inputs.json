@@ -20,11 +20,13 @@
     "swamp/ansible/tasks/node-converge-base.yml",
     "swamp/ansible/tasks/node-converge-cli-absent.yml",
     "swamp/ansible/tasks/node-converge-hub.yml",
+    "swamp/ansible/tasks/node-converge-hub-filter-absent.yml",
     "swamp/ansible/tasks/node-converge-hub-prune.yml",
     "swamp/ansible/tasks/node-converge-replace.yml",
     "swamp/ansible/tasks/node-hub-source.yml",
     "swamp/ansible/tasks/node-kernel-policy.yml",
-    "swamp/ansible/tasks/node-update-policy.yml"
+    "swamp/ansible/tasks/node-update-policy.yml",
+    "swamp/ansible/tasks/proof-seed-certificate.yml"
   ],
   "cut_imports": [
     {

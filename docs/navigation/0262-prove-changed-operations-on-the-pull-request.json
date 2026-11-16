@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 262,
+      "pages": [
+        "decisions/0262-prove-changed-operations-on-the-pull-request"
+      ]
+    }
+  ]
+}

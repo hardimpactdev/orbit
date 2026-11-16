@@ -16,6 +16,7 @@ Check this page before you build on something. Each row is code that still runs,
 | The `instance-create-stage-`, `instance-create-redact-token-` and `instance-create-redact-model-` key prefixes in the create's declared copies, the Gateway grants, the create workflow's input pattern and `ContainerDestroyExecutionCopies` | The one-line launch copy `instance-create-launch-<operation>`; the bare copies are not written | When no Instance created on release 2079 or 2084 is left (the destroy deletes their copies) |
 | The merge-base replay pieces of the [task VM proof run](#the-task-vm-proof-run) | [`proof:run` in copies](/cli/proof/run#the-run), once it replays flagged cases | When the replay is ported to copies |
 | `GatewayRuntimeFiles::RetiredSettings`, the four `ORBIT_TASK_VMS_UPCLOUD_*` keys and `ORBIT_SWAMP_DIRECT_WRITERS` | Nothing: the `gateway` role's convergence removes them from `shared/gateway.env` | When no Gateway has them |
+| `swamp/ansible/tasks/node-converge-hub-filter-absent.yml`, which removes the [task VM hub filter](#the-task-vm-lifecycle) | Nothing: the hub converge removes the filter | When no vpn Node has the filter |
 | [`instance:migrate`](/cli/instance/migrate), its kind `instance.migrate`, the workflow `operation-instance-migrate` and the playbook `instance-migrate.yml`; and checkout Instances on an `app-dev` Node, with their PHP-FPM pools | Every new Instance is a [container](/reference/development-containers); the command moves each checkout Instance into one | When the last checkout Instance has moved, with the switch of every `app-dev` Node ([PR 16](/solutions/development-container-runtime#pr-16-switch-every-app-dev-node)) |
 | `bin/e2e-topology`, its harness `apps/e2e` and the per-issue topology it composes, with its virtiofs share of the worktree | The nested fleet ([stage 2](/reference/command-development-pipeline#2-development-environment)) | When its harness is removed: no subtask can [declare a topology](/reference/compute-drivers#declare-a-topology) |
 
@@ -51,7 +52,11 @@ The lifecycle that only the Pi loop used is removed as well:
 
 A task without a [task copy](/reference/tasks#task-copy) has no workspace that Orbit can use or remove. Its sync, check and publish answer `tasks.no_workspace`. Its cancel ends it at admission and starts no run. When it still holds a task VM workspace, its complete asks for removal assistance.
 
-`tasks.provision` stays registered as the request kind of `task:start`, with its vault patterns. No Operation of it starts. The rows of `task_vms` stay, and nothing changes them.
+`tasks.provision` stays registered as the request kind of `task:start`, which scopes the route's `Idempotency-Key`. No Operation of it starts. Its registry entry names `operation-instance-create`, the workflow a start runs through its task copy, and declares no vault pattern. The rows of `task_vms` stay, and nothing changes them.
+
+The task VM hub filter that the removed `task_vm.hub_converge` installed on the vpn Node goes with the next converge that applies the network on the hub. That is a full converge of the vpn Node, or of any Node that uses it as its hub. It removes the unit `orbit-task-vms-hub.service`, its unit file, `/etc/orbit/task-vms/hub.nft` and the nft table `inet orbit_task_vms`. [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) has the steps.
+
+The task VM workflows that #3849 kept are deleted: the start `operation-task-provision` with its children `task-vm-start` and `task-vm-hub-peer`, and the place release `operation-task-vm-slot-release` with its children `task-vm-slot-phase` and `task-vm-hub-peer-remove`. The playbook `swamp/ansible/task-vm-start.yml`, which only the start ran, goes with them. `operation-task-cancel` calls no release any more; a cancel starts no run.
 
 ### The Pi agent server
 
@@ -59,13 +64,15 @@ The Pi agent server `apps/pi-server` is removed with its CI check, its Dependabo
 
 No Node enrollment, certificate signing, VPN or worker material and no Process install accepts a `tasks.provision` Operation any more. A Node joins the fleet only through `node.add`.
 
-The machine recipe still pins the Pi build as the tool `pi` of the task VM profile `base`. It goes with the Swamp side of the task VM workflows, which reads it. `ORBIT_PI_PORT` stays reserved: a Node service may not use the port, and the task VM hub rules name it, until the task VM settings are removed.
+The task VM start installs no Pi server any more. Its fetch and checksum steps, the `pi_path` playbook input, the Ansible task file `task-vm-pi.yml`, the Pi line of the role's end check and the Pi unit of the VM identity are deleted.
+
+The machine recipe pins no Pi build: the tool `pi`, its entry in the task VM profile `base` and its catalog line are deleted, so the recipe identity changed. `ORBIT_PI_PORT` stays reserved: a Node service may not use the port, and the task VM hub rules name it, until the task VM settings are removed. The `pi` fields of the task VM settings, the Pi unit check of `tasks.provision` and the Pi firewall rules of the boot phase stay with the task VM runtime.
 
 ### What stays
 
 Old Operations of all these kinds stay as history, as for every [kind that left the registry](/reference/operations#kinds-that-left-the-registry).
 
-The Swamp workflows of the removed kinds stay one release longer, because a rollback by one release still names them. Nothing starts them. The vault patterns `^task-vm-pi-token-[1-9][0-9]*$`, `^pr-comment-write-[a-f0-9-]{36}$` and `^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$` stay declared on `tasks.provision` until the grants release after the Pi loop.
+The Swamp workflows that only the Pi loop ran are deleted. They are the Pi turn, the script, the package install, the idle save, the maintenance run, the prep, the prep fix, the build, the review round and the VM resume. Their child workflows, extensions, playbook and tests go with them. The grants release after the Pi loop removed the five vault patterns that nothing writes from the declarations and from `swamp/config/gateway-workflow-grants.json`: `^(swamp-proof-club-api-key|task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$`, `^task-vm-pi-(claim|token)-[1-9][0-9]*$`, `^task-vm-pi-token-[1-9][0-9]*$`, `^pr-comment-write-[a-f0-9-]{36}$` and `^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$`. `^nested-fleet-club-api-key$` stays.
 
 ## Off in the live fleet
 

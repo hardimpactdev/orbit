@@ -6,6 +6,7 @@ namespace App\Actions\Tasks;
 
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Shared\StoredInteger;
+use App\Domain\Tasks\DeliverableCorrectionKind;
 use App\Domain\Tasks\DeliverablePathChecker;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskAssistance;
@@ -38,19 +39,26 @@ final readonly class UpdateTaskAction
             throw TaskGroupGuard::deliverablesLocked();
         }
         $task->setRelation('parent', $group);
-        $check = $data->deliverables === null ? null : TaskGroupGuard::deliverableCorrectionCheck($group, $task);
-        // A subtask stopped by the path gate has no implementer work yet, so its contract can be fixed without the one correction.
-        $gate = $data->deliverables !== null && $check === null && TaskGroupGuard::deliverableGateBlocked($group, $task);
+        if ($data->reason !== null && $data->deliverables === null) {
+            throw TaskGroupGuard::reasonUnexpected();
+        }
+        $correction = $data->deliverables === null ? null : TaskGroupGuard::deliverableCorrection($group, $task);
         $base = TaskReviewBase::commit($task);
         $groupState = $group->getRawOriginal();
         $taskState = $task->getRawOriginal();
         $projectState = $group->project->getRawOriginal();
-        if ($check !== null || $gate) {
+        if ($correction !== null) {
             if ($data->title !== null || $data->brief !== null || $data->position !== null) {
                 throw TaskGroupGuard::notInBacklog();
             }
             if ($data->deliverables === []) {
                 throw TaskGroupGuard::deliverablesRequired();
+            }
+            if (! $correction->takesReason() && $data->reason !== null) {
+                throw TaskGroupGuard::reasonUnexpected();
+            }
+            if ($correction->takesReason() && $data->reason === null) {
+                throw ValidationException::withMessages(['reason' => [__('A correction after a failed check needs a reason.')]]);
             }
             $commit = $base === '' ? app(DeliverablePathRepository::class)->defaultBranchCommit($group->project) : $base;
             $workspace = $group->taskable instanceof Instance ? $group->taskable : null;
@@ -64,7 +72,7 @@ final readonly class UpdateTaskAction
             }
         }
 
-        return DB::transaction(static function () use ($group, $task, $data, $actor, $requestId, $check, $gate, $base, $groupState, $taskState, $projectState): Task {
+        return DB::transaction(static function () use ($group, $task, $data, $actor, $requestId, $correction, $base, $groupState, $taskState, $projectState): Task {
             $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             $task = Task::query()->lockForUpdate()->findOrFail($task->id);
             if ($task->parent_id !== $locked->id) {
@@ -73,8 +81,9 @@ final readonly class UpdateTaskAction
             $task->setRelation('parent', $locked);
             if ($data->status !== null) {
                 TaskStatusMoves::subtask($locked, $task, $data->status);
-                if ($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) {
-                    TaskCopyTurn::refuseCompletionWhileRunning($locked);
+                $reopen = TaskStatusMoves::reopens($locked, $task, $data->status);
+                if (($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) || $reopen) {
+                    TaskCopyTurn::refuseSubtaskMoveWhileRunning($locked);
                 }
                 if ($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) {
                     TaskAssistance::resolveExternalSubtask($task, $locked);
@@ -84,53 +93,43 @@ final readonly class UpdateTaskAction
                     if ($task->status !== $data->status) {
                         $task->update(['status' => $data->status]);
                     }
+                    if ($reopen) {
+                        // The reopen adds no state: the group is not done again until the subtask completes again (docs/reference/tasks.md#reopen-the-last-subtask).
+                        Activity::query()->create([
+                            'log_name' => 'tasks', 'description' => 'subtask reopened', 'subject_type' => Task::class,
+                            'subject_id' => $task->id, 'properties' => ['group_id' => $locked->id, 'old' => TaskStatus::Completed->value, 'new' => TaskStatus::Running->value],
+                            'caller_node_id' => $actor?->id, 'caller_ip' => $actor?->wireguard_ip,
+                            'request_id' => $requestId ?? (string) Str::uuid(), 'command' => 'task:update', 'status' => 'completed',
+                        ]);
+                    }
 
                     return $task->refresh();
                 }
             }
 
-            if ($check !== null && TaskGroupGuard::deliverableCorrectionCheck($locked, $task)?->id !== $check->id) {
-                throw TaskGroupGuard::deliverablesLocked();
-            }
-            if ($data->deliverables !== null && ($currentCheck = TaskGroupGuard::deliverableCorrectionCheck($locked, $task)) !== null) {
-                if ($data->title !== null || $data->brief !== null || $data->position !== null) {
-                    throw TaskGroupGuard::notInBacklog();
-                }
-                if ($data->deliverables === []) {
-                    throw TaskGroupGuard::deliverablesRequired();
-                }
-
-                // Repository I/O has finished. Reject a stale validation instead of consuming recovery.
-                if ($check?->id !== $currentCheck->id || $locked->getRawOriginal() !== $groupState
+            $current = $data->deliverables === null ? null : TaskGroupGuard::deliverableCorrection($locked, $task);
+            if ($correction !== null || $current !== null) {
+                // Repository I/O has finished. Reject a request that was not validated as this correction, or a stale one, instead of consuming it.
+                if ($correction === null || ! $correction->sameAs($current) || $locked->getRawOriginal() !== $groupState
                     || $task->getRawOriginal() !== $taskState || TaskReviewBase::commit($task) !== $base
                     || $locked->project->getRawOriginal() !== $projectState) {
                     throw TaskGroupGuard::deliverablesLocked();
                 }
 
                 $old = $task->deliverables;
-                $task->update(['deliverables' => $data->deliverables, 'deliverable_correction_check_id' => $currentCheck->id, 'status' => $data->status ?? $task->status]);
+                $properties = match ($correction->kind) {
+                    DeliverableCorrectionKind::PathGate => ['gate' => true],
+                    DeliverableCorrectionKind::InvalidDeliverable => ['check_id' => $correction->check?->id],
+                    DeliverableCorrectionKind::FailedCopyCheck => ['check_id' => $correction->check?->id, 'reason' => $data->reason],
+                };
+                $task->update(['deliverables' => $data->deliverables, 'status' => $data->status ?? $task->status, ...match ($correction->kind) {
+                    DeliverableCorrectionKind::PathGate => [],
+                    DeliverableCorrectionKind::InvalidDeliverable => ['deliverable_correction_check_id' => $correction->check?->id],
+                    DeliverableCorrectionKind::FailedCopyCheck => ['copy_correction_check_id' => $correction->check?->id],
+                }]);
                 Activity::query()->create([
                     'log_name' => 'tasks', 'description' => 'deliverables corrected', 'subject_type' => Task::class,
-                    'subject_id' => $task->id, 'properties' => ['check_id' => $currentCheck->id, 'old' => $old, 'new' => $data->deliverables],
-                    'caller_node_id' => $actor?->id, 'caller_ip' => $actor?->wireguard_ip,
-                    'request_id' => $requestId ?? (string) Str::uuid(), 'command' => 'task:update', 'status' => 'completed',
-                ]);
-
-                return $task->refresh();
-            }
-            if ($gate || ($data->deliverables !== null && TaskGroupGuard::deliverableGateBlocked($locked, $task))) {
-                // Repository I/O has finished. Reject a request that was not validated as a gate fix, or a stale one.
-                if (! $gate || ! TaskGroupGuard::deliverableGateBlocked($locked, $task)
-                    || $locked->getRawOriginal() !== $groupState || $task->getRawOriginal() !== $taskState
-                    || TaskReviewBase::commit($task) !== $base || $locked->project->getRawOriginal() !== $projectState) {
-                    throw TaskGroupGuard::deliverablesLocked();
-                }
-
-                $old = $task->deliverables;
-                $task->update(['deliverables' => $data->deliverables, 'status' => $data->status ?? $task->status]);
-                Activity::query()->create([
-                    'log_name' => 'tasks', 'description' => 'deliverables corrected', 'subject_type' => Task::class,
-                    'subject_id' => $task->id, 'properties' => ['gate' => true, 'old' => $old, 'new' => $data->deliverables],
+                    'subject_id' => $task->id, 'properties' => [...$properties, 'old' => $old, 'new' => $data->deliverables],
                     'caller_node_id' => $actor?->id, 'caller_ip' => $actor?->wireguard_ip,
                     'request_id' => $requestId ?? (string) Str::uuid(), 'command' => 'task:update', 'status' => 'completed',
                 ]);
@@ -161,6 +160,9 @@ final readonly class UpdateTaskAction
             }
             if (! $backlog && $data->deliverables === []) {
                 throw TaskGroupGuard::deliverablesRequired();
+            }
+            if ($data->reason !== null) {
+                throw TaskGroupGuard::reasonUnexpected();
             }
 
             $task->title = $data->title ?? $task->title;

@@ -243,7 +243,7 @@ export const behavior = {
         },
         base: {
             description:
-                "Read the base statement of a task copy's publish, or refuse a real merge conflict with its paths",
+                "Read the base statement of a task copy's publish and its merge at publish, or refuse an own workflow change or a real merge conflict with its paths",
             arguments: PrivateReply,
             execute: async (
                 args: z.infer<typeof PrivateReply>,
@@ -256,15 +256,19 @@ export const behavior = {
                         return "";
                     }
                 };
-                const { facts, error_code } = baseFacts(args.exit_code, {
+                const { facts, merged, error_code } = baseFacts(args.exit_code, {
                     head: await file("head"),
                     base: await file("base"),
                     behind: await file("behind"),
                     overlap: await file("overlap"),
                     merge: await file("merge"),
+                    // A file the read did not write is an error, never an empty one.
+                    workflows: await read(args.directory, "base/workflows").catch(() => null),
+                    merged: await read(args.directory, "base/merged").catch(() => null),
                 });
                 if (facts === null) throw new Error(error_code);
-                return save(ctx, { stdout: JSON.stringify(facts) });
+                // The merge at publish, or "": "Push the branch" pushes it instead of the candidate.
+                return save(ctx, { stdout: JSON.stringify(facts), merged });
             },
         },
         written: {

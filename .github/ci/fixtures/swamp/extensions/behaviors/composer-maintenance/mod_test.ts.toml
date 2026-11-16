@@ -1,5 +1,4 @@
 order = 210
-source_sha256 = "c28f1eddf3ec2decbc2222efef9173f47f09a51732e24032d2d7ad04459361f8"
 cases = [
   "detect preflights every path before any command",
   "detect has exact upstream Composer candidates without vendor",

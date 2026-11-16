@@ -1,7 +1,6 @@
 file = "swamp/tests/task_instance_workspace_export_test.py"
 slices = false
 cost = 43
-source_sha256 = "de934a4717086a5384c79295074bb3792b6df87506baf255bce90708e41d6803"
 cases = [
   "test_export_refuses_a_branch_move_during_bundle_creation",
   "test_export_removes_node_scratch_when_guest_cleanup_fails",

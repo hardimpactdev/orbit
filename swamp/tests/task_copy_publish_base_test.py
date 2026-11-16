@@ -1,5 +1,7 @@
-"""A task copy's publish states its base and refuses only a real conflict: the workflow's own "Read the base" script on real Git
-repositories, its typed reader "Check the base" and the pull request plan, with the pinned CEL engine for the wiring."""
+"""A task copy's publish states its base and refuses only a workflow change of the copy's own or a real conflict; a copy only behind a
+workflow change of the default head publishes through a merge at publish: the workflow's own "Read the base" and "Push the branch"
+scripts on real Git repositories against a bare origin, its typed readers "Check the base" and "Read push result" and the pull request
+plan, with the pinned CEL engine for the wiring."""
 import importlib.util
 import json
 import os
@@ -25,6 +27,7 @@ CEL = base.CEL.replace('const raw = field === "guard" ? step.guard :',
 assert CEL != base.CEL
 PUBLISH = ROOT / 'workflows/workflow-operation-task-publish.yaml'
 READ, CHECK, PUSH, PLAN = 'Read the base', 'Check the base', 'Push the branch', 'Plan the PR'
+WORKFLOW = '.github/workflows/x.yml'
 GIT_ENV = {'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_AUTHOR_NAME': 'base', 'GIT_AUTHOR_EMAIL': 'base@example.test',
            'GIT_COMMITTER_NAME': 'base', 'GIT_COMMITTER_EMAIL': 'base@example.test'}
 
@@ -47,7 +50,7 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         self.git('init', '--quiet', '--bare', '--initial-branch=main', str(self.origin), cwd=self.root)
         self.main = self.root / 'main'
         self.git('clone', '--quiet', str(self.origin), str(self.main), cwd=self.root)
-        self.commit(self.main, 'seed', {'a.txt': 'one\ntwo\nthree\nfour\nfive\n', 'b.txt': 'b\n'})
+        self.commit(self.main, 'seed', {'a.txt': 'one\ntwo\nthree\nfour\nfive\n', 'b.txt': 'b\n', WORKFLOW: 'on: push\n'})
         self.git('push', '--quiet', 'origin', 'HEAD:main', cwd=self.main)
         self.work = self.root / 'work'
         self.git('clone', '--quiet', str(self.origin), str(self.work), cwd=self.root)
@@ -60,6 +63,7 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
 
     def commit(self, work, message, files):
         for name, content in files.items():
+            (work / name).parent.mkdir(parents=True, exist_ok=True)
             (work / name).write_text(content)
         self.git('add', '--all', cwd=work)
         self.git('commit', '--quiet', '-m', message, cwd=work)
@@ -85,11 +89,18 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         shutil.rmtree(repository, ignore_errors=True)
         self.git('init', '--quiet', '--bare', str(repository), cwd=self.root)
         self.git('fetch', '--quiet', str(self.work), '+refs/heads/task-1:refs/heads/candidate', cwd=repository)
+        # The step's fixed merge identity, as written; the intent values through the step's own expressions.
+        identity = {name: value for name, value in self.step(READ)['task']['inputs']['env'].items() if name.startswith(('GIT_AUTHOR_', 'GIT_COMMITTER_'))}
+        self.assertEqual(len(identity), 4)
         done = subprocess.run(['/bin/sh', '-c', self.cel(READ, 'run', self.copy)], capture_output=True, text=True, check=False, timeout=120,
-                              env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
-                                   'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(self.scratch),
-                                   'ORBIT_REMOTE': str(self.origin), 'ORBIT_BASE': self.cel(READ, 'env.ORBIT_BASE', self.copy)})
+                              env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1', **identity,
+                                   'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(self.scratch), 'ORBIT_REMOTE': str(self.origin),
+                                   **{name: self.cel(READ, 'env.' + name, self.copy) for name in ('ORBIT_BASE', 'ORBIT_BRANCH')}})
         return done.returncode
+
+    @staticmethod
+    def step(name):
+        return next(item for job in yaml.safe_load(PUBLISH.read_text())['jobs'] for item in job['steps'] if item['name'] == name)
 
     def behavior(self, method, args):
         file = self.root / ('args-' + method + '.json')
@@ -126,7 +137,7 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         facts, _ = self.check_base(code)
         self.assertEqual(facts, {'base_commit': self.git('merge-base', 'task-1', 'origin/main', cwd=self.fetched()),
                                  'default_commit': self.git('rev-parse', 'refs/heads/main', cwd=self.origin),
-                                 'behind_by': behind, 'overlapping_paths': overlap, 'overlapping_more': 0})
+                                 'behind_by': behind, 'overlapping_paths': overlap, 'overlapping_more': 0, 'merged_default': None})
         # Nothing reached origin: its main is where the test put it, and it has no task branch.
         self.assertEqual(self.git('for-each-ref', '--format=%(refname)', cwd=self.origin), 'refs/heads/main')
         return facts
@@ -134,6 +145,43 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
     def fetched(self):
         self.git('fetch', '--quiet', 'origin', cwd=self.work)
         return self.work
+
+    def publish(self):
+        """One publish of the copy's branch: "Read the base", "Check the base", then "Push the branch" with the refspec its own
+        expression builds from the check's output, against origin, and "Read push result". Returns the facts, the merge at publish
+        and the push's error code, or '' after a push."""
+        candidate = self.git('rev-parse', 'task-1', cwd=self.work)
+        self.assertEqual(self.read_base(), 0)
+        done = self.behavior('base', {'directory': str(self.scratch), 'exit_code': 0})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        output = json.loads(done.stdout)
+        intent = {**self.copy, 'commit': candidate, 'refspec': candidate + ':refs/heads/task-1'}
+        refspec = self.cel(PUSH, 'env.ORBIT_REFSPEC', intent, {CHECK: {'status': 'succeeded', 'outputs': output}})
+        self.assertEqual(refspec, (output['merged'] or candidate) + ':refs/heads/task-1')
+        pushed = subprocess.run(['/bin/sh', '-c', self.cel(PUSH, 'run', intent)], capture_output=True, text=True, check=False, timeout=120,
+                                env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
+                                     'ORBIT_REPOSITORY': str(self.scratch / 'repository.git'), 'ORBIT_DIRECTORY': str(self.scratch),
+                                     'ORBIT_REMOTE': str(self.origin), 'ORBIT_REFSPEC': refspec})
+        read = self.behavior('pushed', {'directory': str(self.scratch), 'exit_code': pushed.returncode})
+        error = '' if read.returncode == 0 else re.search(r'tasks\.[a-z_]+', read.stderr).group(0)
+        return json.loads(output['stdout']), output['merged'], error
+
+    def published_merge(self, facts, merged, parents):
+        """origin's task branch is the merge at publish: its parents, its message naming main's head, Orbit as author and committer,
+        and main's workflows. The checked commit stays the first parent."""
+        head = self.git('rev-parse', 'refs/heads/main', cwd=self.origin)
+        self.assertEqual(self.git('rev-parse', 'refs/heads/task-1', cwd=self.origin), merged)
+        self.assertEqual(self.git('rev-list', '--parents', '-n', '1', merged, cwd=self.origin).split()[1:], parents)
+        self.assertEqual(self.git('log', '-1', '--format=%B', merged, cwd=self.origin), f'Merge main {head} at publish')
+        self.assertEqual(self.git('log', '-1', '--format=%an <%ae>|%cn <%ce>', merged, cwd=self.origin),
+                         'Orbit <orbit@users.noreply.github.com>|Orbit <orbit@users.noreply.github.com>')
+        self.assertEqual(self.git('rev-parse', merged + ':.github/workflows', cwd=self.origin),
+                         self.git('rev-parse', 'refs/heads/main:.github/workflows', cwd=self.origin))
+        self.assertEqual(facts['merged_default'], head)
+        body = self.planned_body(json.dumps(facts))
+        self.assertIn(f'- Behind by: {facts["behind_by"]} commit', body)
+        self.assertIn(f'- Merged main `{head}` at publish\n', body)
+        return head
 
     def test_a_branch_level_with_main_is_zero_behind_and_overlaps_nothing(self):
         self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
@@ -168,15 +216,177 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
 
     def test_a_real_conflict_is_refused_with_its_paths_before_the_push(self):
         self.commit(self.work, 'agent work', {'a.txt': 'one\ntask\nthree\nfour\nfive\n', 'b.txt': 'task\n'})
-        self.advance_main({'a.txt': 'one\nmain\nthree\nfour\nfive\n', 'b.txt': 'main\n'})
+        # Main also changed a workflow: a conflict makes no merge at publish.
+        self.advance_main({'a.txt': 'one\nmain\nthree\nfour\nfive\n', 'b.txt': 'main\n', WORKFLOW: 'on: [push, pull_request]\n'})
         code = self.read_base()
         self.assertEqual(code, 3)
+        self.assertEqual((self.scratch / 'base/merged').read_bytes(), b'')
         facts, error = self.check_base(code)
         self.assertIsNone(facts)
         self.assertIn('tasks.publish_conflict: "a.txt", "b.txt"', error)
         # The refused check fails its step, so the push guard skips the push; origin holds no task branch.
         self.assertTrue(self.cel(PUSH, 'guard', self.copy, {CHECK: {'status': 'failed'}}))
         self.assertEqual(self.git('for-each-ref', '--format=%(refname)', cwd=self.origin), 'refs/heads/main')
+
+    def refused(self, error):
+        """The base check refused before the push, and origin holds no task branch."""
+        self.assertTrue(self.cel(PUSH, 'guard', self.copy, {CHECK: {'status': 'failed'}}))
+        self.assertEqual(self.git('for-each-ref', '--format=%(refname)', cwd=self.origin), 'refs/heads/main')
+        return error
+
+    def no_workflow_change(self):
+        """The base read lists no workflow path, and the check states the base against the real default head."""
+        self.assertEqual(self.read_base(), 0)
+        facts, error = self.check_base(0)
+        self.assertIsNotNone(facts, error)
+        self.assertEqual(facts['default_commit'], self.git('rev-parse', 'refs/heads/main', cwd=self.origin))
+        self.assertEqual((self.scratch / 'base/workflows').read_bytes(), b'')
+        return facts
+
+    def test_a_branch_behind_a_default_commit_that_changed_a_workflow_publishes_through_a_merge_of_main(self):
+        """Operation 24460: no commit of the branch changes a workflow, but main changed one since the branch's base. GitHub compares
+        the pushed tree with main's, so the worker merges main at publish and pushes that merge."""
+        candidate = self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        head = self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        facts, merged, error = self.publish()
+        self.assertEqual((error, facts['behind_by'], facts['default_commit']), ('', 1, head))
+        self.published_merge(facts, merged, [candidate, head])
+        # The merge holds the copy's work as well.
+        self.assertEqual(self.git('show', merged + ':a.txt', cwd=self.origin), 'one\ntwo\nthree\nfour\nfive\nsix')
+
+    def test_a_workflow_change_merged_on_main_after_the_sync_is_no_change_of_the_copy_and_publishes_through_a_merge(self):
+        """Groups 5416 and 5425: the copy synced main and merged it, then main merged a workflow change (#3867)."""
+        self.advance_main({'b.txt': 'b1\n'})
+        self.git('merge', '--quiet', '--no-edit', 'origin/main', cwd=self.fetched())
+        candidate = self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        head = self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        facts, merged, error = self.publish()
+        self.assertEqual(error, '')
+        self.published_merge(facts, merged, [candidate, head])
+
+    def test_a_branch_without_a_workflow_difference_pushes_its_candidate_and_merges_nothing(self):
+        candidate = self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        self.advance_main({'b.txt': 'b1\n'})
+        facts, merged, error = self.publish()
+        self.assertEqual((error, merged, facts['merged_default'], facts['behind_by']), ('', '', None, 1))
+        self.assertEqual(self.git('rev-parse', 'refs/heads/task-1', cwd=self.origin), candidate)
+        self.assertNotIn('Merged main', self.planned_body(json.dumps(facts)))
+        # A republish of a newer candidate is a plain fast-forward over the candidate it pushed.
+        newer = self.commit(self.work, 'more agent work', {'c.txt': 'c\n'})
+        facts, merged, error = self.publish()
+        self.assertEqual((error, merged), ('', ''))
+        self.assertEqual(self.git('rev-parse', 'refs/heads/task-1', cwd=self.origin), newer)
+
+    def test_a_republish_after_a_merge_at_publish_is_a_fast_forward_over_that_merge(self):
+        first = self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        head = self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        _, earlier, error = self.publish()
+        self.assertEqual(error, '')
+        self.assertEqual(self.git('rev-list', '--parents', '-n', '1', earlier, cwd=self.origin).split()[1:], [first, head])
+        # The same publish again, as a retry: the tip already is its merge, so the push sends it again and pushes nothing.
+        facts, merged, error = self.publish()
+        self.assertEqual((error, merged, facts['merged_default']), ('', earlier, head))
+        self.assertEqual(self.git('rev-parse', 'refs/heads/task-1', cwd=self.origin), earlier)
+        # A newer candidate, with main moved on: the merge takes the earlier publish merge as third parent.
+        newer = self.commit(self.work, 'more agent work', {'c.txt': 'c\n'})
+        head = self.advance_main({'b.txt': 'b1\n'})
+        facts, merged, error = self.publish()
+        self.assertEqual(error, '')
+        self.published_merge(facts, merged, [newer, head, earlier])
+        self.assertEqual(self.git('merge-base', '--is-ancestor', earlier, merged, cwd=self.origin), '')
+        # The copy then merges main itself: no workflow differs, and the merge is still made over the earlier one.
+        self.git('merge', '--quiet', '--no-edit', 'origin/main', cwd=self.fetched())
+        synced = self.git('rev-parse', 'HEAD', cwd=self.work)
+        facts, latest, error = self.publish()
+        self.assertEqual(error, '')
+        self.assertEqual(self.git('rev-parse', synced + ':.github/workflows', cwd=self.work),
+                         self.git('rev-parse', 'refs/heads/main:.github/workflows', cwd=self.origin))
+        self.published_merge(facts, latest, [synced, head, merged])
+
+    def test_a_tip_that_is_no_earlier_publish_merge_is_not_a_fast_forward(self):
+        self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        other = self.root / 'other'
+        self.git('clone', '--quiet', str(self.origin), str(other), cwd=self.root)
+        self.commit(other, 'pushed by hand', {'d.txt': 'd\n'})
+        self.git('push', '--quiet', 'origin', 'HEAD:refs/heads/task-1', cwd=other)
+        tip = self.git('rev-parse', 'HEAD', cwd=other)
+        _, merged, error = self.publish()
+        self.assertEqual((merged, error), ('', 'tasks.not_fast_forward'))
+        # Also when main changed a workflow: the merge at publish is made, and the push still refuses the foreign tip.
+        self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        _, merged, error = self.publish()
+        self.assertNotEqual(merged, '')
+        self.assertEqual(error, 'tasks.not_fast_forward')
+        # Each condition of an earlier publish merge decides on its own; the tip stays where it was put.
+        candidate = self.git('rev-parse', 'task-1', cwd=self.fetched())
+        head = self.git('rev-parse', 'origin/main', cwd=self.work)
+        tree = self.git('rev-parse', 'task-1^{tree}', cwd=self.work)
+        beside = self.git('commit-tree', tree, '-p', head, '-m', 'not on main', cwd=self.work)
+        for name, parents, message in [('a message that is no publish merge', [candidate, head], f'Merge main {head} by hand'),
+                                       ('a second parent outside main', [candidate, beside], f'Merge main {beside} at publish'),
+                                       ('a first parent outside the candidate', [tip, head], f'Merge main {head} at publish')]:
+            with self.subTest(name):
+                forged = self.git('commit-tree', tree, *[arg for parent in parents for arg in ('-p', parent)], '-m', message, cwd=self.work)
+                self.git('push', '--quiet', 'origin', '+' + forged + ':refs/heads/task-1', cwd=self.work)
+                _, _, error = self.publish()
+                self.assertEqual(error, 'tasks.not_fast_forward')
+                self.assertEqual(self.git('rev-parse', 'refs/heads/task-1', cwd=self.origin), forged)
+
+    def test_the_same_branch_after_it_merged_the_default_head_publishes(self):
+        self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        self.git('merge', '--quiet', '--no-edit', 'origin/main', cwd=self.fetched())
+        facts = self.no_workflow_change()
+        self.assertEqual((facts['behind_by'], facts['overlapping_paths']), (0, []))
+
+    def test_a_default_commit_that_changed_a_workflow_carried_in_by_hand_is_no_change_of_the_copy(self):
+        """Operation 24405: main changed a workflow after the last release, and the copy got that main by hand, not through its
+        remote refs. The default head holds the commit, so the copy publishes."""
+        self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        released = self.git('rev-parse', 'origin/main', cwd=self.work)
+        self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        # Carried in by hand: the copy's origin/main stays the released main.
+        self.git('fetch', '--quiet', str(self.main), '+HEAD:refs/heads/hand', cwd=self.work)
+        self.git('merge', '--quiet', '--no-edit', 'hand', cwd=self.work)
+        self.assertEqual(self.git('rev-parse', 'refs/remotes/origin/main', cwd=self.work), released)
+        facts = self.no_workflow_change()
+        self.assertEqual((facts['behind_by'], facts['overlapping_paths']), (0, []))
+
+    def test_a_workflow_change_of_the_copy_that_a_later_commit_undoes_is_no_change(self):
+        self.commit(self.work, 'agent work', {WORKFLOW: 'on: [push]\n'})
+        self.commit(self.work, 'undo', {WORKFLOW: 'on: push\n'})
+        self.no_workflow_change()
+
+    def test_a_copy_commit_of_its_own_that_changes_a_workflow_is_refused_with_its_path(self):
+        self.commit(self.work, 'agent work', {WORKFLOW: 'on: [push]\n', '.github/workflow-notes.md': 'x\n',
+                                              '.github/workflows/y.yml': 'on: push\n'})
+        self.commit(self.work, 'more agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        self.advance_main({'b.txt': 'b1\n'})
+        self.assertEqual(self.read_base(), 0)
+        facts, error = self.check_base(0)
+        self.assertIsNone(facts)
+        self.assertIn('tasks.publish_workflow_change: ".github/workflows/x.yml", ".github/workflows/y.yml"\n', self.refused(error))
+
+    def test_a_merge_that_keeps_its_own_workflow_version_is_refused(self):
+        self.commit(self.work, 'agent work', {'b.txt': 'task\n'})
+        self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        self.git('fetch', '--quiet', 'origin', cwd=self.work)
+        self.git('merge', '--quiet', '--no-commit', 'origin/main', cwd=self.work)
+        self.commit(self.work, 'merge main', {WORKFLOW: 'on: [workflow_dispatch]\n'})
+        self.assertEqual(self.git('rev-list', '--count', '--merges', 'HEAD~1..HEAD', cwd=self.work), '1')
+        self.assertEqual(self.read_base(), 0)
+        facts, error = self.check_base(0)
+        self.assertIsNone(facts)
+        self.assertIn('tasks.publish_workflow_change: ".github/workflows/x.yml"\n', self.refused(error))
+
+    def test_a_workflow_change_refuses_before_a_conflict(self):
+        self.commit(self.work, 'agent work', {'a.txt': 'one\ntask\nthree\nfour\nfive\n', WORKFLOW: 'on: [push]\n'})
+        self.advance_main({'a.txt': 'one\nmain\nthree\nfour\nfive\n'})
+        self.assertEqual(self.read_base(), 3)
+        facts, error = self.check_base(3)
+        self.assertIsNone(facts)
+        self.assertIn('tasks.publish_workflow_change: ".github/workflows/x.yml"\n', self.refused(error))
+        self.assertNotIn('tasks.publish_conflict', error)
 
     def test_a_read_that_fails_never_states_a_base_or_lets_the_push_run(self):
         self.copy['base'] = 'missing'
@@ -204,7 +414,7 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         self.assertIn({'step': CHECK, 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}}, push['dependsOn'])
         # Only keys the publish intent already had: an older Gateway's run reaches these steps with the same intent.
         keys = set(re.findall(r'inputs\.intent\.(\w+)', json.dumps(read) + json.dumps(check)))
-        self.assertEqual(keys, {'node_id', 'remote', 'base'})
+        self.assertEqual(keys, {'node_id', 'remote', 'base', 'branch'})
 
 
 if __name__ == '__main__':

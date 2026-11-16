@@ -1,5 +1,4 @@
 order = 350
-source_sha256 = "3923ce66d6f617c94adda92d1104631292e47a858956b159c22ab7b45fb7465d"
 cases = [
   "test_stale_capture_keeps_later_admission_then_current_capture_prunes_it",
   "test_refresh_paused_after_read_cannot_resurrect_last_user_after_withdrawal",

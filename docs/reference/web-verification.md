@@ -41,6 +41,10 @@ These fixtures and browser tests exercise client behavior, not live S3 or Gatewa
 
 Open `/projects/1/dependencies` for the shared dependency view. Capture Versions and Findings on phone and desktop. Check source selection, locked-version provenance, readable package names, blocked reasons, PR certainty, and the group links. Instance pages use the same view from their Dependencies section. Browser tests cover stale and unavailable evidence, and confirm that reading starts no mutation. Demo results do not prove live Swamp publication or Instance installations.
 
+## Runner view review
+
+A runner view change includes phone and desktop screenshots of `/runners`. The demo fleet has one CI Node with a busy, an idle and a stopped runner, one proof copy, and running, queued and completed jobs. On the phone, check that each runner row shows its name, state and version, that the current job reads in full on the line below, and that the page does not scroll sideways. [CI runner view](/reference/ci-runner-view) owns the content.
+
 ## Commands
 
 `routes` reads the feature map and does not start the app. `stop` stops the daemon for this checkout and does not start the app. The other commands share one daemon and one demo server for the checkout. A dead server is started again. [Active page](#active-page) states which page `click` uses. [Daemon](#daemon) states what keeps running and how to stop it.

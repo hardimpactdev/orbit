@@ -54,8 +54,9 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
 
     /**
      * The base a task copy's publish states: the merge base of the checked commit and the default head at publish time, how far
-     * behind, and the paths both sides changed, bounded with the count beyond. A task VM publish, or a run that started on the
-     * workflow before the base step, has no statement and records none of the fields.
+     * behind, the paths both sides changed, bounded with the count beyond, and the default head the worker merged at publish or null
+     * (docs/reference/tasks.md#merge-main-at-publish). A task VM publish, or a run that started on the workflow before the base
+     * step, has no statement and records none of the fields; a run before the merge at publish records no `merged_default`.
      *
      * @return array<string,mixed>
      */
@@ -66,7 +67,7 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
         }
         $facts = ValidatedData::object(json_decode($captured, true, flags: JSON_THROW_ON_ERROR));
 
-        return array_intersect_key($facts, array_flip(['base_commit', 'default_commit', 'behind_by', 'overlapping_paths', 'overlapping_more']));
+        return array_intersect_key($facts, array_flip(['base_commit', 'default_commit', 'behind_by', 'overlapping_paths', 'overlapping_more', 'merged_default']));
     }
 
     /**
@@ -84,19 +85,30 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
     }
 
     /**
-     * The copy check's refusal (docs/reference/tasks.md#the-copy-check): its code, and the quoted items of its one line, which name paths,
-     * lines and secret names, never a value. Any other failure of the check refuses as unchecked.
+     * A refusal line `<code>: "a", "b" and N more`, wherever it stands in the step's detail: its code, and its quoted items, which name
+     * paths, lines and secret names, never a value; null when the detail holds no such line.
+     *
+     * @return array{error_code: string, refused: list<string>, refused_more: int}|null
+     */
+    private static function refused(mixed $detail, string $code): ?array
+    {
+        if (! is_string($detail) || preg_match('/^'.preg_quote($code, '/').': (.*?)(?: and ([1-9][0-9]*) more)?$/m', $detail, $match) !== 1) {
+            return null;
+        }
+        $items = json_decode('['.$match[1].']', true);
+
+        return ['error_code' => $code, 'refused' => is_array($items) ? array_values(array_filter($items, is_string(...))) : [], 'refused_more' => (int) ($match[2] ?? 0)];
+    }
+
+    /**
+     * The copy check's refusal (docs/reference/tasks.md#the-copy-check): a secret value with its items. Any other failure of the check
+     * refuses as unchecked.
      *
      * @return array{error_code: string, refused?: list<string>, refused_more?: int}
      */
     private static function copyCheck(mixed $detail): array
     {
-        if (! is_string($detail) || preg_match('/^(tasks\.publish_(?:secret_value|workflow_change)): (.*?)(?: and ([1-9][0-9]*) more)?$/m', $detail, $match) !== 1) {
-            return ['error_code' => 'tasks.publish_secret_unchecked'];
-        }
-        $items = json_decode('['.$match[2].']', true);
-
-        return ['error_code' => $match[1], 'refused' => is_array($items) ? array_values(array_filter($items, is_string(...))) : [], 'refused_more' => (int) ($match[3] ?? 0)];
+        return self::refused($detail, 'tasks.publish_secret_value') ?? ['error_code' => 'tasks.publish_secret_unchecked'];
     }
 
     /** Only the check's own refusal line names content; any other failure of the check refuses as unchecked. */
@@ -121,12 +133,16 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
                 $failure = ValidatedData::object($data['failure'] ?? []);
                 $detail = $failure['detail'] ?? null;
                 $step = $failure['failed_step'] ?? null;
-                $copyCheck = in_array($step, ['Check the copy', 'Read the copy check'], true) && ! SwampLockTimeout::matches($detail) ? self::copyCheck($detail) : null;
-                $code = $copyCheck !== null ? $copyCheck['error_code'] : (SwampLockTimeout::matches($detail) ? TaskDonePublication::LockTimeoutCode : ($step === 'Check the base' && is_string($detail) && preg_match('/^tasks\.publish_conflict: /m', $detail) === 1 ? 'tasks.publish_conflict' : (in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
+                $locked = SwampLockTimeout::matches($detail);
+                // The copy check refuses a secret value; the base check a workflow change that the default head lacks
+                // (docs/reference/tasks.md#the-base-of-a-copy-publish). Each names its items.
+                $refusal = in_array($step, ['Check the copy', 'Read the copy check'], true) && ! $locked ? self::copyCheck($detail)
+                    : ($step === 'Check the base' && ! $locked ? self::refused($detail, 'tasks.publish_workflow_change') : null);
+                $code = $refusal !== null ? $refusal['error_code'] : ($locked ? TaskDonePublication::LockTimeoutCode : ($step === 'Check the base' && is_string($detail) && preg_match('/^tasks\.publish_conflict: /m', $detail) === 1 ? 'tasks.publish_conflict' : (in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
                     ? $detail : ($step === 'Check the environment file' ? 'tasks.publish_secret_path' : (in_array($step, ['Check the .env content', 'Read the .env check'], true) ? self::contentCode($detail) : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed')))))));
                 $data['error_code'] = $code;
                 // A conflict names its paths, as the check's one line lists them.
-                $result = ['error_code' => $code, ...($code === 'tasks.publish_conflict' ? self::conflict(ValidatedData::string($detail)) : []), ...array_diff_key($copyCheck ?? [], ['error_code' => true])];
+                $result = ['error_code' => $code, ...($code === 'tasks.publish_conflict' ? self::conflict(ValidatedData::string($detail)) : []), ...array_diff_key($refusal ?? [], ['error_code' => true])];
             } else {
                 $result = [];
             }

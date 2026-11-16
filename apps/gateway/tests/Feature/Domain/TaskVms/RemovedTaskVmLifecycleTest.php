@@ -316,19 +316,37 @@ function groupCall(Node $gateway, Task $group, string $command): TestResponse
         ->postJson("/api/v1/tasks/{$group->id}/{$command}");
 }
 
-// `tasks.provision` stays as the request kind of `task:start`, which starts a task copy (an `instance.create`). Its registry entry keeps
-// the workflow name and the vault patterns byte-equal until the grants release (S8), so the rendered grants do not change.
-it('keeps tasks.provision registered with its workflow and its vault patterns, and gives it no token issuer', function (): void {
+// The grants release after the Pi loop (docs/reference/old-paths.md#the-pi-task-loop): no kind declares, and the grants file holds, a
+// vault pattern that nothing writes. `tasks.provision` stays the request kind of `task:start`, which starts a task copy (an
+// `instance.create`); it names that workflow, declares no pattern and issues no token.
+const UNWRITTEN_VAULT_PATTERNS = ['^(swamp-proof-club-api-key|task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$', '^task-vm-pi-(claim|token)-[1-9][0-9]*$',
+    '^task-vm-pi-token-[1-9][0-9]*$', '^pr-comment-write-[a-f0-9-]{36}$', '^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$'];
+
+it('declares and grants no vault pattern that nothing writes, and keeps the nested fleet club key', function (): void {
+    $declared = collect(app(DirectOperation::class)->definitions())->flatMap(static fn (array $definition): array => array_column($definition['execution_copies'] ?? [], 'key_pattern'));
+    $granted = array_column(json_decode((string) file_get_contents(dirname(base_path(), 2).'/swamp/config/gateway-workflow-grants.json'), true, flags: JSON_THROW_ON_ERROR)['vaults'], 'key_pattern');
+
+    expect($declared->intersect(UNWRITTEN_VAULT_PATTERNS)->values()->all())->toBe([])
+        ->and(array_values(array_intersect($granted, UNWRITTEN_VAULT_PATTERNS)))->toBe([])
+        ->and($declared->all())->toContain('^nested-fleet-club-api-key$')
+        ->and($granted)->toContain('^nested-fleet-club-api-key$');
+});
+
+it('names in the registry only workflows and alternates that exist under swamp/workflows', function (): void {
+    // The top-level name of each workflow file; Swamp starts a workflow by it.
+    $names = collect(glob(dirname(base_path(), 2).'/swamp/workflows/*.yaml') ?: [])
+        ->map(static fn (string $file): ?string => preg_match('/^name: "?([a-z0-9_.-]+)"?$/m', (string) file_get_contents($file), $match) === 1 ? $match[1] : null)->all();
+    $named = collect(app(DirectOperation::class)->definitions())->flatMap(static fn (array $definition): array => [$definition['workflow'], ...($definition['alternate_workflows'] ?? [])])->unique();
+
+    expect($names)->not->toBeEmpty()
+        ->and($named->diff($names)->values()->all())->toBe([]);
+});
+
+it('keeps tasks.provision registered with the workflow its start runs, no vault pattern and no token issuer', function (): void {
     $definition = app(DirectOperation::class)->definition('tasks.provision');
 
-    expect($definition['workflow'] ?? null)->toBe('operation-task-provision')
-        ->and(array_column($definition['execution_copies'] ?? [], 'key_pattern'))->toBe([
-            '^(swamp-proof-club-api-key|task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$',
-            '^task-vm-pi-(claim|token)-[1-9][0-9]*$',
-            '^task-vm-pi-token-[1-9][0-9]*$',
-            '^pr-comment-write-[a-f0-9-]{36}$',
-            '^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$',
-        ])
+    expect($definition['workflow'] ?? null)->toBe('operation-instance-create')
+        ->and($definition)->not->toHaveKey('execution_copies')
         ->and($definition)->not->toHaveKey('github_token_issuer');
 });
 

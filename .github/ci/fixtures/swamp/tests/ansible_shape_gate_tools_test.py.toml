@@ -1,7 +1,7 @@
 order = 450
-source_sha256 = "c248a232126096e5ab629e9d3bd016bec7412e9d9e34a067b81365fb6ca9e451"
 cases = [
   "test_uses_the_system_tools_only_when_built_for_these_pins",
+  "test_a_venv_of_another_interpreter_is_never_reused",
   "test_a_built_venv_needs_no_write_access_and_no_install",
   "test_a_first_build_keeps_standard_output_free",
   "test_the_playbook_names_the_tools_as_the_gate_does",
@@ -40,6 +40,7 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/shape_tool_names.py",
   "swamp/ansible/task-vm-role.yml",
   "swamp/ansible/tasks/instance-bridge-refresh.yml",
   "swamp/ansible/tasks/instance-bridge-rules.yml",

@@ -2,8 +2,9 @@ name: Static PHP build
 
 # Builds the static PHP CLI and FrankenPHP of the Instance runtime folder from the recipe's instances.php section, proves both
 # with the Gateway as a Laravel fixture, and on main, from a push or a manual run, publishes a build that has no release yet.
-# A pull request only validates the pins: compilation is over the five-minute CI budget.
-# A recipe pin records the published SHA-256 in a later reviewed commit. See docs/reference/compute-drivers.md#static-php-build.
+# A pull request only validates the pins: compilation is over the five-minute CI budget. A manual run from main with a `ref`
+# builds, proves and publishes that ref's definition, so a pull request can record the published SHA-256 before it merges.
+# See docs/reference/compute-drivers.md#static-php-build.
 on:
   pull_request:
     paths:
@@ -21,12 +22,18 @@ on:
       - swamp/ansible/library/orbit_static_php.py
       - .github/workflows/static-php.yml
   workflow_dispatch:
+    inputs:
+      ref:
+        description: The branch or full commit SHA whose definition to build, prove and publish. Empty builds the run's own commit.
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
+# A manual run of a ref has its own group, so it never drops a queued run of main or of another ref.
 concurrency:
-  group: static-php-${{ github.ref }}
+  group: static-php-${{ github.ref }}-${{ inputs.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -35,11 +42,18 @@ jobs:
     runs-on: ubuntu-26.04
     outputs:
       missing: ${{ steps.missing.outputs.builds }}
+      sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
+
+      # Every later job builds, proves and publishes this one commit, even when the ref moves during the run.
+      - name: Resolve the source commit
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Require each pin to name its definition
         run: python3 bin/static-php-build verify-pins
@@ -70,7 +84,7 @@ jobs:
   build:
     name: Build PHP ${{ matrix.build.php_version }}
     needs: definition
-    # Compilation exceeds the pull request budget. Pin validation stays automatic; main builds after the merge.
+    # Compilation exceeds the pull request budget. Pin validation stays automatic; main builds after the merge, or a manual run builds a branch.
     if: github.event_name != 'pull_request' && needs.definition.outputs.missing != '[]'
     runs-on: ubuntu-26.04
     timeout-minutes: 240
@@ -81,6 +95,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.definition.outputs.sha }}
           persist-credentials: false
 
       # The proof job saves an archive under its build id only once it passed, so a cached archive is a proven one.
@@ -124,6 +139,16 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.definition.outputs.sha }}
+          persist-credentials: false
+
+      # The proof is the run's own commit, main's on a manual run from main: a branch's change to its proof never proves itself.
+      - name: Check out the proof
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .proof
+          sparse-checkout: tools/static-php
           persist-credentials: false
 
       - name: Download the build
@@ -139,15 +164,14 @@ jobs:
           sha256sum --check --strict SHA256SUMS
           tar -xzf "${{ matrix.build.asset }}"
           file bin/php bin/frankenphp
-          # A static-pie binary has no program interpreter: it needs no loader and no shared library.
-          for binary in bin/php bin/frankenphp; do
-            headers="$(readelf --program-headers --wide "$binary")"
-            if grep -q INTERP <<< "$headers"; then echo "::error::${binary} is not fully static."; exit 1; fi
-          done
           echo "STATIC=$PWD/bin" >> "$GITHUB_ENV"
 
       - name: Check both binaries against the recipe
         run: python3 bin/static-php-build check --version "${{ matrix.build.version }}" --bin "$STATIC"
+
+      # Only glibc stays shared, and with the container's php-cli.ini only the CLI loads the CLI-only extensions, such as PCOV.
+      - name: Prove the build
+        run: python3 .proof/tools/static-php/prove.py build --bin "$STATIC" --config "$RUNNER_TEMP/php-config"
 
       - name: Run the PHP command line
         run: |
@@ -177,12 +201,16 @@ jobs:
           "$STATIC/php" "$RUNNER_TEMP/composer.phar" install --no-interaction --prefer-dist
           "$STATIC/php" artisan --version
 
-      - name: Run Pest with the static PHP
+      # With the container's php-cli.ini, PCOV measures coverage: the clover report must cover a file the tests run.
+      - name: Run Pest with coverage on the static PHP
         working-directory: apps/gateway
         run: |
           set -euo pipefail
-          "$STATIC/php" -d memory_limit=1G vendor/bin/pest --version
-          "$STATIC/php" -d memory_limit=1G vendor/bin/pest tests/Unit/Infrastructure/MachineSoftware
+          "$STATIC/php" -c "$RUNNER_TEMP/php-config" -d memory_limit=1G vendor/bin/pest --version
+          "$STATIC/php" -c "$RUNNER_TEMP/php-config" -d memory_limit=1G vendor/bin/pest \
+            --coverage-clover "$RUNNER_TEMP/coverage.xml" tests/Unit/Infrastructure/MachineSoftware
+          python3 ../../.proof/tools/static-php/prove.py coverage --clover "$RUNNER_TEMP/coverage.xml" \
+            --source app/Infrastructure/MachineSoftware/StaticPhpBuild.php
 
       - name: Serve the Gateway with FrankenPHP
         working-directory: apps/gateway
@@ -208,7 +236,9 @@ jobs:
           [ "$status" = 200 ]
           grep -qi "PHP/${{ matrix.build.php_version }}" <<< "$header"
 
+      # Only main's own commits fill main's cache: a manual run of another ref publishes its build, so it needs no cache.
       - name: Keep the proven build under its build id
+        if: inputs.ref == ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: static-php-${{ matrix.build.build }}
@@ -240,6 +270,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ matrix.build.tag }}
+          SOURCE: ${{ needs.definition.outputs.sha }}
         run: |
           set -euo pipefail
           sha256sum --check --strict SHA256SUMS
@@ -247,7 +278,7 @@ jobs:
             echo "::error::Release ${TAG} already exists. Published builds are never replaced."
             exit 1
           fi
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --prerelease --latest=false \
             --title "Static PHP ${{ matrix.build.php_version }} (${TAG})" \
-            --notes "The static PHP CLI and FrankenPHP of the Instance runtime folder, built from ${GITHUB_SHA}. See docs/reference/compute-drivers.md#static-php-build." \
+            --notes "The static PHP CLI and FrankenPHP of the Instance runtime folder, built from ${SOURCE}. See docs/reference/compute-drivers.md#static-php-build." \
             ./*

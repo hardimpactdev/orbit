@@ -1,5 +1,4 @@
 order = 630
-source_sha256 = "e5ed77ddcc1ffce5c16121fb3dffc724e0d205925108169be6c2714200ae8ba0"
 cases = [
   "test_the_hubs_host_key_at_a_directly_routed_lan_address_proves_the_lan",
   "test_a_foreign_host_that_answers_at_the_hubs_lan_address_is_refused",

@@ -29,7 +29,7 @@ it("uses the Gateway-filtered section list for digit shortcuts", async () => {
             vault: false,
             conn: false,
         });
-    await expect.poll(() => screenText()).toContain("1-5 jump");
+    await expect.poll(() => screenText()).toContain("1-6 jump");
 
     await userEvent.keyboard("5");
     await expect.poll(app.url).toBe("/activity");

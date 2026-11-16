@@ -1,5 +1,4 @@
 order = 440
-source_sha256 = "662af869588dfb3d6c78efe1761a2eebe0b4ae53e263fb58eab63f885895b6de"
 cases = [
   "test_every_host_is_pinned_and_the_private_files_have_their_custody",
   "test_every_phase_is_one_tag_and_runs_on_the_hosts_it_needs",

@@ -1,0 +1,28 @@
+---
+# The Incus pool of a CI-only Node (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node). Only its intent has `create_pool`:
+# an app-dev Node keeps the rule that the operator provides the pool. A missing pool goes on a new dataset of the one zpool that the
+# Node's ZFS Incus pools use; no ZFS Incus pool, or more than one zpool, refuses and creates nothing.
+- name: Read the Incus pools
+  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/storage-pools?recursion=1"] }
+  register: instance_pools_read
+  changed_when: false
+
+- name: Create the Instance pool
+  when: instances.pool not in (instance_pools_read.stdout | from_json | map(attribute='name') | list)
+  vars:
+    zpools: >-
+      {{ instance_pools_read.stdout | from_json | selectattr('driver', 'equalto', 'zfs') | map(attribute='config') | map('dict2items')
+         | map('selectattr', 'key', 'equalto', 'zfs.pool_name') | map('map', attribute='value') | map('first')
+         | map('split', '/') | map('first') | unique | sort }}
+  block:
+    - name: Require one zpool to hold the Instance pool
+      ansible.builtin.assert:
+        that: zpools | length == 1
+        fail_msg: >-
+          instance.host_unavailable: the Node has no Incus pool {{ instances.pool }}, and its ZFS Incus pools use
+          {{ zpools | length }} zpools ({{ zpools | join(', ') }}); the converge creates the pool only on exactly one
+        quiet: true
+    - name: Create the pool on a new dataset of that zpool
+      ansible.builtin.command:
+        argv: [incus, storage, create, "{{ instances.pool }}", zfs, "source={{ zpools | first }}/{{ instances.pool }}"]
+      changed_when: true

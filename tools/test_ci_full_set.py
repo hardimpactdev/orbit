@@ -132,7 +132,7 @@ class PlanningTest(unittest.TestCase):
     def test_changed_registration_population_uses_live_names_and_new_case_estimate(self):
         result = self.plan([{'file': 'swamp/a.ts', 'cost': 25, 'case_costs': {'old': 25}}],
                            {'swamp/a.ts': ['renamed', 'loop 1', 'loop 2']},
-                           {'swamp/a.ts': {'cases': ['old'], 'source_sha256': 'stale'}})
+                           {'swamp/a.ts': {'cases': ['old']}})
         self.assertEqual(['renamed', 'loop 1', 'loop 2'], result['fixtures']['swamp/a.ts']['cases'])
         self.assertEqual({'renamed': 30, 'loop 1': 30, 'loop 2': 30}, result['fixtures']['swamp/a.ts']['case_costs'])
         self.assertNotIn('old', [name for u in result['units'] for name in u['cases']])
@@ -442,7 +442,7 @@ class WorkflowTest(unittest.TestCase):
                                 capture_output=True, text=True, timeout=90)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
-    def test_manual_full_set_uses_the_same_consumer_and_cannot_compete_for_sabre(self):
+    def test_manual_full_set_uses_the_same_consumer_and_cannot_compete_for_shard_runners(self):
         import yaml
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci-full-set.yml').read_text())
         self.assertEqual({'workflow_dispatch'}, set(workflow.get('on', workflow.get(True))))

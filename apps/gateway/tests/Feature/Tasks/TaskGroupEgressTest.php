@@ -217,11 +217,11 @@ it('names the container bridge beside the VM bridge on a host with task containe
     [$host] = egress_world();
     $vms = ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2];
 
-    $host->update(['settings' => ['task_vms' => $vms + ['containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1, 'ci_places' => 1]]]]);
+    $host->update(['settings' => ['task_vms' => $vms + ['containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1]]]]);
     expect(app(AgentWatchListAction::class)->execute($host->refresh())['egress'])->toBe(['network' => 'orbittask0', 'container_network' => 'orbittaskc0'])
         ->and(AgentWatchListAction::egressNetworks($host))->toBe(['orbittask0', 'orbittaskc0']);
 
-    $host->update(['settings' => ['task_vms' => $vms + ['containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1, 'ci_places' => 1, 'network' => 'orbittaskd']]]]);
+    $host->update(['settings' => ['task_vms' => $vms + ['containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1, 'network' => 'orbittaskd']]]]);
     expect(app(AgentWatchListAction::class)->execute($host->refresh())['egress'])->toBe(['network' => 'orbittask0', 'container_network' => 'orbittaskd']);
 });
 

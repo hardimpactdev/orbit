@@ -1,5 +1,4 @@
 order = 240
-source_sha256 = "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5"
 cases = [
   "exact script output: v5.11.0 → v5.12.0",
   "exact script output: v5.42.0 → v5.43.0",

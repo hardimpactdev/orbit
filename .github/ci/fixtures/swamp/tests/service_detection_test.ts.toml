@@ -1,5 +1,4 @@
 order = 1090
-source_sha256 = "a91e1fa6087cc9dae10e36afb642c64e126e12e1122a7f1ea7735f686f083cf4"
 cases = [
   "unavailable native PR observations retain the last good publication",
   "cancellation kills a tool's descendants and closes inherited output pipes",

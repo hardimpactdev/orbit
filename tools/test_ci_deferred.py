@@ -223,14 +223,14 @@ class DeferredTest(unittest.TestCase):
                                  str(ROOT / '.github/workflows/ci-deferred.yml')], capture_output=True, text=True, timeout=90)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
-    def test_coalesced_workflow_serializes_sabre_and_pins_the_claimed_sha(self):
+    def test_coalesced_workflow_serializes_the_shared_pool_and_pins_the_claimed_sha(self):
         import yaml
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci-deferred.yml').read_text())
         self.assertEqual({'group': 'main-fixture-consumer', 'cancel-in-progress': False}, workflow['concurrency'])
         jobs = workflow['jobs']
         self.assertEqual(['main'], workflow.get('on', workflow.get(True))['push']['branches'])
         self.assertEqual(5, jobs['fixtures']['strategy']['max-parallel'])
-        self.assertEqual(['self-hosted', 'orbit-shard', 'sabre'], jobs['fixtures']['runs-on'])
+        self.assertEqual(['self-hosted', 'orbit-shard'], jobs['fixtures']['runs-on'])
         self.assertIn("has_shards == 'true'", jobs['fixtures']['if'])
         self.assertEqual({'contents': 'read'}, workflow['permissions'])
         self.assertIn("github.ref == 'refs/heads/main'", jobs['claim']['if'])

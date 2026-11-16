@@ -264,7 +264,7 @@ Deno.test("a failed handoff preserves the admitted base for its retry", async ()
     assertEquals(value.subtask_start_commit, base);
 });
 
-Deno.test("a failed Project check retains failed evidence when command deliverables are skipped", async () => {
+Deno.test("a failed Project check retains failed evidence and reads skipped command deliverables not_run", async () => {
     const value = await localResult(
         {
             ...input,
@@ -289,8 +289,42 @@ Deno.test("a failed Project check retains failed evidence when command deliverab
     assertEquals(value.exit_code, 23);
     assertEquals(value.output, "project check failed");
     assertEquals(value.evidence?.commands, {});
-    assertEquals(value.deliverables[0].outcome, "failed");
+    assertEquals(value.deliverables, [{
+        id: "project-check",
+        outcome: "not_run",
+        failures: [
+            "project-check: the command did not run: the Project check failed first.",
+        ],
+    }]);
     assertEquals(value.commit, null);
+});
+
+Deno.test("a passed Project check with a command deliverable it holds no run of is failed", async () => {
+    const value = await localResult(
+        {
+            ...input,
+            phase: "handoff",
+            command: "true",
+            deliverables: [commandDeliverable],
+        },
+        valid,
+        {
+            ...snapshots(),
+            project: ran(0),
+            "deliverable-0": { status: "skipped" },
+            diff: ran(0, ""),
+            changed: ran(0, ""),
+        },
+        outputs({ project: "" }),
+    );
+    if (!("outcome" in value)) {
+        throw new Error("Expected public local check evidence");
+    }
+    assertEquals(value.deliverables[0].outcome, "not_run");
+    assertEquals(value.deliverables[0].failures, [
+        "project-check: the command did not run: no evidence was recorded.",
+    ]);
+    assertEquals(value.outcome, "failed");
 });
 
 Deno.test("command output is the redacted tail of its downloaded file, which is deleted", async () => {

@@ -73,7 +73,7 @@ A separate remote Node service access fixture covers exact TCP admission, proxy 
 
 The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site.
 
-[Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Its deferred consumer coalesces waiting main commits and runs the union of their omitted cases on the newest SHA; each commit links to that range’s answer. Both receivers run two workers per Sabre shard to reduce timeouts caused by runner load. The separate main proof consumer uses the enrolled caller and at most two task copies; its reports never gate Required or delivery. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
+[Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Its deferred consumer coalesces waiting main commits and runs the union of their omitted cases on the newest SHA; each commit links to that range’s answer. Both receivers run two workers per shard to reduce timeouts caused by runner load. The separate main proof consumer uses the enrolled caller and at most two task copies; its reports never gate Required or delivery. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 Withdrawal fixtures also check that publication stops when the live checksum differs from the base used for composition. The Node helper tests use temporary files, fake Caddy commands and real file locks; they cover contention, holder death and reload failure.
 
@@ -185,17 +185,19 @@ Every executable check job has a `timeout-minutes` equal to its table `ceiling`,
 
 Required checks has static dependencies on the selected checks, including Swamp. It accepts success or an unselected skip and checks that the plan's boolean selection keys exactly match its dependencies. Its API wait covers only blocking proof. The two proof switches retain their meaning.
 
-Each registered fixture has one metadata file under `.github/ci/fixtures/`, mirroring its source path with `.toml` appended. It holds the input rules, costs, ordered case names and source hash. When the fixture's tests run a host program, such as `zip` or `jq`, `host_programs` lists it; `bin/ci-units` refuses a list that is empty or names a program twice. Shared budgets, defaults and build checks stay in `.github/ci/checks.toml`.
+Each registered fixture has one metadata file under `.github/ci/fixtures/`, mirroring its source path with `.toml` appended. It holds the input rules, costs and ordered case names. It holds no hash of the test file: an edit that keeps the case names leaves the metadata alone, so two PRs that change different cases of one file do not conflict on it. When the fixture's tests run a host program, such as `zip` or `jq`, `host_programs` lists it; `bin/ci-units` refuses a list that is empty or names a program twice. Shared budgets, defaults and build checks stay in `.github/ci/checks.toml`.
 
 `bin/ci-registry` is the loader for PR selection, fixture execution and Main full set. Editing fixture metadata selects only those fixtures, using the same merge base as path selection. Formatting and edits to check definitions select no extra fixture bodies. Changes to shared fixture budgets, defaults or fixture order, or to the loader, runner and slice preload, select all fixtures within the existing budget.
 
-`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most eight shards per pull request. Runs with six shards peaked at 16 to 17 concurrent hosted jobs, so eight shards reach about 19 of the organisation's 20 concurrent hosted jobs; a second run at the same time queues. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
+`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most ten shards per pull request.
+
+Runs with six shards peaked at 16 to 17 concurrent hosted jobs, so ten shards reach about 21, one above the organisation's 20 concurrent hosted jobs: the last shard can wait for a free job, and a second run at the same time queues. Each shard's own time limit starts when its job starts, so a wait does not cut its units. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
 
 For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per case, so a long refresh cannot share its unit with another refresh.
 
 A slice takes every n-th case, so a new case can move two long cases into one slice; then raise the slice count until no slice is above the lane budget. A slice count equal to the number of retained cases always meets this: each case gets its own slice.
 
-A new Python fixture needs its own `.github/ci/fixtures/<source>.toml`, with `slices = false`, measured whole-file cost, inputs, ordered cases and source hash. It does not need a shape-gate listing: the PR and full-set planners read the registry, and the runner uses `python3 -I` for a registered unsliceable file. A new Deno fixture remains sliceable. A listing adds the file to the broad local gate and its Ruff audit. Editing that shared list selects all fixtures, so work beyond the PR budget is deferred; registry-only additions avoid that effect.
+A new Python fixture needs its own `.github/ci/fixtures/<source>.toml`, with `slices = false`, measured whole-file cost, inputs and ordered cases. It does not need a shape-gate listing: the PR and full-set planners read the registry, and the runner uses `python3 -I` for a registered unsliceable file. A new Deno fixture remains sliceable. A listing adds the file to the broad local gate and its Ruff audit. Editing that shared list selects all fixtures, so work beyond the PR budget is deferred; registry-only additions avoid that effect.
 
 The Instance workspace proof runs in five independent Python files: target and identity, snapshots, receipts, export, and check workflow. Each file keeps its complete assertions and uses the test-free `swamp/tests/_support/task_instance_workspace.py` harness. Load it with `runpy.run_path` using a path relative to the test file, then subclass `WorkspaceHarness` or `CheckHarness`; this also works with Python isolated mode.
 
@@ -205,7 +207,7 @@ Measured container and fleet files declare costs by exact case name, with run ID
 
 A case cost is a high percentile of hosted runs, not one run. When a case is added or changed, declare its local time × 2.1, rounded up, plus one second, marked `ESTIMATE`. When the case has completed in at least five hosted pull request runs, replace the estimate with the 90th percentile of those completed times, rounded up, plus one second, and name the runs.
 
-The fleet refresh fixture uses one case per unit. Its costs combine hosted observations for earlier cases with local estimates for the split refresh cases. Before a CI sweep admits another change to a fleet input, compare completed `ci-unit-times-*.json` case bodies with `case_costs` on main, matching exact case names and source hashes. Warn on an observation above its estimate and recalibrate before the next affected PR; do not count deadline cuts as completed samples. This is a sweep check, not an automatic CI warning.
+The fleet refresh fixture uses one case per unit. Its costs combine hosted observations for earlier cases with local estimates for the split refresh cases. Before a CI sweep admits another change to a fleet input, compare completed `ci-unit-times-*.json` case bodies with `case_costs` on main, matching exact case names, and the artifact's source hash with the file on main. Warn on an observation above its estimate and recalibrate before the next affected PR; do not count deadline cuts as completed samples. This is a sweep check, not an automatic CI warning.
 
 The fleet reboot fixture uses six interleaved units. Each unit is costed from the slowest measured group, including the declared startup allowance. All cases remain in Required.
 
@@ -217,7 +219,7 @@ The container fixture uses that rule from 23 hosted pull request runs of 13 Nove
 
 Container host preparation uses one case per unit. Each of its declared body costs uses its largest completed observation, rounded up plus one second, which is stricter than the 90th percentile; paired cases must not receive an equal share of the file total. Deadline cuts are censored observations, not completed measurements.
 
-Task-copy turns also use one case per PR unit. Their costs use completed hosted case times with 25% headroom, rounded up plus one second. The reviewer-detach case has only censored hosted observations and keeps an explicit 120-second estimate until a complete run measures it. The full-set planner uses these costs to split the file instead of running it whole against the 540-second ceiling.
+Task-copy turns also use one case per PR unit. Their costs use completed hosted case times with 25% headroom, rounded up plus one second. The reviewer-detach case has only censored hosted observations and keeps an explicit 138-second estimate until a complete run measures it. A case with no hosted run yet, such as the Conn Server case and the stop cases, keeps an estimate above its local time. `tools/tests/ci-task-copy-turn-costs.json` records each observation and estimate. The full-set planner uses these costs to split the file instead of running it whole against the 540-second ceiling.
 
 Each fixture unit has its own child subreaper. It reaps adopted children while the session leader runs, so exited grandchildren do not remain zombies until the unit ends. The leader alone decides success or failure. Deadlines and cancellation still kill and reap the unit’s remaining descendants before temporary files are removed.
 
@@ -249,11 +251,11 @@ A fixture’s metadata records its measured registrations in order. Population e
 
 Required planning also collects the live names of every Python fixture with `case_costs`, without running test bodies. It checks the complete name set and cost total through the same validator as Main full set, even when the PR does not select that file. Stored inventory names alone cannot satisfy this check.
 
-A PR that adds or renames a Deno case updates `cases`, `source_sha256`, `cost` and `case_costs` in that fixture’s metadata file together. Existing `order` values preserve admission priority when capacity is full; a new record without `order` follows them in path order. `bin/ci-units collect --file <test>` prints the entry. A stale entry fails the fixture before any case runs: `Stale fixture case population`. A renamed case also renames its `case_costs` key: a cost for a name that the entry does not register fails `bin/ci-units plan` with `invalid case_costs`. A new case in a fixture without `case_costs` needs only the entry.
+A PR that adds or renames a Deno case updates `cases`, `cost` and `case_costs` in that fixture’s metadata file together. An edit that keeps every case name needs no metadata change. Existing `order` values preserve admission priority when capacity is full; a new record without `order` follows them in path order. `bin/ci-units collect --file <test>` prints the entry. A stale entry fails the fixture before any case runs: `Stale fixture case population`. A renamed case also renames its `case_costs` key: a cost for a name that the entry does not register fails `bin/ci-units plan` with `invalid case_costs`. A new case in a fixture without `case_costs` needs only the entry.
 
 A playbook expression that parses command output has a recorded output case in `swamp/tests/fixtures/command-output/cases.yaml`. Renaming its task or adding such a parser without a case fails `swamp/tests/ansible_command_output_test.py`.
 
-Source hashes are evidence, not a gate on unrelated changes. Selected Deno units compare current registrations with their recorded population before running a body, including loop-generated cases. Changed populations, zero registrations and stale excluded names fail by name. A successful process must also provide a receipt proving that every selected case passed; ignored cases, unrun cases and missing receipts fail. New files use the default cost and the same runtime deadlines. Use `bin/ci-units collect --file PATH` to collect names without executing bodies, then review costs when updating a measured population. When a case name changes, update its inventory and cost key together.
+The case names are the population; staleness is judged by them alone. Selected Deno units compare current registrations with their recorded population before running a body, including loop-generated cases. Changed populations, zero registrations and stale excluded names fail by name. A successful process must also provide a receipt proving that every selected case passed; ignored cases, unrun cases and missing receipts fail. New files use the default cost and the same runtime deadlines. Use `bin/ci-units collect --file PATH` to collect names without executing bodies, then review costs when updating a measured population. When a case name changes, update its inventory and cost key together.
 
 The from-stock fleet case runs in PR fixtures with a deterministic fixture key pair, without installed WireGuard tools. It checks the stored private key and both public-key consumers, then stops before real WireGuard or systemd activation. Its table cost remains an estimate until a hosted run measures the restored case.
 
@@ -409,9 +411,9 @@ Gateway Pest runs in one hosted job with four workers and no shards. Gateway sta
 
 During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
-Sabre and Shark run CI runners in unprivileged Incus containers.
+Each CI Node runs its CI runners in unprivileged Incus containers. Every runner carries the same labels and no host label, so a workflow never names a host; see [CI runner role](/reference/node-provisioning#ci-runner-role).
 
-The container setup enables the runner’s user systemd manager with lingering. Apply that prerequisite alone to an existing container with `tools/ci-runners/setup.sh user_manager NAME`; it does not restart the Actions listener or grant sudo to jobs. With operator approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Beast and Shark through Incus.
+The container setup enables the runner’s user systemd manager with lingering. Apply that prerequisite alone to an existing container with `tools/ci-runners/setup.sh user_manager NAME`; it does not restart the Actions listener or grant sudo to jobs. With operator approval, CI Nodes also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Incus hosts that have task places.
 
 Public repositories use GitHub-hosted runners, with self-hosted runners available when configured. Private repositories use self-hosted runners.
 
@@ -425,7 +427,7 @@ Run `tools/ci-runners/setup.sh actions NAME` after action pins change, then rest
 
 Every shard runner also runs `tools/ci-runners/job-started-hook.sh` before each job, through the runner's standard `ACTIONS_RUNNER_HOOK_JOB_STARTED` setting. The hook resets each reused git checkout under the work directory with `git sparse-checkout disable`, `git reset --hard` and `git clean -ffdx`. It empties a checkout that is in sparse mode (`core.sparseCheckout`, or skip-worktree entries in the index) or that git cannot reset: `reset --hard` leaves skip-worktree files on disk, and the next job's `git sparse-checkout disable` then fails on them.
 
-A job that leaves tracked files modified therefore cannot fail the next `actions/checkout`. `container NAME` installs the hook; `tools/ci-runners/setup.sh hook NAME` installs it on a running runner without a restart. Restart the runner service once it is idle to load it. The host-level `orbit-proof` runners on Beast and Shark take the same hook with `tools/ci-runners/setup.sh proof_hook` on their host.
+A job that leaves tracked files modified therefore cannot fail the next `actions/checkout`. `container NAME` installs the hook; `tools/ci-runners/setup.sh hook NAME` installs it on a running runner without a restart. Restart the runner service once it is idle to load it. The host-level `orbit-proof` runners take the same hook with `tools/ci-runners/setup.sh proof_hook` on their host.
 
 ### Agent delivery
 
@@ -520,7 +522,16 @@ bin/swamp-shape-gate --base REF     # compare with another base
 bin/swamp-shape-gate --only shape   # or --only validate
 ```
 
-The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate`, keyed by their pins, and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts`, the frozen agent command check and the workflow placement lint, `lint-workflow-placement.ts`. The placement lint needs no credential, so it is one of the static controls that `--only control` runs.
+The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate` and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts`, the frozen agent command check and the workflow placement lint, `lint-workflow-placement.ts`. The placement lint needs no credential, so it is one of the static controls that `--only control` runs.
+
+The venv folder is `venv-<digest>`. The digest covers two things:
+
+- the pin files `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`
+- the Python interpreter that builds the venv: its version and its real path
+
+A venv runs only with the interpreter that built it. A venv of another interpreter can hold `.complete` and still fail, for example with `cannot load libpython3.13`.
+
+So when the interpreter changes, the name changes too, and the gate never reuses a venv of another interpreter. It builds a new one. The CI cache key of these tools covers the version and the path of the job's interpreter beside the pin files, so CI never restores a venv of another interpreter. The rule lives in one file, `swamp/ansible/shape_tool_names.py`. The gate runs it in its own interpreter. The task VM role playbook runs it on the VM with the `python3` that builds the venv there.
 
 Independent commands share up to four workers, with one worker inside each command. The Instance host fixture files run in two serial groups at the front of the queue: updates and ACL cases in one; host, image and runtime cases in the other. At most two Instance host playbooks run at once, leaving workers for the other checks. The updates and ACL cases measured 356 and 257 seconds on ci-shark-2, or 613 seconds together. The image/runtime group must not also carry those ACL cases.
 
@@ -534,7 +545,7 @@ The gate prints each command's start and reports its result as soon as it finish
 
 The shape checker resolves a constant quoted CEL child-workflow name and scans that child just as it scans a literal target.
 
-A task VM holds the same environment in `/opt/orbit-shape-gate`, and so does a copy of a nested-fleet default: its [refresh](/reference/development-containers#the-pinned-shape-tools) builds the tools before the seed. The task VM role playbook builds it for the pins of its release. The script uses it when its name matches the pins, so the check runs offline.
+A task VM holds the same environment in `/opt/orbit-shape-gate`, and so does a copy of a nested-fleet default: its [refresh](/reference/development-containers#the-pinned-shape-tools) builds the tools before the seed. The task VM role playbook builds it for the pins of its release. The script uses it when its name matches the pins and the interpreter, so the check runs offline.
 
 Workflow validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the script skips the workflow validation, the Node enrollment trust test (it imports the extensions that validation pulls) and the grant pattern check (it also needs PHP). It names each skipped step and still exits 0. `--only validate` exits 78 then, which the candidate gate reads as skipped. CI passes `--strict`: a skipped step is a failure there.
 
@@ -595,7 +606,7 @@ Before it writes, the gate removes the `review-*` directories its own Unix user 
 
 ### The scoped task check
 
-`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks only what the task changed since its start commit, so it catches in the copy what CI would otherwise catch after the push. It runs in under five minutes.
+`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks what the task changed since its start commit, and the pin tests of the Pest jobs that change selects, so it catches in the copy what CI would otherwise catch after the push. It runs in under five minutes.
 
 ```bash
 bin/task-check                    # against the start commit
@@ -604,7 +615,7 @@ bin/task-check --budget 200       # seconds for the whole run (default 270)
 bin/task-check --only pest,phpstan
 ```
 
-The [start commit](/reference/tasks#start-commit) has one rule, which the tasks reference states. The changed paths are those since the start commit, with uncommitted and untracked files, as the candidate gate reads them. The command asks `bin/ci-build-plan --pull-request` which CI jobs those paths select, and `bin/ci-units plan` which Swamp fixture units. When the tree has uncommitted work, both plans read a commit of the working tree that no branch holds. Inside a selected Pest job, it reuses the file-level mapping that the repository already has, `bin/cli-contract`, and adds none. The parts run in this order.
+The [start commit](/reference/tasks#start-commit) has one rule, which the tasks reference states. The changed paths are those since the start commit, with uncommitted and untracked files, as the candidate gate reads them. The command asks `bin/ci-build-plan --pull-request` which CI jobs those paths select, and `bin/ci-units plan` which Swamp fixture units. When the tree has uncommitted work, both plans read a commit of the working tree that no branch holds. Inside a selected Pest job, it reuses the file-level mapping that the repository already has, `bin/cli-contract`, and adds none. It adds the job's pin tests, which the job selection alone chooses. The parts run in this order.
 
 | Part | Runs when | What it runs |
 | --- | --- | --- |
@@ -632,9 +643,13 @@ The Pest jobs are `gateway-tests`, `cli-tests`, `sdk-tests` and `docs` for the d
 
 - `packages/php-sdk` runs its whole suite. It takes about a second.
 - `apps/gateway`, `apps/cli` and `apps/docs` run their changed test files in one Pest run. `apps/cli` also runs the CLI tests that replay a changed SDK fixture, as `bin/cli-contract --changed <start commit>` names them.
+- `apps/gateway` and `apps/cli` also run their pin test files in that run, whatever changed. The `PIN_TESTS` table in `bin/task-check` lists them.
+- The line's detail counts the changed and pin files and names the pins, such as `0 changed or contract-mapped, 1 pin test files: CommandSurfaceTest`.
 - The whole suite of `apps/gateway`, `apps/cli` and `apps/docs` is a `pest <project> suite` line, `skipped` with the reason "CI runs the full suite".
 
 A job that CI does not select is `not selected`.
+
+A pin test checks a whole surface: a whole intent, a digest or every command's approved options. A change far from it can break it, so no file mapping finds it. Gateway: `GatewayRuntimeFilesTest` (the recipe digests), `NestedFleetHostingTest`, `ConnThreadStartTest`, `ProofRunCopiesTest`, `InstanceNodeServiceTargetsTest` and `CollectionAccessContractTest`. CLI: `CommandSurfaceTest`. Add a test to the table when CI's full suite catches a break in it that the check missed, and it fits the budget. Together they take about 37 seconds in a warm copy with one process: 34 for the Gateway and 3 for the CLI.
 
 The Swamp checkers read committed `HEAD` and the tracked files. When the tree has uncommitted work, `swamp-shape` runs in a temporary Git worktree of the candidate commit and removes it afterwards, so an untracked Swamp file is checked too. A SIGTERM, such as Orbit's outer timeout, ends the check through its cleanup, which removes the worktree.
 
@@ -664,7 +679,7 @@ A fixture unit whose fixture declares a host program in `host_programs` does not
 
 #### What it leaves to CI
 
-The scoped check does not run Rector, the full PHPStan analysis or the Gateway, CLI and docs Pest suites. Nor does it run the web app checks, Rust formatting, the Generated contracts job, the Swamp shape fixtures outside the plan, or Swamp workflow validation. It also leaves out a fixture unit whose declared host program the copy lacks. It does not fix files: Pint runs with `--test`. CI runs all of these on the handoff commit.
+The scoped check does not run Rector, the full PHPStan analysis or the Gateway, CLI and docs Pest suites beyond the changed, contract-mapped and pin test files. Nor does it run the web app checks, Rust formatting, the Generated contracts job, the Swamp shape fixtures outside the plan, or Swamp workflow validation. It also leaves out a fixture unit whose declared host program the copy lacks. It does not fix files: Pint runs with `--test`. CI runs all of these on the handoff commit.
 
 #### Its tests
 
@@ -679,9 +694,10 @@ The seeded file holds one change set for each real failure that CI caught after 
 
 - From #3713: an SDK Pest test and a strict docs-lint finding.
 - From #3715: a PHPStan error, a stale fixture case population and a flow chart finding.
+- From #3854: a CLI option added in app code alone, which `CommandSurfaceTest` pins.
 - An uncommitted Swamp file that breaks a shape rule.
 
-Each case applies its change set in a scratch clone of the checkout and runs the part that must fail. The cases need the vendor folders of `packages/php-sdk` and `apps/docs`, Deno and Node.
+Each case applies its change set in a scratch clone of the checkout and runs the part that must fail. The cases need the vendor folders of `packages/php-sdk`, `apps/cli` and `apps/docs`, Deno and Node. A case asserts only its own part: a Pest part whose project has no vendor folder in the clone, such as the Gateway pins that a CLI change selects, fails there too.
 
 ### Gateway test databases
 
@@ -788,7 +804,7 @@ Reviewers report `strtotime()`, inline type overrides, and unguarded classificat
 
 Pushes to `main` share one concurrency group. A running run always finishes, and a newer push replaces the waiting one. An automatic Gateway release ships only a commit with its own successful `Required checks` run, so a replaced commit never ships by itself. It ships inside the next green commit, which descends from it and whose builds and static checks cover its tree.
 
-A group per `main` commit is a rejected alternative. It gave every commit a result, but during a burst of merges every commit queued a full run on the runners on Sabre, and the newest commit, the one a release ships, ran last. On 2026-10-08 about a dozen merges in 15 minutes delayed the release by 30 to 40 minutes.
+A group per `main` commit is a rejected alternative. It gave every commit a result, but during a burst of merges every commit queued a full run on the CI runners, and the newest commit, the one a release ships, ran last. On 2026-10-08 about a dozen merges in 15 minutes delayed the release by 30 to 40 minutes.
 
 The cost is a smaller fallback when the newest run fails. The release resolver examines at most 20 commits, and a replaced commit has no result to fall back to. After a burst of more than 20 merges whose newest run fails, auto-release waits for a fix to merge and pass. A manual re-run of an older `main` run also joins the shared group, so it replaces a waiting run.
 

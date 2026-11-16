@@ -228,6 +228,23 @@ it('links the Project\'s php for every PATH in the container, and no version the
     expect(app(InstanceContainer::class)->intent($instance->refresh(), $runtime)['php'])->toBeNull();
 });
 
+it('gives the Project\'s PHP CLI, and only the CLI, each CLI-only extension of its static build', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/x', 'root' => 'public']);
+    $runtime = InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances',
+        'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
+        'power_state' => InstanceRuntimePowerState::Stopped]);
+    $node->forceFill(['instance_bridge' => '10.253.0.0/24'])->save();
+
+    expect(app(InstanceContainer::class)->intent($instance, $runtime)['php_cli_ini'])
+        ->toBe("extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n");
+
+    $project->forceFill(['php_version' => '7.4'])->save();
+
+    expect(app(InstanceContainer::class)->intent($instance->refresh(), $runtime)['php_cli_ini'])->toBeNull();
+});
+
 it('serves a container Instance\'s Route by proxying to FrankenPHP at its bridge address, with no PHP pool on the Node', function (): void {
     $node = containerDefaultNode();
     $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
@@ -264,7 +281,8 @@ it('records a created routed container default at its first seed and admits depl
     $runtime = InstanceRuntime::query()->where('instance_id', $operation->target_id)->firstOrFail();
     expect(Instance::query()->findOrFail($operation->target_id)->status)->toBe(InstanceState::Active)
         ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Running)
-        ->and($runtime->seed_commit)->toBe($commit);
+        ->and($runtime->seed_commit)->toBe($commit)
+        ->and($runtime->seed_taken_at)->not->toBeNull();
     // A default has no baseline: its read is the plain truth.
     expect($runtime->workspace_baseline)->toBeNull();
     $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(['head' => $commit, 'files' => [

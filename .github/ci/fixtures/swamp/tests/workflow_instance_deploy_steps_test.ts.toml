@@ -1,5 +1,4 @@
 order = 1460
-source_sha256 = "773432f616b8335ff9dcb370a163eb469820decd16800f241131dafdbea39602"
 cases = [
   "a deployment without a step that has inputs reads no skip list, and its steps run with the command they had",
   "a step with inputs that the checkout named unchanged is skipped; any other step runs",

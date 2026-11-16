@@ -1,5 +1,4 @@
 order = 220
-source_sha256 = "1b656674369e281b1c98428aca628cfd9f0b93a743da5412a2d6d3cf196d74c8"
 cases = [
   "fresh Vite+ npm detects from lockfiles without a bootstrap install",
   "fresh Vite+ bun detects from lockfiles without a bootstrap install",

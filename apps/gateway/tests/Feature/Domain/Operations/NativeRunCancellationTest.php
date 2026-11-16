@@ -594,8 +594,10 @@ describe('a cancel while a database copy runs', function (): void {
     });
 
     it('names, for each kind, steps that exist in its workflow with the bound of their own timeout, and every server copy step', function (): void {
+        // A workflow may serve several kinds (`tasks.provision` names the create of its task copy); its copy steps belong to the one listed.
         $kinds = collect(app(DirectOperation::class)->definitions())->filter(fn (array $definition): bool => isset($definition['workflow']))
-            ->mapWithKeys(fn (array $definition, string $kind): array => [$definition['workflow'] => $kind]);
+            ->groupBy(fn (array $definition): string => $definition['workflow'], preserveKeys: true)
+            ->map(fn ($group): string => collect($group->keys())->first(fn (string $kind): bool => isset(NativeRunCancellation::CopySteps[$kind]), $group->keys()->first()));
         $found = [];
         // Every workflow file, child workflows too: a step that runs the server database fill must belong to a kind and be listed.
         foreach (glob(base_path('../../swamp/workflows/*.yaml')) as $file) {

@@ -1,5 +1,4 @@
 order = 863
-source_sha256 = ""
 cases = [
   "pinned route withdraw: pooled names, no empty vpn visit, and two withdrawals in one slot",
 ]

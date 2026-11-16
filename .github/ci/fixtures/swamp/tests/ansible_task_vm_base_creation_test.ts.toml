@@ -1,5 +1,4 @@
 order = 510
-source_sha256 = "27fdfd6d1889c6f8f1286d15c14f5d3871a09d65a8f15c9b924a8e1877160c6c"
 cases = [
   "an unpromoted failed base and seed are replaced from stock",
   "a recorded base stays intact unless rebuilding from stock is explicit",

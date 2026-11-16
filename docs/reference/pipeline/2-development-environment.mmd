@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design (agreed with Nick, 2026-11-07): stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, is a copy of the host's base VM snapshot with a fresh identity, named `<node>-tvm-<n>` by its place under the host's `task_places`. The base holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, sshd and UFW, a warm checkout of main with `vendor/` and `node_modules/`, and the nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) as Incus system containers that start with the VM, with a `base` snapshot each for the proof. The containers mount the outer VM's checkout as a disk device, so an edit reaches them at once. The task start: docs/cli/task/start.mmd.
+  %% 2026-11-16: the task VM start (`operation-task-provision`, `task-vm-start`, `task-vm-hub-peer`) and its release (`operation-task-vm-slot-release`, `task-vm-slot-phase`, `task-vm-hub-peer-remove`) are deleted (docs/reference/old-paths.md#the-pi-task-loop); their steps below record the old flow until this stage moves to task copies.
   %% status: draft
   %% command: development pipeline stage 2 · development environment
   %% kind: pipeline.2-development-environment

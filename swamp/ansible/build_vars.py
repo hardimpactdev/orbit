@@ -5,8 +5,8 @@ import shlex
 import sys
 from pathlib import Path
 
-TASK_VM_KINDS = ('tasks.provision', 'task_vm.nested_ready', 'tasks.idle_save')
-SSH_EXECUTION_KINDS = ('task_vm.nested_ready', 'tasks.idle_save')
+TASK_VM_KINDS = ('tasks.provision', 'task_vm.nested_ready')
+SSH_EXECUTION_KINDS = ('task_vm.nested_ready',)
 
 
 def unsafe(value):
@@ -32,7 +32,7 @@ def build_task_vm(folder, kind):
     # A task start's one run holds the whole start intent in the file; the role converges the part that names it.
     if os.environ.get('ORBIT_INTENT_KEY'):
         intent = intent[os.environ['ORBIT_INTENT_KEY']]
-    # The readiness and idle save intents name their connection ssh_execution; the other task VM intents name it ssh.
+    # The readiness intent names its connection ssh_execution; the other task VM intents name it ssh.
     ssh = intent['ssh_execution' if kind in SSH_EXECUTION_KINDS else 'ssh']
     target = dict(ssh['target'])
     known = set(known_host_lines(target))
@@ -144,10 +144,15 @@ def build(folder, kind):
     analytics = intent['runtime']['analytics']
     if analytics:
         host(analytics['clickhouse_node_id'], analytics['clickhouse_ssh'])
+    seed = intent['runtime'].get('proof_seed') or {}
+    sender = seed.get('sender') if seed.get('present') else None
+    if sender:
+        host(sender['node_id'], sender['ssh'])
 
     groups = {
         'role_node': [f'n{intent["node_id"]}'],
         'clickhouse_node': [f'n{analytics["clickhouse_node_id"]}'] if analytics else [],
+        'proof_seed_sender': [f'n{sender["node_id"]}'] if sender else [],
         'publication_nodes': [name for name, entry in hosts.items() if entry['publications']],
         'exporter_nodes': [name for name, entry in hosts.items() if entry['exporters']],
         'prometheus_node': [f'n{intent["prometheus"]["node_id"]}'] if intent['prometheus'] else [],

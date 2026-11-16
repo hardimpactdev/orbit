@@ -1,5 +1,4 @@
 {
-  "source_sha256": "b7ee7d733175315420e273544c38762abd93237fd0083bbaa88bb0cad38be6e3",
   "note": "Completed local Beast run with pinned Ansible. All29 cases passed. These are local body seconds, not hosted p90. The old whole-file21s estimate hit the190s shard deadline after87.6s in run43549818386 job132309667150; this is a censored observation and is not used as a completed timing. Six interleaved slices retain every case; each is costed at the slowest slice local sum times2.1, rounded up, plus1s.",
   "slices": 6,
   "estimate_factor": 2.1,
