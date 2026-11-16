@@ -223,8 +223,8 @@ Each task workspace keeps its recorded routing mode after a settings change. Ren
 `POST /api/v1/projects/{project}/review-and-merge/enable` and `/disable` switch the flow; it applies at the next tick, to open tasks too. `PATCH /api/v1/projects/{project}` accepts `merge_check` as a string of at most 255 characters, or null, and refuses `review_and_merge`. The flow is on only while `review_and_merge` is true, `merge_check` is set, and `source_access` is `github_app`. Enabling without the check or the App, or an update that would leave an enabled Project without one of these, fails with HTTP 422 `validation.failed` on `merge_check` or `review_and_merge`, and changes nothing. CLI human detail output labels the fields `Review and merge` and `Merge check`. An invalid CLI value returns `project.review_and_merge_invalid`, `project.merge_check_conflict`, or `project.merge_check_invalid` before a request.
 
 ```bash
-orbit project:update 46 --merge-check="Required checks"
-orbit project:review-and-merge:enable 46
+orbit project:update 78 --merge-check="Required checks"
+orbit project:review-and-merge:enable 78
 ```
 
 Enabling review and merge requires readable branch rules that do not require an up-to-date branch. Orbit reads rulesets with `Metadata: read` and classic branch protection with `Administration: read`. A 404 for classic protection means none is set. A strict rule returns `project.strict_base`; an unreadable policy returns `project.branch_policy_unavailable`. Both refuse to enable. Projects already enabled are not read again.

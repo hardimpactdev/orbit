@@ -44,18 +44,18 @@ Deno.test("Orbit routine reads its policy and ignores old PR names in ended grou
         ...intent(),
         project: {
             ...project,
-            id: 46,
+            id: 78,
             repository: "https://github.com/hardimpactdev/orbit.git",
         },
         groups: [{
             id: 1,
-            project_id: 46,
+            project_id: 78,
             status: "completed",
             pr_url: "https://github.com/nckrtl/orbit/pull/1025",
             watched_pr_url: null,
         }, {
             id: 2,
-            project_id: 46,
+            project_id: 78,
             status: "backlog",
             pr_url: "https://github.com/hardimpactdev/orbit/pull/2450",
             watched_pr_url: null,
@@ -64,7 +64,7 @@ Deno.test("Orbit routine reads its policy and ignores old PR names in ended grou
     assertEquals(
         (getWrittenResources()[0].data.result as { project_id: number })
             .project_id,
-        46,
+        78,
     );
 });
 
