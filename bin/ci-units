@@ -22,8 +22,9 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 TABLE = ROOT / '.github/ci/checks.toml'
 PRELOAD = 'swamp/tests/_support/slice.ts'
-# The shared fixture machinery. A change to it selects the machinery canary set, not every fixture.
-MACHINERY = ('bin/ci-units', 'bin/ci-registry', PRELOAD)
+# The shared fixture machinery. A change to it selects the machinery canary set, not every fixture, even a fixture that
+# lists it as an input. The shape gate lists and launches the fixtures.
+MACHINERY = ('bin/ci-units', 'bin/ci-registry', 'bin/swamp-shape-gate', PRELOAD)
 # Fixture metadata keys that only schedule a fixture: where it runs, its declared costs and its slices.
 SCHEDULING = ('self_hosted', 'cost', 'case_costs', 'slices')
 OUTPUT_LOCK = threading.Lock()
@@ -202,6 +203,8 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
     selected, unmapped = {}, []
     machinery = shared_registry or any(path in MACHINERY for path in paths)
     for path in paths:
+        if path in MACHINERY:
+            continue
         matched = False
         for file, fixture in fixtures.items():
             matches = [specificity(pattern) for pattern in [file, *fixture['inputs']]
@@ -210,7 +213,7 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
                 matched = True
                 priority = (2, len(file), 0) if path == file else max(matches)
                 selected[file] = max(selected.get(file, (-1, 0, 0)), priority)
-        if path.startswith('swamp/') and not matched and path != PRELOAD:
+        if path.startswith('swamp/') and not matched:
             unmapped.append(path)
             for file in defaults:
                 selected.setdefault(file, (-1, 0, 0))

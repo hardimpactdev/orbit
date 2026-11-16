@@ -187,9 +187,10 @@ class PlanningTest(unittest.TestCase):
         for path in ('swamp/tests/a.ts', 'swamp/tests/_support/helper.ts', 'swamp/ansible/tasks/a-b.yml'):
             self.assertEqual(names(planned([path], fixtures)), ['swamp/tests/a.ts'])
         self.assertEqual(names(planned(['swamp/ansible/tasks/a-sub/file.yml'], fixtures)), [])
-        # The machinery selects the canary set, not every fixture.
+        # The machinery selects the canary set, not every fixture, even one that lists a machinery path as an input.
         budget = {**BUDGET, 'machinery_canary': ['swamp/tests/b.py']}
-        for path in ('bin/ci-units', 'bin/ci-registry', units.PRELOAD):
+        fixtures[0]['inputs'].append('bin/swamp-shape-gate')
+        for path in ('bin/ci-units', 'bin/ci-registry', 'bin/swamp-shape-gate', units.PRELOAD):
             result = planned([path], fixtures, budget=budget)
             self.assertEqual(scheduled(result), ['swamp/tests/b.py'])
         self.assertEqual(scheduled(planned(['bin/ci-units', 'swamp/tests/a.ts'], fixtures, budget=budget)),

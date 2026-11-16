@@ -222,7 +222,9 @@ Each registered fixture has one metadata file under `.github/ci/fixtures/`, mirr
 
 `bin/ci-registry` is the loader for fixture selection and execution. Editing what a fixture tests selects only that fixture, using the same merge base as path selection: its cases, its inputs or any other key except the scheduling keys. The scheduling keys are `self_hosted`, `cost`, `case_costs` and `slices`. An edit that changes only them is a machinery change: it selects the machinery canary set, not the fixture. Formatting and edits to check definitions select no extra fixture bodies.
 
-A change to the shared fixture machinery does not select every fixture. The machinery is the fixture list, budgets, defaults and fixture order in `checks.toml`, the loader, the planner, the runner and the slice preload. Such a change selects the fixtures whose own code it touches, plus the machinery canary set: the short list `machinery_canary` in the `[budget]` of `checks.toml`. The canary files exercise the loader, the runner and the budget paths; together they fit one shard of one pull request. The pure-code tests of the machinery, `tools/test_ci_*.py`, cover the rest.
+A change to the shared fixture machinery does not select every fixture. The machinery is the fixture list, budgets, defaults and fixture order in `checks.toml`, the loader, the planner, the runner, the slice preload and the shape gate `bin/swamp-shape-gate`. A fixture that lists one of these paths as an input is not selected by it.
+
+Such a change selects the fixtures whose own code it touches, plus the machinery canary set: the short list `machinery_canary` in the `[budget]` of `checks.toml`. The canary files exercise the loader, the runner and the budget paths; together they fit one shard of one pull request. The pure-code tests of the machinery, `tools/test_ci_*.py`, cover the rest.
 
 A canary file must be a registered hosted fixture; `bin/ci-units plan` refuses a list that names an unregistered or `self_hosted` file, or that needs more than one shard.
 
@@ -234,7 +236,7 @@ For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per
 
 A slice takes every n-th case, so a new case can move two long cases into one slice; then raise the slice count until no slice is above the lane budget. A slice count equal to the number of retained cases always meets this: each case gets its own slice.
 
-A new Python fixture needs its own `.github/ci/fixtures/<source>.toml`, with `slices = false`, measured whole-file cost, inputs and ordered cases. It does not need a shape-gate listing: the planner reads the registry, and the runner uses `python3 -I` for a registered unsliceable file. A new Deno fixture remains sliceable. A listing adds the file to the broad local gate and its Ruff audit. Editing that shared list selects all fixtures, which can exceed the PR budget and then fails Required checks; registry-only additions avoid that effect.
+A new Python fixture needs its own `.github/ci/fixtures/<source>.toml`, with `slices = false`, measured whole-file cost, inputs and ordered cases. It does not need a shape-gate listing: the planner reads the registry, and the runner uses `python3 -I` for a registered unsliceable file. A new Deno fixture remains sliceable. A listing adds the file to the broad local gate and its Ruff audit. Editing that shared list is a machinery change: it selects the machinery canary set.
 
 The Instance workspace proof runs in five independent Python files: target and identity, snapshots, receipts, export, and check workflow. Each file keeps its complete assertions and uses the test-free `swamp/tests/_support/task_instance_workspace.py` harness. Load it with `runpy.run_path` using a path relative to the test file, then subclass `WorkspaceHarness` or `CheckHarness`; this also works with Python isolated mode.
 
