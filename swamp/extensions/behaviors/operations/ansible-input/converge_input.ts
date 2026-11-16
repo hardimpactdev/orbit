@@ -85,9 +85,9 @@ export async function phaseDigests<Phase extends typeof skippable[number] | type
     return { digests, unchanged: phases.filter((phase) => intent.recorded_digests[phase] === digests[phase]) };
 }
 
-/** A role Operation's code: the converge's, and the plan of its Tool Managers, which runs after the digest. */
-export function rolePhaseCode(builder: string, toolHelper: string, rolePlans: string): string[] {
-    return [...phaseCode(builder, toolHelper), rolePlans];
+/** A role Operation's code: the converge's, and the plan of its Tool Managers beside the Tool helper, which runs after the digest. */
+export function rolePhaseCode(builder: string, toolHelper: string): string[] {
+    return [...phaseCode(builder, toolHelper), `${toolHelper.slice(0, toolHelper.lastIndexOf("/"))}/role_add_plans.ts`];
 }
 
 /** A role Operation's digests, after its playbook input is written; the Gateway records them after a succeeded run. */

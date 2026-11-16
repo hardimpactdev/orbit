@@ -553,7 +553,7 @@ Deno.test("a role Operation's digests skip every role phase only when its writte
         assertEquals((await role(first.digests)).unchanged, []);
     } finally { await Deno.remove(code, { recursive: true }); }
     // The plan of the Tool Managers runs after the digest, so its code is part of it.
-    assertEquals(rolePhaseCode("/x/ansible/build_vars.py", "/x/ext/ansible-input/converge_tool.ts", "/x/ext/ansible-input/role_add_plans.ts"),
+    assertEquals(rolePhaseCode("/x/ansible/build_vars.py", "/x/ext/ansible-input/converge_tool.ts"),
         ["/x/ansible", "/x/ext/ansible-input/converge_tool.ts", "/x/ext/tools", "/x/ext/ansible-input/role_add_plans.ts"]);
 });
 

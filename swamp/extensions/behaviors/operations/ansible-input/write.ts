@@ -106,8 +106,7 @@ export const behavior = {
                 const { folder, operation_id } = ConvergeInputArgs.parse(raw);
                 const builder = ctx.extensionFile('ansible/build_vars.py');
                 const helper = ctx.extensionFile('extensions/behaviors/operations/ansible-input/converge_tool.ts');
-                const plans = ctx.extensionFile('extensions/behaviors/operations/ansible-input/role_add_plans.ts');
-                const phases = await roleDigests(folder, operation_id, rolePhaseCode(builder, helper, plans));
+                const phases = await roleDigests(folder, operation_id, rolePhaseCode(builder, helper));
                 const value = RolePhases.parse({ ready: true, unchanged: phases.unchanged, stdout: JSON.stringify({ digests: phases.digests }) });
                 await ctx.writeResource("rolePhases", "rolePhases", value);
                 return value;
