@@ -78,7 +78,7 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 3167
+cost = 3181
 slices = 76
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
@@ -102,7 +102,7 @@ inputs = [
   "a Swamp install whose serve does not come back fails the refresh with its step, takes no base and writes no record" = 10 # hosted run 43730633700: 7s x 1.25, rounded up, plus 1s
   "a refresh without the Club key reads no Swamp release and installs none" = 19 # hosted run 43730633700: 14s x 1.25, rounded up, plus 1s
 "a fleet built at the recipe's release only reads; a read that fails runs the install and names no release" = 75 # hosted run 43730633700: 59s x 1.25, rounded up, plus 1s
-  "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 40
+  "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 50 # ESTIMATE: local 23s x 2.1, rounded up, plus 1s (the Instance host and egress rules)
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads" = 24
   "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check" = 40 # ESTIMATE: prior local x 3, plus 1s
   "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words" = 35
@@ -118,7 +118,7 @@ inputs = [
   "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 39
   "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 18
   "the nested Gateway's Horizon and PHP-FPM pool get the fleet's egress proxy from files of their own, so a Gateway role converge keeps them" = 39 # ESTIMATE: local 18s x 2.1, rounded up, plus 1s
-  "a fleet built from the rules has the live shape, with boot.autostart true" = 31
+  "a fleet built from the rules has the live shape, with boot.autostart true" = 35 # ESTIMATE: local 16s x 2.1, rounded up, plus 1s (the Instance host and egress rules)
   "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base" = 74 # ESTIMATE: local 34.4s (main 32.4s; the converge now installs the power helper) x 2.1, rounded up, plus 1s
   "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base" = 22 # ESTIMATE: prior local x 3, plus 1s
   "readiness reads a healthy Doctor on the first poll; an empty, an error or no response fails with what the last poll got" = 76 # ESTIMATE: prior local x 3, plus 1s
