@@ -34,7 +34,7 @@ final class AgentDelivery
      * The artifact key of a Node, such as `linux-x86_64`. Only macOS has an ARM build: Apple silicon reports
      * `arm64` and maps to `macos-aarch64`. Linux Nodes are x86_64 only, so a Linux ARM Node has no build.
      */
-    public static function key(Node|AgentGuest $node): string
+    public static function key(Node $node): string
     {
         $architecture = match (true) {
             in_array($node->architecture, ['amd64', 'x86_64'], true) => 'x86_64',
@@ -78,14 +78,14 @@ final class AgentDelivery
     }
 
     /** The pinned SHA-256 for a Node. */
-    public function pin(Node|AgentGuest $node): string
+    public function pin(Node $node): string
     {
         return $this->artifact(self::key($node))['sha256'];
     }
 
     /** A verified local copy of the pinned binary for a Node. */
     /** The pinned binary for this host, downloaded within `$timeoutSeconds` when the manifest names only a URL. */
-    public function localFile(Node|AgentGuest $node, float $timeoutSeconds = 120.0): string
+    public function localFile(Node $node, float $timeoutSeconds = 120.0): string
     {
         $key = self::key($node);
         $artifact = $this->artifact($key);
