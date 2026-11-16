@@ -312,8 +312,12 @@ class RemoteAccessTest(unittest.TestCase):
                     # The rule that names a task copy's base scratch, which the destroy imports beside the playbook.
                     (folder / 'tasks').mkdir(exist_ok=True)
                     shutil.copyfile(ROOT / 'ansible/tasks/task-copy-base-names.yml', folder / 'tasks/task-copy-base-names.yml')
-                    # A sleep's swap record goes with the container, by the one rule that names it; the destroy intent names the Instance.
-                    shutil.copyfile(ROOT / 'ansible/tasks/instance-container-swap.yml', folder / 'tasks/instance-container-swap.yml')
+                    # The power helper's files go with the container through its one call; the destroy intent names the Instance.
+                    # The test copy's helper is the shared Deno fixture (tests/_support/power_helper.ts).
+                    support = ROOT / 'tests/_support/power_helper.ts'
+                    subprocess.run([deno, 'eval', f'import {{ installPowerHelper }} from {json.dumps(support.as_uri())}; '
+                                    f'installPowerHelper({json.dumps(str(folder))}, {json.dumps(str(folder))});'],
+                                   check=True, timeout=60)
                     container = dict(container, instance_id=11)
                 else:
                     tasks = yaml.safe_load((ROOT / 'ansible/tasks/instance-migrate-discard.yml').read_text())
@@ -330,7 +334,7 @@ class RemoteAccessTest(unittest.TestCase):
                 proof = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
                           'vars': {'container': container, 'phase': 'remove', 'incus': ['incus', '--project', 'orbit-instances'],
                                    'run': str(folder / 'run'), 'ansible_python_interpreter': sys.executable,
-                                   'task_base_root': str(folder / 'task-base'), 'swap_record_directory': str(folder / 'shm')},
+                                   'task_base_root': str(folder / 'task-base')},
                           'tasks': tasks}]
                 (folder / 'proof.yml').write_text(yaml.safe_dump(proof))
                 environment = dict(os.environ, HOST_FIXTURE=str(folder), ANSIBLE_STDOUT_CALLBACK='default',
@@ -349,6 +353,7 @@ class RemoteAccessTest(unittest.TestCase):
                 if kind == 'destroy':
                     self.assertEqual([r['comment'] for r in json.loads((folder / 'ufw.json').read_text())],
                                      ['orbit:instance-12-node-service-10.44.0.11-8096'])
+                    self.assertEqual([json.loads(line) for line in (folder / 'helper-calls').read_text().splitlines()], [['discard', '--instance', '11']])
                 else:
                     removed = json.loads((folder / 'removed-forward.json').read_text())
                     self.assertEqual({key: removed[key] for key in ('from_ip', 'to_ip', 'to_port', 'proto')},

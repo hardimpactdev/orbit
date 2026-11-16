@@ -458,7 +458,17 @@ An `app-dev` Node on the Gateway's build list of [development containers](/refer
 
 Each such converge also writes every Instance container's [presented machine name](/reference/development-containers#the-machine-name) into its `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts`, through the Incus file API, whether the container runs, is stopped or is frozen. Nothing restarts: the kernel hostname follows at the container's next start, and T3's label at T3's next start.
 
-A sleeping container's asleep marker lives in the role's hibernation directory, `/data/caddy/orbit/hibernation`, which [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation#host-directories) lists. A sleep writes it before it freezes the container; the start part of a wake removes it once the app answers. The sleep opens swap only for the frozen container's own cgroup, and the wake closes it again: the role changes no host swap or Incus setting.
+A sleeping container's asleep marker lives in the role's hibernation directory, `/data/caddy/orbit/hibernation`, which [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation#host-directories) lists. A sleep writes it before it freezes the container; the start part of a wake removes it once the app answers. The sleep opens swap only for the frozen container's own cgroup subtree, and the wake closes exactly what it opened: the role changes no host swap or Incus setting.
+
+The same converge installs the [power helper](/reference/prepared-restore#the-power-helper), `/usr/local/libexec/orbit-instance-power`, with the task file `swamp/ansible/tasks/instance-power-helper.yml`. It writes the helper and its private folder `/var/lib/orbit/hibernation/instances` (`0700`), and the properties of every `orbit-instance-power-<id>` unit as one drop-in, `/etc/systemd/system/orbit-instance-power-.service.d/orbit.conf`.
+
+When the helper changed or its manifest is missing, the converge runs `orbit-instance-power capabilities` as the unit `orbit-instance-power-probe`, with the drop-in's properties, and prints each probe's result. The probe tests cgroup v2, `/proc/<pid>/maps` and `pagemap`, `pidfd_open` with the pidfd liveness poll, `process_madvise` and `process_vm_readv`. Its target is `orbit-power-probe-target.service`, which systemd starts as `nobody` and stops after the probe, so the probe meets another uid as a restore does ([Capabilities](/reference/prepared-restore#the-power-helper)). It records the results in `/var/lib/orbit/hibernation/capabilities.json`. A missing primitive does not fail the converge: the Node's sleeps then record no plan, and they freeze and reclaim as before. The helper's result reports a failure with one of these error codes:
+
+| Code | Meaning |
+| --- | --- |
+| `instance.container_freeze_failed` | `prepare` could not pause the container, or its reclaim failed |
+| `instance.container_start_failed` | `restore` could not unfreeze the container |
+| `instance.power_helper_failed` | The helper refused its input or crashed; it exits 70 |
 
 A [CI-only Node](#proof-copies-on-a-ci-node) gets the same branch through its `ci-runner` role.
 

@@ -1046,8 +1046,8 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
 });
 
 /**
- * The frozen baseline with the one intended change since it: a default's deploy steps put Playwright's browsers beside its package
- * (InstanceContainer::BrowserEnvironment).
+ * The frozen baseline with the intended changes since it: a default's deploy steps put Playwright's browsers beside its package
+ * (InstanceContainer::BrowserEnvironment), the machine name and the power helper's web port.
  *
  * @return array<string, mixed>
  */
@@ -1058,6 +1058,9 @@ function normalContainerSinceMain(Instance $instance, InstanceRuntime $runtime):
     // The presented machine name came after main, right after the Incus name (InstanceMachineName).
     $name = array_search('name', array_keys($expected), true) + 1;
     $expected = [...array_slice($expected, 0, $name, true), 'machine_name' => InstanceMachineName::intent($instance), ...array_slice($expected, $name, null, true)];
+    // The power helper's readiness port came with prepared restore, right after the web config (docs/reference/prepared-restore.md).
+    $web = array_search('web_config', array_keys($expected), true) + 1;
+    $expected = [...array_slice($expected, 0, $web, true), 'web_port' => $expected['web_config'] === null ? null : InstanceContainer::WebPort, ...array_slice($expected, $web, null, true)];
     // The CLI-only PHP ini came after main, right after `php`; a Project without PHP has none (InstanceContainer::phpCliIni).
     $php = array_search('php', array_keys($expected), true) + 1;
     $expected = [...array_slice($expected, 0, $php, true), 'php_cli_ini' => null, ...array_slice($expected, $php, null, true)];

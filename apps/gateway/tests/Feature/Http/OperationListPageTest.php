@@ -109,6 +109,17 @@ it('reads no stored input or result, and keeps the caller and the capacity wait 
         ->and($row['caller_node_name'])->toBe('gateway')->and($row['capacity_wait'])->not->toBeNull()->and($row['poll_after_seconds'])->not->toBeNull()
         ->and($selects)->toHaveCount(1);
     foreach ($selects as $selected) {
-        expect($selected)->not->toMatch('/(^|, )("\w+"\.)?\*/')->not->toContain('"result"')->not->toMatch('/(^|, )("operations"\.)?"input"(,|$)/');
+        expect($selected)->not->toMatch('/(^|, )("\w+"\.)?\*/')->not->toMatch('/(^|, )("operations"\.)?"result"(,|$)/')->not->toMatch('/(^|, )("operations"\.)?"input"(,|$)/');
     }
+});
+
+it('gives a wake\'s ready_at on its list row and on show, and null to any other operation', function (): void {
+    $wake = Operation::query()->create(['kind' => 'instance.wake', 'target_type' => 'instance', 'target_id' => 1, 'node_id' => Node::query()->value('id'),
+        'input' => [], 'result' => ['ready_at' => '2026-11-16T00:46:40Z', 'log' => str_repeat('y', 4096)], 'status' => OperationStatus::Succeeded]);
+
+    $rows = operation_page('?limit=2')->assertOk()->json('data');
+    $show = test()->withServerVariables(['REMOTE_ADDR' => '10.44.0.2'])->getJson('/api/v1/operations/'.$wake->id)->assertOk();
+
+    expect(array_column($rows, 'ready_at', 'id'))->toBe([$wake->id => '2026-11-16T00:46:40Z', $this->ids[24] => null])
+        ->and($show->json('data.ready_at'))->toBe('2026-11-16T00:46:40Z');
 });

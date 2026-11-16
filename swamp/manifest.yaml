@@ -53,6 +53,7 @@ additionalFiles:
   - ansible/tasks/fleet-reboot-rerun.yml
   - ansible/files/fleet-reboot-planned.sh
   - ansible/files/instance-container-wake.sh
+  - ansible/files/instance-container-power.py
   - ansible/files/instance-browser-trust.sh
   - ansible/files/fleet-reboot-ci-drain.sh
   - ansible/tasks/node-converge-replace.yml
@@ -174,6 +175,8 @@ additionalFiles:
   - ansible/tasks/instance-vite-plus-home.yml
   - ansible/tasks/instance-egress.yml
   - ansible/tasks/instance-host.yml
+  - ansible/tasks/instance-power-helper.yml
+  - ansible/tasks/instance-power-call.yml
   - ansible/tasks/instance-network-check.yml
   - ansible/tasks/instance-network-nic-check.yml
   - ansible/tasks/instance-network-move.yml
@@ -185,7 +188,6 @@ additionalFiles:
   - ansible/conn-environment-restart.yml
   - ansible/templates/t3-service-processes.j2
   - ansible/tasks/instance-container-power.yml
-  - ansible/tasks/instance-container-swap.yml
   - ansible/instance-connection-environment.yml
   - ansible/instance_env_keys.py
   - ansible/instance_node_services.py

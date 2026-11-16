@@ -1,7 +1,10 @@
-/** The two parts of a container's sleep (the asleep marker, the freeze), run by real Ansible against the Incus fixture, and the shipped sleep and
- * wake step expressions. A wake's resume and marker work run in its `start` part: ansible_instance_container_test.ts. */
+/** The one phase of a container's sleep (the asleep marker, then the power helper's prepare and its counter reads), run by real Ansible against
+ * the Incus fixture and the helper fixture, and the shipped sleep and wake step expressions. A wake's resume and marker work run in its
+ * `start` part: ansible_instance_container_test.ts. The helper's own engine: instance_power_helper_test.py. */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1.0.12";
+import { join } from "jsr:@std/path@1";
+import { helperCalls as readHelperCalls, installPowerHelper } from "./_support/power_helper.ts";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 
 type Step = { name: string; dependsOn?: { step: string }[]; task: { behaviorName?: string; inputs: { run?: string; env?: Record<string, string> } } };
@@ -12,10 +15,10 @@ const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn
 const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, "");
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 
-Deno.test("each sleep and wake step runs its charted part with the shipped Ansible settings; the wake is one playbook", () => {
-    const context = { inputs: { node_id: 9, intent: {} }, steps: { input: { status: "succeeded", outputs: { assets: shipped } } }, run: { id: runId } };
+Deno.test("the sleep and the wake each run one charted phase with the shipped Ansible settings; the sleep's names its Operation", () => {
+    const context = { inputs: { operation_id: 41, node_id: 9, intent: {} }, steps: { input: { status: "succeeded", outputs: { assets: shipped } } }, run: { id: runId } };
     const evaluate = (value: string) => value.startsWith("${{") ? String(cel.evaluate(value.slice(3, -2).trim(), context)) : value;
-    for (const [kind, parts] of [["sleep", [["Mark the Route asleep", "--tags asleep", "instance-container-power.yml"], ["Freeze the container", "--tags freeze", "instance-container-power.yml"]]],
+    for (const [kind, parts] of [["sleep", [["Sleep the container", "--tags prepared_sleep", "instance-container-power.yml"]]],
         ["wake", [["Wake the container", "--tags start", "instance-container.yml"]]]] as const) {
         const all = steps(kind);
         assertEquals(all.map((step) => step.name), ["input", ...parts.map((part) => part[0]), "result", "cleanup"]);
@@ -29,12 +32,27 @@ Deno.test("each sleep and wake step runs its charted part with the shipped Ansib
             assertEquals(env.ORBIT_RUN_ID, runId);
             assert(Deno.statSync(`${shipped}/${playbook}`).isFile);
             assert(evaluate(step.task.behaviorName!).endsWith("-9"), name);
+            assertEquals(env.ORBIT_OPERATION_ID, "41");
         }
     }
 });
 
+Deno.test("every workflow step that runs instance-container.yml names its Operation, which the power helper's restore records", () => {
+    const context = { inputs: { operation_id: 41, node_id: 9, intent: {} }, steps: {}, run: { id: runId } };
+    let found = 0;
+    for (const kind of ["wake", "start", "deploy-direct", "create"]) {
+        for (const step of steps(kind).filter((candidate) => candidate.task?.inputs?.run?.includes("instance-container.yml"))) {
+            found++;
+            const value = step.task.inputs.env?.ORBIT_OPERATION_ID;
+            assert(value !== undefined, `${kind}: ${step.name}`);
+            assertEquals(String(cel.evaluate(value.slice(3, -2).trim(), context)), "41");
+        }
+    }
+    assert(found >= 14, String(found));
+});
+
 Deno.test("a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet", () => {
-    const context = { inputs: { node_id: 9, intent: {}, execution_secrets: { club_key: { vault: "orbit-control-inputs", key: "nested-fleet-club-api-key" } } },
+    const context = { inputs: { node_id: 9, operation_id: 31, intent: {}, execution_secrets: { club_key: { vault: "orbit-control-inputs", key: "nested-fleet-club-api-key" } } },
         steps: { input: { status: "succeeded", outputs: { assets: shipped } } }, run: { id: runId } };
     const vault = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false })
         .registerFunction("vaultget(dyn, dyn): string", (v: unknown, k: unknown) => `${v}/${k}`);
@@ -56,7 +74,7 @@ Deno.test("a nested-fleet clone's start runs the deployment's start with the Clu
     assertEquals(fleet.dependsOn?.[0].step, "Start the container");
     for (const step of [container, fleet]) {
         const env = Object.fromEntries(Object.entries(step.task.inputs.env!).map(([key, value]) => [key, evaluate(value)]));
-        assertEquals([env.ANSIBLE_CONFIG, env.ORBIT_ANSIBLE, env.ORBIT_RUN_ID], [`${shipped}/ansible.cfg`, shipped, runId]);
+        assertEquals([env.ANSIBLE_CONFIG, env.ORBIT_ANSIBLE, env.ORBIT_RUN_ID, env.ORBIT_OPERATION_ID], [`${shipped}/ansible.cfg`, shipped, runId, "31"]);
         assert(evaluate(step.task.behaviorName!).endsWith("-9"), step.name);
     }
 });
@@ -98,70 +116,74 @@ const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-play
 const user = new TextDecoder().decode(new Deno.Command("id", { args: ["-un"] }).outputSync().stdout).trim();
 const group = new TextDecoder().decode(new Deno.Command("id", { args: ["-gn"] }).outputSync().stdout).trim();
 
-/** One part of instance-container-power.yml with a Caddy admin answer and, for a clone, a T3 that serves or not (the fixture's T3). */
-async function part(
-    tag: "asleep" | "freeze",
-    options: { caddy?: string; t3?: boolean; clone?: boolean; marker?: boolean; status?: string; anonAfter?: number; pauseFails?: boolean; stopFails?: boolean; resumeFails?: boolean; unreadable?: boolean;
-        nested?: boolean; inner?: Record<string, string>; record?: string; route?: boolean | null; recordFolderMissing?: boolean; locked?: string },
-): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; marker: boolean; status: string; swap: string; reclaim: string; calls: string[];
-    inner: Record<string, string>; record: string | null }> {
+/** The shipped playbook with its tasks, and the power helper of the test copy (_support/power_helper.ts). */
+function playbook(folder: string): string {
+    const copy = `${folder}/ansible`;
+    Deno.mkdirSync(`${copy}/tasks`, { recursive: true });
+    for (const entry of Deno.readDirSync(shipped)) {
+        if (!["tasks", "files"].includes(entry.name)) Deno.symlinkSync(join(shipped, entry.name), join(copy, entry.name));
+    }
+    for (const entry of Deno.readDirSync(`${shipped}/tasks`)) {
+        if (!["instance-power-helper.yml", "instance-power-call.yml"].includes(entry.name)) Deno.symlinkSync(join(shipped, "tasks", entry.name), join(copy, "tasks", entry.name));
+    }
+    installPowerHelper(folder, copy);
+    return copy;
+}
+
+type Sleep = { ok: boolean; output: string; result: Record<string, unknown>; marker: boolean; status: string; swap: string; reclaim: string; calls: string[];
+    inner: Record<string, string>; intent: Record<string, unknown> | null; helper: string[][]; installed: boolean };
+
+/** The sleep phase with a Caddy admin answer, the Incus fixture and the helper fixture behind a `systemd-run` of the fixture. */
+async function sleep(
+    options: { caddy?: string; clone?: boolean; web?: boolean; status?: string; anonAfter?: number; pauseFails?: boolean; stopFails?: boolean; resumeFails?: boolean;
+        nested?: boolean; inner?: Record<string, string>; route?: boolean | null; busy?: number; crash?: string; settle?: number; earlier?: Record<string, unknown> },
+): Promise<Sleep> {
     const folder = Deno.makeTempDirSync();
     const servers: Deno.HttpServer[] = [];
     try {
-        for (const dir of ["bin", "run", "hibernation", "shm", "containers/instance-7/home/agent"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
+        for (const dir of ["bin", "run", "hibernation", "state", "systemd", "libexec"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
         const project = options.nested ? "orbit-instances-nested" : "orbit-instances";
-        Deno.writeTextFileSync(`${folder}/state.json`,
-            JSON.stringify({ pause_fails: options.pauseFails === true, stop_fails: options.stopFails === true, resume_fails: options.resumeFails === true, containers: { "instance-7": { status: options.status ?? "Running", t3: options.t3 === true } } }));
+        Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({ pause_fails: options.pauseFails === true, stop_fails: options.stopFails === true,
+            resume_fails: options.resumeFails === true, containers: { "instance-7": { status: options.status ?? "Running", t3: false } },
+            helper: { busy: options.busy ?? 0, crash: options.crash, settle: options.settle ?? 0 }, helper_project: project,
+            ...(options.earlier ? { sleep: options.earlier } : {}) }));
         // The container's cgroup: swap closed as Incus writes it, and what is left in RAM after the reclaim.
         const cgroup = `${folder}/cgroup/lxc.payload.${project}_instance-7`;
         Deno.mkdirSync(cgroup, { recursive: true });
-        // The cgroups below the container's own, such as an inner Incus's payload roots, each with its swap limit.
         for (const [path, value] of Object.entries(options.inner ?? {})) {
             Deno.mkdirSync(`${cgroup}/${path.split("/").slice(0, -1).join("/")}`, { recursive: true });
             Deno.writeTextFileSync(`${cgroup}/${path}`, value);
         }
-        // After a Node's reboot /dev/shm holds no record folder until something makes it.
-        const recordFolder = options.recordFolderMissing ? `${folder}/shm/after-reboot/hibernation` : `${folder}/shm`;
-        const record = `${recordFolder}/app-instance-7.swap`;
-        // A cgroup folder find cannot read (as a unit's cgroup that goes during the walk): find fails part way and walks on.
-        if (options.locked) {
-            Deno.mkdirSync(`${cgroup}/${options.locked}`, { recursive: true });
-            Deno.writeTextFileSync(`${cgroup}/${options.locked}/memory.swap.max`, "0");
-            Deno.chmodSync(`${cgroup}/${options.locked}`, 0o000);
-        }
-        if (options.record !== undefined) Deno.writeTextFileSync(record, options.record);
         Deno.writeTextFileSync(`${cgroup}/memory.swap.max`, "0");
         Deno.writeTextFileSync(`${cgroup}/memory.reclaim`, "");
-        if (!options.unreadable) Deno.writeTextFileSync(`${cgroup}/memory.current`, "524242944\n");
+        Deno.writeTextFileSync(`${cgroup}/memory.current`, "524242944\n");
         Deno.writeTextFileSync(`${cgroup}/memory.stat`, `anon ${options.anonAfter ?? 0}\nfile 0\nshmem 0\n`);
-        Deno.writeTextFileSync(
-            `${folder}/bin/incus`,
-            `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`,
-        );
+        Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`);
         Deno.chmodSync(`${folder}/bin/incus`, 0o755);
         const marker = `${folder}/hibernation/app-instance-7.asleep`;
-        if (options.marker) Deno.writeTextFileSync(marker, "");
-        const caddy = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, () => new Response(options.caddy ?? "{}"));
+        const caddy = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, () => new Response(options.caddy ?? loaded));
         servers.push(caddy);
         const clone = options.clone === false ? null : { t3: { internal_port: 3773, ready_seconds: 1, unit: "t3.service" } };
         Deno.writeTextFileSync(
             `${folder}/run/intent.json`,
             JSON.stringify({
                 ssh_execution: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
-                container: { instance_id: 7, project, name: "instance-7", clone, ...(options.nested ? { allowed_devices: {} } : {}) },
+                container: { instance_id: 7, project, name: "instance-7", address: "10.10.0.7", clone, web_config: options.web ? { listen: 8080 } : null, web_port: options.web ? 8080 : null,
+                    ...(options.nested ? { allowed_devices: {} } : {}) },
                 marker,
                 ...(options.route === null ? {} : { route: options.route ?? true }),
                 freeze: { resident_anon_mib: 32 },
             }),
         );
         const done = await new Deno.Command("ansible-playbook", {
-            args: ["-i", "localhost,", "--tags", tag, "-e", "ansible_connection=local", "-e", "ansible_become=false",
+            args: ["-i", "localhost,", "--tags", "prepared_sleep", "-e", "ansible_connection=local", "-e", "ansible_become=false",
                 "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", `caddy_admin=http://127.0.0.1:${caddy.addr.port}`,
-                "-e", `marker_owner=${user}`, "-e", `marker_group=${group}`, "-e", `cgroup_root=${folder}/cgroup`, "-e", `swap_record_directory=${recordFolder}`,
-                `${shipped}/instance-container-power.yml`],
-            env: { HOST_FIXTURE: folder, ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
-                ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
+                "-e", `marker_owner=${user}`, "-e", `marker_group=${group}`, `${playbook(folder)}/instance-container-power.yml`],
+            env: { HOST_FIXTURE: folder, ORBIT_RUN: `${folder}/run`, ORBIT_OPERATION_ID: "41", PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
+                ANSIBLE_HOME: `${folder}/ansible-home`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
+        const lines = (() => { try { return Deno.readTextFileSync(`${folder}/calls`).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]); } catch { return []; } })();
+        const helper = readHelperCalls(folder);
         return {
             ok: done.success,
             output: new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr),
@@ -170,103 +192,58 @@ async function part(
             status: JSON.parse(Deno.readTextFileSync(`${folder}/state.json`)).containers["instance-7"].status,
             swap: Deno.readTextFileSync(`${cgroup}/memory.swap.max`),
             reclaim: Deno.readTextFileSync(`${cgroup}/memory.reclaim`),
-            calls: (() => { try { return Deno.readTextFileSync(`${folder}/calls`).split("\n").filter(Boolean).map((line) => (JSON.parse(line) as string[]).filter((arg) => !["--project", project].includes(arg))[0]); } catch { return []; } })(),
+            calls: lines.map((call) => call.filter((arg) => !["--project", project].includes(arg))[0]),
+            helper,
             inner: Object.fromEntries(Object.keys(options.inner ?? {}).map((path) => [path, (() => { try { return Deno.readTextFileSync(`${cgroup}/${path}`); } catch { return "gone"; } })()])),
-            record: (() => { try { return Deno.readTextFileSync(record); } catch { return null; } })(),
+            intent: (() => { try { return JSON.parse(Deno.readTextFileSync(`${folder}/helper-intent.json`)); } catch { return null; } })(),
+            installed: (() => { try { return Deno.statSync(`${folder}/libexec/orbit-instance-power`).isFile; } catch { return false; } })(),
         };
     } finally {
         for (const server of servers) await server.shutdown();
-        if (options.locked) Deno.chmodSync(`${folder}/cgroup/lxc.payload.${options.nested ? "orbit-instances-nested" : "orbit-instances"}_instance-7/${options.locked}`, 0o755);
         Deno.removeSync(folder, { recursive: true });
     }
 }
 
 const loaded = JSON.stringify({ apps: { http: { servers: { orbit: { routes: [{ match: [{ file: { root: "/data/caddy/orbit/hibernation", try_files: ["/app-instance-7.asleep"] } }] }] } } } } });
+const ready = { version: 1, status: "ready", generation: "6f1c1d1e-0000-4000-8000-000000000001", processes: 18, resident_mapping_bytes: 336117760, metadata_bytes: 1357673,
+    prepare_seconds: 0.291 };
+const helperCalls = (sleep: Sleep) => sleep.helper.map((call) => call[0] === "discard" ? call.join(" ") : call[0]);
 
-Deno.test({ name: "a sleep writes the marker once Caddy's loaded site has the check, and refuses without changing anything when it lacks it", ignore: !available, async fn() {
-    const ready = await part("asleep", { caddy: loaded });
-    assert(ready.ok, ready.output);
-    assertEquals(ready.result, {});
-    assert(ready.marker);
-
-    const unready = await part("asleep", { caddy: JSON.stringify({ apps: { http: {} } }) });
+Deno.test({ name: "a sleep refuses before it changes anything when Caddy's loaded site lacks the asleep check", ignore: !available, async fn() {
+    const unready = await sleep({ caddy: JSON.stringify({ apps: { http: {} } }) });
     assert(!unready.ok, unready.output);
     assertEquals(unready.result, { error_code: "instance.sleep_route_unready" });
-    assert(!unready.marker);
+    assertEquals([unready.marker, unready.calls, unready.status], [false, [], "Running"]);
 } });
 
-Deno.test({ name: "a freeze opens swap for the container, pauses it and pushes its memory to swap; the marker stays", ignore: !available, async fn() {
-    const frozen = await part("freeze", { marker: true });
+Deno.test({ name: "a sleep is one phase: the marker, the helper's install, its prepare through the Instance's unit, and counter reads until RAM holds nothing", ignore: !available, async fn() {
+    const frozen = await sleep({ settle: 2, web: true });
     assert(frozen.ok, frozen.output);
-    assertEquals(frozen.result, { sleep: "frozen", swap_subtree: 0 });
-    // The reclaim asks for the whole memory the container holds.
-    assertEquals([frozen.status, frozen.swap, frozen.reclaim], ["Frozen", "max", "524242944"]);
+    assertEquals(frozen.result, { sleep: "frozen", swap_subtree: 0, prepared_restore: { ...ready, residual_anon_bytes: 0, residual_file_bytes: 0 } });
+    assertEquals([frozen.status, frozen.reclaim], ["Frozen", "524242944"]);
     assert(frozen.marker);
-    // The reclaim follows the pause, so no frozen process pulls a page back.
-    assertEquals(frozen.calls.filter((call) => call !== "query"), ["pause"]);
+    assert(frozen.installed);
+    // The counters settle after two reads: the phase reads again until both are 0, through the same lock.
+    assertEquals(helperCalls(frozen), ["prepare", "residual", "residual", "residual"]);
+    assertEquals(frozen.helper[0], ["prepare", "--instance", "7", "--operation", "41"]);
+    assertEquals(frozen.intent, { schema_version: 1, instance_id: 7, operation_id: 41, incus_project: "orbit-instances", incus_name: "instance-7",
+        web: { address: "10.10.0.7", port: 8080 } });
 } });
 
-Deno.test({ name: "a freeze that opens no inner cgroup leaves no swap record and removes one left from before", ignore: !available, async fn() {
-    // A plain clone's wake takes the Node's fast resume, which never removes a record: so the freeze writes none.
-    const plain = await part("freeze", { marker: true, inner: { "system.slice/polkit.service/memory.swap.max": "33554432", "init.scope/memory.swap.max": "max" } });
-    assert(plain.ok, plain.output);
-    assertEquals([plain.result, plain.status, plain.record], [{ sleep: "frozen", swap_subtree: 0 }, "Frozen", null]);
-
-    const stale = await part("freeze", { marker: true, record: "lxc.payload.nested-gateway/memory.swap.max\n" });
-    assert(stale.ok, stale.output);
-    assertEquals([stale.result, stale.status, stale.record], [{ sleep: "frozen", swap_subtree: 0 }, "Frozen", null]);
+Deno.test({ name: "a sleep of an Instance without a published Route or a web unit checks no Caddy site and sends the helper no web target", ignore: !available, async fn() {
+    const done = await sleep({ caddy: JSON.stringify({ apps: { http: {} } }), route: false });
+    assert(done.ok, done.output);
+    assertEquals(done.result.sleep, "frozen");
+    assertEquals(done.intent?.web, null);
+    assert(done.marker);
 } });
 
-Deno.test({ name: "a freeze whose memory stays in RAM (swap is full) resumes and stops the container instead", ignore: !available, async fn() {
-    const full = await part("freeze", { marker: true, anonAfter: 300 * 1048576 });
-    assert(full.ok, full.output);
-    assertEquals(full.result, { sleep: "stopped", swap_subtree: 0 });
-    assertEquals(full.status, "Stopped");
-    assertEquals(full.calls.filter((call) => call !== "query"), ["pause", "resume", "stop"]);
-    assert(full.marker);
-} });
-
-Deno.test({ name: "a failed stop after a full swap closes swap again and removes the marker of the running container", ignore: !available, async fn() {
-    const failed = await part("freeze", { marker: true, anonAfter: 300 * 1048576, stopFails: true });
-    assert(!failed.ok, failed.output);
-    assertEquals(failed.result, { error_code: "instance.container_freeze_failed" });
-    assertEquals([failed.status, failed.swap], ["Running", "0"]);
-    assert(!failed.marker);
-} });
-
-Deno.test({ name: "a failed resume after a full swap fails the sleep with the container frozen behind its marker", ignore: !available, async fn() {
-    const failed = await part("freeze", { marker: true, anonAfter: 300 * 1048576, resumeFails: true });
-    assert(!failed.ok, failed.output);
-    assertEquals(failed.result, { error_code: "instance.container_freeze_failed" });
-    assertEquals(failed.status, "Frozen");
-    assert(failed.marker);
-} });
-
-Deno.test({ name: "an unreadable memory count after the pause keeps the container frozen behind its marker, without a reclaim", ignore: !available, async fn() {
-    const kept = await part("freeze", { marker: true, anonAfter: 300 * 1048576, unreadable: true });
-    assert(kept.ok, kept.output);
-    assertEquals(kept.result, { sleep: "frozen", swap_subtree: 0 });
-    assertEquals([kept.status, kept.swap, kept.reclaim], ["Frozen", "max", ""]);
-    assert(kept.marker);
-    assertEquals(kept.calls.filter((call) => call !== "query"), ["pause"]);
-} });
-
-Deno.test({ name: "a failed pause closes swap again, removes the marker and fails with its own code; the container keeps running", ignore: !available, async fn() {
-    const failed = await part("freeze", { marker: true, pauseFails: true });
-    assert(!failed.ok, failed.output);
-    assertEquals(failed.result, { error_code: "instance.container_freeze_failed" });
-    assertEquals([failed.status, failed.swap], ["Running", "0"]);
-    assert(!failed.marker);
-} });
-
-Deno.test({ name: "a freeze leaves a Frozen or Stopped container as it is", ignore: !available, async fn() {
-    for (const [status, sleep] of [["Frozen", "frozen"], ["Stopped", "stopped"]]) {
-        const done = await part("freeze", { marker: true, status });
-        assert(done.ok, done.output);
-        assertEquals(done.result, { sleep, swap_subtree: 0 });
-        assertEquals([done.status, done.swap, done.reclaim], [status, "0", ""]);
-        assertEquals(done.calls.filter((call) => call !== "query"), []);
-    }
+Deno.test({ name: "a sleep intent without `route` fails before it checks or writes anything", ignore: !available, async fn() {
+    const done = await sleep({ route: null });
+    assert(!done.ok, done.output);
+    assertEquals(done.result, { error_code: "instance.container_asleep_failed" });
+    assert(done.output.includes("The sleep intent names no `route`"), done.output);
+    assertEquals([done.marker, done.calls], [false, []]);
 } });
 
 /** A nested-fleet copy as measured: the inner Incus writes 0 for its payload roots; polkit has its own 32 MiB; the rest is open. */
@@ -278,114 +255,97 @@ const nestedCgroups = {
     "init.scope/memory.swap.max": "max",
 };
 
-Deno.test({ name: "a freeze opens swap for every cgroup of the subtree that holds 0, records the inner ones, and counts them", ignore: !available, async fn() {
-    const frozen = await part("freeze", { marker: true, nested: true, inner: nestedCgroups });
+Deno.test({ name: "a nested-fleet sleep counts the inner cgroups the helper opened and records no plan", ignore: !available, async fn() {
+    const frozen = await sleep({ nested: true, inner: nestedCgroups });
     assert(frozen.ok, frozen.output);
-    assertEquals(frozen.result, { sleep: "frozen", swap_subtree: 3 });
-    assertEquals([frozen.status, frozen.swap], ["Frozen", "max"]);
-    assertEquals(frozen.inner, { ...nestedCgroups, "lxc.payload.nested-gateway/memory.swap.max": "max", "lxc.payload.nested-app-dev/memory.swap.max": "max",
-        "lxc.payload.nested-app-prod/memory.swap.max": "max" });
-    assertEquals(frozen.record?.split("\n").filter(Boolean).sort(), ["lxc.payload.nested-app-dev/memory.swap.max", "lxc.payload.nested-app-prod/memory.swap.max",
-        "lxc.payload.nested-gateway/memory.swap.max"]);
-    assertEquals(frozen.calls.filter((call) => call !== "query"), ["pause"]);
+    assertEquals(frozen.result, { sleep: "frozen", swap_subtree: 3,
+        prepared_restore: { version: 1, status: "skipped", reason: "placement_unproven", residual_anon_bytes: 0, residual_file_bytes: 0 } });
+    assertEquals(frozen.intent?.incus_project, "orbit-instances-nested");
 } });
 
-Deno.test({ name: "a nested-fleet freeze whose memory stays in RAM never stops: it resumes, closes the whole swap, removes the marker and fails", ignore: !available, async fn() {
-    const kept = await part("freeze", { marker: true, nested: true, inner: nestedCgroups, anonAfter: 1531 * 1048576 });
+Deno.test({ name: "a sleep whose memory stays in RAM drops the plan, resumes through the helper and stops the container; the marker stays", ignore: !available, async fn() {
+    const full = await sleep({ anonAfter: 300 * 1048576 });
+    assert(full.ok, full.output);
+    assertEquals(full.result, { sleep: "stopped", swap_subtree: 0,
+        prepared_restore: { version: 1, status: "skipped", reason: "stopped", residual_anon_bytes: 300 * 1048576, residual_file_bytes: 0 } });
+    assertEquals(full.status, "Stopped");
+    // Twenty reads, then the plan goes before the resume, so no page is read back while swap is full.
+    assertEquals(helperCalls(full), ["prepare", ...Array(20).fill("residual"), "discard --instance 7 --plan-only", "restore"]);
+    assertEquals(full.calls.at(-1), "stop");
+    assert(full.marker);
+} });
+
+Deno.test({ name: "a nested-fleet sleep whose memory stays in RAM never stops: the helper resumes it and closes its swap, the marker goes, and it fails", ignore: !available, async fn() {
+    const kept = await sleep({ nested: true, inner: nestedCgroups, anonAfter: 1531 * 1048576 });
     assert(!kept.ok, kept.output);
     assertEquals(kept.result, { error_code: "instance.container_freeze_failed" });
-    assertEquals([kept.status, kept.swap, kept.record], ["Running", "0", null]);
+    assertEquals([kept.status, kept.swap], ["Running", "0"]);
     assertEquals(kept.inner, nestedCgroups);
     assert(!kept.marker);
-    assertEquals(kept.calls.filter((call) => call !== "query"), ["pause", "resume"]);
+    assert(!kept.calls.includes("stop"));
+    assertEquals(helperCalls(kept).slice(-2), ["discard --instance 7 --plan-only", "restore"]);
 } });
 
-Deno.test({ name: "a failed pause closes the inner cgroups it opened as well, and a full swap's stop leaves no record", ignore: !available, async fn() {
-    const failed = await part("freeze", { marker: true, inner: { "inner.slice/memory.swap.max": "0" }, pauseFails: true });
-    assert(!failed.ok, failed.output);
-    assertEquals([failed.status, failed.swap, failed.record], ["Running", "0", null]);
-    assertEquals(failed.inner, { "inner.slice/memory.swap.max": "0" });
-    assert(!failed.marker);
-
-    const stopped = await part("freeze", { marker: true, inner: { "inner.slice/memory.swap.max": "0" }, anonAfter: 300 * 1048576 });
-    assert(stopped.ok, stopped.output);
-    assertEquals([stopped.result, stopped.status, stopped.record], [{ sleep: "stopped", swap_subtree: 0 }, "Stopped", null]);
-} });
-
-Deno.test({ name: "a resume's swap close writes 0 to the container and to each recorded cgroup that still exists, never climbs out, and removes the record", ignore: !available, async fn() {
-    const folder = Deno.makeTempDirSync();
-    try {
-        const cgroup = `${folder}/cgroup/lxc.payload.orbit-instances_instance-7`;
-        const files: Record<string, string> = {
-            [`${cgroup}/memory.swap.max`]: "max",
-            [`${cgroup}/lxc.payload.nested-gateway/memory.swap.max`]: "max",
-            [`${cgroup}/system.slice/polkit.service/memory.swap.max`]: "33554432",
-            [`${folder}/cgroup/escape/memory.swap.max`]: "max",
-        };
-        for (const [path, value] of Object.entries(files)) {
-            Deno.mkdirSync(path.split("/").slice(0, -1).join("/"), { recursive: true });
-            Deno.writeTextFileSync(path, value);
-        }
-        Deno.mkdirSync(`${folder}/shm`);
-        // A short-lived unit's cgroup went while the container slept; a record line that climbs out is never followed.
-        Deno.writeTextFileSync(`${folder}/shm/app-instance-7.swap`,
-            "lxc.payload.nested-gateway/memory.swap.max\nsystem.slice/systemd-hostnamed.service/memory.swap.max\n../escape/memory.swap.max\n");
-        Deno.writeTextFileSync(`${folder}/play.yml`, JSON.stringify([{ hosts: "localhost", gather_facts: false,
-            vars: { container: { instance_id: 7, project: "orbit-instances", name: "instance-7" } },
-            tasks: [{ name: "Close the swap", "ansible.builtin.include_tasks": { file: `${shipped}/tasks/instance-container-swap.yml` }, vars: { swap: "close" } }] }]));
-        const done = await new Deno.Command("ansible-playbook", {
-            args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
-                "-e", `cgroup_root=${folder}/cgroup`, "-e", `swap_record_directory=${folder}/shm`, `${folder}/play.yml`],
-            env: { ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
-        }).output();
-        assert(done.success, new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr));
-        assertEquals(Object.keys(files).map((path) => Deno.readTextFileSync(path)), ["0", "0", "33554432", "max"]);
-        assert(!(() => { try { return Deno.statSync(`${folder}/shm/app-instance-7.swap`).isFile; } catch { return false; } })());
-    } finally {
-        Deno.removeSync(folder, { recursive: true });
-    }
-} });
-
-Deno.test({ name: "a sleep of an Instance without a published Route has no Caddy site to check and still writes the marker", ignore: !available, async fn() {
-    const done = await part("asleep", { caddy: JSON.stringify({ apps: { http: {} } }), route: false });
-    assert(done.ok, done.output);
-    assertEquals(done.result, {});
-    assert(done.marker);
-} });
-
-Deno.test({ name: "a find that fails part way still records what it opened, and a failed freeze closes every inner cgroup it opened", ignore: !available, async fn() {
-    // As root find reads the locked folder too; the case then still proves the rescue's close of the recorded cgroups.
-    const failed = await part("freeze", { marker: true, inner: { "a.slice/memory.swap.max": "0", "b.slice/memory.swap.max": "0" }, locked: "gone.scope", pauseFails: true });
+Deno.test({ name: "a failed stop after a full swap leaves the resumed container serving without the marker", ignore: !available, async fn() {
+    const failed = await sleep({ anonAfter: 300 * 1048576, stopFails: true });
     assert(!failed.ok, failed.output);
     assertEquals(failed.result, { error_code: "instance.container_freeze_failed" });
-    assertEquals([failed.status, failed.swap, failed.record], ["Running", "0", null]);
-    assertEquals(failed.inner, { "a.slice/memory.swap.max": "0", "b.slice/memory.swap.max": "0" });
+    assertEquals([failed.status, failed.swap], ["Running", "0"]);
     assert(!failed.marker);
-
-    const frozen = await part("freeze", { marker: true, inner: { "a.slice/memory.swap.max": "0" }, locked: "gone.scope" });
-    assert(frozen.ok, frozen.output);
-    assertEquals(frozen.result.sleep, "frozen");
-    assert(frozen.record?.includes("a.slice/memory.swap.max"), String(frozen.record));
 } });
 
-Deno.test({ name: "a freeze makes the record's folder that a Node's reboot emptied", ignore: !available, async fn() {
-    const frozen = await part("freeze", { marker: true, nested: true, inner: nestedCgroups, recordFolderMissing: true });
-    assert(frozen.ok, frozen.output);
-    assertEquals(frozen.result, { sleep: "frozen", swap_subtree: 3 });
-    assertEquals(frozen.record?.split("\n").filter(Boolean).length, 3);
+Deno.test({ name: "a failed resume after a full swap fails the sleep with the container frozen behind its marker", ignore: !available, async fn() {
+    const failed = await sleep({ anonAfter: 300 * 1048576, resumeFails: true });
+    assert(!failed.ok, failed.output);
+    assertEquals(failed.result, { error_code: "instance.container_freeze_failed" });
+    assertEquals(failed.status, "Frozen");
+    assert(failed.marker);
 } });
 
-Deno.test({ name: "a sleep of a container an earlier sleep froze reports what that sleep opened, so its wake closes it", ignore: !available, async fn() {
-    const again = await part("freeze", { marker: true, status: "Frozen", record: "lxc.payload.nested-gateway/memory.swap.max\nlxc.payload.nested-app-dev/memory.swap.max\n" });
+Deno.test({ name: "a failed pause leaves the container running with its swap closed, removes the marker and fails with the helper's code", ignore: !available, async fn() {
+    const failed = await sleep({ pauseFails: true, inner: { "inner.slice/memory.swap.max": "0" } });
+    assert(!failed.ok, failed.output);
+    assertEquals(failed.result, { error_code: "instance.container_freeze_failed" });
+    assertEquals([failed.status, failed.swap, failed.inner], ["Running", "0", { "inner.slice/memory.swap.max": "0" }]);
+    assert(!failed.marker);
+    assertEquals(helperCalls(failed), ["prepare"]);
+} });
+
+Deno.test({ name: "a sleep leaves a Frozen container with its earlier result and a Stopped one as it is, without counter reads", ignore: !available, async fn() {
+    const earlier = { sleep_operation_id: 40, swap_subtree: ["a.slice", "b.slice"], prepared_restore: { ...ready, residual_anon_bytes: 0, residual_file_bytes: 0 } };
+    const again = await sleep({ status: "Frozen", earlier });
     assert(again.ok, again.output);
-    assertEquals(again.result, { sleep: "frozen", swap_subtree: 2 });
-    assertEquals(again.calls.filter((call) => call !== "query"), []);
+    assertEquals(again.result, { sleep: "frozen", swap_subtree: 2, prepared_restore: earlier.prepared_restore });
+    assertEquals(helperCalls(again), ["prepare"]);
+
+    const stopped = await sleep({ status: "Stopped" });
+    assert(stopped.ok, stopped.output);
+    assertEquals(stopped.result, { sleep: "stopped", swap_subtree: 0, prepared_restore: { version: 1, status: "not_applicable" } });
+    assertEquals([stopped.status, helperCalls(stopped)], ["Stopped", ["prepare"]]);
 } });
 
-Deno.test({ name: "a sleep intent without `route` fails before it checks or writes anything", ignore: !available, async fn() {
-    const done = await part("asleep", { caddy: loaded, route: null });
-    assert(!done.ok, done.output);
-    assertEquals(done.result, { error_code: "instance.container_asleep_failed" });
-    assert(done.output.includes("The sleep intent names no `route`"), done.output);
-    assert(!done.marker);
+Deno.test({ name: "a busy lock is tried again; one that stays busy fails `instance.power_helper_busy` and a crash `instance.power_helper_failed`, both behind the marker", ignore: !available, async fn() {
+    const waited = await sleep({ busy: 3 });
+    assert(waited.ok, waited.output);
+    assertEquals(waited.result.sleep, "frozen");
+
+    const busy = await sleep({ busy: 100 });
+    assert(!busy.ok, busy.output);
+    assertEquals(busy.result, { error_code: "instance.power_helper_busy" });
+    assertEquals([busy.marker, busy.status, busy.helper], [true, "Running", []]);
+
+    const crashed = await sleep({ crash: "prepare" });
+    assert(!crashed.ok, crashed.output);
+    assertEquals(crashed.result, { error_code: "instance.power_helper_failed" });
+    assertEquals([crashed.marker, helperCalls(crashed)], [true, ["prepare"]]);
 } });
+
+Deno.test("the role probes the helper's primitives through the helper's own unit properties, which hold no CAP_KILL", () => {
+    const tasks = parse(Deno.readTextFileSync(new URL("../ansible/tasks/instance-power-helper.yml", import.meta.url))) as Record<string, any>[];
+    const probe = tasks.find((task) => task.name === "Probe the kernel primitives of the power helper")!["ansible.builtin.command"].argv as string[];
+    assertEquals(probe.slice(0, 2), ["systemd-run", "--unit=orbit-instance-power-probe"]);
+    assertEquals(probe.slice(-2), ["/usr/local/libexec/orbit-instance-power", "capabilities"]);
+    const dropIn = JSON.stringify(tasks);
+    assert(dropIn.includes("CapabilityBoundingSet=CAP_SYS_PTRACE CAP_SYS_NICE CAP_DAC_OVERRIDE\\n"), "the restore needs no signal");
+    assert(!dropIn.includes("CAP_KILL"));
+});
