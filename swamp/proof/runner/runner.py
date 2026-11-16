@@ -25,8 +25,8 @@ LINE_LIMIT = 1000
 CALL_LIMIT = 3   # the failed CLI calls a verdict keeps, the first ones
 
 
-class ConvergeTimeout(Exception):
-    """The CLI stopped waiting; its Operation may still hold the fleet."""
+class OperationTimeout(Exception):
+    """The CLI of a Node Operation (fleet.NODE_OPERATIONS) stopped waiting; its Operation may still hold the fleet."""
 
 
 class Run:
@@ -40,7 +40,7 @@ class Run:
         self.log, self.calls, self.acted, self.timings = [], 0, time.time(), {}
         self.shimmed, self.background = set(), []
         self.failed_calls = []   # steps.failed_call of each CLI call whose expectation failed
-        self.converge_wait = 0.0
+        self.operation_wait = 0.0   # the seconds a Node Operation's CLI waited on its copy budget; the case timeout does not count them
         self.evidence.mkdir(parents=True, exist_ok=True)
 
     def cli(self, args, form='json', node=None):
@@ -49,12 +49,12 @@ class Run:
         try:
             result = self.fleet.cli(args, timeout=timeout, form=form, **({'node': node} if node else {}))
         except subprocess.TimeoutExpired as error:
-            if args and args[0] == 'node:converge':
-                raise ConvergeTimeout(f'node:converge CLI timed out after {error.timeout} seconds; Operation may still be running; batch stopped') from error
+            if fleet_module.node_operation(args):
+                raise OperationTimeout(f'{args[0]} CLI timed out after {error.timeout} seconds; Operation may still be running; batch stopped') from error
             raise
         finally:
-            if timeout == fleet_module.COPY_CONVERGE_SECONDS and args and args[0] == 'node:converge':
-                self.converge_wait += time.monotonic() - started
+            if timeout == fleet_module.COPY_OPERATION_SECONDS and fleet_module.node_operation(args):
+                self.operation_wait += time.monotonic() - started
         return self.keep(result, 'json' if form == 'json' else 'txt')
 
     def cli_tty(self, args, script):
@@ -122,7 +122,7 @@ def run_steps(run, items, section, failures, deadline):
 
 def _run_steps(run, items, section, failures, deadline):
     for index, step in enumerate(items):
-        if time.time() > deadline + run.converge_wait:
+        if time.time() > deadline + run.operation_wait:
             raise steps.Infra('the case timeout passed')
         started = time.time()
         resolved = run.resolve(step.args)
@@ -168,7 +168,7 @@ def execute(case, fleet, spec, evidence, negative=False):
                 verdict, cause, failures = 'failed', 'assertion', [f'negative: did not fail: {kept}' if kept else 'negative: must_fail names no expectation']
         elif failures:
             verdict, cause = 'failed', 'assertion'
-    except ConvergeTimeout as error:
+    except OperationTimeout as error:
         verdict, cause, failures = 'failed', 'infrastructure', failures + [str(error)]
         stop_batch = True
     except steps.Unrun as error:
@@ -309,7 +309,7 @@ def schedule(cases, limit, work):
             if stopped_by:
                 for case in waiting:
                     yield case, {'id': case.id, 'verdict': 'unrun', 'cause': 'infrastructure', 'secs': 0,
-                                 'blocked_by': stopped_by, 'failed': [f'batch stopped after {stopped_by}: converge CLI timed out; Operation may still be running']}
+                                 'blocked_by': stopped_by, 'failed': [f'batch stopped after {stopped_by}: a Node Operation CLI timed out; Operation may still be running']}
                 waiting.clear()
                 if not running:
                     break
