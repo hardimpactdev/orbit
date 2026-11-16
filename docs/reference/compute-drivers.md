@@ -489,7 +489,7 @@ The template builder verifies the guest account before it becomes a template. Cl
 
 ### From claim to workspace
 
-A task start (`tasks.provision`, [command](/cli/task/start)) takes the lowest free place of a host and mints the identity of its VM. It copies the host's [base snapshot](#claims-copy-the-base-snapshot), writes the identity and the claim, and adds the hub peer. Then it converges the VM to the commit and starts the task branch. There is no provision, enrollment or bootstrap kind; the Node, its `app-dev` role and its `pi-server` Process are recorded at admission.
+No task start claims a place any more: a [task start](/cli/task/start) makes a task copy. The workflows that took a place, copied the [base snapshot](#claims-copy-the-base-snapshot), added the hub peer and converged the VM (`operation-task-provision`, `task-vm-start`, `task-vm-hub-peer`), and the ones that released it (`operation-task-vm-slot-release`, `task-vm-slot-phase`, `task-vm-hub-peer-remove`), are deleted ([old paths](/reference/old-paths#the-pi-task-loop)). The steps below describe the old claim.
 
 1. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 2. The claim starts the baseline check. Then the same claim projects the Route.
@@ -639,7 +639,7 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Converge a running task VM
 
-The common converge brings a task VM to the pins of the release. A [base snapshot refresh](#refresh-the-base-snapshot) runs it on the base VM, and every task start runs it on the new VM, in one Ansible run with the host part (`swamp/ansible/task-vm-start.yml`). It has no kind or command of its own. Swamp runs the phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH, so a base and a started VM end in the same state. These are the `software`, `tools` and `check` phases.
+The common converge brings a task VM to the pins of the release. A [base snapshot refresh](#refresh-the-base-snapshot) runs it on the base VM, and a task start ran it on the new VM until the task VM start was deleted. It has no kind or command of its own. Swamp runs the phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH, so a base and a started VM end in the same state. These are the `software`, `tools` and `check` phases.
 
 The Gateway puts these in the intent:
 
