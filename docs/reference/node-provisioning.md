@@ -256,6 +256,25 @@ Run it once for each CI Node.
 
 Verify each Node with `orbit doctor --node=<numeric-node-id>`. For a failed role add, repair the reported cause and retry with `orbit node:role:add <node> ci-runner --converge`. Existing runners and registrations stay in place.
 
+### Runner state for the runner view
+
+The role installs the Node's part of the [CI runner view](/reference/ci-runner-view): the script `/usr/local/libexec/orbit-ci-runner-state`, the service `orbit-ci-runner-state.service` and the timer `orbit-ci-runner-state.timer`, which starts the service every 15 seconds. Role convergence first creates `/usr/local/libexec` as root with mode `0755`, because a Node that hosts no Instance does not have that folder. It then writes and repairs all three and enables the timer. Role removal stops the timer and removes the three files and the script's output, so Prometheus drops the series.
+
+The script only reads. For each container in the Incus project `orbit-ci`, it reads the state from Incus. Inside a running container it reads, under `/home/runner/actions-runner`, the runner version from the `bin` link and the state of the runner service that `.service` names. The runner is busy while a `Runner.Worker` process runs. A container that does not run reports the service as `unknown`. The script starts, stops and registers nothing.
+
+It writes the result in the node exporter's text format to `/var/lib/prometheus/node-exporter/orbit_ci_runners.prom`. The service's `StateDirectory=prometheus/node-exporter` makes that folder, owned by root, when no exporter package made it. It writes a temporary file in the same folder first and renames it, so the exporter never reads half a file.
+
+| Series | Labels | Value |
+| --- | --- | --- |
+| `orbit_ci_runner_info` | `runner`, `state`, `service`, `version` (empty when unreadable) | `1` |
+| `orbit_ci_runner_busy` | `runner` | `1` when busy, else `0` |
+| `orbit_ci_runners_observed_timestamp_seconds` | none | The Unix time of the read |
+| `orbit_ci_runners_read_ok` | none | `0` when Incus did not answer, else `1` |
+
+The service runs as root, because the Incus socket belongs to root; membership of `incus-admin` would give the same power. It has no new privileges and a read-only file system, except the output folder and a runtime folder for the Incus client's configuration. Each run has a 10-second limit. Each Incus call has its own shorter limit, and the script starts no call after 8 seconds.
+
+The [Metrics role](/reference/metrics#exporter-selection)'s node exporter reads the folder with its textfile collector. Without a selected exporter on the Node, or without a Metrics role, the script still runs, and the view reports `ci_runner.state_unavailable` for the Node.
+
 ## macOS Nodes
 
 A macOS Node supports selected Homebrew formulae, casks, and Vite+ global packages. It needs no role. It uses an existing account, a working WireGuard connection, and SSH access authorized for the Gateway. Enrollment pins the approved SSH host identity and verifies the actual platform, architecture, account, and tunnel address before it succeeds. The Gateway resolves the host name. An SSH alias on the caller's machine is not a fleet address.

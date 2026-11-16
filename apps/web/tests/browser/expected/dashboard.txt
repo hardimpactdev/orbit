@@ -5,6 +5,7 @@
 │  Databases │ 2
 │  Tasks │ 2
 │  Activity │
+│  Runners │
 ╰─
 
 ╭─ Tracked nodes
@@ -57,4 +58,4 @@
 │  Firewall │ 22/tcp allow 10.44.0.0/16 │ app-prod │ failed !
 ╰─
 
-↑↓ sections · → into the page · 1-6 jump    live updates paused demo fleet
+↑↓ sections · → into the page · 1-7 jump    live updates paused demo fleet

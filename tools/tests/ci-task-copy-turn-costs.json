@@ -30,9 +30,11 @@
   },
   "censored_seconds": {
     "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing": 26.394,
-    "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched": 66.547
+    "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched": 66.547,
+    "a turn in a Conn Server copy runs the Conn Server's program for every call, and a program outside the agent folder is refused": 7.4
   },
   "estimates": {
-    "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched": 120
+    "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched": 120,
+    "a turn in a Conn Server copy runs the Conn Server's program for every call, and a program outside the agent folder is refused": 17
   }
 }

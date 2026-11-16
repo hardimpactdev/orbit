@@ -1,5 +1,6 @@
-"""A task copy's publish states its base and refuses only a real conflict: the workflow's own "Read the base" script on real Git
-repositories, its typed reader "Check the base" and the pull request plan, with the pinned CEL engine for the wiring."""
+"""A task copy's publish states its base and refuses only a workflow tree that differs from the default head or a real conflict: the
+workflow's own "Read the base" script on real Git repositories, its typed reader "Check the base" and the pull request plan, with the
+pinned CEL engine for the wiring."""
 import importlib.util
 import json
 import os
@@ -25,6 +26,7 @@ CEL = base.CEL.replace('const raw = field === "guard" ? step.guard :',
 assert CEL != base.CEL
 PUBLISH = ROOT / 'workflows/workflow-operation-task-publish.yaml'
 READ, CHECK, PUSH, PLAN = 'Read the base', 'Check the base', 'Push the branch', 'Plan the PR'
+WORKFLOW = '.github/workflows/x.yml'
 GIT_ENV = {'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_AUTHOR_NAME': 'base', 'GIT_AUTHOR_EMAIL': 'base@example.test',
            'GIT_COMMITTER_NAME': 'base', 'GIT_COMMITTER_EMAIL': 'base@example.test'}
 
@@ -47,7 +49,7 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         self.git('init', '--quiet', '--bare', '--initial-branch=main', str(self.origin), cwd=self.root)
         self.main = self.root / 'main'
         self.git('clone', '--quiet', str(self.origin), str(self.main), cwd=self.root)
-        self.commit(self.main, 'seed', {'a.txt': 'one\ntwo\nthree\nfour\nfive\n', 'b.txt': 'b\n'})
+        self.commit(self.main, 'seed', {'a.txt': 'one\ntwo\nthree\nfour\nfive\n', 'b.txt': 'b\n', WORKFLOW: 'on: push\n'})
         self.git('push', '--quiet', 'origin', 'HEAD:main', cwd=self.main)
         self.work = self.root / 'work'
         self.git('clone', '--quiet', str(self.origin), str(self.work), cwd=self.root)
@@ -60,6 +62,7 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
 
     def commit(self, work, message, files):
         for name, content in files.items():
+            (work / name).parent.mkdir(parents=True, exist_ok=True)
             (work / name).write_text(content)
         self.git('add', '--all', cwd=work)
         self.git('commit', '--quiet', '-m', message, cwd=work)
@@ -177,6 +180,87 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         # The refused check fails its step, so the push guard skips the push; origin holds no task branch.
         self.assertTrue(self.cel(PUSH, 'guard', self.copy, {CHECK: {'status': 'failed'}}))
         self.assertEqual(self.git('for-each-ref', '--format=%(refname)', cwd=self.origin), 'refs/heads/main')
+
+    def refused(self, error):
+        """The base check refused before the push, and origin holds no task branch."""
+        self.assertTrue(self.cel(PUSH, 'guard', self.copy, {CHECK: {'status': 'failed'}}))
+        self.assertEqual(self.git('for-each-ref', '--format=%(refname)', cwd=self.origin), 'refs/heads/main')
+        return error
+
+    def no_workflow_change(self):
+        """The base read lists no workflow path, and the check states the base against the real default head."""
+        self.assertEqual(self.read_base(), 0)
+        facts, error = self.check_base(0)
+        self.assertIsNotNone(facts, error)
+        self.assertEqual(facts['default_commit'], self.git('rev-parse', 'refs/heads/main', cwd=self.origin))
+        self.assertEqual((self.scratch / 'base/workflows').read_bytes(), b'')
+        return facts
+
+    def test_a_branch_behind_a_default_commit_that_changed_a_workflow_is_refused_with_that_path(self):
+        """Operation 24460: no commit of the branch changes a workflow, but main changed one since the branch's base. GitHub compares
+        the trees, not the commits, so the push would be refused: the base read refuses it first."""
+        self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        self.assertEqual(self.read_base(), 0)
+        facts, error = self.check_base(0)
+        self.assertIsNone(facts)
+        self.assertIn('tasks.publish_workflow_change: ".github/workflows/x.yml"\n', self.refused(error))
+
+    def test_the_same_branch_after_it_merged_the_default_head_publishes(self):
+        self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        self.git('merge', '--quiet', '--no-edit', 'origin/main', cwd=self.fetched())
+        facts = self.no_workflow_change()
+        self.assertEqual((facts['behind_by'], facts['overlapping_paths']), (0, []))
+
+    def test_a_default_commit_that_changed_a_workflow_carried_in_by_hand_is_no_change_of_the_copy(self):
+        """Operation 24405: main changed a workflow after the last release, and the copy got that main by hand, not through its
+        remote refs. The default head holds the commit, so the copy publishes."""
+        self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        released = self.git('rev-parse', 'origin/main', cwd=self.work)
+        self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        # Carried in by hand: the copy's origin/main stays the released main.
+        self.git('fetch', '--quiet', str(self.main), '+HEAD:refs/heads/hand', cwd=self.work)
+        self.git('merge', '--quiet', '--no-edit', 'hand', cwd=self.work)
+        self.assertEqual(self.git('rev-parse', 'refs/remotes/origin/main', cwd=self.work), released)
+        facts = self.no_workflow_change()
+        self.assertEqual((facts['behind_by'], facts['overlapping_paths']), (0, []))
+
+    def test_a_workflow_change_of_the_copy_that_a_later_commit_undoes_is_no_change(self):
+        self.commit(self.work, 'agent work', {WORKFLOW: 'on: [push]\n'})
+        self.commit(self.work, 'undo', {WORKFLOW: 'on: push\n'})
+        self.no_workflow_change()
+
+    def test_a_copy_commit_of_its_own_that_changes_a_workflow_is_refused_with_its_path(self):
+        self.commit(self.work, 'agent work', {WORKFLOW: 'on: [push]\n', '.github/workflow-notes.md': 'x\n',
+                                              '.github/workflows/y.yml': 'on: push\n'})
+        self.commit(self.work, 'more agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})
+        self.advance_main({'b.txt': 'b1\n'})
+        self.assertEqual(self.read_base(), 0)
+        facts, error = self.check_base(0)
+        self.assertIsNone(facts)
+        self.assertIn('tasks.publish_workflow_change: ".github/workflows/x.yml", ".github/workflows/y.yml"\n', self.refused(error))
+
+    def test_a_merge_that_keeps_its_own_workflow_version_is_refused(self):
+        self.commit(self.work, 'agent work', {'b.txt': 'task\n'})
+        self.advance_main({WORKFLOW: 'on: [push, pull_request]\n'})
+        self.git('fetch', '--quiet', 'origin', cwd=self.work)
+        self.git('merge', '--quiet', '--no-commit', 'origin/main', cwd=self.work)
+        self.commit(self.work, 'merge main', {WORKFLOW: 'on: [workflow_dispatch]\n'})
+        self.assertEqual(self.git('rev-list', '--count', '--merges', 'HEAD~1..HEAD', cwd=self.work), '1')
+        self.assertEqual(self.read_base(), 0)
+        facts, error = self.check_base(0)
+        self.assertIsNone(facts)
+        self.assertIn('tasks.publish_workflow_change: ".github/workflows/x.yml"\n', self.refused(error))
+
+    def test_a_workflow_change_refuses_before_a_conflict(self):
+        self.commit(self.work, 'agent work', {'a.txt': 'one\ntask\nthree\nfour\nfive\n', WORKFLOW: 'on: [push]\n'})
+        self.advance_main({'a.txt': 'one\nmain\nthree\nfour\nfive\n'})
+        self.assertEqual(self.read_base(), 3)
+        facts, error = self.check_base(3)
+        self.assertIsNone(facts)
+        self.assertIn('tasks.publish_workflow_change: ".github/workflows/x.yml"\n', self.refused(error))
+        self.assertNotIn('tasks.publish_conflict', error)
 
     def test_a_read_that_fails_never_states_a_base_or_lets_the_push_run(self):
         self.copy['base'] = 'missing'

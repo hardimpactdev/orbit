@@ -248,6 +248,17 @@ The [fleet reboot](/reference/gateway-recovery#ci-jobs-lost-at-the-freeze) re-ru
 
 An App merge is a push by the App to the default branch, so GitHub starts the `push` workflows for the merge commit. A merge with the workflow `GITHUB_TOKEN` would start none. The Gateway's [automatic release](/reference/gateway-recovery#automatic-releases) needs that `Required checks` run on the merge commit.
 
+## How the runner view reads CI jobs
+
+The [CI runner view](/reference/ci-runner-view) reads the self-hosted jobs of the last 48 hours. For each repository it reads, the Gateway asks for one token with only `actions: read`, from the App's existing `Actions: read`.
+
+| Call | Endpoint | Token |
+| --- | --- | --- |
+| List the runs of the window | `GET /repos/{owner}/{repo}/actions/runs?created=>={time}`, pages of 100 | `actions: read` |
+| List the jobs of a run | `GET /repos/{owner}/{repo}/actions/runs/{id}/jobs?filter=latest`, pages of 100 | `actions: read` |
+
+Each job names the runner that took it. The view reads no runner list, for the organization or a repository, so the App needs no new permission.
+
 ## Find the newest green commit
 
 The Gateway can find the newest commit of a branch that may ship. This is the first step of an automatic release. The [automatic release runner](/reference/gateway-recovery#automatic-releases) asks every five minutes while automatic releases are enabled. While it is up to date, it also reads the branch head at most every 5 minutes, with the installation, one `contents: read` token, and one commits page. The question names a repository, a branch, and a required check. For the Gateway itself these are `hardimpactdev/orbit`, `main`, and `Required checks`. The release history adds two inputs: the commit that is deployed now, and the commits that already failed a release.
