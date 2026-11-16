@@ -211,6 +211,16 @@
   ansible.builtin.file:
     path: "{{ marker }}"
     state: absent
+  register: wake_marker_removed
+
+# The website is ready once this run removed the marker: the Node's UTC time, in milliseconds (docs/reference/prepared-restore.md#results).
+# A marker that the Node's fast wake removed keeps that wake's time.
+- name: Note when the website became ready
+  when: power == 'awake' and wake_marker_removed is changed
+  ansible.builtin.set_fact:
+    wake_result: >-
+      {{ wake_result | default({}) | combine({'ready_at': now(utc=true).isoformat(timespec='milliseconds')[:23] ~ 'Z',
+                                             'ready_at_resolution_seconds': 0.001}) }}
 
 # A converge cannot exec in a frozen container, so one that slept through it may wake with a library cache that lacks the shared
 # runtime libraries. After the marker went, so the visitor does not wait: one exec, `ldconfig -X` only when the cache lacks a soname of

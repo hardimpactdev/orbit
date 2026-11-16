@@ -7,6 +7,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContribution;
 use App\Domain\Instances\InstanceLifecycleContributions;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceThreadContribution;
 use App\Domain\Instances\InstanceThreadContributions;
@@ -29,11 +30,13 @@ use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Defer\DeferredCallbackCollection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -377,21 +380,23 @@ it('gives a production or checkout site no asleep check', function (): void {
 });
 
 /**
- * The Instance's Node for the fast wake: the frozen agent's `hibernation.marker` writes the wake request and `hibernation.times`
- * reads the request folder, while the app-dev role's script (when the Node has it) takes the request at the first read.
+ * The Instance's Node for the fast wake: the frozen agent's `hibernation.marker` writes the Operation's wake request and
+ * `hibernation.times` reads the files, while the app-dev role's dispatcher and worker (when the Node has them) act on the request at
+ * the read number `after`: the worker calls the helper's restore and checks readiness, then removes the marker and writes one ready
+ * file and done, or it writes failed. A `silent` worker never acts.
  *
- * @param  array{script?: bool, status?: string, marker?: bool, web?: bool, fails?: ?string}  $node
+ * @param  array{worker?: bool, status?: string, marker?: bool, web?: bool, restore?: string, after?: int, silent?: bool, fails?: ?string}  $node
  */
 function wakeNode(Instance $clone, array $node = []): object
 {
-    $state = (object) [...['script' => true, 'status' => 'Frozen', 'marker' => true, 'web' => true, 'fails' => null, 'onRead' => null], ...$node,
-        'files' => [], 'calls' => []];
+    $state = (object) [...['worker' => true, 'status' => 'Frozen', 'marker' => true, 'web' => true, 'restore' => 'complete', 'after' => 1,
+        'silent' => false, 'fails' => null, 'onRead' => null, 'readyAt' => null], ...$node, 'files' => [], 'calls' => [], 'reads' => 0, 'restores' => 0];
     $marker = InstanceWake::markerPath($clone);
     if ($state->marker) {
         $state->files[$marker] = time();
     }
-    if ($state->script) {
-        $state->files[ContainerResume::ScriptPath] = time();
+    if ($state->worker) {
+        $state->files[ContainerResume::WorkerPath] = time();
     }
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldReceive('run')->andReturnUsing(function (Node $node, string $command, array $input = []) use ($state, $clone, $marker): array {
@@ -400,14 +405,13 @@ function wakeNode(Instance $clone, array $node = []): object
         if ($state->fails === $command) {
             throw new AgentRunnerFailure($command, AgentRunnerFailure::Timeout, 'The agent call timed out.');
         }
-        $request = ContainerResume::requestPath($clone->id);
         if ($command === 'hibernation.marker') {
-            expect($input['path'])->toBe($request);
             if ($input['operation'] === 'mark') {
-                expect($input['marker_directory'])->toBe('/dev/shm/orbit/hibernation')->and($input['log_directory'])->toBe('/data/caddy/orbit/hibernation');
-                $state->files[$request] = time();
+                expect($input['path'])->toMatch('#^/dev/shm/orbit/hibernation/app-instance-'.$clone->id.'-op-[1-9][0-9]*\.wake$#')
+                    ->and($input['marker_directory'])->toBe('/dev/shm/orbit/hibernation')->and($input['log_directory'])->toBe('/data/caddy/orbit/hibernation');
+                $state->files[$input['path']] = time();
             } else {
-                unset($state->files[$request]);
+                unset($state->files[$input['path']]);
             }
 
             return [];
@@ -416,15 +420,27 @@ function wakeNode(Instance $clone, array $node = []): object
         if ($state->onRead !== null) {
             ($state->onRead)();
         }
-        if ($state->script && isset($state->files[$request])) {
-            unset($state->files[$request]);
+        $state->reads++;
+        foreach (array_keys($state->files) as $path) {
+            if (! $state->worker || $state->silent || $state->reads < $state->after
+                || preg_match('#^/dev/shm/orbit/hibernation/app-instance-'.$clone->id.'-op-([0-9]+)\.wake$#', (string) $path, $match) !== 1) {
+                continue;
+            }
+            unset($state->files[$path]);
+            $operationId = (int) $match[1];
+            $state->files[ContainerResume::requestPath($clone->id, $operationId, 'taken')] = time();
             if ($state->status === 'Frozen' && isset($state->files[$marker])) {
+                $state->restores++;
                 $state->status = 'Running';
                 if ($state->web) {
                     unset($state->files[$marker]);
-                    $state->files[ContainerResume::requestPath($clone->id, 'resumed')] = time();
+                    $state->files[ContainerResume::outcomePath($clone->id, $operationId, 'ready-'.$state->restore)] = $state->readyAt ?? time();
+                    $state->files[ContainerResume::outcomePath($clone->id, $operationId, 'done')] = time();
+
+                    continue;
                 }
             }
+            $state->files[ContainerResume::outcomePath($clone->id, $operationId, 'failed')] = time();
         }
 
         return ['times' => collect($input['paths'])->mapWithKeys(fn (string $path): array => [$path => $state->files[$path] ?? null])->all()];
@@ -432,6 +448,12 @@ function wakeNode(Instance $clone, array $node = []): object
     app()->instance(AgentCommandRunner::class, $agents);
 
     return $state;
+}
+
+/** @return list<string> The Gateway's removal of a fast wake's files after the projection: one read, then each file found. */
+function cleanUpCalls(int $files): array
+{
+    return ['hibernation.times', ...array_fill(0, $files, 'hibernation.marker:remove')];
 }
 
 /** A clone whose last sleep froze it (`sleep: frozen`), as the freeze sleep records it. */
@@ -445,11 +467,25 @@ function frozenClone(string $sleep = 'frozen'): Instance
     return $clone->refresh();
 }
 
-it('takes the run, not the Node\'s resume, when the last sleep opened swap for inner cgroups', function (): void {
+it('tries the Node\'s fast wake whatever swap the sleep opened, since the helper\'s restore closes every limit', function (): void {
     Sleep::fake(syncWithCarbon: true);
     $clone = sleepingClone();
     powerRun(app(InstanceSleep::class)->start($clone, null, null), 'succeeded', ['sleep' => 'frozen', 'swap_subtree' => 3]);
     Queue::fake();
+    $state = wakeNode($clone->refresh());
+
+    $wake = app(InstanceWake::class)->start($clone, null, null);
+
+    expect($wake->status->value)->toBe('succeeded')->and($state->restores)->toBe(1);
+});
+
+it('never takes the fast wake for a nested-fleet Instance: its run wakes it, with no Node call', function (): void {
+    $clone = frozenClone();
+    // A runtime keeps its container: the nested-fleet placement is a new record of the same Instance.
+    $runtime = $clone->runtime()->firstOrFail();
+    $runtime->delete();
+    InstanceRuntime::query()->forceCreate([...Arr::except($runtime->getAttributes(), ['id']), 'incus_project' => InstancePlacement::NestedProject,
+        'idmap_size' => 101000000]);
     $state = wakeNode($clone->refresh());
 
     $wake = app(InstanceWake::class)->start($clone, null, null);
@@ -476,12 +512,13 @@ it('answers a visit to a frozen container with the waiting page before any Node 
     $wake->refresh();
     expect($wake->status->value)->toBe('succeeded')
         ->and($wake->result)->toMatchArray(['power_state' => 'running', 'wake' => 'resumed', 'marker_found' => true])
-        ->and($wake->result)->toHaveKeys(['trigger_seconds', 'confirm_seconds'])
+        ->and($wake->result)->toHaveKeys(['trigger_seconds', 'confirm_seconds', 'ready_at'])
         ->and($wake->lock_key)->toBeNull()
         ->and($wake->triggered_by)->toBe('node:'.$clone->node_id)
         ->and($wake->state[InstanceWake::ResumeState])->toBe('resumed')
         ->and($clone->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running)
-        ->and($node->calls)->toBe(['hibernation.marker:mark', 'hibernation.times']);
+        ->and($node->calls)->toBe(['hibernation.marker:mark', 'hibernation.times', ...cleanUpCalls(3)])
+        ->and(array_keys($node->files))->toBe([ContainerResume::WorkerPath]);
     // Only the safety net is queued, well after the bound: it starts nothing for an ended Operation.
     Queue::assertPushed(StartAdmittedSwampRun::class, 1);
     Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $wake->id
@@ -496,7 +533,7 @@ it('gives the visit the waiting page, then ends the wake through the Node once t
         ->assertHeader('Cache-Control', 'no-store, private')->assertSee(json_encode('/dashboard?tab=1', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT), false);
 
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->status->value)->toBe('succeeded')
-        ->and($node->calls)->toBe(['hibernation.marker:mark', 'hibernation.times']);
+        ->and($node->calls)->toBe(['hibernation.marker:mark', 'hibernation.times', ...cleanUpCalls(3)]);
 });
 
 it('makes no Node call after the answer for a wake that was cancelled in the meantime', function (): void {
@@ -532,15 +569,15 @@ it('runs the wake workflow in the same Operation for every other state, removes 
     expect($wake->status->value)->toBe('queued')
         ->and($wake->state[InstanceWake::ResumeState] ?? null)->toBe($calls === [] ? null : 'workflow')
         ->and($state->calls)->toBe($calls)
-        ->and($state->files)->not->toHaveKey(ContainerResume::requestPath($clone->id));
+        ->and($state->files)->not->toHaveKey(ContainerResume::requestPath($clone->id, $wake->id));
     Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
 })->with([
     'stopped and marker: the sleep fell back to a stop' => [[], 'stopped', []],
     'stopped and marker, found by the Node' => [['status' => 'Stopped'], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
     'running and marker after a reboot' => [['status' => 'Running'], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
     'frozen without its marker' => [['marker' => false], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
-    'FrankenPHP silent after the resume' => [['web' => false], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
-    'a Node without the script' => [['script' => false], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
+    'a web unit silent after the resume' => [['web' => false], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
+    'a Node without the worker' => [['worker' => false], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
     'the request call fails' => [['fails' => 'hibernation.marker'], 'frozen', ['hibernation.marker:mark', 'hibernation.marker:remove']],
     'the read call fails' => [['fails' => 'hibernation.times'], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
 ]);
@@ -632,9 +669,9 @@ it('still ends the wake when an extension fails after the Node resume', function
     Queue::assertNotPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
 });
 
-it('leaves a Node without the script out of the fast path for ten minutes, then tries it again', function (): void {
+it('leaves a Node without the worker out of the fast path for ten minutes, then tries it again', function (): void {
     $clone = frozenClone();
-    $state = wakeNode($clone, ['script' => false]);
+    $state = wakeNode($clone, ['worker' => false]);
 
     activationPoll($clone)->assertStatus(401);
     expect(Cache::has(ContainerResume::missingScriptKey($clone->node_id)))->toBeTrue();
