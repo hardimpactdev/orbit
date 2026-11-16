@@ -1870,9 +1870,10 @@ The phase uses these commands, as `agent` in `/srv/workspace`.
 | Put a reviewer on the candidate | `git status --porcelain`, `git symbolic-ref --short HEAD`, `git rev-parse HEAD`, `git checkout --detach CANDIDATE` | Before a reviewer turn: a clean checkout on a branch, its tip, the detach mark at it, then the candidate, detached. Each bounded at 20 seconds |
 | Restore the checkout after a reviewer | `git reset --hard`, `git clean -fd`, `git checkout BRANCH`, then the status, branch and tip reads again | After a reviewer turn, also a cut one: the reviewer's changes go and the task branch is back at its earlier tip. A verified restore clears the detach mark |
 | Read the question of a run that asks | `node - T3 read T3THREAD`, with `t3_copy_rpc.mjs` on stdin | When the start exits 2. Prints the open runs, the pending requests with their questions, and whether Orbit may stop on them. Bounded at 60 seconds |
-| Stop the run that asks | `node - T3 interrupt T3THREAD RUN REQUESTS`, with `t3_copy_rpc.mjs` on stdin | After the question's evidence is written, only while the run waits for exactly the stored requests. Waits for its end within a 50-second deadline, inside a 60-second bound |
+| Stop the run that asks | `node - T3 interrupt T3THREAD RUN REQUESTS`, with `t3_copy_rpc.mjs` on stdin | After the question's evidence is written, only while the run waits for exactly the stored requests. Waits for its end within a 42-second deadline, inside a 60-second bound |
+| Stop a thread's active run | `node - T3 stop T3THREAD`, with `t3_copy_rpc.mjs` on stdin | After a wait cut by the bound, and before the launch for an earlier turn that T3 shows active. Same interrupt and wait; bounded at 60 seconds |
 
-The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input` once [the question ends the turn](#a-question-ends-the-turn), and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
+The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input` once [the question ends the turn](#a-question-ends-the-turn), and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`; the phase stops its run, and the turn is over once that stop ended it. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
 
 A continued turn whose title T3 lists not exactly once launches nothing and is `failed` with `tasks.copy_thread_missing`; a list that fails or is not JSON is `failed` with `tasks.copy_turn_failed`.
 
@@ -1893,7 +1894,7 @@ So the phase ends a turn at its question. When `--wait` exits 2, `t3_copy_rpc.mj
 
 The stop has two guards. The read must find questions alone: no approval, no request without a question, and no more text than the result can hold. And the run must still wait for exactly the stored requests. A run that someone answered meanwhile, or that now asks something else, goes on, so no new question is lost.
 
-The helper runs on the runtime's Node.js, `/opt/orbit-runtime/current/bin/node`, from stdin. It takes a session of one minute, read-only for the read, holds it only in its memory and revokes it before it exits. No session reaches an argument, a file, a log or the run folder. T3 stays stock.
+The helper runs on the runtime's Node.js, `/opt/orbit-runtime/current/bin/node`, from stdin. It takes a session of one minute, read-only for the read, holds it only in its memory and revokes it before it exits. Its `stop` finds the thread's active run, sends the same `run.interrupt` as `interrupt` and waits for the run's end the same way. It answers `{stopped, run, state}`. A thread with no active run answers `stopped: false` and no run. No session reaches an argument, a file, a log or the run folder. T3 stays stock.
 
 The turn is then `asking_for_input` and over, and its Operation succeeds. Its result and its thread keep the questions. The role's next turn quotes them before the caller's prompt and continues the thread with `t3 thread send`, as a normal follow-up. A question the helper could not read is `tasks.copy_question_unread`, and a run it could not stop is `tasks.copy_question_unstopped`. Neither is over, so the group holds.
 
@@ -1913,28 +1914,29 @@ Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes 
 
 These hold until a T3 server gives Swamp a full-access MCP session:
 
-- **No stop of a cut turn.** Orbit stops only a run that asks, through T3's own RPC. A turn cut by its bound may go on in the container.
 - **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
 - **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
 - **No consult and no caller's model.** Both were options of the removed Pi turn; a request with either answers `validation.failed` on that field.
 
 ### Hold after a turn that may still run
 
-A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that asks is over once Orbit stopped it. A reviewer turn whose checkout is not restored is not over. Nor is a turn cancelled before its run step reports.
+A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that asks is over once Orbit stopped it. A run cut by the turn's bound is stopped in the same phase, through T3's own RPC, and its turn is over once that stop ended the run or found none active. A reviewer turn whose checkout is not restored is not over. Nor is a turn cancelled before its run step reports, or a cut turn whose stop failed.
 
 One rule settles a turn that is not over: T3 lists its thread in no active state, or none of its title. For a reviewer's turn, its detach must also be undone. Only a turn's phase can read that, so the next turn settles it:
 
 - The Gateway puts every turn that is not settled into the next turn's intent, with its title. A reviewer's turn adds the task branch.
-- The phase lists T3's threads first. It touches nothing as long as an earlier run goes on.
-- The phase writes which turns it found settled.
-- While one is not settled, the phase launches nothing and fails with `tasks.copy_turn_unended`. The work in the copy stays.
+- Each of these turns is over in Orbit: it timed out, was cancelled or was lost.
 - The result names the settled turns. The Gateway counts them settled from then on.
+
+The phase lists T3's threads first. A thread that T3 still shows active is stopped with `t3_copy_rpc.mjs stop`, which interrupts its active run and waits for its end. A run that stopped, or a thread with no active run, has ended. The phase writes which turns it found settled, and names each run it stopped.
+
+When a stop fails, the earlier turn is not settled. The phase touches nothing and launches nothing, and fails with `tasks.copy_turn_unended`. The work in the copy stays.
 
 A reviewer's detach marks the copy with the ref `refs/orbit/review-detach`, at the tip the branch had. Only a verified restore clears the mark. The phase restores the checkout only when the mark is set, every earlier run is over, and the checkout is still detached. The restore is a reset, a clean and a checkout of the task branch. The checkout must then be clean on that branch at the mark's tip, and the phase clears the mark.
 
 Without the mark, the phase never touches the tree. The reviewer's turn is then settled once its run is over, so an implementer's uncommitted work stays.
 
-A check, a publish or a proof of the copy refuses with `tasks.copy_turn_unended` while a turn is not settled. Only a turn settles it. When the last subtask is completed, the caller [reopens it](/reference/tasks#reopen-the-last-subtask) with `task:update <subtask> --status=running`, and its next turn settles the copy. When no turn can run because a reviewer turn needs a check first, `task:cancel` is the only way out: it ends the copy, its work and any run with it.
+A check, a publish or a proof of the copy refuses with `tasks.copy_turn_unended` while a turn is not settled, and waits for the next turn, which stops the earlier run and settles it. `operation:cancel <turn>` ends a running turn's Operation, and the next turn stops its run. When the last subtask is completed, the caller [reopens it](/reference/tasks#reopen-the-last-subtask) with `task:update <subtask> --status=running`, and its next turn settles the copy. When a completed subtask cannot reopen, no turn can run, and `task:cancel` is the only way out: it ends the copy, its work and any run with it.
 
 The threads and roles, thread state, provider errors, token metrics, retries and transcripts below remain the target. Their MCP and WebSocket calls need a T3 server that gives Swamp its own full-access session.
 
