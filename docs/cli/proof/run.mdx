@@ -45,7 +45,7 @@ In a terminal, an omitted commit is asked for with a text prompt. A noninteracti
 
 Orbit selects the cases from the commit and optional ancestor base. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the proof CI](/reference/feature-flow#the-proof-ci).
 
-Built so far: the trust check, the case selection, the run in copies and the verdict of each case. The CI job `proof-run` is part of Required checks. Today it starts no proof: the repository variable `ORBIT_PROOF_ENABLED` is unset ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)). A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
+Built so far: the trust check, the case selection, the run in copies and the verdict of each case. The CI job `proof-run` is part of Required checks: when it runs, its result always gates the merge, and no switch makes it report-only. Main runs no proof after the merge. Today CI starts no proof: the repository variable `ORBIT_PROOF_ENABLED` is unset ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)). A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
 
 The CI wrapper waits up to 270 minutes, covering the two-hour admission budget and two-hour execution budget with 30 minutes of margin. Its Actions jobs allow 275 minutes. See [CI time budgets](/reference/implementation-loop) for the separate fast-check limits.
 
@@ -122,8 +122,6 @@ A proof does not replay flagged cases on the merge base (`fails_on_base: true`).
 Every run end removes its copy: Orbit cancels the run's group with discard, which destroys the copy and drops its hold on the Node's places. That holds after a pass, a failure, a cancel, a timeout, an interruption and a run that never started. A copy that an Operation still holds is asked again. After a Gateway restart the queued cancel runs, and the watchdog asks again for every group that still owns a copy.
 
 Orbit reads the full case reports, checks the expected case identities and merges every copy’s verdicts into one report. A missing, duplicate or unexpected verdict prevents a pass. The line on which a copy's batch reports the reset seconds of its inner fleet is evidence, not a verdict. The proof closes after all runs end and passes only when every selected command has all its cases passed. A selection with no command passes without a copy.
-
-The [main proof consumer](/reference/main-full-set#proof-consumer) retains an unproven range after an admission or transport failure. Its bounded retries do not gate a merge or a release.
 
 ## The execution switch
 
