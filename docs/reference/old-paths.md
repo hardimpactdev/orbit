@@ -55,7 +55,7 @@ A task without a [task copy](/reference/tasks#task-copy) has no workspace that O
 
 The task VM workflows that #3849 kept are deleted: the start `operation-task-provision` with its children `task-vm-start` and `task-vm-hub-peer`, and the place release `operation-task-vm-slot-release` with its children `task-vm-slot-phase` and `task-vm-hub-peer-remove`. The playbook `swamp/ansible/task-vm-start.yml`, which only the start ran, goes with them. `operation-task-cancel` calls no release any more; a cancel starts no run.
 
-The read-only task places view is removed too: the `capacity` of `task:status`, the `capacity_wait` of an Operation and of a task, the `input.capacity_request` summary, the places table of the CLI and the queue panel of the web app. Nothing admitted a waiting task VM start any more. A CLI from before this release refuses the `task:status` reply until it is updated. The column `capacity_wait_reason` stays. The `task_vm.*` error codes and the doctor codes `node.task_vm_orphaned`, `node.task_vm_missing`, `node.task_vm_inspection_failed` and `node.task_vm_stray_*`, which nothing produced, are deleted.
+The read-only task places view is removed too: the `capacity` of `task:status`, the `capacity_wait` of an Operation and of a task, the `input.capacity_request` summary and the places table of the CLI. Nothing admitted a waiting task VM start any more. A CLI from before this release refuses the `task:status` reply until it is updated. The column `capacity_wait_reason` stays. The `task_vm.*` error codes and the doctor codes `node.task_vm_orphaned`, `node.task_vm_missing`, `node.task_vm_inspection_failed` and `node.task_vm_stray_*`, which nothing produced, are deleted.
 
 ### The Pi agent server
 
