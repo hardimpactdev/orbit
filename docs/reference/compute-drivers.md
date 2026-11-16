@@ -722,7 +722,7 @@ Admission captures live VM names and the highest allocated VM and build IDs befo
 
 Swamp runs task VM effects through recorded Operations. Each effect fixes its host, guest identity and command input before execution. The Gateway admits the effect and requires a matching successful command receipt before recording completion. A retry uses the same Operation and effect key. A lost reply does not authorize a second VM or a different target.
 
-No provider class is left in the Gateway: the observation provider and its host reader had no caller and are deleted. A task start copies the base snapshot with the Ansible phases of `task-vm-host.yml`.
+No provider class is left in the Gateway: the observation provider and its host reader had no caller and are deleted. No task start copies the base snapshot any more: the `start` and `delete` play of `task-vm-host.yml` is deleted with the task VM start and release ([old paths](/reference/old-paths#the-pi-task-loop)).
 
 A [medium VM](#incus-provider) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. A task copy inherits the boot config of its base snapshot.
 
@@ -1128,7 +1128,7 @@ The host part that logged task VM egress is removed with the base snapshot refre
 
 No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`, its intent and projection, and the artisan command `task-vms:image-builds` are removed; its triggers went before them. It is replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates the default Instance of each nested-fleet Project. A recorded base snapshot stays the base of a task start until the rest of the task VM path leaves.
 
-The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`. The parts `host-prepare` and `base-*` stay while tests of shared files load them; nothing runs them. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
+The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`, and later its task start and release parts `start` and `delete`. The parts `host-prepare` and `base-*` stay while tests of shared files load them; nothing runs them. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
 
 The Node column `image_refresh_hold` and `orbit node:update NODE --image-refresh-hold` / `--no-image-refresh-hold` remain until the task VM settings leave. Nothing reads the hold.
 
