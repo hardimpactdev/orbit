@@ -76,14 +76,27 @@ The task VM settings and the Node setting `task_vms` are removed:
 - Port 3774 is free: [`instance:node-service:attach`](/cli/instance/node-service-attach) accepts it.
 - The Node setting `task_vms` with its `containers` member, and the field `image_refresh_hold`. The API refuses either member as unknown.
 - `node:update` has no `--task-vms` or `--image-refresh-hold` option. Node reads and the SDK return neither field.
+
+The Node work that served them goes too:
+
 - The firewall catalog's task bridge input rules (`orbit:task-vms-*`, `orbit:task-containers-*`) and the VPN Node's task VM hub rules. The VPN Node's next converge removes its managed UFW rules of the range.
 - The Caddy guard: every route block of every Node Caddyfile loses its `@orbit_task_vms remote_ip` matcher and its `abort @orbit_task_vms` at the Node's next build.
-- The task VM term of a Node's subordinate-ID demand, the `arc` flag of the Instance host intent (every Node's Instance side now keeps the ZFS ARC within its budget), and the task VM deny rule of an Instance container's T3 port.
-- The `Withdraw task host input` step of the `node:update` run. Node removal still withdraws the task bridge input rules by comment.
-- The Ansible builder's `tasks.provision` kind and its `ORBIT_INTENT_KEY` input: no run sends them. `task_vm.nested_ready` stays; the proof fleet restore runs it.
-- `tasks.provision`, `tasks.cancel` and `tasks.maintenance_finish` from the Route publication step holds: no Operation of the first starts, and `operation-task-cancel` publishes no Route. `instance.register` and the Cluster Router writes keep their step holds.
+- The task VM term of a Node's subordinate-ID demand.
+- The `arc` flag of the Instance host intent. Every Node's Instance side now keeps the ZFS ARC within its budget.
+- The task VM deny rule on an Instance container's T3 port.
+- The `Withdraw task host input` step of the `node:update` run. Node removal still withdraws those rules by comment.
 
-The WireGuard range `10.44.0.128/25` stays reserved: the address allocator never hands an address of it to a Node, and the ai-router task guard still admits it. Three readers of a stored `settings.task_vms` value stay until that value goes: the Instance bridge allocation keeps clear of a stored task bridge, the agent watch list names a stored host's bridges for the egress fact, and the fleet reboot reads a stored host's Incus project. The columns `nodes.image_refresh_hold`, the stored `settings.task_vms` members, `capacity_wait_reason` and the task VM tables stay, unread, until a later release drops them. No migration runs.
+Two later items from the Pi loop removal go as well.
+
+The Ansible builder has no task VM path for the kind `tasks.provision` and reads no `ORBIT_INTENT_KEY`, because no run sends them. It keeps `task_vm.nested_ready`, which the proof fleet restore runs.
+
+`tasks.provision`, `tasks.cancel` and `tasks.maintenance_finish` hold no Route Nodes per step. No Operation of the first starts. `operation-task-cancel`, the run of the other two, publishes no Route. `instance.register` and the Cluster Router writes keep their step holds.
+
+The WireGuard range `10.44.0.128/25` stays reserved. The address allocator never hands an address of it to a Node. The guard of the ai-router admits it as before.
+
+Three readers of a stored `settings.task_vms` value stay until that value goes. The Instance bridge allocation keeps clear of a stored task bridge. The agent watch list names a stored host's bridges for the egress fact. The fleet reboot reads a stored host's Incus project.
+
+The columns `nodes.image_refresh_hold`, the stored `settings.task_vms` members, `capacity_wait_reason` and the task VM tables stay, unread by the API, until a later release drops them. No migration runs.
 
 ### What stays
 
