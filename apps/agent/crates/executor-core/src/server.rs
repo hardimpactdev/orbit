@@ -86,6 +86,10 @@ pub fn now_ms() -> u64 {
 }
 
 /// Serves connections for the life of the process, one thread per connection, at most 64 at once.
+///
+/// # Panics
+///
+/// A connection thread panics when a lock of the executor's state is poisoned; the binary aborts on any panic.
 pub fn serve<R: Run + 'static>(
     listener: &UnixListener,
     settings: &Arc<Settings>,
@@ -125,6 +129,10 @@ pub fn serve<R: Run + 'static>(
 }
 
 /// Handles one connection: the caller check, the order checks, the action and the reply.
+///
+/// # Panics
+///
+/// Panics when a lock of the executor's state is poisoned, which is fatal.
 pub fn connection<R: Run>(
     stream: &UnixStream,
     settings: &Settings,
@@ -167,9 +175,13 @@ fn answer<R: Run>(
     caller: caller::Caller,
 ) -> io::Result<()> {
     stream.set_read_timeout(Some(READ_TIMEOUT))?;
-    let limit = u64::try_from(MAX_ORDER_BYTES + 1).expect("the order bound fits u64");
+    // The order plus its newline, plus one byte to see an order over the bound.
+    let limit = u64::try_from(MAX_ORDER_BYTES + 2).expect("the order bound fits u64");
     let mut wire = Vec::new();
     BufReader::new(stream.take(limit)).read_until(b'\n', &mut wire)?;
+    if wire.last() == Some(&b'\n') {
+        wire.pop();
+    }
     let mut out = stream;
     writeln!(out, "{}", json!({ "status": "accepted" }))?;
 

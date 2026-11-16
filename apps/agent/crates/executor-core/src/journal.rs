@@ -179,13 +179,15 @@ impl Journal {
         })
     }
 
-    /// Appends one record with a single `write`. It does not sync.
+    /// Appends one record with a single `write`. It does not sync. Each record starts and ends with a newline, so a
+    /// fragment that a failed earlier write left behind never joins it on one unreadable line.
     ///
     /// # Errors
     ///
     /// Returns [`JournalError`] when the record cannot be encoded or written.
     pub fn append(&self, record: &Record) -> Result<(), JournalError> {
-        let mut line = serde_json::to_vec(record).map_err(JournalError::Encode)?;
+        let mut line = vec![b'\n'];
+        serde_json::to_writer(&mut line, record).map_err(JournalError::Encode)?;
         line.push(b'\n');
         (&*self.file)
             .write_all(&line)

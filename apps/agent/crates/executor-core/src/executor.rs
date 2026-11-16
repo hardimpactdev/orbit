@@ -108,6 +108,10 @@ impl<R: Run> Executor<R> {
     /// # Errors
     ///
     /// Returns [`JournalError`] when the journal cannot be read, compacted or written.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a lock of the new state is poisoned, which cannot happen before it is shared.
     pub fn start(
         path: &Path,
         runner: R,

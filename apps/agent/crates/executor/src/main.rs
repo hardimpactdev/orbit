@@ -87,6 +87,13 @@ fn system_user(passwd: &str, user: &str) -> Option<(u32, u32)> {
 }
 
 fn serve() -> Result<(), String> {
+    // Lock poisoning is fatal (ADR 0267 P9): any panic ends the process, so systemd restarts it and start-up
+    // recovery finishes open orders, instead of one dead thread leaking a connection slot and a poisoned lock.
+    let report = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        report(info);
+        std::process::abort();
+    }));
     let keys =
         PinnedKeys::parse(&read(KEYS_PATH)?).map_err(|error| format!("{KEYS_PATH}: {error}"))?;
     let enabled =

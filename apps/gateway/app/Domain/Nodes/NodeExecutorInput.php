@@ -30,7 +30,7 @@ final readonly class NodeExecutorInput
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array
     {
-        $roles = $node->roles()->get()->map(static fn (NodeRole $assignment): RoleName => $assignment->role)->all();
+        $roles = array_values($node->roles()->get()->map(static fn (NodeRole $assignment): RoleName => $assignment->role)->all());
         $keys = config('orbit.executor.public_keys');
 
         return self::intent((string) $node->id, $node->user, 'executor-'.AgentDelivery::key($node), $roles,

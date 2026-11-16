@@ -169,3 +169,34 @@ fn the_observer_unit_is_admitted_by_its_exact_cgroup() {
         "observer reply: {reply}"
     );
 }
+
+#[test]
+fn an_order_of_exactly_four_kilobytes_passes_the_size_check() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let socket = start(dir.path(), relay_policy());
+    let wire = "a".repeat(4096);
+    let lines = relay(&socket, &wire);
+    assert_eq!(
+        lines[1]["reason"], "order_malformed",
+        "4096 bytes reach the form check, not the size check"
+    );
+    let mut child = Command::new(env!("CARGO_BIN_EXE_orbit-executor"))
+        .args(["relay", "--socket"])
+        .arg(&socket)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("relay starts");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all("a".repeat(4097).as_bytes())
+        .expect("order written");
+    let over = child.wait_with_output().expect("relay ends");
+    assert!(
+        !over.status.success() && over.stdout.is_empty(),
+        "the relay itself refuses an order over 4 KB"
+    );
+}
