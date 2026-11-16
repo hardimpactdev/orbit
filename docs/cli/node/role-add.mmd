@@ -123,7 +123,7 @@ sequenceDiagram
     %%> Why:
     %%> - Freeze public intent and vault references under the Node lock before dispatch.
     %%> Digests:
-    %%> - the run carries the Node's phase digest record and compares by the one rule (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change); a new role changes the input, so an add runs every phase
+    %%> - the run carries the Node's phase digest record and compares by the one rule (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change); a new role changes the input, so a first add runs every phase; a repeated add of an `active` `ingress` role skips its unchanged phases as a convergence does
     GW->>SW: Start run, full intent<br/>operation-node-role-add
     GW-->>CLI: 202 Accepted<br/>Operation ID
     SW->>N: Apply prerequisites<br/>Ansible phase: prerequisites

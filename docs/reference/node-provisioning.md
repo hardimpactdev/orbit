@@ -612,9 +612,9 @@ This is the one rule for a skipped phase. It applies to `node:converge` and to t
 | Operation | Phases that can skip | Phases that always run |
 | --- | --- | --- |
 | `node.converge` | `agent`, `software`, `roles`, `tools`, `network` | `input`, `check` |
-| `node.role_add`, `node.role_converge` | `prerequisites`, `tools`, `node`, `publication`, `firewall` | the input, the OS check, Ansible, Analytics storage and runtime, Swamp, certificates, PHP pools, private DNS, Metrics, `check` |
+| `node.role_add`, `node.role_converge` | `prerequisites`, `tools`, `node`, `firewall` | the input, the OS check, Ansible, Analytics storage and runtime, Swamp, certificates, PHP pools, `publication` (Publish role sites), private DNS, Metrics, `check` |
 
-A role phase that always runs either changes another Node, signs with the Gateway, starts a runtime, or is a native delta publication that already changes nothing when nothing changed.
+A role phase that always runs can change another Node, signs with the Gateway, or starts a runtime. `publication` (Publish role sites) is one of them, because it can change other Nodes. PHP pools and private DNS are native delta publications: they change nothing when nothing changed.
 
 A phase digest is the SHA-256 of the phase name and of what the phases read. Swamp computes it when it prepares the input, after it writes every file for the phases. What the phases read is:
 

@@ -41,8 +41,8 @@ sequenceDiagram
   Note over SW: Write input<br/>compare phase digests
   %%> What it does:
   %%> - after it writes every file the phases read, it computes each phase digest by the one rule of node:converge and compares it with the recorded digest
-  %%> - `prerequisites`, `tools`, `node`, `publication` and `firewall` skip when their digest is equal: they do not connect to the Node
-  %%> - every other step and the end check always run, so the check still reads drift
+  %%> - `prerequisites`, `tools`, `node` and `firewall` skip when their digest is equal: they do not connect to the Node
+  %%> - every other step and the end check always run, so the check still reads drift; Publish role sites always runs, because it can change other Nodes
   SW->>N: Require supported Ubuntu<br/>SSH argv · native assert
   opt swamp role
     SW->>N: Install Ansible<br/>native bootstrap
