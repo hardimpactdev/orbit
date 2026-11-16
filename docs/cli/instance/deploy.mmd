@@ -118,7 +118,7 @@ sequenceDiagram
     %%> - reads the steps the checkout found unchanged; only a deployment with a step that has `inputs` runs it
     SW->>N: Run dev deploy steps<br/>incus exec · vault copy
     %%> What it does:
-    %%> - each Project command as `agent`, the workspace's owner (ADR 0266), in the workspace, with the runtime folder's PATH
+    %%> - each Project command as `agent`, the workspace's owner (ADR 0267), in the workspace, with the runtime folder's PATH
     %%> - a step with `inputs` is skipped when its inputs at the commit and its command are as at its last passed run in this workspace
     SW->>N: Finish the container<br/>Ansible · processes · seed · check
     %%> What it does:

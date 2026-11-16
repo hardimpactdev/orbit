@@ -6,7 +6,7 @@ declare(strict_types=1);
 // tests in NestedFleetHostingTest compare today's normal Node and normal Instance intents with these, byte for byte. Only the class
 // names changed, and Pint formatted the result. Do not edit: a change here weakens the proof that a normal Node and a normal Instance stay as they were.
 // Two deliberate edits: the task container side lost its CI places (ADR 0260), so its demand counts task places only; and the deploy
-// commands' environment names `agent`, who runs them (ADR 0266).
+// commands' environment names `agent`, who runs them (ADR 0267).
 
 namespace App\Domain\Instances;
 

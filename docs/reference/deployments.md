@@ -14,7 +14,7 @@ covers:
 
 # Instance releases
 
-An [Instance container's default deployment](/reference/development-containers#processes) runs its Project commands as `agent`, the workspace's owner ([ADR 0266](/decisions/0266-one-owner-for-the-workspace)), repairs workspace group permissions and owners before and after those commands, installs its development Processes and takes a new seed. The seed stops and starts every running unit, so each worker runs the new commit.
+An [Instance container's default deployment](/reference/development-containers#processes) runs its Project commands as `agent`, the workspace's owner ([ADR 0267](/decisions/0267-one-owner-for-the-workspace)), repairs workspace group permissions and owners before and after those commands, installs its development Processes and takes a new seed. The seed stops and starts every running unit, so each worker runs the new commit.
 
 Checkout development deployment uses one native Swamp root on 209 and official SSH to the app-dev Node. The Gateway captures public intent and names for private execution copies. Fetch, checkout checks, cleanup, checkout, Vite preparation, each Project command and final inspection are separate native steps. The shared terminal reader records the result and history; development steps do not read intent or report progress to the Gateway.
 

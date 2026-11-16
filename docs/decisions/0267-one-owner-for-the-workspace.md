@@ -1,10 +1,10 @@
 ---
-title: "ADR 0266: One owner for the workspace"
-sidebarTitle: "0266 One workspace owner"
+title: "ADR 0267: One owner for the workspace"
+sidebarTitle: "0267 One workspace owner"
 description: "In progress. `agent` owns a development container's workspace. It runs Orbit's checkout Git calls and the Project's development deploy steps. `orbit` stays the app user: FrankenPHP, queue workers and every Orbit Process. Root's group pass also makes `agent` the owner of each workspace entry that `orbit` owns. `agent` gets no sudo in any image."
 ---
 
-# ADR 0266: One owner for the workspace
+# ADR 0267: One owner for the workspace
 
 `agent` owns a development container's workspace, `/srv/workspace`. It runs Orbit's checkout Git calls and the Project's development deploy steps. `orbit` stays the app user: FrankenPHP, queue workers and every Orbit Process. Root's pass that keeps the workspace writable for its group also makes `agent` the owner of each entry that `orbit` owns. `agent` gets no sudo in any image.
 

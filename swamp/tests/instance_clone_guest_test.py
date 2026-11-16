@@ -753,7 +753,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         before = self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout
         self.phase("services", self.full_container(), self.full_private(), [], walk=True)
         self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, before)
-        # Root's workspace pass ran, the program a deployment runs (ADR 0266), as root over the workspace, giving `orbit`'s entries
+        # Root's workspace pass ran, the program a deployment runs (ADR 0267), as root over the workspace, giving `orbit`'s entries
         # (uid 1000) to `agent` (uid 2750): it adds group bits and never an exec bit Git tracks.
         self.assertEqual(self.owner_calls, [("python3", ["/srv/workspace", "1000", "2750"])])
         self.assertEqual(script.stat().st_mode & 0o777, 0o775)

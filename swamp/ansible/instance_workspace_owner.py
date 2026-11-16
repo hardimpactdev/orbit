@@ -1,4 +1,4 @@
-"""Root's workspace pass (docs/reference/development-containers.md#who-runs-what, ADR 0266).
+"""Root's workspace pass (docs/reference/development-containers.md#who-runs-what, ADR 0267).
 
 `agent` owns the workspace, and `orbit` and `agent` share it through the group `work`. A tool that asks for 0755 folders, such as Bun
 in `node_modules`, caps their ACL mask, so the other user cannot write there; and a call that only a file's owner may make, such as

@@ -5,7 +5,7 @@ background, the repack removed pack files while `find … -exec chmod g+rwX {} +
 directory" failed the phase. These cases run the shipped pass and the shipped Git options on a scratch repository.
 
 On 2026-11-16 files that deploy steps made as `orbit` in a default reached its copies, where the agent, as `agent`, could not change
-their modes or times: the pass now also gives each `orbit` entry to `agent` (ADR 0266).
+their modes or times: the pass now also gives each `orbit` entry to `agent` (ADR 0267).
 """
 
 import os

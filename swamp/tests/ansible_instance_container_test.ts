@@ -1834,7 +1834,7 @@ Deno.test({
       Object.assign(f.container, { environment_file: "/srv/workspace/.env" });
       f.write();
       // `agent`, the workspace's owner, runs every call of the first build in the workspace: `git init`, Git and the `.env` exclude
-      // program (ADR 0266).
+      // program (ADR 0267).
       const calls = () => f.state().workspace_calls as string[];
       assertEquals([...new Set(calls())].sort(), ["agent git", "agent python3", "agent test"]);
 
