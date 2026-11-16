@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { skippable } from "./converge_input.ts";
 
 export const phases = ["input", "agent", "software", "roles", "tools", "network", "check"] as const;
 const SafeText = z.string().min(1).max(120).regex(/^[\x20-\x7e]+$/).nullable();
@@ -16,13 +17,16 @@ const BrowserTrust = z.array(z.object({
     reason: z.string().regex(/^(no agent home|not running|version mismatch: (not installed|unreadable|[0-9A-Za-z.+:~-]{1,64}) != [0-9A-Za-z.+:~-]{1,64}|path refused: \/home\/agent(\/[A-Za-z0-9._-]{1,64}){0,3} is (file|directory|symlink|other|unknown)|store failed: (timeout|exit [0-9]{1,3}|[A-Za-z]{1,40}))$/),
 }).strict()).max(1000);
 export const Result = z.object({
-    phases: z.array(z.object({ name: z.enum(phases), status: z.enum(["succeeded", "failed", "skipped"]), changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative() }).strict()).length(7),
+    phases: z.array(z.object({ name: z.enum(phases), status: z.enum(["succeeded", "failed", "skipped", "unchanged"]), changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative() }).strict()).length(7),
     changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative(), cleanup_complete: z.boolean(),
     tools: z.array(z.object({ id: z.number().int().positive(), status: z.enum(["installed", "failed"]), installed_version: z.string().min(1).max(255).regex(/^[^\x00-\x20\x7f]+$/).nullable() }).strict().refine((tool) => tool.status === "failed" || tool.installed_version !== null)).max(10000),
     browser_trust: BrowserTrust,
     failure: Failure.optional(),
     failed_phase: z.enum(phases).optional(), error_code: z.literal("operation.native_failed").optional(),
+    // Each skippable phase's digest; the Gateway records them on the Node after a succeeded converge.
+    digests: z.partialRecord(z.enum(skippable), z.string().regex(/^[0-9a-f]{64}$/)),
 }).strict();
+const Digests = z.object({ digests: Result.shape.digests, unchanged: z.array(z.enum(skippable)) }).strict();
 export const ReportInput = z.object({ folder: z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/) }).strict();
 const Stats = z.object({ changed: z.number().int().nonnegative(), failures: z.number().int().nonnegative(), unreachable: z.number().int().nonnegative() });
 const Report = z.object({ stats: z.record(z.string(), Stats), plays: z.array(z.unknown()).min(1) });
@@ -95,11 +99,21 @@ export async function convergeResult(folder: string) {
     let browserTrust: z.infer<typeof BrowserTrust> = [];
     let failed: typeof phases[number] | undefined;
     let failure: z.infer<typeof Failure> | undefined;
+    // Written by the input preparation; without it no phase is unchanged and no digest is recorded.
+    let plan: z.infer<typeof Digests> | undefined;
+    try {
+        plan = Digests.parse(JSON.parse(await Deno.readTextFile(`${folder}/digests.json`)));
+    } catch {
+        plan = undefined;
+    }
     for (const name of phases) {
-        let status: "succeeded" | "failed" | "skipped" = failed ? "skipped" : "failed";
+        let status: "succeeded" | "failed" | "skipped" | "unchanged" = failed ? "skipped" : "failed";
         let changed = 0;
         let elapsed = 0;
-        if (!failed) {
+        if (!failed && name !== "input" && name !== "check" && plan?.unchanged.includes(name)) {
+            // The workflow skipped the phase: its digest equals the Node's record. It ran nothing and read nothing.
+            status = "unchanged";
+        } else if (!failed) {
             try {
                 const timing = Timing.parse(JSON.parse(await Deno.readTextFile(`${folder}/${name}-meta.json`)));
                 elapsed = timing.elapsed_seconds;
@@ -127,6 +141,7 @@ export async function convergeResult(folder: string) {
     }
     return Result.parse({ phases: summaries, changed: summaries.reduce((sum, phase) => sum + phase.changed, 0),
         elapsed_seconds: summaries.reduce((sum, phase) => sum + phase.elapsed_seconds, 0), tools, browser_trust: browserTrust, cleanup_complete: false,
+        digests: plan?.digests ?? {},
         ...(failure ? { failure } : {}),
         ...(failed ? { failed_phase: failed, error_code: "operation.native_failed" } : {}) });
 }

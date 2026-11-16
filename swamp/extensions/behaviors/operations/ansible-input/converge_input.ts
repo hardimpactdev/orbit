@@ -1,3 +1,5 @@
+import { z } from "npm:zod@4.4.3";
+
 type Ssh = { target: { host: string; port: number; user: string; host_keys: string[] }; identity_file: string };
 
 /** Every string is literal, including nested Tool values and private environment files. */
@@ -14,7 +16,44 @@ export function unsafeYaml(value: unknown, depth = 0): string {
  * compiled Swamp binary, so `Deno.execPath()` names Swamp, which cannot run a script. */
 export const toolRuntime = "/usr/local/bin/deno";
 
-export async function convergeInput(folder: string, builder: string, toolHelper: string) {
+/** The phases that skip when their digest is unchanged (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
+export const skippable = ["agent", "software", "roles", "tools", "network"] as const;
+
+async function sha256(text: string | Uint8Array): Promise<string> {
+    const bytes = typeof text === "string" ? new TextEncoder().encode(text) : text;
+    return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as BufferSource)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** The code part of a phase digest: every file of the given folders, by relative path and content, in path order. */
+export async function codeDigest(folders: string[]): Promise<string> {
+    const rows: string[] = [];
+    const walk = async (root: string, path: string): Promise<void> => {
+        const entries = [];
+        for await (const entry of Deno.readDir(path)) entries.push(entry);
+        for (const entry of entries.sort((a, b) => a.name < b.name ? -1 : 1)) {
+            if (entry.isDirectory) await walk(root, `${path}/${entry.name}`);
+            else if (entry.isFile) rows.push(`${path.slice(root.length)}/${entry.name}\0${await sha256(await Deno.readFile(`${path}/${entry.name}`))}`);
+        }
+    };
+    for (const folder of folders) await walk(folder.slice(0, folder.lastIndexOf("/")), folder);
+    return sha256(rows.join("\n"));
+}
+
+/** Each skippable phase's digest, and the phases whose digest equals the one the Node records. */
+const Hex = z.string().regex(/^[0-9a-f]{64}$/);
+const DigestIntent = z.object({ phase_input: Hex, // PHP sends an empty map as an empty list.
+    recorded_digests: z.preprocess((value) => Array.isArray(value) && value.length === 0 ? {} : value, z.partialRecord(z.enum(skippable), Hex)) });
+
+export async function phaseDigests(raw: unknown, secrets: Record<string, string>, code: string) {
+    const intent = DigestIntent.parse(raw);
+    const secretRows = await Promise.all(Object.keys(secrets).sort().map(async (name) => `${name}\0${await sha256(secrets[name])}`));
+    const secretDigest = await sha256(secretRows.join("\n"));
+    const digests: Record<string, string> = {};
+    for (const phase of skippable) digests[phase] = await sha256([phase, intent.phase_input, secretDigest, code].join("\0"));
+    return { digests, unchanged: skippable.filter((phase) => intent.recorded_digests[phase] === digests[phase]) };
+}
+
+export async function convergeInput(folder: string, builder: string, toolHelper: string, code: string[]) {
     const intent = JSON.parse(await Deno.readTextFile(`${folder}/intent.json`));
     const hosts: Record<string, unknown> = {};
     const known = new Set<string>();
@@ -41,6 +80,8 @@ export async function convergeInput(folder: string, builder: string, toolHelper:
         await Deno.remove(`${folder}/${file.name}`);
     }
     const plans = JSON.parse(await Deno.readTextFile(`${folder}/plans.json`));
+    const phases = await phaseDigests(intent, secrets, await codeDigest(code));
+    await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify(phases), { mode: 0o600 });
     await Deno.writeTextFile(`${folder}/inventory.json`, JSON.stringify({ all: { hosts, children: { proof_seed_sender: { hosts: senders } } } }), { mode: 0o600 });
     await Deno.writeTextFile(`${folder}/known_hosts`, [...known].sort().join("\n") + "\n", { mode: 0o600 });
     await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: intent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: toolRuntime, converge_secrets: secrets, converge_plans: plans }), { mode: 0o600 });
@@ -58,4 +99,5 @@ export async function convergeInput(folder: string, builder: string, toolHelper:
         if (!outcome.success) throw new Error('The recorded role input could not be materialized');
         await Deno.chmod(`${path}/vars.yml`, 0o600);
     }
+    return phases;
 }

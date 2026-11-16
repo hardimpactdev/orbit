@@ -328,7 +328,7 @@ A new push cancels the previous proof. The runner rechecks eligibility immediate
 
 A fork keeps its separate trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner. That workflow publishes `Orbit outside proof` on the exact head. While proof admission is on, Required checks reads its latest trusted status and fails if it is missing, pending or failed. After the outside proof succeeds, rerun the failed Required job.
 
-CI proofs join one FIFO admission queue. Its front takes one copy of the Orbit container in each free CI place across the CI Nodes. Orbit balances whole batches by measured case time, runs them in the copies' inner fleets, merges the verdicts and destroys the copies. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
+CI proofs join one FIFO admission queue. Its front takes one copy of the Orbit container in each free CI place across the CI Nodes. Orbit balances batches by measured case time, splits a long batch that changes the fleet by case, runs them in the copies' inner fleets, merges the verdicts and destroys the copies. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
 
 A clean CLI exit is insufficient: the job requires a passing result with case verdicts for every selected command. A failed case, an unrun case, a missing result or a selected command with no verdict fails. A result with no selected command passes. A capacity message with no cases always fails; it has no successful skip classification.
 

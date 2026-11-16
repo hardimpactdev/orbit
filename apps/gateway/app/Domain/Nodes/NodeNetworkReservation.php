@@ -20,11 +20,17 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class NodeNetworkReservation
 {
+    /** The recorded VPN hub of every converge. */
+    public static function hub(): ?Node
+    {
+        return Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->first();
+    }
+
     /** @param Closure(?Node):Operation $admit */
     public function hold(Node $node, bool $base, Closure $admit): Operation
     {
         return DB::transaction(function () use ($node, $base, $admit): Operation {
-            $hub = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->first();
+            $hub = self::hub();
             Node::query()->whereKey(array_values(array_unique([$node->id, $hub->id ?? $node->id])))->orderBy('id')->lockForUpdate()->get();
             $node->refresh();
             $open = Operation::query()->where('kind', 'node.converge')

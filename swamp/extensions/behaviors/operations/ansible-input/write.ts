@@ -19,6 +19,8 @@ const Output = z.object({
     requirements: z.string(),
     collections: z.string(),
 });
+// The phases whose digest the Node records, which the workflow skips (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+const Phases = z.object({ ready: z.literal(true), unchanged: z.array(z.enum(["agent", "software", "roles", "tools", "network"])) });
 type Context = {
     extensionFile(path: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
@@ -27,9 +29,10 @@ type Context = {
 /** Swamp expressions cannot encode an object as JSON; large intents exceed env limits. */
 export const behavior = {
     type: "@nckrtl/ansible-input",
-    version: "2026.11.11.1",
+    version: "2026.11.16.1",
     resources: {
         input: { schema: Output, lifetime: "1d", garbageCollection: 10 },
+        phases: { schema: Phases, lifetime: "1d", garbageCollection: 10 },
         output: { schema: z.object({ stdout: z.string() }), lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
@@ -84,8 +87,13 @@ export const behavior = {
             arguments: ReportInput,
             async execute(raw: z.infer<typeof ReportInput>, ctx: Context) {
                 const { folder } = ReportInput.parse(raw);
-                await convergeInput(folder, ctx.extensionFile('ansible/build_vars.py'), ctx.extensionFile('extensions/behaviors/operations/ansible-input/converge_tool.ts'));
-                return { ready: true };
+                const helper = ctx.extensionFile('extensions/behaviors/operations/ansible-input/converge_tool.ts');
+                // The code part of each phase digest: the Ansible bundle and this behaviour, which writes the phases' variables.
+                const phases = await convergeInput(folder, ctx.extensionFile('ansible/build_vars.py'), helper,
+                    [ctx.extensionFile('ansible/build_vars.py').slice(0, -'/build_vars.py'.length), helper.slice(0, helper.lastIndexOf('/'))]);
+                const value = Phases.parse({ ready: true, unchanged: phases.unchanged });
+                await ctx.writeResource("phases", "phases", value);
+                return value;
             },
         },
         convergeResult: {
