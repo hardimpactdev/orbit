@@ -24,7 +24,7 @@ cases = [
   "test_prediction_refuses_source_valid_links_to_omitted_submodule_contents_and_missing_targets",
 ]
 file = "swamp/tests/ansible_instance_migrate_links_test.py"
-cost = 3 # completed local file body; rounded up plus 1s
+cost = 5 # CI on PRs 3855 and 3852 ran up to 4.5s (3855: 4.5s, 3852: 3.6s), declared 3s; raised to the max, rounded up
 inputs = [
   "swamp/ansible/instance_migrate_git.py",
   "bin/swamp-shape-gate",

@@ -7,7 +7,7 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_volmode_test.py"
 # Local run on Beast: 2.7 s for five real ansible-playbook runs.
-cost = 6
+cost = 10 # CI on PRs 3855 and 3852 ran up to 9.1s (3855: 9.1s, 3852: 4.8s), declared 6s; raised to the max, rounded up
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",

@@ -30,7 +30,7 @@ cases = [
   "test_missing_off_branch_tree_requires_fsck_even_on_identical_snapshot",
 ]
 file = "swamp/tests/instance_migrate_git_scope_test.py"
-cost = 30 # conservative; completed local file body rounded up plus 1s
+cost = 68 # CI on PRs 3855 and 3852 ran up to 67.4s (3855: 67.4s), declared 30s; raised to the max, rounded up
 inputs = [
   "swamp/ansible/instance_migrate_git.py",
   "swamp/ansible/instance_migrate_links.py",

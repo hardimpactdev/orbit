@@ -1,6 +1,6 @@
 order = 1240
 file = "swamp/tests/ansible_instance_env_keys_test.py"
-cost = 3
+cost = 6 # CI on PRs 3855 and 3852 ran up to 5.2s (3855: 5.2s), declared 3s; raised to the max, rounded up
 slices = false
 inputs = [
   "swamp/ansible/instance_env_keys.py",

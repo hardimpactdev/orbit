@@ -6,7 +6,7 @@ cases = [
   "test_an_absent_package_is_installed",
 ]
 file = "swamp/tests/ansible_container_host_system_test.py"
-cost = 7
+cost = 10 # CI on PRs 3855 and 3852 ran up to 9.3s (3855: 9.3s), declared 7s; raised to the max, rounded up
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",

@@ -8,7 +8,7 @@ cases = [
   "test_every_reachable_converge_task_name_is_static",
 ]
 file = "swamp/tests/ansible_command_output_test.py"
-cost = 3
+cost = 5 # CI on PRs 3855 and 3852 ran up to 4.5s (3852: 4.5s, 3855: 3.7s), declared 3s; raised to the max, rounded up
 inputs = [
   "apps/gateway/app/Domain/Nodes/NodeDesiredConvergeInput.php",
   "bin/swamp-shape-gate",

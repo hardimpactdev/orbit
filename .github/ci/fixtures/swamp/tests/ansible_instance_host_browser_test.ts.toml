@@ -18,7 +18,7 @@ cases = [
   "the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib",
 ]
 file = "swamp/tests/ansible_instance_host_browser_test.ts"
-cost = 135
+cost = 170
 # Beast case times * 2.1, rounded up + 1s; startup is added per slice.
 slices = 13
 # Run 43660983227: this two-converge case took 121.364s and set the main critical path.
@@ -60,7 +60,7 @@ inputs = [
 [case_costs]
   "a failed read of a machine name file fails that container after its trust work and writes no hosts file from nothing; a renamed running kernel stays an alias, an unreadable one is none" = 5 # ESTIMATE: local 1s * 2.1, rounded up + 1s
   "the converge writes each named container's machine name files, running, stopped and frozen, keeping other hosts lines; nothing restarts" = 5 # ESTIMATE: local 2s * 2.1, rounded up
-  "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart" = 82 # ESTIMATE: Beast 35-38s * 2.1, rounded up + 1s
+  "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart" = 117 # CI unit 0/13 on PRs 3855 and 3852 ran up to 123.3s (3855: 123.3s, 3852: 117.4s), declared 89s with startup; raised to the max, rounded up, less the 6s startup; its slice partner keeps its cost
   "two Debian packages that give the same library name fail the folder build: one would hide the other" = 18 # ESTIMATE: Beast 8s * 2.1, rounded up + 1s
   "a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike" = 2 # ESTIMATE: Beast 0.82s, no Ansible; rounded up
   "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not" = 1 # ESTIMATE: Beast 0.1s, no Ansible; rounded up
