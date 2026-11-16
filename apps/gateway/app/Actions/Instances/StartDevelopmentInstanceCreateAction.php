@@ -247,18 +247,18 @@ final readonly class StartDevelopmentInstanceCreateAction
             // A clone runs no deploy steps: the default ran them before its seed snapshot.
             $steps = $container && $provisioning['already_active'] !== true
                 ? ($source instanceof Instance ? [] : app(DevelopmentDeploySteps::class)->capture($project)) : null;
-            $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database,
-                'server_database' => $server['input'] ?? null, 'server_valkey' => $valkey['input'] ?? null, 'container' => $steps === null ? null
-                    : $this->containerIntent($instance, $node, $steps, $source, $server['connection'] ?? null,
-                        ValidatedData::string(ValidatedData::object($provisioning['resolve'])['branch']), $route?->domain, $agentFiles)];
-            if ($selection !== null && is_array($input['direct_provisioning']['container'])) {
-                $input['direct_provisioning']['container']['branch_selection'] = $selection->toArray();
+            $containerIntent = $steps === null ? null : $this->containerIntent($instance, $node, $steps, $source, $server['connection'] ?? null,
+                ValidatedData::string(ValidatedData::object($provisioning['resolve'])['branch']), $route?->domain, $agentFiles);
+            if ($selection !== null && $containerIntent !== null) {
+                $containerIntent['branch_selection'] = $selection->toArray();
             }
             // A proof copy holds its CI place before it starts: the create stops the Node's idle runners down to the places left to
             // runners (docs/reference/node-provisioning.md#proof-places-on-a-ci-node). Its destroy releases the hold.
-            if ($proofPlace && is_array($input['direct_provisioning']['container']['clone'] ?? null)) {
-                $input['direct_provisioning']['container']['clone']['ci_hold'] = ['places' => ProofCopyHosts::places($node)];
+            if ($proofPlace && is_array($containerIntent['clone'] ?? null)) {
+                $containerIntent['clone']['ci_hold'] = ['places' => ProofCopyHosts::places($node)];
             }
+            $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database,
+                'server_database' => $server['input'] ?? null, 'server_valkey' => $valkey['input'] ?? null, 'container' => $containerIntent];
             if ($steps !== null) {
                 // F8: no container create has run yet, so the run starts at 30 minutes, plus the deploy step timeouts and a default's
                 // own database. A clone runs no deploy step and no database step: its completion copies the database. Its Route runs
