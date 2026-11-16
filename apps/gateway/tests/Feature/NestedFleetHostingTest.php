@@ -395,6 +395,44 @@ describe('the seed of the proof default on each Node that offers proof places', 
         exec('rm -rf '.escapeshellarg($folder));
     });
 
+    it('renders a CI Node\'s firewall with the seed allow, then the seed deny, both before the WireGuard member trust', function (): void {
+        $source = (string) proofSeedDefault()->node()->firstOrFail()->wireguard_ip;
+        $node = ciNode();
+        $commands = app(NodeRoleFirewallInput::class)->convergeCommands($node, RoleName::CiRunner)['desired'];
+        // tasks/firewall.yml pairs an inserted deny with the command right after it, its allow, and checks the order against desired[0].
+        $deny = array_search('orbit:proof-seed-deny', array_map(static fn (array $command): string => (string) end($command), $commands), true);
+        expect(end($commands[0]))->toBe('orbit:wireguard-members')
+            ->and($deny)->toBeInt()
+            ->and(end($commands[$deny + 1]))->toBe('orbit:proof-seed');
+
+        // UFW applies the commands in order: `insert 1` puts a rule first, any other rule goes last, and an existing rule is skipped.
+        foreach ([[], ['orbit:wireguard-members', 'orbit-ci-runners']] as $installed) {
+            $rules = array_map(static fn (string $comment): array => ['comment' => $comment, 'argv' => []], $installed);
+            foreach ($commands as $command) {
+                if (in_array(end($command), array_column($rules, 'comment'), true)) {
+                    continue;
+                }
+                $rule = ['comment' => (string) end($command), 'argv' => $command];
+                $command[1] === 'insert' ? array_splice($rules, (int) $command[2] - 1, 0, [$rule]) : $rules[] = $rule;
+            }
+            $order = array_column($rules, 'comment');
+            $allow = $rules[array_search('orbit:proof-seed', $order, true)]['argv'];
+            $denied = $rules[array_search('orbit:proof-seed-deny', $order, true)]['argv'];
+            expect(array_search('orbit:proof-seed', $order, true))->toBeLessThan(array_search('orbit:proof-seed-deny', $order, true))
+                ->and(array_search('orbit:proof-seed-deny', $order, true))->toBeLessThan(array_search('orbit:wireguard-members', $order, true))
+                ->and(array_slice($allow, 3))->toBe(['allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed'])
+                ->and(array_slice($denied, 3))->toBe(['deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed-deny']);
+        }
+
+        // The Gateway's desired rule list, which the firewall check compares with the Node, holds both rules with their shapes.
+        $desired = collect(app(NodeFirewallDesiredRules::class)->forNode($node))->keyBy('name');
+        expect($desired['orbit:proof-seed']->shape->source)->toBe($source)
+            ->and($desired['orbit:proof-seed']->shape->port)->toBe('8444')
+            ->and($desired['orbit:proof-seed-deny']->shape->action)->toBe('deny')
+            ->and($desired['orbit:proof-seed-deny']->shape->source)->toBe('any')
+            ->and($desired->has('orbit:wireguard-members'))->toBeTrue();
+    });
+
     it('has no targets while the proof default has no seed', function (): void {
         $default = proofSeedDefault();
         ciNode();
