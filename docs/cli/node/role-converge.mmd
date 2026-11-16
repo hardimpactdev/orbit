@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0243/0244 task, one Swamp run, Ansible phases for idempotent Node state (rule 22). docs/reference/node-provisioning.md.
-  %% status: reviewed
+  %% status: draft
   %% command: node:role:add
   %% kind: node.role_converge
   autonumber
@@ -52,6 +52,10 @@ sequenceDiagram
   SW->>N: Apply the role<br/>Ansible phase: node
   %%> What it does:
   %%> - the role's files, units, ports and storage directory owner and mode; protected paths are refused before any host work
+  %%> On a CI Node that hosts proof copies (`ci-runner`, CI places, no `app-dev`):
+  %%> - the same phase runs the Instance container branch of `app-dev` from the same `instances` intent, with its nested part: the projects `orbit-instances` and `orbit-instances-nested`, the bridge, the ACLs, the egress proxy, the shared folders, both images; it checks the CI Node's subordinate-ID demand first
+  %%> - the intent leaves out the own-site rules, the development port redirect and the wake of frozen containers: the Node runs no Caddy
+  %%> - the runner side (`orbit-ci`, `orbitci0`) stays as it is; a bridge range that overlaps it refuses `instance.host_unavailable` before any change
   opt Analytics uses local storage
     SW->>N: Open Analytics storage<br/>Ansible phase: storage-firewall
     %%> Not included:
@@ -103,6 +107,13 @@ sequenceDiagram
     Note over GW: Record the role active
     %%> Result:
     %%> - the assignment is `active` and an earlier failed step is cleared; a second convergence reports no changes
+    opt CI Node hosts proof copies
+      Note over GW: Admit the seed copy<br/>instance.seed_copy
+      %%> When:
+      %%> - the Node's recorded seed is not the proof default's current seed, and no seed copy is open; an open copy admits it when it ends
+      %%> Result:
+      %%> - the role stays active either way; until the copy passes, the Node offers no proof places (docs/reference/development-containers.md#the-seed-on-each-ci-node)
+    end
   else a step fails
     N--xSW: exit ≠ 0 or no match
     SW--xGW: Run failed<br/>error_code, failed step

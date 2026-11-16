@@ -250,6 +250,33 @@ orbit node:role:add Beast ci-runner
 
 Verify each Node with `orbit doctor --node=<numeric-node-id>`. For a failed role add, repair the reported cause and retry with `orbit node:role:add <node> ci-runner --converge`. Existing runners and registrations stay in place.
 
+### Proof copies on a CI Node
+
+This part is the target design of ADR 0260, build steps 3 and 4.
+
+A CI Node hosts [proof](/cli/proof/run) copies when it has an active `ci-runner` role, at least one CI place, and no `app-dev` role. This is the one rule; the other pages link here. A proof copy takes one CI place. The CI places are the Node's count from ADR 0260.
+
+A Node that also has `app-dev` is not such a CI Node. It hosts Instances through its `app-dev` role, and ADR 0260 build step 5 decides whether its CI places take proof copies. Orbit never adds `app-dev` to a CI Node to host proof copies.
+
+On such a Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent, with its `nested` part, for two kinds of Node: an `app-dev` Node on the build list, and a CI Node that hosts proof copies. The role runtime runs the branch for either one. The CI Node gets no `app-dev` role for this.
+
+The branch prepares:
+
+- the Incus projects `orbit-instances` and `orbit-instances-nested`, the bridge `orbitinst0`, the ACLs, the egress proxy and the two shared folders;
+- the nested project's profile, the kernel modules `wireguard` and `overlay`, and `volmode=dev` for [inner volumes](/reference/development-containers#the-inner-volume) on the pool;
+- the normal image and the [nested-fleet image](/reference/development-containers#the-nested-fleet-image);
+- first, a check of root's subordinate IDs against a [CI Node's demand](/reference/node-settings#a-ci-node), before any nesting change.
+
+The intent leaves out the parts that serve a Route or a sleep through the Node's Caddy: the own-site rules, the redirect of agent development ports and the wake of frozen containers. The tasks are the same; the intent decides. The admission of the role add or converge allocates the Node's Instance bridge, as for an `app-dev` Node.
+
+The Node provides the ZFS pool `orbit-instances`, as every Node that clones does. Without the pool, the converge refuses with `instance.host_unavailable`. The Instance bridge range must not overlap `orbitci0`. The branch refuses an overlap with `instance.host_unavailable` before it changes anything. The runner side (`orbit-ci`, `orbitci0`, its ACL and its profile) stays as it is. The two sides share Incus and the Node, and nothing else.
+
+The converge makes no seed. When it passes, the Gateway admits a [seed copy](/reference/development-containers#the-seed-on-each-ci-node) to the Node if its seed is not the proof default's current seed.
+
+A CI Node that hosts proof copies takes no other Instance. `instance:create` refuses it with `instance.node_ci_only` (409) before any record. Only a proof copy is made there. A proof copy there gets no Route: the Node runs no Caddy and has no TLD.
+
+When the Node stops hosting proof copies, the converge sends no branch, and nothing is removed. This is the same as when the [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is cleared.
+
 ## macOS Nodes
 
 A macOS Node supports selected Homebrew formulae, casks, and Vite+ global packages. It needs no role. It uses an existing account, a working WireGuard connection, and SSH access authorized for the Gateway. Enrollment pins the approved SSH host identity and verifies the actual platform, architecture, account, and tunnel address before it succeeds. The Gateway resolves the host name. An SSH alias on the caller's machine is not a fleet address.
@@ -367,6 +394,8 @@ An `app-dev` Node on the Gateway's build list of [development containers](/refer
 Each such converge also writes every Instance container's [presented machine name](/reference/development-containers#the-machine-name) into its `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts`, through the Incus file API, whether the container runs, is stopped or is frozen. Nothing restarts: the kernel hostname follows at the container's next start, and T3's label at T3's next start.
 
 A sleeping container's asleep marker lives in the role's hibernation directory, `/data/caddy/orbit/hibernation`, which [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation#host-directories) lists. A sleep writes it before it freezes the container; the start part of a wake removes it once the app answers. The sleep opens swap only for the frozen container's own cgroup, and the wake closes it again: the role changes no host swap or Incus setting.
+
+A CI Node that [hosts proof copies](#proof-copies-on-a-ci-node) gets the same branch through its `ci-runner` role.
 
 When the Node's [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on, the same converge first checks root's subordinate IDs for the larger demand, then also prepares the Incus project `orbit-instances-nested`, its profile, its stock image and two kernel modules: `wireguard` and `overlay`. After the normal image, it builds the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) in that project. A Node with the switch off runs the same tasks and commands as before.
 

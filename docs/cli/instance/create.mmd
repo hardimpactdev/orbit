@@ -36,6 +36,7 @@ sequenceDiagram
   %%> - a Project with `nested_fleet` on is admitted only as a container in the nested Incus project: `instance.nested_fleet_host_unavailable` (409) when the Node has nested-fleet hosting off, `instance.nested_fleet_container_required` (409) when the Node is not on the build list or the result is a host checkout, both before any record; this holds on a retry of a failed create too
   %%> - the name is one DNS label of at most 63 characters; a web Route has labels of at most 63 characters and at most 64 characters in total while the Node CSR uses the domain as its common name (`route.domain_invalid`), checked before the Operation starts
   %%> - the target is an active `app-dev` Node and not a task VM; a production Node is refused (`instance.candidate_required`)
+  %%> - a CI Node that hosts proof copies is refused first, `instance.node_ci_only` (409), before any record: only a proof copy is made there (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node)
   %%> - the checkout path is free, and no other change runs on the Instance; the Gateway holds one lock per Instance
   %%> Allowed:
   %%> - repeat the command for an Instance that failed or never finished: it resumes (see the failure branch)
