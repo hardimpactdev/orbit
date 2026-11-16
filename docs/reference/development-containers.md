@@ -2764,10 +2764,12 @@ A seed is the commit and the time that the default took it, because a retake at 
 
 ##### How the seed moves
 
-Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for each target side by side:
+Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for one target at a time:
 
 - `incus copy <default> proof-node-<id>:proof-seed --refresh --mode=push`, in the project `orbit-instances-nested`;
 - `incus storage volume copy` of the default's inner volume to `proof-seed-inner` on the same remote, with `--refresh --mode=push`.
+
+The copies to the targets never overlap. Each push of the inner volume takes a snapshot of it on the default's Node. The volume is mounted in the default, so Incus freezes its file system (`fsfreeze --freeze`) for that snapshot. A second freeze of a frozen file system fails with `Device or resource busy`. So two copies of one source side by side can fail a target. The certificate reads and the checks run on the CI Nodes, and they still run side by side.
 
 An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The holder volume gets the default's `size`, but each snapshot that it receives records `size: 0`; a clone [sets its own size](#the-inner-volume). The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
 
