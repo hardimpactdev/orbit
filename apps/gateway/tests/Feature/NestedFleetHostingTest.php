@@ -401,6 +401,67 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and(app(ProofSeeds::class)->holder($behind))->toBeNull();
     });
 
+    it('names the default\'s current seed as the base of its next retake only while a Node that a copy would target holds it', function (): void {
+        $default = proofSeedDefault();
+        $runtime = $default->runtime()->firstOrFail();
+        $holding = ciNode();
+        $behind = ciNode(2, LifecycleStatus::Active, 'ci-behind', '10.44.0.35');
+        $seed = ['holder' => 'proof-seed', 'commit' => str_repeat('a', 40), 'taken_at' => '2026-11-16 00:00:00', 'operation_id' => 7];
+        ProofSeed::query()->create(['node_id' => $holding->id, ...$seed]);
+        $instance = fn (): array => app(InstanceContainer::class)->intent($default->refresh(), $runtime->refresh());
+
+        // docs/reference/development-containers.md#a-retake-keeps-the-seed: a Node whose listener is not ready is no target, so it needs no base.
+        expect(app(ProofSeeds::class)->base($default, $runtime))->toBeNull()
+            ->and($instance())->not->toHaveKey('seed_base');
+        seedListening($holding, $behind);
+        expect(app(ProofSeeds::class)->base($default, $runtime))->toBe(str_repeat('a', 40))
+            ->and($instance()['seed_base'])->toBe(str_repeat('a', 40))
+            // A copy to every Node behind the seed may release the base; one that leaves a Node out may not.
+            ->and(app(ProofSeeds::class)->admit('seed')?->input['release_base'])->toBeTrue();
+        Operation::query()->where('kind', ProofSeeds::Kind)->delete();
+        expect(app(ProofSeeds::class)->admit('seed', [$behind->id]))->toBeNull()
+            ->and(app(ProofSeeds::class)->admit('node_role', [$holding->id])?->input['release_base'])->toBeTrue();
+        Operation::query()->where('kind', ProofSeeds::Kind)->delete();
+        ProofSeed::query()->create(['node_id' => $behind->id, ...$seed, 'commit' => str_repeat('b', 40)]);
+        $third = ciNode(2, LifecycleStatus::Active, 'ci-third', '10.44.0.36');
+        seedListening($third);
+        expect(app(ProofSeeds::class)->admit('seed', [$third->id])?->input['release_base'])->toBeFalse();
+
+        // A Node with an older seed does not keep a base: only the current seed is one. Nor does another runtime, or a Node without places.
+        ProofSeed::query()->where('node_id', $holding->id)->update(['taken_at' => '2026-11-15 00:00:00']);
+        expect(app(ProofSeeds::class)->base($default, $runtime))->toBeNull();
+        ProofSeed::query()->where('node_id', $holding->id)->update(['taken_at' => '2026-11-16 00:00:00']);
+        Node::withoutEvents(fn (): bool => $holding->update(['settings' => ['ci' => ['places' => 0, 'proof_only' => false]]]));
+        expect(app(ProofSeeds::class)->base($default, $runtime))->toBeNull()
+            ->and(app(ProofSeeds::class)->base($default, InstanceRuntime::query()->whereKeyNot($runtime->id)->first() ?? new InstanceRuntime))->toBeNull();
+    });
+
+    it('asks no query for the base of any container but the proof default, which every container intent asks for', function (): void {
+        $default = proofSeedDefault();
+        $runtime = $default->runtime()->firstOrFail();
+        $holding = ciNode();
+        ProofSeed::query()->create(['node_id' => $holding->id, 'holder' => 'proof-seed', 'commit' => str_repeat('a', 40),
+            'taken_at' => '2026-11-16 00:00:00', 'operation_id' => 7]);
+        seedListening($holding);
+        expect(app(ProofSeeds::class)->base($default, $runtime))->toBe(str_repeat('a', 40));
+
+        // Another Project's default, another Instance of the proof Project, a runtime outside the nested project, and one without a seed.
+        $others = [[$default->replicate()->forceFill(['project_id' => $default->project_id + 1]), $runtime],
+            [$default->replicate()->forceFill(['name' => 'feature']), $runtime],
+            [$default, $runtime->replicate()->forceFill(['incus_project' => 'default'])],
+            [$default, $runtime->replicate()->forceFill(['seed_commit' => null])]];
+        DB::enableQueryLog();
+        try {
+            foreach ($others as [$instance, $other]) {
+                expect(app(ProofSeeds::class)->base($instance, $other))->toBeNull();
+            }
+            expect(DB::getQueryLog())->toBe([]);
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+    });
+
     it('gives the ci-runner converge of a Node that offers proof places the seed listener of the default\'s Node, and every other Node its removal', function (): void {
         $default = proofSeedDefault();
         $defaultNode = $default->node()->firstOrFail();
@@ -545,14 +606,15 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and($operation->node_id)->toBe($default->node_id)
             ->and($operation->lock_key)->toBe('instance_seed_copy:'.$default->id)
             ->and($operation->input)->toBe(['default_instance_id' => $default->id, 'commit' => str_repeat('a', 40),
-                'taken_at' => $runtime->refresh()->seed_taken_at?->toIso8601String(), 'targets' => [$node->id]])
+                'taken_at' => $runtime->refresh()->seed_taken_at?->toIso8601String(), 'targets' => [$node->id], 'release_base' => true])
             // One copy at a time: the open copy admits the next one when it ends.
             ->and(app(ProofSeeds::class)->admit('seed'))->toBeNull()
             ->and(Operation::query()->where('kind', 'instance.seed_copy')->count())->toBe(1);
 
         $intent = app(ProofSeedCopyProjection::class)->input($operation)['intent'];
         expect(collect($intent)->except(['source', 'targets'])->all())->toBe(['project' => 'orbit-instances-nested', 'pool' => 'orbit-instances',
-            'snapshot' => 'seed-'.str_repeat('a', 40), 'holder' => 'proof-seed', 'holder_volume' => 'proof-seed-inner', 'holder_nic_acl' => 'orbitinst0-proxy'])
+            'snapshot' => 'seed-'.str_repeat('a', 40), 'release_base' => true, 'holder' => 'proof-seed', 'holder_volume' => 'proof-seed-inner',
+            'holder_nic_acl' => 'orbitinst0-proxy'])
             ->and(collect($intent['source'])->except('ssh_execution')->all())->toBe(['node_id' => $default->node_id,
                 'container' => $runtime->container_name, 'inner_volume' => 'inner-'.$default->id])
             ->and(collect($intent['targets'][0])->except('ssh_execution')->all())->toBe(['node_id' => $node->id, 'remote' => 'proof-node-'.$node->id,

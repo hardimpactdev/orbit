@@ -41,6 +41,12 @@ A failed or cancelled clone keeps the new Instance reserved and records the erro
 
 <div className="flow-at" data-chart="instance/clone"></div>
 
+### Production in containers (planned)
+
+This flow is planned by [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) and not built. The clone records the Instance, its storage volume and its preview Route, and makes no container. The first deploy builds the first release container from the image. See [Production containers](/reference/production-containers#after-a-clone).
+
+<div className="flow-at" data-chart="instance/container/create-production"></div>
+
 ## Errors
 
 | Code | Meaning |

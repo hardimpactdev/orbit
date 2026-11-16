@@ -13,7 +13,7 @@ const certificate = "-----BEGIN CERTIFICATE-----\nCI\n-----END CERTIFICATE-----"
 type Play = Record<string, unknown> & { name: string };
 const intent = (inner: string | null) => ({
     project: "orbit-instances-nested", pool: "orbit-instances", snapshot: "seed-abc", holder: "proof-seed", holder_volume: "proof-seed-inner",
-    holder_nic_acl: "orbitinst0-proxy",
+    holder_nic_acl: "orbitinst0-proxy", release_base: false,
     source: { node_id: 7, container: "instance-41", inner_volume: inner },
     targets: [{ node_id: 12, remote: "proof-node-12", listen: "10.44.0.30:8444" }, { node_id: 13, remote: "proof-node-13", listen: "10.44.0.31:8444" }],
 });
@@ -21,20 +21,24 @@ const intent = (inner: string | null) => ({
 /**
  * A folder with a stub incus: `remote list` answers from `remotes.json`, `query` from the snapshot lists, every other call is logged.
  * As the Incus API does, the stub names an instance snapshot `<snapshot>` and a volume snapshot `<volume>/<snapshot>`. The volume holds
- * the instance's snapshots unless the test names its own.
+ * the instance's snapshots unless the test names its own. `snapshots` are the holder's, `source` the default's, both halves alike.
  */
-async function fixture(remotes: string[], snapshots: string[], volumeSnapshots = snapshots) {
+async function fixture(remotes: string[], snapshots: string[], volumeSnapshots = snapshots, source: string[] = []) {
     const folder = await Deno.makeTempDir();
     await Deno.mkdir(`${folder}/bin`);
     await Deno.mkdir(`${folder}/servercerts`);
     await Deno.writeTextFile(`${folder}/remotes.json`, JSON.stringify(Object.fromEntries(remotes.map((name) => [name, {}]))));
     await Deno.writeTextFile(`${folder}/snapshots.json`, JSON.stringify(snapshots.map((name) => ({ name }))));
     await Deno.writeTextFile(`${folder}/volume-snapshots.json`, JSON.stringify(volumeSnapshots.map((name) => ({ name: `proof-seed-inner/${name}` }))));
+    await Deno.writeTextFile(`${folder}/source-snapshots.json`, JSON.stringify(source.map((name) => ({ name }))));
+    await Deno.writeTextFile(`${folder}/source-volume-snapshots.json`, JSON.stringify(source.map((name) => ({ name: `inner-41/${name}` }))));
     await Deno.writeTextFile(`${folder}/certificate-12.pem`, certificate);
     await Deno.writeTextFile(`${folder}/bin/incus`, `#!/bin/sh
 case "$1 $2" in
   "remote list") cat '${folder}/remotes.json';;
-  "query --") case "$3" in */volumes/custom/*) cat '${folder}/volume-snapshots.json';; *) cat '${folder}/snapshots.json';; esac;;
+  "query --") case "$3" in
+    *proof-seed-inner/*) cat '${folder}/volume-snapshots.json';; */instances/proof-seed/*) cat '${folder}/snapshots.json';;
+    */volumes/custom/*) cat '${folder}/source-volume-snapshots.json';; *) cat '${folder}/source-snapshots.json';; esac;;
   "remote add") echo "$*" >> '${folder}/calls'; cp '${folder}/certificate-12.pem' '${folder}/servercerts/'"$3"'.crt';;
   *) echo "$*" >> '${folder}/calls';;
 esac
@@ -128,4 +132,55 @@ Deno.test("the check fails a holder whose instance holds the admitted seed snaps
         assertEquals((await run(folder, ["Check the holder on the CI Node"], intent("inner-41"))).code === 0, false);
         assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/target-12.json`)).status, "failed");
     } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the holder's seed takes the name of the default's base before the refresh, so both sides share it and the push sends only the change", { ignore: !hasAnsible }, async () => {
+    // docs/reference/development-containers.md#how-the-seed-moves: the default kept `seed-old` as `base-old`; the CI Node holds `seed-old`.
+    const folder = await fixture(["proof-node-12"], ["seed-old"], ["seed-old"], ["base-old", "seed-abc"]);
+    try {
+        await Deno.writeTextFile(`${folder}/servercerts/proof-node-12.crt`, certificate + "\n");
+        const { code, calls } = await run(folder, ["Push the seed from the default's Node"], intent("inner-41"));
+        assertEquals(code, 0);
+        assertEquals(calls, [
+            "snapshot rename proof-node-12:proof-seed seed-old base-old --project orbit-instances-nested",
+            "storage volume snapshot rename proof-node-12:orbit-instances proof-seed-inner seed-old base-old --project orbit-instances-nested",
+            `storage volume copy orbit-instances/inner-41 proof-node-12:orbit-instances/proof-seed-inner --refresh --mode=push ${nested}`,
+            "copy instance-41 proof-node-12:proof-seed --refresh --mode=push --device eth0,ipv4.address= --device eth0,security.acls=orbitinst0-proxy"
+            + ` --device inner-pool,source=proof-seed-inner ${nested}`,
+        ]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+    // A holder that has the base's name already, or holds another seed, is pushed as it is: a rerun renames nothing.
+    for (const holder of [["base-old"], ["seed-older"]]) {
+        const again = await fixture(["proof-node-12"], holder, holder, ["base-old", "seed-abc"]);
+        try {
+            await Deno.writeTextFile(`${again}/servercerts/proof-node-12.crt`, certificate + "\n");
+            const { code, calls } = await run(again, ["Push the seed from the default's Node"], intent("inner-41"));
+            assertEquals(code, 0);
+            assertEquals(calls.filter((call) => call.includes("rename")), [], holder.join());
+        } finally { await Deno.remove(again, { recursive: true }); }
+    }
+});
+
+Deno.test("a copy to every Node behind the seed releases the default's base when each target passed and the seed did not move", { ignore: !hasAnsible }, async () => {
+    const released = { ...intent("inner-41"), release_base: true };
+    const cases: [string, ReturnType<typeof intent>, string[], string[]][] = [
+        ["all passed", released, ["succeeded", "succeeded"], ["base-old", "seed-abc"]],
+        ["one failed", released, ["succeeded", "failed"], ["base-old", "seed-abc"]],
+        ["not every Node behind", intent("inner-41"), ["succeeded", "succeeded"], ["base-old", "seed-abc"]],
+        ["the seed moved", released, ["succeeded", "succeeded"], ["base-abc", "seed-new"]],
+    ];
+    for (const [name, seed, outcomes, source] of cases) {
+        const folder = await fixture([], [], [], source);
+        try {
+            for (const [index, status] of outcomes.entries()) {
+                await Deno.writeTextFile(`${folder}/target-${seed.targets[index].node_id}.json`, JSON.stringify({ status }));
+            }
+            const { code, calls } = await run(folder, ["Release the default's base"], seed);
+            assertEquals(code, 0, name);
+            assertEquals(calls, name === "all passed" ? [
+                "snapshot delete instance-41 base-old --project orbit-instances-nested",
+                "storage volume snapshot delete orbit-instances inner-41 base-old --project orbit-instances-nested",
+            ] : [], name);
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    }
 });

@@ -29,7 +29,7 @@ sequenceDiagram
   %%> - a Node whose listener is not ready: no copy fails on it and no copy marks it tried; its next passed `ci-runner` converge makes it a target
   %%> - one copy at a time: an open copy holds the default's seed-copy lock, `operation.target_busy`
   %%> Result:
-  %%> - a task is recorded with the full intent: the default's Node, container and inner volume, and per target its Node and WireGuard address
+  %%> - a task is recorded with the full intent: the default's Node, container and inner volume, per target its Node and WireGuard address, and `release_base` when the run's targets are all the Nodes behind the seed
   GW->>SW: Start run, full intent<br/>instance-seed-copy
   loop each CI Node, side by side
     SW->>C: Read its Incus certificate<br/>Ansible · tags certificate
@@ -40,11 +40,14 @@ sequenceDiagram
     SW->>N: Copy the seed<br/>Ansible · tags copy
     %%> What it does:
     %%> - adds the client remote `proof-node-ID` of root when it is missing, and refuses when the certificate that root's client stored for it is not the one read on the CI Node
-    %%> - `incus copy DEFAULT proof-node-ID:proof-seed --refresh --mode=push` in `orbit-instances-nested`, then `incus storage volume copy` of the inner volume to `proof-seed-inner` with the same flags
+    %%> - names the base: when the default holds a `base-COMMIT` pair and the holder holds `seed-COMMIT`, renames the holder's pair to `base-COMMIT` through the remote; a rename keeps the creation time, so both sides share that snapshot
+    %%> - `incus storage volume copy` of the inner volume to `proof-seed-inner` with `--refresh --mode=push`, then `incus copy DEFAULT proof-node-ID:proof-seed` with the same flags, in `orbit-instances-nested`
     %%> Why push:
     %%> - the source server sends the data and only the target listens, so the default's Node needs no listener and no daemon change
     %%> Why refresh:
-    %%> - Incus compares the snapshots on both sides and sends only the newer ones; the holder gets `seed-COMMIT` natively; the first copy to a Node sends the whole pair
+    %%> - Incus compares the snapshots on both sides by name and creation time and sends only the newer ones, from the newest shared one; the holder gets `seed-COMMIT` natively; the first copy to a Node sends the whole pair
+    %%> Why a base:
+    %%> - a retake deletes or renames the old `seed-COMMIT`, so without the default's `base-COMMIT` no snapshot is shared and the refresh sends the whole pair; the retake keeps it while a ready CI Node records that seed (`ProofSeeds`)
     %%> Why the whole instance:
     %%> - a snapshot source carries no snapshots, so a refresh from it could not find a common one
     %%> On failure:
@@ -53,6 +56,15 @@ sequenceDiagram
     %%> What it does:
     %%> - the holder `proof-seed` has the snapshot `seed-COMMIT` that the run was admitted for, and its volume has the snapshot of the same name
     %%> - the holder's config and devices match the default's, as the start guard checks them; the volume has exactly the inner volume's keys
+  end
+  opt every Node behind the seed was a target and passed
+    SW->>N: Release the base<br/>Ansible · tags release
+    %%> When:
+    %%> - the intent's `release_base`: the run's targets are all the Nodes behind the default's seed (`ProofSeeds`); every target passed; the default still holds a snapshot with the name the run was admitted for (by name only: after a retake at the same commit during the run, the base that the retake kept goes too)
+    %%> What it does:
+    %%> - deletes every `base-` pair of the default; the holders drop it at their next refresh
+    %%> On failure:
+    %%> - no target's result changes; the next retake deletes the base
   end
   SW-->>GW: Run ended<br/>result per target
   %%> How the Gateway learns it:

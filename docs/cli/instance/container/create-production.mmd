@@ -1,0 +1,83 @@
+sequenceDiagram
+  %% Target design, production containers (ADR 0263, docs/reference/production-containers.md#after-a-clone): instance:clone records a production Instance on an app-prod Node, with its storage volume and preview Route, and makes no container. Its first release container is the cold hot of the first deploy (container/deploy-production.mmd). A checkout production Instance reaches its first release container through container/migrate-production.mmd. When the charts move into place, this replaces the clone chart.
+  %% status: draft
+  %% command: instance:clone
+  %% kind: instance.clone
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane C icon=server pill=target tone=purple
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant C as Candidate<br/>Node · container
+  participant N as app-prod Node<br/>reached over ssh
+  CLI->>GW: instance:clone CAND NODE<br/>NAME --preview-name=NAME
+  %%> Command:
+  %%> - `orbit instance:clone CANDIDATE NODE NAME --preview-name=NAME`
+  %%> - syntax: `<candidate> <node> <name> --preview-name=NAME [--branch=BRANCH] [--sqlite-source-path=PATH] [--json]`
+  %%> Input:
+  %%> - a development Instance, in a container or a checkout, as the candidate
+  Note over GW: Validate, reserve Instance<br/>render .env · TASK
+  %%> Requirements:
+  %%> - the Node is an active `app-prod` Node with the container setup and a TLD
+  %%> - the Project has no production Instance on the Node, and the preview domain is free
+  %%> Records:
+  %%> - the Instance, its environment, its Process and Schedule copies, its preview Route
+  %%> - the rendered `.env`, kept for the first deploy; with a SQLite source it names `/srv/shared/database.sqlite`
+  Note over GW: Hold the Route Nodes
+  %%> What it does:
+  %%> - holds each Node that serves the preview Route's site until the task ends, as every Route write does
+  GW->>SW: Start run, full intent<br/>operation-instance-clone
+  %%> Not included:
+  %%> - no GitHub token and no `.env`: the clone fetches no code; the first deploy does
+  GW-->>CLI: 202 Accepted<br/>TASK
+  SW->>C: Check candidate source<br/>Ansible · tags candidate
+  %%> What it does:
+  %%> - checks the repository, branch and commit and a clean tree, read-only
+  %%> Why on the Node:
+  %%> - the candidate's tree can change after admission, and the clone depends on it
+  SW->>N: Create storage volume<br/>Ansible · tags volume
+  %%> What it does:
+  %%> - creates the filesystem custom volume `instance-<id>-shared` on the Node's pool, with each shared path as a folder
+  %%> - writes the Instance's upstream file with a `503` answer, so a Route site can import it before the first release
+  opt --sqlite-source-path
+    SW->>C: Snapshot the database<br/>SQLite export · dump
+    SW->>N: Install into the volume<br/>shared/database.sqlite
+    %%> What it does:
+    %%> - installs the consistent copy as `database.sqlite` in the volume; the copy's transfer files go after success and failure
+  end
+  opt web Project needs a preview Route
+    SW->>N: Make a CSR on the Node<br/>openssl req · key stays on Node
+    SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
+    %%> Why:
+    %%> - the one allowed step→Gateway call; the Orbit CA key stays in the Gateway
+    GW-->>SW: Signed certificate
+    SW->>N: Publish preview Route<br/>child route-create-site · Ansible
+    %%> What it does:
+    %%> - installs the certificate and adds the Caddy site, which imports the Instance's upstream file, then reloads Caddy
+    %%> No DNS step:
+    %%> - the preview name is inside the Node's TLD
+  end
+  alt all steps pass
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record result<br/>Instance active · no release
+    %%> Result:
+    %%> - the Instance is active with its volume and preview Route; no release container exists yet
+    %%> - its Schedules get their triggers when the first deploy records a live release
+    %%> Next:
+    %%> - `instance:deploy`: its cold hot is the first release container
+  else a step fails
+    SW--xGW: Run failed<br/>failed step, error code
+    Note over GW: Keep Instance reserved<br/>rerun reuses it
+    %%> On the Node:
+    %%> - the volume and site stay; the candidate is unchanged
+    %%> Retry:
+    %%> - the same request repeats only what is missing; a changed request returns `instance.clone_retry_conflict`
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end
