@@ -191,7 +191,9 @@ A tool that asks for a narrower mode, such as Bun with its 0755 folders in `node
 
 One program does the pass: `swamp/ansible/instance_workspace_owner.py`. It names each entry it changed, up to 20; above that it prints only the count.
 
-The workspace is live while root does this: Git, the app or an agent may remove an entry between its listing and its change. An entry that is gone needs nothing. Any other error fails the pass and names the path. The pass never follows a link: it changes the mode and the owner through the entry it opened without following one, and it gives a link or a socket itself to `agent`, never its target. A file it gives to `agent` loses its setuid and setgid bits, so `orbit` cannot make a program that runs as `agent`. A file with a second name, a hard link, keeps its owner, because that name may be outside the workspace; it still gets the group's bits.
+The workspace is live while root does this: Git, the app or an agent may remove an entry between its listing and its change. An entry that is gone needs nothing. Any other error fails the pass and names the path.
+
+The pass never follows a link: it changes the mode and the owner through the entry it opened without following one, and it gives a link or a socket itself to `agent`, never its target. A file it gives to `agent` loses its setuid and setgid bits, so `orbit` cannot make a program that runs as `agent`. A file with a second name, a hard link, keeps its owner, because that name may be outside the workspace; it still gets the group's bits.
 
 Orbit's own Git commands in the workspace start no automatic maintenance (`maintenance.auto=false`, `gc.auto=0`): a fetch would otherwise repack in the background and remove pack files while the pass and the deploy steps run. The Git commands of the people and agents who work in the workspace still repack it.
 
@@ -2920,7 +2922,7 @@ Gap: which refusal comes first on a full Node for nested-fleet clones, and its e
 
 Six phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start, the refresh and the resume through the tags `fleet_check`, `fleet_start`, `fleet_refresh` and `fleet_resume` of `instance-container.yml`. The create of its clone, and the [start of a stopped clone](#a-stopped-nested-fleet-clone-starts), call the check and the resume ([A clone starts its fleet](#a-clone-starts-its-fleet)). The proof of a task copy calls the reset through the tag `fleet_reset` ([Reset](#reset)). No flow calls the rules alone yet.
 
-A [`proof:run`](/cli/proof/run#the-run) in a copy first runs the phase `proof_checkout` (`tasks/instance-proof-checkout.yml`). As `orbit`, it fetches the commit under proof by SHA from the public Orbit repository with the deploy commands' environment, 60 s and no retry, and checks it out detached. It then names the development deploy steps whose inputs did not change, as a deployment's checkout does.
+A [`proof:run`](/cli/proof/run#the-run) in a copy first runs the phase `proof_checkout` (`tasks/instance-proof-checkout.yml`). As `agent`, the workspace's owner, it fetches the commit under proof by SHA from the public Orbit repository with the deploy commands' environment, 60 s and no retry, and checks it out detached. It then names the development deploy steps whose inputs did not change, as a deployment's checkout does.
 
 Each phase runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` (`NestedFleetIntent`) from the fleet constants of task VMs, with the commit of the old seed, for the deployment of the default and the create of its clone.
 
