@@ -1,7 +1,9 @@
 ---
 # The seed listener of a CI Node (docs/reference/node-provisioning.md#the-seed-listener). The default's Node pushes the seed with
 # `incus copy --refresh --mode=push`, so only this Node listens: on its WireGuard address, for one restricted client certificate, root's
-# client certificate of the default's Node, limited to one project. Without a sender the same tasks remove the trust and the listener.
+# client certificate of the default's Node, limited to one project. These tasks run in the node phase: they write the trust, and
+# without a sender they remove the trust and the listener. The listener opens later, in the firewall phase, after the allow and the
+# deny of its port exist (proof-seed-listen.yml).
 # Reads `seed` (the runtime's `proof_seed`) and `seed_certificate` (the sender's certificate, PEM, or empty without a sender).
 - name: Read the Incus listener
   ansible.builtin.command: { argv: [incus, config, get, core.https_address] }
@@ -38,10 +40,6 @@
   always:
     - name: Remove the certificate file
       ansible.builtin.file: { path: /run/orbit-proof-seed.crt, state: absent }
-- name: Listen on the WireGuard address
-  when: seed.present and seed_listener.stdout | trim != seed.listen
-  ansible.builtin.command: { argv: [incus, config, set, core.https_address, "{{ seed.listen }}"] }
-  changed_when: true
 # Only the listener of the seed goes: an address that someone else set stays.
 - name: Stop the listener
   when: not seed.present and seed_listener.stdout | trim == seed.listen

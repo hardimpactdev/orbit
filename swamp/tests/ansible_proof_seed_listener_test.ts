@@ -6,6 +6,7 @@ import { assertEquals } from "jsr:@std/assert@1";
 import { fileURLToPath } from "node:url";
 
 const tasks = fileURLToPath(new URL("../ansible/tasks/proof-seed-listener.yml", import.meta.url));
+const listen = fileURLToPath(new URL("../ansible/tasks/proof-seed-listen.yml", import.meta.url));
 const venv = [...Deno.readDirSync("/opt/orbit-shape-gate")].find((entry) => entry.name.startsWith("venv-"))?.name;
 const playbook = venv ? `/opt/orbit-shape-gate/${venv}/bin/ansible-playbook` : "ansible-playbook";
 const certificate = "-----BEGIN CERTIFICATE-----\nDEFAULT\n-----END CERTIFICATE-----";
@@ -35,7 +36,9 @@ async function run(folder: string, present: boolean) {
     await Deno.writeTextFile(`${folder}/play.yml`, JSON.stringify([{
         hosts: "localhost", connection: "local", gather_facts: false,
         vars: { seed, seed_certificate: present ? certificate : "" },
-        tasks: [{ name: "Apply the seed listener", "ansible.builtin.include_tasks": tasks }],
+        // The node phase, then the firewall phase, which opens the listener after the rules exist.
+        tasks: [{ name: "Apply the seed listener", "ansible.builtin.include_tasks": tasks },
+            ...(present ? [{ name: "Open the seed listener", "ansible.builtin.include_tasks": listen }] : [])],
     }]));
     // The certificate file goes to /run as root on a Node; here it goes to the fixture folder as the test user.
     const text = Deno.readTextFileSync(tasks).replaceAll("/run/orbit-proof-seed.crt", `${folder}/orbit-proof-seed.crt`)
@@ -97,6 +100,17 @@ Deno.test("without a sender the trust and the seed listener go, and another list
     try {
         assertEquals(await run(kept, false), []);
     } finally { await Deno.remove(kept, { recursive: true }); }
+});
+
+Deno.test("a converge opens the seed listener only in the firewall phase, after the rules of its port exist", async () => {
+    assertEquals(Deno.readTextFileSync(tasks).includes("core.https_address, \"{{ seed.listen }}\""), false);
+    // The playbook holds a tag that the YAML reader here does not parse, so the firewall play is read as text.
+    const book = Deno.readTextFileSync(new URL("../ansible/operation-node-role-add.yml", import.meta.url));
+    const start = book.indexOf("- name: Role firewall\n");
+    const play = book.slice(start, book.indexOf("\n- name: ", start + 1));
+    assertEquals(start >= 0 && play.includes("tags: [firewall]"), true);
+    const converge = play.indexOf("- name: Converge the role firewall");
+    assertEquals(converge >= 0 && converge < play.indexOf("- name: Open the seed listener"), true);
 });
 
 Deno.test("a ci-runner removal stops the seed listener in a phase before the firewall rules go", async () => {

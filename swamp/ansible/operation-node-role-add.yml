@@ -120,6 +120,11 @@
         firewall_commands: >-
           {{ (intent.firewall.desired | reject('contains', 'docker0') | list
           if intent.role == 'analytics' else intent.firewall.desired) + intent.firewall.remove }}
+    # The seed listener opens only once its allow and deny exist (docs/reference/node-provisioning.md#the-seed-listener).
+    - name: Open the seed listener
+      when: intent.runtime.proof_seed is defined and intent.runtime.proof_seed.present
+      ansible.builtin.include_tasks: tasks/proof-seed-listen.yml
+      vars: { seed: "{{ intent.runtime.proof_seed }}" }
 - name: Node exporters
   hosts: exporter_nodes
   tags:

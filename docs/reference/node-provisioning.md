@@ -294,7 +294,7 @@ A Node that offers proof places, other than the proof default's own Node, receiv
 | Trust | One restricted client certificate, named `orbit-proof-seed`: root's Incus client certificate on the proof default's Node, with `restricted` on and the project `orbit-instances-nested` only |
 | Firewall | Two UFW rules on the WireGuard interface for TCP port 8444, both inserted at the top. `orbit:proof-seed` allows the WireGuard address of the default's Node. `orbit:proof-seed-deny` denies every other source |
 
-The rule `orbit:wireguard-members` admits every port from every WireGuard member. So the deny must come before it, and the allow before the deny: UFW uses the first rule that matches. The converge inserts the deny first and the allow last.
+The node phase writes the trust. The firewall phase inserts the two rules and only then sets the listener, so the port is never reachable before its rules exist. The rule `orbit:wireguard-members` admits every port from every WireGuard member. So the deny must come before it, and the allow before the deny: UFW uses the first rule that matches. The converge inserts the deny first and the allow last.
 
 The converge reads the default Node's client certificate there. When root has none yet, it makes one with `incus remote generate-certificate`; nothing else changes on that Node. A trust entry of that name with another certificate is replaced. The Gateway sends the default's Node in the intent, so a converge after the default moved to another Node trusts the new one.
 
