@@ -260,33 +260,7 @@ Deno.test({
       }
 
       assertEquals(Deno.readTextFileSync(helper), "pre-existing helper: do not install or convert");
-
-      // A container made before the .env line existed: its own exclude lines stay, the .env line comes once.
-      const exclude = `${guest}/srv/workspace/.git/info/exclude`;
-      Deno.writeTextFileSync(exclude, "# local\n*.log");
-      for (const _ of [1, 2]) assert(f.run("workspace").ok);
-      assertEquals(Deno.readTextFileSync(exclude), "# local\n*.log\n/.env\n");
-      // An application folder names its own .env.
-      Object.assign(f.container, { environment_file: "/srv/workspace/apps/web/.env" });
-      f.write();
-      Deno.mkdirSync(`${guest}/srv/workspace/apps/web`, { recursive: true });
-      assert(f.run("workspace").ok);
-      assertEquals(Deno.readTextFileSync(exclude), "# local\n*.log\n/.env\n/apps/web/.env\n");
-      assertEquals(f.workspace("status", "--porcelain", "--untracked-files=all"), "");
-      Object.assign(f.container, { environment_file: "/srv/workspace/.env" });
-      f.write();
       assertEquals(Deno.readLinkSync(guest + "/var/lib/orbit/vite-plus-home/js_runtime"), "/opt/orbit-runtime/current/vite-plus-home/js_runtime");
-
-      // Configuration drift alone restarts PHP, even when its unit has not changed.
-      Deno.writeTextFileSync(`${f.folder}/containers/instance-7/etc/orbit/frankenphp.Caddyfile`, "stale\n");
-      const before = f.state().systemctl.length;
-      const repaired = f.run("processes");
-      assert(repaired.ok, repaired.output);
-      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/orbit/frankenphp.Caddyfile`), f.container.web_config.content);
-      assert(f.state().systemctl.slice(before).some((call: string[]) => call.join(" ") === "restart --no-block -- orbit-frankenphp.service"));
-      const unchanged = f.run("processes");
-      assert(unchanged.ok, unchanged.output);
-      assertEquals(unchanged.changed, 0, unchanged.output);
     } finally {
       f.cleanup();
     }
@@ -594,7 +568,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
+  name: "a deployment checks out the branch's new commit, seeds it and deletes the older seed",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -629,6 +603,26 @@ Deno.test({
       assertEquals(f.state().bundles.at(-1).prerequisites, [first]);
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${second}`]);
 
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a deployment refuses a pinned commit off the branch at its fetch, and dirty or diverged work at its checkout",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      // The workspace starts at the branch's second commit, so the first one is older.
+      const first = git(f.source, "rev-parse", "HEAD");
+      Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
+      git(f.source, "commit", "--quiet", "-am", "second");
+      const second = git(f.source, "rev-parse", "HEAD");
+      for (const phase of ["container", "workspace", "processes"]) assert(f.run(phase).ok);
+      assertEquals(f.workspace("rev-parse", "HEAD"), second);
+
       // A pinned commit that is not on the branch refuses at the fetch, the second phase of the play: the result names it.
       f.container.commit = "f".repeat(40);
       f.write();
@@ -644,6 +638,7 @@ Deno.test({
       const dirty = f.run("checkout");
       assert(!dirty.ok);
       assertEquals(f.result(), { error_code: "deployment.checkout_dirty" });
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/index.php`), "<?php echo 3;\n");
       f.workspace("checkout", "--", "index.php");
 
       // An older commit does not fast-forward the branch.
@@ -653,22 +648,6 @@ Deno.test({
       assert(!diverged.ok);
       assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);
-
-      // A failure that is no refusal names its phase.
-      f.container.commit = null;
-      f.write();
-      const state = f.state();
-      state.inactive = ["orbit-frankenphp.service"];
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-      assert(!f.run("check").ok);
-      assertEquals(f.result(), { error_code: "deployment.processes_inactive" });
-      // In one play of several phases a failed phase stops the play, and the result names it.
-      delete state.containers["instance-7"];
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-      const bundles = (f.state().bundles ?? []).length;
-      assert(!f.phases(["start", "fetch"]).ok);
-      assertEquals(f.result(), { error_code: "instance.container_start_failed", failed_phase: "start", phases_passed: [] });
-      assertEquals((f.state().bundles ?? []).length, bundles, "a failed phase stops the play: no fetch after a failed start");
     } finally {
       f.cleanup();
     }
@@ -1020,7 +999,7 @@ const restarts = (state: { systemctl?: string[][] }) =>
   (state.systemctl ?? []).filter((call) => call[0] === "restart").map((call) => call.slice(call.indexOf("--") + 1));
 
 Deno.test({
-  name: "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing",
+  name: "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing, a drifted web configuration alone restarts PHP, and a changed value replaces its environment file",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1048,6 +1027,28 @@ Deno.test({
       assert(again.ok, again.output);
       assertEquals(again.changed, 0, again.output);
       assertEquals(restarts(f.state()), [["orbit-frankenphp.service", worker.name]]);
+
+      // Configuration drift alone restarts PHP, even when its unit has not changed.
+      Deno.writeTextFileSync(`${rootfs}/etc/orbit/frankenphp.Caddyfile`, "stale\n");
+      const before = f.state().systemctl.length;
+      const repaired = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(repaired.ok, repaired.output);
+      assertEquals(Deno.readTextFileSync(`${rootfs}/etc/orbit/frankenphp.Caddyfile`), f.container.web_config.content);
+      assert(f.state().systemctl.slice(before).some((call: string[]) => call.join(" ") === "restart --no-block -- orbit-frankenphp.service"));
+      const unchanged = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(unchanged.ok, unchanged.output);
+      assertEquals(unchanged.changed, 0, unchanged.output);
+
+      // A changed value is a new environment file and a changed unit: the unit restarts and the former file goes.
+      const changed = { ...worker, environment: "/etc/orbit/processes/41/def.env", content: worker.content.replace("abc.env", "def.env") };
+      f.container.processes = [changed, paused];
+      f.write();
+      const restartsBefore = restarts(f.state()).length;
+      const rotated = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: JSON.stringify({ [changed.environment]: "# Orbit Process 41\nQUEUE=\"low\"\n" }) });
+      assert(rotated.ok, rotated.output);
+      assertEquals([...Deno.readDirSync(`${rootfs}/etc/orbit/processes/41`)].map((entry) => entry.name), ["def.env"]);
+      assertEquals(restarts(f.state()).slice(restartsBefore), [[worker.name]]);
+      assert(f.state().systemctl.some((call: string[]) => call[0] === "daemon-reload"));
     } finally {
       f.cleanup();
     }
@@ -1055,7 +1056,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file",
+  name: "a deployment's new seed restarts the running Processes on the new commit",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1072,7 +1073,8 @@ Deno.test({
       state.systemctl = [];
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
 
-      for (const phase of ["start", "fetch", "checkout", "processes", "seed", "check"]) {
+      // The deployment's phases that touch the units; "a deployment's start waits only for enabled Process units" covers its start.
+      for (const phase of ["fetch", "checkout", "processes", "seed"]) {
         const result = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments });
         assert(result.ok, `${phase}: ${result.output}`);
       }
@@ -1082,16 +1084,6 @@ Deno.test({
       assert(calls.includes(`stop -- orbit-frankenphp.service ${worker.name}`), calls.join("\n"));
       assert(calls.includes(`start -- orbit-frankenphp.service ${worker.name}`), calls.join("\n"));
 
-      // A changed value is a new environment file and a changed unit: the unit restarts and the former file goes.
-      const changed = { ...worker, environment: "/etc/orbit/processes/41/def.env", content: worker.content.replace("abc.env", "def.env") };
-      f.container.processes = [changed, paused];
-      f.write();
-      const rotated = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: JSON.stringify({ [changed.environment]: "# Orbit Process 41\nQUEUE=\"low\"\n" }) });
-      assert(rotated.ok, rotated.output);
-      const rootfs = `${f.folder}/containers/instance-7/etc/orbit/processes/41`;
-      assertEquals([...Deno.readDirSync(rootfs)].map((entry) => entry.name), ["def.env"]);
-      assertEquals(restarts(f.state()), [[worker.name]]);
-      assert(f.state().systemctl.some((call: string[]) => call[0] === "daemon-reload"));
     } finally {
       f.cleanup();
     }
@@ -1141,7 +1133,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a new Process that does not start fails the deployment's processes phase, which names its unit",
+  name: "a new Process that does not start fails the deployment's processes phase, which names its unit; any failed phase names itself and stops its play",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1162,6 +1154,22 @@ Deno.test({
       const processes = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
       assert(!processes.ok, processes.output);
       assertEquals(f.result(), { error_code: "instance.container_processes_failed", detail: `Not active: ${broken.name}`, units_inactive: [broken.name] });
+
+      // A failure of the deployment's check, which is no refusal, names its phase.
+      f.container.processes = [worker];
+      f.write();
+      state.failing = [];
+      state.inactive = ["orbit-frankenphp.service"];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      assert(!f.run("check").ok);
+      assertEquals(f.result(), { error_code: "deployment.processes_inactive" });
+      // In one play of several phases a failed phase stops the play, and the result names it.
+      delete state.containers["instance-7"];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const bundles = (f.state().bundles ?? []).length;
+      assert(!f.phases(["start", "fetch"]).ok);
+      assertEquals(f.result(), { error_code: "instance.container_start_failed", failed_phase: "start", phases_passed: [] });
+      assertEquals((f.state().bundles ?? []).length, bundles, "a failed phase stops the play: no fetch after a failed start");
     } finally {
       f.cleanup();
     }
@@ -1235,8 +1243,23 @@ Deno.test({
       assert(f.run("process", { ORBIT_PROCESS_ACTION: "destroy" }).ok);
       assertEquals(f.result(), { state: "removed", output: "" });
       assert(!exists(`/etc/systemd/system/multi-user.target.wants/${paused.name}`));
-      Object.assign(f.control, { process_id: 41, name: worker.name });
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a Process start whose unit does not come up fails with the shared code, and a stopped container has no unit to change",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker, paused];
       f.write();
+      for (const phase of ["container", "workspace", "processes"]) {
+        assert(f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments }).ok);
+      }
 
       // A unit that does not come up fails the start with the shared code.
       const failing = f.state();
@@ -1293,7 +1316,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a wake's start removes the marker once the app answers, waits a short time through 5xx, and keeps it when the web unit never answers",
+  name: "a wake's start removes the marker once the app answers, and waits a short time through 5xx",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1314,9 +1337,21 @@ Deno.test({
       assert(!sleeping.present());
       // The first answer, then the settle wait's first try and its 4 retries.
       assertEquals(sleeping.webChecks(), 6);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
 
-      // No answer at all keeps the marker.
-      sleeping = asleep(f, {});
+Deno.test({
+  name: "a wake's start keeps the marker when the web unit never answers",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const sleeping = asleep(f, {});
+      Object.assign(f.intent, { marker: sleeping.marker, web: { port: 8080, ready_seconds: 3, settle_seconds: 4 } });
+      f.write();
       const state = f.state();
       delete state.containers["instance-7"].web;
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
@@ -1589,7 +1624,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a clone runs its own Process units: the default's units and folders from the seed go, and its own start",
+  name: "a clone runs its own Process units: the default's units and folders from the seed go, and its own start, also at its next boot",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1622,6 +1657,12 @@ Deno.test({
       assertEquals([...Deno.readDirSync(`${clone}/etc/orbit/processes`)].map((entry) => entry.name), ["51"]);
       const calls = f.state().systemctl.map((call: string[]) => call.join(" "));
       assert(calls.includes(`enable --now --no-block -- orbit-frankenphp.service ${own.name}`), calls.join("\n"));
+      // Its own units are the ones its next boot starts.
+      const wants = [...Deno.readDirSync(`${clone}/etc/systemd/system/multi-user.target.wants`)].map((entry) => entry.name).sort();
+      assertEquals(wants, ["orbit-frankenphp.service", own.name]);
+      assert(f.run("stop").ok);
+      assert(f.run("start").ok);
+      assertEquals(f.state().containers["instance-8"].booted.at(-1), ["orbit-frankenphp.service", own.name]);
       // The `processes` phase still removes a unit and folder the Instance does not own, such as one that came back with a copy.
       Deno.writeTextFileSync(`${clone}/etc/systemd/system/${worker.name}`, worker.content);
       Deno.mkdirSync(`${clone}/etc/orbit/processes/41`);
@@ -1673,14 +1714,6 @@ Deno.test({
       assertEquals([...Deno.readDirSync(`${clone}/etc/orbit/processes`)], []);
       assertEquals(Deno.readTextFileSync(`${clone}/etc/machine-id`), "696e7374616e63652d382d2d2d2d2d2d\n");
       assert(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/machine-id`) !== Deno.readTextFileSync(`${clone}/etc/machine-id`));
-      // Its own `processes` phase enables its own units; the next boot starts those only.
-      for (const phase of ["workspace", "processes"]) {
-        assert(f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: JSON.stringify({ [own.environment]: "# Orbit Process 51\nQUEUE=\"high\"\n" }) }).ok);
-      }
-      assertEquals(wants("instance-8"), ["orbit-frankenphp.service", own.name]);
-      assert(f.run("stop").ok);
-      assert(f.run("start").ok);
-      assertEquals(f.state().containers["instance-8"].booted.at(-1), ["orbit-frankenphp.service", own.name]);
       // The default keeps its own.
       assertEquals(wants("instance-7"), ["orbit-frankenphp.service", worker.name]);
     } finally {
@@ -1690,13 +1723,28 @@ Deno.test({
 });
 
 Deno.test({
-  name: "the workspace stays writable for its group before and after the deploy steps, whoever installed last",
+  name: "the workspace stays writable for its group before and after the deploy steps, whoever installed last; Git excludes the .env once, beside the container's own lines",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
       for (const phase of ["container", "workspace"]) assert(f.run(phase).ok);
       const workspace = `${f.folder}/containers/instance-7/srv/workspace`;
+      // A container made before the .env line existed: its own exclude lines stay, the .env line comes once.
+      const exclude = `${workspace}/.git/info/exclude`;
+      Deno.writeTextFileSync(exclude, "# local\n*.log");
+      for (const _ of [1, 2]) assert(f.run("workspace").ok);
+      assertEquals(Deno.readTextFileSync(exclude), "# local\n*.log\n/.env\n");
+      // An application folder names its own .env.
+      Object.assign(f.container, { environment_file: "/srv/workspace/apps/web/.env" });
+      f.write();
+      Deno.mkdirSync(`${workspace}/apps/web`, { recursive: true });
+      assert(f.run("workspace").ok);
+      assertEquals(Deno.readTextFileSync(exclude), "# local\n*.log\n/.env\n/apps/web/.env\n");
+      assertEquals(f.workspace("status", "--porcelain", "--untracked-files=all"), "");
+      Object.assign(f.container, { environment_file: "/srv/workspace/.env" });
+      f.write();
+
       // An install as `orbit` asks for 0755 folders and 0644 files, as Bun does in node_modules.
       Deno.mkdirSync(`${workspace}/node_modules/react`, { recursive: true, mode: 0o755 });
       Deno.chmodSync(`${workspace}/node_modules`, 0o755);
@@ -2348,24 +2396,16 @@ const incusCalls = (f: ReturnType<typeof fixture>) => {
 };
 
 Deno.test({
-  name: "a nested-fleet create refuses by name, before any Incus change, while the host converge records a failed nested-fleet image build",
+  name: "a nested-fleet create refuses by name, before any Incus change, while the Node records a failed nested-fleet image build",
   ignore: !hasAnsible,
-  async fn() {
-    // The record comes from the shipped host tasks: a switched-on Node whose nested build fails its sudo audit.
-    const host = await hostFixture({pool: "dir", nested: true});
-    let record: string;
-    try {
-      const state = host.state();
-      state.sudo_paths_by_project = {"orbit-instances-nested": "agent:syntax"};
-      Deno.writeTextFileSync(`${host.folder}/state.json`, JSON.stringify(state));
-      const converged = await host.run();
-      assert(converged.ok, converged.output.slice(-4000));
-      record = Deno.readTextFileSync(`${host.folder}/nested-image.json`);
-    } finally { host.cleanup(); }
+  fn() {
+    // The record that the host tasks write when the nested build fails its sudo audit, as ansible_instance_host_image_test.ts
+    // proves ("a sudo path in the nested-fleet image fails only the nested-fleet image").
+    const record = { error: "nested image build failed", alias: "orbit-instance-nested-aaaaaaaaaaaa", task: "Require an image without a sudo path" };
     const f = fixture();
     try {
       nestedCreate(f);
-      Deno.writeTextFileSync(`${f.folder}/nested-image.json`, record);
+      Deno.writeTextFileSync(`${f.folder}/nested-image.json`, JSON.stringify(record));
       const result = f.run("container");
       assert(!result.ok, result.output);
       assertEquals(f.result(), {error_code: "instance.nested_fleet_image_unavailable"});
@@ -2624,7 +2664,8 @@ Deno.test({
   },
 });
 
-const probeDamage: Record<string, string> = {"raw.lxc": "a raw.lxc key", "privileged": "security.privileged", "host-disk": "a host disk", "extra-share-key": "an extra share key"};
+// The guard's other damages, such as security.privileged and an extra disk, are cases of the same gate in instance_clone_test.py.
+const probeDamage: Record<string, string> = {"raw.lxc": "a raw.lxc key", "extra-share-key": "an extra share key"};
 for (const damage of Object.keys(probeDamage)) {
   Deno.test({
     name: `the nested clone probe refuses a profile with ${probeDamage[damage]} before it starts`,
@@ -2639,9 +2680,7 @@ for (const damage of Object.keys(probeDamage)) {
         const runtime = `${f.instances.folders.runtime.path}`;
         state.profiles["orbit-instances-nested"] = {description: "", config: {
           ...(damage === "raw.lxc" ? {"raw.lxc": "lxc.apparmor.profile=unconfined"} : {}),
-          ...(damage === "privileged" ? {"security.privileged": "true"} : {}),
         }, devices: {
-          ...(damage === "host-disk" ? {socket: {type: "disk", source: "/var/lib/incus/unix.socket", path: "/run/host-incus"}} : {}),
           // Profile convergence rewrites the keys it owns, so a drifted share keeps only keys it does not own.
           ...(damage === "extra-share-key" ? {"orbit-runtime": {type: "disk", source: runtime, path: runtime, propagation: "shared"}} : {}),
         }};
