@@ -522,7 +522,8 @@ Deno.test({
   name: "a refresh applies the checkout, converges the three Node bases, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture(ruled(), { club: true, base: true });
+    // Below 2,000,000: the three bases only. The host's own order is the window's first refresh case.
+    const f = fixture(ruled(), { club: true, base: true, host: false });
     try {
       assert(f.run("start").ok);
       f.calls();
@@ -559,7 +560,7 @@ Deno.test({
         `${api} --fail https://10.45.0.1/api/v1/nodes`,
         ...names.map((name) => exec(name, "systemctl stop apt-daily.timer apt-daily-upgrade.timer")),
         ...names.map((name) => exec(name, "systemctl show --property=ActiveState --value apt-daily.service apt-daily-upgrade.service")),
-        ...convergeCalls,
+        ...convergeCallsFor([1, 2, 3]),
         ...names.map((name) => `incus query /1.0/instances/${name}/snapshots?recursion=1`),
         // The shrink check: no package changed since the last shrink, so it adds nothing to `base`.
         shrinkCall + "check " + shrinkArgs,
@@ -588,8 +589,7 @@ Deno.test({
       ]);
       assertKeyUntouched(calls, refreshed.output);
       const state = f.state();
-      // A first refresh builds the Instance host: nested-app-dev's role converge comes after the two base converges.
-      assertEquals(state.operations.map((operation: { node: number }) => operation.node), [1, 3, 2]);
+      assertEquals(state.operations.map((operation: { node: number }) => operation.node), [1, 2, 3]);
       assertEquals(calls.filter((call) => call.includes("/doctor")).length, 1);
       for (const name of names) {
         assertEquals(state.containers[name].status, "Running");
