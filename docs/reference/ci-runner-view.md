@@ -102,7 +102,7 @@ Each entry of `runners`:
 | --- | --- |
 | `name` | The container name, which is also the runner's name on GitHub. |
 | `state` | The container state from Incus: `running`, `stopped`, `frozen` or `error`. |
-| `service` | The state of the runner service in the container: `active`, `activating`, `inactive` or `failed`. `unknown` when the container does not run or has no runner service. |
+| `service` | The state of the runner service in the container: `active`, `activating`, `inactive` or `failed`. `unknown` when the container does not run or has no runner service. A runner that a proof stopped while it holds places on the Node reads `inactive` in a running container ([Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node)). |
 | `busy` | True while a `Runner.Worker` process runs in the container. |
 | `version` | The runner version, or null when it cannot be read. |
 | `current_job` | The newest `in_progress` job whose `runner_name` is this runner: `job_id`, `repository`, `workflow`, `job`, `started_at` and `url`. Null when there is none. A busy runner with a null `current_job` runs a job that the Gateway did not read. |
