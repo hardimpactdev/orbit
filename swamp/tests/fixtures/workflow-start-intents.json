@@ -160,6 +160,7 @@
                     "units": [],
                     "web_config": null,
                     "php": null,
+                    "php_cli_ini": null,
                     "clone": {
                         "source": "instance-1",
                         "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
@@ -610,6 +611,7 @@
                         "units": [],
                         "web_config": null,
                         "php": null,
+                        "php_cli_ini": null,
                         "clone": {
                             "source": "instance-1",
                             "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",

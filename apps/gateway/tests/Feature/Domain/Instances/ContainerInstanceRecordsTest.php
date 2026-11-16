@@ -64,7 +64,7 @@ describe('Instance bridges', function (): void {
 
     it('skips a range that a task bridge or the VPN subnet overlaps', function (): void {
         recordsNode('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.253.0.0/23', 'task_places' => 1, 'ci_places' => 0,
-            'containers' => ['cidr' => '10.253.3.0/25', 'task_places' => 1, 'ci_places' => 0]]]);
+            'containers' => ['cidr' => '10.253.3.0/25', 'task_places' => 1]]]);
         app(VpnSettings::class)->configure('10.253.2.0/24');
 
         expect(app(AllocateInstanceBridgeAction::class)->execute(recordsNode()))->toBe('10.253.4.0/24');

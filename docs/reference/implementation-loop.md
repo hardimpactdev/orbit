@@ -191,7 +191,9 @@ Each registered fixture has one metadata file under `.github/ci/fixtures/`, mirr
 
 `bin/ci-registry` is the loader for PR selection, fixture execution and Main full set. Editing fixture metadata selects only those fixtures, using the same merge base as path selection. Formatting and edits to check definitions select no extra fixture bodies. Changes to shared fixture budgets, defaults or fixture order, or to the loader, runner and slice preload, select all fixtures within the existing budget.
 
-`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most eight shards per pull request. Runs with six shards peaked at 16 to 17 concurrent hosted jobs, so eight shards reach about 19 of the organisation's 20 concurrent hosted jobs; a second run at the same time queues. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
+`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most ten shards per pull request.
+
+Runs with six shards peaked at 16 to 17 concurrent hosted jobs, so ten shards reach about 21, one above the organisation's 20 concurrent hosted jobs: the last shard can wait for a free job, and a second run at the same time queues. Each shard's own time limit starts when its job starts, so a wait does not cut its units. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
 
 For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per case, so a long refresh cannot share its unit with another refresh.
 

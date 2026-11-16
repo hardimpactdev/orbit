@@ -1,0 +1,24 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Api;
+
+use App\Actions\Ci\ShowCiRunnersAction;
+use App\Http\Authorization\RequiresNodeAccess;
+use App\Http\Authorization\ServingNode;
+use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+final class CiRunnersController extends Controller
+{
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function show(Request $request, ShowCiRunnersAction $action): JsonResponse
+    {
+        return response()->json([
+            'data' => $action->execute()->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+        ])->header('Cache-Control', 'no-store');
+    }
+}

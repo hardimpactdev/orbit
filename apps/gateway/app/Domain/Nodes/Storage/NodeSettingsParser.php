@@ -18,6 +18,16 @@ final readonly class NodeSettingsParser
     /** @var list<string> */
     private const array TOP_LEVEL_KEYS = ['apps', 'task_vms', 'nested_fleet'];
 
+    /**
+     * Only node:update sets a CI Node's `ci`; node:add takes the other members.
+     *
+     * @var list<string>
+     */
+    private const array PATCH_KEYS = [...self::TOP_LEVEL_KEYS, 'ci'];
+
+    /** @var list<string> */
+    private const array CI_KEYS = ['places', 'proof_only'];
+
     /** @var list<string> */
     private const array NESTED_KEYS = ['path'];
 
@@ -33,7 +43,7 @@ final readonly class NodeSettingsParser
     public function parsePatch(mixed $value): NodeSettingsPatch
     {
         $object = $this->jsonObject($value, 'The settings object is invalid.');
-        $this->assertClosedKeys($object, self::TOP_LEVEL_KEYS);
+        $this->assertClosedKeys($object, self::PATCH_KEYS);
 
         if ($object === []) {
             $this->reject('The settings object must contain at least one known member.');
@@ -46,6 +56,8 @@ final readonly class NodeSettingsParser
             taskVms: array_key_exists('task_vms', $object) ? $this->nestedTaskVms($object['task_vms']) : null,
             hasNestedFleet: array_key_exists('nested_fleet', $object),
             nestedFleet: $this->nestedFleet(array_key_exists('nested_fleet', $object) ? $object['nested_fleet'] : false),
+            hasCi: array_key_exists('ci', $object),
+            ci: array_key_exists('ci', $object) ? $this->nestedCi($object['ci']) : null,
         );
     }
 
@@ -72,6 +84,25 @@ final readonly class NodeSettingsParser
         }
 
         return $value;
+    }
+
+    /** A `ci` patch names at least one member: `places`, an integer from 0 to 64, or `proof_only`, a boolean. */
+    private function nestedCi(mixed $value): ?NodeCiPatch
+    {
+        if ($value === null) {
+            return null;
+        }
+        $object = $this->assertNestedObject($value, self::CI_KEYS);
+        $places = $object['places'] ?? null;
+        $proofOnly = $object['proof_only'] ?? null;
+        match (true) {
+            $object === [] => $this->reject('ci must name places or proof_only.'),
+            array_key_exists('places', $object) && (! is_int($places) || $places < 0 || $places > 64) => $this->reject('ci.places must be an integer from 0 to 64.'),
+            array_key_exists('proof_only', $object) && ! is_bool($proofOnly) => $this->reject('ci.proof_only must be a JSON boolean.'),
+            default => null,
+        };
+
+        return new NodeCiPatch(is_int($places) ? $places : null, is_bool($proofOnly) ? $proofOnly : null);
     }
 
     private function nestedTaskVms(mixed $value): ?NodeTaskVmsData

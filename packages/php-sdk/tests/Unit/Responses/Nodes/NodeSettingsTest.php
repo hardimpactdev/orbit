@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\Responses\Nodes\AppsSettings;
+use Orbit\Sdk\Responses\Nodes\CiSettings;
 use Orbit\Sdk\Responses\Nodes\NodeSettings;
 
 describe(NodeSettings::class, function (): void {
@@ -37,11 +38,23 @@ describe(NodeSettings::class, function (): void {
     });
 
     it('maps the task container side and leaves it out when absent or malformed', function (): void {
-        $containers = ['cidr' => '10.251.78.0/24', 'task_places' => 1, 'ci_places' => 0, 'project' => 'orbit-task-containers', 'network' => 'orbittaskc0'];
+        $containers = ['cidr' => '10.251.78.0/24', 'task_places' => 1, 'project' => 'orbit-task-containers', 'network' => 'orbittaskc0'];
         $settings = NodeSettings::fromGatewayData(['task_vms' => ['cidr' => '10.251.77.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => $containers]]);
         expect($settings->task_vms?->containers)->toBe($containers)
             ->and($settings->toArray()['task_vms']['containers'] ?? null)->toBe($containers)
             ->and(NodeSettings::fromGatewayData(['task_vms' => ['cidr' => '10.251.77.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.251.78.0/24']]])->toArray()['task_vms'])->not->toHaveKey('containers');
+    });
+
+    it('maps a CI Node\'s CI places and leaves them out when absent or malformed', function (): void {
+        $settings = NodeSettings::fromGatewayData(['ci' => ['places' => 4, 'proof_only' => true]]);
+        expect($settings->ci)->toEqual(new CiSettings(4, true))
+            ->and($settings->isEmpty())->toBeFalse()
+            ->and($settings->toArray())->toBe(['apps' => null, 'task_vms' => null, 'ci' => ['places' => 4, 'proof_only' => true]])
+            ->and(NodeSettings::fromGatewayData(['ci' => ['places' => 0]])->ci)->toEqual(new CiSettings(0, false));
+        foreach ([[], ['ci' => null], ['ci' => ['proof_only' => true]], ['ci' => ['places' => '4']]] as $data) {
+            expect(NodeSettings::fromGatewayData($data)->ci)->toBeNull()
+                ->and(NodeSettings::fromGatewayData($data)->toArray())->not->toHaveKey('ci');
+        }
     });
 
     it('preserves separate pool sizes, including zero', function (): void {

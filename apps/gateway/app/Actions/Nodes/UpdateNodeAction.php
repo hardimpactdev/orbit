@@ -19,6 +19,7 @@ use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
+use App\Domain\Nodes\Storage\NodeCiPatch;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
@@ -48,7 +49,7 @@ final readonly class UpdateNodeAction
 
     /**
      * Saves record fields at once. Apps preparation and task-host input withdrawal start a run; its settings
-     * are stored when the run succeeds, while a new name, platform, LAN address or either hold in the same request is already saved.
+     * are stored when the run succeeds, while a new name, platform, LAN address, either hold or CI places in the same request are already saved.
      * A record-only request whose values all equal the stored ones writes nothing and is reported unchanged.
      */
     public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null,
@@ -73,13 +74,14 @@ final readonly class UpdateNodeAction
         $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, $imageRefreshHold, &$written): Node|Operation {
             $node->refresh();
             $written = $this->record($node, $name, $platform, $hasLanIp, $lanIp, $rebootHold, $imageRefreshHold);
+            $written = $this->recordCi($node, $settings) || $written;
             if ($settings->isEmpty()) {
                 return $node;
             }
             $merged = $settings->merge($this->normalizer->fromStored($node->settings));
             $normalized = $this->normalizer->normalize($merged);
             $this->validateHostBridge($node, $normalized);
-            $create = $this->hasActiveAppDevRole($node);
+            $create = $this->hasActiveRole($node, RoleName::AppDev);
             $previousHost = $this->normalizer->fromStored($node->settings)?->task_vms;
             $this->keepLiveContainers($node, $previousHost, $normalized?->task_vms);
             $nextHost = $normalized?->task_vms;
@@ -165,6 +167,23 @@ final readonly class UpdateNodeAction
     }
 
     /**
+     * Saves a CI Node's CI places, a record that needs no run (docs/reference/node-settings.md#ci-places), and reports whether they
+     * changed. Only a Node with an active ci-runner role takes them; clearing them is allowed on any Node.
+     */
+    private function recordCi(Node $node, NodeSettingsPatch $settings): bool
+    {
+        if (! $settings->hasCi) {
+            return false;
+        }
+        if ($settings->ci instanceof NodeCiPatch && ! $this->hasActiveRole($node, RoleName::CiRunner)) {
+            throw new ResourceOperationException('node.settings_ci_runner_required', 'Only a Node with an active ci-runner role takes CI places.', 422);
+        }
+
+        return $this->persist($node, new NodeSettingsPatch(hasApps: false, apps: null, hasCi: true, ci: $settings->ci)
+            ->merge($this->normalizer->fromStored($node->settings)));
+    }
+
+    /**
      * The Node's roots are prepared or inspected first, over SSH and outside any transaction. The bridge check and the write then
      * run in one transaction, which the connection begins IMMEDIATE, so an Instance bridge allocation cannot slip between them.
      */
@@ -175,7 +194,7 @@ final readonly class UpdateNodeAction
         $this->validateHostBridge($node, $normalized);
         $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);
         $this->validator->validateGrammar($normalized);
-        if ($this->hasActiveAppDevRole($node)) {
+        if ($this->hasActiveRole($node, RoleName::AppDev)) {
             $this->prepareEffectiveRoots($node, $normalized);
         } elseif ($normalized instanceof NodeSettingsData) {
             $this->inspectConfiguredRoots($node, $normalized);
@@ -195,7 +214,7 @@ final readonly class UpdateNodeAction
         $this->validateHostBridge($node, $normalized);
         $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);
         $this->validator->validateGrammar($normalized);
-        $create = $this->hasActiveAppDevRole($node);
+        $create = $this->hasActiveRole($node, RoleName::AppDev);
         $storage = null;
         if ($create || $normalized?->appsPath() !== null) {
             $account = $this->accounts->resolve($node);
@@ -278,11 +297,11 @@ final readonly class UpdateNodeAction
         }
     }
 
-    private function hasActiveAppDevRole(Node $node): bool
+    private function hasActiveRole(Node $node, RoleName $role): bool
     {
         return $node
             ->roles()
-            ->where('role', RoleName::AppDev->value)
+            ->where('role', $role->value)
             ->where('status', LifecycleStatus::Active->value)
             ->exists();
     }
