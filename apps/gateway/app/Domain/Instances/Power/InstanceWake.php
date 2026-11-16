@@ -39,6 +39,9 @@ final readonly class InstanceWake extends InstancePower
     /** When the wake's run starts anyway if the Gateway never finished the Node's resume (ContainerResume's worst case is about 5 s). */
     public const int SafetyNetSeconds = 15;
 
+    /** The closed reason codes of a wake's `skipped` or `timed_out` restore (docs/reference/prepared-restore.md#wake). */
+    public const array PreparedReasons = ['no_plan', 'plan_invalid', 'plan_stale', 'unsupported', 'placement_unproven', 'deadline', 'nothing_read'];
+
     /** The run found a nested-fleet container stopped: it boots none, since only a start or a deployment brings back its fleet. */
     public const string NestedStopped = 'instance.nested_fleet_stopped';
 
@@ -110,11 +113,45 @@ final readonly class InstanceWake extends InstancePower
         return ['wake', 'marker_found', 'resume_seconds', 'web_probe_seconds'];
     }
 
-    /** A woken Instance's extensions catch up, such as Conn's renewal of a session that ended or ends soon while it slept. */
+    /**
+     * The run's prepared restore facts with only their documented fields, each of its type (docs/reference/prepared-restore.md#results):
+     * the restore's status and reason, `restore_mode` from that status, and `ready_at` with its resolution. A value outside the contract
+     * is left out, never guessed; a number the run did not return stays absent.
+     */
+    #[\Override]
+    protected function kept(array $phase): array
+    {
+        $kept = parent::kept($phase);
+        $prepared = $phase['prepared_restore'] ?? null;
+        $status = is_array($prepared) ? ($prepared['status'] ?? null) : null;
+        if (in_array($status, [...array_values(ContainerResume::ReadyStatuses), 'not_applicable'], true)) {
+            $reason = $prepared['reason'] ?? null;
+            $kept['prepared_restore'] = ['status' => $status, ...(in_array($reason, self::PreparedReasons, true) ? ['reason' => $reason] : [])];
+            $kept['restore_mode'] = in_array($status, ContainerResume::PreparedStatuses, true) ? 'prepared' : 'ordinary';
+        }
+        $readyAt = $phase['ready_at'] ?? null;
+        $resolution = $phase['ready_at_resolution_seconds'] ?? null;
+        if (is_string($readyAt) && preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{3})?Z$/', $readyAt) === 1 && in_array($resolution, [1, 0.001], true)) {
+            $kept['ready_at'] = $readyAt;
+            $kept['ready_at_resolution_seconds'] = $resolution;
+        }
+
+        return $kept;
+    }
+
+    /**
+     * A woken Instance's extensions catch up, such as Conn's renewal of a session that ended or ends soon while it slept. A wake that
+     * tried the Node's fast wake then removes its request and outcome files, after the projection and off the visitor's path.
+     */
     protected function ended(Operation $operation): void
     {
-        if ($operation->status === OperationStatus::Succeeded && ($instance = Instance::query()->find($operation->target_id)) !== null) {
+        $instance = Instance::query()->with('node')->find($operation->target_id);
+        if ($operation->status === OperationStatus::Succeeded && $instance !== null) {
             app(InstanceLifecycleContributions::class)->projectWake($instance);
+        }
+        if (isset($operation->state[self::ResumeState]) && $instance?->node !== null) {
+            $node = $instance->node;
+            defer(static fn () => app(ContainerResume::class)->cleanUp($operation, $node), always: true);
         }
     }
 

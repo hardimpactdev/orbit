@@ -66,7 +66,7 @@ final class TaskGroupGuard
      * The deliverable path gate asked for assistance and no implementer exists yet, so there is no thread to resume.
      * A resolution clears the assistance and the next tick runs the gate again. Called under the group and subtask locks.
      */
-    public static function deliverableGateBlocked(Task $group, Task $task): bool
+    private static function deliverableGateBlocked(Task $group, Task $task): bool
     {
         return $group->status === TaskGroupStatus::Running
             && $task->parent_id === $group->id && $task->status === TaskStatus::Running && $task->assistance_requested
@@ -77,8 +77,57 @@ final class TaskGroupGuard
                 ->where('external_id', 'not like', AgentThread::PendingPrefix.'%')->exists();
     }
 
+    /**
+     * The one rule for whether a started subtask's deliverables may change, and by which correction; null keeps them locked
+     * (docs/reference/tasks.md#correct-the-deliverables-of-a-started-subtask). A todo subtask follows the planning rules instead.
+     * Called before the locks to validate, and again under the group and subtask locks before the change.
+     */
+    public static function deliverableCorrection(Task $group, Task $task): ?DeliverableCorrection
+    {
+        if (($check = self::deliverableCorrectionCheck($group, $task)) !== null) {
+            return new DeliverableCorrection(DeliverableCorrectionKind::InvalidDeliverable, $check);
+        }
+        if (self::deliverableGateBlocked($group, $task)) {
+            return new DeliverableCorrection(DeliverableCorrectionKind::PathGate);
+        }
+        $check = self::failedCopyCheck($group, $task);
+
+        return $check === null ? null : new DeliverableCorrection(DeliverableCorrectionKind::FailedCopyCheck, $check);
+    }
+
+    /**
+     * The newest handoff check of a task copy's current subtask, which has started, when it failed and no correction answered it yet.
+     */
+    private static function failedCopyCheck(Task $group, Task $task): ?TaskCheck
+    {
+        if (in_array($group->status, TaskGroupStatus::endedStatuses(), true) || TaskInstanceWorkspace::forGroup($group) === null
+            || $task->parent_id !== $group->id || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
+            return null;
+        }
+        $current = Task::query()->where('parent_id', $group->id)
+            ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
+            ->orderBy('position')->orderBy('id')->value('id');
+        if ($current !== $task->id) {
+            return null;
+        }
+        $check = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Handoff)->latest('id')->first();
+
+        // One correction answers one check, whichever correction it was.
+        return $check instanceof TaskCheck && $check->status === TaskCheckStatus::Failed
+            && $task->copy_correction_check_id !== $check->id && $task->deliverable_correction_check_id !== $check->id ? $check : null;
+    }
+
+    public static function reasonUnexpected(): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            errorCode: 'tasks.reason_unexpected',
+            message: __('A reason goes only with a correction of a started subtask\'s deliverables after its newest handoff check failed.'),
+            status: 422,
+        );
+    }
+
     /** Called under the group and subtask locks before consuming the one recovery. */
-    public static function deliverableCorrectionCheck(Task $group, Task $task): ?TaskCheck
+    private static function deliverableCorrectionCheck(Task $group, Task $task): ?TaskCheck
     {
         if ($group->status !== TaskGroupStatus::Running || $task->status !== TaskStatus::Running
             || ! $task->assistance_requested || self::deliverableCorrectionRecorded($task)) {
@@ -96,7 +145,7 @@ final class TaskGroupGuard
         return $receipt?->completion_attempt === $task->completion_attempt ? $check : null;
     }
 
-    public static function deliverableCorrectionRecorded(Task $task): bool
+    private static function deliverableCorrectionRecorded(Task $task): bool
     {
         return $task->deliverable_correction_check_id !== null;
     }

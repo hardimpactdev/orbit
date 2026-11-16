@@ -12,6 +12,15 @@
     - name: Reconcile the hub
       ansible.builtin.import_tasks: tasks/node-converge-hub.yml
       vars: { hub_plan: "{{ intent.network.hub }}" }
+# The roles phase writes the seed listener's trust of a CI Node from the default Node's certificate, as the role add does
+# (docs/reference/node-provisioning.md#the-seed-listener). Nothing else changes on that Node.
+- name: Read the Incus client certificate of the default's Node
+  hosts: proof_seed_sender
+  become: true
+  gather_facts: false
+  tags: [roles]
+  tasks:
+    - { name: Read the client certificate, ansible.builtin.import_tasks: tasks/proof-seed-certificate.yml }
 - name: Reconcile recorded Node state
   hosts: target
   become: true

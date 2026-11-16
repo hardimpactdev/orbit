@@ -26,6 +26,14 @@ export async function convergeInput(folder: string, builder: string, toolHelper:
     };
     host("target", intent.ssh);
     if (intent.network?.hub && intent.network.hub.hub_id !== intent.node_id) host("hub", intent.network.hub.ssh);
+    // The default's Node, whose certificate the seed listener of a CI Node trusts (docs/reference/node-provisioning.md#the-seed-listener).
+    const senders: Record<string, Record<string, never>> = {};
+    for (const role of intent.roles) {
+        const seed = role.runtime.proof_seed;
+        if (!seed?.present) continue;
+        host(`n${seed.sender.node_id}`, seed.sender.ssh);
+        senders[`n${seed.sender.node_id}`] = {};
+    }
     const secrets: Record<string, string> = {};
     for await (const file of Deno.readDir(folder)) {
         if (!file.name.startsWith("secret-")) continue;
@@ -33,7 +41,7 @@ export async function convergeInput(folder: string, builder: string, toolHelper:
         await Deno.remove(`${folder}/${file.name}`);
     }
     const plans = JSON.parse(await Deno.readTextFile(`${folder}/plans.json`));
-    await Deno.writeTextFile(`${folder}/inventory.json`, JSON.stringify({ all: { hosts } }), { mode: 0o600 });
+    await Deno.writeTextFile(`${folder}/inventory.json`, JSON.stringify({ all: { hosts, children: { proof_seed_sender: { hosts: senders } } } }), { mode: 0o600 });
     await Deno.writeTextFile(`${folder}/known_hosts`, [...known].sort().join("\n") + "\n", { mode: 0o600 });
     await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: intent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: toolRuntime, converge_secrets: secrets, converge_plans: plans }), { mode: 0o600 });
     // Reuse the shipped role materializer. Only its literal variables are consumed: its cross-Node

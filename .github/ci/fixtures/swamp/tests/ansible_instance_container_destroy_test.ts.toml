@@ -13,7 +13,6 @@ inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance-container-destroy.yml",
-  "swamp/ansible/tasks/instance-container-swap.yml",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
@@ -22,6 +21,11 @@ inputs = [
   "swamp/tests/fixtures/instance-container-incus.ts",
   "swamp/tests/fixtures/instance-container-ufw.ts",
   "swamp/workflows/workflow-operation-instance-destroy.yaml",
+  "swamp/ansible/tasks/instance-power-call.yml",
+  "swamp/ansible/tasks/instance-power-helper.yml",
+  "swamp/ansible/files/instance-container-power.py",
+  "swamp/tests/fixtures/instance-power-helper.ts",
+  "swamp/tests/_support/power_helper.ts",
 ]
 
 [case_costs]

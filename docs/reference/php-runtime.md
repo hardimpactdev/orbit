@@ -134,6 +134,10 @@ extension=/opt/orbit-runtime/current/php/<php-version>/modules/pcov.so
 
 The Gateway renders the file into the container intent as `php_cli_ini`: one `extension=` line for each name in the recipe's `instances.php.cli_extensions`. So a new CLI-only extension needs no change in Ansible or the clone guest.
 
+The file names only modules that the Node's runtime folder holds. Each writer looks in the container, where that folder is mounted at `/opt/orbit-runtime`, and drops an `extension=` line whose module file is not there. Any other line stays. When no line is left, the writer removes Orbit's file, as for a Project without PHP.
+
+A Gateway release can reach a Node before the Node's role converge installs the new runtime folder. The file then leaves PCOV out, so PHP CLI calls do not warn "Unable to load dynamic library". A create, clone, task copy, deploy or refresh still passes. The container phase runs again at each start and deploy, so the line returns by itself once the Node holds the module.
+
 The PHP CLI reads `php-<sapi>.ini` in its config path, `/etc/orbit/php`, and reads the `conf.d` scan directory as well. It reads `php.ini` only when it finds no `php-cli.ini`; Orbit writes no `php.ini` there. FrankenPHP's server has the SAPI name `frankenphp`, so it does not read `php-cli.ini`, and it never loads PCOV. `frankenphp php-cli` takes the SAPI name `cli`, so it reads `php-cli.ini` and loads PCOV, as `php` does. Only the server never loads PCOV. The settings of `99-orbit-runtime.ini` stay in `conf.d`, because both binaries need them. When the file changes in a running container, the phase restarts the running `orbit-*` units, as for the shared settings: a queue worker is a PHP CLI too.
 
 `pcov.enabled` stays at PCOV's default, on, so Pest TIA needs no flag. This costs test time for Projects that use no coverage. A production container gets no `php-cli.ini`. [ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov) holds the decision.

@@ -1,31 +1,27 @@
 order = 390
 cases = [
-  "each sleep and wake step runs its charted part with the shipped Ansible settings; the wake is one playbook",
+  "the sleep and the wake each run one charted phase with the shipped Ansible settings; the sleep's names its Operation",
+  "every workflow step that runs instance-container.yml names its Operation, which the power helper's restore records",
   "a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet",
   "a start's result adds the fleet's seconds when the fleet step ran, and is the phases' result as it is when it did not",
   "the start's fleet step writes its milliseconds and keeps the exit code of the phase that failed",
-  "a sleep writes the marker once Caddy's loaded site has the check, and refuses without changing anything when it lacks it",
-  "a freeze opens swap for the container, pauses it and pushes its memory to swap; the marker stays",
-  "a freeze that opens no inner cgroup leaves no swap record and removes one left from before",
-  "a freeze whose memory stays in RAM (swap is full) resumes and stops the container instead",
-  "a failed stop after a full swap closes swap again and removes the marker of the running container",
-  "a failed resume after a full swap fails the sleep with the container frozen behind its marker",
-  "an unreadable memory count after the pause keeps the container frozen behind its marker, without a reclaim",
-  "a failed pause closes swap again, removes the marker and fails with its own code; the container keeps running",
-  "a freeze leaves a Frozen or Stopped container as it is",
-  "a freeze opens swap for every cgroup of the subtree that holds 0, records the inner ones, and counts them",
-  "a nested-fleet freeze whose memory stays in RAM never stops: it resumes, closes the whole swap, removes the marker and fails",
-  "a failed pause closes the inner cgroups it opened as well, and a full swap's stop leaves no record",
-  "a resume's swap close writes 0 to the container and to each recorded cgroup that still exists, never climbs out, and removes the record",
-  "a sleep of an Instance without a published Route has no Caddy site to check and still writes the marker",
-  "a find that fails part way still records what it opened, and a failed freeze closes every inner cgroup it opened",
-  "a freeze makes the record's folder that a Node's reboot emptied",
-  "a sleep of a container an earlier sleep froze reports what that sleep opened, so its wake closes it",
+  "a sleep refuses before it changes anything when Caddy's loaded site lacks the asleep check",
+  "a sleep is one phase: the marker, the helper's install, its prepare through the Instance's unit, and counter reads until RAM holds nothing",
+  "a sleep of an Instance without a published Route or a web unit checks no Caddy site and sends the helper no web target",
   "a sleep intent without `route` fails before it checks or writes anything",
+  "a nested-fleet sleep counts the inner cgroups the helper opened and records no plan",
+  "a sleep whose memory stays in RAM drops the plan, resumes through the helper and stops the container; the marker stays",
+  "a nested-fleet sleep whose memory stays in RAM never stops: the helper resumes it and closes its swap, the marker goes, and it fails",
+  "a failed stop after a full swap leaves the resumed container serving without the marker",
+  "a failed resume after a full swap fails the sleep with the container frozen behind its marker",
+  "a failed pause leaves the container running with its swap closed, removes the marker and fails with the helper's code",
+  "a sleep leaves a Frozen container with its earlier result and a Stopped one as it is, without counter reads",
+  "a busy lock is tried again; one that stays busy fails `instance.power_helper_busy` and a crash `instance.power_helper_failed`, both behind the marker",
+  "the role probes the helper's primitives through the helper's own unit properties, which hold no CAP_KILL",
 ]
 file = "swamp/tests/ansible_instance_container_power_test.ts"
-cost = 77
-# Local Deno case times on Beast rounded up by one second; not CI measurements.
+cost = 146
+# Local Deno case times on a task copy rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
   "swamp/ansible/ansible.cfg",
@@ -34,35 +30,35 @@ inputs = [
   "swamp/ansible/requirements.yml",
   "swamp/ansible/tasks/address-node.yml",
   "swamp/ansible/tasks/instance-container-power.yml",
-  "swamp/ansible/tasks/instance-container-swap.yml",
+  "swamp/ansible/tasks/instance-power-call.yml",
+  "swamp/ansible/tasks/instance-power-helper.yml",
+  "swamp/ansible/files/instance-container-power.py",
   "swamp/tests/fixtures/instance-container-incus.ts",
+  "swamp/tests/fixtures/instance-power-helper.ts",
   "swamp/workflows/workflow-operation-instance-sleep.yaml",
   "swamp/workflows/workflow-operation-instance-wake.yaml",
   "swamp/workflows/workflow-operation-instance-start.yaml",
   "swamp/workflows/workflow-operation-instance-complete.yaml",
   "swamp/workflows/workflow-operation-instance-create.yaml",
+  "swamp/tests/_support/power_helper.ts",
 ]
 
 [case_costs]
-  "each sleep and wake step runs its charted part with the shipped Ansible settings; the wake is one playbook" = 1
+  "the sleep and the wake each run one charted phase with the shipped Ansible settings; the sleep's names its Operation" = 1
+  "every workflow step that runs instance-container.yml names its Operation, which the power helper's restore records" = 2
   "a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet" = 1
   "a start's result adds the fleet's seconds when the fleet step ran, and is the phases' result as it is when it did not" = 1
   "the start's fleet step writes its milliseconds and keeps the exit code of the phase that failed" = 1
-  "a sleep writes the marker once Caddy's loaded site has the check, and refuses without changing anything when it lacks it" = 3
-  "a freeze opens swap for the container, pauses it and pushes its memory to swap; the marker stays" = 3
-  "a freeze that opens no inner cgroup leaves no swap record and removes one left from before" = 8
-  "a freeze whose memory stays in RAM (swap is full) resumes and stops the container instead" = 3
-  "a failed pause closes swap again, removes the marker and fails with its own code; the container keeps running" = 3
-  "a freeze leaves a Frozen or Stopped container as it is" = 4
-  "a freeze opens swap for every cgroup of the subtree that holds 0, records the inner ones, and counts them" = 4
-  "a nested-fleet freeze whose memory stays in RAM never stops: it resumes, closes the whole swap, removes the marker and fails" = 7
-  "a failed pause closes the inner cgroups it opened as well, and a full swap's stop leaves no record" = 9
-  "a failed stop after a full swap closes swap again and removes the marker of the running container" = 3
-  "a failed resume after a full swap fails the sleep with the container frozen behind its marker" = 3
-  "an unreadable memory count after the pause keeps the container frozen behind its marker, without a reclaim" = 3
-  "a resume's swap close writes 0 to the container and to each recorded cgroup that still exists, never climbs out, and removes the record" = 2
-  "a sleep of an Instance without a published Route has no Caddy site to check and still writes the marker" = 2
-  "a find that fails part way still records what it opened, and a failed freeze closes every inner cgroup it opened" = 8
-  "a freeze makes the record's folder that a Node's reboot emptied" = 4
-  "a sleep of a container an earlier sleep froze reports what that sleep opened, so its wake closes it" = 2
+  "a sleep refuses before it changes anything when Caddy's loaded site lacks the asleep check" = 4
+  "a sleep is one phase: the marker, the helper's install, its prepare through the Instance's unit, and counter reads until RAM holds nothing" = 11
+  "a sleep of an Instance without a published Route or a web unit checks no Caddy site and sends the helper no web target" = 5
   "a sleep intent without `route` fails before it checks or writes anything" = 2
+  "a nested-fleet sleep counts the inner cgroups the helper opened and records no plan" = 5
+  "a sleep whose memory stays in RAM drops the plan, resumes through the helper and stops the container; the marker stays" = 12
+  "a nested-fleet sleep whose memory stays in RAM never stops: the helper resumes it and closes its swap, the marker goes, and it fails" = 15
+  "a failed stop after a full swap leaves the resumed container serving without the marker" = 14
+  "a failed resume after a full swap fails the sleep with the container frozen behind its marker" = 15
+  "a failed pause leaves the container running with its swap closed, removes the marker and fails with the helper's code" = 7
+  "a sleep leaves a Frozen container with its earlier result and a Stopped one as it is, without counter reads" = 11
+  "a busy lock is tried again; one that stays busy fails `instance.power_helper_busy` and a crash `instance.power_helper_failed`, both behind the marker" = 38
+  "the role probes the helper's primitives through the helper's own unit properties, which hold no CAP_KILL" = 1

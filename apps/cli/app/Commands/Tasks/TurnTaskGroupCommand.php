@@ -63,4 +63,16 @@ final class TurnTaskGroupCommand extends TaskCommand
             ? $this->followOperation($connector, $profile, $operation, "Turn on task group [{$groupId}]", 'Turn')
             : self::FAILURE;
     }
+
+    /** The agent thread and the agent's reply, under the outcome, so one call reads the turn (docs/cli/task/turn.mdx). */
+    protected function writeOperationResult(OperationResponse $operation): void
+    {
+        $agent = $operation->result['agent_id'] ?? null;
+        if (! is_int($agent)) {
+            return;
+        }
+        $this->writeHumanMessage('Agent thread: '.$agent);
+        $reply = $operation->result['reply'] ?? null;
+        is_string($reply) ? $this->writeText('Reply', $reply) : $this->writeHumanMessage('Reply: none');
+    }
 }

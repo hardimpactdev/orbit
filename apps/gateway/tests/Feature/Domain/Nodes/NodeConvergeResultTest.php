@@ -249,3 +249,38 @@ it('refuses unsafe or inconsistent task failure evidence', function (array $fail
 
     return $cases;
 })());
+
+it('records the seed listener of a ci-runner converge by the one rule of ProofSeeds', function (array $seed, ?int $recorded, ?string $failure, bool $kept): void {
+    // docs/reference/node-provisioning.md#the-seed-listener: a node:converge never opens the listener, so it keeps only the sender it already records.
+    $default = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'default', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit']));
+    $sender = $recorded === null ? null : ($recorded === 0 ? $default->id : $recorded);
+    Node::query()->whereKey($this->node->id)->update(['seed_sender_id' => $sender]);
+    $proofSeed = $seed === [] ? ['present' => false, 'sender' => null] : ['present' => true, 'sender' => ['node_id' => $default->id]];
+    $input = $this->operation->input;
+    $input['_converge']['intent'] = ['tools' => [], 'roles' => [['role' => RoleName::CiRunner->value, 'runtime' => ['proof_seed' => $proofSeed]]]];
+    $this->operation->update(['input' => $input]);
+
+    app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => $failure === null ? 'succeeded' : 'failed', 'result' => converge_receipt($failure)]);
+
+    expect($this->node->refresh()->seed_sender_id)->toBe($kept ? $sender : null);
+})->with([
+    'a passed run without a sender' => [[], 99, null, false],
+    'a passed run with the recorded sender' => [['sender'], 0, null, true],
+    'a passed run with another sender than the recorded one' => [['sender'], 99, null, false],
+    'a passed run with a sender and no record' => [['sender'], null, null, false],
+    'a run whose roles phase failed' => [['sender'], 0, 'roles', false],
+    'a run that failed after its roles phase' => [['sender'], 0, 'network', true],
+]);
+
+it('clears the seed listener record of a ci-runner converge whose result is refused', function (): void {
+    $default = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'default', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit']));
+    Node::query()->whereKey($this->node->id)->update(['seed_sender_id' => $default->id]);
+    $input = $this->operation->input;
+    $input['_converge']['intent'] = ['tools' => [], 'roles' => [['role' => RoleName::CiRunner->value, 'runtime' => ['proof_seed' => ['present' => true, 'sender' => ['node_id' => $default->id]]]]]];
+    $this->operation->update(['input' => $input]);
+
+    // An unsuccessful native run cannot report success: the Gateway does not know what the roles phase did.
+    $operation = app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => 'failed', 'result' => converge_receipt()]);
+
+    expect($operation->error_code)->toBe('operation.result_invalid')->and($this->node->refresh()->seed_sender_id)->toBeNull();
+});

@@ -2,6 +2,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
+import { helperCalls, installPowerHelper } from "./_support/power_helper.ts";
 // The "Delete the container" step of a normal destroy, its guard and its env evaluated from the shipped workflow.
 type Step = { name: string; guard: string; task: { inputs: { env: Record<string, string> } } };
 const deleteStep = (parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-destroy.yaml", import.meta.url))) as {
@@ -76,9 +77,6 @@ Deno.test({
             // The stopped instance-7 sleeps: its asleep marker goes with it, and instance-8's stays.
             Deno.mkdirSync(`${folder}/hibernation`);
             for (const id of [7, 8]) Deno.writeTextFileSync(`${folder}/hibernation/app-instance-${id}.asleep`, "");
-            // A sleep's records of the inner cgroups it opened: instance-7's goes with its container, instance-8's stays.
-            Deno.mkdirSync(`${folder}/shm`);
-            for (const id of [7, 8]) Deno.writeTextFileSync(`${folder}/shm/app-instance-${id}.swap`, "lxc.payload.nested-gateway/memory.swap.max\n");
             for (const name of ["instance-7", "instance-8"]) {
                 Deno.mkdirSync(`${folder}/mail-state/${name}`, {recursive: true});
                 Deno.writeTextFileSync(`${folder}/mail-state/${name}/activation.json`, "[]");
@@ -92,7 +90,8 @@ Deno.test({
                 new URL("tasks/task-copy-base-names.yml", root),
                 `${folder}/tasks/task-copy-base-names.yml`,
             );
-            Deno.copyFileSync(new URL("tasks/instance-container-swap.yml", root), `${folder}/tasks/instance-container-swap.yml`);
+            // The power helper discards the Instance's plan, sleep result, swap record and fast wake files (_support/power_helper.ts).
+            installPowerHelper(folder, folder);
             // A base scratch that a cancelled task:sync of this Instance left, named by its mirror's Instance, and another Instance's.
             for (const name of ["orbit-task-base-mirror", "orbit-task-base-8"]) {
                 Deno.mkdirSync(`${folder}/task-base/${name}`, { recursive: true });
@@ -190,8 +189,6 @@ Deno.test({
                         "ansible_python_interpreter={{ ansible_playbook_python }}",
                         "-e",
                         `task_base_root=${folder}/task-base`,
-                        "-e",
-                        `swap_record_directory=${folder}/shm`,
                         `${folder}/instance-container-destroy.yml`,
                     ],
                     env: {
@@ -221,7 +218,8 @@ Deno.test({
             // The destroyed Instance's base scratch goes; another Instance's stays.
             assertEquals([...Deno.readDirSync(`${folder}/task-base`)].map((entry) => entry.name), ["orbit-task-base-8"]);
             assertEquals([...Deno.readDirSync(`${folder}/hibernation`)].map((entry) => entry.name), ["app-instance-8.asleep"]);
-            assertEquals([...Deno.readDirSync(`${folder}/shm`)].map((entry) => entry.name), ["app-instance-8.swap"]);
+            // The helper's files of instance-7 go through its lock; instance-8's stay.
+            assertEquals([helperCalls(folder), state.discarded], [[["discard", "--instance", "7"]], [7]]);
             assert(!Deno.statSync(`${folder}/mail-state`).isFile);
             assertEquals([...Deno.readDirSync(`${folder}/mail-state`)].map((entry) => entry.name), ["instance-8"]);
             assertEquals(Deno.readTextFileSync(`${folder}/mail-state/instance-8/activation.json`), "[]");
@@ -272,7 +270,8 @@ Deno.test({
                 Deno.readTextFileSync(new URL("instance-container-destroy.yml", root)).replaceAll("/var/lib/orbit/instance-mail", `${folder}/mail-state`));
             Deno.copyFileSync(new URL("tasks/address-node.yml", root), `${folder}/tasks/address-node.yml`);
             Deno.copyFileSync(new URL("tasks/task-copy-base-names.yml", root), `${folder}/tasks/task-copy-base-names.yml`);
-            Deno.copyFileSync(new URL("tasks/instance-container-swap.yml", root), `${folder}/tasks/instance-container-swap.yml`);
+            // The power helper discards the Instance's plan, sleep result, swap record and fast wake files (_support/power_helper.ts).
+            installPowerHelper(folder, folder);
             Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`);
             Deno.writeTextFileSync(`${folder}/bin/ufw`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-ufw.ts", import.meta.url).pathname}' "$@"\n`);
             for (const name of ["incus", "ufw"]) Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
@@ -293,7 +292,7 @@ Deno.test({
             const run = () => {
                 const done = new Deno.Command("ansible-playbook", {
                     args: ["-i", "localhost,", "--tags", "remove", "-e", "ansible_connection=local", "-e", "ansible_become=false",
-                        "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", `task_base_root=${folder}/task-base`, "-e", `swap_record_directory=${folder}/shm`,
+                        "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", `task_base_root=${folder}/task-base`,
                         `${folder}/instance-container-destroy.yml`],
                     env: { ANSIBLE_CONFIG: stepEnv.ANSIBLE_CONFIG, HOST_FIXTURE: folder, ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
                         ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1" },
@@ -307,6 +306,7 @@ Deno.test({
             assert(done.ok, done.output);
             assertEquals(Object.keys(state().containers), ["instance-8"]);
             assertEquals(Object.keys(state().volumes), ["inner-8"]);
+            assertEquals(state().discarded, [7]);
             const order = calls().map((call) => call.join(" "));
             const deleted = order.findIndex((call) => call === "--project orbit-instances-nested delete --force instance-7");
             const volume = order.findIndex((call) => call === "--project orbit-instances-nested storage volume delete orbit-instances inner-7");

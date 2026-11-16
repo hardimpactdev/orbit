@@ -45,6 +45,12 @@
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
     container: "{{ intent.container }}"
     run_id: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN_ID') }}"
+    # The wake's readiness check (docs/reference/prepared-restore.md#wake): one bounded request from the Node to the container's
+    # recorded address and web port; an answer below 500 is ready. The Node's fast worker (files/instance-container-wake.sh) sends the
+    # same request.
+    web_probe: >-
+      {{ ['curl', '--silent', '--output', '/dev/null', '--write-out', '%{http_code}', '--max-time', '1.5',
+          'http://' ~ container.address ~ ':' ~ container.web_port ~ '/'] }}
     container_phases: "{{ (phases | default(ansible_run_tags | first)).split(',') }}"
     # The phase that runs now; tasks/instance-container-run-phase.yml sets it as each phase starts.
     container_phase_running: "{{ container_phases | first }}"

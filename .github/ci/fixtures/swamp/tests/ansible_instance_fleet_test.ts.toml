@@ -73,7 +73,7 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2780
+cost = 2876
 slices = 71
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
@@ -113,7 +113,7 @@ inputs = [
   "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 39
   "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 18
   "a fleet built from the rules has the live shape, with boot.autostart true" = 31
-  "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base" = 54
+  "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base" = 74 # ESTIMATE: local 34.4s (main 32.4s; the converge now installs the power helper) x 2.1, rounded up, plus 1s
   "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base" = 22 # ESTIMATE: prior local x 3, plus 1s
   "readiness reads a healthy Doctor on the first poll; an empty, an error or no response fails with what the last poll got" = 76 # ESTIMATE: prior local x 3, plus 1s
   "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes" = 77
@@ -164,5 +164,5 @@ inputs = [
   "a deployment starts an older fleet, refreshes its absent caller map with all Nodes stopped, and resets from the upgraded base" = 100
   "standalone starts and proof resets refuse absent caller maps, and deployment starts still refuse conflicting maps" = 60
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps" = 45
-  "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current" = 45
+  "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current" = 121 # ESTIMATE: local 56.7s (main 47.8s; the converge now installs the power helper) x 2.1, rounded up, plus 1s
   "a shrink check or run that fails or prints no result never fails the refresh: a failed check keeps base, a failed run is named" = 22

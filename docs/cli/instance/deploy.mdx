@@ -82,6 +82,8 @@ A container default refreshes its [Project source facts at the deployed commit](
 | `deployment.branch_changed` | The development checkout does not match the commit after the steps. |
 | `deployment.processes_inactive` | A container default's units were not active after the deployment. |
 | `instance.container_<phase>_failed` | A phase of a container default's deployment failed without a refusal, such as `instance.container_start_failed`. |
+| `instance.power_helper_busy` | The deployment found its container asleep, and another power action on the Instance's Node stayed busy, such as a wake still at work. The asleep marker stays. Retry later. |
+| `instance.power_helper_failed` | The deployment found its container asleep, and the power helper refused its input or crashed. The asleep marker stays; the run's output has the helper's error. Retry, or read the Node's journal. |
 | `schedule.install_failed` | Installing a Schedule service or timer failed. |
 | `deployment.selection_invalid` | Selecting or reading back `current` failed. |
 | `deployment.php_runtime_unconfirmed` | The PHP runtime did not confirm the new release. |

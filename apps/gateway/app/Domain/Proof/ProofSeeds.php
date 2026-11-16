@@ -68,6 +68,34 @@ final readonly class ProofSeeds
         return $default === null || $default->id === $node->id || ! ProofCopyHosts::offersPlaces($node) ? null : $default;
     }
 
+    /**
+     * Records which Node the seed listener of a CI Node trusts, at the end of each run that changes it: a `ci-runner` add or role converge,
+     * and a `node:converge` with the role, which passes here when its roles phase passed. A passed run with a sender in its intent sets that
+     * sender when the run opens the listener; a `node:converge` never opens it, so it keeps the record only when the record already names
+     * that sender. A passed run without a sender removed the listener, and any other end may have changed the trust: both clear it
+     * (docs/reference/node-provisioning.md#the-seed-listener). A seed copy targets only a Node whose record names the default's Node.
+     *
+     * @param  array<string, mixed>  $runtime  the run's role runtime intent
+     */
+    public static function recordListener(int $nodeId, array $runtime, bool $passed, bool $opens): void
+    {
+        $sender = $passed ? (ValidatedData::object($runtime['proof_seed'] ?? [])['sender'] ?? null) : null;
+        $senderId = is_array($sender) ? ValidatedData::integer($sender['node_id']) : null;
+        $node = Node::query()->whereKey($nodeId);
+        if ($senderId !== null && ! $opens) {
+            $node->where('seed_sender_id', '!=', $senderId)->update(['seed_sender_id' => null]);
+
+            return;
+        }
+        $node->update(['seed_sender_id' => $senderId]);
+    }
+
+    /** The end of a `ci-runner` removal, passed or failed: its phase stops the listener, so the Node trusts no sender. */
+    public static function forgetListener(int $nodeId): void
+    {
+        Node::query()->whereKey($nodeId)->update(['seed_sender_id' => null]);
+    }
+
     /** The proof default's runtime when the default is active and has a seed, else null. */
     public function source(): ?InstanceRuntime
     {
@@ -93,7 +121,8 @@ final readonly class ProofSeeds
 
     /**
      * The Nodes whose seed a copy must bring to the current seed: each Node that offers proof places, other than the default's Node,
-     * whose recorded seed is not the default's current seed.
+     * whose recorded seed is not the default's current seed and whose seed listener trusts the default's Node ({@see self::recordListener()}).
+     * A Node whose listener is not ready is no target, so no copy fails on it or marks it tried; its next passed converge makes it one.
      *
      * @return list<Node>
      */
@@ -105,8 +134,9 @@ final readonly class ProofSeeds
         }
         $ids = NodeRole::query()->where('role', RoleName::CiRunner)->where('node_id', '!=', $source->node_id)->orderBy('node_id')->pluck('node_id')->unique();
         $seeds = ProofSeed::query()->whereIn('node_id', $ids)->get()->keyBy('node_id');
+        $ready = Node::query()->whereIn('id', $ids)->where('seed_sender_id', $source->node_id)->orderBy('id')->get();
 
-        return array_values(Node::query()->whereIn('id', $ids)->orderBy('id')->get()->filter(static function (Node $node) use ($seeds, $source): bool {
+        return array_values($ready->filter(static function (Node $node) use ($seeds, $source): bool {
             $seed = $seeds->get($node->id);
 
             return ProofCopyHosts::offersPlaces($node) && ! ($seed instanceof ProofSeed && self::current($seed, $source));

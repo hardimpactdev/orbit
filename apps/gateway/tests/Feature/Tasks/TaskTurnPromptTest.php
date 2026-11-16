@@ -5,6 +5,13 @@ declare(strict_types=1);
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskTurnPrompt;
 use App\Models\Task;
+use Carbon\CarbonImmutable;
+
+/** The admission time of the turns in this file. */
+function promptStart(): CarbonImmutable
+{
+    return CarbonImmutable::parse('2026-11-16T10:00:00Z');
+}
 
 function promptSubtask(?array $deliverables, string $groupBrief = "Add a firewall rule set.\nAllow and deny share one shape."): Task
 {
@@ -19,7 +26,7 @@ it('puts the group, then the subtask, then the copy rules in front of the prompt
         ['id' => 'tests', 'type' => 'command', 'description' => 'The tests pass.', 'command' => 'vendor/bin/pest tests/Feature/DenyTest.php', 'directory' => 'apps/gateway'],
     ]);
 
-    expect(TaskTurnPrompt::compose($subtask, 'Implement the brief.'))->toBe(<<<'TEXT'
+    expect(TaskTurnPrompt::compose($subtask, 'Implement the brief.', promptStart()))->toBe(<<<'TEXT'
     Task group: Firewall rules
 
     Group brief:
@@ -42,18 +49,21 @@ it('puts the group, then the subtask, then the copy rules in front of the prompt
     - Commit your work before this turn ends.
     - Never print an environment file, a token, a key or a session value.
 
+    This turn started at 2026-11-16T10:00:00Z and Orbit ends it at 2026-11-16T11:00:00Z. Commit your work before then.
+
     Prompt of this turn:
     Implement the brief.
     TEXT);
 });
 
 it('leaves the deliverables section out when the subtask has none', function (): void {
-    $text = TaskTurnPrompt::compose(promptSubtask(null), 'Review the checked commit.');
+    $text = TaskTurnPrompt::compose(promptSubtask(null), 'Review the checked commit.', promptStart());
 
     expect($text)->toStartWith("Task group: Firewall rules\n\nGroup brief:\nAdd a firewall rule set.\nAllow and deny share one shape.\n\nSubtask: Add the deny rule\n\nBrief:\n")
         ->and($text)->not->toContain('Deliverables:')
         ->and(substr_count($text, TaskTurnPrompt::CopyRules))->toBe(1)
-        ->and($text)->toEndWith(TaskTurnPrompt::CopyRules."\n\nPrompt of this turn:\nReview the checked commit.");
+        ->and($text)->toEndWith(TaskTurnPrompt::CopyRules."\n\nThis turn started at 2026-11-16T10:00:00Z and Orbit ends it at 2026-11-16T11:00:00Z. "
+            ."Commit your work before then.\n\nPrompt of this turn:\nReview the checked commit.");
 });
 
 it('names no command of one Project in the copy rules', function (): void {
@@ -62,19 +72,19 @@ it('names no command of one Project in the copy rules', function (): void {
 
 it('refuses a composed prompt that the turn workflow would reject', function (): void {
     $subtask = promptSubtask(null);
-    $room = TaskTurnPrompt::Limit - mb_strlen(TaskTurnPrompt::compose($subtask, ''));
+    $room = TaskTurnPrompt::Limit - mb_strlen(TaskTurnPrompt::compose($subtask, '', promptStart()));
 
-    expect(mb_strlen(TaskTurnPrompt::compose($subtask, str_repeat('a', $room))))->toBe(TaskTurnPrompt::Limit)
-        ->and(fn () => TaskTurnPrompt::compose($subtask, str_repeat('a', $room + 1)))->toThrow(ResourceOperationException::class, 'longer than a turn accepts')
+    expect(mb_strlen(TaskTurnPrompt::compose($subtask, str_repeat('a', $room), promptStart())))->toBe(TaskTurnPrompt::Limit)
+        ->and(fn () => TaskTurnPrompt::compose($subtask, str_repeat('a', $room + 1), promptStart()))->toThrow(ResourceOperationException::class, 'longer than a turn accepts')
         // A character outside the basic plane counts as two code units, as the schema counts it.
-        ->and(fn () => TaskTurnPrompt::compose($subtask, str_repeat('a', $room - 1).'😀'))->toThrow(ResourceOperationException::class);
+        ->and(fn () => TaskTurnPrompt::compose($subtask, str_repeat('a', $room - 1).'😀', promptStart()))->toThrow(ResourceOperationException::class);
 });
 
 it('counts the group brief in the limit', function (): void {
     $short = promptSubtask(null, 'Brief');
     $long = promptSubtask(null, str_repeat('b', 8000));
-    $prompt = str_repeat('a', TaskTurnPrompt::Limit - mb_strlen(TaskTurnPrompt::compose($short, '')));
+    $prompt = str_repeat('a', TaskTurnPrompt::Limit - mb_strlen(TaskTurnPrompt::compose($short, '', promptStart())));
 
-    expect(mb_strlen(TaskTurnPrompt::compose($short, $prompt)))->toBe(TaskTurnPrompt::Limit)
-        ->and(fn () => TaskTurnPrompt::compose($long, $prompt))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tasks.prompt_too_large'));
+    expect(mb_strlen(TaskTurnPrompt::compose($short, $prompt, promptStart())))->toBe(TaskTurnPrompt::Limit)
+        ->and(fn () => TaskTurnPrompt::compose($long, $prompt, promptStart()))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tasks.prompt_too_large'));
 });
