@@ -256,7 +256,14 @@ The role `consult` and the field `model` were options of the Pi turn on a task V
 
 No `tasks.provision` Operation starts any more: a task start makes a task copy. An old one that is still open holds its group as every open Operation does, so other work returns `operation.target_busy` until the reconcile pass ends it.
 
-A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission puts the title, brief and deliverables of the subtask in front of the prompt of the caller, for every role, and records that text as the admitted prompt. A composed prompt over 100000 characters returns 422 `tasks.prompt_too_large`.
+A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission composes the prompt for every role, in this order: the group's title and brief, read from the subtask's parent; the title, brief and deliverables of the subtask; Orbit's copy rules; then the prompt of the caller. It records that text as the admitted prompt. A composed prompt over 100000 characters, the group's brief included, returns 422 `tasks.prompt_too_large`.
+
+The copy rules are one fixed text, the same for the implementer and the reviewer. They name no command of one Project:
+
+- Run every command in the foreground. Leave none running when the turn ends.
+- The Project's long gates and full test sets are the work of the task check and CI (`task:check`). Run single test files by path.
+- Commit your work before the turn ends.
+- Never print an environment file, a token, a key or a session value.
 
 #### Publish an external group
 
