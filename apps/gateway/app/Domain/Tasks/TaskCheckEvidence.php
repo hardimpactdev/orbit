@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\AgentThread;
-use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use Illuminate\Support\Carbon;
@@ -17,7 +16,7 @@ final readonly class TaskCheckEvidence
 
     private const string CHECK_ERROR_STEP = 'check_error';
 
-    public function __construct(private TaskWorkspaceStateReader $workspace, private TaskBroadcasts $broadcasts, private TaskCheckOutputBuilder $outputBuilder) {}
+    public function __construct(private TaskBroadcasts $broadcasts, private TaskCheckOutputBuilder $outputBuilder) {}
 
     public function recordReading(TaskCheck $check, TaskCheckReading $reading): void
     {
@@ -75,52 +74,5 @@ final readonly class TaskCheckEvidence
     {
         return Task::query()->where('parent_id', $group->id)->whereNotNull('implementer_agent_thread_id')->exists()
             || AgentThread::query()->where('task_group_id', $group->id)->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'not like', AgentThread::PendingPrefix.'%')->exists();
-    }
-
-    private function implementerTurnStarted(Task $task): bool
-    {
-        $threadId = $task->implementer_agent_thread_id;
-        if ($threadId !== null) {
-            $externalId = AgentThread::query()->whereKey($threadId)->value('external_id');
-            if (is_string($externalId) && ! str_starts_with($externalId, AgentThread::PendingPrefix)) {
-                return true;
-            }
-        }
-
-        return AgentThread::query()
-            ->where('task_id', $task->id)
-            ->where('role', TaskThreadRole::Implementer->value)
-            ->where('external_id', 'not like', AgentThread::PendingPrefix.'%')
-            ->exists();
-    }
-
-    public function recordSubtaskStart(Task $task): void
-    {
-        if (is_string($task->subtask_start_commit) && $task->subtask_start_commit !== '') {
-            return;
-        }
-        if ($task->continuation_of_task_id !== null) {
-            $source = Task::query()->find($task->continuation_of_task_id);
-            if ($source instanceof Task) {
-                $sourceStart = TaskReviewBase::commit($source);
-                if ($sourceStart !== '') {
-                    $task->update(['subtask_start_commit' => $sourceStart]);
-                }
-
-                return;
-            }
-        }
-        if ($this->implementerTurnStarted($task)) {
-            return;
-        }
-        $instance = $task->parent()->with('taskable')->first()?->taskable;
-        if (! $instance instanceof Instance) {
-            return;
-        }
-        $head = $this->workspace->headCommit($instance);
-        if (! is_string($head) || $head === '') {
-            return;
-        }
-        $task->update(['subtask_start_commit' => $head]);
     }
 }

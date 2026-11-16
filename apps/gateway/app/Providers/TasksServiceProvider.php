@@ -21,7 +21,6 @@ use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
-use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestCheckOutput;
@@ -32,7 +31,6 @@ use App\Infrastructure\Tasks\JevBriefCoverageLabeler;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
-use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\WebSocketSwampRunReader;
 use App\Models\Task;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -44,7 +42,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
-        TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
         DeliverablePathRepository::class => NativeDeliverablePathRepository::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
         BriefCoverageLabeler::class => JevBriefCoverageLabeler::class,
