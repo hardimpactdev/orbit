@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupDone;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Models\Activity;
 use App\Models\Operation;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -104,4 +105,91 @@ it('does not count a reviewer turn on another commit than the re-check\'s', func
     TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40));
 
     expect(doneCheckOf($world->group))->toBeNull();
+});
+
+describe('the reopen of the last completed subtask (docs/reference/tasks.md#reopen-the-last-subtask)', function (): void {
+    function reopenSubtask(Task $group, Task $subtask): Task
+    {
+        return app(UpdateTaskAction::class)->execute($group->refresh(), $subtask->refresh(), new UpdateTaskData(null, null, null, status: TaskStatus::Running));
+    }
+
+    function reopenRefusal(Task $group, Task $subtask): string
+    {
+        try {
+            reopenSubtask($group, $subtask);
+        } catch (ResourceOperationException $error) {
+            return $error->errorCode.' '.$error->status;
+        }
+
+        return 'reopened';
+    }
+
+    it('reopens the last completed subtask of an open copy group, records it, and leaves the group not done', function (): void {
+        $world = TaskCopyDoneFixture::make();
+        // A later cancelled subtask is not the last one.
+        Task::query()->create(['parent_id' => $world->group->id, 'position' => 2, 'title' => 'Dropped', 'brief' => 'Dropped.', 'status' => TaskStatus::Cancelled]);
+        expect(doneCheckOf($world->group))->toBe($world->check->id);
+
+        expect(reopenSubtask($world->group, $world->subtask)->status)->toBe(TaskStatus::Running)
+            ->and(doneCheckOf($world->group))->toBeNull()
+            ->and(($activity = Activity::query()->where('description', 'subtask reopened')->sole())->only(['subject_id', 'command']))
+            ->toBe(['subject_id' => $world->subtask->id, 'command' => 'task:update'])
+            ->and($activity->properties->all())->toBe(['group_id' => $world->group->id, 'old' => 'completed', 'new' => 'running']);
+    });
+
+    it('refuses any other reopen and leaves the subtask completed', function (Closure $break, string $refusal): void {
+        $world = TaskCopyDoneFixture::make();
+        $subtask = $break($world) ?? $world->subtask;
+        $before = $subtask->refresh()->status;
+
+        expect(reopenRefusal($world->group, $subtask))->toBe($refusal)
+            ->and($subtask->refresh()->status)->toBe($before)
+            ->and(Activity::query()->where('description', 'subtask reopened')->exists())->toBeFalse();
+    })->with([
+        'a later subtask exists' => [function (TaskCopyDoneFixture $w): null {
+            Task::query()->create(['parent_id' => $w->group->id, 'position' => 2, 'title' => 'More', 'brief' => 'More.', 'status' => TaskStatus::Completed]);
+
+            return null;
+        }, 'tasks.status_move_refused 422'],
+        'another subtask has not ended' => [function (TaskCopyDoneFixture $w): Task {
+            Task::query()->whereKey($w->subtask->id)->update(['status' => TaskStatus::Running->value]);
+
+            return Task::query()->create(['parent_id' => $w->group->id, 'position' => 2, 'title' => 'More', 'brief' => 'More.', 'status' => TaskStatus::Completed]);
+        }, 'tasks.status_move_refused 422'],
+        'the subtask failed' => [function (TaskCopyDoneFixture $w): null {
+            Task::query()->whereKey($w->subtask->id)->update(['status' => TaskStatus::Failed->value]);
+
+            return null;
+        }, 'tasks.status_move_refused 422'],
+        'the group ended' => [function (TaskCopyDoneFixture $w): null {
+            $w->group->update(['status' => TaskGroupStatus::Completed]);
+
+            return null;
+        }, 'tasks.status_move_refused 422'],
+        'the group has no task copy' => [function (TaskCopyDoneFixture $w): null {
+            $w->group->update(['taskable_type' => null, 'taskable_id' => null]);
+
+            return null;
+        }, 'tasks.status_move_refused 422'],
+        'a copy turn of the group runs' => [function (TaskCopyDoneFixture $w): null {
+            $w->turn->update(['status' => OperationStatus::Running, 'finished_at' => null, 'result' => null]);
+
+            return null;
+        }, 'tasks.copy_turn_unended 409'],
+    ]);
+
+    it('is not done again until a new check, a reviewer turn on it and a new completion', function (): void {
+        $world = TaskCopyDoneFixture::make();
+        reopenSubtask($world->group, $world->subtask);
+        $fix = str_repeat('e', 40);
+
+        $check = TaskCopyDoneFixture::check($world->group, $world->subtask, $fix);
+        expect(doneCheckOf($world->group))->toBeNull();
+        TaskCopyDoneFixture::reviewerTurn($world->group, $world->subtask, $world->reviewer, $fix, now());
+        expect(doneCheckOf($world->group))->toBeNull();
+
+        $completed = app(UpdateTaskAction::class)->execute($world->group->refresh(), $world->subtask->refresh(), new UpdateTaskData(null, null, null, status: TaskStatus::Completed));
+        expect($completed->status)->toBe(TaskStatus::Completed)
+            ->and(doneCheckOf($world->group))->toBe($check->id);
+    });
 });

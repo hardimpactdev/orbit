@@ -11,10 +11,12 @@ use App\Actions\Tasks\ReadAgentThreadAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
+use App\Actions\Tasks\UpdateTaskAction;
 use App\Data\Tasks\AgentThreadData;
 use App\Data\Tasks\StartTaskCheckData;
 use App\Data\Tasks\StartTaskPublishData;
 use App\Data\Tasks\TaskTurnData;
+use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerServer;
@@ -1507,6 +1509,27 @@ describe('a turn of a group that owns a copy', function (): void {
         // A done reviewer turn leaves the subtask running: only the caller completes it (docs/reference/tasks.md#subtask-status-in-a-task-copy).
         expect($subtask->refresh()->status)->toBe(TaskStatus::Running)
             ->and(app(TaskGroupDone::class)->check($group->refresh()))->toBeNull();
+    });
+
+    it('admits an implementer turn on the reopened last subtask, which continues its thread (docs/reference/tasks.md#reopen-the-last-subtask)', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $subtask = $group->tasks()->firstOrFail();
+        $first = copyTurn($group);
+        copyTurnEnded($first, 'succeeded', copyTurnDone('mcp:1'));
+        copyTurnEnded(copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]), 'succeeded', copyTurnDone('mcp:2'));
+        $move = fn (TaskStatus $to): Task => app(UpdateTaskAction::class)->execute($group->refresh(), $subtask->refresh(), new UpdateTaskData(null, null, null, status: $to));
+        $move(TaskStatus::Completed);
+        expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.subtask_not_current 409');
+
+        expect($move(TaskStatus::Running)->status)->toBe(TaskStatus::Running);
+        $fix = copyTurn($group, ['prompt' => 'Fix the CI failure.']);
+
+        expect($fix->input['subtask'])->toBe($subtask->id)
+            ->and($fix->input['thread_id'])->toBe($first->input['thread_id'])
+            ->and($fix->input['turn']['thread'])->toBe('continue')
+            ->and($subtask->refresh()->status)->toBe(TaskStatus::Running);
     });
 
     it('leaves the subtask todo when the turn is refused', function (): void {

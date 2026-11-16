@@ -73,8 +73,9 @@ final readonly class UpdateTaskAction
             $task->setRelation('parent', $locked);
             if ($data->status !== null) {
                 TaskStatusMoves::subtask($locked, $task, $data->status);
-                if ($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) {
-                    TaskCopyTurn::refuseCompletionWhileRunning($locked);
+                $reopen = TaskStatusMoves::reopens($locked, $task, $data->status);
+                if (($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) || $reopen) {
+                    TaskCopyTurn::refuseSubtaskMoveWhileRunning($locked);
                 }
                 if ($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) {
                     TaskAssistance::resolveExternalSubtask($task, $locked);
@@ -83,6 +84,15 @@ final readonly class UpdateTaskAction
                     && $data->deliverables === null) {
                     if ($task->status !== $data->status) {
                         $task->update(['status' => $data->status]);
+                    }
+                    if ($reopen) {
+                        // The reopen adds no state: the group is not done again until the subtask completes again (docs/reference/tasks.md#reopen-the-last-subtask).
+                        Activity::query()->create([
+                            'log_name' => 'tasks', 'description' => 'subtask reopened', 'subject_type' => Task::class,
+                            'subject_id' => $task->id, 'properties' => ['group_id' => $locked->id, 'old' => TaskStatus::Completed->value, 'new' => TaskStatus::Running->value],
+                            'caller_node_id' => $actor?->id, 'caller_ip' => $actor?->wireguard_ip,
+                            'request_id' => $requestId ?? (string) Str::uuid(), 'command' => 'task:update', 'status' => 'completed',
+                        ]);
                     }
 
                     return $task->refresh();
