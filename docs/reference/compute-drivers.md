@@ -629,11 +629,11 @@ The native action uses an empty temporary bare Git repository with the workspace
 
 From the VM, the Gateway takes only commit IDs and pack data. A commit ID must be 40 or 64 lowercase hex characters. Git in the mirror never reads a file from the VM. It runs with these settings: `core.hooksPath=/dev/null`, `core.fsmonitor=false`, an empty `credential.helper`, `http.followRedirects=false`, `protocol.allow=never`, and `protocol.https.allow=always`. A pack from the VM goes through `git index-pack --strict`, which runs the object checks that `transfer.fsckObjects` runs for a fetch. Fetches from GitHub skip them, because an old commit in a real repository can fail them.
 
-The remaining Gateway source adapters refuse to send a command that carries a source Git credential to a task VM. Native Swamp publication consumes its repository token through the shared private reader on the admitted worker. The separate Composer setup token described above is a narrow exception for dependency downloads.
+Native Swamp publication consumes its repository token through the shared private reader on the admitted worker. The separate Composer setup token described above is a narrow exception for dependency downloads.
 
-A source command fails with `task_vm.git_credential_refused` before SSH starts. An `incus` command on a task VM host refuses one too. So an Instance or Project operation that would fetch on a task VM with a token fails there and passes no token. Examples are `instance:destroy` of a task VM workspace and `instance:clone` from one. `project:update` with a new repository URL sends no token: it reads the proposed repository on the Gateway and only sets `origin` on the VM. A task VM workspace goes with its group; see [Release a task VM](#release-a-task-vm).
+An `incus` command refuses a command that carries a source Git credential with `task_vm.git_credential_refused` before it runs. The Gateway's SSH executor sends a command without asking whether its target is a task VM, because no task VM exists ([old paths](/reference/old-paths#the-task-vm-readers)). `project:update` reads no task VM either: it sends each checkout's preflight the token of the Project's source access.
 
-The guard knows a credential by the mark that `GitReadScript` puts on its input. A test fails when other code builds the credential header. It also fails when a new file sends remote commands with GitHub access in reach, so each such path gets a review.
+The refusal knows a credential by the mark that `GitReadScript` puts on its input. A test fails when other code builds the credential header. It also fails when a new file sends remote commands with GitHub access in reach, so each such path gets a review.
 
 The checkout keeps the Project repository URL as `origin`. After setup ends, the agent can run Git there, but its environment holds no setup credential. So it cannot fetch from or push to a private repository.
 
@@ -675,7 +675,7 @@ A VM that dies on an Incus host stays in its row until its group ends; no sweep 
 
 [Doctor](/cli/doctor) does not inspect task VM hosts: it has no code for an orphaned, missing or stray VM. The operator lists a host with `incus list --all-projects` instead.
 
-Doctor does not inspect the Node of a `parked` task VM, because the VM is stopped on purpose. Its `node` family reports one informational `node.task_vm_parked`, and the other families check nothing. So no problem is filed for a parked VM.
+Doctor reads no task VM row. It reports no `node.task_vm_parked` and inspects every Node by its families ([old paths](/reference/old-paths#the-task-vm-readers)).
 
 ### States
 
@@ -1216,7 +1216,9 @@ The WireGuard address allocator still skips the reserved range `10.44.0.128/25`,
 
 ### Placement invariant
 
-A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be the workspace its group [owns](/reference/tasks#workspace-ownership), in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Any other Instance fails with HTTP 409 `task_vm.foreign_instance`. Orbit also refuses an access grant from a task VM Node with HTTP 409 `task_vm.access_refused`. The fleet rollout skips task VM Nodes with the reason `sandbox`.
+No task VM exists, so no Node is a task VM Node. An Instance save, an access grant, the fleet rollout, a metrics exporter and a Node removal do not check for one. The refusals `task_vm.foreign_instance`, `task_vm.access_refused` and `instance.task_vm_node` and the rollout reason `sandbox` are removed ([old paths](/reference/old-paths#the-task-vm-readers)).
+
+Every task workspace command over SSH fails with `task_vm.workspace_mismatch`, because task VMs are removed. The guard reads no task VM row ([old paths](/reference/old-paths#the-task-vm-readers)).
 
 ### Configure task VMs
 
@@ -1234,18 +1236,15 @@ Every task VM error code starts with `task_vm.`. The setup commands print the co
 | --- | --- | --- |
 | `task_vm.invalid_config` | 500 | A `task_vms` value is invalid. See [Configure task VMs](#configure-task-vms) |
 | `task_vm.unknown_host` | 409 | The Node is not active or has no valid `settings.task_vms` |
-| `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
-| `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
-| `task_vm.access_refused` | 409 | An access grant names a task VM Node as its consumer |
+| `task_vm.workspace_mismatch` | 409 | A task workspace command over SSH was refused. Task VMs are removed, so every such command fails with it |
 | `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
 | `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
 The build row records the step and error |
-| `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
 | `task_vm.vm_missing` | 502 | The sweep found a `ready` or `parked` task VM gone from its host |
-| `task_vm.git_credential_refused` | 409 | A command that carries a GitHub credential was about to reach a task VM or an `incus` command. See [Git on a task VM](#git-on-a-task-vm) |
+| `task_vm.git_credential_refused` | 409 | A command that carries a GitHub credential was about to run through an `incus` command. See [Git on a task VM](#git-on-a-task-vm) |
 
 ### Limits
 
@@ -1309,7 +1308,7 @@ Nothing reads a declaration that a group saved before this rule. The column `tas
 
 ## VM power
 
-Task group responses report `vm_power` separately from task status. For a [task VM](#task-vms), it is `running` while the VM is `ready`, `stopped` while it is [`parked`](#park-and-resume), and `destroyed` once it is `destroyed`. In the other states it is `null`, and the group's wait reason names the state. The CLI shows this value as **VM power** when it is not `null`.
+Task group responses keep the field `vm_power`, and it is always `null`. No task VM exists, and the Gateway reads no task VM row for it ([old paths](/reference/old-paths#the-task-vm-readers)). The field stays so that older clients keep their shape. The CLI shows **VM power** only when the value is not `null`, so it shows none.
 
 ## Request a preview
 

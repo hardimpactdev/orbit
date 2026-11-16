@@ -1034,7 +1034,7 @@ The parent sheds admitted roles through native workflow children, restores publi
 
 Network and serving publications use their shared native children from Node 209. A child failure prevents later retirement steps and keeps the Node record with failed status. An expired budget (`operation.timed_out`) or a run that ends without a readable result (`operation.result_unreadable`) does the same. Cleanup does not roll back completed effects; the terminal result reports only completed work.
 
-Task VM guest Nodes skip Node removal's Swamp token list and revoke phases. Admission records `task_vm_guest` only for a Node referenced by a TaskVM row with no selected Swamp worker; callers cannot set it. Real Node removals retain token cleanup.
+The removal intent keeps the field `task_vm_guest`, and admission always records `false`: no Node is a task VM guest any more ([old paths](/reference/old-paths#the-task-vm-readers)). Every Node removal runs the Swamp token list and revoke phases.
 
 `--offline --force` permits removal of an unreachable Node's registry membership while leaving its machine untouched. The native workflow checks reachability first. A reachable target runs ordinary cleanup. The result names the artifacts retained on an unreachable machine; offline confirmation does not fabricate their removal.
 

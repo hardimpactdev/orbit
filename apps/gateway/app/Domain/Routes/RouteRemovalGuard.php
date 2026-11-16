@@ -37,10 +37,9 @@ final readonly class RouteRemovalGuard
         }
     }
 
-    /** @param list<int> $removingRouteIds Validated by the owning workspace policy. */
-    public function assertNodeRemovable(Node $node, array $removingRouteIds = []): void
+    public function assertNodeRemovable(Node $node): void
     {
-        $references = Route::query()->whereNotIn('id', $removingRouteIds)->where(static fn ($query) => $query
+        $references = Route::query()->where(static fn ($query) => $query
             ->where('node_id', $node->id)->orWhere('generation_basis_node_id', $node->id)->orWhere('transition_node_id', $node->id)
             ->orWhereHas('customProxy', static fn ($proxy) => $proxy->where('node_id', $node->id))
             ->orWhereHas('targets.instance', static fn ($target) => $target->where('node_id', $node->id)));
@@ -65,13 +64,12 @@ final readonly class RouteRemovalGuard
         }
     }
 
-    /** @param list<int> $removingRouteIds Validated by the owning workspace policy. */
-    public function assertRoleRemovable(Node $node, RoleName $role, array $removingRouteIds = []): void
+    public function assertRoleRemovable(Node $node, RoleName $role): void
     {
         if (
             ($role === RoleName::AppDev
             || $role === RoleName::AppProd)
-            && RouteTarget::query()->whereNotIn('route_id', $removingRouteIds)->whereHas(
+            && RouteTarget::query()->whereHas(
                 'instance',
                 static fn ($query) => $query->where('node_id', $node->id),
             )->exists()

@@ -37,8 +37,7 @@ final readonly class NodeRemovalRecords
     {
         DB::transaction(function () use ($snapshot): void {
             $node = Node::query()->lockForUpdate()->find(ValidatedData::integer($snapshot['node_id']));
-            if ($node === null || $node->name !== $snapshot['name']
-                || ($snapshot['task_vm_id'] !== null && ! TaskVm::query()->whereKey($snapshot['task_vm_id'])->where('node_id', $node->id)->exists())) {
+            if ($node === null || $node->name !== $snapshot['name']) {
                 throw new ResourceOperationException('node.removal_owner_mismatch', 'The admitted removal no longer owns this Node row.', 422);
             }
             $node->update(['status' => LifecycleStatus::Removing]);
@@ -57,7 +56,7 @@ final readonly class NodeRemovalRecords
             if ($node === null) {
                 return;
             }
-            if ($node->name !== $snapshot['name'] || ($snapshot['task_vm_id'] !== null && ! TaskVm::query()->whereKey($snapshot['task_vm_id'])->where('node_id', $node->id)->exists())) {
+            if ($node->name !== $snapshot['name']) {
                 throw new ResourceOperationException('node.removal_owner_mismatch', 'The admitted cleanup no longer owns this Node row.', 422);
             }
             $routes ??= ['routes' => Route::query()->whereKey(ValidatedData::integerList($snapshot['route_ids']))->get()
@@ -107,7 +106,7 @@ final readonly class NodeRemovalRecords
         if ($node === null) {
             return;
         }
-        if ($node->name !== $snapshot['name'] || ($snapshot['task_vm_id'] !== null && ! TaskVm::query()->whereKey($snapshot['task_vm_id'])->where('node_id', $node->id)->exists())) {
+        if ($node->name !== $snapshot['name']) {
             throw new ResourceOperationException('node.removal_owner_mismatch', 'The admitted restore no longer owns this Node row.', 422);
         }
         $node->update(['status' => $snapshot['prior_status'], 'failed_step' => null, 'error_code' => null]);

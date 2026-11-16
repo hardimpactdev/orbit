@@ -127,7 +127,6 @@ final readonly class StartDevelopmentInstanceCreateAction
             if ($source instanceof Instance) {
                 $clone = $this->containerDatabase($clone, $data->databaseServer);
             }
-            app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($node);
             $sourceRoot = $this->nodeSettings->fromStored($node->settings)?->appsPath();
             if (! $container && (! is_string($sourceRoot) || StoragePath::tryParse($sourceRoot) === null)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Native creation requires an explicit apps.path.', 503);

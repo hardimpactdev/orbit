@@ -8,10 +8,10 @@ use App\Infrastructure\Ssh\GatewaySshKeys;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsRepository;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\NativeSshExecutor;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\TaskVms\TaskVmCredentialGuard;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 
@@ -20,7 +20,7 @@ final class SshServiceProvider extends ServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         HostKeyScanner::class => SshHostKeyScanner::class,
-        SshExecutor::class => TaskVmCredentialGuard::class,
+        SshExecutor::class => NativeSshExecutor::class,
     ];
 
     public function register(): void

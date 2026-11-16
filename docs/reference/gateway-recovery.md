@@ -550,9 +550,7 @@ The alert records `release|{kind}|{resource}|{attempt}|{fault}`, with the source
 
 An open incident keeps one linked group. Further observations update its generated brief while the group and its subtasks remain untouched. Operator edits or a move out of Backlog preserve the group. Confirmed recovery or supersession cancels an untouched generated group. A successful stage is held and does not confirm recovery. Filing clears an occurrence episode; that reset is not recovery evidence.
 
-The recipe image build raised alerts that use `recipe-image:<build id>` as the resource, the build attempt as the attempt, and `build_failed` as the fault. Nothing raises one since the build was removed. An alert raised before stays open until its build is superseded or a later promoted build resolves it.
-
-The incident resolves when a later attempt succeeds, the desired recipe identity differs from the build, or the build row is gone. An attempt that is still running or failed does not prove recovery. A recipe revert to the failed build’s identity does not resolve the incident, even at a newer generation.
+The recipe image build raised alerts that use `recipe-image:<build id>` as the resource, the build attempt as the attempt, and `build_failed` as the fault. Nothing raises one since the build was removed. Recovery resolves an alert raised before as `resource_gone`, because no build runs to recover it. It reads no build row and no recipe identity.
 
 A migration merges the old buckets based on SHA only when retained alert evidence proves their resource, attempt, and fault. It adopts only groups whose original generated content and lack of operator activity can be confirmed. Ambiguous history stays available for an operator and cannot file a new group automatically.
 
@@ -634,11 +632,9 @@ The rollout visits a Node when all of these hold:
 - it holds at least one active role other than `gateway`;
 - it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host;
 
-Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. A [CLI convergence](/cli/fleet#how-it-works) names why it leaves a Node out: `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `cli_not_required`.
+Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. A [CLI convergence](/cli/fleet#how-it-works) names why it leaves a Node out: `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `cli_not_required`.
 
-A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) owns, on an Incus host. The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. The Gateway creates a task VM for one task group and destroys it when the group ends. Provisioning links its Node to the task VM before any convergence, so the Node never gets the Orbit CLI.
-
-The rollout never visits a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. The `sandbox` reason comes first, so a sandbox shows it in every state.
+No Node is a task sandbox any more, so the rollout has no `sandbox` reason and reads no task VM row ([old paths](/reference/old-paths#the-task-vm-readers)).
 
 The order goes lowest risk first. Each role has a group. A Node with several roles goes in the latest group of its roles, so it waits until every lower-risk Node is done. Inside a group, the Node ID decides.
 

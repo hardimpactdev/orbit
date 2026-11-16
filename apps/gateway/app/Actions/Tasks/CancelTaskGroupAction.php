@@ -11,7 +11,6 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
-use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 
 /** Board-only cancellation for untouched generated groups. Workspace cleanup belongs to tasks.cancel. */
@@ -27,7 +26,7 @@ final readonly class CancelTaskGroupAction
         return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Task => DB::transaction(function () use ($group): Task {
             $group = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             TaskCancelIntent::eligible($group);
-            if ($group->taskable_id !== null || TaskVm::forGroup($group) !== null) {
+            if ($group->taskable_id !== null) {
                 throw new ResourceOperationException('tasks.native_cleanup_required', 'Use the keyed tasks.cancel Operation to clean up this workspace.', 409);
             }
             $group->update(['status' => TaskGroupStatus::Cancelled, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);

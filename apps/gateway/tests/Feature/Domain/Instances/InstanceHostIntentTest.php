@@ -27,7 +27,6 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\TaskVm;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -51,15 +50,6 @@ function instanceFolderPins(string $version = '1.0'): array
 describe('the container branch of the app-dev converge', function (): void {
     it('gives a Node that is not on the build list nothing and leaves its bridge unallocated', function (): void {
         $node = instanceHostNode();
-
-        expect(app(InstanceHostIntent::class)->for($node))->toBeNull()
-            ->and($node->refresh()->instance_bridge)->toBeNull();
-    });
-
-    it('gives a task VM nothing, even on the build list', function (): void {
-        $node = instanceHostNode();
-        config(['instances.container_nodes' => [$node->id]]);
-        TaskVm::query()->create(['node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-1', 'wireguard_ip' => '10.44.9.1', 'state' => 'ready']);
 
         expect(app(InstanceHostIntent::class)->for($node))->toBeNull()
             ->and($node->refresh()->instance_bridge)->toBeNull();

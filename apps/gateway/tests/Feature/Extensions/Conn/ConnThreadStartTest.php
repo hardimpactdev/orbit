@@ -35,7 +35,6 @@ use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
-use App\Models\TaskVm;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -586,23 +585,6 @@ describe('the reachable Project directory', function (): void {
             ->assertConflict()->assertJsonPath('error.code', 'ai_router.disabled');
     });
 
-    it('refuses only live task VM Nodes without changing the default readiness rule', function (string $state, bool $cloneable): void {
-        $default = threadDefault($this->beast, 'tool');
-        TaskVm::query()->create(['node_id' => $this->beast->id, 'provider' => 'incus', 'name' => 'tvm-test',
-            'wireguard_ip' => '10.44.9.1', 'state' => $state]);
-
-        $response = threadCall($this->phone, 'GET', 'projects?include_unavailable=1')->assertOk()
-            ->assertJsonPath('data.0.cloneable', $cloneable)
-            ->assertJsonPath('data.0.cloneable_reason', $cloneable ? null : 'instance.task_vm_node');
-        if (! $cloneable) {
-            $response->assertJsonPath('data.0.checks.14.message', fn (string $message): bool => $message !== '');
-            threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'free'])
-                ->assertConflict()->assertJsonPath('error.code', 'instance.task_vm_node');
-            threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
-                ->assertConflict()->assertJsonPath('error.code', 'instance.task_vm_node');
-        }
-    })->with(['live' => ['ready', false], 'destroyed' => ['destroyed', true]]);
-
     it('returns the shared domain suffix from the Cluster or Node TLD', function (bool $clustered): void {
         $default = threadDefault($this->beast, 'tool');
         $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
@@ -677,7 +659,7 @@ describe('the reachable Project directory', function (): void {
 
         expect(array_unique(array_column($response->json('data'), 'cloneable')))->toBe([true])
             ->and($large)->toBeLessThanOrEqual($small + 1)
-            ->and(array_unique(array_map('count', array_column($response->json('data'), 'checks'))))->toBe([15]);
+            ->and(array_unique(array_map('count', array_column($response->json('data'), 'checks'))))->toBe([14]);
     })->with(['compatible default' => '', 'full directory' => '?include_unavailable=1']);
 
     it('classifies an invalid default-branch alias before default or taken', function (): void {
@@ -789,7 +771,7 @@ describe('ordered start checks for the client', function (): void {
         $checks = $row['checks'];
         $keys = ['default_instance', 'container', 'active', 'seed_snapshot', 'node_access', 'source_access', 'source_defaults',
             'production_placement', 'node_active_linux', 'app_dev_role', 'source_profile', 'php_readiness',
-            'runtime_contributions', 'model_route', 'native_create'];
+            'runtime_contributions', 'model_route'];
         expect(array_column($checks, 'key'))->toBe($keys)
             ->and(array_slice(array_column($checks, 'label'), 0, 5))->toBe(['Default Instance', 'Runs in a container', 'Active', 'Seed snapshot', 'Node access']);
         $failures = array_values(array_filter($checks, fn (array $check): bool => $check['status'] === 'fail'));
@@ -941,12 +923,12 @@ describe('the compatible Project directory', function (): void {
         $compatible = threadCall($this->phone, 'GET', 'projects')->assertOk()->assertJsonCount(1, 'data')->json('data');
         expect(array_column($compatible, 'id'))->toBe($oldIds)->toBe([$ready->project_id])
             ->and(array_column($compatible, 'cloneable'))->toBe([true])
-            ->and($compatible[0]['checks'])->toHaveCount(15);
+            ->and($compatible[0]['checks'])->toHaveCount(14);
         expect(threadCall($this->phone, 'GET', 'projects?include_unavailable=0')->assertOk()->json('data'))->toBe($compatible);
         $wide = threadCall($this->phone, 'GET', 'projects?include_unavailable=1')->assertOk()->assertJsonCount(4, 'data')->json('data');
         expect(array_column($wide, 'slug'))->toBe(['checkout', 'inactive', 'missing', 'ready']);
         foreach ($wide as $row) {
-            expect($row['checks'])->toHaveCount(15);
+            expect($row['checks'])->toHaveCount(14);
         }
     });
 
