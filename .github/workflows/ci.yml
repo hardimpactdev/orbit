@@ -722,7 +722,9 @@ jobs:
           path: ~/.cache/orbit-shape-gate
           key: fixture-tools-${{ runner.os }}-${{ runner.arch }}-${{ steps.python.outputs.python-version }}-${{ steps.python.outputs.python-path }}-${{ hashFiles('swamp/ansible/shape-gate-requirements.txt', 'swamp/ansible/requirements.txt', 'swamp/ansible/requirements.yml') }}
       # A cold cache returns after every Python or pin change. The build stays out of the units' 190-second deadline.
-      # Two minutes is more than twice the slowest cold build on a hosted runner; the job's five minutes hold both.
+      # Two minutes is more than twice the slowest cold build on a hosted runner. The job's five minutes hold the expected cold build
+      # (under a minute) and the unit deadline, not this step's full bound: a build near two minutes can run the job into its limit,
+      # which then names the job, not a unit.
       - name: Prepare fixture tools
         timeout-minutes: 2
         run: bin/ci-units prepare-tools

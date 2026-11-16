@@ -249,7 +249,9 @@ Each fixture shard has a five-minute job limit. The runner stops the shard at 19
 
 The shard deadline counts only the units. Before the units, the job restores the pinned shape tools and Ansible collections from its cache, or builds them, in its own step: `Prepare fixture tools` runs `bin/ci-units prepare-tools` with a two-minute limit.
 
-The two-minute limit is more than twice the slowest cold build on a hosted runner. The job limit holds checkout, setup, a cold build, the 190-second unit deadline and the artifact upload. A cold cache comes back after every change to the Python version or a pin, and pull requests do not share their caches. A slow or failed build fails this step by name; it does not take time from a unit.
+The two-minute limit is more than twice the slowest cold build on a hosted runner. The five-minute job limit holds checkout, setup, the expected cold build of under a minute, the 190-second unit deadline and the artifact upload. It does not hold the step's full bound: a build that uses most of its two minutes can run the job into its limit, which then names the job, not a unit.
+
+A cold cache comes back after every change to the Python version or a pin, and pull requests do not share their caches. A slow or failed build fails this step by name; it does not take time from a unit.
 
 `bin/ci-units run` checks the tools again before the first unit, so a local run without the workflow still works. With ready tools, this costs only the readiness check: the venv's `.complete` marker and a collection install that has nothing to do. Without ready tools, `run` builds them inside the shard deadline.
 
