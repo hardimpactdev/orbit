@@ -9,9 +9,9 @@ use App\Infrastructure\GitHub\GitHubActionsJobs;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Project;
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
-use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Support\Facades\Http;
 
 uses(LazilyRefreshDatabase::class);
@@ -162,8 +162,8 @@ describe('the CI runner view job read', function (): void {
                 'started_at' => '2026-11-15T10:00:30Z', 'completed_at' => '2026-11-15T10:05:30Z', 'queue_wait_seconds' => 30, 'run_seconds' => 300,
                 'url' => 'https://github.com/acme/shop/actions/runs/1/job/91']);
 
-        Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/repos/acme/shop/actions/runs?')
-            && $request['created'] === '>=2026-11-14T12:00:00Z' && $request['per_page'] === '100' && $request['page'] === '1');
+        Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/repos/acme/shop/actions/workflows/1/runs?')
+            && $request['created'] === '2026-11-14T12:00:00Z..2026-11-16T12:00:00Z' && $request['per_page'] === '100' && $request['page'] === '1');
         Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/actions/runs/11/jobs?') && $request['filter'] === 'latest');
         Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/actions/runs/10/jobs')
             || str_contains($request->url(), 'acme/private') || str_contains($request->url(), '/runners'));
@@ -226,17 +226,19 @@ describe('the CI runner view job read', function (): void {
         Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/jobs'));
     });
 
-    it('reads at most the given pages of runs and says when the window holds more', function (): void {
-        $runs = array_map(static fn (int $id): array => ['id' => $id, 'name' => 'CI', 'status' => 'completed'], range(1, 100));
-        Http::fake(['api.github.com/repos/acme/shop/actions/runs*' => static fn () => Http::response(['total_count' => 250, 'workflow_runs' => $runs])]);
+    it('reads a run list to its last page and splits a window that holds more runs than GitHub gives for one query', function (): void {
+        $runs = ciJobsRuns(2500, 2500, 2, '2026-11-16T11:59:00Z');
+        ciJobsGitHub(['acme/shop' => $runs], []);
 
         $listed = new GitHubActionsReader(app(GitHubAppStore::class), new CommandDeadline)
-            ->workflowRuns(GitHubRepository::fromOrigin('https://github.com/acme/shop') ?? throw new LogicException, 'token', now()->subHours(48), 2);
+            ->workflowRuns(GitHubRepository::fromOrigin('https://github.com/acme/shop') ?? throw new LogicException, 'token', 2, now()->subHours(48), now());
 
-        expect($listed['runs'])->toHaveCount(200)->and($listed['truncated'])->toBeTrue();
-        Http::assertSentCount(2);
-        Http::assertSent(static fn (Request $request): bool => $request['page'] === '2' && $request->hasHeader('Authorization', 'Bearer token'));
+        expect(array_column($listed, 'id'))->toBe(range(2500, 1, -1));
+        Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/actions/workflows/2/runs?') && $request['page'] === '8'
+            && $request->hasHeader('Authorization', 'Bearer token'));
+        Http::assertNotSent(static fn (Request $request): bool => (int) $request['page'] > 10);
     });
+
     it('lists every self-hosted job of a repository whose self-hosted runs are older than its newest 500 runs', function (): void {
         ciJobsApp();
         ciJobsRepository('acme/shop');
