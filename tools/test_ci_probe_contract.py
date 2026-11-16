@@ -30,7 +30,7 @@ class HostProbeAdmissionTest(unittest.TestCase):
                 pressure = {f'swamp/pressure{i}.py': fixture(f'swamp/pressure{i}.py', 15, [path]) for i in range(slots)}
                 result = units.plan([path], budget, pressure | {FILE: contract}, [])
                 self.assertIn(FILE, names(result))
-                self.assertNotIn(FILE, result['deferred'])
+                self.assertNotIn(FILE, units.unplaced_units(result))
                 self.assertEqual(result['mandatory'], [{'file': FILE, 'cases': [CASE], 'units': [FILE]}])
 
     def test_unfittable_contract_fails_required_instead_of_deferring_silently(self):

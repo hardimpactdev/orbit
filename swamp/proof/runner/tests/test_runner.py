@@ -99,6 +99,34 @@ class RunnerTest(unittest.TestCase):
             self.assertIn("failed_step='Converge input', error_code='operation.native_failed'", failures[0])
             self.assertNotIn('private-error-sentinel', failures[0])
 
+    def test_a_refusal_before_admission_keeps_its_exit_code_error_code_and_stderr_tail_in_the_verdict(self):
+        case = self.spec.case(CASE)
+        case.setup.append(spec.Step('cli', {'run': ['firewall:allow', '80'], 'expect': {'exit': 0, 'status': 'succeeded'}}))
+        refusal = {'error': {'code': 'node.converge_unsupported', 'message': 'Only an active, managed Linux Node can converge.'}}
+        stderr = 'x' * 400 + '\n  \x1b[31mRefused\x1b[0m:   the Node is not active\n'
+        original = self.fleet.cli
+
+        def cli(args, **kwargs):
+            if args[0] == 'firewall:allow':
+                return {'rc': 1, 'json': refusal, 'stdout': json.dumps(refusal), 'stderr': stderr}
+            return original(args, **kwargs)
+
+        with patch.object(self.fleet, 'cli', side_effect=cli):
+            result = runner.run_case(case, self.fleet, self.spec, Path(self.directory.name))
+        receipt = json.loads(next(Path(self.directory.name).glob(CASE + '/*/receipt.json')).read_text())
+        line = json.loads(runner.verdict_line(result))
+        for calls in (receipt['calls'], line['calls']):
+            self.assertEqual(len(calls), 1)
+            self.assertEqual({key: calls[0][key] for key in ('run', 'exit', 'code')}, {'run': 'firewall:allow', 'exit': 1, 'code': 'node.converge_unsupported'})
+            self.assertTrue(calls[0]['stderr'].endswith('Refused: the Node is not active'), calls[0]['stderr'])
+            self.assertEqual(len(calls[0]['stderr']), steps.STDERR_TAIL)
+
+    def test_a_passed_case_keeps_no_calls(self):
+        result, receipt = self.execute()
+        self.assertEqual(result['verdict'], 'passed', result)
+        self.assertNotIn('calls', result)
+        self.assertNotIn('calls', receipt)
+
     def test_a_port_that_is_not_blocked_before_the_command_is_unrun_not_a_pass(self):
         self.fleet.deny_ignored = True
         result, _ = self.execute()
@@ -159,6 +187,17 @@ class VerdictLineTest(unittest.TestCase):
     def test_a_short_line_is_plain_json(self):
         line = runner.verdict_line({'id': 'a', 'verdict': 'passed', 'secs': 1.5})
         self.assertEqual(json.loads(line), {'id': 'a', 'verdict': 'passed', 'secs': 1.5})
+
+    def test_failed_calls_are_kept_before_messages_and_the_line_stays_under_1_kb(self):
+        calls = [{'run': 'node:converge', 'exit': 1, 'code': 'operation.target_busy', 'stderr': 'y' * 160} for _ in range(3)]
+        failed = [f'act[{n}] ' + 'x' * 400 for n in range(5)]
+        line = runner.verdict_line({'id': 'a', 'verdict': 'failed', 'cause': 'assertion', 'secs': 2, 'failed': failed, 'calls': calls})
+        self.assertLessEqual(len(line), 1000)
+        self.assertEqual(json.loads(line)['calls'], calls)
+        huge = [{**call, 'stderr': 'y' * 900} for call in calls]
+        line = runner.verdict_line({'id': 'a', 'verdict': 'failed', 'cause': 'assertion', 'secs': 2, 'failed': failed, 'calls': huge})
+        self.assertLessEqual(len(line), 1000)
+        self.assertIsInstance(json.loads(line), dict)
 
     def test_many_long_failures_stay_under_1_kb_and_are_counted(self):
         failed = [f'expect[{n}] ' + 'x' * 400 for n in range(30)]

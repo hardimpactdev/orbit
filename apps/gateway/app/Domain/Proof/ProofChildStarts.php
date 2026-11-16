@@ -22,10 +22,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-/** Serializes the starts of one proof, leaving queue time between native answers. */
+/** Holds the starts of one proof until its execution copies succeeded, then queues them all at once (docs/cli/proof/run.mmd). */
 final readonly class ProofChildStarts
 {
-    public const int SpacingSeconds = 20;
+    /** How long a start whose copy is not active yet waits before it checks again. */
+    public const int CopyCheckSeconds = 20;
 
     public function __construct(private OperationStore $store) {}
 
@@ -53,7 +54,7 @@ final readonly class ProofChildStarts
                 $proof = Operation::query()->lockForUpdate()->findOrFail($id);
                 foreach (Operation::query()->whereKey($children)->lockForUpdate()->get() as $child) {
                     if ($child->status === OperationStatus::Queued && ! isset($child->state['proof_child_start'])) {
-                        $this->mark($child, ['not_before' => null, 'released_at' => null, 'advanced_at' => null]);
+                        $this->mark($child, ['not_before' => null, 'released_at' => null]);
                     }
                 }
                 if ($this->ended($proof)) {
@@ -61,14 +62,14 @@ final readonly class ProofChildStarts
 
                     return;
                 }
-                $this->scheduleNext($proof);
+                $this->schedule($proof);
             });
         }
 
         return $ordinary;
     }
 
-    /** Held includes a queued successor whose delayed job has not run yet. */
+    /** Held includes a queued start whose delayed job has not run yet. */
     public static function held(Operation $operation): bool
     {
         return isset($operation->state['proof_child_start']) && self::releasedAt($operation) === null;
@@ -115,7 +116,7 @@ final readonly class ProofChildStarts
             // or is gone fails the run, with its cases unrun, and cancels the group, which removes what is left of the copy.
             $copy = app(ProofCopies::class)->state($operation);
             if ($copy === 'pending') {
-                return now()->toImmutable()->addSeconds(self::SpacingSeconds)->ceilSecond();
+                return now()->toImmutable()->addSeconds(self::CopyCheckSeconds)->ceilSecond();
             }
             if ($copy === 'failed') {
                 $this->failWithoutCopy($operation);
@@ -128,12 +129,6 @@ final readonly class ProofChildStarts
 
             return true;
         });
-    }
-
-    /** A missed callback can be recovered entirely from the child's stored result. */
-    private static function answered(Operation $child): bool
-    {
-        return isset(self::record($child)['advanced_at']) || $child->status->terminal() || isset($child->state['swamp_run_id']);
     }
 
     /** @return Builder<Operation> The parent IDs, used as a subquery without reading every open proof. */
@@ -155,18 +150,11 @@ final readonly class ProofChildStarts
     /** @param Collection<int, Operation> $children */
     public static function needsResume(Collection $children): bool
     {
-        return $children->contains(static fn (Operation $child): bool => ! $child->status->terminal() && self::held($child))
-            && ! $children->contains(static fn (Operation $child): bool => isset(self::record($child)['not_before']) && ! self::answered($child));
+        return $children->contains(static fn (Operation $child): bool => ! $child->status->terminal() && self::held($child)
+            && ! isset(self::record($child)['not_before']));
     }
 
-    public function advance(Operation $operation): void
-    {
-        if (isset($operation->state['proof_child_start'])) {
-            $this->resume(ValidatedData::integer($operation->input['proof_operation_id']));
-        }
-    }
-
-    /** The one retry entry point, shared by start answers and the watchdog. */
+    /** The one retry entry point, for the watchdog. */
     public function resume(int $proofId): void
     {
         DB::transaction(function () use ($proofId): void {
@@ -176,44 +164,29 @@ final readonly class ProofChildStarts
 
                 return;
             }
-            $this->scheduleNext($proof);
+            $this->schedule($proof);
         });
     }
 
-    /** The parent lock serializes selection even when jobs run on different workers. */
-    private function scheduleNext(Operation $proof): void
+    /**
+     * Queue every held start that has no job yet, all at once: a gap between starts adds to the wall time of the proof. The parent lock
+     * keeps two workers from queuing one start twice, and a start with a due time is never queued again.
+     */
+    private function schedule(Operation $proof): void
     {
-        $notBefore = now()->toImmutable();
         $stale = null;
         foreach (ProofRunSettlement::children($proof->id) as $child) {
-            $start = $child->state['proof_child_start'] ?? null;
-            if (! is_array($start)) {
+            if (! self::held($child) || $child->status->terminal() || isset($child->state['swamp_run_id'])) {
                 continue;
             }
-            if (self::held($child)) {
-                $stale ??= ProofRunSettlement::stalePlaceChildren();
-                if ($this->cancelStaleHeld($child, $stale)) {
-                    continue;
-                }
-            }
-            if (self::answered($child)) {
-                if (! isset($start['advanced_at'])) {
-                    $start['advanced_at'] = now()->toISOString();
-                    $this->mark($child, ['advanced_at' => $start['advanced_at']]);
-                }
-                $notBefore = max($notBefore, CarbonImmutable::parse(ValidatedData::string($start['advanced_at']))->addSeconds(self::SpacingSeconds));
-
+            $stale ??= ProofRunSettlement::stalePlaceChildren();
+            if ($this->cancelStaleHeld($child, $stale) || isset(self::record($child)['not_before'])) {
                 continue;
-            }
-            if (isset($start['not_before'])) {
-                return;
             }
             // Queue availability is an integer timestamp; round up so delivery cannot precede the stored due time.
-            $notBefore = $notBefore->ceilSecond();
+            $notBefore = now()->toImmutable()->ceilSecond();
             $this->mark($child, ['not_before' => $notBefore->toISOString()]);
             DB::afterCommit(fn () => $this->enqueue($child, $notBefore));
-
-            return;
         }
     }
 

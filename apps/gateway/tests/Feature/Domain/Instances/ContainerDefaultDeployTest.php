@@ -7,6 +7,7 @@ use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Projects\UpdateProjectAction;
+use App\Data\Instances\InstanceDeploymentData;
 use App\Data\Projects\UpdateProjectData;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
@@ -215,6 +216,58 @@ it('reads a container deployment\'s commit or refusal from the result file', fun
         ['Finish the container']);
     expect($data['failure']['detail'])->toBe('Not active: orbit-process-9-mailer.service')
         ->and($payload['units_inactive'])->toBe(['orbit-process-9-mailer.service']);
+});
+
+it('records the exit code of each best-effort step that ran, never its output, and the deployment still passes', function (): void {
+    $admitted = [['name' => 'npm-build', 'required' => true], ['name' => 'tia-warm', 'required' => false], ['name' => 'cache-warm', 'required' => false],
+        ['name' => 'lint-warm', 'required' => false], ['name' => 'docs-warm', 'required' => false]];
+    $run = static fn (string $status, array $steps, array $failed = []): array => ContainerDeployOutcome::from(['status' => $status, 'result' => [
+        'steps' => [ContainerDeployOutcome::ResultStep => ['stdout' => '{"commit":"'.str_repeat('b', 40).'"}'], ...$steps], 'summary' => ['failed_steps' => $failed]]], [], $admitted);
+
+    // The wrapper prints only the command's exit code: 1 is a failed warm-up, 0 a passed one, 124 a timeout. A required step prints nothing.
+    [$data, $payload] = $run('succeeded', ['Run dev deploy steps-0-0' => ['status' => 'succeeded', 'stdout' => ''],
+        'Run dev deploy steps-1-1' => ['status' => 'succeeded', 'stdout' => "1\n"], 'Run dev deploy steps-2-2' => ['status' => 'succeeded', 'stdout' => "0\n"],
+        'Run dev deploy steps-3-3' => ['status' => 'succeeded', 'stdout' => "124\n"], 'Run dev deploy steps-4-4' => ['status' => 'skipped']]);
+    expect($data)->not->toHaveKey('error_code')
+        ->and($payload['commit'])->toBe(str_repeat('b', 40))
+        ->and($payload['best_effort_steps'])->toBe([['name' => 'tia-warm', 'exit_code' => 1], ['name' => 'cache-warm', 'exit_code' => 0], ['name' => 'lint-warm', 'exit_code' => 124]]);
+    // Anything but an integer from 0 to 255 is null; the line itself is never kept.
+    foreach (['SQLSTATE[HY000] [1044] Access denied for user', '256', '-1', '01', '1 2', ''] as $line) {
+        $payload = $run('succeeded', ['Run dev deploy steps-1-1' => ['status' => 'succeeded', 'stdout' => $line]])[1];
+        expect($payload['best_effort_steps'])->toBe([['name' => 'tia-warm', 'exit_code' => null]])
+            ->and(json_encode($payload, JSON_THROW_ON_ERROR))->not->toContain('SQLSTATE');
+    }
+    // A failed required step still fails the deployment; the best-effort steps before it keep their codes.
+    [$data, $payload] = $run('failed', ['Run dev deploy steps-0-0' => ['status' => 'failed'], 'Run dev deploy steps-1-1' => ['status' => 'succeeded', 'stdout' => '1']],
+        ['Run dev deploy steps-0-0']);
+    expect($data['error_code'])->toBe('deployment.step_failed')
+        ->and($payload['failed_step'])->toBe('Run dev deploy steps-0-0')
+        ->and($payload['best_effort_steps'])->toBe([['name' => 'tia-warm', 'exit_code' => 1]]);
+    // A deployment whose steps are all required, or that ran none, has no key.
+    expect($run('succeeded', ['Run dev deploy steps-0-0' => ['status' => 'succeeded', 'stdout' => '']])[1])->not->toHaveKey('best_effort_steps');
+});
+
+it('stores a failed best-effort step\'s exit code in the Operation result and the deployment record of a passed deployment', function (): void {
+    $instance = deployDefault(container: true);
+    ProjectDevelopmentDeployStep::query()->create(['project_id' => $instance->project_id, 'name' => 'tia-warm', 'position' => 2, 'command' => 'composer test',
+        'required' => false, 'timeout_seconds' => 120]);
+    $commit = str_repeat('c', 40);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [
+        'steps' => ['Read the container result' => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)],
+            'Run dev deploy steps-0-0' => ['status' => 'succeeded', 'stdout' => ''], 'Run dev deploy steps-1-1' => ['status' => 'succeeded', 'stdout' => "1\n"]],
+        'summary' => ['failed_steps' => []]]]);
+
+    $operation->refresh();
+    $row = InstanceDeployment::query()->findOrFail($operation->state['deployment_id']);
+    expect($operation->status)->toBe(OperationStatus::Succeeded)
+        ->and($operation->result['best_effort_steps'])->toBe([['name' => 'tia-warm', 'exit_code' => 1]])
+        ->and($row->status)->toBe('succeeded')
+        ->and($row->best_effort_steps)->toBe([['name' => 'tia-warm', 'exit_code' => 1]])
+        // instance:deployment:show returns the record's data.
+        ->and(InstanceDeploymentData::fromModel($row)->toArray()['best_effort_steps'])->toBe([['name' => 'tia-warm', 'exit_code' => 1]]);
 });
 
 it('records a running container but no seed when a deployment fails after the container started', function (): void {
@@ -960,13 +1013,21 @@ it('gives only a nested-fleet default on a switched-on Node the fleet of its dep
     if ($fleet) {
         expect($snapshot['fleet'])->toBe([
             'guests' => ['gateway' => 'nested-gateway', 'app-dev' => 'nested-app-dev', 'app-prod' => 'nested-app-prod'],
-            'layout' => ['gateway' => ['address' => '10.232.2.11'], 'app-dev' => ['address' => '10.232.2.12'], 'app-prod' => ['address' => '10.232.2.13']],
+            'layout' => ['gateway' => ['address' => '10.232.2.11', 'memory' => '4GiB'], 'app-dev' => ['address' => '10.232.2.12', 'memory' => '5GiB'],
+                'app-prod' => ['address' => '10.232.2.13', 'memory' => '2GiB']],
+            'host' => true,
             'operator' => ['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24'],
             'checkout' => ['path' => '/home/orbit/orbit'],
             'proxy' => ['HTTP_PROXY' => 'http://10.253.0.1:3128', 'HTTPS_PROXY' => 'http://10.253.0.1:3128', 'http_proxy' => 'http://10.253.0.1:3128',
                 'https_proxy' => 'http://10.253.0.1:3128', 'NO_PROXY' => 'localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24',
                 'no_proxy' => 'localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24'],
         ]);
+        // A full-size default leaves room for the Instance host; below 2,000,000 the refresh builds none
+        // (docs/reference/development-containers.md#instance-host-in-the-fleet).
+        foreach ([1_165_536 => false, 2_000_000 => true, 101_000_000 => true] as $size => $host) {
+            $instance->runtime()->update(['idmap_size' => $size]);
+            expect(app(InstanceDeploymentIntent::class)->snapshot($instance->refresh())['fleet']['host'])->toBe($host);
+        }
     }
 })->with([
     'nested-fleet default' => [true, true, InstancePlacement::NestedProject, true],
@@ -982,7 +1043,9 @@ it('gives only a clone of a nested-fleet default on a switched-on Node the fleet
         'checkout_path' => '/srv/tool/seedcopy1', 'status' => InstanceState::Reserved]);
     $runtime = InstanceRuntime::query()->create(['instance_id' => $clone->id, 'node_id' => $default->node_id, 'incus_project' => $incusProject,
         'container_name' => 'instance-'.$clone->id, 'bridge_address' => '10.253.0.3', 't3_port' => 3800, 'container_server' => 't3', 'clone_source_instance_id' => $default->id,
-        'runtime_version' => 'r', 'agent_version' => 'a', 'power_state' => InstanceRuntimePowerState::Stopped]);
+        'runtime_version' => 'r', 'agent_version' => 'a', 'power_state' => InstanceRuntimePowerState::Stopped,
+        // A copy takes its default's ID map size at its reservation (InstanceContainer).
+        'idmap_size' => $default->runtime()->value('idmap_size')]);
     $intents = app(NestedFleetIntent::class);
 
     // The clone's create gets the same fleet as its default's deployment; a deployment never treats a clone as a default.

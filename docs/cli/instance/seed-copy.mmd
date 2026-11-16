@@ -17,7 +17,7 @@ sequenceDiagram
   %%> Started by:
   %%> - the proof default records a new seed: the refresh after a release, or an `instance:deploy` of the default
   %%> - a `ci-runner` add or converge of a Node that offers proof places passes
-  %%> - a seed copy ends, only when the default's seed moved during it (all Nodes behind the new seed), or for Nodes that no seed copy has tried at the same seed (a Node that became a target while the copy held the lock)
+  %%> - a seed copy ends, only when the default's seed moved during it (all Nodes behind the new seed), or for Nodes that no seed copy has tried at the same seed (a Node that became a target while the copy held the lock, or one that the run's target limit left out)
   %%> Never started by:
   %%> - the end of a copy for a Node that any seed copy has tried at the same seed: it waits for the next seed or for its own `ci-runner` converge, so lasting failures do not repeat, also not two Nodes for each other
   %%> Requirements:
@@ -28,8 +28,10 @@ sequenceDiagram
   %%> Not a target:
   %%> - a Node whose listener is not ready: no copy fails on it and no copy marks it tried; its next passed `ci-runner` converge makes it a target
   %%> - one copy at a time: an open copy holds the default's seed-copy lock, `operation.target_busy`
+  %%> - a Node past the run's target limit: the copies run one target at a time, so the run budget grows with the targets and must fit in the Swamp serve run cap; the limit is the number of copy steps that fit beside the fixed phases (`ProofSeeds::maxTargets`), and the end of the run admits the Nodes it left out; a `ci-runner` add or converge names its own Node, and the limit keeps that Node, because the end of a run admits no Node that a copy tried at the seed
   %%> Result:
   %%> - a task is recorded with the full intent: the default's Node, container and inner volume, per target its Node and WireGuard address, and `release_base` when the run's targets are all the Nodes behind the seed
+  %%> - the run budget is captured: the fixed phases plus one copy step bound per target (`ProofSeeds::budgetSeconds`)
   GW->>SW: Start run, full intent<br/>instance-seed-copy
   loop each CI Node, side by side
     SW->>C: Read its Incus certificate<br/>Ansible · tags certificate
@@ -37,6 +39,8 @@ sequenceDiagram
     %%> - reads the Incus server certificate of the CI Node and checks that the Node listens on its WireGuard address
     %%> On failure:
     %%> - no listener: this target fails; a `ci-runner` converge of the Node adds the listener and the trust
+  end
+  loop each CI Node, one at a time
     SW->>N: Copy the seed<br/>Ansible · tags copy
     %%> What it does:
     %%> - adds the client remote `proof-node-ID` of root when it is missing, and refuses when the certificate that root's client stored for it is not the one read on the CI Node
@@ -50,8 +54,12 @@ sequenceDiagram
     %%> - a retake deletes or renames the old `seed-COMMIT`, so without the default's `base-COMMIT` no snapshot is shared and the refresh sends the whole pair; the retake keeps it while a ready CI Node records that seed (`ProofSeeds`)
     %%> Why the whole instance:
     %%> - a snapshot source carries no snapshots, so a refresh from it could not find a common one
+    %%> Why one at a time:
+    %%> - each push takes a snapshot of the default's mounted inner volume, and Incus freezes its file system (`fsfreeze`) for that snapshot; a second freeze of a frozen file system fails with `Device or resource busy`, so two copies side by side can fail a target
     %%> On failure:
-    %%> - this target fails with `instance.seed_copy_failed`; the other targets go on
+    %%> - this target fails with `instance.seed_copy_failed`; the next target's copy still runs
+  end
+  loop each CI Node, side by side
     SW->>C: Check the holder<br/>Ansible · tags check
     %%> What it does:
     %%> - the holder `proof-seed` has the snapshot `seed-COMMIT` that the run was admitted for, and its volume has the snapshot of the same name

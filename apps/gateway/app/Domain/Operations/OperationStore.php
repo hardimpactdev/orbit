@@ -7,7 +7,6 @@ namespace App\Domain\Operations;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Deployment\InstanceDeployExecutionCopies;
-use App\Domain\Proof\ProofChildStarts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Models\Operation;
@@ -115,17 +114,6 @@ final readonly class OperationStore
             $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
             $operation->setRawAttributes($current->getAttributes(), true);
             $operation->forceFill([...$changes, 'sequence' => $current->sequence + 1])->save();
-            if (isset($operation->state['proof_child_start'])
-                && ((! $current->status->terminal() && $operation->status->terminal())
-                    || (! isset($current->state['swamp_run_id']) && isset($operation->state['swamp_run_id'])))) {
-                DB::afterCommit(static function () use ($operation): void {
-                    try {
-                        app(ProofChildStarts::class)->advance($operation);
-                    } catch (Throwable $exception) {
-                        Log::warning('Proof child starts could not be advanced', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
-                    }
-                });
-            }
             if ($operation->kind === InstanceMigration::Kind && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(InstanceMigrateProjection::class)->terminal($operation, $current);
             }

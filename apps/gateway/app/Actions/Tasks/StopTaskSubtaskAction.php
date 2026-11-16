@@ -5,22 +5,15 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCheckException;
-use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
-use App\Models\Instance;
 use App\Models\Task;
 
 /** Stops remote work before cancellation. Call outside the cancellation transaction. */
 final readonly class StopTaskSubtaskAction
 {
-    public function __construct(
-        private TaskCheckRunner $checks,
-    ) {}
-
     /** Identity of the work about to be stopped, for completion's locked revalidation. */
     public function snapshot(Task $group, Task $task): string
     {
@@ -39,8 +32,9 @@ final readonly class StopTaskSubtaskAction
     }
 
     /**
-     * Cancels the subtask's running checks. Its acting thread has no interrupt here. A thread of a copy turn (driver `t3`) runs its
-     * turn as a `tasks.copy_turn` Operation, so the caller must first end the group's open Operations ({@see TaskOperations::cancelOpen()}),
+     * Refuses a subtask whose running check has no recorded process identity: its start may have been interrupted. A check runs as
+     * a `tasks.check` Operation and records no process, so a running check always refuses. Its acting thread has no interrupt here.
+     * A thread of a copy turn (driver `t3`) runs its turn as a `tasks.copy_turn` Operation, so the caller must first end the group's open Operations ({@see TaskOperations::cancelOpen()}),
      * as task:complete does; the copy's destroy ends a T3 run that outlived its Operation. A thread of the removed Pi task loop
      * (driver `pi`) ran on a task VM, which is gone with its Pi server, so nothing of it runs.
      */
@@ -50,19 +44,9 @@ final readonly class StopTaskSubtaskAction
             return;
         }
 
-        $group = $group->fresh() ?? $group;
-        $instance = $group->fresh()?->taskable;
         foreach ($task->checks()->where('status', TaskCheckStatus::Running->value)->orderBy('id')->get() as $check) {
             if ($check->pid < 1 || trim($check->process_started) === '') {
                 throw $this->stopFailed('The running check has no recorded process identity; its start may have been interrupted.');
-            }
-            if (! $instance instanceof Instance) {
-                return;
-            }
-            try {
-                $this->checks->cancel($instance, $check->process());
-            } catch (TaskCheckException $exception) {
-                throw $this->stopFailed($exception->getMessage());
             }
         }
     }

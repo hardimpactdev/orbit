@@ -1,0 +1,48 @@
+---
+# The first part of the container branch on an Instance fleet Node: `nested-app-dev` of a nested fleet, a third level below the host
+# (docs/reference/development-containers.md#instance-host-in-the-fleet). The Gateway sends `instances.fleet_node` only for it, so a real
+# app-dev or CI Node keeps the branch as it was. The Node has no Incus and no pool: this part installs Incus first, runs it without
+# AppArmor, which cannot load a profile there, and creates the directory pool. The rest of the branch then finds both.
+- name: Make the folder of the Incus drop-in
+  ansible.builtin.file: { path: /etc/systemd/system/incus.service.d, state: directory, owner: root, group: root, mode: "0755" }
+- name: Run the fleet Node's Incus without AppArmor
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/incus.service.d/50-orbit-nested.conf
+    content: |
+      [Service]
+      Environment=INCUS_SECURITY_APPARMOR=false
+    owner: root
+    group: root
+    mode: "0644"
+  register: fleet_node_apparmor
+
+- name: Install Incus on the fleet Node
+  ansible.builtin.include_tasks: incus-install.yml
+  vars:
+    container_host: { incus: "{{ instances.incus }}" }
+
+# An Incus that started before the drop-in, such as one installed by hand, takes it now.
+- name: Restart Incus with the drop-in
+  when: fleet_node_apparmor.changed
+  ansible.builtin.systemd_service: { name: incus.service, daemon_reload: true, state: restarted }
+
+- name: Read the Incus pools
+  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/storage-pools"] }
+  register: fleet_node_pools
+  changed_when: false
+
+- name: Create the directory pool
+  when: ("/1.0/storage-pools/" ~ instances.pool) not in (fleet_node_pools.stdout | from_json)
+  ansible.builtin.command: { argv: [incus, storage, create, "{{ instances.pool }}", dir] }
+  changed_when: true
+
+# The power helper reads this marker and keeps the fast wake off for every Instance here, as for nested-fleet Instances (ADR 0261).
+- name: Make the folder of the marker
+  ansible.builtin.file: { path: /etc/orbit, state: directory, owner: root, group: root, mode: "0755" }
+- name: Mark the Instance fleet Node
+  ansible.builtin.copy:
+    dest: /etc/orbit/instance-fleet-node
+    content: "# Managed by Orbit: an Instance fleet Node; the fast wake stays off (docs/reference/development-containers.md#instance-host-in-the-fleet).\n"
+    owner: root
+    group: root
+    mode: "0644"

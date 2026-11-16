@@ -9,6 +9,8 @@ A sleeping development container keeps its memory in swap ([Sleep and wake](/ref
 
 This page is the contract for [ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes), which is in progress. The [sleep](/cli/instance/sleep) and [wake](/cli/instance/wake) charts show the steps.
 
+> **Target design, not built.** [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) replaces the Python helper, its transient-unit lock, the path unit, the dispatcher, the `orbit-instance-wake@` worker and the fast wake's files on this page. A Rust executor on the Node does every sleep and wake in-process, on Gateway-signed orders that arrive through the observer's WebSocket or one fixed SSH relay command. One restore pool of about 32 threads per Node serves one target fully before the next. The plan also records swapped pages (pagemap bit 62), so a partial wake never shrinks a later plan. Until its slices land, this page describes what runs.
+
 | Rule | Meaning |
 | --- | --- |
 | Generic | Every process in the container's cgroup subtree counts. Nothing selects by name, runtime, framework, container server or route, and there is no training. |
@@ -19,7 +21,7 @@ This page is the contract for [ADR 0261](/decisions/0261-restore-a-sleeping-cont
 
 ## Scope
 
-Prepared restore runs for development containers on `app-dev` Nodes with Linux x86_64 and cgroup v2. It covers defaults and clones. Nested-fleet Instances (Incus project `orbit-instances-nested`) use the same helper for swap and resume, but `prepare` records no plan for them (`skipped`, reason `placement_unproven`), and they never take the fast wake. Production Instances, checkout Instances, VMs and macOS do not sleep this way.
+Prepared restore runs for development containers on `app-dev` Nodes with Linux x86_64 and cgroup v2. It covers defaults and clones. Nested-fleet Instances (Incus project `orbit-instances-nested`) use the same helper for swap and resume, but `prepare` records no plan for them (`skipped`, reason `placement_unproven`), and they never take the fast wake. Checkout Instances, VMs and macOS do not sleep this way. Planned: a production Instance's live release container sleeps this way on its `app-prod` Node, whose role installs the helper and the fast wake ([ADR 0265](/decisions/0265-sleep-idle-production-containers)).
 
 A Node gets the feature from the `app-dev` convergence. Orbit changes no host-wide setting: no swap, zswap, THP, readahead or sysctl setting, and no kernel module. Sleep writes only the container's own cgroup files: `memory.swap.max` and `memory.reclaim`.
 

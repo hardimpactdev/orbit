@@ -31,6 +31,8 @@ The command stores the settings on the Instance. It does not change deploy steps
 
 The human output is a detail titled `Instance: <name>` with ID, Project and Node by name, Status, the stored Deployment branch when `--branch` was given, the effective Shared paths when `--shared-paths` was given (`None` for `[]`, and the default list after `null`), the Selected branch and the request ID. `selected_branch` describes the source checkout and does not change when you update deployment settings. With `--json`, stdout holds the Instance with `deployment_branch`, the stored override for future deployments, which is null when the Instance uses `selected_branch`, the effective `shared_paths`, `selected_branch`, `branch_override` and `request_id`. Use [`instance:show`](/cli/instance/show) to verify the stored settings before deploying.
 
+Planned ([ADR 0265](/decisions/0265-sleep-idle-production-containers)): the command also sets the Instance's `never_sleep` field. The idle sleep never puts an Instance with it to sleep, in development or production. The field replaces `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`.
+
 ## Errors
 
 | Code | Meaning |

@@ -149,6 +149,22 @@ describe('instance:deploy', function (): void {
             ->and($seen)->toBe(['', '', '']);
     });
 
+    it('warns about a best-effort step that did not exit 0 and still succeeds', function (): void {
+        $seen = [];
+        cli_deploy_gateway([
+            cli_operation(['status' => 'succeeded', 'sequence' => 5, 'started_at' => '2026-10-15T10:00:01+00:00', 'poll_after_seconds' => null,
+                'result' => ['deployment_id' => 5, 'commit' => str_repeat('a', 40),
+                    'best_effort_steps' => [['name' => 'tia-warm', 'exit_code' => 1], ['name' => 'cache-warm', 'exit_code' => 0]]]]),
+        ], $seen);
+
+        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Deployment succeeded.', 'Warning: best-effort step tia-warm exited 1')
+            ->not->toContain('cache-warm');
+    });
+
     it('fails with the failed step and error code of the operation', function (): void {
         $seen = [];
         cli_deploy_gateway([

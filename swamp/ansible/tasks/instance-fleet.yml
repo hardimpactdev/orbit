@@ -8,6 +8,9 @@
 #   intent.container.workspace            The workspace in the container: the source of the `checkout` device.
 #   intent.fleet.guests                   {gateway, app-dev, app-prod}: the nested containers by role (TaskVmNestedFleet::Guests).
 #   intent.fleet.layout.<role>.address    The address of each nested container on the inner bridge (TaskVmNestedFleet::Layout).
+#   intent.fleet.layout.<role>.memory     Its memory limit, an owned rule (NestedFleetIntent::Memory).
+#   intent.fleet.host                     Whether the refresh builds the Instance host on nested-app-dev: the default's ID map is
+#                                         2,000,000 or more (NestedFleetIntent).
 #   intent.fleet.operator                 {address, hub, network}: the container as operator, the nested Gateway as hub, the
 #                                         fleet's network (TaskVmNestedFleet::operator()).
 #   intent.fleet.checkout.path            Where the three nested Nodes see the workspace (TaskVmNestedFleet::CheckoutPath).
@@ -95,13 +98,28 @@
     # all three IDs, so nested root resolves every checkout inode and the state mounts come up. An ID shift fails two levels below the
     # host. Changing a map remaps a container's disk, so it is a build rule.
     fleet_idmap: {raw.idmap: "both 1000 1000\nuid 2750 2750\ngid 2760 2760"}
+    # nested-app-dev runs Instance containers in its own Incus (docs/reference/development-containers.md#instance-host-in-the-fleet):
+    # nesting and the interception of mknod and setxattr. Owned: the refresh writes them with the fleet stopped.
+    fleet_instance_host: {security.nesting: "true", security.syscalls.intercept.mknod: "true", security.syscalls.intercept.setxattr: "true"}
     # The inner Incus starts the fleet when the Instance container boots; the start also starts any nested container that is stopped.
     fleet_autostart: {boot.autostart: "true"}
     fleet_environment: "{{ dict(intent.fleet.proxy.keys() | map('regex_replace', '^', 'environment.') | zip(intent.fleet.proxy.values())) }}"
-    # The Swamp units of the nested Gateway reach Swamp Club through the proxy: one Environment line, every proxy setting quoted.
+    # The Swamp units and Horizon of the nested Gateway reach Swamp Club and Git through the proxy: one Environment line, every proxy
+    # setting quoted.
     fleet_unit_environment: |
       [Service]
       Environment={{ intent.fleet.proxy | dict2items | map(attribute='key') | zip(intent.fleet.proxy.values()) | map('join', '=') | map('regex_replace', '^(.*)$', '"\1"') | join(' ') }}
+    # The nested Gateway's PHP-FPM pool `orbit-gateway` clears its environment, so `project:create` could not reach GitHub. php-fpm merges a
+    # repeated pool section, and the Gateway role writes only `orbit-gateway.conf` (GatewayRuntimeFiles::Pool), so this file survives a
+    # role converge. A file is read when its process starts: the refresh retakes `base` with the container stopped and started again.
+    fleet_pool_files:
+      - path: /etc/php/8.5/fpm/pool.d/zz-orbit-nested-egress.conf
+        content: |
+          ; Managed by Orbit: the fleet's egress proxy for the Gateway's pool (docs/reference/development-containers.md#fleet-rules).
+          [orbit-gateway]
+          {% for key, value in intent.fleet.proxy.items() %}
+          env[{{ key }}] = "{{ value }}"
+          {% endfor %}
     # The marker of the nested Gateway of an Instance fleet (InstanceFleetGateway::Marker): the Gateway reads it and names no task VM
     # package cache for its Nodes (TaskVmAptCache).
     fleet_marker_files:
@@ -110,7 +128,7 @@
           # Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).
     fleet_unit_files: >-
       {%- set out = [] -%}
-      {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service'] -%}
+      {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service', 'orbit-gateway-horizon.service'] -%}
       {%-   set _ = out.append({'path': '/etc/systemd/system/' ~ unit ~ '.d/50-inner-fleet-proxy.conf', 'content': fleet_unit_environment}) -%}
       {%- endfor -%}
       {{ out }}
@@ -149,15 +167,15 @@
         devices: >-
           {{ fleet_checkout_device | combine({'club-key': {'type': 'disk', 'source': fleet_club_folder,
              'path': fleet_club_mount, 'required': 'false', 'shift': 'false'}}) }}
-        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
-        files: "{{ fleet_unit_files + fleet_marker_files + fleet_egress_files + fleet_size_files }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, {'limits.memory': intent.fleet.layout.gateway.memory}) }}"
+        files: "{{ fleet_unit_files + fleet_pool_files + fleet_marker_files + fleet_egress_files + fleet_size_files }}"
       app-dev:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
-        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_instance_host, {'limits.memory': intent.fleet.layout['app-dev'].memory}) }}"
         files: "{{ fleet_egress_files + fleet_size_files }}"
       app-prod:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
-        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, {'limits.memory': intent.fleet.layout['app-prod'].memory}) }}"
         files: "{{ fleet_egress_files + fleet_size_files }}"
     fleet_build_rules: [raw.idmap]
     # The inner bridge's own keys, owned. Its dnsmasq answers the fleet's names and forwards every other name to the Instance

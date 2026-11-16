@@ -20,12 +20,16 @@ final readonly class ContainerDeployOutcome
     /** The step whose first phase starts the container (docs/cli/instance/deploy.mmd). */
     public const string PrepareStep = 'Prepare the container';
 
+    /** The forEach step that runs each development deploy step, one item per admitted step. */
+    public const string DeployStepsStep = 'Run dev deploy steps';
+
     /**
      * @param  array<string, mixed>  $data
      * @param  list<string>  $secrets  Values the recorded failure detail must not show: the Instance's environment and the Swamp tokens.
+     * @param  array<mixed>  $admittedSteps  The deployment's development deploy steps as the admission froze them.
      * @return array{0: array<string, mixed>, 1: array<string, mixed>}
      */
-    public static function from(array $data, array $secrets = []): array
+    public static function from(array $data, array $secrets = [], array $admittedSteps = []): array
     {
         $result = ValidatedData::object($data['result'] ?? []);
         $steps = ValidatedData::object($result['steps'] ?? []);
@@ -35,6 +39,10 @@ final readonly class ContainerDeployOutcome
         $file = is_array($file) ? $file : [];
         // A nested-fleet start's word for what it did with the Club key, kept in the result file by every later phase.
         $payload = ['commit' => null, 'failed_step' => null, 'started' => true, 'club_key' => $file['club_key'] ?? null];
+        $bestEffort = self::bestEffortSteps($steps, $admittedSteps);
+        if ($bestEffort !== []) {
+            $payload['best_effort_steps'] = $bestEffort;
+        }
         // What a nested-fleet refresh did, part by part, kept in the result file by every later phase.
         $refresh = self::fleetRefresh($file['fleet_refresh'] ?? null);
         if ($refresh !== null) {
@@ -53,7 +61,7 @@ final readonly class ContainerDeployOutcome
             $payload['started'] = ! in_array($step, ['native_execution', 'Write the container intent'], true)
                 && ($step !== self::PrepareStep || in_array('start', $passed, true));
             $code = match (true) {
-                str_starts_with($step, 'Run dev deploy steps') => 'deployment.step_failed',
+                str_starts_with($step, self::DeployStepsStep) => 'deployment.step_failed',
                 is_string($file['error_code'] ?? null) && preg_match('/\A[a-z]+\.[a-z_]+\z/', $file['error_code']) === 1 => $file['error_code'],
                 default => 'operation.native_failed',
             };
@@ -87,10 +95,43 @@ final readonly class ContainerDeployOutcome
     }
 
     /**
+     * The exit code of each best-effort (`required: false`) development deploy step that ran, in the admitted order
+     * (docs/reference/deployments.md#development-deploy-steps). The step's wrapper sends the command's output to /dev/null and prints only the
+     * command's exit code, so that line is all this reads. Anything but an integer from 0 to 255 is null; the text is never kept. A
+     * skipped step has no row.
+     *
+     * @param  array<string, mixed>  $steps
+     * @param  array<mixed>  $admitted
+     * @return list<array{name:string,exit_code:?int}>
+     */
+    private static function bestEffortSteps(array $steps, array $admitted): array
+    {
+        $rows = [];
+        foreach ($steps as $name => $step) {
+            // Swamp names each forEach item `<step>-<index>-<index>`.
+            if (preg_match('/\A'.preg_quote(self::DeployStepsStep, '/').'-([0-9]+)(?:-\1)?\z/D', $name, $match) !== 1) {
+                continue;
+            }
+            $intent = $admitted[(int) $match[1]] ?? null;
+            $step = is_array($step) ? $step : [];
+            if (! is_array($intent) || ($intent['required'] ?? null) !== false || ! is_string($intent['name'] ?? null)
+                || ($step['status'] ?? null) === 'skipped') {
+                continue;
+            }
+            $line = is_string($step['stdout'] ?? null) ? trim($step['stdout']) : '';
+            $rows[(int) $match[1]] = ['name' => $intent['name'],
+                'exit_code' => preg_match('/\A(?:0|[1-9][0-9]{0,2})\z/D', $line) === 1 && (int) $line <= 255 ? (int) $line : null];
+        }
+        ksort($rows);
+
+        return array_values($rows);
+    }
+
+    /**
      * The refresh's own words for each part (docs/reference/development-containers.md#what-a-refresh-skips), or null when the run
      * has no refresh or its words are not these.
      *
-     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,converge_nodes:list<string>,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,shrink:string,shrink_reason:string,swamp:string,swamp_reason:string,swamp_version:?string,seconds:array<string,int>}|null
+     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,converge_nodes:list<string>,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,shrink:string,shrink_reason:string,swamp:string,swamp_reason:string,swamp_version:?string,host?:'converged'|'kept'|'skipped_idmap_small',seconds:array<string,int>}|null
      */
     private static function fleetRefresh(mixed $raw): ?array
     {
@@ -135,6 +176,12 @@ final readonly class ContainerDeployOutcome
             'base' => $refresh['base'], 'base_containers' => $containers, 'record' => $refresh['record'], 'tools' => $refresh['tools'],
             'tools_reason' => $refresh['tools_reason'], 'shrink' => $refresh['shrink'], 'shrink_reason' => $refresh['shrink_reason'],
             'swamp' => $refresh['swamp'], 'swamp_reason' => $refresh['swamp_reason'], 'swamp_version' => $swampVersion];
+        // What it did with the Instance host on nested-app-dev. Unlike the parts above it is optional: a run of an Ansible from before the
+        // part (such as after a rollback) names none, and its other parts are still true, so a missing or unknown word only leaves `host`
+        // out and drops nothing else.
+        if (in_array($raw['host'] ?? null, ['converged', 'kept', 'skipped_idmap_small'], true)) {
+            $refresh['host'] = $raw['host'];
+        }
         $seconds = is_array($raw['seconds'] ?? null) ? $raw['seconds'] : [];
         $refresh['seconds'] = [];
         foreach (['gateway', 'converge', 'ready', 'base', 'tools'] as $part) {

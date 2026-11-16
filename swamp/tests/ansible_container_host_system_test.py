@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-SYSTEM = Path(__file__).resolve().parents[1] / 'ansible/tasks/task-container-host-system.yml'
+SYSTEM = Path(__file__).resolve().parents[1] / 'ansible/tasks/incus-install.yml'
 
 
 class ContainerHostPackageTest(unittest.TestCase):

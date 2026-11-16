@@ -1,0 +1,37 @@
+---
+# Install Incus from the recipe's pinned packages on a host without it (docs/reference/compute-drivers.md#the-host-system): the system part of a
+# container host (task-container-host-system.yml), and first of all on an Instance fleet Node (instance-fleet-node.yml). `container_host.incus`
+# names the packages. It never upgrades a running Incus.
+# The package's state is independent of its selection: an installed package may be held. Config files left after removal do not count.
+- name: Read the installed Incus package
+  ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${db:Status-Status}", incus] }
+  register: container_incus_package
+  changed_when: false
+  failed_when: container_incus_package.rc not in [0, 1]
+
+# Only a host without Incus gets it here, from the recipe's pinned packages (the mirror first, then upstream, checked by SHA-256).
+- name: Install Incus from the recipe
+  when: container_incus_package.stdout != 'installed'
+  vars:
+    container_incus_debs: >-
+      {{ container_host.incus.packages | map(attribute='name') | zip(container_host.incus.packages | map(attribute='sha256'))
+         | map('join', '_') | map('regex_replace', '^', '/var/cache/orbit/debs/') | map('regex_replace', '$', '.deb') | list }}
+  block:
+    - name: Create the package cache
+      ansible.builtin.file: { path: /var/cache/orbit/debs, state: directory, owner: root, group: root, mode: "0755" }
+    - name: Fetch the Incus packages
+      ansible.builtin.include_tasks: artifact-fetch.yml
+      vars:
+        artifact:
+          urls: "{{ item.urls }}"
+          path: "{{ container_incus_debs[index] }}"
+          sha256: "{{ item.sha256 }}"
+      loop: "{{ container_host.incus.packages }}"
+      loop_control: { label: "{{ item.name }}", index_var: index }
+    - name: Read the package index
+      ansible.builtin.apt: { update_cache: true, cache_valid_time: 3600 }
+    - name: Install the Incus packages
+      ansible.builtin.command:
+        argv: "{{ ['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--'] + container_incus_debs }}"
+      environment: { DEBIAN_FRONTEND: noninteractive }
+      changed_when: true

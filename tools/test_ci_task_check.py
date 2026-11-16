@@ -130,7 +130,7 @@ class BudgetTest(unittest.TestCase):
     def test_a_unit_over_the_budget_is_named_and_does_not_run(self):
         budget, _fixtures, _defaults = check['units'].configuration()
         unit = 'swamp/tests/maintenance_resources_test.ts'
-        plan = {'shards': [{'units': [unit]}], 'deferred': [], 'units': {unit: {'declared_seconds': 60}}, 'budget': budget}
+        plan = {'shards': [{'units': [unit]}], 'self_hosted_shards': [], 'units': {unit: {'declared_seconds': 60}}, 'budget': budget}
         part = check['fixtures'](plan, time.monotonic() + 5, {})
         self.assertEqual((part.status, part.detail), ('skipped', f'budget skipped: {unit} (budget: declared 60s)'))
 
@@ -139,7 +139,7 @@ class BudgetTest(unittest.TestCase):
         runtime, load = 'swamp/tests/ansible_instance_host_runtime_test.ts', 'swamp/tests/gateway_swamp_load_test.ts'
         # The repository declares the programs in the fixture metadata, not this command.
         self.assertEqual(table[runtime]['host_programs'], ['zip', 'unzip'])
-        plan = {'shards': [{'units': [f'{runtime}#0/2', load]}], 'deferred': [], 'budget': budget,
+        plan = {'shards': [{'units': [f'{runtime}#0/2', load]}], 'self_hosted_shards': [], 'budget': budget,
                 'units': {f'{runtime}#0/2': {'declared_seconds': 60}, load: {'declared_seconds': 60}}}
         present = {'unzip': '/usr/bin/unzip', 'jq': '/usr/bin/jq'}
         with patch.object(check['shutil'], 'which', side_effect=present.get), \
@@ -153,7 +153,7 @@ class BudgetTest(unittest.TestCase):
         schedules = 'swamp/tests/swamp_node_schedules_test.ts'
         # Its release load script exits 127 in 4 of its 8 cases without jq.
         self.assertEqual(table[schedules]['host_programs'], ['jq', 'timeout'])
-        plan = {'shards': [{'units': [schedules]}], 'deferred': [], 'budget': budget,
+        plan = {'shards': [{'units': [schedules]}], 'self_hosted_shards': [], 'budget': budget,
                 'units': {schedules: {'declared_seconds': 7}}}
         with patch.object(check['shutil'], 'which', side_effect={'timeout': '/usr/bin/timeout'}.get), \
                 patch.dict(check['fixtures'].__globals__, {'run': self.fail}):
@@ -167,7 +167,7 @@ class FixtureRunTest(unittest.TestCase):
 
     def plan(self, seconds=80):
         budget, _table, _defaults = check['units'].configuration()
-        return {'shards': [{'units': self.UNITS}], 'deferred': [], 'budget': budget,
+        return {'shards': [{'units': self.UNITS}], 'self_hosted_shards': [], 'budget': budget,
                 'units': {unit: {'declared_seconds': seconds} for unit in self.UNITS}}
 
     def fixtures(self, plan, left, code, status, output='', workers=1):
@@ -221,27 +221,30 @@ class FixtureRunTest(unittest.TestCase):
 
     def test_a_capacity_row_of_the_ci_plan_is_named(self):
         _budget, table, _defaults = check['units'].configuration()
-        plan = {'shards': [], 'deferred': [], 'unmapped': [],
-                'capacity': [{'file': 'swamp/tests/maintenance_resources_test.ts', 'seconds': 900, 'shards': 3, 'workers': 12}]}
+        plan = {'shards': [], 'self_hosted_shards': [], 'unmapped': [],
+                'capacity': [{'file': 'swamp/tests/maintenance_resources_test.ts', 'seconds': 900, 'self_hosted': False, 'shards': 3, 'workers': 12},
+                             {'unplaced': ['swamp/tests/maintenance_resources_test.ts']}]}
         self.assertEqual(check['capacity_errors'](plan, table),
                          ['CAPACITY: `swamp/tests/maintenance_resources_test.ts` needs 900 declared seconds, 3 shards / 12 workers, '
-                          'above the pull request shard limit. Required checks will fail.'])
+                          'above the pull request shard limit. Required checks will fail.',
+                          'CAPACITY: 1 selected units do not fit the shard limit and are not run: '
+                          '["swamp/tests/maintenance_resources_test.ts"]. Required checks will fail.'])
         self.assertEqual(check['capacity_errors']({**plan, 'capacity': []}, table), [])
 
 
 class FixturePopulationTest(unittest.TestCase):
     def test_a_planned_fixture_is_checked_even_when_its_own_file_did_not_change(self):
-        fixtures = {'swamp/tests/maintenance_resources_test.ts': {'cases': ['a', 'b']}, 'swamp/tests/deferred_test.ts': {'cases': ['a']},
-                    'swamp/tests/instance_clone_test.py': {'cases': ['test_a']}}
+        fixtures = {'swamp/tests/maintenance_resources_test.ts': {'cases': ['a', 'b']}, 'swamp/tests/frankenphp_proxy_test.ts': {'cases': ['a']},
+                    'swamp/tests/unplanned_test.ts': {'cases': ['a']}, 'swamp/tests/instance_clone_test.py': {'cases': ['test_a']}}
         plan = {'shards': [{'units': ['swamp/tests/maintenance_resources_test.ts#0/2', 'swamp/tests/instance_clone_test.py']}],
-                'deferred': ['swamp/tests/maintenance_resources_test.ts#1/2', 'swamp/tests/deferred_test.ts']}
+                'self_hosted_shards': [{'units': ['swamp/tests/frankenphp_proxy_test.ts']}]}
         units = check['units']
         with patch.object(units, 'configuration', return_value=({}, fixtures, [])), \
                 patch.object(units, 'collect', return_value={'cases': ['a', 'b', 'c']}) as collect:
             part = check['fixture_population'](plan, time.monotonic() + 60)
-        # CI compares a Deno fixture's registered cases in its PR units; the table load checks a Python fixture, and the main
-        # full set collects a deferred fixture's cases live.
-        collect.assert_called_once_with('swamp/tests/maintenance_resources_test.ts')
+        # CI compares a Deno fixture's registered cases in its PR units, hosted and self-hosted; the table load checks a Python fixture.
+        self.assertEqual([call.args[0] for call in collect.call_args_list],
+                         ['swamp/tests/maintenance_resources_test.ts', 'swamp/tests/frankenphp_proxy_test.ts'])
         self.assertEqual(part.status, 'FAILED')
         self.assertIn('not stored: ["c"]', part.output)
 
@@ -249,7 +252,7 @@ class FixturePopulationTest(unittest.TestCase):
 class CollectionTimeoutTest(unittest.TestCase):
     def population(self, error):
         fixtures = {'swamp/tests/maintenance_resources_test.ts': {'cases': ['a']}}
-        plan = {'shards': [{'units': ['swamp/tests/maintenance_resources_test.ts']}], 'deferred': []}
+        plan = {'shards': [{'units': ['swamp/tests/maintenance_resources_test.ts']}], 'self_hosted_shards': []}
         units = check['units']
         with patch.object(units, 'configuration', return_value=({}, fixtures, [])), patch.object(units, 'collect', side_effect=error):
             return check['fixture_population'](plan, time.monotonic() + 60)

@@ -179,7 +179,7 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `ORBIT_HIBERNATION_IDLE_SECONDS`, `ORBIT_HIBERNATION_SWEEP_SECONDS`, `ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS` | Development runtime hibernation timing. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation). |
 | `ORBIT_CONN_HELD_SESSION_PREMINT` | The pre-mint of held Conn sessions when a container Instance's T3 server is recorded. Off by default; a Node's first read makes its session. See [Held sessions](/reference/conn#how-the-gateway-makes-one). |
 | `ORBIT_CONN_THREAD_INDEX_POLL` | The reads of the Conn thread index: the minute poll, the list's read-through and the last read before a sleep. Off by default. See [Thread index](/reference/conn#thread-index). |
-| `ORBIT_HIBERNATION_CONTAINER_SLEEP`, `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP` | Which development containers the idle sleep acts on: `false` (the default, also for an invalid value), `without_t3` or `true`; and the Instance ids it never puts to sleep. See [Sleep and wake](/reference/development-containers#sleep-and-wake). |
+| `ORBIT_HIBERNATION_CONTAINER_SLEEP`, `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP` | Which containers the idle sleep acts on: `false` (the default, also when invalid), `without_t3` or `true`; and the Instance ids it skips. Planned: production lives too ([ADR 0265](/decisions/0265-sleep-idle-production-containers)). See [Sleep and wake](/reference/development-containers#sleep-and-wake). |
 | `PHP_CLI_SERVER_WORKERS` | Number of workers for `php artisan serve` in local development. |
 | `BCRYPT_ROUNDS` | Laravel password hashing cost. |
 | `LOG_CHANNEL`, `LOG_STACK`, `LOG_DAILY_DAYS`, `LOG_DEPRECATIONS_CHANNEL`, `LOG_LEVEL` | Laravel logging. [Gateway request logs](/reference/gateway-recovery#gateway-request-logs) describes the files. |
@@ -210,7 +210,7 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 
 The fleet-owned `instances.mailpit` configuration names the main Docker Node Process and SMTP port. It needs no Gateway environment key or contributor setting; [development mail](/reference/development-containers#development-mail) applies only on a Node with that active publication.
 
-`ORBIT_INSTANCES_CONTAINER_NODES` is the build list of [Instance containers](/reference/development-containers#the-build-list): a JSON list of the Node ids that run container Instances. It is empty by default.
+`ORBIT_INSTANCES_CONTAINER_NODES` is the build list of [Instance containers](/reference/development-containers#the-build-list): a JSON list of the Node ids that run container Instances. It is empty by default. A nested Gateway of an Instance fleet adds its fleet's `app-dev` Node without it.
 
 `ORBIT_INSTANCES_NESTED_FLEET_PROJECTS` is the operator-set allow list of nested-fleet Projects, read as `instances.nested_fleet_projects`: a JSON list of positive integer Project IDs, such as `[123]`. It defaults to `[]`, so no Project can enable `nested_fleet` by default. List only the Orbit Project, whose container holds an inner fleet, and disposable trial Projects.
 

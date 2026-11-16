@@ -5,19 +5,27 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Models\Node;
 use Illuminate\Support\Facades\Config;
 
 /**
  * The build list `instances.container_nodes`: the only Nodes that run container Instances until every `app-dev` Node
  * switches (docs/solutions/development-container-runtime.md#rules-for-every-pr). A Node that is not on it keeps its
- * checkout Instances. A malformed list refuses, so a typo never puts a Node on it.
+ * checkout Instances. A malformed list refuses, so a typo never puts a Node on it. The nested Gateway of an Instance fleet also counts
+ * its fleet's `app-dev` Node, by its address (docs/reference/development-containers.md#instance-host-in-the-fleet).
  */
 final readonly class ContainerNodes
 {
     public function includes(Node $node): bool
     {
-        return in_array($node->id, $this->ids(), true);
+        return in_array($node->id, $this->ids(), true) || self::fleetNode($node);
+    }
+
+    /** Whether the Node is the `app-dev` Node of this nested Gateway's Instance fleet: `nested-app-dev`, a third level below the host. */
+    public static function fleetNode(Node $node): bool
+    {
+        return InstanceFleetGateway::holds() && $node->public_ssh_host === TaskVmNestedFleet::Layout['app-dev']['address'];
     }
 
     /** @return list<int> */

@@ -5,12 +5,8 @@ declare(strict_types=1);
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Orbit\Extensions\AiRouter\Actions\DisableAiRouterAction;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSecrets;
@@ -71,12 +67,8 @@ it('refuses the route while the ai-router is off', function (): void {
         ->and(fn () => $route->origin())->toThrow(ResourceOperationException::class);
 });
 
-it('tears the ai-router down while task VMs run: they hold no per-VM key that only the router could revoke', function (): void {
+it('tears the ai-router down: no task holds a per-VM key that only the router could revoke', function (): void {
     routeWorld();
-    $host = routeNode('beast', '10.44.0.7');
-    $node = routeNode('beast-tvm-1', '10.44.0.131');
-    TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Normal,
-        'name' => 'beast-tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.131', 'pi_token' => str_repeat('p', 64)]);
 
     $status = app(DisableAiRouterAction::class)->execute();
 

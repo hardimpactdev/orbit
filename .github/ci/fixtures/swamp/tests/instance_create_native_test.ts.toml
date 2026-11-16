@@ -12,9 +12,8 @@ cases = [
   "pinned create: a later clone step that fails after the Route published fails the run, keeps the published address and stops the container",
 ]
 file = "swamp/tests/instance_create_native_test.ts"
+self_hosted = true
 cost = 45 # 9 cases in 63-74 s locally on a loaded Beast; each case puts the real-size launch copy into a local vault
-after_merge = true
-reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
 inputs = [
   "swamp/ansible/instance_workspace_owner.py",
   "swamp/scripts/instance_clone_launch.py",

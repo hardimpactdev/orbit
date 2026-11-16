@@ -151,6 +151,10 @@ At run start the Gateway mints a repository-scoped Contents read token with the 
 
 Required steps must pass before Orbit records the commit as deployed. A failed or timed-out best-effort step (`required: false`) does not fail the deployment, and the files it wrote stay. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
 
+In a container deployment, Orbit records the exit code of each best-effort step that ran, never its output. The step prints only its command's exit code, and native run history keeps that line. The Gateway reads it into `best_effort_steps`, one `{name, exit_code}` row per step in list order. A skipped step has no row. `exit_code` is an integer from 0 to 255, and 124 is a timeout. A line that is not such a number gives `null`, and the line itself is not kept. The deployment still passes.
+
+[`instance:deploy`](/cli/instance/deploy) and [`instance:deployment:show`](/cli/instance/deployment-show) warn about each step that did not exit 0, for example `best-effort step tia-warm exited 1`, and the web deployment page lists them as a warning. `operation:show` returns the same rows in the Operation result.
+
 #### Step inputs
 
 A container deployment skips a step with `inputs` when nothing it depends on changed. Orbit compares the Git object ID of each input at the deployed commit, and the step's command, with the values at the step's last successful run in that workspace. When all are the same, the step does not run. A changed input or command, an input that does not exist at the commit, or no recorded successful run runs the step. A step without `inputs` always runs, and a checkout deployment runs every step.

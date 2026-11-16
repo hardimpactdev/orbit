@@ -18,7 +18,6 @@ use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskStatusMoves;
 use App\Models\Activity;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
@@ -61,8 +60,7 @@ final readonly class UpdateTaskAction
                 throw ValidationException::withMessages(['reason' => [__('A correction after a failed check needs a reason.')]]);
             }
             $commit = $base === '' ? app(DeliverablePathRepository::class)->defaultBranchCommit($group->project) : $base;
-            $workspace = $group->taskable instanceof Instance ? $group->taskable : null;
-            $errors = app(DeliverablePathChecker::class)->check($group->project, $data->deliverables ?? [], $commit, $base === '' ? 'provisional' : 'resolved', $workspace);
+            $errors = app(DeliverablePathChecker::class)->check($group->project, $data->deliverables ?? [], $commit, $base === '' ? 'provisional' : 'resolved');
             if ($errors !== []) {
                 $messages = [];
                 foreach ($errors as $field => $message) {

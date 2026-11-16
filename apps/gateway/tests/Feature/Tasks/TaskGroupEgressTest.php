@@ -8,16 +8,11 @@ use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
 use App\Http\Controllers\Api\TaskEgressController;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskGroupEgress;
-use App\Models\TaskVm;
-use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -47,11 +42,11 @@ function stored_egress_row(Task $group, array $row): TaskGroupEgress
 }
 
 /**
- * A task VM host, and a VM `shark-tvm-1` on it that a task group holds since 19:00.
+ * A former task VM host and a running task group.
  *
- * @return array{Node, Task, TaskVm}
+ * @return array{Node, Task}
  */
-function egress_world(TaskVmState $state = TaskVmState::Ready, bool $grouped = true): array
+function egress_world(): array
 {
     $node = static fn (string $name, string $address, array $settings = []): Node => Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => $address, 'public_ssh_port' => 22,
@@ -59,14 +54,10 @@ function egress_world(TaskVmState $state = TaskVmState::Ready, bool $grouped = t
         'ssh_host_key' => 'fixture-public-key', 'settings' => $settings ?: null,
     ]));
     $host = $node('shark', '10.44.0.11');
-    $guest = $node('shark-tvm-1', '10.44.0.133');
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
-    $vm = TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $grouped ? $group->id : null, 'provider' => TaskVmProviderKind::Incus,
-        'name' => 'shark-tvm-1', 'slot_number' => 1, 'slot_project_id' => $project->id, 'state' => $state, 'wireguard_ip' => '10.44.0.133', 'size' => TaskVmSize::Large,
-        'claimed_at' => CarbonImmutable::parse('2026-11-07T19:00:00Z')]);
 
-    return [$host, $group, $vm];
+    return [$host, $group];
 }
 
 it('accepts the egress fact the agent reports', function (): void {

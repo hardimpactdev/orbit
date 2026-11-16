@@ -73,17 +73,17 @@ class InputClosureTest(unittest.TestCase):
     def test_copied_helpers_select_their_fixture(self):
         api = runpy.run_path(str(ROOT / 'bin/ci-units'))
         budget, fixtures, defaults = api['configuration']()
-        for helper, file in [('swamp/ansible/instance_node_services.py', 'swamp/tests/ansible_instance_migrate_test.ts'),
-                             ('swamp/ansible/tasks/instance-private-names.yml', 'swamp/tests/ansible_instance_migrate_test.ts'),
-                             ('swamp/ansible/library/orbit_migrate_env.py', 'swamp/tests/ansible_instance_migrate_test.ts'),
-                             ('swamp/ansible/templates/instance-migrate-schedule.j2', 'swamp/tests/ansible_instance_migrate_test.ts'),
-                             ('swamp/extensions/behaviors/operations/processes-schedules/unit-templates.json', 'swamp/tests/ansible_instance_migrate_test.ts'),
+        for helper, file in [('swamp/ansible/instance_node_services.py', 'swamp/tests/ansible_instance_migrate_move_test.ts'),
+                             ('swamp/ansible/tasks/instance-private-names.yml', 'swamp/tests/ansible_instance_migrate_move_test.ts'),
+                             ('swamp/ansible/library/orbit_migrate_env.py', 'swamp/tests/ansible_instance_migrate_move_test.ts'),
+                             ('swamp/ansible/templates/instance-migrate-schedule.j2', 'swamp/tests/ansible_instance_migrate_move_test.ts'),
+                             ('swamp/extensions/behaviors/operations/processes-schedules/unit-templates.json', 'swamp/tests/ansible_instance_migrate_move_test.ts'),
                              ('swamp/tests/fixtures/fleet-reboot-ssh.py', 'swamp/tests/fleet_reboot_unreachable_test.ts')]:
             with self.subTest(helper=helper):
                 plan = api['plan']([helper], budget, fixtures, defaults)
-                selected = {u.split('#')[0] for s in plan['shards'] for u in s['units']}
-                selected.update(u.split('#')[0] for u in plan['deferred'])
-                selected.update(row['file'] for row in plan.get('excluded', []))
+                # A named capacity gap is selected even when none of its units fit: the plan names them as not run.
+                selected = {u.split('#')[0] for u in [*api['planned_units'](plan), *api['unplaced_units'](plan),
+                                                      *(u for row in plan.get('not_run', []) for u in row['units'])]}
                 self.assertIn(file, selected)
 
 

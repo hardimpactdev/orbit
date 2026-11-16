@@ -8,6 +8,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\ReadAgentThreadAction;
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
@@ -84,7 +85,6 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -208,7 +208,7 @@ function startCopy(Task $group): Operation
 function copyRows(): array
 {
     return ['instances' => Instance::query()->count(), 'runtimes' => InstanceRuntime::query()->count(), 'operations' => Operation::query()->count(),
-        'task_vms' => TaskVm::query()->count(), 'nodes' => Node::query()->count()];
+        'nodes' => Node::query()->count()];
 }
 
 function copyRefusal(Closure $start): string
@@ -314,7 +314,6 @@ describe('the decision point', function (): void {
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Todo)
             ->and($group->taskable_id)->toBeNull()
             ->and(Instance::query()->count())->toBe($instances)
-            ->and(TaskVm::query()->count())->toBe(0)
             ->and(Operation::query()->count())->toBe($operations);
     });
 
@@ -347,8 +346,7 @@ describe('a task start on the copy path', function (): void {
             ->and($runtime->incus_project)->toBe(InstancePlacement::NestedProject)
             ->and($runtime->clone_source_instance_id)->toBe($default->id)
             ->and($group->status)->toBe(TaskGroupStatus::Reserved)
-            ->and($group->taskable_id)->toBe($copy->id)
-            ->and(TaskVm::query()->count())->toBe(0);
+            ->and($group->taskable_id)->toBe($copy->id);
     });
 
     it('gives a task copy of a nested-fleet default with an inner volume its own volume, copied from the default\'s seed, and removes it with the copy', function (): void {
@@ -432,8 +430,7 @@ describe('a task start on the copy path', function (): void {
             // baseline included, is admitted before (tasks.instance_not_running), and a turn waits for `active`.
             ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Stopped)
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)
-            ->and($group->taskable_id)->toBe($copy->id)
-            ->and(TaskVm::query()->count())->toBe(0);
+            ->and($group->taskable_id)->toBe($copy->id);
     });
 
     it('reads the Project\'s agent instructions before its admission transaction and gives the copy them', function (): void {
@@ -1370,6 +1367,34 @@ describe('a complete of a group that owns a copy', function (): void {
             ->and($group->taskable_id)->toBeNull();
     });
 
+    it('completes a copy group over HTTP: admits the copy\'s destroy, and the complete after it succeeded finishes the removal and ends its request', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $group->update(['status' => TaskGroupStatus::Settling]);
+        $group->tasks()->update(['status' => TaskStatus::Completed]);
+        // An earlier complete could not remove the copy and asked for assistance.
+        TaskAssistance::apply($group->refresh(), AssistanceKind::RemovalFailure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The destroy failed.', replaceFailure: true);
+        $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+
+        $this->withHeader('Idempotency-Key', 'complete-1')->postJson("/api/v1/tasks/{$group->id}/complete")->assertOk()->assertJsonPath('data.status', 'completed');
+
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        expect($destroy->target_id)->toBe($copy->id)->and($destroy->input['force'])->toBeTrue()
+            ->and($group->refresh()->taskable_id)->toBe($copy->id)
+            ->and($group->assistance_kind)->toBe(AssistanceKind::RemovalFailure);
+
+        destroySucceeded($destroy);
+        expect(Instance::query()->find($copy->id))->toBeNull()->and($group->refresh()->taskable_id)->toBeNull();
+
+        $this->withHeader('Idempotency-Key', 'complete-2')->postJson("/api/v1/tasks/{$group->id}/complete")->assertOk()->assertJsonPath('data.status', 'completed');
+
+        expect($group->refresh()->assistance_kind)->toBeNull()->and($group->assistance_reason)->toBeNull()
+            ->and(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+    });
+
     it('keeps the copy of a completed group when its destroy fails, and admits a new destroy on the next complete', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
@@ -1387,6 +1412,28 @@ describe('a complete of a group that owns a copy', function (): void {
 });
 
 describe('a stop of a subtask in a copy', function (): void {
+    it('refuses to stop a subtask whose running check task:check admitted: such a check records no process identity', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $subtask = $group->tasks()->firstOrFail();
+        copyTurnEnded(copyTurn($group), 'succeeded', copyTurnDone('mcp:1'));
+        app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null);
+        $check = $subtask->checks()->sole();
+        expect($check->status)->toBe(TaskCheckStatus::Running)->and($check->pid)->toBe(0);
+
+        $refusal = null;
+        try {
+            app(StopTaskSubtaskAction::class)->execute($group->refresh(), $subtask->refresh());
+        } catch (ResourceOperationException $exception) {
+            $refusal = $exception;
+        }
+
+        expect($refusal)->not->toBeNull()->errorCode->toBe('tasks.subtask_interrupt_failed')->status->toBe(502)
+            ->and($refusal->getMessage())->toBe('The subtask remains running because its implementer or check could not be stopped: The running check has no recorded process identity; its start may have been interrupted.')
+            ->and($check->refresh()->status)->toBe(TaskCheckStatus::Running)
+            ->and($subtask->refresh()->status)->toBe(TaskStatus::Running);
+    });
+
     it('sends no interrupt to a t3 thread, which has none, and does not fail; the subtask stays as it was', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
@@ -1398,6 +1445,21 @@ describe('a stop of a subtask in a copy', function (): void {
         app(StopTaskSubtaskAction::class)->execute($group->refresh(), $subtask->refresh());
 
         expect($subtask->refresh()->status)->toBe(TaskStatus::Running);
+    });
+});
+
+describe('a baseline check of a copy group', function (): void {
+    it('records no subtask start at admission while no implementer turn ran; the check\'s result records it', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $copy->runtime->update(['power_state' => InstanceRuntimePowerState::Running]);
+        $subtask = $group->tasks()->firstOrFail();
+
+        $check = app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Baseline), 'test', null);
+
+        expect($check->kind)->toBe('tasks.check')
+            ->and($subtask->refresh()->subtask_start_commit)->toBeNull()
+            ->and($subtask->checks()->sole()->only(['pid', 'process_started', 'head_before']))->toBe(['pid' => 0, 'process_started' => '', 'head_before' => '']);
     });
 });
 
@@ -1491,7 +1553,6 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($thread->only(['driver', 'role', 'model', 'effort', 'provider_instance', 'node_id']))->toBe(['driver' => 't3', 'role' => 'implementer', 'model' => 'claude-opus-5-5',
                 'effort' => 'medium', 'provider_instance' => 'claudeMedium', 'node_id' => $copy->node_id])
             ->and($group->tasks()->firstOrFail()->implementer_agent_thread_id)->toBe($thread->id)
-            ->and(TaskVm::query()->count())->toBe(0)
             // T3 issues its own session inside the copy: no vault key, no token. The prompt, pinned above, is text: its copy rules name both.
             ->and(app(DirectOperation::class)->definition('tasks.copy_turn'))->not->toHaveKey('execution_copies')
             ->and(json_encode(Arr::except($turn->input, 'turn.prompt'), JSON_THROW_ON_ERROR))->not->toContain('vault')->not->toContain('token')->not->toContain('session');
@@ -1552,8 +1613,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect($turn->kind)->toBe('tasks.copy_turn')
             ->and($turn->input['runtime'])->toBe(['project' => InstanceHostIntent::Project, 'name' => $copy->runtime->container_name])
-            ->and($turn->input['branch'])->toBe('task-'.$group->id)
-            ->and(TaskVm::query()->count())->toBe(0);
+            ->and($turn->input['branch'])->toBe('task-'.$group->id);
     });
 
     it('takes the agent of a new thread from the Gateway\'s settings of its role, through the provider instance of its provider and effort', function (): void {
@@ -1945,7 +2005,7 @@ describe('a turn of a group that owns a copy', function (): void {
         $group->update(['status' => TaskGroupStatus::Running]);
 
         expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.no_workspace 409')
-            ->and(TaskVm::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(1);
+            ->and(Operation::query()->count())->toBe(1);
     });
 
     it('records a completed turn on its thread, with T3\'s thread id and a transcript that outlives the copy', function (): void {

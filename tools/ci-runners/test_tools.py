@@ -17,8 +17,12 @@ class ManagedToolsTest(unittest.TestCase):
             root = Path(directory)
             binary = root / 'bin'
             binary.mkdir()
+            swamp = b'#!/bin/sh\necho swamp\n'
+            (root / 'swamp').write_bytes(swamp)
             environment = dict(os.environ, PATH=f'{binary}:{os.environ["PATH"]}',
-                               DENO_VERSION='2.9.8', BUN_VERSION='1.4.2', TOOL_ROOT=str(root))
+                               DENO_VERSION='2.9.8', BUN_VERSION='1.4.2', TOOL_ROOT=str(root),
+                               SWAMP_URL='https://github.com/swamp-club/swamp/releases/download/v1/swamp-linux-x86_64',
+                               SWAMP_SHA256=hashlib.sha256(swamp).hexdigest(), SWAMP_BINARY=str(binary / 'orbit-swamp-proof'))
             for name, member, output in [('deno', 'deno', 'deno 2.9.8 (stable, release, x86_64-unknown-linux-gnu)'),
                                          ('bun', 'bun-linux-x64/bun', '1.4.2')]:
                 archive = root / (name + '.zip')
@@ -32,9 +36,9 @@ class ManagedToolsTest(unittest.TestCase):
             curl = binary / 'curl'
             curl.write_text('''#!/bin/sh
 set -eu
-case "$3" in *denoland*) name=deno;; *oven-sh*) name=bun;; *) exit 1;; esac
+case "$3" in *denoland*) name=deno;; *oven-sh*) name=bun;; *swamp-club*) name=swamp;; *) exit 1;; esac
 printf '%s\\n' "$name" >> "$TOOL_ROOT/downloads"
-cp "$TOOL_ROOT/$name.zip" "$2"
+if [ "$name" = swamp ]; then cp "$TOOL_ROOT/swamp" "$2"; else cp "$TOOL_ROOT/$name.zip" "$2"; fi
 ''')
             curl.chmod(0o755)
             command = program.replace('/usr/local/bin/', str(binary) + '/')
@@ -42,7 +46,14 @@ cp "$TOOL_ROOT/$name.zip" "$2"
                 result = subprocess.run(['bash', '-euo', 'pipefail', '-c', command], env=environment,
                                         capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual((root / 'downloads').read_text().splitlines(), ['deno', 'bun'])
+            # Each pinned tool downloads once; the recipe's Swamp binary is checked before install.
+            self.assertEqual((root / 'downloads').read_text().splitlines(), ['deno', 'bun', 'swamp'])
+            self.assertEqual((binary / 'orbit-swamp-proof').read_bytes(), swamp)
+            (binary / 'orbit-swamp-proof').unlink()
+            result = subprocess.run(['bash', '-euo', 'pipefail', '-c', command],
+                                    env={**environment, 'SWAMP_SHA256': '0' * 64}, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((binary / 'orbit-swamp-proof').exists())
             (binary / 'deno').write_text(stale)
             environment['DENO_SHA256'] = '0' * 64
             result = subprocess.run(['bash', '-euo', 'pipefail', '-c', command], env=environment,

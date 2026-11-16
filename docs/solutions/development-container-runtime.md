@@ -42,7 +42,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Host disk paths | The Incus project `orbit-instances` has no `restricted.devices.disk.paths` limit beside its idmapped runtime and agent folders. This permits those mounts; the project does not restrict host disk source paths ([#3311](https://github.com/hardimpactdev/orbit/pull/3311)) |
 | Container contents | Containers install as little as possible |
 | Production | Production Instances move into containers too, after development containers work |
-| Sleep | A development container sleeps after one hour idle, never while a task runs in it. Development Instances have no Schedules. Production containers never sleep |
+| Sleep | A development container sleeps after one hour idle, never while a task runs in it. Development Instances have no Schedules. Planned: an idle production live sleeps too ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) |
 | Setup | There are no development setup steps. Only a Project's first default Instance is built from scratch |
 | Default Instance | Intended: deploy every merge. Delivered: clones use the [last successfully deployed seed](/reference/deployments#automatic-development-defaults); each clone installs its own dependency changes. There is no separate source container |
 | One default per Project | A Project has one `default` Instance in the whole fleet. The Node that holds it is where every clone of the Project is made |
@@ -679,10 +679,10 @@ Tests: Molecule `unit` cases and `ansible-lint`. Live on a test `app-prod` Node:
 This PR serves one production Instance from a container.
 
 - `instance:clone` makes a production Instance's container from its candidate.
-- FrankenPHP serves it, and it never sleeps.
+- FrankenPHP serves it. An idle live sleeps as [ADR 0265](/decisions/0265-sleep-idle-production-containers) decides.
 - Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
 
-Tests: Pest for the intent and projection; the cases. Live: a test Laravel Project serves in production from a container, a Schedule runs on time, and the hibernation sweep leaves the container running after an idle hour.
+Tests: Pest for the intent and projection; the cases. Live: a test Laravel Project serves in production from a container, a Schedule runs on time, and the hibernation sweep puts live to sleep after an idle hour and a visit wakes it.
 
 ### PR 21: releases and rollback
 

@@ -8,13 +8,13 @@ cases = [
   "metrics exporter: with no files the units reload after the downloads and folders, not before them",
   "destroy: with no Processes, a failed Route release still keeps the teardown steps from running; they run after the release, one at a time",
   "harness: items of a forEach without a limit overlap, so a one-at-a-time check can fail",
+  "seed copy: the copies of two targets never overlap; they run after both certificates and before both checks",
   "firewall: one planned change runs, the others are skipped by their guard, then the result is read and checked",
   "task-check-ci: a tick without a pending check runs only its collect step",
 ]
 file = "swamp/tests/workflow_engine_semantics_native_test.ts"
-cost = 60 # 11 cases in 45-70 s locally on Beast; each case inits a repository and runs one real workflow with stubbed steps
-after_merge = true
-reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
+self_hosted = true
+cost = 60 # 12 cases in 45-70 s locally on Beast; each case inits a repository and runs one real workflow with stubbed steps
 inputs = [
   "swamp/workflows/workflow-operation-instance-destroy.yaml",
   "swamp/tests/_support/native_auth.ts",
@@ -27,4 +27,5 @@ inputs = [
   "swamp/workflows/workflow-metrics-exporter-node.yaml",
   "swamp/workflows/workflow-operation-firewall-direct.yaml",
   "swamp/workflows/workflow-task-check-ci.yaml",
+  "swamp/workflows/workflow-operation-instance-seed-copy.yaml",
 ]

@@ -108,6 +108,15 @@ class RefusalTest(unittest.TestCase):
     def test_a_good_minimal_file_loads(self):
         self.assertEqual(len(load_text(GOOD).cases), 1)
 
+    def test_a_read_only_case_changes_nothing(self):
+        refusal = GOOD.replace('summary: One case.', 'summary: One case.\n    read_only: true').replace('expect: {exit: 0}', 'expect: {exit: 1, request: none}')
+        self.assertTrue(load_text(refusal).cases[0].read_only)
+        self.assertFalse(load_text(GOOD).cases[0].read_only)
+        # A CLI call that may start an Operation, a setup or a negative run can change the fleet.
+        self.refused(GOOD.replace('summary: One case.', 'summary: One case.\n    read_only: true'), 'read_only case can change the fleet with its cli step')
+        self.refused(refusal.replace('act:', 'setup:\n      - ufw_delete: {on: app-dev, to: 80/tcp}\n    act:'), 'read_only case has no setup')
+        self.refused(refusal.replace('read_only: true', 'read_only: yes please'), 'read_only is true or false')
+
     def test_unknown_step(self):
         self.refused(GOOD.replace('probe:', 'poke:'), 'unknown step poke')
 

@@ -3,6 +3,7 @@ title: "Old paths"
 description: "Code that still runs but that a stage of the command development pipeline replaces. Check this page before you build on it."
 covers:
   - apps/gateway/app/Infrastructure/TaskVms/RecipeImageBuilds.php
+  - apps/gateway/database/migrations/2027_03_03_000000_drop_task_vm_tables.php
 ---
 
 # Old paths
@@ -106,11 +107,11 @@ A later release drops what nothing read any more. Its migration `2027_03_01_0000
 - The rows already in `task_group_egress` stay readable through `task:egress`.
 - The fleet reboot intent of a Node has no `task_project`, and the pass has no `task_hosts`. Swamp drains no task guests: the step `Drain the task guests` and its task files `fleet-reboot-drain-tasks.yml` and `fleet-reboot-park.yml` are deleted.
 
-The busy check of the fleet reboot, `FleetReboot::busy`, drops the Operation kind pattern `task_vm.%`, because no `task_vm.*` kind starts. No admission calls the check any more. It goes with `rebootingTaskHosts` and `refuseTaskWork` ([the task VM readers](#the-task-vm-readers)). `capacity_wait_reason` and the task VM tables stay, unread by the API, until a later release drops them.
+The busy check of the fleet reboot, `FleetReboot::busy`, drops the Operation kind pattern `task_vm.%`, because no `task_vm.*` kind starts. No admission calls the check any more. It goes with `rebootingTaskHosts` and `refuseTaskWork` ([the task VM readers](#the-task-vm-readers)). `capacity_wait_reason` stays, unread by the API. A later release dropped [the task VM tables](#the-task-vm-tables).
 
 ### The task VM readers
 
-No task VM is created any more, and `task_vms` has no live row. This release removes the Gateway code that read `task_vms`, `task_vm_image_builds` or `task_vm_image_recipe` only to find a task VM, which none of them finds. The path that ran when no VM existed is now the only path. Instances, Projects and tasks lose these guards:
+No task VM is created any more. When `task_vms` had no live row left, this release removed the Gateway code that read `task_vms`, `task_vm_image_builds` or `task_vm_image_recipe` only to find a task VM, which none of them found. The path that ran when no VM existed is now the only path. Instances, Projects and tasks lose these guards:
 
 - The Instance guards of create, clone and transfer.
 - The Instance save rule `task_vm.foreign_instance` and the access grant rule `task_vm.access_refused`.
@@ -130,22 +131,64 @@ Nodes and the fleet lose these:
 
 The code that served only those readers goes too:
 
-- The SSH credential guard `TaskVmCredentialGuard`. The `incus` transport keeps its refusal `task_vm.git_credential_refused`.
+- The SSH credential guard `TaskVmCredentialGuard`. The `incus` transport kept its refusal `task_vm.git_credential_refused` until [the guest agent chain](#the-guest-agent-chain) went.
 - The relations `Node::liveTaskVm`, `Node::taskVms` and `Task::latestVm`.
 - `TaskVmStepClock`, `TaskVmFailedException` and the check runner's task VM setup branches.
 - The slot lookup and slot update of `TaskProvisionProjection`.
 
 The task group field `vm_power` stays and is always `null` ([VM power](/reference/compute-drivers#vm-power)). No other API, agent or Swamp input field changes.
 
-`TaskVmWorkspaceGuard` reads no table. It refuses every task workspace command over SSH with `task_vm.workspace_mismatch`, because task VMs are removed and no task workspace lives on one. The refusal `task_vm.parked` is gone.
+The refusal `task_vm.parked` is gone.
 
-The SSH task workspace path still remains, and a later slice removes it: `TaskWorkspaceExecutor` and its callers, which are the check runner (`RemoteTaskCheckRunner`), the workspace diff and state readers, and the workspace file read of the deliverable paths. Each of them fails at the guard.
+The SSH task workspace path is removed too (S10c). Since the task VM readers went, its guard refused every command, so none reached SSH. These go:
+
+- The guard `TaskVmWorkspaceGuard`, its refusal `task_vm.workspace_mismatch`, and `TaskWorkspaceExecutor`.
+- The `Workspace ownership refused:` prefix of a removal failure.
+
+The check runner goes with these:
+
+- The check runner `RemoteTaskCheckRunner` and the interface `TaskCheckRunner`.
+- The scripts the runner installed: `tasks/check`, `tasks/composer`, `tasks/metadata` and `tasks/unit-state.py`.
+- The composer credential the runner passed on file descriptor 3, `orbit_setup_composer_auth`.
+- The runner's helpers `TaskUnitProgram`, `TaskWorkspaceMetadata`, `TaskCheckProcess`, `TaskCheckReading` and `TaskWorkspaceSnapshot`.
+- The check cancel of a subtask stop. A stop still refuses a running check that has no process identity. Every check that a Swamp workflow runs has none.
+
+The workspace readers go too:
+
+- The workspace diff readers `RemoteTaskWorkspaceDiffReader` and `AgentViewTaskWorkspaceDiffReader` and the interface `TaskWorkspaceDiffReader`, which nothing read.
+- The workspace state reader `RemoteTaskWorkspaceStateReader` and the interface `TaskWorkspaceStateReader`.
+- The evidence writers `TaskCheckEvidence::recordSubtaskStart` and `recordReading`. Nothing has called them since checks moved to Swamp. The check's projection records the subtask start and the result.
+- The workspace file read of the deliverable paths. Deliverable path validation reads the origin, with or without a task copy.
+
+What stays: a task copy is removed through its `instance.destroy`, and any other workspace a group owns is refused with `operation.kind_unavailable` (503) and stays.
 
 `ProblemRecovery` resolves an open `recipe-image:` alert as `resource_gone` and reads neither `task_vm_image_builds` nor `task_vm_image_recipe`. The answers `verified_image_build` and `recipe_generation_superseded` are gone.
 
-Two cleanup deletes stay until the tables go, because the tables keep foreign keys to `nodes` and `tasks`: Node removal deletes the Node's `task_vms` rows and its finished `task_vm_image_builds` rows, and Project removal deletes the `destroyed` `task_vms` rows of its groups.
+### The task VM tables
 
-The next release drops `task_vms`, `task_vm_image_builds` and `task_vm_image_recipe`, with the models `TaskVm` and `TaskVmImageBuild`, their state enums and the cleanup deletes.
+The release after the readers drops what was left. Its migration `2027_03_03_000000_drop_task_vm_tables` drops the tables `task_vms`, `task_vm_image_builds` and `task_vm_image_recipe`. No other table has a foreign key to them. Its rollback creates the three tables again, empty, with the columns, defaults, indexes and foreign keys they had. It cannot bring the rows back: the Gateway SQLite snapshot that the release takes before it migrates holds them.
+
+With the tables go:
+
+- The models `TaskVm` and `TaskVmImageBuild`, and the enums `TaskVmState`, `TaskVmImageBuildState`, `TaskVmImageBuildStep`, `TaskVmSize`, `TaskVmProviderKind`, `TaskVmPublishState` and `TaskVmRuntime`, with `TaskVmResources`.
+- The cleanup deletes. Node removal deletes no `task_vms` or `task_vm_image_builds` rows, and Project removal deletes no `task_vms` rows.
+- The task wait `task_vm`, which nothing produced or read, and the unused class `App\Infrastructure\TaskVms\TaskVmRuntime`.
+- The row error helpers of `TaskVmException`. The class went with [the guest agent chain](#the-guest-agent-chain).
+
+`TaskVmError` loses every case that nothing produces any more: `task_vm.invalid_config`, `task_vm.unknown_host`, `task_vm.host_configured`, `task_vm.fleet_unavailable`, `task_vm.setup_failed`, `task_vm.job_failed`, `task_vm.vm_missing`, `task_vm.not_settled` and `task_vm.awaiting_host_sweep`. Its last case, `task_vm.git_credential_refused`, went with [the guest agent chain](#the-guest-agent-chain). `task_vm.workspace_mismatch` went with the SSH task workspace path ([the task VM readers](#the-task-vm-readers)). The Ansible host preparation still fails with its own `task_vm.setup_failed`, and the frozen agent contract keeps `task_vm.vm_missing`.
+
+The contract does not change. The task group field `vm_power` stays and is always `null`. The Node removal input keeps `task_vm_id` as `null` and `task_vm_guest` as `false`, and the Operation inputs of a task copy end and of a cancel keep `task_vm_id: null`. `tasks.provision` stays registered. No other API, agent or Swamp input field changes.
+
+### The guest agent chain
+
+S10d removed the last VM-era code that nothing called. Nothing built an agent guest, so the guest runner, its `incus` transport and the error that transport raised had no caller. These go:
+
+- `AgentGuest`, the interface `GuestAgentCommandRunner` and its container binding, and `NativeAgentCommandRunner::runGuest()` and `installGuest()`.
+- `AgentTransports::guest()` and `IncusAgentTransport`, with its refusal `task_vm.git_credential_refused`.
+- The enum `TaskVmError`, which held only that refusal, and `TaskVmException`, which only the transport threw.
+- The deliverable evidence verifier: `TaskDeliverableVerifier::failures()` and the class `TaskDeliverableEvidence`. Nothing has called them since checks moved to Swamp.
+
+`AgentDelivery`, `SshAgentTransport` and `NativeAgentCommandRunner` take a Node only. What stays: the Node agent transports (local, SSH, a workspace, and the connection of a Node that is being admitted), `TaskDeliverableVerifier::matches()` and `unconfirmed()`, `TaskCheckOutputBuilder`, and `TaskVmAptCache`, `TaskVmModelRoute` and `TaskVmNestedFleet`. `GitReadScript` still marks its input as one that carries a credential. No API, agent or Swamp field changes.
 
 ### What stays
 

@@ -26,6 +26,8 @@ Native `node.add` fetches the pinned Linux binary and writes the observer config
 
 Fixed **service entry points** run under their own Linux systemd units. `service schedules-run <uuid>` reads the protected Schedule command file and executes its project command as the service user. `service schedules-complete <uuid>` runs as root, reads only the pinned CA, and reports completion. It runs no project code and reads no agent secret. [Schedules](/reference/schedules#node-timers) owns their units and execution context.
 
+> **Target design, not built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) a separate Rust binary from this workspace, the **executor**, sleeps and wakes app containers on `app-dev` Nodes. The Gateway publishes a signed order as the server event `executor-order` on `presence-node.{id}`. The observer writes the bytes unchanged to `/run/orbit-executor.sock` and sends the reply back as `client-executor-result` on the same channel. It cannot sign and does not parse the order. Sleep and wake are then the one Node change that is not a typed command over SSH. Until its slices land, the observer only observes, as this page says.
+
 The observer listens on no port. Nothing reaches command mode over the network: only a process that SSH or the Gateway starts runs it. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
 The agent observes the Node. Swamp applies the network part after the agent footprint checks, and verifies a repaired tunnel with a handshake check.
@@ -345,7 +347,7 @@ The Gateway runs every Node action through one runner, `AgentCommandRunner`. The
 [sudo -n] /usr/local/bin/orbit-agent command <name>
 ```
 
-A Gateway architecture check scans core and extension PHP for process, SSH, and agent transport dependencies. Only the command transports, Gateway control-plane processes, command rendering, and the excluded Tasks and private DNS paths may use those dependencies. New Node behavior must call `AgentCommandRunner`; adding another executor fails the check.
+A Gateway architecture check scans core and extension PHP for process, SSH, and agent transport dependencies. Only the command transports, Gateway control-plane processes, command rendering, and the excluded private DNS path may use those dependencies. New Node behavior must call `AgentCommandRunner`; adding another executor fails the check.
 
 For containers, the Gateway reads three sources directly over pinned SSH: a container Process's journal tail and unit state, and the [workspace work state](/reference/development-containers#workspace-work-state) of a container Instance. The separate [Git check at admission](/reference/remote-programs) covers new host-checkout destroy and transfer requests. It uses the Node’s existing SSH account, with fixed argv built from the resolved Instance and Process’s validated ids and names; this grants no new identity or container access. A list groups all container Process states into one bounded call per Node. Every action stays a Swamp workflow.
 
@@ -422,16 +424,17 @@ A transport loss, a missing result, a malformed result, a timeout, and an undecl
 
 ### Transports
 
-The runner picks the transport from the Node or build guest. Every adapter carries the same arguments, envelope, and result.
+The runner picks the transport from the Node. Every adapter carries the same arguments, envelope, and result.
 
 | Node | Transport |
 | --- | --- |
 | A managed Node | SSH to its WireGuard address, as its enrolled account, with its pinned host key |
 | The Gateway's own Node | A local process. Mutations still change the Node, because each runs in its own transient service outside the worker's read-only view |
 | A Node being admitted | Its pinned bootstrap SSH connection, until managed WireGuard SSH is ready |
-| An Incus build guest | `incus exec` through its managed host, before guest networking or SSH exists |
 
 Native bootstrap and image consumers receive typed public input from `orbit:node-recipe`: the Node account and roles, bootstrap input, stored machine recipe, and frozen observer delivery. Swamp supplies the system programs and runs their effects. The export contains no agent actions, executable programs or command fingerprints.
+
+No transport runs through `incus exec`: the build guest transport had no caller and is removed ([old paths](/reference/old-paths#the-guest-agent-chain)).
 
 Only binary staging may change a Node outside a named command. First admission uses a fixed `uname -sm` staging probe because no agent exists yet. It validates the platform and architecture before installing a candidate. A root bootstrap login runs root commands directly; other Linux logins use passwordless sudo. The installer owns atomic replacement and the cleanup of each candidate it runs from.
 
@@ -439,7 +442,7 @@ Only binary staging may change a Node outside a named command. First admission u
 
 The Gateway owns validation, authorization, records, operations, placement, and error mapping. Rust commands own Node execution and its tests. [Extensions](/reference/extensions#add-a-plug-in-point) own their Rust command modules, startup hooks, and compiled services; one agent binary dispatches them. There is no dynamic loader or second command runner.
 
-Tasks workspace scripts retain their [existing runner](/reference/remote-programs). The private DNS listener and its publication scripts remain for the separate [DNS migration](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
+The Tasks workspace scripts that went over SSH are removed ([old paths](/reference/old-paths#the-task-vm-readers)). The private DNS listener and its publication scripts remain for the separate [DNS migration](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
 
 Operations own recovery. Mutations accept an `effect_key` as `op-<operation id>.<step key>`. Executor transports always supply it after contract authorization. After acquiring command target and resource locks, the shared command layer writes a private intent on the target before the effect and a durable receipt before returning. A repeated key with the same command, input and Operation nonce returns the saved result. A different command or input is refused with `agent.effect_conflict`. An interrupted intent has unknown outcome and is never executed again under that key.
 

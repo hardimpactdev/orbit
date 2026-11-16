@@ -28,6 +28,8 @@ use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationBudgetTable;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofSeedCopyProjection;
 use App\Domain\Proof\ProofSeeds;
@@ -261,7 +263,15 @@ describe('a CI Node that hosts proof copies', function (): void {
             ->and($host['ids'])->toBe(13_172_736 + 5 * 101_000_000)
             ->and($host)->not->toHaveKeys(['dev_ports', 'own_site'])
             // Its converge creates the Instance pool (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
-            ->and($host['create_pool'])->toBeTrue();
+            ->and($host['create_pool'])->toBeTrue()
+            ->and($host)->not->toHaveKey('fleet_node');
+        // The Instance fleet marker changes no CI intent: only nested-app-dev's address gets `fleet_node`.
+        $marker = sys_get_temp_dir().'/orbit-instance-fleet-ci-'.getmypid();
+        touch($marker);
+        config(['instances.fleet_marker' => $marker]);
+        $marked = ciRunnerRuntime($node->refresh())['instances'];
+        unlink($marker);
+        expect(array_diff_key($marked, ['bridge_admitted_at' => true]))->toBe(array_diff_key($host, ['bridge_admitted_at' => true]));
 
         $project = otherProject('orbit', true);
         config(['proof.project' => $project->id]);
@@ -644,7 +654,8 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and($operation->node_id)->toBe($default->node_id)
             ->and($operation->lock_key)->toBe('instance_seed_copy:'.$default->id)
             ->and($operation->input)->toBe(['default_instance_id' => $default->id, 'commit' => str_repeat('a', 40),
-                'taken_at' => $runtime->refresh()->seed_taken_at?->toIso8601String(), 'targets' => [$node->id], 'release_base' => true])
+                'taken_at' => $runtime->refresh()->seed_taken_at?->toIso8601String(), 'targets' => [$node->id], 'release_base' => true,
+                'run_budget_seconds' => 900 + 2500])
             // One copy at a time: the open copy admits the next one when it ends.
             ->and(app(ProofSeeds::class)->admit('seed'))->toBeNull()
             ->and(Operation::query()->where('kind', 'instance.seed_copy')->count())->toBe(1);
@@ -658,6 +669,37 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and(collect($intent['targets'][0])->except('ssh_execution')->all())->toBe(['node_id' => $node->id, 'remote' => 'proof-node-'.$node->id,
                 'listen' => '10.44.0.30:8444'])
             ->and($intent['targets'][0]['ssh_execution']['target']['host'])->toBe('10.44.0.30');
+    });
+
+    it('captures a run budget that holds the copies of its targets in series, and takes no more targets than the serve run cap holds', function (): void {
+        proofSeedDefault();
+        seedSwampNode();
+        $nodes = array_map(static fn (int $index): Node => ciNode(2, LifecycleStatus::Active, 'ci-'.$index, '10.44.0.'.(40 + $index)), range(1, 6));
+        seedListening(...$nodes);
+        $budget = static fn (Operation $copy): int => OperationRunBudgets::seconds($copy->forceFill(['attempts' => 1]));
+
+        // docs/reference/operations.md: the fixed phases, plus one copy step per target, because the copies run one target at a time.
+        $one = app(ProofSeeds::class)->admit('seed', array_map(static fn (Node $node): int => $node->id, array_slice($nodes, 1)));
+        expect($one?->input['targets'])->toBe([$nodes[0]->id])
+            ->and($budget($one))->toBe(900 + 2500);
+        Operation::query()->where('kind', ProofSeeds::Kind)->delete();
+        $three = app(ProofSeeds::class)->admit('seed', array_map(static fn (Node $node): int => $node->id, array_slice($nodes, 3)));
+        expect($three?->input['targets'])->toHaveCount(3)
+            ->and($budget($three))->toBe(900 + 3 * 2500);
+        Operation::query()->where('kind', ProofSeeds::Kind)->delete();
+
+        // Six Nodes behind: the run takes the five that fit in the cap and may not release the base; its end admits the sixth.
+        $capped = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        expect(ProofSeeds::maxTargets())->toBe(5)
+            ->and($capped->input['targets'])->toBe(array_map(static fn (Node $node): int => $node->id, array_slice($nodes, 0, 5)))
+            ->and($capped->input['release_base'])->toBeFalse()
+            ->and($budget($capped))->toBe(900 + 5 * 2500)
+            ->and($budget($capped))->toBeLessThanOrEqual(OperationBudgetTable::longestFixedSeconds());
+        $capped->forceFill(['status' => 'running', 'state' => [...($capped->state ?? []), 'swamp_run_id' => 'run-1']])->save();
+        app(ProofSeedCopyProjection::class)->apply($capped, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['targets' => array_map(static fn (int $node): array => ['node_id' => $node,
+                'status' => 'succeeded'], $capped->input['targets'])]]);
+        expect(Operation::query()->where('kind', ProofSeeds::Kind)->whereKeyNot($capped->id)->sole()->input['targets'])->toBe([$nodes[5]->id]);
     });
 
     it('records the seed of each passed Node and an Activity problem for each failed one, and tries no failed Node again at the same seed', function (): void {
@@ -809,6 +851,23 @@ describe('the seed of the proof default on each Node that offers proof places', 
 
         expect($assignment->refresh()->status)->toBe(LifecycleStatus::Active)
             ->and(Operation::query()->where('kind', 'instance.seed_copy')->sole()->input['targets'])->toBe([$node->id]);
+    });
+
+    it('keeps the converged Node in the run when more Nodes are behind the seed than one run takes', function (): void {
+        proofSeedDefault();
+        seedSwampNode();
+        $nodes = array_map(static fn (int $index): Node => ciNode(2, LifecycleStatus::Active, 'ci-'.$index, '10.44.0.'.(40 + $index)), range(1, 6));
+        seedListening(...array_slice($nodes, 0, 5));
+        $converged = $nodes[5];
+        Node::withoutEvents(fn (): bool => $converged->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+
+        // The end of a run admits only Nodes that no copy has tried at the seed, so a run without the converged Node would leave it behind.
+        endCiRunnerConverge($converged, 'succeeded');
+
+        $targets = Operation::query()->where('kind', ProofSeeds::Kind)->sole()->input['targets'];
+        expect($targets)->toHaveCount(ProofSeeds::maxTargets())
+            ->and($targets)->toContain($converged->id)
+            ->and($targets)->toBe([...array_map(static fn (Node $node): int => $node->id, array_slice($nodes, 0, 4)), $converged->id]);
     });
 
     it('targets only a Node whose passed ci-runner converge opened the seed listener for the default\'s Node, and never marks another tried', function (): void {
@@ -1349,7 +1408,7 @@ describe('the id map size', function (): void {
             })(),
             default => $default,
         };
-        if ($case === 'a rollback under a small copy') {
+        if ($case === 'a raise over a small copy') {
             InstanceRuntime::query()->where('instance_id', $default->id)->update(['idmap_size' => 1165536]);
             recordedNestedInstance($default->project, $node, 'small', $default);
         }
@@ -1359,22 +1418,42 @@ describe('the id map size', function (): void {
         }
         $size = match ($case) {
             'another size' => '65536',
-            'a rollback under a small copy' => '101000000',
+            'a raise over a small copy' => '2000000',
             default => '1165536',
         };
         // The size refusal names the floor: the inner range is the outer size minus 1,000,000 (development-containers.md#the-id-map-size).
         $this->artisan('gateway:instance-idmap-size', ['instance' => (string) $target->id, 'size' => $size])
-            ->expectsOutputToContain($case === 'another size' ? $code.': The size must be 1165536 or 101000000. The inner range is the outer size minus 1,000,000, so no size below 1,065,536 works.' : $code)
+            ->expectsOutputToContain($case === 'another size' ? $code.': The size must be 2000000 or 1165536. The inner range is the outer size minus 1,000,000, so no size below 1,065,536 works.' : $code)
             ->assertFailed();
         expect(InstanceRuntime::query()->where('instance_id', $default->id)->first(['idmap_size', 'seed_commit'])?->only(['idmap_size', 'seed_commit']))
-            ->toBe(['idmap_size' => $case === 'a rollback under a small copy' ? 1165536 : 101000000, 'seed_commit' => str_repeat('a', 40)]);
+            ->toBe(['idmap_size' => $case === 'a raise over a small copy' ? 1165536 : 101000000, 'seed_commit' => str_repeat('a', 40)]);
     })->with([
         'another size' => ['another size', 'instance.idmap_size_invalid'],
         'a clone' => ['a clone', 'instance.idmap_size_not_nested_default'],
         'a normal default' => ['a normal default', 'instance.idmap_size_not_nested_default'],
         'an open Operation' => ['an open Operation', 'operation.target_busy'],
-        'a rollback under a small copy' => ['a rollback under a small copy', 'instance.idmap_size_copies_smaller'],
+        'a raise over a small copy' => ['a raise over a small copy', 'instance.idmap_size_copies_smaller'],
     ]);
+
+    // docs/reference/development-containers.md#raise-a-default-to-2000000: 2,000,000 gives nested-app-dev room for Instances, and 1,165,536 is its rollback.
+    it('raises a converted default to 2,000,000 and rolls it back to 1,165,536, and its next copy takes the raised size', function (): void {
+        $node = nestedSwitch(containerDefaultNode(), true);
+        $default = recordedNestedInstance(otherProject('raised', true), $node);
+        $runtime = InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail();
+        $runtime->update(['idmap_size' => 1165536, 'seed_commit' => str_repeat('a', 40)]);
+
+        $this->artisan('gateway:instance-idmap-size', ['instance' => (string) $default->id, 'size' => '2000000'])->assertSuccessful();
+        expect($runtime->refresh()->only(['idmap_size', 'seed_commit']))->toBe(['idmap_size' => 2000000, 'seed_commit' => null]);
+        $runtime->update(['seed_commit' => str_repeat('b', 40)]);
+        $copy = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $node->id, 'name' => 'raised-copy', 'checkout_path' => '/test/raised/copy']);
+        $copyRuntime = app(InstanceContainer::class)->reserve($copy, $node, $default);
+        expect($copyRuntime->idmap_size)->toBe(2000000)
+            ->and(app(InstanceContainer::class)->intent($copy, $copyRuntime)['config']['security.idmap.size'])->toBe('2000000');
+
+        $this->artisan('gateway:instance-idmap-size', ['instance' => (string) $default->id, 'size' => '1165536'])->assertSuccessful();
+        expect($runtime->refresh()->idmap_size)->toBe(1165536)->and($copyRuntime->fresh()?->idmap_size)->toBe(2000000);
+        $this->artisan('gateway:instance-idmap-size', ['instance' => (string) $default->id, 'size' => '101000000'])->assertFailed();
+    });
 
     it('warns in Doctor from the kept ID map read while a full-size nested container is on the Node, and not after its conversion', function (): void {
         $node = nestedSwitch(containerDefaultNode(), true);

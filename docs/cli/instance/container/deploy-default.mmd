@@ -63,6 +63,7 @@ sequenceDiagram
   SW->>C: Run dev deploy steps<br/>incus exec · vault copy
   %%> What it does:
   %%> - the Project's development deploy steps, as `agent`, the workspace's owner, with `HOME=/home/agent` (ADR 0268): they install changed dependencies and migrate
+  %%> - a best-effort step (`required: false`) discards its output and prints only its command's exit code; the Gateway records that code in the result's `best_effort_steps` (an integer 0-255, else null, never the text), and a nonzero code does not fail the deployment
   %%> - a step with `inputs` runs only when they or its command changed since its last passed run in this workspace: the checkout compares the Git object IDs of its inputs at the commit and its command's digest with the step's record in `.git/orbit-deploy-steps`, and the step's guard skips it when they match; a passed step records them; a step without `inputs` always runs
   %%> Why:
   %%> - most releases change no lock file: an install that finds nothing to do still costs its tool's start, its autoload and its scripts, about 4 s a step

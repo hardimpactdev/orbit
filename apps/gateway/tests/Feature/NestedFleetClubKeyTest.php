@@ -344,5 +344,17 @@ describe('the result of a start', function (): void {
             // Unknown parts of `seconds` are dropped.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'seconds' => ['gateway' => 2, 'secret' => 'x']]])->result['fleet_refresh']['seconds'])
             ->toBe(['gateway' => 2]);
+
+        // The Instance host's word is kept, before `seconds`; a run of an older Ansible names none and is recorded as before.
+        $withHost = static fn (string $host): array => [...array_diff_key($refresh, ['seconds' => true]), 'host' => $host, 'seconds' => $refresh['seconds']];
+        foreach (['skipped_idmap_small', 'converged', 'kept'] as $host) {
+            expect($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'host' => $host]])->result['fleet_refresh'])->toBe($withHost($host));
+        }
+        // A host word not these is left out, and the rest of the refresh is still recorded.
+        expect($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'host' => 'built']])->result['fleet_refresh'])->toBe($refresh)
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'host' => null]])->result['fleet_refresh'])->toBe($refresh)
+            // The host's time is not a part of `seconds`.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'host' => 'kept', 'seconds' => ['gateway' => 2, 'host' => 5]]])->result['fleet_refresh']['seconds'])
+            ->toBe(['gateway' => 2]);
     });
 });
