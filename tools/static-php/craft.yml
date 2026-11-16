@@ -3,8 +3,11 @@
 # Its digest is part of the build id, so any change here needs a new build and a new pin.
 php-version: "@PHP_VERSION@"
 
-# The recipe's extensions of this PHP version, without the ones a fully static binary cannot load.
+# The recipe's extensions of this PHP version, less `without` and less `cli_extensions`, linked into both binaries.
 extensions: "@EXTENSIONS@"
+
+# The recipe's `cli_extensions`, built as shared extensions that only the PHP CLI loads.
+shared-extensions: "@SHARED_EXTENSIONS@"
 
 # Libraries no listed extension requires, named so that no suggestion adds an extension: gd's image formats,
 # curl's HTTP/2 and HTTP/3, and brotli and watcher for FrankenPHP.

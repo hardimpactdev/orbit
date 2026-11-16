@@ -174,8 +174,10 @@ final readonly class InstanceHostIntent
         $nestedMaps = InstanceRuntime::query()->where('node_id', $node->id)->where('incus_project', InstancePlacement::NestedProject)->pluck('idmap_size');
         $nestedRuntimes = $nestedMaps->count();
         $nestedIds = $nestedMaps->sum(static fn (mixed $size): int => is_int($size) ? $size : throw new LogicException('A nested-fleet runtime records its ID map size.'));
-        $taskContainers = $taskHost?->containers;
-        $taskIds = $taskContainers instanceof NodeTaskVmContainersData ? ($taskContainers->task_places + $taskContainers->ci_places + 1) * self::TaskPlaceIds : 0;
+        // Each task container place and each CI place gets one full map, and the base one more (docs/reference/node-settings.md#nested-fleet-instance-hosting).
+        $containerPlaces = $taskHost?->containers instanceof NodeTaskVmContainersData ? $taskHost->containers->task_places : null;
+        $ciPlaces = $settings?->ci()?->places;
+        $taskIds = $containerPlaces === null && $ciPlaces === null ? 0 : (($containerPlaces ?? 0) + ($ciPlaces ?? 0) + 1) * self::TaskPlaceIds;
         $subnet = Ipv4Subnet::from($cidr);
         [$gateway, $last] = $subnet->usableRange();
 

@@ -32,14 +32,25 @@
     ubuntu_tools: "{{ tool_list | selectattr('source', 'equalto', 'ubuntu') | list }}"
     deb_tools: "{{ tool_list | selectattr('url', 'match', '.*[.]deb$') | list }}"
     tool_by_name: "{{ dict(tool_list | map(attribute='name') | zip(tool_list)) }}"
-- name: Name the shape gate tools
+# The venv name covers the interpreter that builds the venv, so the gate's own rule runs here, with the python3 that
+# task-vm-shape-gate.yml builds the venv with.
+- name: Name the shape gate venv
   vars:
     pins: >-
       {{ lookup('ansible.builtin.file', playbook_dir ~ '/shape-gate-requirements.txt', rstrip=False)
       ~ lookup('ansible.builtin.file', playbook_dir ~ '/requirements.txt', rstrip=False) }}
+  ansible.builtin.command:
+    argv: [python3, -I, -c, "{{ lookup('ansible.builtin.file', playbook_dir ~ '/shape_tool_names.py') }}"]
+    stdin: "{{ pins }}"
+    stdin_add_newline: false
+  register: shape_venv_name
+  changed_when: false
+  check_mode: false
+- name: Name the shape gate tools
+  vars:
     gate_collections: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/requirements.yml', rstrip=False) }}"
   ansible.builtin.set_fact:
-    shape_venv: "/opt/orbit-shape-gate/venv-{{ pins | hash('sha256') | truncate(16, True, '') }}"
+    shape_venv: "/opt/orbit-shape-gate/{{ shape_venv_name.stdout }}"
     shape_collections: "/opt/orbit-shape-gate/collections-{{ gate_collections | hash('sha256') | truncate(16, True, '') }}"
 - name: Name the packages that the snapshot pins
   ansible.builtin.set_fact:

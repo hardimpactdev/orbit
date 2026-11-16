@@ -15,6 +15,7 @@ use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
+use App\Infrastructure\MachineSoftware\StaticPhpBuild;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -341,6 +342,8 @@ final readonly class InstanceContainer
             'web_config' => $this->webConfig($instance, $runtime),
             // `php` on every PATH in the container is the Project's static build, so `composer` runs for `agent` and `orbit` alike.
             'php' => $this->php($project),
+            // Only the PHP CLI reads it, so the FrankenPHP server never loads PCOV; null removes Orbit's file.
+            'php_cli_ini' => $this->phpCliIni($project),
             'clone' => $clone,
             // The Project's development Processes; a deployment's new seed restarts the running ones on the new commit.
             'processes' => app(ContainerProcesses::class)->units($instance),
@@ -392,12 +395,34 @@ final readonly class InstanceContainer
     /** The Project's `php` in the runtime folder, through `current`, or null when the Project has no PHP version the folder holds. */
     private function php(Project $project): ?string
     {
-        $version = $project->php_version;
-        if (! is_string($version) || ($this->folders()->php[$version]->artifact ?? null) === null) {
+        $build = $this->phpBuild($project);
+
+        return $build === null ? null : InstanceHostIntent::RuntimeFolder.'/current/php/'.$build->version.'/'.StaticPhpBuild::Bin['php'];
+    }
+
+    /**
+     * The CLI-only `php-cli.ini` of the Project's PHP: one `extension=` line for each CLI-only extension of its static build, such as
+     * PCOV, through `current`. Null when the Project has no PHP version the folder holds, or its build has no CLI-only extension
+     * (docs/reference/php-runtime.md#pcov-in-the-cli-only).
+     */
+    private function phpCliIni(Project $project): ?string
+    {
+        $build = $this->phpBuild($project);
+        if ($build === null || $build->cliExtensions === []) {
             return null;
         }
 
-        return InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin/php';
+        return implode('', array_map(static fn (string $name): string => 'extension='.InstanceHostIntent::RuntimeFolder.'/current/php/'
+            .$build->version."/modules/{$name}.so\n", $build->cliExtensions));
+    }
+
+    /** The Project's static PHP build, or null when the Project has no PHP version or the runtime folder does not hold it yet. */
+    private function phpBuild(Project $project): ?StaticPhpBuild
+    {
+        $version = $project->php_version;
+        $build = is_string($version) ? ($this->folders()->php[$version] ?? null) : null;
+
+        return $build?->artifact === null ? null : $build;
     }
 
     /**

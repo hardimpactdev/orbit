@@ -287,7 +287,9 @@ The container's `/etc/orbit/frankenphp.Caddyfile` trusts only the Node's bridge 
 
 The `vp-dev` preset sets its development origin from the HTTPS Route, including `/__orbit/vite`, and HMR uses that origin. PHP's scheme translation preserves these development URLs; it changes no Vite upstream or WebSocket routing.
 
-The command line runs a real PHP CLI: a static `php` from the same static build as the Instance's FrankenPHP, with the same PHP version and extensions. `frankenphp php-cli` behind a `php` shim does not fit yet. It refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run `php -i` or PHP without a script. Orbit runs PHP 8.5. The [static PHP build](/reference/compute-drivers#static-php-build) defines the build and its extension list, and the runtime folder's check compares both binaries with it. The shim can replace the CLI binary once FrankenPHP accepts `-d` and Orbit runs PHP 8.6.
+The command line runs a real PHP CLI: a static `php` from the same static build as the Instance's FrankenPHP, with the same PHP version and extensions. The CLI also loads PCOV, from the same build, so Pest TIA and `pest --coverage` work in the container. The FrankenPHP server does not load PCOV: only the CLI SAPI reads [`php-cli.ini`](/reference/php-runtime#pcov-in-the-cli-only). `frankenphp php-cli` uses the CLI SAPI, so it loads PCOV too.
+
+`frankenphp php-cli` behind a `php` shim does not fit yet. It refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run `php -i` or PHP without a script. Orbit runs PHP 8.5. The [static PHP build](/reference/compute-drivers#static-php-build) defines the build and its extension list, and the runtime folder's check compares both binaries with it. The shim can replace the CLI binary once FrankenPHP accepts `-d` and Orbit runs PHP 8.6.
 
 ## Shared folders
 
@@ -296,6 +298,7 @@ The software that the app and the agents run lives once per Node, in two version
 | Path | Content | Access |
 | --- | --- | --- |
 | `/opt/orbit-runtime/<version>/php/<php-version>/bin` | `frankenphp` and `php` of one PHP version, from its [static PHP build](/reference/compute-drivers#static-php-build) once that is published and pinned | Everyone |
+| `/opt/orbit-runtime/<version>/php/<php-version>/modules` | `pcov.so` of the same build, which only the PHP CLI loads ([PCOV in the CLI only](/reference/php-runtime#pcov-in-the-cli-only)) | Everyone |
 | `/opt/orbit-runtime/<version>/bin` | `composer`, Node, npm, npx, Bun and `bunx`, Deno, `vp`, rg | Everyone |
 | `/opt/orbit-runtime/<version>/{lib,fonts}` | The [browser libraries and fonts](#browser-libraries-and-fonts) | Everyone |
 | `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |
@@ -2591,7 +2594,7 @@ The same step keeps three host programs that Swamp fixture units run: `zip`, `un
 
 It also keeps `btrfs-progs`. The inner Incus needs it for its btrfs pool on the [inner volume](#the-inner-volume). The nested image carries it since PR #3706, so a new nested-fleet default has it from its image. A default made from an older image, Instance 2454 among them, keeps that image and lacks it until this step installs it. [Convert a default](#convert-a-default) needs it inside the container before the inner pool can be made.
 
-The step sends `swamp/ansible/instance_shape_tools.py` into the outer container and runs it as root, with the workspace as its argument. The script loads the checkout's own `bin/swamp-shape-gate`. The gate names the tools from its three pin files: `/opt/orbit-shape-gate/venv-<digest>` from `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`, and `/opt/orbit-shape-gate/collections-<digest>` from `swamp/ansible/requirements.yml`. The gate also builds the venv. So the step, the gate and the proof runner always use the same names, and no version or naming rule exists twice.
+The step sends `swamp/ansible/instance_shape_tools.py` into the outer container and runs it as root, with the workspace as its argument. The script loads the checkout's own `bin/swamp-shape-gate`. The gate names the tools: `/opt/orbit-shape-gate/venv-<digest>` from `swamp/ansible/shape-gate-requirements.txt`, `swamp/ansible/requirements.txt` and the interpreter that builds the venv, by [the gate's venv rule](/reference/implementation-loop#run-the-swamp-shape-gate-before-you-push), and `/opt/orbit-shape-gate/collections-<digest>` from `swamp/ansible/requirements.yml`. The gate also builds the venv. So the step, the gate and the proof runner always use the same names, and no version or naming rule exists twice.
 
 | State in the default | What the step does | Result |
 | --- | --- | --- |
@@ -2609,7 +2612,7 @@ A build does five things:
 2. It builds the venv with the gate's own `tool_path`.
 3. It installs the collections into a `.partial` folder and renames it. Collections that are complete already stay.
 4. It writes the venv's `.complete`, the marker of ready tools.
-5. It removes the `venv-*` and `collections-*` folders of other pins.
+5. It removes the `venv-*` and `collections-*` folders of other pins or another interpreter.
 
 The build reaches three services: the Ubuntu mirror (apt, for the packages), the Python package index (pip) and Ansible Galaxy (`ansible-galaxy`). All three go through the Node's egress proxy: apt by its own setting in the image, pip and `ansible-galaxy` by `HTTPS_PROXY` from the Instance profile. The first build in a copy took about 30 s. The folders are mode 0755 and the files 0644, so `agent` reads them. The runner's own `ansible-galaxy collection install` then finds every collection and writes nothing.
 
@@ -2929,6 +2932,7 @@ Step 10 of ADR 0250 moves production Instances into containers on `app-prod` Nod
 
 - The `app-prod` role installs the container setup and the runtime folder, not PHP-FPM. It installs no agent folder.
 - A production container has only the user `orbit`: no T3, no agent and no model route.
+- A production container gets no `php-cli.ini`, so its PHP never loads PCOV ([ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov)).
 - FrankenPHP serves it once it has proved itself in development, by the criteria of the plan's [production gate](/solutions/development-container-runtime#production-gate).
 - Production containers never sleep. Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
 - Existing production checkouts are migrated, as development checkouts are.

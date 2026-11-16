@@ -5,6 +5,7 @@ declare(strict_types=1);
 // Frozen copies of InstanceHostIntent and InstanceContainer from origin/main 77f6bf5c22, before nested-fleet hosting. The identity
 // tests in NestedFleetHostingTest compare today's normal Node and normal Instance intents with these, byte for byte. Only the class
 // names changed, and Pint formatted the result. Do not edit: a change here weakens the proof that a normal Node and a normal Instance stay as they were.
+// One deliberate edit: the task container side lost its CI places (ADR 0260), so its demand counts task places only.
 
 namespace App\Domain\Instances;
 
@@ -101,7 +102,7 @@ final readonly class BaselineNormalInstanceHostIntent
         // Instance containers and the task containers of the same host take their isolated ID maps from root's one range.
         $taskHost = app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->task_vms;
         $taskContainers = $taskHost?->containers;
-        $taskIds = $taskContainers instanceof NodeTaskVmContainersData ? ($taskContainers->task_places + $taskContainers->ci_places + 1) * self::TaskPlaceIds : 0;
+        $taskIds = $taskContainers instanceof NodeTaskVmContainersData ? ($taskContainers->task_places + 1) * self::TaskPlaceIds : 0;
         $subnet = Ipv4Subnet::from($cidr);
         [$gateway, $last] = $subnet->usableRange();
 

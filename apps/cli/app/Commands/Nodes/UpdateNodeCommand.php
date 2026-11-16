@@ -32,11 +32,15 @@ final class UpdateNodeCommand extends NodeCommand
         {--lan-ip= : LAN IPv4 address; an empty value clears it}
         {--apps-path= : Apps folder; an empty value restores the default}
         {--task-vms= : Task VM host settings as a JSON object, or null to remove them}
+        {--ci-places= : CI places that runner jobs and proof copies share, from 0 to 64}
+        {--ci-proof-only : Keep the CI places for proof copies}
+        {--no-ci-proof-only : Let runner jobs use the CI places too}
+        {--no-ci : Clear the CI places}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Change the name, platform, LAN address, reboot hold, image refresh hold, apps folder, or task VM host settings of a Node.';
+    protected $description = 'Change the name, platform, LAN address, reboot hold, image refresh hold, apps folder, task VM host settings, or CI places of a Node.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -55,9 +59,16 @@ final class UpdateNodeCommand extends NodeCommand
         $imageRefreshHold = $holdImageRefresh ? true : ($clearImageRefreshHold ? false : null);
         $appsPath = $this->option('apps-path');
         $taskVms = $this->option('task-vms');
+        $ci = NodeSettingOptions::parseCi($this->option('ci-places'), (bool) $this->option('ci-proof-only'),
+            (bool) $this->option('no-ci-proof-only'), (bool) $this->option('no-ci'));
 
-        if (! is_string($name) && ! is_string($platform) && ! is_string($lanIp) && ! is_string($appsPath) && ! is_string($taskVms) && ! is_string($rebootHold) && $imageRefreshHold === null) {
-            return $this->renderGatewayFailure('node.option_required', 'Provide at least one of --name, --platform, --lan-ip, --reboot-hold, --image-refresh-hold, --no-image-refresh-hold, --apps-path, or --task-vms.');
+        if (! is_string($name) && ! is_string($platform) && ! is_string($lanIp) && ! is_string($appsPath) && ! is_string($taskVms) && ! is_string($rebootHold) && $imageRefreshHold === null
+            && ($ci['ok'] && ! $ci['provided'])) {
+            return $this->renderGatewayFailure('node.option_required', 'Provide at least one of --name, --platform, --lan-ip, --reboot-hold, --image-refresh-hold, --no-image-refresh-hold, --apps-path, --task-vms, --ci-places, --ci-proof-only, --no-ci-proof-only, or --no-ci.');
+        }
+
+        if ($ci['ok'] === false) {
+            return $this->renderGatewayFailure($ci['code'], $ci['message']);
         }
 
         if ($holdImageRefresh && $clearImageRefreshHold) {
@@ -127,6 +138,8 @@ final class UpdateNodeCommand extends NodeCommand
                 imageRefreshHold: $imageRefreshHold,
                 hasLanIp: is_string($lanIp),
                 lanIp: is_string($lanIp) && $lanIp !== '' ? $lanIp : null,
+                hasCi: $ci['provided'],
+                ci: $ci['value'],
             ),
             NodeUpdateResponse::class,
             ['Update Node', 'Updating Node', 'Node updated'],
