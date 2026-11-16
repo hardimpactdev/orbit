@@ -25,7 +25,7 @@ final readonly class TaskCopyWork
      */
     public function refusal(Task $group, TaskInstanceWorkspace $copy): ?string
     {
-        return self::committed($group, $this->read->read($copy->instance)['head']) ?? (self::latest($group)['empty'] ?? false ? 'work_empty' : null);
+        return self::committed($group, $this->read->read($copy->instance)['head_commit']) ?? (self::latest($group)['empty'] ?? false ? 'work_empty' : null);
     }
 
     /**
@@ -51,7 +51,7 @@ final readonly class TaskCopyWork
         $work = self::latest($group);
 
         return $work !== null && $work['approved'] === $approved && $work['approved_held'] === true && $work['paths']['count'] === 0
-            && $work['head'] === $this->read->read($copy->instance)['head'];
+            && $work['head'] === $this->read->read($copy->instance)['head_commit'];
     }
 
     /**

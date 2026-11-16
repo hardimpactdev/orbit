@@ -94,7 +94,9 @@ it('reads a clone of a default with local-only branches a stash and an untracked
     $baseline = workspaceRecord();
     expect($baseline['untracked'])->toBe(['notes.txt'])->and($baseline['stashes'])->toHaveCount(1)->and($baseline['heads'])->toHaveCount(3);
 
+    // `head` names the branch; `head_commit` is the commit a task copy's content read is held against.
     expect(workspaceState('instance-2', $baseline))->toBe(['state' => 'clean', 'reason' => null, 'baseline' => 'recorded', 'head' => 'main',
+        'head_commit' => trim(workspaceGit($this->folder.'/clone', 'rev-parse', 'HEAD')),
         'modified' => ['count' => 0, 'names' => []], 'untracked' => ['count' => 0, 'names' => []],
         'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => []], 'stashes' => ['count' => 0, 'names' => []]]);
 });

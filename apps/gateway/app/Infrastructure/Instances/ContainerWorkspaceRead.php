@@ -55,7 +55,7 @@ final readonly class ContainerWorkspaceRead
      *
      * @param  list<string>  $published
      * @return array{instance_id: int, state: string, reason: ?string, read_at: string, duration_ms: int, baseline: ?string,
-     *     head: ?string, uncommitted: ?int, unpushed: ?int, modified: ?array<string, mixed>, untracked: ?array<string, mixed>,
+     *     head: ?string, head_commit: ?string, uncommitted: ?int, unpushed: ?int, modified: ?array<string, mixed>, untracked: ?array<string, mixed>,
      *     commits: ?array<string, mixed>, stashes: ?array<string, mixed>}
      */
     public function read(Instance $instance, array $published = []): array
@@ -202,7 +202,7 @@ final readonly class ContainerWorkspaceRead
     /**
      * @param  array<string, mixed>|null  $answer
      * @return array{instance_id: int, state: string, reason: ?string, read_at: string, duration_ms: int, baseline: ?string,
-     *     head: ?string, uncommitted: ?int, unpushed: ?int, modified: ?array<string, mixed>, untracked: ?array<string, mixed>,
+     *     head: ?string, head_commit: ?string, uncommitted: ?int, unpushed: ?int, modified: ?array<string, mixed>, untracked: ?array<string, mixed>,
      *     commits: ?array<string, mixed>, stashes: ?array<string, mixed>}
      */
     private static function shape(int $instanceId, ?array $answer, int $milliseconds): array
@@ -220,7 +220,7 @@ final readonly class ContainerWorkspaceRead
 
             return ['instance_id' => $instanceId, 'state' => 'unknown',
                 'reason' => $state === 'unknown' && in_array($reason, self::Reasons, true) ? $reason : 'unreachable',
-                'read_at' => $at, 'duration_ms' => $milliseconds, 'baseline' => null, 'head' => null, 'uncommitted' => null,
+                'read_at' => $at, 'duration_ms' => $milliseconds, 'baseline' => null, 'head' => null, 'head_commit' => null, 'uncommitted' => null,
                 'unpushed' => null, 'modified' => null, 'untracked' => null, 'commits' => null, 'stashes' => null];
         }
         $uncommitted = $classes['modified']['count'] + $classes['untracked']['count'];
@@ -229,6 +229,7 @@ final readonly class ContainerWorkspaceRead
         return ['instance_id' => $instanceId, 'state' => $dirty ? 'dirty' : 'clean', 'reason' => null, 'read_at' => $at,
             'duration_ms' => $milliseconds, 'baseline' => $answer['baseline'],
             'head' => is_string($answer['head'] ?? null) ? $answer['head'] : null,
+            'head_commit' => is_string($answer['head_commit'] ?? null) && preg_match('/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/', $answer['head_commit']) === 1 ? $answer['head_commit'] : null,
             'uncommitted' => $uncommitted, 'unpushed' => $commits['count'],
             'modified' => $classes['modified'], 'untracked' => $classes['untracked'], 'commits' => $commits, 'stashes' => $classes['stashes']];
     }

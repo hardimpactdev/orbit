@@ -41,7 +41,7 @@ final readonly class TaskCopyEnd
         $count = static fn (mixed $class): ?int => is_array($class) && is_int($class['count'] ?? null) ? $class['count'] : null;
         // Committed work counts by content, not by commit id: when the copy's content read of this head finds every committed path on
         // the default branch, its local commits are published, as after a squash merge or a hand-carry.
-        $work = $read['state'] === 'unknown' ? null : (($read['unpushed'] ?? 0) > 0 ? TaskCopyWork::committed($group, $read['head']) : null);
+        $work = $read['state'] === 'unknown' ? null : (($read['unpushed'] ?? 0) > 0 ? TaskCopyWork::committed($group, $read['head_commit']) : null);
         $unpushed = $work === null && $read['state'] !== 'unknown' ? 0 : $read['unpushed'];
         $state = $read['state'] === 'dirty' && $unpushed + $read['uncommitted'] + ($count($read['stashes']) ?? 0) === 0 ? 'clean' : $read['state'];
 

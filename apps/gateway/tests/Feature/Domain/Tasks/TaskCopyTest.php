@@ -2351,8 +2351,9 @@ describe('a cancel or complete of a copy group whose work was carried to the def
     {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
+        // The reader names the branch as `head` and its commit as `head_commit`; the content read is of the commit.
         $head = str_repeat('d', 40);
-        test()->ssh->answer['head'] = $head;
+        test()->ssh->answer['head_commit'] = $head;
         if ($work !== null) {
             Operation::query()->create(['kind' => 'tasks.sync', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
                 'input' => ['copy' => ['approved' => $approved]], 'state' => [], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 0,
@@ -2402,7 +2403,7 @@ describe('a cancel or complete of a copy group whose work was carried to the def
     it('cancels a squash-merged copy without discard: its local commits are on the default branch by content', function (): void {
         [$group, $copy] = carriedCopy([]);
         // The read counts the copy's own commits and the check's empty handoff commit: origin lacks their ids.
-        $this->ssh->answer = [...$this->ssh->answer, 'state' => 'dirty', 'head' => str_repeat('d', 40),
+        $this->ssh->answer = [...$this->ssh->answer, 'state' => 'dirty',
             'commits' => ['count' => 2, 'branch_count' => 1, 'branches' => [['name' => 'task-'.$group->id, 'count' => 2]]]];
 
         $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
@@ -2414,7 +2415,7 @@ describe('a cancel or complete of a copy group whose work was carried to the def
 
     it('still refuses a copy whose committed work is on the default branch but which holds uncommitted work, or whose commits were not read', function (array $answer, ?array $work, array $details): void {
         [$group] = carriedCopy($work);
-        $this->ssh->answer = [...$this->ssh->answer, 'state' => 'dirty', 'head' => str_repeat('d', 40),
+        $this->ssh->answer = [...$this->ssh->answer, 'state' => 'dirty',
             'commits' => ['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'task-'.$group->id, 'count' => 1]]], ...$answer];
 
         try {

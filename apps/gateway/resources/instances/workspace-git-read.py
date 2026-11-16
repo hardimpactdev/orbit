@@ -201,7 +201,11 @@ def read(target, marker, default):
     modified = [text(entry) for entry in modified]
     untracked = [text(entry) for entry in untracked]
     dirty = modified or untracked or lost or stashes
-    print(json.dumps({"state": "dirty" if dirty else "clean", "reason": None, "baseline": kind, "head": head(target),
+    branch = head(target)
+    # The commit of the checked-out branch, from the heads already read: a task copy's content read is of one commit
+    # (docs/reference/tasks.md#published-work-of-a-copy). None on a detached HEAD.
+    print(json.dumps({"state": "dirty" if dirty else "clean", "reason": None, "baseline": kind, "head": branch,
+                      "head_commit": next((oid for name, oid in heads if name == branch), None),
                       "modified": listed(modified), "untracked": listed(untracked),
                       "commits": {"count": len(lost), "branch_count": len(branches), "branches": counted},
                       "stashes": listed(stashes)}))
