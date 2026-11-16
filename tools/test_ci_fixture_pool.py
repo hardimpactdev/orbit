@@ -79,5 +79,17 @@ class FixturePoolTest(unittest.TestCase):
             self.assertEqual(2, units.shard_workers(shard['units'], budget, fixtures))
 
 
+    def test_host_input_places_all_updates_units_without_capacity_failure(self):
+        budget, fixtures, defaults = units.configuration()
+        plan = units.plan(['swamp/ansible/tasks/instance-host.yml'], budget, fixtures, defaults)
+        file = 'swamp/tests/ansible_instance_host_updates_test.ts'
+        expected = {name for name, _ in units.units_for(fixtures[file], budget)}
+        self.assertEqual(4, len(expected))
+        self.assertEqual(expected, {name for name in units.planned_units(plan) if name.split('#')[0] == file})
+        self.assertNotIn('capacity', plan)
+        self.assertEqual([], units.unplaced_units(plan))
+        self.assertLessEqual(len(plan['shards']) + len(plan['self_hosted_shards']), budget['runner_shards'])
+
+
 if __name__ == '__main__':
     unittest.main()
