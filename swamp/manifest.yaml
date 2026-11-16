@@ -68,6 +68,7 @@ additionalFiles:
   - ansible/tasks/node-converge-tool-repository.yml
   - ansible/tasks/node-converge-network.yml
   - ansible/tasks/node-converge-hub.yml
+  - ansible/tasks/node-converge-hub-filter-absent.yml
   - ansible/tasks/node-converge-hub-prune.yml
   - ansible/tasks/node-add-hub-peers.yml
   - ansible/tasks/node-hub-lan-proof.yml
