@@ -634,6 +634,82 @@ def recorded_guest(run, payload):
         raise Infra('recorded Gateway support returned no JSON') from error
 
 
+def executor_guest(run, payload):
+    """The executor proof signer on the nested Gateway, as its managed user (tools/swamp-proof-guest/executor-order.php)."""
+    command = ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit',
+               'php', fleet_module.NODE_CHECKOUT + '/tools/swamp-proof-guest/executor-order.php']
+    done = run.fleet.sh('gateway', shlex.join(command), stdin_text=json.dumps(payload))
+    if done.returncode:
+        raise Infra(f'executor proof signer: exit {done.returncode}: {(done.stderr or done.stdout)[-500:]}')
+    try:
+        return json.loads(done.stdout)
+    except ValueError as error:
+        raise Infra('executor proof signer returned no JSON') from error
+
+
+def executor_key(run, args):
+    """Make the proof-only key on the nested Gateway and pin its public half there (docs/reference/executor.md#proof-key). A new pin
+    takes effect for the next Operation: the Gateway's config is cleared and Horizon restarted."""
+    key = executor_guest(run, {'mode': 'key'})
+    run.evidence_text('executor-proof-public-key.txt', key['public_key'] + '\n')
+    if key['changed']:
+        clear = ['runuser', '-u', 'orbit', '--', 'php', fleet_module.NODE_CHECKOUT + '/apps/gateway/artisan', 'config:clear']
+        for command in (shlex.join(clear), 'systemctl restart orbit-gateway-horizon.service'):
+            done = run.fleet.sh('gateway', command, timeout=120)
+            if done.returncode:
+                raise Infra(f'executor proof key: {command}: exit {done.returncode}: {(done.stderr or done.stdout)[-300:]}')
+    return []
+
+
+RELAY = '/usr/local/libexec/orbit-executor'
+# How each caller reaches the executor's socket on the Node. Only `relay` is an allowed caller from a shell: the observer is the other.
+EXECUTOR_CALLERS = {
+    'relay': f'sudo -n -u orbit-executor-relay {RELAY} relay',
+    'other_user': f'runuser -u nobody -- {RELAY} relay',
+    'root_outside_observer': f'{RELAY} relay',
+    'relay_other_program': ("runuser -u orbit-executor-relay -- python3 -c 'import socket, sys; s = socket.socket(socket.AF_UNIX); "
+                            's.connect("/run/orbit-executor.sock"); s.sendall(sys.stdin.buffer.read() + b"\\n"); s.shutdown(socket.SHUT_WR); '
+                            "sys.stdout.write(s.recv(65536).decode())'"),
+}
+
+
+def executor_order(run, args):
+    """Sign one proof.noop order for the Node and hand it to the executor as one caller. `expect` names the result line's fields, or
+    `refused_caller` with the executor's logged refusal code (an empty reply), or `connect: denied` for a user the socket's mode
+    refuses."""
+    node = nodes_of(run, 'executor_order', args['on'])[0]
+    node_id = run.fleet.nodes[node]['node_id']
+    payload = {'mode': 'order', 'node': node_id, 'operation': args['operation']}
+    if 'nonce' in args:
+        payload['nonce'] = run.names[args['nonce']]
+    signed = executor_guest(run, payload)
+    if 'save' in args:
+        run.names[args['save']] = signed['nonce']
+    caller = args.get('as', 'relay')
+    if caller not in EXECUTOR_CALLERS:
+        raise Infra(f'executor_order: unknown caller {caller}')
+    since = run.fleet.sh(node, 'date -u +%Y-%m-%dT%H:%M:%S').stdout.strip()
+    done = run.fleet.sh(node, EXECUTOR_CALLERS[caller], stdin_text=signed['order'])
+    run.evidence_text(f'executor-{caller}-{args["operation"]}.txt', done.stdout + done.stderr)
+    expect = args['expect']
+    if 'connect' in expect:
+        refused = done.returncode != 0 and 'ermission denied' in done.stderr
+        return [] if refused else [f'executor {node} {caller}: connect not denied: exit {done.returncode} {done.stderr[-200:]}']
+    if 'refused_caller' in expect:
+        failures = [] if done.stdout.strip() == '' else [f'executor {node} {caller}: a refused caller got a reply: {done.stdout[-200:]}']
+        log = run.fleet.sh(node, shlex.join(['journalctl', '-u', 'orbit-executor.service', '--since', since, '--no-pager', '-o', 'cat']))
+        if expect['refused_caller'] not in log.stdout:
+            failures.append(f'executor {node} {caller}: no {expect["refused_caller"]} in the executor log')
+        return failures
+    lines = [line for line in done.stdout.splitlines() if line.strip()]
+    if done.returncode or len(lines) != 2:
+        return [f'executor {node} {caller}: exit {done.returncode}, {len(lines)} lines: {(done.stdout + done.stderr)[-300:]}']
+    accepted, result = (json.loads(line) for line in lines)
+    failures = [] if accepted == {'status': 'accepted'} else [f'executor {node}: first line {accepted}']
+    failures += [f'executor {node} {key}: {result.get(key)!r}, expected {value!r}' for key, value in expect.items() if result.get(key) != value]
+    return failures
+
+
 def node_fixture(run, args):
     if args['kind'] == 'retained' and not all(key in args for key in ('consumer', 'serving')):
         raise Infra('a retained Node fixture needs consumer and serving Nodes')
@@ -837,4 +913,5 @@ def unbuilt(name):
 FUNCTIONS = {name: unbuilt(name) for name in spec.STEPS}
 FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6_addresses, 'listener': listener, 'ufw_rule': ufw_rule, 'probe': probe, 'cli': cli, 'ufw': ufw, 'record': record, 'doctor': doctor,
                   'service': service, 'package': package, 'ansible_changes': ansible_changes, 'unchanged': unchanged, 'ufw_delete': ufw_delete, 'agent_report': agent_report, 'node_down': node_down,
-                  'node_access_remove': node_access_remove, 'node_fixture': node_fixture, 'recorded_request': recorded_request})
+                  'node_access_remove': node_access_remove, 'node_fixture': node_fixture, 'recorded_request': recorded_request,
+                  'executor_key': executor_key, 'executor_order': executor_order})
