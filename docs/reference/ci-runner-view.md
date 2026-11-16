@@ -1,6 +1,15 @@
 ---
 title: "CI runner view"
 description: "What the web app's runner view shows about each CI Node and runner, where each value comes from, how fresh it is, and the read endpoint GET /api/v1/ci/runners behind it."
+covers:
+  - apps/gateway/app/Actions/Ci/ShowCiRunnersAction.php
+  - apps/gateway/app/Data/Ci
+  - apps/gateway/app/Http/Controllers/Api/CiRunnersController.php
+  - apps/gateway/routes/api/ci.php
+  - apps/gateway/app/Infrastructure/GitHub/GitHubActionsJobs.php
+  - apps/gateway/app/Infrastructure/Metrics/PrometheusCiRunnerStates.php
+  - apps/gateway/app/Domain/Nodes/CiRunnerStateFiles.php
+  - apps/gateway/resources/ci-runner/state.py
 ---
 
 # CI runner view
@@ -32,7 +41,9 @@ The view joins four sources. Each has its own age, and the response gives the ob
 
 A runner's name is its container name in the Incus project `orbit-ci`. `setup.sh` registers the runner with the same name, so a job's `runner_name` matches it.
 
-The repositories are the same set that the [fleet reboot](/reference/gateway-recovery#ci-jobs-lost-at-the-freeze) reads: each repository of a Project read through the GitHub App, when the App is installed on it. For each repository, the Gateway lists the workflow runs created in the last 48 hours, at most 5 pages of 100, and the latest attempt's jobs of each run. It leaves out skipped runs and every job that did not ask for a `self-hosted` runner. The jobs of a completed run do not change, so the Gateway keeps them until they leave the window and reads again only the runs that have not completed. One answer reads job lists for at most 20 seconds, newest runs first. When that time runs out, the repository is marked `truncated`, and the next answer goes on from the runs that the Gateway kept.
+The repositories are the same set that the [fleet reboot](/reference/gateway-recovery#ci-jobs-lost-at-the-freeze) reads: each repository of a Project read through the GitHub App, when the App is installed on it. For each repository, the Gateway lists the workflow runs created in the last 48 hours, at most 5 pages of 100, and the latest attempt's jobs of each run. It leaves out skipped runs and every job that did not ask for a `self-hosted` runner.
+
+The jobs of a completed run do not change, so the Gateway keeps them until they leave the window and reads again only the runs that have not completed. One answer reads job lists for at most 20 seconds, newest runs first. When that time runs out, the repository is marked `truncated`, and the next answer goes on from the runs that the Gateway kept.
 
 ## What the view never does
 
@@ -61,9 +72,11 @@ A source that cannot answer does not fail the read. The response marks that part
 | `generated_at` | When the Gateway built the response. |
 | `window_hours` | The job window, `48`. |
 | `nodes` | One entry for each CI Node, ordered by name. See below. |
-| `repositories` | One entry for each repository read: `repository` as `owner/name`, `error_code`, and `truncated`. `error_code` is null when the read succeeded. `truncated` is true when the Gateway did not read every run of the window: the repository had more runs than the Gateway reads, or the answer ran out of time to read their jobs. |
+| `repositories` | One entry for each repository read: `repository` as `owner/name`, `error_code`, and `truncated`. See below the table. |
 | `github_error_code` | Null, or the reason that no repository was read. |
 | `jobs` | Every job of the window that asked for a self-hosted runner, newest first. See below. |
+
+In `repositories`, `error_code` is null when the read succeeded. `truncated` is true when the Gateway did not read every run of the window: the repository had more runs than the Gateway reads, or the answer ran out of time to read their jobs.
 
 Each entry of `nodes`:
 
