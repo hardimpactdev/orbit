@@ -327,7 +327,7 @@ The program prints one line of evidence. It names paths, line numbers and secret
 | Private keys | A `-----BEGIN … PRIVATE KEY-----` block with 100 or more base64 characters. A short test stub passes |
 | Same objects | The worker's content check refuses unless its object digest equals the copy check's |
 
-A plain copy has no outer or inner secrets, so it checks only for private keys. The check does not judge workflow changes: a copy's remote branches show the last main it synced, not the default branch head on GitHub. [The base of a copy publish](#the-base-of-a-copy-publish) judges them from the merge base with that head.
+A plain copy has no outer or inner secrets, so it checks only for private keys. The check does not judge workflow changes: a copy's remote branches show the main that its last sync or [handoff check](#the-handoff-check-merges-main-first) brought in, not the default branch head on GitHub at publish. [The base of a copy publish](#the-base-of-a-copy-publish) judges them from the merge base with that head.
 
 A secret refuses with `tasks.publish_secret_value`. The publish result lists the items in `refused`: `path:line secret-name`. `refused_more` counts the rest. An error refuses with `tasks.publish_secret_unchecked`. So does a nested-fleet copy that shows no inner machine. In each case nothing is pushed. A hit in a file name names the folder that holds it, and a path that holds a value is never printed.
 
@@ -361,6 +361,8 @@ These fields join the result. With `--title` and `--body`, the pull request body
 
 The body stays within its 65,536-character limit: when the path list does not fit, the section names only their count, and when the section does not fit at all, the body has none; the result states the base either way.
 
+A copy's handoff check already [merged the head it judged against](#the-handoff-check-merges-main-first). So when the default branch did not move since that check, the publish reads `behind_by` 0 and pushes the checked merge commit itself. A conflict that a busy main brings shows up at the check, before review, not at publish.
+
 A task VM publish states no base. A run that started on the workflow before this step has none of the fields and no `## Base` section.
 
 The base read also judges workflow changes. It lists the copy's own: the paths under `.github/workflows/` that the checked commit changed since the merge base, `git diff --name-only <base> <commit>`, which is `git diff <default>...<commit>`. A commit that the default branch already holds is never a change of the copy, whether [`task:sync`](#bring-main-into-a-copy) brought it, even from a main newer than the last release, or it was carried in by hand. A workflow change of the copy that a later commit undoes is no change either. A merge that keeps the copy's own version of a workflow that the default branch changed is a change of the copy.
@@ -379,6 +381,8 @@ When the own list is empty, the trees under `.github/workflows/` of the fetched 
 - its author and committer are `Orbit <orbit@users.noreply.github.com>`.
 
 The push sends that merge instead of the checked commit, so the branch's workflows equal the default branch's. `merged_default` names the head. The publication record keeps `commit`, the checked commit. A copy whose workflows already equal the default branch's pushes the checked commit itself, as before.
+
+The handoff check merges the head of its time first, so this merge stays only for a default branch that moved after the check.
 
 ###### A republish
 
@@ -997,6 +1001,21 @@ The source is the Project's repository, for every Project. When that is Orbit's 
 | Container | Refused with `tasks.instance_not_running` when the copy's container does not run |
 | Credential | Minted per run; it is the environment of the Node's one fetch and is never written, so a killed run leaves none |
 | Workflow | The Gateway starts `operation-task-sync-copy`. `operation-task-sync` served the removed task VMs; the Gateway starts it no more. Swamp resolves every step's inputs at run start, so each reads only its intent's keys |
+
+#### The handoff check merges main first
+
+The handoff check of a copy judges the tree that publish will push. Its run first runs the same `base` phase as the sync, through the same child workflow, `task-copy-base`. It has its own read token under the same rules. The Gateway mints it as the run starts, and the Node's one fetch reads it as a Git header through stdin. The copy never holds it. Then, as `agent` in the copy, the run merges with `git merge-tree --write-tree HEAD refs/remotes/origin/<default branch>`:
+
+| Case | What happens |
+| --- | --- |
+| HEAD holds the head | Nothing. `merged_default` is null |
+| Clean merge | Any uncommitted work is committed first, so nothing is lost. Then one merge commit, described below. The check runs on that tree |
+| Conflict | The check fails at once with `tasks.check_conflict` and the conflicting paths. The long parts do not run, and the workspace is left exactly as it was |
+| Base unavailable | A failed base phase does not block the check. It runs on the tree as it is, and the result says `base: unavailable` |
+
+The merge commit has the parents HEAD, then the head. Its message is `Merge main <full sha> before the check`, and its author and committer are `Orbit <orbit@users.noreply.github.com>`, as at publish. A conflict lists at most 100 paths in at most 3,000 bytes in `conflicting_paths`, and `conflicting_more` counts the rest. The implementer merges by hand in the next turn, while the subtask is still open. A base fails when the mirror or GitHub is down; `base_reason` then names the reason.
+
+The result names `default_commit`, the head the check judged against, and `merged_default`, the head it merged or null, so the driver and the reviewer see the base. `base` is `current` when the head was brought in. Only the copy's own workflow changes refuse at publish: the default branch's workflow changes that this merge brings in are never the copy's ([The base of a copy publish](#the-base-of-a-copy-publish)). A baseline check and a task VM check bring in no base.
 
 A task VM keeps its own path, which fetches both branches on 209 and copies one bundle over SSH. Task VMs get no new work.
 

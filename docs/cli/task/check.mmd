@@ -39,6 +39,22 @@ sequenceDiagram
   %%> - the intent, and vault key names for the CI tokens when the Project requires handoff CI
   GW-->>CLI: 202 Accepted<br/>task #5170
   opt recorded container Instance workspace
+    opt handoff
+      SW->>I: Bring in the base<br/>task-copy-base · base
+      %%> What it does:
+      %%> - the same `base` workspace phase that `task:sync` runs ([Bring main into a copy](/reference/tasks#bring-main-into-a-copy)): the Node fetches the current default branch head into the copy's mirror and the copy gets it in `refs/remotes/origin/<default>`
+      %%> - the read token follows the sync's rules: the Gateway mints it as the run starts, the Node's one fetch reads it as a Git header through stdin, and it never reaches the copy
+      %%> - a failed base (mirror or GitHub down) does not block the check: the check runs on the tree as it is, and the result says `base: unavailable` with the reason
+      %%> - its scratch cleanup runs after it, whatever it did
+      SW->>I: Merge the base
+      %%> What it does:
+      %%> - as `agent` in the copy: `git merge-tree --write-tree HEAD refs/remotes/origin/<default>`
+      %%> - HEAD already holds the head: nothing; `merged_default` is null
+      %%> - a clean merge: any uncommitted work is committed first, then one merge commit, parents HEAD then the head, message `Merge main <full sha> before the check`, author and committer `Orbit <orbit@users.noreply.github.com>`
+      %%> - only the copy's own workflow changes refuse at publish (`git diff <merge-base>...<commit>`): the default branch's workflow changes that the merge brings in are never the copy's
+      %%> Refuses:
+      %%> - a conflict: `tasks.check_conflict` with the conflicting paths, at most 100 in at most 3,000 bytes and `conflicting_more`, before the long parts run; the workspace is left exactly as it was
+    end
     SW->>I: Check in the Instance
     %%> What it does:
     %%> - one child workflow runs the whole check through Ansible phases on the Instance Node; every repository command runs in the container as `agent` in `/srv/workspace`, with the agent's HOME and login shell
@@ -118,6 +134,8 @@ sequenceDiagram
   end
   alt every step passes
     SW-->>GW: Run succeeded<br/>outcome · commit · ci
+    %%> Result:
+    %%> - a copy's handoff check also names `default_commit`, the default head it judged against, `merged_default`, the head it merged or null, and `base`: `current`, or `unavailable` with `base_reason`
     Note over GW: Record check 17<br/>passed, failed or changed
     %%> Rules:
     %%> - a check preserves its admitted subtask base as the start commit; the candidate HEAD is never a new base for a retry
