@@ -302,7 +302,7 @@ final readonly class InstanceContainer
             // Only a runtime that records an inner volume names it; absent, every step keeps the directory pool of Instance 2454.
             ...(NestedFleetInnerVolume::intent($runtime) === null ? [] : ['inner_volume' => NestedFleetInnerVolume::intent($runtime)]),
             // The proof default's seed that a CI Node holds: its retake keeps it as the base of the next seed copy.
-            ...(($base = app(ProofSeeds::class)->base($runtime)) === null ? [] : ['seed_base' => $base]),
+            ...(($base = app(ProofSeeds::class)->base($instance, $runtime)) === null ? [] : ['seed_base' => $base]),
             'acl' => $runtime->container_name, 'nic_acl' => InstanceHostIntent::NicAcl,
             'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
             'bridge_admitted_at' => $admittedAt,

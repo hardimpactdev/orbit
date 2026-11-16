@@ -3220,47 +3220,82 @@ Deno.test({
   },
 });
 
+/** A rename keeps a snapshot's place in the stub's list; the names are what count. */
+const seedPairNames = (f: ReturnType<typeof fixture>) => ({container: [...seedPair(f).container].sort(), volume: [...seedPair(f).volume].sort()});
+
+/** A proof default with an inner volume and its first seed, as the base cases start from; returns the seed's commit. */
+function seededProofDefault(f: ReturnType<typeof fixture>): string {
+  innerVolumeCreate(f);
+  assert(f.run("container").ok);
+  const seeded = f.phases(["workspace", "processes", "seed"]);
+  assert(seeded.ok, seeded.output);
+  return git(f.source, "rev-parse", "HEAD");
+}
+
+/** Adds a base pair that an earlier retake kept, straight into the stub's state. */
+function keptBase(f: ReturnType<typeof fixture>, commit: string) {
+  const state = f.state();
+  state.containers["instance-7"].snapshots.push(`base-${commit}`);
+  state.volumes["inner-7"].snapshots.push(`base-${commit}`);
+  Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+}
+
 Deno.test({
-  name: "the proof default keeps the seed that a CI Node holds as its one base pair while the Gateway names it, and drops it after",
+  name: "the proof default's retake keeps the seed that a CI Node holds as its one base pair, and a second retake at that commit keeps it",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
-    // A rename keeps a snapshot's place in the stub's list; the names are what count.
-    const pairNames = (g: typeof f) => ({container: [...seedPair(g).container].sort(), volume: [...seedPair(g).volume].sort()});
     try {
-      innerVolumeCreate(f);
-      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok, phase);
-      const first = git(f.source, "rev-parse", "HEAD");
-      const container = f.container as unknown as Record<string, unknown>;
+      const first = seededProofDefault(f);
       // docs/reference/development-containers.md#a-retake-keeps-the-seed: a CI Node holds the first seed, so the Gateway names it.
-      container.seed_base = first;
+      (f.container as unknown as Record<string, unknown>).seed_base = first;
       f.intent.deployment = { variant: "container", steps: [] };
       f.write();
       // A retake at the same commit renames the old pair to `base-` instead of deleting it; a rename needs no free ID range.
-      for (const phase of ["start", "seed"]) assert(f.run(phase).ok, phase);
-      assertEquals(pairNames(f), {container: [`base-${first}`, `seed-${first}`], volume: [`base-${first}`, `seed-${first}`]});
+      assert(f.phases(["start", "seed"]).ok);
+      assertEquals(seedPairNames(f), {container: [`base-${first}`, `seed-${first}`], volume: [`base-${first}`, `seed-${first}`]});
       const calls = incusCalls(f).map((call) => call.join(" "));
       assert(!calls.some((call) => call.includes(" delete ") && call.includes(`seed-${first}`)), "the held seed is not deleted");
       // A second retake at the same commit, as the second seed phase of a fleet deployment: the kept base stays, the newer seed goes.
-      for (const phase of ["start", "seed"]) assert(f.run(phase).ok, phase);
-      assertEquals(pairNames(f), {container: [`base-${first}`, `seed-${first}`], volume: [`base-${first}`, `seed-${first}`]});
-      // A new commit while the CI Node still holds that seed: the base stays, the older seed goes, one base only.
+      assert(f.phases(["start", "seed"]).ok);
+      assertEquals(seedPairNames(f), {container: [`base-${first}`, `seed-${first}`], volume: [`base-${first}`, `seed-${first}`]});
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "the proof default's retake at a new commit keeps the seed that a CI Node holds as the base and drops every other base pair",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const first = seededProofDefault(f);
+      // An older seed that an earlier retake kept; the CI Node now holds the first seed, so the Gateway names that one.
+      const older = "0".repeat(40);
+      keptBase(f, older);
+      (f.container as unknown as Record<string, unknown>).seed_base = first;
+      f.intent.deployment = { variant: "container", steps: [] };
+      f.write();
       git(f.source, "commit", "--quiet", "--allow-empty", "-m", "second");
       const second = git(f.source, "rev-parse", "HEAD");
-      for (const phase of ["start", "fetch", "checkout", "seed"]) assert(f.run(phase).ok, phase);
-      assertEquals(pairNames(f), {container: [`base-${first}`, `seed-${second}`], volume: [`base-${first}`, `seed-${second}`]});
-      // The CI Node now holds the second seed: the next retake keeps that one as the base and drops the older base.
-      container.seed_base = second;
-      f.write();
-      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "third");
-      const third = git(f.source, "rev-parse", "HEAD");
-      for (const phase of ["start", "fetch", "checkout", "seed"]) assert(f.run(phase).ok, phase);
-      assertEquals(pairNames(f), {container: [`base-${second}`, `seed-${third}`], volume: [`base-${second}`, `seed-${third}`]});
+      for (const phases of [["start", "fetch"], ["checkout"], ["seed"]]) assert(f.phases(phases).ok, phases.join(","));
+      // One base only: the held seed becomes it, and the older base goes.
+      assertEquals(seedPairNames(f), {container: [`base-${first}`, `seed-${second}`], volume: [`base-${first}`, `seed-${second}`]});
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "the proof default's seed step drops the kept base pair once the Gateway names no base",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const first = seededProofDefault(f);
+      keptBase(f, first);
       // No CI Node needs a base: the Gateway names none, and the next seed step drops it.
-      delete container.seed_base;
-      f.write();
-      for (const phase of ["start", "seed"]) assert(f.run(phase).ok, phase);
-      assertEquals(pairNames(f), {container: [`seed-${third}`], volume: [`seed-${third}`]});
+      assert(f.run("seed").ok);
+      assertEquals(seedPairNames(f), {container: [`seed-${first}`], volume: [`seed-${first}`]});
     } finally { f.cleanup(); }
   },
 });

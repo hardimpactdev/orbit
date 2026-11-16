@@ -137,10 +137,15 @@ final readonly class ProofSeeds
      * The seed that the default keeps as `base-<commit>` at its next retake, for the next seed copy to start from
      * (docs/reference/development-containers.md#a-retake-keeps-the-seed): the default's current seed while a Node that a copy would target
      * records it, so it lacks only the new one. Null for any other runtime, or when no such Node holds it; then the retake keeps no base.
-     * Only one base: a Node with an older seed gets the whole pair.
+     * Only one base: a Node with an older seed gets the whole pair. Every container intent asks, so the loaded Instance and runtime first
+     * rule out any other container without a query.
      */
-    public function base(InstanceRuntime $runtime): ?string
+    public function base(Instance $instance, InstanceRuntime $runtime): ?string
     {
+        if ($instance->project_id !== $this->settings->projectId() || $instance->name !== DefaultInstanceName::Name
+            || $runtime->incus_project !== InstancePlacement::NestedProject || $runtime->seed_commit === null) {
+            return null;
+        }
         $source = $this->source();
 
         return $source === null || $source->id !== $runtime->id || $this->ready($source, holding: true) === [] ? null : $source->seed_commit;
