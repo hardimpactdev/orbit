@@ -207,6 +207,7 @@ Deno.test("a destroy withdrawal equals the Route deltas it replaces, and keeps u
         account: JSON.stringify({
             user: "orbit",
             group: "1000",
+            group_name: null,
             home: "/home/orbit",
         }),
     }).files;

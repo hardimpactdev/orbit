@@ -123,15 +123,36 @@ export function phpSections(text: string) {
     }
     return { prefix, groups };
 }
-export function mergePhp(before: string, after: string, current: string) {
+/** `alternatives` are before and after in another form FPM reads the same. They count only for the scopes the two change, so a
+ * scope that stays keeps its bytes. */
+export function mergePhp(
+    before: string,
+    after: string,
+    current: string,
+    alternatives: string[] = [],
+) {
     const original = phpSections(before),
         desired = phpSections(after),
         observed = phpSections(current);
+    const changed = new Set(
+        [...original.groups.keys(), ...desired.groups.keys()].filter((key) =>
+            original.groups.get(key) !== desired.groups.get(key)
+        ),
+    );
+    const forms = alternatives.map((state) =>
+        new Map([
+            ...[...desired.groups].filter(([key]) => !changed.has(key)),
+            ...[...phpSections(state).groups].filter(([key]) =>
+                changed.has(key)
+            ),
+        ])
+    );
     const groups = mergeSections(
         original.groups,
         desired.groups,
         observed.groups,
         "php",
+        forms,
     );
     return observed.groups.size && !groups.size ? "" : observed.prefix +
         [...groups.keys()].sort().map((key) => groups.get(key)).join("");

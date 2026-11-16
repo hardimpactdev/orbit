@@ -36,8 +36,9 @@ const plan = (row: (typeof recorded)[number]) =>
         cleanup: row.cleanup,
     });
 
-/** The composition that ran in Swamp before this change, step for step, from the same TypeScript merges. */
-function reference(value: Plan, live: Live) {
+/** The composition that ran in Swamp before this change, step for step, from the same TypeScript merges. `group` is the name of the
+ * account's primary group, as composePhp takes it. */
+function reference(value: Plan, live: Live, group: string | null = null) {
     let caddy: string | null = null;
     if (value.caddy) {
         caddy = live.caddy;
@@ -47,11 +48,13 @@ function reference(value: Plan, live: Live) {
     }
     const pools: Record<string, string> = {};
     if (value.php) {
-        const resolve = (text: string) =>
-            text.replaceAll("__ORBIT_NODE_GROUP__", String(ACCOUNT.pw_gid)).replaceAll("/__ORBIT_NODE_HOME__", ACCOUNT.pw_dir);
+        const resolve = (text: string, name = String(ACCOUNT.pw_gid)) =>
+            text.replaceAll("__ORBIT_NODE_GROUP__", name).replaceAll("/__ORBIT_NODE_HOME__", ACCOUNT.pw_dir);
         for (const version of value.php.versions) {
-            const previous = resolve(value.php.before[version] ?? ""), desired = resolve(value.php.after[version] ?? "");
-            if (previous !== desired) pools[version] = mergePhp(previous, desired, live.pools[version] ?? "");
+            const states = [value.php.before[version] ?? "", value.php.after[version] ?? ""];
+            const [previous, desired] = states.map((text) => resolve(text));
+            const named = group ? states.map((text) => resolve(text, group)) : [];
+            if (previous !== desired) pools[version] = mergePhp(previous, desired, live.pools[version] ?? "", named);
         }
     }
     let dns: Dns | null = null;
@@ -63,13 +66,13 @@ function reference(value: Plan, live: Live) {
 }
 
 /** The Python merge and its byte-compare check, on the same plan and live files. */
-async function node(value: Plan, live: Live) {
+async function node(value: Plan, live: Live, group: string | null = null) {
     const script = `
 import importlib.util, json, sys, types
 spec = importlib.util.spec_from_file_location("w", sys.argv[1]); w = importlib.util.module_from_spec(spec); spec.loader.exec_module(w)
 data = json.load(sys.stdin); account = types.SimpleNamespace(**data["account"])
 try:
-    out = w.compose(data["plan"], data["live"], account); w.check_untouched(data["plan"], data["live"], out, account)
+    out = w.compose(data["plan"], data["live"], account, data["group"]); w.check_untouched(data["plan"], data["live"], out, account)
 except w.WithdrawFailure as error:
     out = {"error": error.code}
 print(json.dumps(out))`;
@@ -80,7 +83,7 @@ print(json.dumps(out))`;
         stderr: "piped",
     }).spawn();
     const writer = child.stdin.getWriter();
-    await writer.write(new TextEncoder().encode(JSON.stringify({ plan: value, live, account: ACCOUNT })));
+    await writer.write(new TextEncoder().encode(JSON.stringify({ plan: value, live, account: ACCOUNT, group })));
     await writer.close();
     const done = await child.output();
     assertEquals(new TextDecoder().decode(done.stderr), "");
@@ -149,6 +152,41 @@ Deno.test("a pool withdrawal merges as the Swamp composition did and keeps the o
     assertEquals(await node(value, live), expected);
 });
 
+Deno.test("a scope written with the group name withdraws as the Swamp composition does, and a scope that stays keeps its bytes", async () => {
+    const scope = (id: number) => `[orbit-app-instance-${id}]\nuser = orbit\ngroup = __ORBIT_NODE_GROUP__\nchdir = /__ORBIT_NODE_HOME__/i${id}\n`;
+    const as = (text: string, group: string) => text.replaceAll("__ORBIT_NODE_GROUP__", group).replaceAll("/__ORBIT_NODE_HOME__", "/home/orbit");
+    const value = await plan({
+        operation_id: 0,
+        user: "orbit",
+        php: {
+            before: { account_user: "orbit", configurations: { "8.4": scope(7) + scope(9) } },
+            after: { account_user: "orbit", configurations: { "8.4": scope(9) } },
+        },
+        caddy: {},
+        dns: {},
+        cleanup: [],
+    });
+    const cases: [string, string | null, string | { error: string }][] = [
+        [as(scope(7) + scope(9), "orbit"), "orbit", as(scope(9), "orbit")],
+        [as(scope(7), "1000") + as(scope(9), "orbit"), "orbit", as(scope(9), "orbit")],
+        [as(scope(7), "orbit") + as(scope(9), "orbit"), null, { error: "php.owned_revision_conflict" }],
+        [as(scope(7), "staff") + as(scope(9), "orbit"), "orbit", { error: "php.owned_revision_conflict" }],
+        [as(scope(7), "orbit").replace("user = orbit", "user = www-data"), "orbit", { error: "php.owned_revision_conflict" }],
+    ];
+    for (const [pool, group, result] of cases) {
+        const live = { caddy: "", pools: { "8.4": "; Managed by Orbit\n" + pool }, dns: null };
+        let expected: unknown;
+        try {
+            expected = reference(value, live, group);
+        } catch (error) {
+            expected = { error: (error as Error).message };
+        }
+        const want = typeof result === "string" ? { caddy: null, pools: { "8.4": "; Managed by Orbit\n" + result }, dns: null } : result;
+        assertEquals(expected, want, pool);
+        assertEquals(await node(value, live, group), want, pool);
+    }
+});
+
 /** A small seeded generator, so a failing case can be replayed. */
 function random(seed: number) {
     return () => {
@@ -166,7 +204,8 @@ Deno.test("the Node merge equals the Swamp merge on 300 random Caddy, PHP and DN
         `# orbit: app-dev ${key}\nhttps://${key}.test {\n    reverse_proxy 10.253.0.9:${variant}\n}\n`;
     const caddyState = (headerVariant: string, keys: string[]) =>
         header(headerVariant) + (keys.length ? "\n" + keys.map((key) => caddyBlock(key, pick(["8080", "9090"]))).join("\n") : "");
-    const scope = (id: number, variant: string) => `[orbit-app-instance-${id}]\nuser = orbit\nchdir = /__ORBIT_NODE_HOME__/i${id}\npm.max_children = ${variant}\n`;
+    const scope = (id: number, variant: string) =>
+        `[orbit-app-instance-${id}]\nuser = orbit\ngroup = __ORBIT_NODE_GROUP__\nchdir = /__ORBIT_NODE_HOME__/i${id}\npm.max_children = ${variant}\n`;
     const poolState = (ids: number[]) => ids.map((id) => scope(id, pick(["4", "5"]))).join("");
     const dnsState = (names: string[]) => ({
         records: "# Managed by Orbit.\n" + names.map((name) => `host-record=${name},${pick(["10.44.0.7", "10.44.0.8"])}`).join("\n") + "\n",
@@ -177,7 +216,7 @@ Deno.test("the Node merge equals the Swamp merge on 300 random Caddy, PHP and DN
             ...(next() < 0.3 ? { empty: [] } : {}),
         }) + "\n",
     });
-    const cases: { plan: Plan; live: Live }[] = [];
+    const cases: { plan: Plan; live: Live; group: string | null }[] = [];
     for (let i = 0; i < 300; i++) {
         const keys = ["a", "b", "c", "d"], ids = [1, 2, 3, 4], names = ["a.test", "b.test", "c.test"];
         const headers = ["metrics", next() < 0.9 ? "metrics" : "debug"];
@@ -197,9 +236,14 @@ Deno.test("the Node merge equals the Swamp merge on 300 random Caddy, PHP and DN
             },
             live: {
                 caddy: next() < 0.1 ? "" : caddyState(pick(headers), subset([...keys, "prod"])),
-                pools: next() < 0.1 ? {} : { "8.4": "; Managed by Orbit\n" + poolState(subset([...ids, 9])).replaceAll("/__ORBIT_NODE_HOME__", ACCOUNT.pw_dir) },
+                pools: next() < 0.1 ? {} : {
+                    "8.4": "; Managed by Orbit\n" + subset([...ids, 9]).map((id) =>
+                        scope(id, pick(["4", "5"])).replace("__ORBIT_NODE_GROUP__", pick([String(ACCOUNT.pw_gid), "orbit"]))
+                    ).join("").replaceAll("/__ORBIT_NODE_HOME__", ACCOUNT.pw_dir),
+                },
                 dns: dnsState(subset([...names, "shop.example"])),
             },
+            group: next() < 0.5 ? "orbit" : null,
         });
     }
     const outcome = (fn: () => unknown) => {
@@ -209,14 +253,14 @@ Deno.test("the Node merge equals the Swamp merge on 300 random Caddy, PHP and DN
             return { error: (error as Error).message };
         }
     };
-    const expected = cases.map(({ plan, live }) => outcome(() => reference(plan, live)));
+    const expected = cases.map(({ plan, live, group }) => outcome(() => reference(plan, live, group)));
     const script = `
 import importlib.util, json, sys, types
 spec = importlib.util.spec_from_file_location("w", sys.argv[1]); w = importlib.util.module_from_spec(spec); spec.loader.exec_module(w)
 data = json.load(sys.stdin); account = types.SimpleNamespace(**data["account"]); out = []
 for case in data["cases"]:
     try:
-        out.append(w.compose(case["plan"], case["live"], account))
+        out.append(w.compose(case["plan"], case["live"], account, case["group"]))
     except w.WithdrawFailure as error:
         out.append({"error": error.code})
 print(json.dumps(out))`;
