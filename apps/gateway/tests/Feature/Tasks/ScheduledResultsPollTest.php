@@ -175,3 +175,16 @@ it('goes back ten minutes on a first read', function (): void {
     $since = Carbon\Carbon::parse($socket->frames[0]['payload']['since']);
     expect((int) $since->diffInMinutes(now(), true))->toBe(10);
 });
+
+// Proof 25268 (release 2120): a nested Gateway restored from a snapshot kept a saved read hours old. The poll read back from it, queued a
+// projection for each run since then, and their failed reads used up serve's handshakes, so node:converge admissions failed.
+it('reads back one hour from now, never from an older saved read', function (): void {
+    Bus::fake();
+    $socket = pollSocket([[]]);
+    Cache::forever('swamp:scheduled-results:'.hash('sha256', 'swamp.test').':cursor', now()->subHours(7)->toIso8601String());
+
+    app(SwampScheduledResults::class)->poll();
+
+    $since = Carbon\Carbon::parse($socket->frames[0]['payload']['since']);
+    expect((int) $since->diffInMinutes(now(), true))->toBe(60);
+});
