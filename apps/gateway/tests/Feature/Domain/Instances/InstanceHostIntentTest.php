@@ -230,16 +230,17 @@ describe('the Instance image', function (): void {
     it('installs each published static PHP build as php/<version>, checked against its extensions, and no unpublished one', function (): void {
         $recipe = app(RecipeImageBuilds::class)->currentRecipe()->instances;
         $build = $recipe->php['8.5'];
-        $published = new StaticPhpBuild('8.5', $build->phpVersion, $build->frankenphp, $build->extensions, $build->build, $build->url,
+        $published = new StaticPhpBuild('8.5', $build->phpVersion, $build->frankenphp, $build->extensions, $build->cliExtensions, $build->build, $build->url,
             new ArtifactPin($build->url, 'sha256', str_repeat('d', 64), $build->phpVersion));
-        $pending = new StaticPhpBuild('8.5', $build->phpVersion, $build->frankenphp, $build->extensions, $build->build, $build->url, null);
+        $pending = new StaticPhpBuild('8.5', $build->phpVersion, $build->frankenphp, $build->extensions, $build->cliExtensions, $build->build, $build->url, null);
         $part = static fn (StaticPhpBuild $php): array => array_values(array_filter(
             InstanceFolderPlan::for(new InstanceFolders($recipe->runtime, $recipe->agent, ['8.5' => $php], $recipe->vitePlus))['runtime']['parts'],
             static fn (array $part): bool => str_starts_with($part['name'], 'php/'),
         ));
 
         expect($part($published))->toBe([['name' => 'php/8.5', 'version' => $build->phpVersion, 'url' => $build->url, 'archive' => 'tar',
-            'sha256' => str_repeat('d', 64), 'bin' => [], 'static_php' => ['php_version' => $build->phpVersion, 'extensions' => $build->extensions]]])
+            'sha256' => str_repeat('d', 64), 'bin' => [], 'static_php' => ['php_version' => $build->phpVersion, 'extensions' => $build->extensions,
+                'cli_extensions' => ['pcov']]]])
             ->and($part($pending))->toBe([]);
     });
 
