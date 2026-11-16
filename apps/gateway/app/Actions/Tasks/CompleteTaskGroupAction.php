@@ -9,6 +9,7 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskCopyEnd;
 use App\Domain\Tasks\TaskCopyWork;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskFinalReview;
@@ -32,11 +33,12 @@ final readonly class CompleteTaskGroupAction
         private TaskExecutionLock $execution,
         private TaskFinalReview $review,
         private TaskCopyWork $work,
+        private TaskCopyEnd $end,
     ) {}
 
     /**
      * Completes a settling group, or a running/reviewing group whose watched PR ended or whose task copy's work is already on the
-     * default branch (a hand-carry), and removes its workspace.
+     * default branch (a hand-carry), and removes its workspace. A task copy that holds work that is not published refuses it.
      *
      * A manual complete still ends the group when removal fails, keeps the Instance, and reports the failure
      * on the completed group. Merge cleanup passes `$finishWhenRemovalFails` false so a failed removal leaves
@@ -65,6 +67,7 @@ final readonly class CompleteTaskGroupAction
                 [$ended, $carried] = [null, true];
             }
             $this->review->assertOnOrigin($group);
+            $this->assertCopyDiscardable($group);
             if ($ended !== null) {
                 $this->authorizeEndedPullRequest($group, ...$ended);
             }
@@ -72,6 +75,9 @@ final readonly class CompleteTaskGroupAction
             throw $this->notReady('status');
         } else {
             $this->review->assertOnOrigin($group);
+            if ($group->status !== TaskGroupStatus::Completed) {
+                $this->assertCopyDiscardable($group);
+            }
         }
         app(TaskOperations::class)->cancelOpen($group);
 
@@ -165,6 +171,19 @@ final readonly class CompleteTaskGroupAction
         $reason = $this->work->refusal($group, $copy);
         if ($reason !== null) {
             throw $this->notReady($reason);
+        }
+    }
+
+    /**
+     * The copy's destroy takes what it holds, so a copy that holds uncommitted, untracked, stashed or other-branch work, or that cannot
+     * be read, refuses the completion before it changes anything, as a cancel without discard does (TaskCopyEnd). A completed group's
+     * retry reads nothing: the completion that ended it read the copy.
+     */
+    private function assertCopyDiscardable(Task $group): void
+    {
+        $copy = TaskInstanceWorkspace::forGroup($group);
+        if ($copy !== null) {
+            TaskCopyEnd::assertDiscardable($this->end->workspace($group, $copy->instance), discard: false);
         }
     }
 
