@@ -473,7 +473,7 @@ it('bounds the roles phase of an Instance fleet Node\'s app-dev converge at 1800
     }
 });
 
-it('sends the recorded phase digests and a phase input that does not move with the Operation, and clears the record', function (bool $full): void {
+it('sends the recorded phase digests and clears the record', function (bool $full): void {
     // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change
     $recorded = ['agent' => str_repeat('a', 64), 'roles' => str_repeat('b', 64)];
     Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode($recorded)]);
@@ -482,14 +482,12 @@ it('sends the recorded phase digests and a phase input that does not move with t
     $first = Operation::query()->sole();
     $intent = $first->input['_converge']['intent'];
     expect($intent['recorded_digests'])->toBe($full ? [] : $recorded)
-        ->and($intent['phase_input'])->toMatch('/\A[0-9a-f]{64}\z/')
         ->and($this->node->refresh()->converge_digests)->toBeNull();
 
     $first->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
     $this->postJson($this->url, ['base' => true])->assertAccepted();
     $second = Operation::query()->whereKeyNot($first->id)->sole();
-    expect($second->input['_converge']['intent']['phase_input'])->toBe($intent['phase_input'])
-        ->and($second->input['_converge']['intent']['recorded_digests'])->toBe([]);
+    expect($second->input['_converge']['intent']['recorded_digests'])->toBe([]);
 })->with(['recorded' => false, 'full' => true]);
 
 it('compares with no recorded digest while the Node records a failed agent pin', function (): void {

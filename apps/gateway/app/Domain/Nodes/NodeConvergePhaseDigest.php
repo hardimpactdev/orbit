@@ -5,38 +5,24 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Models\Node;
-use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /**
- * The one rule of a skipped converge phase (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). The Gateway owns
- * the phase input part of each digest and the Node's record; Swamp adds the secrets and the code, compares, and skips.
+ * The Gateway's part of a skipped converge phase (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change): the Node's
+ * record of phase digests. Swamp computes each digest from what the phases read, compares it with the record, and skips.
  */
 final readonly class NodeConvergePhaseDigest
 {
     /**
-     * The converge intent as Swamp reads it: the captured intent with its phase input part and the digests the Node records.
+     * The converge intent as Swamp reads it: the captured intent and the digests the Node records.
      *
      * @param  array<string,mixed>  $intent
      * @param  array<string,string>  $recorded
      * @return array<string,mixed>
      */
-    public function stamp(array $intent, Operation $operation, array $recorded): array
+    public function stamp(array $intent, array $recorded): array
     {
-        return [...$intent, 'phase_input' => $this->input($intent, $operation), 'recorded_digests' => $recorded];
-    }
-
-    /**
-     * The phase input part: the SHA-256 of the intent with this Operation's ID replaced by a fixed mark, so two attempts with the same
-     * recorded state have the same digest. Secret values are not in the intent; Swamp adds their digest.
-     *
-     * @param  array<string,mixed>  $intent
-     */
-    public function input(array $intent, Operation $operation): string
-    {
-        $json = json_encode($intent, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-
-        return hash('sha256', (string) preg_replace('/operation-'.$operation->id.'(?![0-9])/', 'operation-#', $json));
+        return [...$intent, 'recorded_digests' => $recorded];
     }
 
     /**

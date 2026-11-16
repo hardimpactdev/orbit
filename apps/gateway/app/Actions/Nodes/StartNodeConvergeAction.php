@@ -49,7 +49,7 @@ final readonly class StartNodeConvergeAction
                     app(InstanceHostIntent::class)->prepare($node);
                 }
                 $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $hub);
-                $snapshot['intent'] = app(NodeConvergePhaseDigest::class)->stamp($snapshot['intent'], $operation, $recorded);
+                $snapshot['intent'] = app(NodeConvergePhaseDigest::class)->stamp($snapshot['intent'], $recorded);
                 // Dispatch is deferred until this reservation transaction commits.
                 $operation->input = [...$operation->input, '_converge' => [
                     ...$snapshot, 'network' => ['hub_id' => $hub?->id, 'base' => $base],

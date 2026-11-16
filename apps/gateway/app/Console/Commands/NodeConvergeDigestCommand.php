@@ -11,8 +11,8 @@ use App\Support\ValidatedData;
 use Illuminate\Console\Command;
 
 /**
- * Prints the digest of each named Node's converge intent as one JSON object, `{"<name>": "<sha256>"}`. Without `--base` it is the phase
- * input digest of the default converge (NodeDesiredConvergeInput::defaultDigest); with `--base`, the digest of the base intent. It makes no
+ * Prints the digest of each named Node's converge intent as one JSON object, `{"<name>": "<sha256>"}`. Without `--base` it is the digest of
+ * the default converge intent (NodeDesiredConvergeInput::defaultDigest); with `--base`, the digest of the base intent. It makes no
  * execution copy, admits no Operation and writes nothing. The nested-fleet refresh runs it in the nested Gateway: an unchanged digest is
  * one input of its skipped converge
  * (docs/reference/development-containers.md#what-a-refresh-skips). With `--host=<name>` it also prints, as `host`, the digest of that Node's

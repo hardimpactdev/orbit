@@ -194,6 +194,7 @@ jobs:
           methodName: convergeInput
           inputs:
             folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+            operation_id: ${{ inputs.operation_id }}
   -
     name: input
     labels:

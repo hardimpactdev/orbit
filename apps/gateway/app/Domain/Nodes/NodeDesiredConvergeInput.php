@@ -83,9 +83,9 @@ final readonly class NodeDesiredConvergeInput
     }
 
     /**
-     * The phase input digest (NodeConvergePhaseDigest) of the Node's default converge, as its admission computes it, without an Operation:
-     * the capture runs in a transaction that rolls back, so it records nothing and pushes no execution copy (SwampDispatch drops the copies
-     * of a rolled back transaction). The nested-fleet refresh compares it (`orbit:node-converge-digest`).
+     * The SHA-256 of the Node's default converge intent, as its admission captures it, for a fixed Operation ID: the capture runs in a
+     * transaction that rolls back, so it records nothing and pushes no execution copy (SwampDispatch drops the copies of a rolled back
+     * transaction). The nested-fleet refresh compares it (`orbit:node-converge-digest`).
      */
     public function defaultDigest(Node $node): string
     {
@@ -98,7 +98,7 @@ final readonly class NodeDesiredConvergeInput
             DB::rollBack();
         }
 
-        return app(NodeConvergePhaseDigest::class)->input($intent, $operation);
+        return hash('sha256', json_encode($intent, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
     /** @return array<string,mixed> */
