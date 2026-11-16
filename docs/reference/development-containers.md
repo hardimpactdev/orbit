@@ -1017,7 +1017,9 @@ A default sleeps like any other development container: after one idle window wit
 
 A retake never leaves the default without a seed. It takes the new snapshot first, beside the old one. It holds the default's seed lock on the Node while it does so. When `seed-<commit>` exists already, the new snapshot waits under `next-<commit>`. Only when the new snapshot exists does the old `seed-<commit>` go, and `next-<commit>` takes its name. Older seeds go last. The seed of a default with an [inner volume](#the-seed-pair) is a pair, and both halves follow the same order.
 
-The proof Project's default can keep one older pair as the base of the next [seed copy](#the-seed-on-each-ci-node). The Gateway names the default's current seed in the seed step's intent (`seed_base`) when a CI Node that is ready for the seed copy records that seed (`ProofSeeds`). Then, after the new seed is whole, the old pair is not deleted but renamed `base-<commit>`, also at the same commit. Every older `base-` pair goes first, so the default keeps at most one base. Without `seed_base`, the old pair goes as before. A clone and a restore never read a `base-` pair. A rename keeps the snapshot's creation time, and it needs no free ID range, so a retake still needs only one free range, for a moment.
+The proof Project's default can keep one older pair as the base of the next [seed copy](#the-seed-on-each-ci-node). The Gateway names the default's current seed in the seed step's intent (`seed_base`) when a CI Node that is ready for the seed copy records that seed (`ProofSeeds`). Then, after the new seed is whole, the old pair is not deleted but renamed `base-<commit>`, also at the same commit.
+
+Every older `base-` pair goes first, so the default keeps at most one base. Without `seed_base`, the old pair goes as before. A clone and a restore never read a `base-` pair. A rename keeps the snapshot's creation time, and it needs no free ID range. So a retake still needs only one free range, for a moment.
 
 Incus maps a new snapshot as it maps a new container: it needs a free [isolated ID range](#isolated-id-ranges) for a moment, but a delete or a rename needs none. So the step never uses `incus snapshot create --reuse`, which deletes the old snapshot before it creates the new one. On 2026-11-14 a retake with `--reuse` on a host with no free range left Instance 2454 without a seed for seven minutes.
 
@@ -1049,7 +1051,7 @@ The first default Instance and its deployments are built for the Nodes of the [b
 | Deploy steps | Each runs as `orbit` at `/srv/workspace`, from its own vault copy. Its environment holds only `HOME`, `USER`, `LOGNAME`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, the [proxy settings](#proxy-settings-in-a-container), and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders |
 | FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile` as `orbit` on port 8080. The Route proxies to the bridge address; the Node runs no PHP pool for it |
-| Seed | The first build and each passed deployment, also at the same commit, take `seed-<commit>` with the units stopped. Older seeds go, except the proof default's one [base](#a-retake-keeps-the-seed); the runtime row records the commit |
+| Seed | The first build and each passed deployment take `seed-<commit>` with the units stopped. Older seeds go, except the proof default's [base](#a-retake-keeps-the-seed). The runtime row records the commit |
 | Deployment | The variant `container` starts a stopped container and fetches the commit on the Node. It refuses `deployment.checkout_dirty`, `deployment.commit_not_on_branch` and `deployment.branch_diverged` as a checkout does |
 | Processes | The Project's development Process definitions run as `orbit-*` units in the container. [Processes](#processes) has the details |
 
@@ -2755,12 +2757,13 @@ An instance copy does not take its attached custom volumes, so the volume has it
 
 `--refresh` sends only what changed since the last copy. Incus compares the snapshots on both sides by name and creation time and sends the newer ones as ZFS increments from the newest snapshot that both sides share, so the holder gets the new `seed-<commit>` snapshot natively. The first copy to a Node sends the whole seed pair. The copy reads the default as an instance, not one snapshot of it: a snapshot source carries no snapshots, so `--refresh` could not find a common one and would send the whole pair each time.
 
-So the default keeps the base of the copy: its previous seed pair, renamed `base-<commit>` by the [retake](#a-retake-keeps-the-seed). A plain delete would leave no shared snapshot, and a retake at the same commit gives the new seed the old one's name with a new creation time. Before the refresh, the run renames the holder's `seed-<commit>` pair to `base-<commit>` when the default holds a `base-` pair of that name. Incus then finds the same name and creation time on both sides and sends only the change since that seed. When the default's base is another seed, or none, the refresh sends the whole pair, as a first copy does. A Node whose seed is older than the base gets the whole pair too: the default keeps only one base.
+So the default keeps the base of the copy: its previous seed pair, renamed `base-<commit>` by the [retake](#a-retake-keeps-the-seed). A plain delete would leave no shared snapshot, and a retake at the same commit gives the new seed the old one's name with a new creation time.
 
-The base goes when no CI Node needs it:
+Before the refresh, the run renames the holder's `seed-<commit>` pair to `base-<commit>` when the default holds a `base-` pair of that name. Incus then finds the same name and creation time on both sides and sends only the change since that seed. When the default's base is another seed, or none, the refresh sends the whole pair, as a first copy does. A Node whose seed is older than the base gets the whole pair too: the default keeps only one base.
 
-- at the end of a seed copy whose targets were all the Nodes behind the seed and all passed, while the default still holds the seed that the copy was admitted for: the run's last step deletes every `base-` pair on the default's Node;
-- at the next retake, which keeps at most the seed it replaces.
+The base goes when no CI Node needs it. The next retake keeps at most the seed that it replaces. A seed copy can drop the base earlier: when it targeted all the Nodes behind the seed and each target passed, its release step deletes every `base-` pair on the default's Node.
+
+The release step first checks that the default still holds the seed that the copy was admitted for. A retake during the copy took a new seed and chose its own base, so the release step leaves that base alone.
 
 A failed release changes no target's result; the next retake deletes the base. The holder mirrors the default, so its next refresh drops the base there too.
 
@@ -2799,7 +2802,7 @@ The copy runs after the release, and nothing in a release or a proof waits for i
 | ID ranges on a CI Node | The holder and the snapshot it receives need a free range of the default's size. The [CI Node's demand](/reference/node-settings#a-ci-node) counts them. Without one, that target fails |
 | A failure shows | Nothing waits for the copy. So each failed target also writes the Activity row `instance.seed_copy_failed` with the Node, the Operation and the detail, as a failed refresh writes `instance.refresh_failed` |
 | A rerun is safe | The next seed, or the Node's own `ci-runner` converge, copies again. `--refresh` makes the holder equal to the default, whatever an earlier run left |
-| One base at a time | The default keeps at most one older seed pair, `base-<commit>`, and only while a CI Node that is ready for the copy needs it. A retake at the same commit still shares the base with the holder |
+| One base at a time | The default keeps at most one older seed pair, `base-<commit>`. It keeps it only while a ready CI Node needs it |
 
 ### A clone starts its fleet
 
