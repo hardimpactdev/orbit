@@ -4,9 +4,10 @@
 CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units plans the Swamp fixture units.
 Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
 names for changed SDK fixtures, the project's pin test files (PIN_TESTS), and the whole SDK suite, which takes
-seconds. The rest of the Gateway, CLI and docs suites is left to CI and named as skipped. A change to what CI's own policy tests read (the CI registry and its
-fixture tomls, workflows, CI scripts, Swamp test files) adds those tests, tools/test_ci_*.py, before Pest and the fixtures. Every part gets the time left as its limit; a part the budget stops or
-leaves out is named as skipped. The output ends with a summary of at most SUMMARY_BYTES: one line per part with its
+seconds. The rest of the Gateway, CLI and docs suites is left to CI and named as skipped. A change to what CI's own
+policy tests read (the CI registry and its fixture tomls, workflows, CI scripts, Swamp test files) adds those tests,
+tools/test_ci_*.py, before Pest and the fixtures. Every part gets the time left as its limit; a part the budget stops
+or leaves out is named as skipped. The output ends with a summary of at most SUMMARY_BYTES: one line per part with its
 outcome and seconds, then the last lines of each failed part, so the stored tail of the output always holds it.
 
 --base REF        the start commit (default: the merge base with origin/main, else main)
@@ -241,6 +242,7 @@ def pest_plan(jobs, paths, base):
             changed |= {str(path.relative_to(ROOT)) for fixture in contract.changed_fixtures(base)
                         for path in contract.replay_tests(fixture)}
         pins = PIN_TESTS.get(project, ())
+        changed -= {f'{project}/{pin}' for pin in pins}
         files = changed | {f'{project}/{pin}' for pin in pins}
         if files:
             detail = f'{len(changed)} changed or contract-mapped, {len(pins)} pin test files'

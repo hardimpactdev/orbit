@@ -54,7 +54,8 @@ class PestSelectionTest(unittest.TestCase):
 
     def test_a_changed_pin_test_runs_once(self):
         plan = pest_plan({'gateway-tests': True}, [GATEWAY_PINS[0]])
-        self.assertEqual(plan['pest apps/gateway'][0], GATEWAY_PINS)
+        self.assertEqual(plan['pest apps/gateway'], (GATEWAY_PINS, 'run',
+                                                     f'0 changed or contract-mapped, 6 pin test files: {GATEWAY_PIN_NAMES}'))
 
     def test_the_cli_pin_test_comes_with_the_cli_job(self):
         plan = pest_plan({'cli-tests': True}, [])
