@@ -678,9 +678,11 @@ class EntryTest(Fixture):
         self.assertEqual(self.call(["discard", "--instance", "7", "--plan-only"])[0], 0)
         self.assertFalse(os.path.exists(self.plan()))
         self.assertTrue(os.path.exists(os.path.join(self.state, "instances", "7", "limits.json")))
-        self.assertEqual(self.call(["discard", "--instance", "7"])[0], 0)
+        code, out = self.call(["discard", "--instance", "7"])
+        self.assertEqual((code, json.loads(out)["removed"]), (0, True))
         self.assertFalse(os.path.exists(os.path.join(self.state, "instances", "7")))
         self.assertEqual(os.listdir(outcomes), ["app-instance-70-op-12.done"])
+        self.assertFalse(json.loads(self.call(["discard", "--instance", "7"])[1])["removed"], "a repeated discard changes nothing")
 
 
 def cold_reload_prepare():

@@ -110,12 +110,13 @@ if (command[0] === "prepare") {
 } else if (command[0] === "discard") {
     state.plan = false;
     if (command[3] !== "--plan-only") {
-        state.discarded = true;
         delete state.sleep;
         state.opened = [];
     }
+    const removed = command[3] === "--plan-only" ? true : !(state.discarded ?? []).includes(instance);
+    if (command[3] !== "--plan-only") state.discarded = [...new Set([...(state.discarded ?? []), instance])];
     save();
-    out({ outcome: "discarded", operation_id: null });
+    out({ outcome: "discarded", operation_id: null, removed });
 } else if (command[0] === "capabilities") {
     out({ outcome: "checked", capabilities: {} });
 }

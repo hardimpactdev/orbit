@@ -1163,8 +1163,10 @@ def residual(host, instance_id, operation_id):
 def discard(host, instance_id, plan_only):
     base = host.instance_dir(instance_id)
     if plan_only:
+        removed = os.path.lexists(os.path.join(base, "plan"))
         remove(os.path.join(base, "plan"))
-        return {"outcome": "discarded"}
+        return {"outcome": "discarded", "removed": removed}
+    removed = os.path.lexists(base)
     remove(base)
     pattern = rf"app-instance-{instance_id}-op-[1-9][0-9]*\.[a-z-]+"
     for folder in (os.path.join(host.state, "outcomes"), host.requests):
@@ -1174,8 +1176,10 @@ def discard(host, instance_id, plan_only):
             continue
         for name in names:
             if re.fullmatch(pattern, name):
+                removed = True
                 remove(os.path.join(folder, name))
-    return {"outcome": "discarded"}
+    # `removed` says whether anything was there, so a repeated destroy reports no change.
+    return {"outcome": "discarded", "removed": removed}
 
 
 # ---------------------------------------------------------------------------------------------------------------------------

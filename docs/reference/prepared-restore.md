@@ -71,7 +71,7 @@ Outcomes per command:
 - `prepare`: `frozen`, `already_frozen`, `stopped`, `missing` or `failed`;
 - `restore`: `resumed`, `already_running`, `stopped`, `missing` or `failed`;
 - `residual`: `recorded` or `not_recorded`; `not_recorded` changes nothing, and means the container is not frozen or `sleep.json` belongs to another sleep;
-- `discard`: `discarded`; `capabilities`: `checked`.
+- `discard`: `discarded`, with `removed`: whether any of its files was there, so a repeated destroy reports no change; `capabilities`: `checked`.
 
 A `failed` outcome also says whether the container is left running or frozen, through `state_after`. A crash leaves no such fact, so the caller keeps the asleep marker.
 

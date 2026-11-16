@@ -17,7 +17,8 @@
   until: power_call_run.rc == 0 or power_call_run.stdout != '' or power_busy not in power_call_run.stderr
   retries: 39
   delay: 0.25
-  changed_when: true
+  # Every command changes the container's state except a `discard` that found nothing.
+  changed_when: power_call_run.rc != 0 or (power_call_run.stdout | from_json).removed | default(true)
   failed_when: false
   vars:
     power_busy: already loaded or has a fragment file
