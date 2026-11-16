@@ -42,7 +42,7 @@ The agent folder is shared by every container on a Node, so the choice cannot li
 
 - A Project switches to the Conn Server for its new containers only. Its existing containers keep T3; to move a container to the other server, a person destroys it and creates it again.
 - An agent folder update restarts both servers the same way, with `systemctl try-restart t3.service`.
-- `conn:environment-restart` counts each direct child of the server that is not a provider as busy. The Conn Server's SDK host runs on `node` as such a child, so that restart may answer `busy` for a Conn container until the restart rule names it.
+- `conn:environment-restart` treats the Conn Server's SDK host as it treats a provider. The host, the providers under it and what stays in the `claude` session may go, as under T3; any other process under it keeps the container busy ([the rule](/reference/development-containers#existing-instances)).
 - The recipe pins the Conn Server as the agent folder's part `conn-server`. `nckrtl/conn` publishes each release with the tag `conn-server-v<version>` and the asset `conn-server-<version>-linux-x64.tar.gz`, with its digest in the asset `conn-server-<version>-linux-x64.tar.gz.sha256`. The part's `bin` is `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`. A bump changes the part's version, URL and digest.
 
 ## Affects
@@ -50,4 +50,4 @@ The agent folder is shared by every container on a Node, so the choice cannot li
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
 - ADRs: [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers)
 - Detail: [Container server](/reference/development-containers#container-server), [Project fields](/reference/projects#fields)
-- Verify: Gateway Pest tests of the setting, the refusal, the record, the drop-in and the turn intent; CLI and SDK tests of the option and the field; the Swamp test of the turn's program check; a by-hand check of the drop-in with both programs in an Incus container
+- Verify: Gateway Pest tests of the setting, the refusal, the record, the drop-in and the turn intent; CLI and SDK tests of the option and the field; the Swamp test of the turn's program check; the Swamp test of the restart's process rule; a by-hand check of the drop-in with both programs in an Incus container

@@ -574,16 +574,20 @@ Only T3's service restarts. The run first checks that `/etc/machine-info` holds 
 | --- | --- |
 | T3 itself: the `MainPID`, and no other process | may go |
 | T3's resource monitor (`t3-resource-mon`) or its own `git` call, a direct child of T3 with no terminal | may go |
-| A provider, `claude` or `codex` (the binaries the recipe ships), a direct child of T3 with no terminal | may go |
+| The [Conn Server](#container-server)'s SDK host, a direct child of `conn-server` with no terminal, whose name reads `MainThread` (its `node`) | may go |
+| A provider, `claude` or `codex` (the binaries the recipe ships), a direct child of T3 or of the SDK host with no terminal | may go |
 | A member of the `claude` provider's own session whose parent is in the service: its setup `sh` and stdio MCP servers such as Laravel Boost's `php`, or `npm` and `node` | may go |
 | Any member with a terminal (a tty), such as a shell node-pty forked or an `exec claude` typed in it | `busy`: `terminals` when T3 is its parent, else `commands` |
 | Any other direct child of T3 | `busy`, counted in `terminals` |
 | A `claude` tool tree, in the session of its own that Claude Code starts each tool shell in: a turn's tool, or a server it left running | `busy`, counted in `commands` |
 | Any descendant of `codex`: its tools may share its session, so none is allowed | `busy`, counted in `commands` |
+| Any other process under the SDK host | `busy`, counted in `commands` |
 | A process whose parent left the service, such as a backgrounded `nohup` server that PID 1 adopted | `busy`, counted in `commands` |
 | A member line the read cannot parse | `busy`, counted in `commands` |
 
 The `claude` session allowance depends on Claude Code starting each tool shell in a session of its own, as the pinned recipe version does. Measure it again on each Claude Code bump in the recipe.
+
+The Conn Server runs `claude` through its SDK host, not as its own child. The host lives while a Claude session is open, and a session closes after 30 idle minutes, so an idle Conn container often holds it. The rule allows the host as it allows a provider. It matches the name `MainThread` only under `conn-server`: under T3, such a child stays `busy`. Measure the name again on each Conn Server bump in the recipe.
 
 An open idle shell counts because a restart loses its state. After a restart, T3 spawns a new shell only when a client opens the terminal again. It starts in the directory the client names and replays the saved scrollback. The old shell's directory, variables, jobs and history are gone.
 
@@ -591,7 +595,7 @@ An accepted limit: an MCP server that starts a long-running child without detach
 
 The read fails closed. When it cannot be read, `ps` fails for a member that is still alive, `MainPID` is 0 or not a member, or `cgroup.stat` counts a cgroup below the service, the answer is `busy` with `processes_unreadable`, and nothing restarts.
 
-So the restart ends T3, its monitor and `git` calls, an idle provider with no descendant outside the `claude` session, and a terminal or command that started in the moment (about a second) between the read and the restart. Stock T3 0.1.7 keeps a provider session after its turn and has no idle release, so that session ends here.
+So the restart ends T3, its monitor and `git` calls, the Conn Server's SDK host, and an idle provider with no descendant outside the `claude` session. It also ends a terminal or command that started in the moment (about a second) between the read and the restart. Stock T3 0.1.7 keeps a provider session after its turn and has no idle release, so that session ends here.
 
 A turn with no live tool process outside the provider's session is cut, for example one that runs Grep, Read or Edit, or whose Bash command already ended. T3 continues it after its start. Orbit Processes run in their own `orbit-*` units and do not restart.
 
