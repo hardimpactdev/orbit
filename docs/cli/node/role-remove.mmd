@@ -35,6 +35,7 @@ sequenceDiagram
   %%> - until the `--offline` flow below is built, `--offline` is refused on both paths (`operation.kind_unavailable`)
   %%> Then:
   %%> - the Gateway reads the recorded state of the assignment and picks one of the two paths below
+  %%> - on both paths the admission clears the Node's phase digest record, so the next converge or role Operation runs every phase (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change)
   alt the role never touched the Node
     Note over GW: Delete the role
     %%> When:
