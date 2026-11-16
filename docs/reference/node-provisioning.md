@@ -609,16 +609,15 @@ A failed phase stops later phases and fails the Operation with its failed step a
 
 This is the one rule for a skipped converge phase. The phases `agent`, `software`, `roles`, `tools` and `network` can skip. `input` and `check` always run.
 
-A phase digest is the SHA-256 of four parts:
+A phase digest is the SHA-256 of the phase name and of what the phases read. Swamp computes it when it prepares the input, after it writes every file for the phases. What the phases read is:
 
-- the phase name;
-- the phase input, which the Gateway computes at admission (`NodeConvergePhaseDigest`);
-- the secret digest, which Swamp computes when it prepares the input;
-- the code digest, which Swamp also computes then.
+- the files written for the phases: the converge variables, `plans.json`, the inventory, the known hosts and each role's variables;
+- the Ansible bundle, which also builds each role's variables;
+- the Tool helper and the shipped Tool files that it imports.
 
-The phase input is the attempt's intent, with its Operation ID replaced by a fixed mark. It holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. The secret digest is the SHA-256 of each execution secret's value, so a new secret value moves it. The code digest covers the Ansible bundle and the input behaviour that writes the phase variables. A release that changes a converge playbook, task or variable moves every phase digest.
+The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies. Swamp replaces the attempt's Operation ID with a fixed mark before it hashes a file, so two attempts with the same recorded state have the same digest. The digests the Node records are not in the variables, so a digest does not read its own record.
 
-Every phase reads the whole intent from its variables, so each phase digest covers the whole intent. A change of any recorded input runs every phase again.
+Every phase reads the same variables, so all phase digests move together. A change of any recorded input, secret value, plan or shipped converge code runs every phase again.
 
 Swamp compares each digest with the digest that the Node records for that phase, and skips the phase only when they are equal. A skipped phase does not connect to the Node and does not read its state.
 

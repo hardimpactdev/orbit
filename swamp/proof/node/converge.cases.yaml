@@ -33,16 +33,16 @@ cases:
     batch: fresh-fleet
     waits: idmap
     covers: [main, admitted, succeeded]
-    summary: One default converge is the main path; a repeat changes nothing within 120 seconds; a keyed retry creates no Operation.
+    summary: One default converge is the main path; a full repeat runs every phase and changes nothing within 120 seconds; a keyed retry creates no Operation.
     stages:
       # Required arguments alone apply the default scope and reach the final phase.
       - act:
           - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
         expect: []
-      # An intentional repeat is a new Operation with zero target changes within 120 seconds.
+      # An intentional repeat is a new Operation. With --full every phase runs on matching intent, with zero target changes within 120 seconds.
       - act:
           - cli:
-              run: [node:converge, "${app-dev.id}", --idempotency-key=proof-node-converge-retry]
+              run: [node:converge, "${app-dev.id}", --full, --idempotency-key=proof-node-converge-retry]
               expect:
                 exit: 0
                 status: succeeded
@@ -51,9 +51,9 @@ cases:
                   - {path: result.changed, equals: 0}
                   - {path: result.elapsed_seconds, at_most: 120}
         expect: []
-      # The same key again returns the Operation of the repeat and starts nothing.
+      # The same request and key again returns the Operation of the repeat and starts nothing.
       - act:
-          - cli: {run: [node:converge, "${app-dev.id}", --idempotency-key=proof-node-converge-retry], expect: {exit: 0, status: succeeded, request: none}}
+          - cli: {run: [node:converge, "${app-dev.id}", --full, --idempotency-key=proof-node-converge-retry], expect: {exit: 0, status: succeeded, request: none}}
         expect:
           - unchanged: {since: act, what: [operations]}
 

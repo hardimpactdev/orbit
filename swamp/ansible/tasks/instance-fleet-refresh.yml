@@ -241,7 +241,7 @@
     quiet: true
 
 # The nested Gateway, on its new code and schema, prints the digest of each Node's default converge intent (`orbit:node-converge-digest`,
-# the phase input digest of NodeConvergePhaseDigest): what the Gateway would send, with no Operation and no write. A read that fails makes
+# NodeDesiredConvergeInput::defaultDigest): what the Gateway would send, with no Operation and no write. A read that fails makes
 # the converge due, and its digest is not recorded.
 - name: Read the default intent digests of the nested Nodes
   ansible.builtin.command:
