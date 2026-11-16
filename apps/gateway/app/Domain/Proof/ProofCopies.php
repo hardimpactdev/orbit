@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Proof;
 
 use App\Actions\Ci\ShowCiRunnersAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\Deployment\DevelopmentDeploySteps;
 use App\Domain\Instances\InstancePlacement;
@@ -129,7 +130,9 @@ final readonly class ProofCopies
      * `failed` when the copy's create ended without success, its completion failed or the copy is gone (a removal ends with the copy
      * gone), and for a run that is not in a copy: one admitted before the task VM proof path was removed, which nothing can start any
      * more. A create whose budget expired leaves its group reserved (TaskCopyLifecycle::createEnded), but no create follows it for a
-     * proof's copy: the run fails, and its group's cancel destroys the copy and releases its CI place.
+     * proof's copy: once the expiry is settled (Swamp proved the run's end, or releaseStaleHolds marked it unproven) the run fails, and
+     * its group's cancel destroys the copy and releases its CI place. Until then the run stays pending: Swamp reopens an expiry whose
+     * run met its real budget (ExpireOperationAction::reopen).
      */
     public function state(Operation $run): string
     {
@@ -146,7 +149,8 @@ final readonly class ProofCopies
         }
         $create = Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')->where('target_id', $copy->instance->id)
             ->orderByDesc('id')->first();
-        if ($create !== null && $create->status->terminal() && $create->status !== OperationStatus::Succeeded) {
+        if ($create !== null && $create->status->terminal() && $create->status !== OperationStatus::Succeeded
+            && ! ExpireOperationAction::expiredUnsettled($create)) {
             return 'failed';
         }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Data\Metrics\MetricsCredentialsData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GitHub\GitHubReview;
@@ -587,6 +588,30 @@ describe('proof:run in copies: when a copy will never be ready', function (): vo
             Operation::query()->create(['kind' => 'instance.complete', 'target_type' => 'instance', 'target_id' => $copy->id, 'node_id' => $copy->node_id,
                 'input' => [], 'state' => [], 'status' => OperationStatus::Failed, 'error_code' => 'instance.complete_failed', 'finished_at' => now(), 'sequence' => 1, 'attempts' => 0]);
         }, 'failed'],
+    ]);
+
+    // Swamp reopens an expiry whose run met its real budget (ExpireOperationAction::reopen): only a settled expiry ends the create.
+    it('reads a create whose budget expired as pending until the expiry is settled, then as failed', function (Closure $settle): void {
+        copyProofAdmitted();
+        $run = copyProofRuns()->first();
+        $create = Operation::query()->where('kind', 'instance.create')->where('target_id', $run->input['instance_id'])->sole();
+        $create->forceFill(['status' => 'running', 'started_at' => now()->subDay(), 'state' => [...($create->state ?? []), 'swamp_run_id' => 'run-1']])->save();
+        $create = app(ExpireOperationAction::class)->execute($create->refresh());
+
+        expect($create->status)->toBe(OperationStatus::Failed)->and($create->error_code)->toBe('operation.timed_out')
+            ->and(ExpireOperationAction::expiredUnsettled($create))->toBeTrue()
+            ->and(app(ProofCopies::class)->state($run->refresh()))->toBe('pending');
+
+        $settle($create);
+
+        expect(ExpireOperationAction::expiredUnsettled($create->refresh()))->toBeFalse()
+            ->and(app(ProofCopies::class)->state($run->refresh()))->toBe('failed');
+    })->with([
+        'Swamp proved the run ended' => [static fn (Operation $create) => app(ExpireOperationAction::class)->settle($create, 'run-1', 'failed')],
+        'no proof within the hold' => [static function (Operation $create): void {
+            test()->travel(ExpireOperationAction::HoldMinutes + 1)->minutes();
+            expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(1);
+        }],
     ]);
 });
 
