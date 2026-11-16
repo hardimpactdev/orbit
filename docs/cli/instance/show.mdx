@@ -42,6 +42,8 @@ In a terminal, the Processes table is a selector. Enter prints the log tail of t
 
 With `--json`, stdout holds the full Instance record, without the Processes: its `project` and `node` objects, the fields above under their JSON keys, `route` for the Instance's own Route and `routes` for all of them, `deploy_steps`, `auto_deploy`, `ssr_port`, `attached_targets` (an empty array when none), and `removal`, which is null or an object with the progress of the removal.
 
+Planned ([ADR 0265](/decisions/0265-sleep-idle-production-containers)): the output also shows the Instance's `never_sleep` field.
+
 ## Errors
 
 | Code | Meaning |

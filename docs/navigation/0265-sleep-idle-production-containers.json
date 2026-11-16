@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 265,
+      "pages": [
+        "decisions/0265-sleep-idle-production-containers"
+      ]
+    }
+  ]
+}
