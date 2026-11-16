@@ -153,9 +153,9 @@ Every development container has the same layout. The image and the create set it
 | Image | Ubuntu 26.04 with the OS packages the runtime needs, the users, `nftables`, `acl`, `sudo` and `hidepid`. No PHP, no Node, no agent software |
 | Egress | The [proxy settings](#egress-and-dns) for every unit, login shell and apt, and no DNS server |
 | `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process. Owns no part of the workspace that Orbit keeps ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)) |
-| `agent` | uid 2750, home `/home/agent` mode 0700, password locked. Runs T3, the agents, Orbit's checkout Git calls and the deploy steps. Owns the workspace, the T3 state, the agent settings and the placeholder key. Has passwordless sudo, so it is root in its own container |
+| `agent` | uid 2750, home `/home/agent` mode 0700, password locked, [sudo](#sudo-and-secrets). Runs T3, the agents, Orbit's checkout Git calls and deploy steps. Owns the workspace, T3 state, agent settings and placeholder key |
 | `work` | gid 2760, members `agent` and `orbit` |
-| Sudo | `agent` alone, with no password, in every container: `/etc/sudoers.d/orbit-agent` (root:root, mode 0440) holds `agent ALL=(ALL:ALL) NOPASSWD: ALL`. It is a [shared file](#existing-containers). `orbit` has none. The stock image's grant and `ubuntu` user are removed. A container holds only dev-scoped keys, never production-grade secrets ([ADR 0268](/decisions/0268-one-owner-for-the-workspace#amendment-sudo-for-agent-in-every-container)) |
+| Sudo | Passwordless for `agent` alone, in every container, from the [shared file](#existing-containers) `/etc/sudoers.d/orbit-agent` (root:root, mode 0440). `orbit` has none. See [Sudo and secrets](#sudo-and-secrets) |
 | Workspace | `/srv/workspace` and every entry in it, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others, and `core.sharedRepository=group`. Root's [pass](#who-runs-what) gives `agent` what `orbit` made |
 | Git | `safe.directory=/srv/workspace` in `/etc/gitconfig`, for every user and only that path; the agent part of the T3 step also writes it to `agent`'s own Git config and preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
@@ -168,6 +168,10 @@ Every development container has the same layout. The image and the create set it
 | Kernel surface | Unprivileged, no nesting, `user.max_user_namespaces=0`, an isolated ID map |
 
 A container mounts no host checkout and no Incus socket. Root work, such as units, goes through Orbit from the Node.
+
+### Sudo and secrets
+
+`agent` has passwordless sudo in every container, normal and nested. The grant is one line, `agent ALL=(ALL:ALL) NOPASSWD: ALL`. The image removes the stock image's grant and its `ubuntu` user, so this grant is the only sudo path. A container holds only dev-scoped keys, never production-grade secrets. [ADR 0268](/decisions/0268-one-owner-for-the-workspace#amendment-sudo-for-agent-in-every-container) holds the security model.
 
 The Gateway renders the image: its packages, the setup script, its files and the units it enables. The script turns cloud-init off, so a new container never makes the stock `ubuntu` user and its sudo grant again. The image's alias is `orbit-instance-` with the first 12 hex digits of a digest of that definition, so a changed definition is a new image. A build container from the stock Ubuntu image runs the definition and is published under that alias. The stable alias `orbit-instance` then moves to it, and prior images remain for separately authorized operator cleanup; a container keeps what it was made from.
 
@@ -2167,7 +2171,17 @@ The inner Incus wants `network-online.target`. Netplan's own wait asks for a DNS
 
 The Node fetches each Incus package through the artifact cache, checks its SHA-256 and pushes it into the build container. The build container installs both packages with their dependencies through the egress proxy. A `policy-rc.d` file stops the packages from starting the inner Incus during the build; the build removes it before it publishes.
 
-A failed fetch, a wrong digest or a failed install publishes no image. There is no unpinned fallback. Before it publishes, the build checks the sudo paths of both images: no `ubuntu` user, no member of `sudo` or `admin`, no grant in `sudoers.d` other than `orbit-agent` with its one line, a grant that `visudo` accepts (judged by its exit code, not its output), sudo works for `agent` and fails for `orbit`. In the nested-fleet image `agent` is alone in `incus-admin`; the normal image has no `incus-admin` group. An Instance start fetches and installs nothing. A failed build removes only a build container that it made; a build container from an earlier run stays for the operator.
+A failed fetch, a wrong digest or a failed install publishes no image. There is no unpinned fallback.
+
+Before it publishes, the build checks the sudo paths of both images:
+
+- no `ubuntu` user and no member of `sudo` or `admin`;
+- no grant in `sudoers.d` other than `orbit-agent` with its one line;
+- a grant that `visudo` accepts, judged by its exit code, not its output;
+- sudo works for `agent` and fails for `orbit`;
+- in the nested-fleet image `agent` is alone in `incus-admin`, and the normal image has no `incus-admin` group.
+
+An Instance start fetches and installs nothing. A failed build removes only a build container that it made; a build container from an earlier run stays for the operator.
 
 A failed nested-fleet build fails only the nested-fleet image. The converge goes on: the normal image, the project, the bridge, the folders and the end checks complete, and the role succeeds. The Node records the failure in `/var/lib/orbit/instance-nested-image.json`: `nested image build failed`, the image's alias and the failed task. The converge log names the failed task too.
 

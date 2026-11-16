@@ -45,7 +45,7 @@ An existing default gets the new owner at its next deployment: the pass runs at 
 
 The nested fleet's guests mount the checkout with `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` ([instance-fleet.yml](/reference/development-containers#fleet-rules)). So an `agent:work` file keeps its owner and group in the guests, and the inner `orbit` is a member of `work` there. On 16 November 2026, in nested-fleet copy 3481, the inner Gateway's `orbit` read and wrote a `2750:2760` file with mode 0660 in the checkout, and PHP ran an `agent`-owned script that loads the Gateway's autoloader. The map stays as it is.
 
-## Amendment: sudo for `agent` in every container
+### Amendment: sudo for `agent` in every container
 
 The owner decided on 2026-11-16 to build Q2.
 
