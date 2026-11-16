@@ -2347,7 +2347,7 @@ A real `app-dev` or CI Node gets no `fleet_node`, so its intent and its branch s
 
 The fleet's egress proxy lies in the Instance container's own bridge, in `10.253.0.0/16` one level up. The nested Gateway reads its address from `HTTPS_PROXY` in its `/etc/environment`, which the fleet rules write whole. It gives the fleet Node no Instance bridge in that /24: a bridge that holds the proxy address makes `nested-app-dev` dial itself, and its Incus cannot fetch the stock image.
 
-**Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has the part `host`, a digest of the nested Gateway's code and Swamp trees. When it differs from the record, `nested-app-dev` joins the due converges, and its converge takes `{"roles":["app-dev"]}` instead of the base only. That is the nested Gateway's own `node.converge`, through its Swamp. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
+**Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has the part `host`. It digests what the container branch reads: the `swamp/ansible` tree, the machine-software recipe, and `nested-app-dev`'s branch intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, the folders, Incus, without the admission time). When it differs from the record, `nested-app-dev` joins the due converges, and its converge takes `{"roles":["app-dev"]}` instead of the base only. That is the nested Gateway's own `node.converge`, through its Swamp. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
 
 A refresh with no change keeps the host and adds no time. The host is built only when the default's recorded ID map size is 2,000,000 or more: the fleet intent's `host` says so. Below that no isolated Instance fits on `nested-app-dev`, so the refresh changes nothing there. The result names `host` as `converged`, `kept` or `skipped_idmap_small`.
 
@@ -2374,7 +2374,7 @@ Before the window:
 | Step | Who | Action | Time |
 | --- | --- | --- | --- |
 | 1 | B | `incus exec instance-<id> --project orbit-instances-nested -- incus stop nested-app-prod nested-app-dev nested-gateway`, then `incus stop instance-<id> --project orbit-instances-nested` | about 20 s |
-| 2 | B | `incus snapshot create instance-<id> pre-2m --project orbit-instances-nested` | 0.2 s |
+| 2 | B | `incus snapshot create instance-<id> pre-2m --project orbit-instances-nested` and `incus storage volume snapshot create orbit-instances inner-<id> pre-2m --project orbit-instances-nested`: the container snapshot does not hold the inner volume | 0.2 s each |
 | 3 | B | `incus config set instance-<id> security.idmap.size=2000000 --project orbit-instances-nested` | under 1 s |
 | 4 | G | `php artisan gateway:instance-idmap-size <id> 2000000`. It clears the seed, so clones refuse until step 8 | about 1 min |
 | 5 | B | `incus start instance-<id> --project orbit-instances-nested`. Incus remaps the container's files to the new range | 35 s; allow 1.5 min |
@@ -2404,7 +2404,14 @@ The command guards only the raise. It refuses with `instance.idmap_size_copies_s
 
 The seed keeps the Instance host built at 2,000,000. It is harmless: no isolated Instance fits on `nested-app-dev` any more.
 
-**B. Restore `pre-2m`.** Use it only when the container itself is broken after the raise. It needs no new snapshot: `pre-2m` exists from step 2 of the raise. After step 1 of A, run `incus snapshot restore instance-<id> pre-2m --project orbit-instances-nested`. It brings back 1,165,536 with no walk, but it **throws away the default's workspace and every change since the window**: commits, files, deployments, and the inner fleet's state. Then run steps 3 and 6 of A; the product start delivers the Club key.
+**B. Restore `pre-2m`.** Use it only when the container itself is broken after the raise. It **throws away the default's workspace and every change since the window**: commits, files, deployments, and the inner fleet's state. It needs no new snapshot: both halves of `pre-2m` exist from step 2 of the raise. ZFS restores only the newest snapshot, and only one without clones, as in the rollback of [Convert a default](#convert-a-default):
+
+1. **B** Stop the inner fleet, then the container, as in the raise.
+2. **B** List the snapshots: `incus snapshot list instance-<id> --project orbit-instances-nested -f csv` and `incus storage volume snapshot list orbit-instances inner-<id> --project orbit-instances-nested -f csv`.
+3. **B** Delete every seed newer than `pre-2m`, both halves: `incus snapshot delete instance-<id> <seed> --project orbit-instances-nested` and `incus storage volume snapshot delete orbit-instances inner-<id> <seed> --project orbit-instances-nested`. A seed with clones blocks this, so destroy those copies first (`orbit instance:destroy <copy> --yes`).
+4. **B** `incus snapshot restore instance-<id> pre-2m --project orbit-instances-nested` and `incus storage volume snapshot restore orbit-instances inner-<id> pre-2m --project orbit-instances-nested`. They bring back 1,165,536 with no walk.
+5. **G** `php artisan gateway:instance-idmap-size <id> 1165536`.
+6. **P** `orbit instance:deploy <id>`: the product start delivers the Club key, and the deployment takes a new seed.
 
 ### Fleet rules
 
