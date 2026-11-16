@@ -29,6 +29,8 @@ final readonly class ToolDefinition
         /** The operation answers 202 with an operation that the caller polls with `operation-show`. */
         public bool $startsOperation = false,
         public array $headerInputs = [],
+        /** The call removes a resource; the OpenAPI document marks it (`x-orbit-destructive`). */
+        public bool $destructive = false,
     ) {}
 
     /** @param array<array-key, mixed> $entry */
@@ -65,6 +67,7 @@ final readonly class ToolDefinition
             startsOperation: ($entry['starts_operation'] ?? false) === true,
             inputSchema: ValidatedData::object($inputSchema),
             headerInputs: array_values(array_filter($headerInputs, is_string(...))),
+            destructive: ($entry['destructive'] ?? false) === true,
         );
     }
 

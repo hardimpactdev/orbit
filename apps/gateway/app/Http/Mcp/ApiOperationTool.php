@@ -74,7 +74,7 @@ final class ApiOperationTool extends Tool
             'inputSchema' => $schema,
             'annotations' => [
                 'readOnlyHint' => $this->definition->readsOnly(),
-                'destructiveHint' => $this->definition->method === 'DELETE',
+                'destructiveHint' => $this->definition->destructive,
                 'idempotentHint' => in_array($this->definition->method, ['GET', 'PUT', 'DELETE'], true),
                 'openWorldHint' => false,
             ],

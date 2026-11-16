@@ -22,6 +22,9 @@ use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Schedules\ScheduleRuntimeAccount;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
+use App\Http\Mcp\ApiDispatcher;
+use App\Http\Mcp\ApiOperationTool;
+use App\Http\Mcp\ToolManifest;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -35,9 +38,11 @@ use App\Models\Route;
 use App\Models\Schedule;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Laravel\Mcp\Request as McpRequest;
 use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
@@ -244,6 +249,24 @@ describe('a successful unregister', function (): void {
         $operation = Operation::query()->findOrFail($call($this->node)->assertStatus(202)->json('data.id'));
         ($this->terminal)($operation, 'succeeded');
         $call($other)->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+    });
+    it('starts through the destructive MCP tool instance-unregister', function (): void {
+        $this->node->accessibleNodes()->attach($this->node);
+        $tools = collect(ToolManifest::default()->definitions())->keyBy('name');
+        $definition = $tools->get('instance-unregister');
+        $tool = new ApiOperationTool($definition, app(ApiDispatcher::class));
+        expect($definition->method)->toBe('POST')->and($definition->startsOperation)->toBeTrue()
+            ->and($tool->toArray()['annotations'])->toMatchArray(['readOnlyHint' => false, 'destructiveHint' => true])
+            // The marker comes from the OpenAPI document: every DELETE, and only the listed POSTs.
+            ->and($tools->get('instance-destroy')->destructive)->toBeTrue()
+            ->and($tools->get('instance-restore')->destructive)->toBeFalse();
+
+        $response = $tool->handle(new McpRequest(['instance' => $this->instance->id]),
+            HttpRequest::create('/mcp', 'POST', server: ['REMOTE_ADDR' => $this->node->wireguard_ip]));
+        $operation = json_decode((string) $response->content(), true, flags: JSON_THROW_ON_ERROR)['operation'];
+
+        expect($operation)->toMatchArray(['kind' => 'instance.unregister', 'target_id' => $this->instance->id])
+            ->and($this->instance->fresh()->status)->toBe(InstanceState::Removing);
     });
 });
 
