@@ -178,6 +178,41 @@
         ]
     },
     {
+        "path": "/runners",
+        "purpose": "The CI runner view: each CI Node's places, CPU pressure, memory and disk, its runners and their current jobs, then the running and queued jobs, each runner's stats of the last 48 hours and the recent jobs.",
+        "reach": "Open Runners in the main nav.",
+        "controls": [
+            {
+                "testid": "nav-runners",
+                "purpose": "Runners in the main nav, after the phone menu is opened when the nav is collapsed."
+            },
+            {
+                "testid": "runners-page",
+                "purpose": "The runner view."
+            },
+            {
+                "testid": "runners-title",
+                "purpose": "The Runners crumb of the page header."
+            },
+            {
+                "testid": "runners-node",
+                "purpose": "One CI Node's frame: its places bar, resources and runners."
+            },
+            {
+                "testid": "runners-active",
+                "purpose": "The running and queued jobs pane. A row opens the job on GitHub."
+            },
+            {
+                "testid": "runners-stats",
+                "purpose": "Each runner's jobs, failures, median queue wait and run time, and busy share over the window."
+            },
+            {
+                "testid": "runners-recent",
+                "purpose": "The recent completed jobs pane. A row opens the job on GitHub."
+            }
+        ]
+    },
+    {
         "path": "/nodes/create",
         "purpose": "The form that adds a node.",
         "reach": "Open Nodes in the main nav, then choose + create.",

@@ -44,6 +44,7 @@ const NAV_TEST_ID = {
     "ai-router": "nav-ai-router",
     tasks: "nav-tasks",
     activity: "nav-activity",
+    runners: "nav-runners",
 } as const satisfies Record<Section, string>;
 
 const desktopQuery = "(min-width: 768px)";
@@ -79,7 +80,7 @@ function navCount(
     totals: ReturnType<typeof counts>,
     taskCount: number | null,
 ): [number | null, number] {
-    if (key === "dashboard" || key === "ai-router" || key === "activity") {
+    if (key === "dashboard" || key === "ai-router" || key === "activity" || key === "runners") {
         return [null, 0];
     }
 

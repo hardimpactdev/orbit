@@ -9,6 +9,9 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
+use DateTimeImmutable;
+use DateTimeInterface;
+use DateTimeZone;
 use Generator;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -16,7 +19,7 @@ use SensitiveParameter;
 use Throwable;
 
 /**
- * Reads GitHub Actions runs and artifacts of one repository with an installation token of the
+ * Reads GitHub Actions runs, jobs and artifacts of one repository with an installation token of the
  * Gateway GitHub App that holds only Actions read.
  * Artifact archives are downloaded from the
  * storage URL GitHub redirects to, without the token. Every failure is a
@@ -28,6 +31,12 @@ final readonly class GitHubActionsReader
 
     /** Responses of the JSON endpoints are read up to this size. */
     private const int JsonBytes = 1024 * 1024;
+
+    /** A page of 100 runs or jobs carries full objects and can pass {@see self::JsonBytes}. */
+    private const int ListBytes = 8 * 1024 * 1024;
+
+    /** Runs and jobs per page, GitHub's largest page. */
+    private const int PerPage = 100;
 
     public function __construct(private GitHubAppStore $apps, private CommandDeadline $deadline) {}
 
@@ -81,15 +90,81 @@ final readonly class GitHubActionsReader
      *
      * @throws GitHubActionsUnavailable
      */
-    public function json(string $path, #[SensitiveParameter] string $token, ?array $payload = null): array
+    public function json(string $path, #[SensitiveParameter] string $token, ?array $payload = null, int $limit = self::JsonBytes): array
     {
-        $data = json_decode($this->body(self::Api.$path, $token, self::JsonBytes, $payload), true);
+        $data = json_decode($this->body(self::Api.$path, $token, $limit, $payload), true);
 
         if (! is_array($data)) {
             throw new GitHubActionsUnavailable(invalid: true);
         }
 
         return $data;
+    }
+
+    /**
+     * The workflow runs created since `$since`, newest first, from at most `$pages` pages. `truncated` is true when the window holds
+     * more runs than those pages.
+     *
+     * @return array{runs: list<array<array-key, mixed>>, truncated: bool}
+     *
+     * @throws GitHubActionsUnavailable
+     */
+    public function workflowRuns(GitHubRepository $repository, #[SensitiveParameter] string $token, DateTimeInterface $since, int $pages): array
+    {
+        $from = DateTimeImmutable::createFromInterface($since)->setTimezone(new DateTimeZone('UTC'));
+        $query = ['created' => '>='.$from->format('Y-m-d\TH:i:s\Z'), 'exclude_pull_requests' => 'true'];
+        [$runs, $total] = $this->pages(self::repositoryPath($repository).'/actions/runs', $query, 'workflow_runs', $token, $pages);
+
+        return ['runs' => $runs, 'truncated' => $total > count($runs)];
+    }
+
+    /**
+     * The jobs of a run's latest attempt, from at most `$pages` pages.
+     *
+     * @return list<array<array-key, mixed>>
+     *
+     * @throws GitHubActionsUnavailable
+     */
+    public function runJobs(GitHubRepository $repository, #[SensitiveParameter] string $token, int $runId, int $pages = 3): array
+    {
+        return $this->pages(self::repositoryPath($repository).'/actions/runs/'.$runId.'/jobs', ['filter' => 'latest'], 'jobs', $token, $pages)[0];
+    }
+
+    /**
+     * The entries of a paged list until a short page, the last page GitHub counts, or `$pages` pages.
+     *
+     * @param  array<string, string>  $query
+     * @return array{0: list<array<array-key, mixed>>, 1: int} the entries and GitHub's `total_count`
+     *
+     * @throws GitHubActionsUnavailable
+     */
+    private function pages(string $path, array $query, string $field, #[SensitiveParameter] string $token, int $pages): array
+    {
+        $entries = [];
+        $total = 0;
+
+        for ($page = 1; $page <= $pages; $page++) {
+            $data = $this->json($path.'?'.http_build_query([...$query, 'per_page' => self::PerPage, 'page' => $page]), $token, limit: self::ListBytes);
+            $rows = $data[$field] ?? null;
+            $total = $data['total_count'] ?? null;
+
+            if (! is_array($rows) || ! array_is_list($rows) || ! is_int($total)) {
+                throw new GitHubActionsUnavailable(invalid: true);
+            }
+
+            foreach ($rows as $row) {
+                if (! is_array($row)) {
+                    throw new GitHubActionsUnavailable(invalid: true);
+                }
+                $entries[] = $row;
+            }
+
+            if (count($rows) < self::PerPage || count($entries) >= $total) {
+                break;
+            }
+        }
+
+        return [$entries, $total];
     }
 
     /**
