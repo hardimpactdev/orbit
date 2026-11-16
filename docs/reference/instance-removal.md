@@ -92,6 +92,8 @@ The steps of a container removal take one of 64 names per Node: `<family>-<node>
 
 Swamp fails a step that waits 60 seconds for a name another run holds, and "Delete the container" holds its name for 20 to 60 seconds under load. So the Gateway starts a removal only when no older removal of its slot on its Node is open ([One Route write per Node](/reference/operations#one-route-write-per-node)). Clones made together have consecutive IDs and take different slots.
 
+Both removal kinds, `instance.destroy` and `instance.unregister`, use the slot. An unregister names its `route-hold-release-withdrawn` and `instance-destroy-hibernation` steps as destroy does, so an unregister and a destroy of one slot on one Node wait for each other with `instance_slot`, in either order.
+
 The container removal step runs one Ansible playbook with the shipped `ansible.cfg` over one pipelined SSH master connection. Without the master, each of its 11 remote tasks opened six SSH logins, and the step took 27 s against 1.5 s for `incus delete --force` itself. The Instance named `default` stays unavailable, except a nested-fleet trial default that [Destroy](/reference/development-containers#destroy) admits. Conn removes its environment and pairing records after the T3 server is gone.
 
 A removal from Conn while a clone's [completion](/cli/instance/complete) runs records the completion's cancel and is admitted `waiting`; it starts when the completion has ended ([Remove a clone whose completion runs](/reference/conn#remove-a-clone-whose-completion-runs)). A removal from the CLI or the core API refuses with `operation.target_busy` while the completion holds the Instance. A completion that is filling the clone's database takes the cancel only when the fill has ended, so the removal does not drop a database that a copy still writes ([the cases not covered](/reference/conn#remove-a-clone-whose-completion-runs)).
@@ -160,6 +162,8 @@ The run reuses destroy's steps and their children:
 3. `Stop, remove Processes`: the `operation-process-destroy` child for each Process.
 4. `Remove hibernation files`: the awake and cold markers and the Caddy access log.
 5. `Check units gone`: each removed unit file and hibernation file is absent. This is the end check.
+
+`Check units gone` uses the per-Node name `instance-destroy-ssh-<node>` of destroy's SSH steps, not a slot name. It can therefore wait behind a host destroy on the same Node, and Swamp fails it after 60 seconds. The removal then fails with `instance.removal_incomplete`; a rerun of `instance:unregister` completes it.
 
 The run holds no source path, teardown step, SQLite path, database, git credential or token. Its intent names the Route withdrawal, the Processes, the hibernation files and `check_paths`: the unit and hibernation files that the end check finds absent. There is no record-only path without a run: destroy has none either, and every unregister runs the workflow. The run budget is destroy's: 60 seconds, 330 seconds for each withdrawn Route, and 180 seconds when the Instance has database records.
 

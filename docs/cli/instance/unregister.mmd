@@ -31,8 +31,8 @@ sequenceDiagram
   %%> Captures:
   %%> - what Instance 42 owns: Processes, Schedules, Route, database records
   %%> - the Route publication to withdraw, as destroy captures it
-  %%> Not captured:
-  %%> - the source, the teardown steps, SQLite paths and server databases: nothing on disk goes
+  %%> Not sent to the run:
+  %%> - the source and SQLite paths stay in the task's recorded input only; no teardown step or server database is captured: nothing on disk goes
   alt a check fails
     %% path: refused
     GW--xCLI: Refused<br/>instance.unregister_*

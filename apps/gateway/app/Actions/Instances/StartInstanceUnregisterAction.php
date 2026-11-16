@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
+use App\Actions\DatabaseConnections\PrepareOwnedDatabaseDestructionAction;
 use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\InstanceRemovalKind;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\Operation;
 
@@ -33,8 +33,8 @@ final readonly class StartInstanceUnregisterAction
         if (! $instance->placedOnAppDev()) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Only a host checkout development Instance can be unregistered.', 503);
         }
-        // Unregister never drops a database, and no database may stay without an owner.
-        if (DatabaseConnection::query()->where('owner_instance_id', $instance->id)->whereNotNull('database_server_id')->exists()) {
+        // Unregister never drops a database, and no database may stay without an owner: the server databases destroy would drop refuse.
+        if (app(PrepareOwnedDatabaseDestructionAction::class)->snapshot($instance)['servers'] !== []) {
             throw new ResourceOperationException('instance.unregister_owned_database', "Instance [{$instance->name}] owns a database on a Database server. Use instance:destroy.", 409);
         }
         app(ContainerInstanceDestroy::class)->assertAvailable($instance, false);

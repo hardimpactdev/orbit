@@ -581,13 +581,32 @@ it('takes the withdrawal slot the way route-withdraw names its Node steps', func
 });
 
 /** A removal of an Instance, with or without a Route on the given Nodes. */
-function instanceRemoval(int $instanceId, array $serving = []): Operation
+function instanceRemoval(int $instanceId, array $serving = [], string $kind = 'instance.destroy'): Operation
 {
-    $operation = routeWrite($serving, 'instance.destroy');
+    $operation = routeWrite($serving, $kind);
     $operation->update(['input' => [...$operation->input, 'instance_id' => $instanceId]]);
 
     return $operation->refresh();
 }
+
+it('keeps an unregister and a destroy of one Instance slot on a Node apart, in either order', function (string $older, string $newer): void {
+    $holds = app(RoutePublicationHolds::class);
+    $started = startedOperations();
+    // Both removal kinds name their release and hibernation steps by the slot: Instances 3206 and 3270 take slot 6.
+    [$first, $same] = [instanceRemoval(3206, kind: $older), instanceRemoval(3270, [5], $newer)];
+    expect(RoutePublicationHolds::destroySlot($same))->toBe(6)
+        ->and($holds->admit($first))->toBeTrue()
+        ->and($holds->admit($same))->toBeFalse()
+        ->and($same->fresh()->status)->toBe(OperationStatus::Waiting)
+        ->and(OperationData::fromModel($same->fresh())->holdWaitReason)->toBe('instance_slot');
+
+    finish($first);
+    runPromotion();
+    expect($same->fresh()->status)->toBe(OperationStatus::Queued)->and($started->getArrayCopy())->toContain($same->id);
+})->with([
+    'unregister behind destroy' => ['instance.destroy', 'instance.unregister'],
+    'destroy behind unregister' => ['instance.unregister', 'instance.destroy'],
+]);
 
 it('keeps two removals of one Instance slot on a Node apart for the whole run, with or without a Route, and tells why it waits', function (): void {
     $holds = app(RoutePublicationHolds::class);

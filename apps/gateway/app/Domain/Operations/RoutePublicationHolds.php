@@ -379,10 +379,10 @@ final class RoutePublicationHolds
         });
     }
 
-    /** The slot of a removal's container step names: its Instance's ID modulo `DestroySlots`. Null for any other kind. */
+    /** The slot of a removal's step names: its Instance's ID modulo `DestroySlots`, for destroy and unregister alike. Null for any other kind. */
     public static function destroySlot(Operation $operation): ?int
     {
-        $instance = $operation->kind === 'instance.destroy' ? ($operation->input['instance_id'] ?? null) : null;
+        $instance = InstanceDestroyKind::removes($operation->kind) ? ($operation->input['instance_id'] ?? null) : null;
 
         return is_int($instance) ? $instance % self::DestroySlots : null;
     }
@@ -399,7 +399,7 @@ final class RoutePublicationHolds
             return false;
         }
 
-        return Operation::query()->where('kind', 'instance.destroy')->where('node_id', $operation->node_id)->where('id', '<', $operation->id)
+        return Operation::query()->whereIn('kind', InstanceDestroyKind::Removals)->where('node_id', $operation->node_id)->where('id', '<', $operation->id)
             ->where(static fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())->orWhereNotNull('lock_key')
                 ->orWhere('finished_at', '>', now()->subMinutes(self::UnconfirmedMinutes)))
             ->get()->contains(static fn (Operation $other): bool => self::destroySlot($other) === $slot
