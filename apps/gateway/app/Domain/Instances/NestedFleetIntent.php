@@ -83,6 +83,7 @@ final readonly class NestedFleetIntent
         $local = implode(',', ['localhost', '127.0.0.1', '::1', '.orbit', TaskVmNestedFleet::Layout['gateway']['wireguard'],
             TaskVmNestedFleet::WireGuardSubnet, TaskVmNestedFleet::Subnet]);
 
+        $size = $instance->runtime()->value('idmap_size');
         $layout = [];
         foreach (TaskVmNestedFleet::Layout as $role => $guest) {
             $layout[$role] = ['address' => $guest['address'], 'memory' => self::Memory[$role]];
@@ -93,7 +94,7 @@ final readonly class NestedFleetIntent
             'layout' => $layout,
             // The refresh builds the Instance host on nested-app-dev only when the default's ID map leaves room for isolated Instances
             // there (docs/reference/development-containers.md#instance-host-in-the-fleet).
-            'host' => (int) $instance->runtime()->value('idmap_size') >= InstanceHostIntent::NestedIdMapSize,
+            'host' => is_int($size) && $size >= InstanceHostIntent::NestedIdMapSize,
             'operator' => TaskVmNestedFleet::operator(),
             'checkout' => ['path' => TaskVmNestedFleet::CheckoutPath],
             'proxy' => ['HTTP_PROXY' => $proxy, 'HTTPS_PROXY' => $proxy, 'http_proxy' => $proxy, 'https_proxy' => $proxy,
