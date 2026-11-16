@@ -375,6 +375,7 @@ async function stagePayload(container: Record<string, unknown>, account: string)
             node_services: await read("ansible/instance_node_services.py"), machine_name: await read("ansible/instance_machine_name.py"),
             mail: await read("ansible/instance_mail.py"), bridge: await read("ansible/instance_bridge.py"),
             node: await read("ansible/instance_node_runtime.py"),
+            workspace_owner: await read("ansible/instance_workspace_owner.py"),
             ...(container.club_key ? { club_key: await read("ansible/instance_nested_club_key.sh") } : {}),
         },
     };

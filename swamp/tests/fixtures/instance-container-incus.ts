@@ -356,6 +356,11 @@ if (family === "list") {
   if (command[0] === "runuser") command = command.slice(command.indexOf("--") + 1);
   const commandTimeout = command[0] === "timeout" ? Number(command[1]) : null;
   if (command[0] === "timeout") command = command.slice(2);
+  // Who runs each call in the workspace, and what (ADR 0266: `agent` owns it).
+  if (cwd === "/srv/workspace") {
+    state.workspace_calls ??= [];
+    state.workspace_calls.push(`${user} ${command[0]}`);
+  }
   // A flush of one file system, such as the inner volume before its snapshot: recorded, never run. `sync_fails` holds a flush that
   // the container refuses.
   if (command[0] === "sync") {
