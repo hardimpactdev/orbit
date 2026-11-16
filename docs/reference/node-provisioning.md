@@ -627,8 +627,10 @@ A succeeded `node:converge` records the digest of each phase on the Node (`nodes
 - a changed digest: a changed intent, secret value or release;
 - no record: the first converge, or a converge after a failed or interrupted converge;
 - no record: a converge after any other Operation on the Node;
-- no record: a converge while the Node records a failed agent pin, which an agent command can record outside an Operation;
+- no record: a converge while the Node records a failed agent pin;
 - `--full`, which compares with no record.
+
+An agent command can record a failed agent pin outside any Operation, so admission does not clear the record for it. The converge must install the agent again, so it compares with no record.
 
 Drift is not an input. A skipped phase does not see a change that someone made on the Node by hand. The `check` phase always reads the selected software, units, role configuration and tunnel. When it finds drift, the converge fails, the record stays clear, and the next converge runs every phase. Run `node:converge --full` to repair drift that the check does not read.
 
