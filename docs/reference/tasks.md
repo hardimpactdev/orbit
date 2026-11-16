@@ -256,7 +256,7 @@ The role `consult` and the field `model` were options of the Pi turn on a task V
 
 No `tasks.provision` Operation starts any more: a task start makes a task copy. An old one that is still open holds its group as every open Operation does, so other work returns `operation.target_busy` until the reconcile pass ends it.
 
-A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission puts the title, brief and deliverables of the subtask in front of the prompt of the caller, for every role, and records that text as the admitted prompt. A composed prompt over 100000 characters returns 422 `tasks.prompt_too_large`.
+A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission puts the title, brief and deliverables of the subtask and the turn's clock in front of the prompt of the caller, for every role, and records that text as the admitted prompt. A composed prompt over 100000 characters returns 422 `tasks.prompt_too_large`.
 
 #### Publish an external group
 
@@ -845,7 +845,9 @@ A reviewer turn works on the checked candidate, detached, and Orbit checks the t
 
 A question ends a turn: Orbit stores it and stops the run, and the role's next turn, or a message to the thread from a T3 client, answers it. The thread and its transcript stay on the Gateway after the copy is gone.
 
-Each turn's prompt gives the agent its clock: the time Orbit admitted the turn and that time plus the one-hour bound, in UTC, with the ask to commit before the end. The turn's result names `agent_id`, the agent thread that [`task:agent:show`](/cli/task/agent-show) reads, and `reply`, the agent's last reply in the turn, bounded at 16,384 characters with a marker that says how much was cut. A driver reads a turn from its result alone; the whole transcript stays in the archive ([result fields](/cli/task/turn#a-task-that-runs-in-a-copy)).
+Each turn's prompt gives the agent its clock: the time Orbit admitted the turn and that time plus the one-hour bound, in UTC, with the ask to commit before the end. The turn's result names `agent_id`, the agent thread that [`task:agent:show`](/cli/task/agent-show) reads, and `reply`, the transcript's last entry that the user did not write, bounded at 16,384 characters with a marker that says how much was cut. The transcript is the whole thread's, so a turn in which the agent wrote nothing shows an earlier turn's reply.
+
+A driver reads a turn from its result alone; the whole transcript stays in the archive ([result fields](/cli/task/turn#a-task-that-runs-in-a-copy)).
 
 [`task:sync`](/cli/task/sync#a-task-copy) brings the Project's newest default branch into it, as [bring main into a copy](#bring-main-into-a-copy) describes. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet.
 

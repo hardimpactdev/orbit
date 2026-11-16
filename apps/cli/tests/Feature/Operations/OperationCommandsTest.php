@@ -582,6 +582,18 @@ it('prints no reply for a turn whose agent wrote none', function (): void {
     expect(Artisan::output())->toContain('Turn failed.', 'Agent thread: 9', 'Reply: none');
 });
 
+it('prints no agent lines for a turn whose result names no agent thread', function (): void {
+    $seen = [];
+    cli_deploy_gateway([
+        cli_operation(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'status' => 'failed', 'error_code' => 'swamp.run_failed',
+            'result' => ['error_code' => 'swamp.run_failed'], 'poll_after_seconds' => null]),
+    ], $seen, TurnTaskRequest::class, ['kind' => 'tasks.copy_turn', 'target_type' => 'task_group']);
+
+    expect(Artisan::call('task:turn', ['task' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--no-interaction' => true]))->toBe(1);
+
+    expect(Artisan::output())->toContain('Turn failed.')->not->toContain('Agent thread:')->not->toContain('Reply');
+});
+
 describe('task:publish', function (): void {
     beforeEach(function (): void {
         MockClient::global(gateway_fixture_mock());
