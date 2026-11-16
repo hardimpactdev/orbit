@@ -1,4 +1,4 @@
-"""Fixture matrices share nine runner places without admitting fork code or a second wave."""
+"""Fixture matrices share eighteen runner places without admitting fork code or a second wave."""
 from pathlib import Path
 import sys
 import unittest
@@ -60,10 +60,23 @@ class FixturePoolTest(unittest.TestCase):
         self.assertTrue(any(step.get('run', '').startswith('bin/ci-units run ') for step in job['steps']))
         self.assertEqual(['self-hosted', 'hardimpact', 'orbit-shard'], workflow['jobs']['self-hosted-fixtures']['runs-on'])
         budget, _, _ = units.configuration()
-        self.assertEqual(9, budget['runner_shards'])
+        self.assertEqual(18, budget['runner_shards'])
         self.assertEqual((150, 180, 190, 240), tuple(budget[key] for key in
                          ('shard_seconds', 'unit_ceiling_seconds', 'shard_deadline_seconds', 'shard_ceiling_seconds')))
-        self.assertEqual((4, 2), (budget['shard_workers'], budget['self_hosted_workers']))
+        self.assertEqual((2, 2), (budget['shard_workers'], budget['self_hosted_workers']))
+
+    def test_shared_policy_runs_the_whole_fleet_in_two_lane_shards(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/ansible_instance_fleet_test.ts'
+        plan = units.plan(['.github/workflows/ci.yml'], budget, fixtures, defaults)
+        self.assertNotIn('capacity', plan)
+        selected = units.planned_units(plan)
+        expected = [name for name, _ in units.units_for(fixtures[file], budget)]
+        self.assertEqual(76, len(expected))
+        self.assertEqual(set(expected), {name for name in selected if name.split('#')[0] == file})
+        self.assertLessEqual(len(plan['shards']) + len(plan['self_hosted_shards']), 18)
+        for shard in plan['shards'] + plan['self_hosted_shards']:
+            self.assertEqual(2, units.shard_workers(shard['units'], budget, fixtures))
 
 
 if __name__ == '__main__':

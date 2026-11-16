@@ -7,13 +7,13 @@
 shard_seconds = 150
 shard_deadline_seconds = 190
 shard_ceiling_seconds = 240
-shard_workers = 4
+shard_workers = 2
 unit_ceiling_seconds = 180
 slice_seconds = 60
 slice_startup_seconds = 6
-pr_shards = 9
-# Both fixture matrices share the nine general runners: Sabre five, Shark four.
-runner_shards = 9
+pr_shards = 18
+# Both fixture matrices share eighteen general runners: Sabre seven, Shark eleven.
+runner_shards = 18
 # Tool-dependent shards keep a separate per-class limit and also count against runner_shards.
 self_hosted_shards = 8
 # Concurrent units in one self-hosted shard. Its runner container shares the Node's memory with proof copies; four

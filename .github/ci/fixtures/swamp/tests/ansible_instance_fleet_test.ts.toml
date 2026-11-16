@@ -81,6 +81,8 @@ file = "swamp/tests/ansible_instance_fleet_test.ts"
 cost = 3227
 slices = 76
 inputs = [
+  # Exercise every case when the workflow changes its runner or concurrency policy.
+  ".github/workflows/ci.yml",
   "swamp/ansible/instance_fleet_shrink.py",
   "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",
