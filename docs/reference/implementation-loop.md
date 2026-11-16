@@ -216,7 +216,11 @@ Required checks has static dependencies on the selected checks, including Swamp.
 
 Each registered fixture has one metadata file under `.github/ci/fixtures/`, mirroring its source path with `.toml` appended. It holds the input rules, costs and ordered case names. It holds no hash of the test file: an edit that keeps the case names leaves the metadata alone, so two PRs that change different cases of one file do not conflict on it. When the fixture's tests run a host program, such as `zip` or `jq`, `host_programs` lists it; `bin/ci-units` refuses a list that is empty or names a program twice. Shared budgets, defaults and build checks stay in `.github/ci/checks.toml`.
 
-`bin/ci-registry` is the loader for fixture selection and execution. Editing fixture metadata selects only those fixtures, using the same merge base as path selection. Formatting and edits to check definitions select no extra fixture bodies. Changes to shared fixture budgets, defaults or fixture order, or to the loader, runner and slice preload, select all fixtures within the existing budget.
+`bin/ci-registry` is the loader for fixture selection and execution. Editing fixture metadata selects only those fixtures, using the same merge base as path selection. Formatting and edits to check definitions select no extra fixture bodies.
+
+A change to the shared fixture machinery does not select every fixture. The machinery is the fixture list, budgets, defaults and fixture order in `checks.toml`, the loader, the planner, the runner and the slice preload. Such a change selects the fixtures whose own code it touches, plus the machinery canary set: the short list `machinery_canary` in the `[budget]` of `checks.toml`. The canary files exercise the loader, the runner and the budget paths; together they fit one shard of one pull request. The pure-code tests of the machinery, `tools/test_ci_*.py`, cover the rest.
+
+A canary file must be a registered hosted fixture; `bin/ci-units plan` refuses a list that names an unregistered or `self_hosted` file, or that needs more than one shard.
 
 `bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most ten shards per pull request.
 
