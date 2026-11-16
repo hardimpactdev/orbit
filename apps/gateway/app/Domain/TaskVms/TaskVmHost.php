@@ -152,12 +152,12 @@ final readonly class TaskVmHost
         return $this->containers === null ? [$this->cidr] : [$this->cidr, $this->containers->cidr];
     }
 
-    /** The places of `$runtime` in the CI or the task pool. A host without `containers` has no container place. */
+    /** The places of `$runtime` in the CI or the task pool. A host without `containers` has no container place, and containers have no CI place. */
     public function places(TaskVmRuntime $runtime, bool $ci): int
     {
         return match ($runtime) {
             TaskVmRuntime::Vm => $ci ? $this->ciPlaces : $this->taskPlaces,
-            TaskVmRuntime::Container => ($ci ? $this->containers?->ciPlaces : $this->containers?->taskPlaces) ?? 0,
+            TaskVmRuntime::Container => $ci ? 0 : $this->containers->taskPlaces ?? 0,
         };
     }
 

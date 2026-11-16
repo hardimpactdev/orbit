@@ -101,9 +101,46 @@ it('sends task VM host settings and their removal without changing apps', functi
     'task-limited host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
     'proof-only host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
     'shared host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
-    'host with task containers' => [['cidr' => '10.251.77.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.251.78.0/24', 'task_places' => 1, 'ci_places' => 1, 'network' => 'orbittaskc0']]],
+    'host with task containers' => [['cidr' => '10.251.77.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.251.78.0/24', 'task_places' => 1, 'network' => 'orbittaskc0']]],
     'removed host' => [null],
 ]);
+
+it('sends only the CI members given, or null to clear them, beside the other fields', function (array $options, array $body): void {
+    node_update_profile();
+    $mockClient = MockClient::global([
+        '*/api/v1/nodes/14' => MockResponse::make([
+            'data' => ['id' => 14, 'name' => 'ci-node', 'status' => 'active', 'public_ssh_host' => '192.0.2.14', 'settings' => ['ci' => ['places' => 4, 'proof_only' => false]]],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ]),
+    ]);
+
+    $this->artisan('node:update', ['node' => '14', ...$options])->expectsOutput('Node #14 [ci-node] updated.')->assertExitCode(0);
+
+    expect($mockClient->getLastRequest()?->body()->all())->toBe($body);
+})->with([
+    'places' => [['--ci-places' => '4'], ['ci' => ['places' => 4]]],
+    'zero places' => [['--ci-places' => '0'], ['ci' => ['places' => 0]]],
+    'places for proof copies only' => [['--ci-places' => '2', '--ci-proof-only' => true], ['ci' => ['places' => 2, 'proof_only' => true]]],
+    'proof only alone' => [['--ci-proof-only' => true], ['ci' => ['proof_only' => true]]],
+    'shared with runner jobs' => [['--no-ci-proof-only' => true], ['ci' => ['proof_only' => false]]],
+    'cleared' => [['--no-ci' => true], ['ci' => null]],
+    'with a new name' => [['--name' => 'ci-node', '--ci-places' => '3'], ['name' => 'ci-node', 'ci' => ['places' => 3]]],
+]);
+
+it('renders the Gateway refusal of CI places on a Node without an active ci-runner role', function (): void {
+    node_update_profile();
+    MockClient::global([
+        UpdateNodeRequest::class => MockResponse::make(
+            ['error' => ['code' => 'node.settings_ci_runner_required', 'message' => 'Only a Node with an active ci-runner role takes CI places.']],
+            422,
+            ['X-Orbit-Request-Id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ),
+    ]);
+
+    $this->artisan('node:update', ['node' => '2', '--ci-places' => '2', '--json' => true])
+        ->expectsOutputToContain('"code":"node.settings_ci_runner_required"')
+        ->assertExitCode(1);
+});
 
 it('reports a skip when the Gateway wrote nothing, in human and JSON output', function (): void {
     node_update_profile();
@@ -178,7 +215,16 @@ it('refuses missing and malformed input before making a request', function (arra
     'non-string operator-owned resource' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":4,"operator_owned":["orbit-ci/*",7]}'], 'node.setting_invalid'],
     'operator-owned object instead of list' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":4,"operator_owned":{"resource":"orbit-ci/*"}}'], 'node.setting_invalid'],
     'containers without places' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24"}}'], 'node.setting_invalid'],
-    'containers unknown field' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1,"image_alias":"base"}}'], 'node.setting_invalid'],
+    'containers unknown field' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"image_alias":"base"}}'], 'node.setting_invalid'],
+    'containers with CI places' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}'], 'node.setting_invalid'],
+    'CI places not a number' => [['node' => '14', '--ci-places' => 'four'], 'node.ci_places_invalid'],
+    'empty CI places' => [['node' => '14', '--ci-places' => ''], 'node.ci_places_invalid'],
+    'negative CI places' => [['node' => '14', '--ci-places' => '-1'], 'node.ci_places_invalid'],
+    'too many CI places' => [['node' => '14', '--ci-places' => '65'], 'node.ci_places_invalid'],
+    'clear with CI places' => [['node' => '14', '--no-ci' => true, '--ci-places' => '2'], 'node.ci_option_conflict'],
+    'clear with proof only' => [['node' => '14', '--no-ci' => true, '--ci-proof-only' => true], 'node.ci_option_conflict'],
+    'clear with shared places' => [['node' => '14', '--no-ci' => true, '--no-ci-proof-only' => true], 'node.ci_option_conflict'],
+    'both proof-only switches' => [['node' => '14', '--ci-proof-only' => true, '--no-ci-proof-only' => true], 'node.ci_option_conflict'],
     'containers as a list' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":[]}'], 'node.setting_invalid'],
 ]);
 

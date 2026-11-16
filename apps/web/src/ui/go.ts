@@ -17,6 +17,7 @@ export const SECTIONS = [
     "ai-router",
     "tasks",
     "activity",
+    "runners",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 
@@ -28,6 +29,7 @@ export const NAV = [
     "databases",
     "tasks",
     "activity",
+    "runners",
 ] as const satisfies readonly Section[];
 
 export function extensionSectionVisible(
@@ -93,6 +95,7 @@ export const SECTION_TITLES: Record<Section, string> = {
     "ai-router": "AI router",
     tasks: "Tasks",
     activity: "Activity",
+    runners: "Runners",
 };
 
 export const FILTERED_SECTIONS: readonly string[] = ["instances", "processes", "schedules"];

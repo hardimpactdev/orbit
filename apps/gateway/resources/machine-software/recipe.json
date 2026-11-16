@@ -1680,15 +1680,17 @@
             "static_php_cli": "ff04d4af9ba44f6c194239d733e0529cc6ddecea",
             "frankenphp": "1.13.5",
             "without": [
-                "ffi",
+                "ffi"
+            ],
+            "cli_extensions": [
                 "pcov"
             ],
             "versions": {
                 "8.5": {
                     "php_version": "8.5.12",
-                    "build": "5ab1cabaf1344665091992b2064d900643ceb86bb4d369e9f707f0fb351b1a70",
-                    "url": "https://github.com/hardimpactdev/orbit/releases/download/static-php-8.5.12-5ab1cabaf134/static-php-8.5.12-5ab1cabaf134-linux-x86_64.tar.gz",
-                    "sha256": "8f67eeba94e8c567d9c0fc2157f217bf167ed26812ce0a57867c6f63d12d4946"
+                    "build": "d17101464dc3fe420f6c96542ce63c48d1a727ccb7a6e6a324c7e3bab55a41a4",
+                    "url": "https://github.com/hardimpactdev/orbit/releases/download/static-php-8.5.12-d17101464dc3/static-php-8.5.12-d17101464dc3-linux-x86_64.tar.gz",
+                    "sha256": "770c4f2e6dd393ddd355c2a498f2a4867b601fdc60a066b147b6a09cb1584aef"
                 }
             }
         }

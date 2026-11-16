@@ -244,8 +244,8 @@ jobs:
         type: succeeded
   - name: Check the copy
     # The copy check (docs/reference/tasks.md#the-copy-check), IN the copy where the values are: root reads the copy's secrets, Git runs
-    # as agent, and the evidence names paths, lines and secret names, never a value. It also names a change of .github/workflows/,
-    # which the copy's token cannot push. The export ended first, so the check reads the branch the bundle holds.
+    # as agent, and the evidence names paths, lines and secret names, never a value. Workflow changes are judged by "Read the base",
+    # against the real default head. The export ended first, so the check reads the branch the bundle holds.
     labels:
       role: swamp
     queueTimeout: 30
@@ -263,8 +263,8 @@ jobs:
       condition:
         type: succeeded
   - name: Read the copy check
-    # A secret value refuses with tasks.publish_secret_value, a workflow change with tasks.publish_workflow_change, an error of the check
-    # with tasks.publish_secret_unchecked; each before any token exists.
+    # A secret value refuses with tasks.publish_secret_value, an error of the check with tasks.publish_secret_unchecked; each before any
+    # token exists.
     labels:
       role: swamp
     queueTimeout: 30
@@ -840,6 +840,9 @@ jobs:
     # A task copy states the base it publishes against: the default branch head at publish time, fetched into this run's scratch
     # repository with the push's own authorization, the merge base with the candidate, how far behind, the paths both sides changed
     # and a merge in the repository alone. Nothing reaches the copy. Exit 0: a clean merge; 3: a conflict; any other: an error.
+    # It also lists the .github/workflows/ paths whose tree differs between the head and the candidate: GitHub refuses a push without
+    # the workflows permission on that net diff, not on the commits. A commit the head holds, synced or carried in by hand, is never a
+    # change of the copy; a copy behind a workflow change of the head lists that path too.
     # The facts go to the private scratch, which "Remove local scratch" removes; Swamp keeps no stderr of a failed step.
     labels:
       role: swamp
@@ -868,6 +871,8 @@ jobs:
           repo diff --name-only --no-renames -z "$base" refs/heads/candidate | sort -z >"$work/ours"
           repo diff --name-only --no-renames -z "$base" "$head" | sort -z >"$work/theirs"
           comm -12 -z "$work/ours" "$work/theirs" >"$work/overlap"
+          repo diff --name-only --no-renames -z "$head" refs/heads/candidate -- .github/workflows/ >"$work/workflows"
+          sort -zu -o "$work/workflows" "$work/workflows"
           code=0
           repo merge-tree --write-tree --name-only --no-messages -z refs/heads/candidate "$head" >"$work/merge" || code=$?
           case $code in
@@ -900,6 +905,7 @@ jobs:
         type: succeeded
     writes: true
   - name: Check the base
+    # A workflow path fails with tasks.publish_workflow_change and its paths, before the conflict: the token has no workflows permission.
     # Exit 0 passes the facts, each path list bounded; exit 3 fails with tasks.publish_conflict and the conflicting paths; any other
     # exit fails with tasks.publish_failed. Being behind or overlapping never refuses.
     labels:
