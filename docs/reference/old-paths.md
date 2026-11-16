@@ -53,6 +53,8 @@ A task without a [task copy](/reference/tasks#task-copy) has no workspace that O
 
 `tasks.provision` stays registered as the request kind of `task:start`, which scopes the route's `Idempotency-Key`. No Operation of it starts. Its registry entry names `operation-instance-create`, the workflow a start runs through its task copy, and declares no vault pattern. The rows of `task_vms` stay, and nothing changes them.
 
+The task VM hub filter that the removed `task_vm.hub_converge` installed on the vpn Node goes with the next converge of that Node: the unit `orbit-task-vms-hub.service`, its unit file, `/etc/orbit/task-vms/hub.nft` and the nft table `inet orbit_task_vms`. [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) has the steps.
+
 The task VM workflows that #3849 kept are deleted: the start `operation-task-provision` with its children `task-vm-start` and `task-vm-hub-peer`, and the place release `operation-task-vm-slot-release` with its children `task-vm-slot-phase` and `task-vm-hub-peer-remove`. The playbook `swamp/ansible/task-vm-start.yml`, which only the start ran, goes with them. `operation-task-cancel` calls no release any more; a cancel starts no run.
 
 ### The Pi agent server

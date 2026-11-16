@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Domain/Nodes/{NodeNetworkConvergeInput,NodeNetworkInput,NodeNetworkParticipantInput,NodeNetworkProjection,NodeWireGuardInput,NodeWireGuardHubInput}.php
   - apps/gateway/app/Infrastructure/Nodes/NodeVpnConfigurationSource.php
   - apps/gateway/database/migrations/2027_02_02_000000_drop_node_wireguard_endpoint_override.php
-  - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source,node-converge-handshake,node-converge-hub-peers,node-converge-hub-switch,node-converge-hub-move,node-add-hub-peers}.yml
+  - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source,node-converge-handshake,node-converge-hub-peers,node-converge-hub-switch,node-converge-hub-move,node-add-hub-peers,node-converge-hub-filter-absent}.yml
   - apps/gateway/app/Domain/Nodes/NodeLanAddress.php
 ---
 
@@ -194,6 +194,10 @@ The converge's Ansible `network` phase reaches the hub over SSH as root:
 5. The source unit is written, restarted on change or drift, and checked.
 6. It requires every recorded peer on the interface, or fails with the assertion `vpn.hub_peer_missing`.
 7. It waits up to a minute for each peer that was live in step 1 to have a handshake in the last 180 seconds.
+
+Step 3 also removes the [task VM hub filter](/reference/old-paths#the-task-vm-lifecycle) that the removed `task_vm.hub_converge` installed. It stops and disables `orbit-task-vms-hub.service` when its unit file exists, deletes the unit file and `/etc/orbit/task-vms/hub.nft`, and deletes the folder `/etc/orbit/task-vms` when it is then empty. It reloads systemd only when it deleted the unit file, and deletes the nft table `inet orbit_task_vms` only when `nft list table` finds it. A hub that never had the filter, or had it removed by an earlier converge, changes nothing.
+
+The same hub tasks run when the target of `node:converge` is the hub itself and when the converge of another Node reconciles its hub first, so the converge of the vpn Node removes the filter.
 
 An offline peer, such as a laptop, has no handshake to give, so the hub does not wait for it. Waiting for every recorded peer failed the hub's converge whenever one was offline (Operation 15006, 2026-11-09). The `check` phase only requires every recorded peer on the interface; with no change it has no handshake to prove.
 
