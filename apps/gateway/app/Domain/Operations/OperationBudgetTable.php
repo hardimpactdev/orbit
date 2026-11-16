@@ -92,11 +92,12 @@ final class OperationBudgetTable
         // its bound) and the stop (130 s at its bound), rounded up to one hour. Replace with the 14-day p95 after the first successes.
         'tasks.provision' => 3900,
         // No run yet. Basis: the agent's turn in a task copy, which its own step bounds at 3,600 s, and
-        // the Ansible phase around it, which `timeout 4400` bounds: the kill grace (30 s), six T3 or helper calls of up to 60 s (the
-        // settle's list, the list of a continued turn, the question's read and stop, the list and show after the turn: 6 minutes), sixteen
-        // Git commands of up to 20 s (the settle's restore, a reviewer's set-up and restore: 320 s) and the SSH set-up, rounded to 76 minutes.
-        // Replace with the longest run x 1.5 once the history holds turns.
-        'tasks.copy_turn' => 4560,
+        // the Ansible phase around it, which `timeout 4500` bounds: the kill grace (30 s), eight T3 or helper calls of up to 60 s (the
+        // settle's list and its stops of up to two earlier runs, the list of a continued turn, the question's read and stop or a cut run's
+        // list and stop, the list and show after the turn: 8 minutes), sixteen Git commands of up to 20 s (the settle's restore, a
+        // reviewer's set-up and restore: 320 s) and the SSH set-up, rounded to 78 minutes. Replace with the longest run x 1.5 once the
+        // history holds turns.
+        'tasks.copy_turn' => 4680,
         // No run yet. Basis: a bare clone of one branch and a fetch of another (about 60 s for this repository), one bundle, one copy
         // and one fetch over WireGuard (about 30 s), so about 2 minutes, x 3 for a slow GitHub, rounded to 6 minutes. Replace with the
         // 14-day p95 after the first success.

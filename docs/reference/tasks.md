@@ -848,7 +848,11 @@ The copy [starts clean](/reference/development-containers#a-task-copy-starts-cle
 
 [`task:turn`](/cli/task/turn#a-task-that-runs-in-a-copy) runs an implementer or reviewer turn in it as `tasks.copy_turn`, with T3's own CLI as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. Each role keeps one ongoing T3 thread, and a turn without `--thread` continues it: the implementer's thread of the current subtask, recorded on the subtask, or the reviewer's thread, recorded on the group. The first turn of a role, or `--thread=new`, starts the thread with the role's copy model and effort.
 
-A reviewer turn works on the checked candidate, detached, and Orbit checks the task branch out again after it, at the commit it had. A checkout left unclean, off that branch or at another commit holds the group, whatever the turn's run did. The next turn settles an earlier turn once T3 shows its run over and a reviewer's checkout is clean on the task branch; the work in the copy stays.
+A reviewer turn works on the checked candidate, detached, and Orbit checks the task branch out again after it, at the commit it had. A checkout left unclean, off that branch or at another commit holds the group, whatever the turn's run did.
+
+A turn has a bound of 3,600 seconds. A turn that its bound cuts stops its own run in the copy, and then holds nothing, though it still fails with `tasks.turn_timeout`.
+
+Every earlier turn that is over in Orbit but may still run in the copy, because it was cut, cancelled or lost, is settled by the next turn. That turn's phase first stops the earlier run when T3 still shows it active. It settles the earlier turn once T3 shows its run over and a reviewer's checkout is clean on the task branch. A stop that fails leaves the earlier turn unsettled, and the next turn fails with `tasks.copy_turn_unended`. The work in the copy stays. So `operation:cancel <turn>` and then a new turn stop a running turn's run.
 
 A question ends a turn: Orbit stores it and stops the run, and the role's next turn, or a message to the thread from a T3 client, answers it. The thread and its transcript stay on the Gateway after the copy is gone.
 

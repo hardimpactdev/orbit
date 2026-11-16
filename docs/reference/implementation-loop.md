@@ -219,7 +219,7 @@ The container fixture uses that rule from 23 hosted pull request runs of 13 Nove
 
 Container host preparation uses one case per unit. Each of its declared body costs uses its largest completed observation, rounded up plus one second, which is stricter than the 90th percentile; paired cases must not receive an equal share of the file total. Deadline cuts are censored observations, not completed measurements.
 
-Task-copy turns also use one case per PR unit. Their costs use completed hosted case times with 25% headroom, rounded up plus one second. The reviewer-detach case has only censored hosted observations and keeps an explicit 120-second estimate until a complete run measures it. The full-set planner uses these costs to split the file instead of running it whole against the 540-second ceiling.
+Task-copy turns also use one case per PR unit. Their costs use completed hosted case times with 25% headroom, rounded up plus one second. The reviewer-detach case has only censored hosted observations and keeps an explicit 138-second estimate until a complete run measures it. A case with no hosted run yet, such as the Conn Server case and the stop cases, keeps an estimate above its local time. `tools/tests/ci-task-copy-turn-costs.json` records each observation and estimate. The full-set planner uses these costs to split the file instead of running it whole against the 540-second ceiling.
 
 Each fixture unit has its own child subreaper. It reaps adopted children while the session leader runs, so exited grandchildren do not remain zombies until the unit ends. The leader alone decides success or failure. Deadlines and cancellation still kill and reap the unit’s remaining descendants before temporary files are removed.
 

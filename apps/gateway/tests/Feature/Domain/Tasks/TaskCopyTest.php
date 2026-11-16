@@ -1996,7 +1996,11 @@ describe('a turn of a group that owns a copy', function (): void {
         try {
             $check();
         } catch (ResourceOperationException $error) {
-            expect($error->details)->toBe(['operation_id' => $cut->id]);
+            // It names the way out: the next turn stops the earlier run and settles it.
+            expect($error->details)->toBe(['operation_id' => $cut->id])
+                ->and($error->getMessage())->toBe('An earlier turn may still run in the task copy or left its checkout unrestored. '
+                    .'A check, publish or proof waits for the next task:turn, which stops that run and settles it. operation:cancel ends a running turn, '
+                    .'and the next turn stops its run.');
         }
 
         // The next turn is admitted and settles the earlier one in its own phase first, also on another thread.
