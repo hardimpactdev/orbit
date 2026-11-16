@@ -395,7 +395,7 @@ Internal source commits and digests remain in the identity; relocating identical
 
 Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, external artifact URL, `artifact_mirror`, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit.
 
-A [refresh](#refresh-the-base-snapshot) records the same identity on the build row of the base snapshot. Schema version `1` and a short display hash are not substitutes. The table `task_vm_image_recipe` that held the current recipe is dropped ([old paths](/reference/old-paths#the-task-vm-tables)).
+A [refresh](#refresh-the-base-snapshot) recorded the same identity on the build row of the base snapshot; the refresh is removed and the build rows went with the table `task_vm_image_builds`. Schema version `1` and a short display hash are not substitutes. The table `task_vm_image_recipe` that held the current recipe is dropped ([old paths](/reference/old-paths#the-task-vm-tables)).
 
 ### Show and validate the recipe
 
@@ -685,9 +685,9 @@ A task VM row had six states. The table and its states are dropped ([old paths](
 | `provisioning` | Orbit is creating, enrolling, or preparing the VM |
 | `ready` | Pi runs, and Orbit can create the workspace |
 | `parked` | Orbit stopped the VM, or is starting it again. The disk stays. See [Park and resume](#park-and-resume) |
-| `failed` | A job failed. The row keeps `error_code` and `error_message`. The group shows the error as its reason and asks for assistance |
+| `failed` | A job failed. The row kept `error_code` and `error_message`. The group shows the error as its reason and asks for assistance |
 | `destroying` | Cleanup has started |
-| `destroyed` | The VM and the Node are gone. The row stays for audit |
+| `destroyed` | The VM and the Node were gone. The row stayed for audit until the table was dropped |
 
 Orbit derives progress inside `provisioning` from facts: the VM exists, the row has a Node, the Node is active, and the Pi Process exists. A group has at most one task VM that is not `destroyed`. `failed` is final for the row. Cancel the group to destroy the VM.
 
@@ -738,7 +738,7 @@ Incus 7.0 requires Linux 6.12, cgroup v2, QEMU 8.2, nftables 1.0, dnsmasq 2.90, 
 Orbit uses complete CLI command names and explicit archive destinations, compatible with 7.0's stricter argument parsing. Its regular image archives do not use the changed file-copy behavior. Existing Ubuntu VMs retain their NVRAM filenames. On hosts only, the installer adds firmware aliases in Zabbly's bundled firmware directory. Incus 7.0.1 searches `INCUS_EDK2_PATH` then `/usr/share/OVMF`, while its AppArmor profile permits only `INCUS_EDK2_PATH` when set ([firmware selection](https://github.com/lxc/incus/blob/v7.0.1/internal/server/device/edk2/driver_edk2.go), [AppArmor](https://github.com/lxc/incus/blob/v7.0.1/internal/server/apparmor/instance.go)). Remove the aliases after an upstream release fixes selection and confinement and a VM created on Ubuntu Incus boots without them. Rebuilt images and new VMs do not need these aliases.
 
 1. Drain Shark with the admission procedure below. Inventory every project with `incus list --all-projects`.
-2. Finish live task VM rows through normal lifecycle operations. Save and disable instance autostart with the drain script below, then stop all remaining instances. Take the stopped-state backup below.
+2. Save and disable instance autostart with the drain script below, then stop all remaining instances. Take the stopped-state backup below.
 4. Verify client and server 7.0.1. Compare project, VM, ZFS, custom volume, and seed inventories with the backup.
 5. Boot an old-image guest and a new disposable guest. Check agent exec, stop/start, bridge isolation, and ACL egress.
 6. Not possible any more: the refresh that proves and promotes the snapshot has no trigger (see [Refresh the base snapshot](#refresh-the-base-snapshot)).
@@ -1105,7 +1105,9 @@ Until a snapshot is proved and recorded, each refresh discards any unpromoted ba
 
 The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
-The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs. The base is identified by the recipe identity that its refresh converged to, recorded on the build row. Image freshness counts a path when it belongs to a carried folder or matches any carried lock-file pattern.
+The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs.
+
+The base was identified by the recipe identity that its refresh converged to, recorded on its build row, which went with the table `task_vm_image_builds` ([old paths](/reference/old-paths#the-task-vm-tables)). Image freshness counts a path when it belongs to a carried folder or matches any carried lock-file pattern.
 
 The converge of a refresh installs the recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and installs with the `apt` module with `APT_CONFIG` pointing at it, and `allow_downgrade` because the pins are exact. The index read goes over plain http through the `apt-cacher-ng` of the VM (`localhost:3142`, no request pipelining, signatures still checked), which the first software task installs; the packages stay a direct download over https. The cache stays in the base VM, and the nested Nodes of a task VM read the snapshot indexes from it. The `check` phase asserts every package at its pin.
 

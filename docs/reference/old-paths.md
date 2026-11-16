@@ -111,7 +111,7 @@ The busy check of the fleet reboot, `FleetReboot::busy`, drops the Operation kin
 
 ### The task VM readers
 
-No task VM is created any more, and `task_vms` has no live row. This release removes the Gateway code that read `task_vms`, `task_vm_image_builds` or `task_vm_image_recipe` only to find a task VM, which none of them finds. The path that ran when no VM existed is now the only path. Instances, Projects and tasks lose these guards:
+No task VM is created any more. When `task_vms` had no live row left, this release removed the Gateway code that read `task_vms`, `task_vm_image_builds` or `task_vm_image_recipe` only to find a task VM, which none of them found. The path that ran when no VM existed is now the only path. Instances, Projects and tasks lose these guards:
 
 - The Instance guards of create, clone and transfer.
 - The Instance save rule `task_vm.foreign_instance` and the access grant rule `task_vm.access_refused`.

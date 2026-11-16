@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
-// These migrations ran on the task VM tables, which a later migration drops. Its rollback creates them as these migrations found them.
+// These migrations ran on the task VM tables, which a later migration drops. Its rollback creates them with the schema the base left.
 beforeEach(function (): void {
     (require database_path('migrations/2027_03_03_000000_drop_task_vm_tables.php'))->down();
 });
