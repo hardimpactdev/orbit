@@ -19,16 +19,17 @@ const intent = (inner: string | null) => ({
 });
 
 /**
- * A folder with a stub incus: `remote list` answers from `remotes.json`, `query` from `snapshots.json`, every other call is logged. The
- * volume's snapshots carry the names the Incus API gives them, `<volume>/<snapshot>`; the instance's carry `<snapshot>` alone.
+ * A folder with a stub incus: `remote list` answers from `remotes.json`, `query` from the snapshot lists, every other call is logged.
+ * As the Incus API does, the stub names an instance snapshot `<snapshot>` and a volume snapshot `<volume>/<snapshot>`. The volume holds
+ * the instance's snapshots unless the test names its own.
  */
-async function fixture(remotes: string[], snapshots: string[]) {
+async function fixture(remotes: string[], snapshots: string[], volumeSnapshots = snapshots) {
     const folder = await Deno.makeTempDir();
     await Deno.mkdir(`${folder}/bin`);
     await Deno.mkdir(`${folder}/servercerts`);
     await Deno.writeTextFile(`${folder}/remotes.json`, JSON.stringify(Object.fromEntries(remotes.map((name) => [name, {}]))));
     await Deno.writeTextFile(`${folder}/snapshots.json`, JSON.stringify(snapshots.map((name) => ({ name }))));
-    await Deno.writeTextFile(`${folder}/volume-snapshots.json`, JSON.stringify(snapshots.map((name) => ({ name: `proof-seed-inner/${name}` }))));
+    await Deno.writeTextFile(`${folder}/volume-snapshots.json`, JSON.stringify(volumeSnapshots.map((name) => ({ name: `proof-seed-inner/${name}` }))));
     await Deno.writeTextFile(`${folder}/certificate-12.pem`, certificate);
     await Deno.writeTextFile(`${folder}/bin/incus`, `#!/bin/sh
 case "$1 $2" in
@@ -117,6 +118,14 @@ Deno.test("the check fails a holder without the admitted seed snapshot", { ignor
     const folder = await fixture([], ["seed-old"]);
     try {
         assertEquals((await run(folder, ["Check the holder on the CI Node"], intent(null))).code === 0, false);
+        assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/target-12.json`)).status, "failed");
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the check fails a holder whose instance holds the admitted seed snapshot but whose volume does not", { ignore: !hasAnsible }, async () => {
+    const folder = await fixture([], ["seed-old", "seed-abc"], ["seed-old"]);
+    try {
+        assertEquals((await run(folder, ["Check the holder on the CI Node"], intent("inner-41"))).code === 0, false);
         assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/target-12.json`)).status, "failed");
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
