@@ -175,6 +175,15 @@
               return done.returncode
 
           record('original', 0, text('rev-parse', 'HEAD') + '\n')
+          base = check['base']
+          if base != '' and request.get('merged_default', ''):
+              # The handoff merged the default head: the start with that head merged in is the base, so the default branch's
+              # changes are never the subtask's work. A conflict of the two keeps Git's tree, with its markers.
+              merged = subprocess.run(git_argv + ['merge-tree', '--write-tree', '--no-messages', base, request['merged_default']],
+                                      capture_output=True, env=env, check=False, timeout=600)
+              if merged.returncode not in [0, 1]:
+                  refuse('phase_failed')
+              base = merged.stdout.decode().splitlines()[0].strip()
           setup_passed = True
           for index, step in enumerate(check['setup']):
               if captured(f'setup-{index}', root, step['command'], step['timeout_seconds']) != 0:
@@ -186,8 +195,8 @@
           before = capture()
           record('snapshot-before-head', 0, before['head'] + '\n')
           record('snapshot-before-tree', 0, before['tree'] + '\n')
-          if check['base'] != '':
-              record('diff', 0, git('diff-tree', '-r', '--no-renames', '--name-status', '-z', check['base'],
+          if base != '':
+              record('diff', 0, git('diff-tree', '-r', '--no-renames', '--name-status', '-z', base,
                                     before['tree']).decode(errors='replace'))
           runnable = setup_passed and project == 0
           commands = [item for item in check['deliverables'] if item['type'] == 'command']
@@ -196,7 +205,7 @@
               if runnable and item.get('fails_on_base', False):
                   tree = scratch / f'base-{index}'
                   archive = scratch / f'base-{index}.tar'
-                  git('archive', '--format=tar', f'--prefix=base-{index}/', '--output=' + str(archive), check['base'])
+                  git('archive', '--format=tar', f'--prefix=base-{index}/', '--output=' + str(archive), base)
                   tool(['tar', '-x', '-f', str(archive), '-C', str(scratch)], root)
                   tool(['find', '.', '-name', '.git', '-prune', '-o', '(', '-name', 'vendor', '-o', '-name', 'node_modules', ')',
                         '-type', 'd', '-prune', '-exec', 'cp', '-a', '--parents', '-t', str(tree), '{}', '+'], root)
@@ -295,36 +304,44 @@
                   git('read-tree', '--empty', index=index)
               git('add', '--all', '--', '.', index=index)
               tree = git('write-tree', index=index).decode().strip()
-          work = head
-          if tree != text('rev-parse', 'HEAD^{tree}'):
-              work = subprocess.run(git_argv + ['commit-tree', tree, '-p', head], input=request['message'].encode(),
-                                    capture_output=True, env=identity, check=True, timeout=60).stdout.decode().strip()
-          merged = subprocess.run(git_argv + ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', work, target],
-                                  capture_output=True, env=env, check=False, timeout=600)
-          if merged.returncode == 1:
-              # The same bounds as a conflict at publish: at most 100 paths whose quoted list fits 3,000 bytes.
-              names = list(dict.fromkeys(name for name in merged.stdout.decode(errors='replace').split('\0')[1:] if name))
-              shown, used = [], 2
-              for name in names:
-                  size = len(json.dumps(name).encode()) + (0 if not shown else 2)
-                  if len(shown) == 100 or used + size > 3000:
-                      break
-                  shown.append(name)
-                  used += size
-              return {'error_code': 'tasks.check_conflict', 'default_commit': target, 'conflicting_paths': shown,
-                      'conflicting_more': len(names) - len(shown), 'changed': False}
-          if merged.returncode != 0:
-              refuse('phase_failed')
-          if work != head:
-              # The uncommitted work becomes the branch's commit; the index follows it, the working tree already holds it.
-              git('update-ref', 'HEAD', work, head)
-              git('read-tree', 'HEAD')
-          subprocess.run(git_argv + ['-c', 'commit.gpgSign=false', 'merge', '--quiet', '--no-ff', '--no-verify', '--no-edit',
-                                     '-m', 'Merge ' + request['default_branch'] + ' ' + target + ' before the check', target],
-                         capture_output=True, env=identity, check=True, timeout=600)
-          commit = text('rev-parse', 'HEAD')
-          if text('rev-parse', 'HEAD^1') != work or text('rev-parse', 'HEAD^2') != target:
-              refuse('phase_failed')
+              work = head
+              if tree != text('rev-parse', 'HEAD^{tree}'):
+                  work = subprocess.run(git_argv + ['commit-tree', tree, '-p', head], input=request['message'].encode(),
+                                        capture_output=True, env=identity, check=True, timeout=60).stdout.decode().strip()
+              merged = subprocess.run(git_argv + ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', work, target],
+                                      capture_output=True, env=env, check=False, timeout=600)
+              if merged.returncode == 1:
+                  # The same bounds as a conflict at publish: at most 100 paths whose quoted list fits 3,000 bytes.
+                  names = list(dict.fromkeys(name for name in merged.stdout.decode(errors='replace').split('\0')[1:] if name))
+                  shown, used = [], 2
+                  for name in names:
+                      size = len(json.dumps(name).encode()) + (0 if not shown else 2)
+                      if len(shown) == 100 or used + size > 3000:
+                          break
+                      shown.append(name)
+                      used += size
+                  return {'error_code': 'tasks.check_conflict', 'default_commit': target, 'conflicting_paths': shown,
+                          'conflicting_more': len(names) - len(shown), 'changed': False}
+              if merged.returncode != 0:
+                  refuse('phase_failed')
+              merged_tree = merged.stdout.decode().split('\0')[0].strip()
+              message = 'Merge ' + request['default_branch'] + ' ' + target + ' before the check'
+              commit = subprocess.run(git_argv + ['commit-tree', merged_tree, '-p', work, '-p', target], input=message.encode(),
+                                      capture_output=True, env=identity, check=True, timeout=60).stdout.decode().strip()
+              # A path the merge adds where an untracked or ignored file lies refuses: Git's read-tree would overwrite it.
+              added = git('diff-tree', '-r', '--no-renames', '--name-only', '-z', '--diff-filter=A', work, commit).decode()
+              if any(os.path.lexists(root / name) for name in added.split('\0') if name):
+                  refuse('phase_failed')
+              # One update of the working tree, on the private index, which checks every path before it writes one; then the
+              # real index and the branch, so a refusal leaves the workspace as it was.
+              if subprocess.run(git_argv + ['read-tree', '-m', '-u', work, commit], capture_output=True,
+                                env={**env, 'GIT_INDEX_FILE': str(index)}, check=False, timeout=600).returncode != 0:
+                  refuse('phase_failed')
+              # Then the index, which already matches the merge, and last the branch.
+              staged = real_index.with_name('index.orbit-merge')
+              staged.write_bytes(index.read_bytes())
+              os.replace(staged, real_index)
+          git('update-ref', 'HEAD', commit, head)
           return {'default_commit': target, 'merged_default': target, 'commit': commit, 'changed': True}
 
 

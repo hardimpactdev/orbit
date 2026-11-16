@@ -1,10 +1,11 @@
 file = "swamp/tests/task_instance_workspace_merge_test.py"
 slices = false
-cost = 158
+cost = 189
 cases = [
   "test_a_clean_merge_commits_the_uncommitted_work_first_then_merges_the_head",
   "test_a_branch_that_holds_the_head_merges_nothing",
   "test_a_conflict_names_the_paths_and_leaves_the_workspace_exactly_as_it_was",
+  "test_a_merge_that_would_overwrite_an_ignored_file_refuses_and_changes_nothing",
   "test_a_main_only_workflow_change_merges_and_is_never_the_copys_own",
   "test_only_a_copy_handoff_check_brings_in_the_base"
 ]
@@ -27,5 +28,6 @@ inputs = [
 "test_a_clean_merge_commits_the_uncommitted_work_first_then_merges_the_head" = 31
 "test_a_branch_that_holds_the_head_merges_nothing" = 37
 "test_a_conflict_names_the_paths_and_leaves_the_workspace_exactly_as_it_was" = 31
+"test_a_merge_that_would_overwrite_an_ignored_file_refuses_and_changes_nothing" = 31
 "test_a_main_only_workflow_change_merges_and_is_never_the_copys_own" = 31
 "test_only_a_copy_handoff_check_brings_in_the_base" = 28

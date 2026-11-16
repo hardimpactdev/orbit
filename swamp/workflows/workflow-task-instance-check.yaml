@@ -165,7 +165,8 @@ jobs:
           behaviorName: '${{ "ansible-input" }}'
           methodName: write
           inputs:
-            intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "snapshot_id": inputs.intent.workspace.snapshot_id, "operation_id": inputs.operation_id, "ssh_execution": inputs.intent.ssh_execution, "check": inputs.intent} }}'
+            # The default head the merge brought in, or "": the check compares deliverables with the start plus that head.
+            intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "snapshot_id": inputs.intent.workspace.snapshot_id, "operation_id": inputs.operation_id, "ssh_execution": inputs.intent.ssh_execution, "check": inputs.intent, "merged_default": "merged" in steps && "outputs" in steps.merged && "merged_default" in steps.merged.outputs.evidence && steps.merged.outputs.evidence.merged_default != null ? steps.merged.outputs.evidence.merged_default : ""} }}'
             path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
       - name: Run the check
         labels: {role: swamp}

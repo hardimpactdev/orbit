@@ -1012,8 +1012,15 @@ The handoff check of a copy judges the tree that publish will push. Its run firs
 | Clean merge | Any uncommitted work is committed first, so nothing is lost. Then one merge commit, described below. The check runs on that tree |
 | Conflict | The check fails at once with `tasks.check_conflict` and the conflicting paths. The long parts do not run, and the workspace is left exactly as it was |
 | Base unavailable | A failed base phase does not block the check. It runs on the tree as it is, and the result says `base: unavailable` |
+| Merge refused | The check fails with `tasks.workspace_phase_failed` and changes nothing |
 
 The merge commit has the parents HEAD, then the head. Its message is `Merge main <full sha> before the check`, and its author and committer are `Orbit <orbit@users.noreply.github.com>`, as at publish. A conflict lists at most 100 paths in at most 3,000 bytes in `conflicting_paths`, and `conflicting_more` counts the rest. The implementer merges by hand in the next turn, while the subtask is still open. A base fails when the mirror or GitHub is down; `base_reason` then names the reason.
+
+The run checks every refusal before it changes the copy. It builds the work commit and the merge commit as objects that no ref names. It refuses when the merge would add a file where an untracked or ignored file lies, because Git would overwrite that file. Only then does it update the working tree, the index and the branch. A hand merge that is resolved but not committed reads as the work alone, so it conflicts again: commit the merge, then check.
+
+After a merge, the check compares file deliverables and `fails_on_base` runs with the subtask's start plus the merged head, not with the bare start. So the default branch's own changes never count as the subtask's work.
+
+A Project without a GitHub repository or a valid default branch brings in no base, and its result names none of these fields.
 
 The result names `default_commit`, the head the check judged against, and `merged_default`, the head it merged or null, so the driver and the reviewer see the base. `base` is `current` when the head was brought in. Only the copy's own workflow changes refuse at publish: the default branch's workflow changes that this merge brings in are never the copy's ([The base of a copy publish](#the-base-of-a-copy-publish)). A baseline check and a task VM check bring in no base.
 

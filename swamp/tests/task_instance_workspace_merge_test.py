@@ -65,6 +65,17 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
         self.assertEqual(self.state(), before)
         self.assertEqual(self.git('for-each-ref'), objects_before)
 
+    def test_a_merge_that_would_overwrite_an_ignored_file_refuses_and_changes_nothing(self):
+        self.main_changes('build/out.txt', 'main\n')
+        (self.checkout / '.git/info/exclude').write_text('build/\n')
+        (self.checkout / 'build').mkdir()
+        (self.checkout / 'build/out.txt').write_text('local ignored\n')
+        self.phase('base')
+        before = self.state()
+        self.assertIn('tasks.workspace_phase_failed', self.merge(ok=False))
+        self.assertEqual(self.state(), before)
+        self.assertEqual((self.checkout / 'build/out.txt').read_text(), 'local ignored\n')
+
     def test_a_main_only_workflow_change_merges_and_is_never_the_copys_own(self):
         self.main_changes('.github/workflows/ci.yml', 'on: push\n')
         self.phase('base')
