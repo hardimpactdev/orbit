@@ -1558,7 +1558,7 @@ class ServicesPhaseFailureTest(unittest.TestCase):
         output, error, code = io.StringIO(), io.StringIO(), 0
         with tempfile.TemporaryDirectory() as folder, patch(
             "sys.argv", [str(SCRIPT), json.dumps(container), "guest", "network", pwd.getpwuid(os.getuid()).pw_name, folder,
-                         json.dumps({"node": "print('helper')"}), "services"],
+                         json.dumps({"node": "print('helper')", "workspace_owner": "print()"}), "services"],
         ), patch("sys.stdin", io.StringIO(stdin)), patch("subprocess.run", command), contextlib.redirect_stdout(output), \
                 contextlib.redirect_stderr(error):
             try:
@@ -1926,7 +1926,7 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
         code = 0
         with tempfile.TemporaryDirectory() as folder, (
             patch("sys.argv", [str(SCRIPT), json.dumps(container), "guest", NETWORK_CHECK.read_text(), account.pw_name, folder,
-                               json.dumps({"node": "node-helper-source"}), phase])
+                               json.dumps({"node": "node-helper-source", "workspace_owner": "owner-pass-source"}), phase])
         ), patch("sys.stdin", io.StringIO(stdin if stdin is not None else json.dumps(self.VALUE) if phase != "check" else "")), \
                 patch("subprocess.run", command), \
                 patch("os.chown"), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
@@ -2063,7 +2063,7 @@ class CompletionCopyLaunchTest(unittest.TestCase):
         container = {"name": "instance-proof", "project": "orbit-instances", "branch": "proof", "php": None, "mirror": "/nowhere",
                      "clone": {"seed_commit": "c" * 40}, "instance_id": 8}
         stage = {"launcher": launcher, "script": SCRIPT.read_text(), "container": container, "guest": "guest",
-                 "network": NETWORK_CHECK.read_text(), "account": account.pw_name, "bundle": {"node": "node-helper-source"}}
+                 "network": NETWORK_CHECK.read_text(), "account": account.pw_name, "bundle": {"node": "node-helper-source", "workspace_owner": "owner-pass-source"}}
         frame = value(stage)
         calls = []
 

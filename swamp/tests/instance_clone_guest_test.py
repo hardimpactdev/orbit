@@ -29,6 +29,8 @@ REAL_RUN = subprocess.run
 # The Node runtime helper the Node script hands the `workspace` and `services` parts in their intent; the guest writes it.
 NODE_RUNTIME_SOURCE = "# the shipped orbit-instance-node-runtime.py\n"
 REAL_WALK = os.walk
+# Root's workspace pass, the program a deployment runs too; the Node script hands it to the `workspace` and `services` parts.
+OWNER_SOURCE = (Path(__file__).resolve().parents[1] / "ansible/instance_workspace_owner.py").read_text()
 
 
 @contextlib.contextmanager
@@ -269,6 +271,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.git(self.base, "clone", "--quiet", str(self.origin), str(self.workspace))
         self.exclude_users = []
         self.git_calls = []
+        self.owner_calls = []
 
     def git(self, cwd, *args):
         return subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", *args], cwd=cwd,
@@ -301,8 +304,16 @@ class WorkspaceCheckoutTest(unittest.TestCase):
 
         def command(argv, **_kwargs):
             actual = argv[4:] if argv[0] == "runuser" else argv
+            if actual[:4] == ["python3", "-I", "-c", OWNER_SOURCE]:
+                # Root's workspace pass: recorded with its arguments, and with `walk` run for real over the fixture's workspace. No
+                # fixture file has the uid it gives away, so the real pass changes modes only.
+                self.owner_calls.append((argv[0], actual[4:]))
+                if not walk:
+                    return subprocess.CompletedProcess(argv, 0, "", "")
+                return REAL_RUN([sys.executable] + actual[1:4] + [str(self.base / actual[4].lstrip("/")), "4242424", actual[6]],
+                                check=False, capture_output=True, text=True, timeout=10)
             if GUEST.EXCLUDE_PROGRAM in actual:
-                # The exclude write runs for real in the workspace; it must run as orbit, never as root.
+                # The exclude write runs for real in the workspace; it must run as agent, the owner, never as root.
                 self.exclude_users.append(argv[2] if argv[0] == "runuser" else "root")
                 return REAL_RUN(actual, cwd=self.workspace, check=False, capture_output=True, text=True, timeout=10,
                                 env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null"))
@@ -353,7 +364,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
             patch.object(GUEST.sys, "stdin", io.StringIO(json.dumps(private))),
             contextlib.redirect_stdout(output),
         ):
-            GUEST.phase_main(phase, json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE}))
+            GUEST.phase_main(phase, json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE, "workspace_owner": OWNER_SOURCE}))
         return json.loads(output.getvalue())
 
     def mark(self):
@@ -379,7 +390,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.assertIn("exclude", first["changes"])
         self.assertEqual(exclude.read_text(), "# local\n*.log\n/.env\n")
         self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
-        self.assertEqual(self.exclude_users, ["orbit"])
+        self.assertEqual(self.exclude_users, ["agent"])
         # A retry, and a clone of this clone, find the line and add nothing.
         self.assertNotIn("exclude", self.phase("checkout")["changes"])
         self.assertNotIn("exclude", self.phase("workspace")["changes"])
@@ -742,7 +753,9 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         before = self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout
         self.phase("services", self.full_container(), self.full_private(), [], walk=True)
         self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, before)
-        # The rights walk ran: it adds group bits and never an exec bit Git tracks.
+        # Root's workspace pass ran, the program a deployment runs (ADR 0266), as root over the workspace, giving `orbit`'s entries
+        # (uid 1000) to `agent` (uid 2750): it adds group bits and never an exec bit Git tracks.
+        self.assertEqual(self.owner_calls, [("python3", ["/srv/workspace", "1000", "2750"])])
         self.assertEqual(script.stat().st_mode & 0o777, 0o775)
         self.assertEqual((self.workspace / "plain").stat().st_mode & 0o777, 0o664)
 
@@ -908,7 +921,7 @@ class CloneGuestTest(unittest.TestCase):
                         "network-check-source",
                         "orbit",
                         folder,
-                        json.dumps({"node": "node-helper-source"}),
+                        json.dumps({"node": "node-helper-source", "workspace_owner": "owner-pass-source"}),
                         "workspace",
                     ],
                 ),
@@ -1269,6 +1282,9 @@ class CloneGuestTest(unittest.TestCase):
                 if "/usr/local/libexec/orbit-instance-node-runtime.py" in argv:
                     helper_timeouts.append(_kwargs["timeout"])
                     return subprocess.CompletedProcess(argv, 0, '{"status":"unchanged"}', "")
+                if OWNER_SOURCE in argv:
+                    # Root's workspace pass finds every entry as it should be.
+                    return subprocess.CompletedProcess(argv, 0, "", "")
                 value = "proof\n" if "symbolic-ref" in argv else "abc123\n"
                 return subprocess.CompletedProcess(argv, 0, value, "")
 
@@ -1287,7 +1303,7 @@ class CloneGuestTest(unittest.TestCase):
                 ),
                 contextlib.redirect_stdout(output),
             ):
-                GUEST.phase_main("workspace", json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE}))
+                GUEST.phase_main("workspace", json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE, "workspace_owner": OWNER_SOURCE}))
             # Only the Node runtime helper is written: no PHP settings.
             self.assertEqual(json.loads(output.getvalue())["changes"], [GUEST.NODE_RUNTIME])
             # The phase prints the names of the keys it kept from the default's file, never a value.
@@ -1320,6 +1336,9 @@ class CloneGuestTest(unittest.TestCase):
             def command(argv, **_kwargs):
                 if "/usr/local/libexec/orbit-instance-node-runtime.py" in argv:
                     return subprocess.CompletedProcess(argv, 0, '{"status":"unchanged"}', "")
+                if OWNER_SOURCE in argv:
+                    # Root's workspace pass finds every entry as it should be.
+                    return subprocess.CompletedProcess(argv, 0, "", "")
                 value = "proof\n" if "symbolic-ref" in argv else "abc123\n"
                 return subprocess.CompletedProcess(argv, 0, value, "")
 
@@ -1332,7 +1351,7 @@ class CloneGuestTest(unittest.TestCase):
                 patch.object(GUEST.sys, "stdin", io.StringIO(json.dumps(inputs))),
                 contextlib.redirect_stdout(output),
             ):
-                GUEST.phase_main("workspace", json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE}))
+                GUEST.phase_main("workspace", json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE, "workspace_owner": OWNER_SOURCE}))
             return env.read_text(), json.loads(output.getvalue())["environment"]
 
     def test_workspace_without_merge_names_writes_the_render_as_before(self):
@@ -1455,7 +1474,7 @@ class CloneGuestTest(unittest.TestCase):
                     ),
                     contextlib.redirect_stdout(io.StringIO()),
                 ):
-                    GUEST.phase_main("workspace", json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE}))
+                    GUEST.phase_main("workspace", json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE, "workspace_owner": OWNER_SOURCE}))
                 return list(commands)
 
             restart = ["systemctl", "restart", unit["name"]]
