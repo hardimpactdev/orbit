@@ -1191,7 +1191,7 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
                 '/home/agent/.codex/config.toml' => true, '/home/agent/.claude.json' => true, '/home/agent/.t3/userdata/settings.json' => true, InstanceContainer::T3BootDropIn => true,
                 InstanceContainer::ServerDropIn => true]);
             expect(array_column($actual['clone']['boot_files'], 'path'))
-                ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
+                ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/sudoers.d/orbit-agent', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
                     '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh',
                     // The presented machine name that T3's first start reads (InstanceMachineName::bootFile).
                     '/etc/machine-info']);

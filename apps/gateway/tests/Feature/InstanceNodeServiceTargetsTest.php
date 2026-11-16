@@ -699,10 +699,10 @@ it('projects only the exact remote path and proxy host and withdraws the complet
     // The default's two proxy files are reset before the copy's first start: the clone script renders them from the base value.
     $reset = 'localhost,127.0.0.1,::1,10.253.0.1';
     expect($cloneIntent['clone']['proxy_environment'])->toBe(['NO_PROXY' => $reset, 'no_proxy' => $reset]);
-    // The browser files, the empty linker cache, the Node root CA, agent's NSS store and the Playwright browser setting are every clone's boot files (InstanceContainer::bootFiles),
+    // The browser files, agent's sudo grant, the empty linker cache, the Node root CA, agent's NSS store and the Playwright browser setting are every clone's boot files (InstanceContainer::bootFiles),
     // and last the presented machine name's /etc/machine-info, which T3's first start reads (InstanceMachineName::bootFile).
     expect(array_column($cloneIntent['clone']['boot_files'], 'path'))
-        ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
+        ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/sudoers.d/orbit-agent', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
             '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh', '/etc/machine-info'])
         ->and(collect($cloneIntent['clone']['files'])->pluck('path')->filter(fn (string $path): bool => str_contains($path, '99-orbit-node-services'))->all())->toBe([]);
     captureNodeServiceAdmission($instance);
