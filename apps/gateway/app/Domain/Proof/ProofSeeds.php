@@ -157,9 +157,8 @@ final readonly class ProofSeeds
         if ($moved) {
             return $this->admit('seed_copy');
         }
-        $tried = Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $source->instance_id)->get(['input'])
-            ->filter(static fn (Operation $copy): bool => ($copy->input['commit'] ?? null) === $source->seed_commit
-                && ($copy->input['taken_at'] ?? null) === $source->seed_taken_at?->toIso8601String())
+        $tried = Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $source->instance_id)
+            ->where('input->commit', $source->seed_commit)->where('input->taken_at', $source->seed_taken_at?->toIso8601String())->get(['input'])
             ->flatMap(static fn (Operation $copy): array => ValidatedData::integerList($copy->input['targets']))->unique()->all();
 
         return $this->admit('seed_copy', array_values($tried));

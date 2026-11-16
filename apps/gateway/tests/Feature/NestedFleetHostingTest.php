@@ -622,6 +622,31 @@ describe('the seed of the proof default on each Node that offers proof places', 
         expect(app(ProofSeeds::class)->admit('seed')?->input['targets'])->toBe([$first->id, $second->id]);
     });
 
+    it('ends a copy whose passed target was deleted during the run, records no seed for it and frees the lock for the next trigger', function (): void {
+        proofSeedDefault();
+        seedSwampNode();
+        $gone = ciNode();
+        $kept = ciNode(2, LifecycleStatus::Active, 'ci-two', '10.44.0.31');
+        foreach ([$gone, $kept] as $node) {
+            Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        }
+        $copy = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-1']])->save();
+        $gone->roles()->delete();
+        Node::withoutEvents(fn (): ?bool => $gone->delete());
+
+        app(ProofSeedCopyProjection::class)->apply($copy, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['targets' => [['node_id' => $gone->id, 'status' => 'succeeded'],
+                ['node_id' => $kept->id, 'status' => 'failed', 'detail' => 'no listener']]]]);
+
+        expect($copy->refresh()->status->terminal())->toBeTrue()
+            ->and($copy->lock_key)->toBeNull()
+            ->and(ProofSeed::query()->count())->toBe(0)
+            ->and($copy->result['passed'])->toBe([])
+            // The kept Node's own converge is the next trigger: the lock is free.
+            ->and(app(ProofSeeds::class)->admit('node_role')?->input['targets'])->toBe([$kept->id]);
+    });
+
     it('admits the seed copy when a deployment of the proof default records a new seed', function (): void {
         $default = proofSeedDefault();
         seedSwampNode();

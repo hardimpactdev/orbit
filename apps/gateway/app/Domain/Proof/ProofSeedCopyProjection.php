@@ -55,6 +55,8 @@ final readonly class ProofSeedCopyProjection implements DirectOperationProjectio
                     $failed[$nodeId] = is_string($detail) ? mb_strcut(app(LogRedactor::class)->redact($detail, []), 0, 1024, 'UTF-8') : null;
                 }
             }
+            // A Node deleted while its copy ran has no seed to record; the copy still ends and frees its lock.
+            $passed = Node::query()->whereIn('id', $passed)->orderBy('id')->pluck('id')->all();
             $holder = ProofSeeds::Holder;
             foreach ($passed as $nodeId) {
                 ProofSeed::query()->updateOrCreate(['node_id' => $nodeId], ['holder' => $holder, 'commit' => ValidatedData::string($operation->input['commit']),
