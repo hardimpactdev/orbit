@@ -196,7 +196,7 @@ final readonly class InstanceHostIntent
             'bridge_admitted_at' => $admittedAt,
             'bridge_endpoints' => app(InstanceContainer::class)->nodeEndpoints($node),
             'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains()),
-            // A CI Node needs a map of the proof default's size for each CI place, its seed holder and the next holder
+            // A CI Node needs a map of the proof default's size for each CI place, its seed holder and a snapshot that a seed copy adds
             // (docs/reference/node-settings.md#a-ci-node).
             'ids' => (self::Containers + 1) * self::IdMapSize + ($ci
                 ? (ProofCopyHosts::places($node) + 2) * ProofCopyHosts::idMapSize()

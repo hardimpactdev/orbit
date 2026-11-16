@@ -7,6 +7,7 @@ namespace App\Domain\Proof;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -40,13 +41,10 @@ final readonly class ProofCopyHosts
             ->where('status', '!=', LifecycleStatus::Removing)->exists();
     }
 
-    /** The Node's CI places: its `ci.places` setting (docs/reference/node-settings.md, ADR 0260), 0 while the Node has none. */
+    /** The Node's CI places: its `ci` setting (docs/reference/node-settings.md#ci-places, ADR 0260), 0 while the Node has none. */
     public static function places(Node $node): int
     {
-        $ci = $node->settings['ci'] ?? null;
-        $places = is_array($ci) ? ($ci['places'] ?? 0) : 0;
-
-        return is_int($places) ? $places : 0;
+        return app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->ci()->places ?? 0;
     }
 
     /**

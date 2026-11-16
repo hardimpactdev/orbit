@@ -258,7 +258,7 @@ Verify each Node with `orbit doctor --node=<numeric-node-id>`. For a failed role
 
 ### Proof copies on a CI Node
 
-This part is the target design of ADR 0260, build steps 3 and 4.
+This part is the target design of [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies), build steps 3 and 4.
 
 Two rules decide what a Node with the `ci-runner` role does for [proof](/cli/proof/run) copies. Both are in one class, `ProofCopyHosts`, and the other pages link here. For both, a `ci-runner` role that is being added or converged counts, so its own converge prepares the Node. A role that is being removed does not count. The CI places are the Node's count from ADR 0260. A proof copy takes one CI place.
 
