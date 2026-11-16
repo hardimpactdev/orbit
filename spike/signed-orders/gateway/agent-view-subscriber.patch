@@ -1,0 +1,26 @@
+diff --git a/apps/gateway/app/Infrastructure/AgentView/AgentViewSubscriber.php b/apps/gateway/app/Infrastructure/AgentView/AgentViewSubscriber.php
+index 797ea4898..4a5429cff 100644
+--- a/apps/gateway/app/Infrastructure/AgentView/AgentViewSubscriber.php
++++ b/apps/gateway/app/Infrastructure/AgentView/AgentViewSubscriber.php
+@@ -627,6 +627,21 @@ private function handle(AgentViewLink $link, array $message): void
+             return;
+         }
+ 
++        // SPIKE(signed-orders): an executor result sent back on the agent's channel; never merges.
++        if ($event === 'client-spike-result' && ($message['user_id'] ?? null) === $agent) {
++            $redis = new \Redis;
++            $redis->connect('127.0.0.1', 6379);
++            $redis->rPush('spike:results', (string) json_encode([
++                'received_us' => (int) (microtime(true) * 1_000_000),
++                'via' => 'channel',
++                'observer_received_ns' => $data['observer_received_ns'] ?? null,
++                'observer_replied_ns' => $data['observer_replied_ns'] ?? null,
++                'body' => json_decode(is_string($data['result'] ?? null) ? $data['result'] : '', true),
++            ]));
++
++            return;
++        }
++
+         // Reverb stamps every client event on a presence channel with the sender's signed member ID.
+         if (
+             in_array($event, ['client-heartbeat', 'client-snapshot', 'client-process', 'client-workspaces', 'client-workspace'], strict: true)

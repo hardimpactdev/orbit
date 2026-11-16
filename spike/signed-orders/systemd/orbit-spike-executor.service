@@ -1,0 +1,12 @@
+# SPIKE(signed-orders) round 2: systemd only starts the executor and restarts it after a crash.
+[Unit]
+Description=Orbit spike executor (long-running)
+
+[Service]
+ExecStart=/usr/local/libexec/orbit-spike-executor2
+Restart=always
+RestartSec=100ms
+SyslogIdentifier=orbit-spike-executor
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes

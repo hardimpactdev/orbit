@@ -13,6 +13,15 @@ if (($argv[1] ?? '') === 'envelope') {
     exit;
 }
 
+if (($argv[1] ?? '') === 'replay-restart') {
+    // The executor restarts between the two sends (from outside); its persisted nonce set must refuse the second.
+    $replay = spike_order($node, '101', 'op-sec-replay-restart', ttlMs: 9000)['envelope'];
+    echo json_encode(['test' => 'replay across restart: first send', 'result' => send($replay)]), "\n";
+    sleep(4);
+    echo json_encode(['test' => 'replay across restart: same order after restart', 'result' => send($replay)]), "\n";
+    exit;
+}
+
 /** Swap one field of a signed payload and keep the old signature. */
 function tamper(string $envelope, string $field, mixed $value): string
 {

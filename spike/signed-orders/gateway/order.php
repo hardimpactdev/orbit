@@ -22,7 +22,8 @@ function spike_sign(string $payload): string
     return base64_encode($payload).'.'.base64_encode(sodium_crypto_sign_detached($payload, $key));
 }
 
-function spike_broadcast(int $node, string $envelope): void
+/** $reply is 'http' (observer POSTs to the agent route) or 'channel' (a client event on the Node channel). */
+function spike_broadcast(int $node, string $envelope, string $reply = 'http'): void
 {
     $realtime = app(App\Domain\Broadcasting\RealtimeConnection::class);
     static $configured = false;
@@ -31,7 +32,7 @@ function spike_broadcast(int $node, string $envelope): void
         $configured = true;
     }
     Illuminate\Support\Facades\Broadcast::connection('reverb')
-        ->broadcast(["presence-node.{$node}"], 'spike-order', ['order' => $envelope]);
+        ->broadcast(["presence-node.{$node}"], 'spike-order', ['order' => $envelope, 'reply' => $reply]);
 }
 
 /** Waits for the result with this nonce, up to $timeout seconds. */

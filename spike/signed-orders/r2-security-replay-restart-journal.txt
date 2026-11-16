@@ -1,0 +1,7 @@
+Nov 16 15:03:16.044091 nested-app-dev orbit-spike-executor[11851]: done op=op-sec-replay-restart target=101
+Nov 16 15:03:17.656945 nested-app-dev systemd[1]: Stopping orbit-spike-executor.service - Orbit spike executor (long-running)...
+Nov 16 15:03:17.663909 nested-app-dev systemd[1]: orbit-spike-executor.service: Deactivated successfully.
+Nov 16 15:03:17.664138 nested-app-dev systemd[1]: Stopped orbit-spike-executor.service - Orbit spike executor (long-running).
+Nov 16 15:03:17.681062 nested-app-dev systemd[1]: Started orbit-spike-executor.service - Orbit spike executor (long-running).
+Nov 16 15:03:17.787932 nested-app-dev orbit-spike-executor[11865]: executor ready: 0 open order(s) to finish
+Nov 16 15:03:20.069050 nested-app-dev orbit-spike-executor[11865]: refused order op="op-sec-replay-restart" nonce="aae62c7026ccc12d9985c85bfc4f97c7": replayed nonce

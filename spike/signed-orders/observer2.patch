@@ -1,0 +1,112 @@
+diff --git a/apps/agent/src/main.rs b/apps/agent/src/main.rs
+index 4400baf90..62cb97b5f 100644
+--- a/apps/agent/src/main.rs
++++ b/apps/agent/src/main.rs
+@@ -361,9 +361,12 @@ async fn connected_session(
+     let snapshot_due = tokio::time::sleep(SNAPSHOT_INTERVAL);
+     tokio::pin!(snapshot_due);
+     let mut liveness = Liveness::new(Instant::now());
++    // SPIKE(signed-orders): results that go back as a client event on this session's Node channel.
++    let (spike_tx, mut spike_rx) = mpsc::unbounded_channel::<Value>();
+     loop {
+         tokio::select! {
+             _=shutdown.changed()=>{socket_write(socket.close(None)).await?;return Ok(())},
++            Some(result)=spike_rx.recv()=>send_client(&mut socket,channel,"client-spike-result",result).await?,
+             _=heartbeat.tick()=>{
+                 let payload=Envelope{sequence:sequence.advance(),at:iso_now(),data:HeartbeatData{}};send_client(&mut socket,channel,"client-heartbeat",serde_json::to_value(payload)?).await?;
+             },
+@@ -406,6 +409,7 @@ async fn connected_session(
+                     Route::LogSubscribed=>{log_subscribed=true;log_pending=false;log_hub.prompt();},
+                     Route::LogRefused=>{log_subscribed=false;log_pending=false;eprintln!("orbit-agent: log channel subscription refused; live log tails are off for this connection");},
+                     Route::FetchLogStreams=>log_hub.prompt(),
++                    Route::SpikeOrder=>spike_pass_order(client,gateway,&value,&spike_tx),
+                     Route::Ignore=>{}
+                 }},
+                 Ok(Message::Ping(data))=>{socket_write(socket.send(Message::Pong(data))).await?},
+@@ -415,6 +419,69 @@ async fn connected_session(
+     }
+ }
+ 
++/// SPIKE(signed-orders): pass the order bytes unchanged to the executor socket and post its reply to the
++/// Gateway with the agent secret. The observer holds no key and does not read the order.
++fn spike_pass_order(client: &reqwest::Client, gateway: &str, value: &Value, channel: &mpsc::UnboundedSender<Value>) {
++    let data: Value = match &value["data"] {
++        Value::String(text) => serde_json::from_str(text).unwrap_or(Value::Null),
++        data => data.clone(),
++    };
++    let Some(order) = data["order"].as_str().map(str::to_owned) else {
++        return;
++    };
++    let received_ns = spike_now_ns();
++    // The Gateway picks how the result comes back; the observer still never reads the order itself.
++    let over_channel = data["reply"] == "channel";
++    let channel = channel.clone();
++    let client = client.clone();
++    let url = format!("{}/api/v1/agent/spike-result", gateway.trim_end_matches('/'));
++    tokio::spawn(async move {
++        let reply = tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
++            use std::io::{Read, Write};
++            let mut stream = std::os::unix::net::UnixStream::connect("/run/orbit-spike-exec.sock")?;
++            stream.set_read_timeout(Some(Duration::from_secs(5)))?;
++            stream.write_all(order.as_bytes())?;
++            stream.shutdown(std::net::Shutdown::Write)?;
++            let mut reply = Vec::new();
++            stream.take(4096).read_to_end(&mut reply)?;
++            Ok(reply)
++        })
++        .await;
++        let replied_ns = spike_now_ns();
++        let body = match reply {
++            Ok(Ok(reply)) => reply,
++            Ok(Err(error)) => format!("{{\"status\":\"observer_error\",\"error\":\"{error}\"}}").into_bytes(),
++            Err(_) => return,
++        };
++        if over_channel {
++            let _ = channel.send(serde_json::json!({
++                "result": String::from_utf8_lossy(&body),
++                "observer_received_ns": received_ns,
++                "observer_replied_ns": replied_ns,
++            }));
++            return;
++        }
++        if let Err(error) = client
++            .post(url)
++            .header("content-type", "application/json")
++            .header("x-spike-observer-received-ns", received_ns)
++            .header("x-spike-observer-replied-ns", replied_ns)
++            .body(body)
++            .send()
++            .await
++        {
++            eprintln!("orbit-agent: spike result post failed: {}", error.without_url());
++        }
++    });
++}
++
++fn spike_now_ns() -> String {
++    std::time::SystemTime::now()
++        .duration_since(std::time::UNIX_EPOCH)
++        .map(|d| d.as_nanos().to_string())
++        .unwrap_or_default()
++}
++
+ /// Keep protocol liveness independent of event publishing and heartbeat timer ticks.
+ async fn receive(
+     socket: &mut Socket,
+@@ -453,6 +520,8 @@ enum Route {
+     LogSubscribed,
+     LogRefused,
+     FetchLogStreams,
++    // SPIKE(signed-orders): an opaque order for the local executor; never merges.
++    SpikeOrder,
+     Ignore,
+ }
+ /// Reverb's `pusher:error` code for a subscription whose signature it refuses.
+@@ -474,6 +543,7 @@ fn route(value: &Value, channel: &str, log_channel: Option<&str>, log_pending: b
+         "pusher_internal:subscription_succeeded" if on_logs => Route::LogSubscribed,
+         "pusher_internal:member_added" if on_node => Route::Snapshot,
+         "log-streams.changed" if on_logs => Route::FetchLogStreams,
++        "spike-order" if on_node => Route::SpikeOrder,
+         _ => Route::Ignore,
+     }
+ }
