@@ -298,7 +298,9 @@ The converge reads the default Node's client certificate there. When root has no
 
 The default's Node gets no listener and no change to its Incus daemon. Each seed copy adds a client remote of root there for each CI Node, `proof-node-<id>`, when it is missing.
 
-When a converge finds that the Node offers no proof places, or that the proof Project has no default, the converge removes the trust entry `orbit-proof-seed`, unsets `core.https_address` when it is the listener above, and deletes both UFW rules. It can name the allow rule only while the proof Project has a default. A removal of the `ci-runner` role does the same. Its removal commands find the trust entry by its name on the Node, so the Gateway never needs its fingerprint. The holder stays, as the other Incus resources of the branch do.
+When a converge finds that the Node offers no proof places, or that the proof Project has no default, the converge removes the trust entry `orbit-proof-seed`, unsets `core.https_address` when it is the listener above, and deletes both UFW rules. It can name the allow rule only while the proof Project has a default.
+
+A removal of the `ci-runner` role does the same. It stops the listener and removes the trust in a phase of its own, before the firewall rules go, so the port is never open to every WireGuard member while Incus still listens. The Node finds the trust entry by its name, so the Gateway never needs its fingerprint. The holder stays, as the other Incus resources of the branch do.
 
 The converge makes no seed. When a `ci-runner` add or converge of a Node that offers proof places passes, the Gateway admits a [seed copy](/reference/development-containers#the-seed-on-each-ci-node) to the Node if it is not the default's Node and its seed is not the proof default's current seed.
 

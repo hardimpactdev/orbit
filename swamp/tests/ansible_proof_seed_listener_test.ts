@@ -98,3 +98,11 @@ Deno.test("without a sender the trust and the seed listener go, and another list
         assertEquals(await run(kept, false), []);
     } finally { await Deno.remove(kept, { recursive: true }); }
 });
+
+Deno.test("a ci-runner removal stops the seed listener in a phase before the firewall rules go", async () => {
+    const { parse } = await import("jsr:@std/yaml@1.0.12");
+    const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-node-role-remove.yaml", import.meta.url))) as
+        { jobs: { name: string; steps: { name: string }[] }[] };
+    const phase = (step: string) => workflow.jobs.findIndex((job) => job.steps.some((item) => item.name === step));
+    assertEquals(phase("Stop the seed listener") >= 0 && phase("Stop the seed listener") < phase("Withdraw firewall rules"), true);
+});

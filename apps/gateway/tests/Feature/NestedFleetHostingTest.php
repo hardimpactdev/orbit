@@ -387,8 +387,10 @@ describe('the seed of the proof default on each Node that offers proof places', 
                 Process::fromShellCommandline($action['command'], env: $env)->mustRun();
             }
         };
-        $actions = collect($removal['commands'])->filter(static fn (array $action): bool => str_contains($action['command'], 'incus config'))->values();
-        expect($actions)->toHaveCount(2);
+        // Its own phase, before the firewall phase: the removal commands keep nothing of it.
+        $actions = collect($removal['seed_listener']);
+        expect($actions)->toHaveCount(2)
+            ->and(collect($removal['commands'])->filter(static fn (array $action): bool => str_contains($action['command'], 'incus config'))->all())->toBe([]);
         foreach (['10.44.0.30:8444', '10.44.0.30:9443'] as $listener) {
             @unlink($folder.'/calls');
             file_put_contents($folder.'/listener', $listener."\n");

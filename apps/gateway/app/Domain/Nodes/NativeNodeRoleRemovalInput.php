@@ -188,13 +188,14 @@ final readonly class NativeNodeRoleRemovalInput
             $files[] = ['ssh' => $ssh, 'path' => $path];
             $directories[] = ['ssh' => $ssh, 'path' => $path.'.releases'];
         }
+        $listener = [];
         if ($assignment->role === RoleName::CiRunner) {
             // The seed listener (docs/reference/node-provisioning.md#the-seed-listener): the Node finds its trust entry by name, so the
-            // Gateway never needs the fingerprint, and unsets only its own listener address.
+            // Gateway never needs the fingerprint, and unsets only its own listener address. It goes before the firewall rules.
             $trust = 'incus config trust list --format csv,noheader -c nF';
-            $commands[] = ['ssh' => $ssh, 'command' => 'timeout 60 sh -c '.escapeshellarg($trust." | awk -F, '\$1 == \"".ProofSeeds::TrustName."\" { print \$2 }' | xargs -r -n 1 incus config trust remove"),
+            $listener[] = ['ssh' => $ssh, 'command' => 'timeout 60 sh -c '.escapeshellarg($trust." | awk -F, '\$1 == \"".ProofSeeds::TrustName."\" { print \$2 }' | xargs -r -n 1 incus config trust remove"),
                 'only_if' => $trust.' | cut -d, -f1 | grep -qx '.ProofSeeds::TrustName];
-            $commands[] = ['ssh' => $ssh, 'command' => 'timeout 60 incus config unset core.https_address',
+            $listener[] = ['ssh' => $ssh, 'command' => 'timeout 60 incus config unset core.https_address',
                 'only_if' => 'test "$(incus config get core.https_address)" = '.escapeshellarg($node->wireguard_ip.':'.ProofSeeds::ListenerPort)];
         }
         if ($assignment->role === RoleName::CiRunner && $purgeData) {
@@ -232,9 +233,9 @@ final readonly class NativeNodeRoleRemovalInput
             'remove_units' => array_map(static fn (string $unit): array => ['ssh' => $ssh, 'input' => ['unit' => $unit]], $units),
             'stop_containers' => array_map(static fn (string $name): array => ['ssh' => $ssh, 'input' => ['name' => $name, 'action' => 'stop']], $containers),
             'remove_containers' => array_map(static fn (string $name): array => ['ssh' => $ssh, 'input' => ['name' => $name, 'action' => 'rm']], $containers),
-            'firewall' => $firewall, 'certificates' => $certificates,
+            'firewall' => $firewall, 'certificates' => $certificates, 'seed_listener' => $listener,
             'ci_host' => $assignment->role === RoleName::CiRunner ? [['ssh' => $ssh, 'input' => []]] : []];
-        foreach (['public_ssh', 'stop_units', 'files', 'directories', 'commands', 'reload_units', 'remove_units', 'stop_containers', 'remove_containers', 'firewall', 'ci_host'] as $field) {
+        foreach (['public_ssh', 'stop_units', 'files', 'directories', 'commands', 'reload_units', 'remove_units', 'stop_containers', 'remove_containers', 'firewall', 'ci_host', 'seed_listener'] as $field) {
             $input[$field] = array_values(array_filter($input[$field], static fn (array $action): bool => $action['ssh'] !== null));
         }
 
