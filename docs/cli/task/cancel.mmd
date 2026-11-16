@@ -1,14 +1,18 @@
 sequenceDiagram
   %% Target design: orchestrator 2026-11-08: keeping approved work is a precondition of the cancel, not a step of it. 2026-11-15: the task VMs and their release are removed (docs/reference/old-paths.md); a cancel starts no run. 2026-11-16: the place release workflows are deleted; `operation-task-cancel` keeps its inputs and its end check, and calls no release.
-  %% Orchestrator 2026-11-13: a task copy ends through its Instance destroy. Orchestrator 2026-11-14: work that only the copy holds, or a copy that cannot be read, refuses the cancel unless the caller discards it; the cancel is recorded under the group lock, in one transaction with the destroy's admission, after the destroy's reads. A commit a publish pushed counts as on origin.
+  %% Orchestrator 2026-11-13: a task copy ends through its Instance destroy. Orchestrator 2026-11-14: work that only the copy holds, or a copy that cannot be read, refuses the cancel unless the caller discards it; the cancel is recorded under the group lock, in one transaction with the destroy's admission, after the destroy's reads. A commit a publish pushed counts as on origin. 2026-11-16 (group 5615): published means content on the default branch, not commit SHAs: without discard the cancel of a copy runs the copy's `base` phase, the one task:sync runs, and its content read decides; a squash-merged or hand-carried copy cancels without discard.
   %% status: draft
   %% command: task:cancel
   %% kind: tasks.cancel
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane GH icon=server pill=target tone=purple
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
   participant GW as Gateway<br/>Laravel API
   participant GH as GitHub<br/>repository
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Copy, Node<br/>reached over ssh
   Note over GW: Check before any change<br/>cancellable
   %%> Requirements:
   %%> - the group is cancellable; otherwise `tasks.not_cancellable`
@@ -19,32 +23,59 @@ sequenceDiagram
   %%> - reads origin's task branch head and compares it with that commit, with a `contents: read` token
   %%> - only when GitHub answers that the branch does not exist (404) and the group's pull request merged does that pull request's head stand in; the pull request is read with a `pull_requests: read` token
   %%> - skipped when the group has no approval, or holds no workspace
+  %%> - for a task copy, content on the default branch counts too: the copy's latest content read (`work`, of a `task:sync` or a cancel run) is of the copy's current head, holds the approved commit in its history and found every committed path on the default branch
   GH-->>GW: Branch reaches it
   %%> Result:
   %%> - otherwise the cancel refuses with HTTP 409 `tasks.approved_work_unpublished`, names the commit and the branch, and admits nothing: run `task:publish` first
   %%> - every other outcome refuses the same way: a GitHub read that fails, a branch that is gone without a merged pull request
-  alt the task owns a task copy
-    Note over GW: Read the copy's workspace<br/>one bounded read
-    %%> What it does:
-    %%> - one SSH call to the copy's Node, bounded at 4 s, reads what the copy holds beyond its seed: commits that origin lacks, uncommitted, untracked and stashed files
-    %%> - a copy never fetches, so the commits that the group's publishes pushed are named to the read as on origin, with their history
-    %%> - a stopped or unreachable copy reads `unknown` with its reason
-    %%> Result:
-    %%> - unless the caller discards the work, a copy that holds work (`dirty`: unpushed commits, uncommitted or untracked files, stashes) refuses the cancel with HTTP 409 `tasks.copy_unpublished_work`; its details carry the counts and the head
-    %%> - unless the caller discards it, a copy that cannot be read (`unknown`) refuses with HTTP 409 `tasks.copy_workspace_unknown`, naming the reason
-    %%> - a `clean` copy goes on; both refusals come before the cancel stops running work, so they change nothing
-    Note over GW: Record, then admit destroy<br/>one transaction · group lock
+  alt the task owns a task copy, without discard
+    Note over GW: Record, start the run<br/>group lock · token
     %%> Requirements:
     %%> - no Operation holds the copy, such as its create or an earlier destroy; otherwise HTTP 409 `operation.target_busy`, naming it
-    %%> - after the group's running work was asked to stop, no Operation still holds the group, such as a timed-out one whose run nothing has proven ended; otherwise HTTP 409 `operation.target_busy`, naming it, and no destroy is admitted
+    %%> - after the group's running work was asked to stop, no Operation still holds the group; otherwise HTTP 409 `operation.target_busy`, naming it
+    %%> - the copy's container runs; a stopped or asleep copy cannot be read, so it refuses with HTTP 409 `tasks.copy_workspace_unknown` and its `reason`
     %%> What it does:
-    %%> - the destroy's checks and the Schedule stop come first, outside any transaction: its replication slot check over SSH, then the stop of the copy's Schedules (`schedule.destroy` Operations and their removal in Swamp)
+    %%> - records the `tasks.cancel` Operation under the group's lock key and starts `operation-task-cancel` with the copy's intent, as `task:sync` captures it
+    %%> - mints the read token as `task:sync` does (`contents: read`, valid one hour) into a vault key of the run; the run gets only the key name
+    %%> Result:
+    %%> - HTTP 202 with the running Operation; the group runs on, and its lock keeps every turn, check and publish out until the run ends
+    GW->>SW: Start the run<br/>operation-task-cancel · copy
+    SW->>N: Base, then read the work<br/>task-copy-base · base
+    %%> What it does:
+    %%> - the `base` phase of `task:sync`: brings the current default head into `refs/remotes/origin/<default>` of the copy through its Node mirror and one bundle; no credential enters the copy
+    %%> - then, as `agent`, one content read: every path that HEAD changed since its merge base with the default head (adds, edits, deletes, modes; a rename is a delete and an add) must hold the same content on the default head, or in a commit that a `task:publish` of the group pushed
+    %%> - empty commits and commits that only repeat published content add nothing, so a squash-merged or hand-carried branch reads `published`
+    %%> - also counts uncommitted and untracked files and stashes: those are never published
+    %%> Result:
+    %%> - `work`: `state` `clean` or `dirty`, `head`, the `paths` count and up to five names that differ, `uncommitted`, `untracked`, `stashes`, and `empty` when HEAD changed nothing
+    SW->>N: Discard the base scratch<br/>task-copy-base · base-cleanup
+    SW-->>GW: Run ended<br/>terminal event · work
+    alt work clean
+      Note over GW: Admit the copy's destroy<br/>instance.destroy · force
+      %%> What it does:
+      %%> - the destroy's checks and the Schedule stop come first: its replication slot check over SSH, then the stop of the copy's Schedules
+      %%> - admits the normal `instance.destroy` of the copy with force
+      %%> Result:
+      %%> - the cancel succeeds; its result names the destroy Operation and holds the read as `workspace`
+      %%> - when the destroy succeeds, a task that still runs and its open subtasks are `cancelled`, and the task lets go of the copy; a `failed` task stays `failed`
+      %%> - when it fails, the task runs on and keeps the copy; the next cancel reads and admits the destroy again
+    else dirty, or the run failed
+      Note over GW: Fail the cancel<br/>copy kept
+      %%> Result:
+      %%> - `dirty`: the cancel fails with `tasks.copy_unpublished_work`; its details carry the head, the differing paths and the counts
+      %%> - a failed run: `tasks.copy_workspace_unknown`, naming the failed step; the copy stays as it was, apart from its `origin/<default>` ref
+      %%> - the group runs on with its copy; publish the work, or cancel again with discard
+    end
+  else the task owns a task copy, with discard
+    Note over GW: Record, then admit destroy<br/>one transaction · group lock
+    %%> Requirements:
+    %%> - no Operation holds the copy or, after the group's running work was asked to stop, the group; otherwise HTTP 409 `operation.target_busy`, naming it
+    %%> What it does:
+    %%> - reads nothing and starts no run: the destroy's checks and the Schedule stop come first, outside any transaction
     %%> - then, in the destroy's one transaction, records the cancel under the group's lock key first and admits the normal `instance.destroy` of the copy with force
     %%> - an Operation that takes the group lock first makes the record refuse with HTTP 409 `operation.target_busy`; the transaction rolls back, so a refused cancel never admits the destroy; the copy's Schedules stay stopped
     %%> Result:
-    %%> - the cancel is recorded as succeeded at once (R1); its result names the destroy Operation and holds the workspace read
-    %%> - the destroy runs as every Instance destroy does; when it succeeds, a task that still runs and its open subtasks are `cancelled`, and the task lets go of the copy; a `failed` task stays `failed`
-    %%> - when it fails, the task runs on and keeps the copy; the next cancel admits the destroy again; a stopped or half-removed copy may read `unknown`, so that cancel may need the discard
+    %%> - the cancel is recorded as succeeded at once (R1); its result names the destroy Operation; the destroy ends the task as above
   else no task copy and no workspace
     Note over GW: End the task at admission<br/>R1: no run
     %%> When:
