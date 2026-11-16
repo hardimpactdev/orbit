@@ -7,11 +7,13 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Infrastructure\GitHub\GitHubActionsJobs;
 use App\Infrastructure\GitHub\GitHubActionsReader;
+use App\Infrastructure\GitHub\GitHubWorkflowFile;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Project;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 
 uses(LazilyRefreshDatabase::class);
@@ -47,10 +49,11 @@ function ciJobsJob(int $id, array $overrides = []): array
  * @param  list<string>  $missing  repositories the App is not installed on
  * @param  list<string>  $failing  repositories whose run list fails
  * @param  array<string, list<array{id: int, path: string, file: ?string}>>  $workflows  repository => its workflows; a null file is not readable
+ * @param  int  $jobSeconds  how long each read of a job list takes
  */
-function ciJobsGitHub(array $runs, array $jobs, array $missing = [], array $failing = [], array $workflows = []): void
+function ciJobsGitHub(array $runs, array $jobs, array $missing = [], array $failing = [], array $workflows = [], int $jobSeconds = 0): void
 {
-    Http::fake(function (Request $request) use ($runs, $jobs, $missing, $failing, $workflows) {
+    Http::fake(function (Request $request) use ($runs, $jobs, $missing, $failing, $workflows, $jobSeconds) {
         $path = (string) parse_url($request->url(), PHP_URL_PATH);
         $page = static function (array $rows, string $field, ?int $total = null) use ($request): PromiseInterface {
             $size = (int) ($request['per_page'] ?? 30);
@@ -104,6 +107,7 @@ function ciJobsGitHub(array $runs, array $jobs, array $missing = [], array $fail
         }
         if (preg_match('#/actions/runs/(\d+)/jobs$#', $path, $match) === 1) {
             expect($request->header('Authorization'))->toBe(['Bearer actions-token']);
+            Carbon::setTestNow(now()->addSeconds($jobSeconds));
 
             return $page($jobs[(int) $match[1]] ?? [], 'jobs');
         }
@@ -257,4 +261,73 @@ describe('the CI runner view job read', function (): void {
             ->and($answer['jobs'])->toHaveCount(50)
             ->and(array_unique(array_column($answer['jobs'], 'run_id')))->toEqualCanonicalizing(range(101, 150));
     });
+    it('reads every job of a run with more than one page of jobs', function (): void {
+        ciJobsApp();
+        ciJobsRepository('acme/shop');
+        ciJobsGitHub(['acme/shop' => ciJobsRuns(9, 1, 1, '2026-11-16T10:00:00Z')], [9 => array_map(static fn (int $id): array => ciJobsJob($id), range(1, 161))]);
+
+        $answer = app(GitHubActionsJobs::class)->read()->toArray();
+
+        expect($answer['jobs'])->toHaveCount(161)
+            ->and($answer['repositories'])->toBe([['repository' => 'acme/shop', 'error_code' => null, 'truncated' => false]]);
+        Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/actions/runs/9/jobs?') && $request['page'] === '2');
+    });
+
+    it('asks for no jobs of a workflow whose file runs only on GitHub-hosted runners', function (): void {
+        ciJobsApp();
+        ciJobsRepository('acme/shop');
+        ciJobsGitHub(['acme/shop' => [...ciJobsRuns(30, 20, 1, '2026-11-16T10:00:00Z'), ...ciJobsRuns(5, 1, 2, '2026-11-16T09:00:00Z')]], [5 => [ciJobsJob(51)]],
+            workflows: ['acme/shop' => [
+                ['id' => 1, 'path' => '.github/workflows/lint.yml', 'file' => "on: push\njobs:\n  lint:\n    runs-on: ubuntu-latest\n  test:\n    runs-on: [macos-15]\n"],
+                ['id' => 2, 'path' => '.github/workflows/gone.yml', 'file' => null],
+            ]]);
+        $jobs = app(GitHubActionsJobs::class);
+
+        expect(array_column($jobs->read()->toArray()['jobs'], 'job_id'))->toBe([51]);
+        $this->travel(61)->seconds();
+        $jobs->read();
+
+        Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/actions/workflows/1/runs')
+            || preg_match('#/actions/runs/(1\d|2\d|30)/jobs#', $request->url()) === 1);
+        expect(Http::recorded(static fn (Request $request): bool => str_contains($request->url(), '/contents/'))->count())->toBe(2);
+    });
+
+    it('stops when the budget is spent, marks the repository truncated and lets the next answer finish it first', function (): void {
+        ciJobsApp();
+        ciJobsRepository('acme/a');
+        ciJobsRepository('acme/b');
+        ciJobsGitHub(['acme/a' => ciJobsRuns(10, 1, 1, '2026-11-16T10:00:00Z'), 'acme/b' => ciJobsRuns(23, 3, 1, '2026-11-16T09:00:00Z')],
+            [10 => [ciJobsJob(100)], 23 => [ciJobsJob(230)], 22 => [ciJobsJob(220)], 21 => [ciJobsJob(210)]], jobSeconds: 4);
+        $jobs = new GitHubActionsJobs(app(GitHubActionsReader::class), app(GitHubAppStore::class), 10.0);
+
+        $first = $jobs->read()->toArray();
+        expect($first['repositories'])->toBe([
+            ['repository' => 'acme/a', 'error_code' => null, 'truncated' => false],
+            ['repository' => 'acme/b', 'error_code' => null, 'truncated' => true],
+        ])->and(array_column($first['jobs'], 'job_id'))->toBe([230, 220, 100]);
+
+        $this->travel(61)->seconds();
+        $before = Http::recorded()->count();
+        $second = $jobs->read()->toArray();
+        $lists = Http::recorded()->slice($before)->map(static fn (array $pair): string => $pair[0]->url())
+            ->filter(static fn (string $url): bool => str_contains($url, '/runs?'))->values();
+
+        expect($second['repositories'])->toBe([
+            ['repository' => 'acme/a', 'error_code' => null, 'truncated' => false],
+            ['repository' => 'acme/b', 'error_code' => null, 'truncated' => false],
+        ])->and(array_column($second['jobs'], 'job_id'))->toBe([230, 220, 210, 100])
+            ->and($lists->first())->toContain('/repos/acme/b/')
+            ->and($lists->last())->toContain('/repos/acme/a/');
+    });
+
+    it('treats a workflow file as able to ask for a self-hosted runner unless every job names hosted labels', function (string $file, bool $expected): void {
+        expect(GitHubWorkflowFile::canAskForSelfHosted($file))->toBe($expected);
+    })->with([
+        'hosted labels' => ["jobs:\n  a:\n    runs-on: ubuntu-26.04\n  b:\n    runs-on: [macos-15]\n", false],
+        'a self-hosted label' => ["jobs:\n  a:\n    runs-on: ubuntu-26.04\n  b:\n    runs-on: [self-hosted, hardimpact, orbit-shard]\n", true],
+        'labels from an expression' => ["jobs:\n  a:\n    runs-on: \${{ fromJSON(vars.ORBIT_PROOF_RUNNER) }}\n", true],
+        'labels in a runner group' => ["jobs:\n  a:\n    runs-on:\n      group: ci\n      labels: [self-hosted]\n", true],
+        'a called workflow' => ["jobs:\n  a:\n    uses: ./.github/workflows/fixtures.yml\n", true],
+        'a file that does not parse' => ["jobs: [\n", true],
+    ]);
 });
