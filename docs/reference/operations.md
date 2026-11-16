@@ -245,7 +245,7 @@ A direct Operation may admit immutable `input.participant_node_ids`. A foreign p
 
 ## The record
 
-The optional `steps` list uses typed `OperationStep` metadata. Start responses can omit it; show and cancel responses include it. List rows never carry `steps`, `input` or `result`; [Page the list](#page-the-list) says why.
+The optional `steps` list uses typed `OperationStep` metadata. Start responses can omit it; show and cancel responses include it. List rows never carry `steps`, `input` or `result`; [Page the list](#page-the-list) says why. A row repeats one result field, `ready_at`, so one history request returns every wake's readiness time.
 
 `operation:show`, `operation:cancel` and `task:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. An admission that waits for a place keeps the caller's request as `input.capacity_request`; the summary keeps it as an object with the same filter, so a waiting Operation reads the same request on every read. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
 
@@ -272,6 +272,7 @@ Every operation has the same fields, whatever its kind.
 | `poll_after_seconds` | How long a polling client waits before its next read, or null once terminal. [Follow an operation by polling](#follow-an-operation-by-polling) gives the values |
 | `capacity_wait` | For an Operation on a task group that waits for a task place: `operation_id`, `position` and `holders`, as [Task places](/reference/tasks#task-places) defines. Null otherwise |
 | `hold_wait_reason` | For a Route write or a removal that waits in the Gateway: why, as [One Route write per Node](#one-route-write-per-node) lists. Null otherwise |
+| `ready_at` | List rows only, for an `instance.wake`: its `result.ready_at`, the Node's UTC time when the website became ready ([Results](/reference/prepared-restore#results)). Null otherwise |
 
 A cancelled operation has an `error_code` only when a rollback superseded it: `operation.superseded`.
 
@@ -396,7 +397,7 @@ Four requests read and stop operations.
 | --- | --- |
 | `GET /api/v1/operations/{operation}` | The record with every step |
 | `GET /api/v1/operations/{operation}?after_sequence=N` | The record with only the steps whose `sequence` is greater than `N` |
-| `GET /api/v1/operations` | The newest records, 20 to a page, without `input`, `result` or `steps`. [Filter the list](#filter-the-list) with `status`, `kind`, `target_type`, and `target_id`, and [page it](#page-the-list) with `limit` and `cursor` |
+| `GET /api/v1/operations` | The newest records, 20 to a page, without `input`, `result` or `steps`; a wake's row carries `ready_at`. [Filter the list](#filter-the-list) with `status`, `kind`, `target_type`, and `target_id`, and [page it](#page-the-list) with `limit` and `cursor` |
 | `POST /api/v1/operations/{operation}/cancel` | Asks the operation to stop and returns the record |
 
 The list selects operations and caller Node names in one query. Show uses the bound operation and reads its steps in one query. Neither waits for the operation. A read needs access to the Node that serves the target, such as the Instance's Node. The list returns only operations on Nodes that the caller can access; the Gateway Node and a Node with an access grant to the Gateway see all of them.

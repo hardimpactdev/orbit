@@ -265,7 +265,7 @@ The worker never retries a range and never follows a replacement process. Advice
 
 The receipt counts each process's outcome (`complete`, `partial`, `skipped`, `failed`) and the pages read. It does not keep the errno of a short call.
 
-**Readiness.** After `restore`, the caller checks readiness with the existing rule: an answer below 500 from the container's web port. The check goes from the Node straight to the address in the target descriptor, not through `incus exec` and `curl`. A container without a web unit gets no HTTP check. The fast worker sends one bounded request. The run keeps its retries and its stop-and-boot fallback, which a nested-fleet Instance never takes. Only after the check passes does the caller remove the asleep marker. `ready_at` is that moment.
+**Readiness.** After `restore`, the caller checks readiness with the existing rule: an answer below 500 from the container's web port. The fast worker's check goes from the Node straight to the address in the target descriptor, not through `incus exec` and `curl`. The run still asks the web port from inside the container, as before this feature; moving its check to the Node is open work. A container without a web unit gets no HTTP check. The fast worker sends one bounded request. The run keeps its retries and its stop-and-boot fallback, which a nested-fleet Instance never takes. Only after the check passes does the caller remove the asleep marker. `ready_at` is that moment.
 
 ## The fast wake
 
@@ -326,9 +326,9 @@ The Operation keeps its existing keys: `power_state`, `sleep`, `wake`, `marker_f
 | `ready_at_resolution_seconds` | `1` for the fast wake (file times); `0.001` for a run |
 | `prepared_restore.status` | `complete`, `partial`, `skipped`, `timed_out` or `not_applicable` |
 | `prepared_restore.reason` | A closed code, when the transport returned one |
-| Durations and counts | Only when the transport returned them; never an invented zero |
+| Durations and counts | Not in the Operation: the Node's receipt and journal keep them; never an invented zero |
 
-The fast wake transports only the status, through the name of its one `.ready-*` file. Its reason and durations stay in the Node's receipt and journal. A run returns them in its result. `finished_at` is not the readiness time. Latency is computed on one host's monotonic clock or by the external client, never by subtracting clocks of different hosts. Addresses, PIDs and raw `/proc` data never appear in a result, the CLI or a public log.
+The fast wake transports only the status, through the name of its one `.ready-*` file. Its reason and durations stay in the Node's receipt and journal. A run returns the reason in its result. `finished_at` is not the readiness time. Latency is computed on one host's monotonic clock or by the external client, never by subtracting clocks of different hosts. Addresses, PIDs and raw `/proc` data never appear in a result, the CLI or a public log.
 
 ## Lifecycle
 

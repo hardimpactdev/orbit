@@ -110,7 +110,7 @@ sequenceDiagram
     %%> Result:
     %%> - the runtime's `power_state` is `running`; the Conn layer shows the T3 server awake
     %%> - the result names the path, `marker_found`, and a resume's `resume_seconds` and `web_probe_seconds`
-    %%> - `restore_mode` (`prepared` or `ordinary`), `prepared_restore` with its status, reason and counts, and `ready_at`, when the marker went (`ready_at_resolution_seconds` 0.001); Operation list and show return them
+    %%> - `restore_mode` (`prepared` or `ordinary`), `prepared_restore` with its status and reason, and `ready_at`, when the marker went (`ready_at_resolution_seconds` 0.001); Operation list and show return them
     %%> - the progress page loads the original path
     opt the Gateway session ends within 7 days or has ended
       Note over GW: Admit the renewal<br/>conn.environment_renew
