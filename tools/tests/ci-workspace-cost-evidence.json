@@ -89,6 +89,18 @@
         "test_a_clean_change_passes_with_public_facts_only": 1.761,
         "test_a_nested_copy_without_its_inner_machines_is_unchecked": 3.127
       }
+    },
+    "swamp/tests/task_instance_workspace_base_work_test.py": {
+      "case_seconds": {
+        "test_a_squash_merged_branch_reads_clean": 7.806,
+        "test_an_empty_handoff_commit_adds_nothing": 0.578,
+        "test_one_path_that_differs_reads_dirty": 0.567,
+        "test_a_delete_on_main_of_a_file_the_copy_also_deleted_is_equal": 0.644,
+        "test_uncommitted_work_stays_dirty": 0.561,
+        "test_an_untracked_file_and_a_stash_stay_dirty": 0.566,
+        "test_a_published_commit_counts_and_holds_the_approved_commit": 0.574,
+        "test_a_copy_that_changed_nothing_is_empty": 0.799
+      }
     }
   }
 }

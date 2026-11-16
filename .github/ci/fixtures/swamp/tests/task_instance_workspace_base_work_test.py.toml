@@ -1,6 +1,6 @@
 file = "swamp/tests/task_instance_workspace_base_work_test.py"
 slices = false
-cost = 248
+cost = 39
 cases = [
   "test_a_squash_merged_branch_reads_clean",
   "test_an_empty_handoff_commit_adds_nothing",
@@ -27,13 +27,13 @@ inputs = [
   "swamp/workflows/workflow-operation-task-sync-copy.yaml"
 ]
 
-# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case (113 s for 8 cases).
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
 [case_costs]
-"test_a_squash_merged_branch_reads_clean" = 31
-"test_an_empty_handoff_commit_adds_nothing" = 31
-"test_one_path_that_differs_reads_dirty" = 31
-"test_a_delete_on_main_of_a_file_the_copy_also_deleted_is_equal" = 31
-"test_uncommitted_work_stays_dirty" = 31
-"test_an_untracked_file_and_a_stash_stay_dirty" = 31
-"test_a_published_commit_counts_and_holds_the_approved_commit" = 31
-"test_a_copy_that_changed_nothing_is_empty" = 31
+"test_a_squash_merged_branch_reads_clean" = 18
+"test_an_empty_handoff_commit_adds_nothing" = 3
+"test_one_path_that_differs_reads_dirty" = 3
+"test_a_delete_on_main_of_a_file_the_copy_also_deleted_is_equal" = 3
+"test_uncommitted_work_stays_dirty" = 3
+"test_an_untracked_file_and_a_stash_stay_dirty" = 3
+"test_a_published_commit_counts_and_holds_the_approved_commit" = 3
+"test_a_copy_that_changed_nothing_is_empty" = 3
