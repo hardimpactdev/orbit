@@ -389,6 +389,20 @@ jobs:
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
           ORBIT_PLAYBOOK: '${{ "playbook" in inputs.intent ? inputs.intent.playbook : "operation-node-role-add.yml" }}'
+  - name: Read the CI bridge
+    labels: {role: swamp}
+    guard: ${{ inputs.intent.role != "ci-runner" }}
+    dependsOn: [{step: Apply the role on the Node, condition: {type: always}}]
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-ci-bridge-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 5 cat "$ORBIT_RUN/ci-bridge"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
   dependsOn:
   - job: phase_13
     condition: {type: succeeded}

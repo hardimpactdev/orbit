@@ -76,7 +76,7 @@ A `node:converge` call in a copy may wait up to 600 seconds. Its product timing 
 | `tasks.copy_completion_failed` | The task copy's last completion failed. The details name `operation_id`, `failed_step`, `error_code`, `retry`, and `requires` when present; `retry` is the command `orbit instance:complete <copy-id>` ([when the start fails](/cli/task/start#when-the-start-fails)). |
 | `tasks.instance_not_running` | The container of the task copy is not running. |
 | `proof.copy_fleet_missing` | The group's Instance is not a clone that keeps its nested fleet, such as a Project's default Instance. The proof resets a copy's fleet, and a default's fleet is never reset. |
-| `tasks.copy_turn_unended` | An earlier turn may still run in the task copy or left its checkout unrestored. Run `task:cancel` to end it with the copy. |
+| `tasks.copy_turn_unended` | An earlier turn may still run in the task copy or left its checkout unrestored. Run the next `task:turn` first: it stops the earlier run and settles it. |
 | `tasks.group_closed` | The task group has ended. |
 | `operation.target_busy` | Another operation holds the task group. The details name it. |
 | `proof.cases_failed` | A case failed or did not run. The result holds each verdict. |

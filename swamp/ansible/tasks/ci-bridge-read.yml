@@ -1,0 +1,20 @@
+---
+# The CI bridge of a ci-runner Node (docs/reference/development-containers.md#nodes): Incus chose its subnet when the role made
+# `orbitci0`. The workflow's step "Read the CI bridge" prints the file, and the Gateway records the subnet so that no Instance bridge
+# takes it. A Node without `orbitci0` yet writes nothing.
+- name: Read the CI bridge
+  ansible.builtin.command: { argv: [incus, network, get, orbitci0, ipv4.address] }
+  register: ci_bridge_read
+  changed_when: false
+  failed_when: false
+- name: Keep the CI bridge for the Gateway
+  when: ci_bridge_read.rc == 0 and ci_bridge_read.stdout | trim | length > 0
+  ansible.builtin.copy:
+    content: "{{ ci_bridge_read.stdout | trim }}\n"
+    dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/ci-bridge"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"

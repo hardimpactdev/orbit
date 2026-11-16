@@ -19,7 +19,6 @@ Principle: [Lean](/mission#principles): one pool and one count per Node, instead
 Open:
 
 - How Orbit keeps the count when a runner takes a job by itself: count the busy runners and start a proof copy only in a free place, or stop runner services while a proof holds their places.
-- What a Node with only the `ci-runner` role needs to host a proof copy. A copy is an Instance created from a seed.
 
 ## Context
 
@@ -47,6 +46,10 @@ The workflow job that calls Orbit runs on the host-level proof runner, which hol
 
 Each CI Node keeps its own seed of the proof Project's default. The refresh after each release, which already refreshes the nested-fleet default ([Development containers](/reference/development-containers#refresh-after-a-release)), refreshes the seed on every CI Node. A copy starts from its own Node's seed.
 
+A CI Node takes only CI work. Its `ci-runner` role prepares what a nested proof copy needs: the Instance Incus projects, the inner volume pool and the nested-fleet image ([Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node)). It never gets the `app-dev` role.
+
+Incus moves the seed from the default's Node to each CI Node over WireGuard, with `incus copy --refresh --mode=push` for the container and `incus storage volume copy --refresh --mode=push` for its inner volume ([The seed on each CI Node](/reference/development-containers#the-seed-on-each-ci-node)). `--refresh` sends only the snapshots that changed. In push mode only the target listens. So each CI Node's Incus API listens on its WireGuard address, port 8444, and nowhere else. It trusts one restricted client certificate: root's Incus client certificate on the default's Node, limited to the project `orbit-instances-nested`. Two firewall rules in front of the WireGuard member trust admit the port from the default's Node and deny it from every other source. The default's Node gets no listener and no change to its Incus daemon: only a client remote for each CI Node. This is the one trust between Nodes that this decision adds.
+
 ### Orbit shows what each place is doing
 
 The web app has a [runner view](/reference/ci-runner-view):
@@ -72,6 +75,7 @@ Orbit reads the runner containers on each CI Node for their state, version and b
 - Separate fixed capacity for runners and for proof: idle places in one stay unused while the other queues.
 - Size places from container memory limits: containers use far less than their limits, and CPU runs out first.
 - One seed on one Node that every other Node copies from at start: each copy would cross the network and wait for it.
+- A ZFS stream of the seed through the Swamp worker, with bookmarks of Orbit's own: the worker is on another host and short of CPU, and Incus already sends the change between snapshots.
 - Use GitHub-hosted runners for the proof: the proof needs an enrolled Node that reaches the Gateway.
 - Read the organization runner list from GitHub: it needs a new organization permission, and the CI Nodes already report the same state.
 
@@ -85,5 +89,5 @@ Orbit reads the runner containers on each CI Node for their state, version and b
 
 - Components: apps/gateway, apps/web, apps/docs
 - ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role), [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers), [0262](/decisions/0262-prove-changed-operations-on-the-pull-request)
-- Detail: [Node provisioning: ci-runner role](/reference/node-provisioning#ci-runner-role); [proof:run](/cli/proof/run); [Implementation loop: CI](/reference/implementation-loop#ci)
+- Detail: [Node provisioning: ci-runner role](/reference/node-provisioning#ci-runner-role); [Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node); [The seed on each CI Node](/reference/development-containers#the-seed-on-each-ci-node); [proof:run](/cli/proof/run); [Implementation loop: CI](/reference/implementation-loop#ci)
 - Verify: a proof with more batches than one Node's places runs copies on several CI Nodes and merges one result; the count holds while runner jobs and proof copies start together; the runner view lists each Node's places and each runner's current job

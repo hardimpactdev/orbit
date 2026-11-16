@@ -256,7 +256,14 @@ The role `consult` and the field `model` were options of the Pi turn on a task V
 
 No `tasks.provision` Operation starts any more: a task start makes a task copy. An old one that is still open holds its group as every open Operation does, so other work returns `operation.target_busy` until the reconcile pass ends it.
 
-A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission puts the title, brief and deliverables of the subtask in front of the prompt of the caller, for every role, and records that text as the admitted prompt. A composed prompt over 100000 characters returns 422 `tasks.prompt_too_large`.
+A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission composes the prompt for every role, in this order: the group's title and brief, read from the subtask's parent; the title, brief and deliverables of the subtask; Orbit's copy rules; then the prompt of the caller. It records that text as the admitted prompt. A composed prompt over 100000 characters, the group's brief included, returns 422 `tasks.prompt_too_large`.
+
+The copy rules are one fixed text, the same for the implementer and the reviewer. They name no command of one Project:
+
+- Run every command in the foreground. Leave none running when the turn ends.
+- The Project's long gates and full test sets are the work of the task check and CI (`task:check`). Run single test files by path.
+- Commit your work before the turn ends.
+- Never print an environment file, a token, a key or a session value.
 
 #### Publish an external group
 
@@ -449,11 +456,32 @@ Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliv
 | `reserved` | Nothing. Subtask create still appends |
 | `completed`, `failed`, `cancelled` | Nothing |
 
-For an external group, subtask update also accepts `status`. A subtask moves from `todo` to `running`, between `running` and `reviewing`, and from either active status to `completed` or `failed`. `completed` and `failed` are final. Only `task:cancel` sets `cancelled`. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing. An ended group permits no subtask status move. Completing a subtask clears its assistance and reconciles the group request as resolution does. A status update starts no agent or check, advances no other subtask, and does not settle the group. The API, PHP SDK, CLI `--status` option, and MCP expose both status inputs.
+For an external group, subtask update also accepts `status`. A subtask moves from `todo` to `running`, between `running` and `reviewing`, and from either active status to `completed` or `failed`. `failed` is final. `completed` is final too, except for the [reopen of the last subtask in a task copy](#reopen-the-last-subtask). Only `task:cancel` sets `cancelled`. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing.
+
+An ended group permits no subtask status move. Completing a subtask clears its assistance and reconciles the group request as resolution does. A status update starts no agent or check, advances no other subtask, and does not settle the group. The API, PHP SDK, CLI `--status` option, and MCP expose both status inputs.
 
 #### Subtask status in a task copy
 
 In a group whose workspace is a task copy, the admission of a [copy turn](/cli/task/turn#in-a-task-copy) of either role moves the current subtask from `todo` to `running`, under the group's row lock and in the turn's own transaction. A refused turn moves nothing. No turn, check or reviewer pass moves the subtask further. The caller completes it with `task:update <subtask> --status=completed` after the reviewer's turn on the done check ended; that move is the approval that [the done rule](#when-the-work-is-done) reads. Since the turn started it, the subtask then keeps its title, brief, position and deliverables, as the next paragraph says.
+
+#### Reopen the last subtask
+
+In an open group whose workspace is a task copy, the caller can reopen the last subtask with `task:update <subtask> --status=running`, so that a fix after the review or after the pull request runs as more turns in the same subtask and threads. The move from `completed` back to `running` is allowed only when all of these hold:
+
+- The subtask is the group's last subtask by position that is not `cancelled`.
+- Every other subtask of the group has ended.
+- No copy turn of the group runs. Otherwise the move returns HTTP 409 `tasks.copy_turn_unended`, as a completion does.
+
+The move takes the group's row lock, as a completion does. Any other move from `completed` returns `tasks.status_move_refused`. A `failed` subtask never reopens. Task activity records the reopen.
+
+The reopen adds no state. The existing rules decide what it means:
+
+- The subtask is current again, so implementer and reviewer turns run on it and continue their threads.
+- Its deliverables stay locked, as for every started subtask.
+- The open subtask keeps the group from being [done](#when-the-work-is-done). A `pr_when_done` group does not publish. A `review_before_pr` group leaves `waiting_for_release`.
+- A new handoff check, a reviewer turn on it and a new completion make the group done again, on the new check.
+- A completion without a new check makes the group done again on its earlier done check, as before the reopen. That check holds no commit made after it.
+- A group that has a pull request keeps it. Its next publish updates the same pull request.
 
 A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the one correction after `invalid_deliverable` described below.
 
@@ -833,6 +861,8 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 A new task of a Project whose default Instance is a container, or that has [`nested_fleet`](/reference/projects#nested-fleet-setting) on, gets no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) and [`task:complete`](/cli/task/complete) destroy it. A cancel refuses a copy that holds work origin lacks unless the caller discards it, and its result records what the copy held. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
 
+The copy clones the seed of the Node it is placed on (`TaskCopyStart::seed`). Today that is always the default's Node, so it clones the default's seed. On a CI Node it would clone that Node's [seed holder](/reference/development-containers#the-seed-on-each-ci-node), and a Node whose seed is not the default's current seed refuses with `tasks.copy_source_unavailable`.
+
 The copy's agents follow the Project's own [agent instructions](/reference/development-containers#agent-instructions) from its Documents. `task:start` reads them before its admission transaction, so a copy keeps the version of its start.
 
 A handoff check in a copy makes no commit for a clean head that an earlier check recorded, so checking a published head again leaves nothing that blocks the cancel.
@@ -841,7 +871,11 @@ The copy [starts clean](/reference/development-containers#a-task-copy-starts-cle
 
 [`task:turn`](/cli/task/turn#a-task-that-runs-in-a-copy) runs an implementer or reviewer turn in it as `tasks.copy_turn`, with T3's own CLI as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. Each role keeps one ongoing T3 thread, and a turn without `--thread` continues it: the implementer's thread of the current subtask, recorded on the subtask, or the reviewer's thread, recorded on the group. The first turn of a role, or `--thread=new`, starts the thread with the role's copy model and effort.
 
-A reviewer turn works on the checked candidate, detached, and Orbit checks the task branch out again after it, at the commit it had. A checkout left unclean, off that branch or at another commit holds the group, whatever the turn's run did. The next turn settles an earlier turn once T3 shows its run over and a reviewer's checkout is clean on the task branch; the work in the copy stays.
+A reviewer turn works on the checked candidate, detached, and Orbit checks the task branch out again after it, at the commit it had. A checkout left unclean, off that branch or at another commit holds the group, whatever the turn's run did.
+
+A turn has a bound of 3,600 seconds. A turn that its bound cuts stops its own run in the copy, and then holds nothing, though it still fails with `tasks.turn_timeout`.
+
+Every earlier turn that is over in Orbit but may still run in the copy, because it was cut, cancelled or lost, is settled by the next turn. That turn's phase first stops the earlier run when T3 still shows it active. It settles the earlier turn once T3 shows its run over and a reviewer's checkout is clean on the task branch. A stop that fails leaves the earlier turn unsettled, and the next turn fails with `tasks.copy_turn_unended`. The work in the copy stays. So `operation:cancel <turn>` and then a new turn stop a running turn's run.
 
 A question ends a turn: Orbit stores it and stops the run, and the role's next turn, or a message to the thread from a T3 client, answers it. The thread and its transcript stay on the Gateway after the copy is gone.
 
@@ -1201,6 +1235,8 @@ Orbit decides from its own records that a group's work is done. All of these mus
 The commit counts, not the check. A re-check of a clean recorded HEAD makes a new check with the same commit, so a reviewer turn on the earlier check of that commit still counts.
 
 A copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval. No clock decides "after": a turn is admitted only on the current subtask, and [`task:update`](/cli/task/update) refuses to complete a task copy's subtask with `tasks.copy_turn_unended` while a copy turn of the group runs. So a reviewer turn on the last subtask always ended before that subtask was completed.
+
+A [reopen](#reopen-the-last-subtask) of the last subtask is refused while a copy turn runs too, and a reopened subtask has not ended, so the group is not done until it is completed again.
 
 For a Project without a task check, a passed handoff check only records the commit: nothing ran on it. The automatic publish still runs. What stands in front of it is the reviewer turn on exactly that commit and the guards of every publish: the [copy publish allow list](#task-copy) and the `.env` content and Club key checks.
 
