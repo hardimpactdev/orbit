@@ -40,7 +40,7 @@ final readonly class InstanceWake extends InstancePower
     public const int SafetyNetSeconds = 15;
 
     /** The closed reason codes of a wake's `skipped` or `timed_out` restore (docs/reference/prepared-restore.md#wake). */
-    public const array PreparedReasons = ['no_plan', 'plan_invalid', 'plan_stale', 'unsupported', 'placement_unproven', 'deadline'];
+    public const array PreparedReasons = ['no_plan', 'plan_invalid', 'plan_stale', 'unsupported', 'placement_unproven', 'deadline', 'nothing_read'];
 
     /** The run found a nested-fleet container stopped: it boots none, since only a start or a deployment brings back its fleet. */
     public const string NestedStopped = 'instance.nested_fleet_stopped';

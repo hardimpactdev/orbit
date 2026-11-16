@@ -31,7 +31,7 @@ The `app-dev` role installs the helper at `/usr/local/libexec/orbit-instance-pow
 
 | Command | Does |
 | --- | --- |
-| `capabilities` | Probes the kernel and writes the capability manifest. Takes no lock. |
+| `capabilities` | Probes the kernel and writes the capability manifest. Runs as the unit `orbit-instance-power-probe`, not the Instance's lock. |
 | `prepare --instance <id> --operation <opid>` | Sleeps the container: opens swap, pauses, records the plan, reclaims. Reads the Instance's intent on stdin. |
 | `restore --instance <id> --operation <opid>` | Wakes the container: validates the plan, restores pages, unfreezes, closes swap. Reads the intent on stdin when a run calls it; the fast worker sends none. |
 | `residual --instance <id> --operation <opid>` | Reads the frozen container's `memory.stat` once and stores its anonymous and file bytes in `sleep.json` of the sleep `<opid>`. The sleep phase's counter settle calls it. |
@@ -103,7 +103,7 @@ The unit runs as root with only the capabilities the kernel requires:
 
 It may hold 16,384 open files, two for each of up to 4,096 processes and room for the rest. It also has no new privileges, and a read-only system except its folders and the cgroup tree. Only `/var/lib/orbit/hibernation`, `/dev/shm/orbit/hibernation` and `/sys/fs/cgroup` are writable. Each call opens a new connection to the Incus Unix socket.
 
-**Capabilities.** `capabilities` checks root access to cgroup v2, `/proc/<pid>/maps` and `pagemap`, `pidfd_open`, `process_madvise` and `process_vm_readv`. It checks them against a child process that it starts and then ends. It writes `/var/lib/orbit/hibernation/capabilities.json` (root, `0644`): the helper's version, the plan schema version, the result of each primitive, and the helper's SHA-256. The shared install task runs it when the helper changed or the manifest is missing. Missing capability means `prepare` records no plan (`unsupported`); swap, pause and resume work as before. The convergence output lists each probe's result. The Gateway learns nothing new from the agent: the fast wake checks only that the role installed its units.
+**Capabilities.** `capabilities` checks root access to cgroup v2, `/proc/<pid>/maps` and `pagemap`, `pidfd_open`, `process_madvise` and `process_vm_readv`. It runs as the unit `orbit-instance-power-probe`, so it has the same properties and capabilities as every restore. It checks each call the restore makes, the pidfd liveness check included, against a process of another uid: systemd starts `orbit-power-probe-target.service` as `nobody` for it and stops it after, as a container's processes run under another uid. The manifest so states what the unit can really do. It writes `/var/lib/orbit/hibernation/capabilities.json` (root, `0644`): the helper's version, the plan schema version, the result of each primitive, and the helper's SHA-256. The shared install task runs it when the helper changed or the manifest is missing. Missing capability means `prepare` records no plan (`unsupported`); swap, pause and resume work as before. The convergence output lists each probe's result. The Gateway learns nothing new from the agent: the fast wake checks only that the role installed its units.
 
 ## Files on the Node
 
@@ -128,7 +128,7 @@ The helper keeps its state in fixed folders. Private files belong to root alone;
 
 Every resume writes `0` to the container's own cgroup, the value Incus keeps for every running container, and to each inner path of the record that still exists. Then it removes the record.
 
-A record whose `host_boot_id` or `cgroup_inode` differs from the live one is stale: the resume closes only the container's own cgroup. A sleep that finds a record no resume closed closes it first, so no inner path stays open. A resume learns inner paths only from `limits.json`; it reads no other record. A nested-fleet Instance frozen before this release has its inner paths only in the old `/dev/shm` record, so the release wakes each such Instance before it deploys.
+A record whose `host_boot_id` or `cgroup_inode` differs from the live one is stale: the resume closes only the container's own cgroup. A sleep that finds a record no resume closed closes it first, so no inner path stays open. A resume learns inner paths only from `limits.json`; it reads no other record. An Instance frozen before this release, whose sleep opened inner paths (`swap_subtree` above 0), has them only in the old `/dev/shm` record, so the release wakes each such Instance before it deploys.
 
 This record is the only one; the plan does not repeat it.
 
@@ -228,7 +228,7 @@ A capture that is unsupported, too large or too slow leaves no plan. The sleep c
 
 | Found | Action | `prepared_restore.status` |
 | --- | --- | --- |
-| Frozen, valid plan | Restores the pages, still frozen; then rechecks the incarnation, unfreezes once and closes the recorded limits | `complete`, `partial` or `timed_out` |
+| Frozen, valid plan | Restores the pages, still frozen; then rechecks the incarnation, unfreezes once and closes the recorded limits | `complete`, `partial` or `timed_out`; `skipped` when no page came back |
 | Frozen; plan missing (also after `discard --plan-only`), invalid, stale or unsupported | No memory syscall; unfreezes and closes the limits | `skipped` with a reason |
 | Running | No restore and no resume; closes any recorded limits | `not_applicable` |
 | Stopped | Discards the plan and the limits record; the caller's existing start path and nested-fleet rule decide | `not_applicable` |
@@ -246,7 +246,7 @@ A range longer than 1 GiB is advised in pieces of at most 1 GiB, so every record
 
 **Residual risk.** `process_vm_readv` takes a PID, not a pidfd; Linux has no pidfd form of it. The pidfd check runs just before each call. A process that exits in that gap, followed by a full PID wrap-around to a new process, would get one discarded one-byte read per page of that batch: no write, and nothing kept.
 
-A batch holds up to `min(512, IOV_MAX)` pages of one process and may span its ranges. Before each batch, the worker checks its pidfd and the process's start time, read from a `stat` file that it opened with the pidfd and that stays bound to that process. It stops when the identity changed or the deadline passed. A range that is unmapped or unreadable, a short advice or read, or `ENOMEM` makes the result `partial` and abandons that batch; the worker goes on with safe work.
+A batch holds up to `min(512, IOV_MAX)` pages of one process and may span its ranges. Before each batch, the worker checks that its pidfd is not readable (a pidfd turns readable when its process exits; the poll needs no privilege, unlike a signal, which the kernel refuses to a process of another uid without `CAP_KILL`) and the process's start time, read from a `stat` file that it opened with the pidfd and that stays bound to that process. It stops when the identity changed or the deadline passed. A range that is unmapped or unreadable, a short advice or read, or `ENOMEM` makes the result `partial` and abandons that batch; the worker goes on with safe work.
 
 The worker never retries a range and never follows a replacement process. Advice that failed never counts as done. After the restore the plan is consumed. A later wake without a new sleep finds no plan.
 
@@ -264,6 +264,7 @@ The worker never retries a range and never follows a replacement process. Advice
 | `capture_failed` | Capture failed for another reason |
 | `stopped` | The sleep took the stop path |
 | `deadline` | The restore passed its 2 s |
+| `nothing_read` | The restore read no page back, for example because every process exited or refused it: it prepared nothing |
 
 The receipt counts each process's outcome (`complete`, `partial`, `skipped`, `failed`) and the pages read. It does not keep the errno of a short call.
 
@@ -296,7 +297,7 @@ A name carries no path, PID, address or shell text. The worker accepts only stri
 
 On any decline or failure it writes `.failed`, keeps the marker, and never writes a ready or done file it did not earn.
 
-**Gateway.** The Gateway records the Operation under the Instance lock before it writes the request. A visit gets the progress page before any Node call. The Gateway reads the request, `.taken`, the outcome files and the marker every 25 ms, for at most 6 s, with no first wait. On `.done` with exactly one `.ready-*`, the Operation succeeds from that status, with `ready_at` from that file's time.
+**Gateway.** The Gateway records the Operation under the Instance lock before it writes the request. A visit gets the progress page before any Node call. The Gateway reads the request, `.taken`, the outcome files and the worker template every 25 ms, for at most 6 s, with no first wait. On `.done` with exactly one `.ready-*`, the Operation succeeds from that status, with `ready_at` from that file's time.
 
 On `.failed`, or after 6 s, the Gateway removes a request that is still there, and the same Operation starts its run. The run takes the same lock, so it waits for a worker that is still active. It then finds the state the Node reached and continues from there; it reads this Operation's outcome files and reports their facts. The safety net of 15 s stays. A cancelled or finished Operation is never overwritten by a late outcome.
 
@@ -325,7 +326,7 @@ The Operation keeps its existing keys: `power_state`, `sleep`, `wake`, `marker_f
 
 | Field | Value |
 | --- | --- |
-| `restore_mode` | `prepared` for `complete`, `partial` and `timed_out`; `ordinary` otherwise |
+| `restore_mode` | `prepared` for `complete`, `partial` and `timed_out`; `ordinary` otherwise. A restore that read no page back is `skipped` (`nothing_read`, or `deadline` when its 2 s passed first), so `prepared` always means pages came back |
 | `ready_at` | Node UTC time when readiness passed and this wake removed the marker; absent when the wake removed no marker |
 | `ready_at_resolution_seconds` | `1` for the fast wake (file times); `0.001` for a run |
 | `prepared_restore.status` | `complete`, `partial`, `skipped`, `timed_out` or `not_applicable` |

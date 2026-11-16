@@ -73,5 +73,6 @@ For a nested-fleet clone:
 | `instance.lifecycle_busy`, `operation.target_busy` | Other lifecycle work runs on the Instance. |
 | `instance.container_start_failed` | The container or one of its units did not start, or the asleep marker could not be removed. |
 | `instance.power_helper_busy` | Another power action on the Instance's Node stayed busy past the wait, for example a restore stuck in disk I/O. The marker stays. |
+| `instance.power_helper_failed` | The power helper refused its input or crashed. The asleep marker stays; the run's output has the helper's error. Retry, or read the Node's journal. |
 | `instance.web_unready` | FrankenPHP gave no answer within about 30 seconds. The marker stays. |
 | `instance.t3_unready` | T3 did not answer within about 30 seconds. The app already serves: the marker is gone, and the Instance is recorded as running. |

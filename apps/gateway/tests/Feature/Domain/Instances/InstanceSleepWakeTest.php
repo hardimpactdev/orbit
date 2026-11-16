@@ -679,6 +679,8 @@ it('keeps the run\'s prepared restore, restore_mode and ready_at, and drops valu
         ['prepared_restore' => ['status' => 'ready', 'reason' => 'whatever'], 'restore_mode' => 'prepared', 'ready_at' => 'yesterday',
             'ready_at_resolution_seconds' => 1],
         []],
+    'a restore that read no page: ordinary' => [['prepared_restore' => ['status' => 'skipped', 'reason' => 'nothing_read']],
+        ['prepared_restore' => ['status' => 'skipped', 'reason' => 'nothing_read'], 'restore_mode' => 'ordinary']],
     'a sleep reason is no wake reason' => [['prepared_restore' => ['status' => 'skipped', 'reason' => 'prepare_timeout']],
         ['prepared_restore' => ['status' => 'skipped'], 'restore_mode' => 'ordinary']],
     'a reason outside the contract' => [['prepared_restore' => ['status' => 'skipped', 'reason' => '/proc/4/maps']],

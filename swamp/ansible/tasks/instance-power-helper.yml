@@ -53,8 +53,12 @@
   ansible.builtin.stat: { path: /var/lib/orbit/hibernation/capabilities.json }
   register: power_capabilities_file
 
+# The probe runs as the unit orbit-instance-power-probe, so it has the drop-in's properties and capabilities, the same as each restore,
+# and it probes a process of another uid that systemd starts for it, as a container's processes are: the manifest states what the
+# unit can really do.
 - name: Probe the kernel primitives of the power helper
-  ansible.builtin.command: { argv: [/usr/local/libexec/orbit-instance-power, capabilities] }
+  ansible.builtin.command:
+    argv: [systemd-run, --unit=orbit-instance-power-probe, --wait, --pipe, --collect, --quiet, /usr/local/libexec/orbit-instance-power, capabilities]
   when: power_helper.changed or not power_capabilities_file.stat.exists
   register: power_capabilities
   changed_when: true

@@ -339,3 +339,13 @@ Deno.test({ name: "a busy lock is tried again; one that stays busy fails `instan
     assertEquals(crashed.result, { error_code: "instance.power_helper_failed" });
     assertEquals([crashed.marker, helperCalls(crashed)], [true, ["prepare"]]);
 } });
+
+Deno.test("the role probes the helper's primitives through the helper's own unit properties, which hold no CAP_KILL", () => {
+    const tasks = parse(Deno.readTextFileSync(new URL("../ansible/tasks/instance-power-helper.yml", import.meta.url))) as Record<string, any>[];
+    const probe = tasks.find((task) => task.name === "Probe the kernel primitives of the power helper")!["ansible.builtin.command"].argv as string[];
+    assertEquals(probe.slice(0, 2), ["systemd-run", "--unit=orbit-instance-power-probe"]);
+    assertEquals(probe.slice(-2), ["/usr/local/libexec/orbit-instance-power", "capabilities"]);
+    const dropIn = JSON.stringify(tasks);
+    assert(dropIn.includes("CapabilityBoundingSet=CAP_SYS_PTRACE CAP_SYS_NICE CAP_DAC_OVERRIDE\\n"), "the restore needs no signal");
+    assert(!dropIn.includes("CAP_KILL"));
+});

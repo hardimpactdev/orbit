@@ -19,6 +19,7 @@ import json
 import os
 import queue
 import re
+import select
 import shutil
 import socket
 import struct
@@ -55,14 +56,25 @@ NESTED_PROJECT = "orbit-instances-nested"
 SPECIAL_MAPPINGS = ("[vvar]", "[vvar_vclock]", "[vdso]", "[vsyscall]")
 PRIMITIVES = ("cgroup_v2", "proc_maps", "proc_pagemap", "pidfd_open", "process_madvise", "process_vm_readv")
 REASONS = ("no_plan", "plan_invalid", "plan_stale", "unsupported", "placement_unproven", "bound_processes", "bound_ranges",
-           "bound_metadata", "bound_residency", "prepare_timeout", "capture_failed", "stopped", "deadline")
+           "bound_metadata", "bound_residency", "prepare_timeout", "capture_failed", "stopped", "deadline", "nothing_read")
+
+# The capability probe's target unit and its program: it touches 1 MiB, tells systemd it is ready, then waits for its stop.
+PROBE_TARGET = "orbit-power-probe-target"
+PROBE_CHILD = ("import os, signal, socket\n"
+               "data = bytearray(1 << 20)\n"
+               "data[::4096] = b'x' * (len(data) // 4096)\n"
+               "path = os.environ['NOTIFY_SOCKET']\n"
+               "sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)\n"
+               "sock.connect('\\0' + path[1:] if path.startswith('@') else path)\n"
+               "sock.send(b'READY=1')\n"
+               "signal.pause()\n")
 
 RANGES_MAGIC = b"ORBRNG1\0"
 RANGES_HEADER = struct.Struct("<8sIIQII")
 RANGES_RECORD = struct.Struct("<IIQQ")
 
 ID = re.compile(r"[1-9][0-9]{0,18}\Z")
-SYS_PIDFD_SEND_SIGNAL, SYS_PIDFD_OPEN, SYS_PROCESS_VM_READV, SYS_PROCESS_MADVISE = 424, 434, 310, 440
+SYS_PIDFD_OPEN, SYS_PROCESS_VM_READV, SYS_PROCESS_MADVISE = 434, 310, 440
 MADV_WILLNEED = 3
 
 
@@ -106,7 +118,11 @@ class Kernel:
         return self._call(SYS_PIDFD_OPEN, ctypes.c_int(pid), ctypes.c_uint(0))
 
     def pidfd_alive(self, pidfd):
-        return self._call(SYS_PIDFD_SEND_SIGNAL, ctypes.c_int(pidfd), ctypes.c_int(0), None, ctypes.c_uint(0))[0] == 0
+        """A pidfd turns readable once its process exited. Polling it needs no privilege, unlike a signal 0, which the kernel refuses
+        to a process of another uid without CAP_KILL: every container process under an isolated idmap."""
+        poller = select.poll()
+        poller.register(pidfd, select.POLLIN)
+        return not poller.poll(0)
 
     def process_madvise(self, pidfd, iovecs, count):
         return self._call(SYS_PROCESS_MADVISE, ctypes.c_int(pidfd), iovecs, ctypes.c_size_t(count), ctypes.c_int(MADV_WILLNEED),
@@ -190,6 +206,21 @@ class Host:
     def boot_id(self):
         with open(os.path.join(self.proc, "sys/kernel/random/boot_id")) as handle:
             return handle.read().strip()
+
+    def probe_target(self):
+        """The capability probe's target: a process of another uid that systemd starts as its own unit, as a container's processes
+        run under another uid. It reserves memory, touches it, reports ready and waits. Returns (pid, stop)."""
+        subprocess.run(["systemd-run", f"--unit={PROBE_TARGET}", "--uid=nobody", "--gid=nogroup", "--property=Type=notify",
+                        "--property=NotifyAccess=main", "--quiet", "--collect", sys.executable, "-I", "-c", PROBE_CHILD],
+                       check=True, timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stop = lambda: subprocess.run(["systemctl", "stop", f"{PROBE_TARGET}.service"], timeout=10,  # noqa: E731
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            with open(os.path.join(self.cgroups, "system.slice", f"{PROBE_TARGET}.service", "cgroup.procs")) as handle:
+                return int(handle.read().split()[0]), stop
+        except (OSError, IndexError, ValueError):
+            stop()
+            raise
 
 
 # ---------------------------------------------------------------------------------------------------------------------------
@@ -775,18 +806,20 @@ def restore_pages(host, manifest, ranges, deadline):
 
 
 def probe(host):
-    """Check each primitive against a child process that this call starts and ends."""
+    """Check each primitive as the restore uses it, from this unit and against a process of another uid (Host.probe_target)."""
     results = dict.fromkeys(PRIMITIVES, False)
     results["cgroup_v2"] = os.path.isfile(os.path.join(host.cgroups, "cgroup.controllers")) and \
         os.access(os.path.join(host.cgroups, "cgroup.procs"), os.R_OK)
-    child = subprocess.Popen([sys.executable, "-I", "-c", "import sys; data = bytearray(1 << 20); sys.stdin.read()"],
-                             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        pid, stop = host.probe_target()
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return results
     pidfd = -1
     try:
         page_size = os.sysconf("SC_PAGESIZE")
         maps_text = None
         try:
-            with open(os.path.join(host.proc, str(child.pid), "maps")) as handle:
+            with open(os.path.join(host.proc, str(pid), "maps")) as handle:
                 maps_text = handle.read()
             results["proc_maps"] = bool(readable_mappings(maps_text))
         except OSError:
@@ -794,7 +827,7 @@ def probe(host):
         run = None
         if maps_text:
             try:
-                pagemap = os.open(os.path.join(host.proc, str(child.pid), "pagemap"), os.O_RDONLY)
+                pagemap = os.open(os.path.join(host.proc, str(pid), "pagemap"), os.O_RDONLY)
                 try:
                     for start, end in readable_mappings(maps_text):
                         runs = resident_runs(pagemap, start, end, page_size)
@@ -806,21 +839,20 @@ def probe(host):
                 results["proc_pagemap"] = run is not None
             except OSError:
                 pass
-        pidfd, _ = host.kernel.pidfd_open(child.pid)
-        results["pidfd_open"] = pidfd >= 0
+        pidfd, _ = host.kernel.pidfd_open(pid)
+        # The restore's liveness check of every target, before each batch.
+        results["pidfd_open"] = pidfd >= 0 and host.kernel.pidfd_alive(pidfd)
         if run is not None and pidfd >= 0:
             vector = (Iovec * 1)(Iovec(run[0], page_size))
             results["process_madvise"] = host.kernel.process_madvise(pidfd, vector, 1)[0] == page_size
             scratch = ctypes.create_string_buffer(1)
             local = Iovec(ctypes.addressof(scratch), 1)
             remote = (Iovec * 1)(Iovec(run[0], 1))
-            results["process_vm_readv"] = host.kernel.process_vm_readv(child.pid, local, remote, 1)[0] == 1
+            results["process_vm_readv"] = host.kernel.process_vm_readv(pid, local, remote, 1)[0] == 1
     finally:
         if pidfd >= 0:
             os.close(pidfd)
-        child.kill()
-        child.wait()
-        child.stdin.close()
+        stop()
     return results
 
 
@@ -1117,7 +1149,11 @@ def restore(host, instance_id, operation_id, intent):
     if prepared is None:
         loaded = time.monotonic()
         status, counts = restore_pages(host, plan[0], plan[1], deadline)
-        prepared = {"version": 1, "status": status, **({"reason": "deadline"} if status == "timed_out" else {}),
+        reason = "deadline" if status == "timed_out" else None
+        # A restore that read no page back prepared nothing: it is `skipped`, so the wake says `ordinary`.
+        if counts["pages_read"] == 0 and plan[0]["range_count"] > 0:
+            status, reason = "skipped", reason or "nothing_read"
+        prepared = {"version": 1, "status": status, **({"reason": reason} if reason else {}),
                     "processes": len(plan[0]["processes"]), "pages_read": counts["pages_read"]}
         result["seconds"]["restore"] = round(time.monotonic() - loaded, 3)
         result["counts"] = counts["processes"]
@@ -1219,7 +1255,7 @@ def own_unit(proc="/proc"):
 
 def run(host, argv, stdin, unit):
     command, instance_id, operation_id, plan_only = parse_args(argv)
-    if command != "capabilities" and unit != f"orbit-instance-power-{instance_id}.service":
+    if unit != (f"orbit-instance-power-{instance_id}.service" if command != "capabilities" else "orbit-instance-power-probe.service"):
         raise Refused("outside its unit")
     if command == "capabilities":
         body = capabilities(host)

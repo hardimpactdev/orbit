@@ -74,6 +74,31 @@ class AdviceKernel(CountingKernel):
         return sum(lengths) - (os.sysconf("SC_PAGESIZE") if self.short else 0), 0
 
 
+class SignalRefusingKernel(AdviceKernel):
+    """The kernel as the helper's unit meets a container process of another uid: a signal, even signal 0, is refused (EPERM)
+    without CAP_KILL, which the unit does not hold. Any syscall the helper makes through `_call` with a signal number is refused."""
+
+    def _call(self, *args):
+        if args[0] == 424:  # pidfd_send_signal
+            return -1, 1
+        return super()._call(*args)
+
+
+class ProbeHost(power.Host):
+    """The probe's target is a child of the test, in place of the systemd unit of another uid."""
+
+    def probe_target(self):
+        child = subprocess.Popen([sys.executable, "-I", "-c", CHILD], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        child.stdout.readline()
+
+        def stop():
+            child.kill()
+            child.wait()
+            child.stdin.close()
+            child.stdout.close()
+        return child.pid, stop
+
+
 class FakeIncus:
     def __init__(self, init_pid):
         self.status, self.incarnation, self.init_pid, self.actions = "running", "uuid-1", init_pid, []
@@ -114,7 +139,7 @@ class Fixture(unittest.TestCase):
         self.state = os.path.join(self.root, "state")
         self.incus = FakeIncus(self.children[0].pid)
         self.kernel = CountingKernel()
-        self.host = power.Host(state=self.state, requests=os.path.join(self.root, "shm"), cgroups=self.cgroups, proc=self.proc,
+        self.host = ProbeHost(state=self.state, requests=os.path.join(self.root, "shm"), cgroups=self.cgroups, proc=self.proc,
                                incus=self.incus, kernel=self.kernel, helper=HELPER)
         self.supported(True)
 
@@ -355,6 +380,24 @@ class RestoreTest(Fixture):
                 self.assertEqual(result["prepared_restore"]["status"], status)
                 self.assertEqual({call for call, _ in self.kernel.calls}, {"madvise", "readv"})
 
+    def test_a_target_that_refuses_every_signal_is_still_restored_in_full(self):
+        # A container process runs under another uid; the liveness check before each batch must need no privilege.
+        self.kernel = self.host.kernel = SignalRefusingKernel(short=False)
+        self.prepare()
+        result = self.restore()
+        self.assertEqual(result["prepared_restore"]["status"], "complete")
+        self.assertGreater(result["prepared_restore"]["pages_read"], 0)
+
+    def test_a_restore_that_reads_no_page_is_skipped_never_prepared(self):
+        class Refusing(AdviceKernel):
+            def process_vm_readv(self, pid, local, remote, count):
+                self.calls.append(("readv", pid))
+                return -1, 1
+        self.kernel = self.host.kernel = Refusing(short=True)
+        self.prepare()
+        prepared = self.restore()["prepared_restore"]
+        self.assertEqual((prepared["status"], prepared["reason"], prepared["pages_read"]), ("skipped", "nothing_read", 0))
+
     def test_another_incarnation_after_the_restore_is_never_unfrozen(self):
         self.prepare()
         reads = []
@@ -423,7 +466,8 @@ class RestoreTest(Fixture):
         exited.wait()
         self.view(moved.pid, "elsewhere")
         result = self.restore()
-        self.assertEqual(result["prepared_restore"]["status"], "partial")
+        # Every target was abandoned, so no page came back: nothing was prepared.
+        self.assertEqual((result["prepared_restore"]["status"], result["prepared_restore"]["reason"]), ("skipped", "nothing_read"))
         self.assertEqual(self.kernel.calls, [])
         self.assertEqual(self.incus.actions, ["freeze", "unfreeze"])
 
@@ -638,6 +682,11 @@ class PlanValidationTest(Fixture):
 
 
 class EntryTest(Fixture):
+    def test_the_probe_runs_only_in_its_own_unit(self):
+        self.assertEqual(self.call(["capabilities"], unit=f"orbit-instance-power-{ID}.service")[0], 70)
+        code, out = self.call(["capabilities"], unit="orbit-instance-power-probe.service")
+        self.assertEqual((code, json.loads(out)["outcome"]), (0, "checked"))
+
     def call(self, argv, stdin=b"", unit=None):
         out = io.StringIO()
         stdout, sys.stdout = sys.stdout, out
