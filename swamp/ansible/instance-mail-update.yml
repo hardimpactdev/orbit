@@ -25,7 +25,9 @@
     container: "{{ intent.container }}"
     mail_refresh: "{{ intent.mail_refresh | default({'php': container.php, 'application': container.environment_file | dirname, 'units': []}) }}"
     as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
-    as_orbit: "{{ ['incus', 'exec', '--project', container.project, container.name, '--user', '1000', '--group', '1000', '--'] }}"
+    # The app user, through `runuser` so it has its groups: `work` opens the workspace, which `agent` owns (ADR 0267). A bare
+    # `--user 1000 --group 1000` has no supplementary group and cannot enter it.
+    as_orbit: "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/home/orbit', container.name, '--', 'runuser', '-u', 'orbit', '--'] }}"
   tasks:
     - name: Apply and check mail
       block:

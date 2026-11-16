@@ -489,6 +489,16 @@ sys.exit(result.returncode)
             self.assertTrue(self.envfile.read_bytes() == copied.replace(b'log', b'smtp'))
 
 
+    def test_the_config_clear_runs_as_orbit_with_its_groups(self):
+        import yaml
+        play = next(play for play in yaml.safe_load((ROOT / 'swamp/ansible/instance-mail-update.yml').read_text()) if 'as_orbit' in play.get('vars', {}))
+        # `runuser` gives `orbit` its groups, among them `work`, which opens the workspace that `agent` owns (ADR 0267); `incus exec
+        # --user 1000 --group 1000` gives none, so its `cd` into the workspace failed and `failed_when: false` hid it.
+        self.assertEqual(play['vars']['as_orbit'],
+                         "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/home/orbit', container.name, '--', 'runuser', "
+                         "'-u', 'orbit', '--'] }}")
+        self.assertIn("as_orbit + ['sh', '-c', 'if [ -x \"$1\" ] && [ -f \"$2/artisan\" ]; then cd -- \"$2\" && \"$1\" artisan config:clear",
+                      (ROOT / 'swamp/ansible/tasks/instance-mail-line.yml').read_text())
 
 if __name__ == '__main__':
     unittest.main()
