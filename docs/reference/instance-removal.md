@@ -126,6 +126,7 @@ Each container removal step treats a part that is already gone as done. A retry 
 - It builds each name only from the removal's recorded pool, Incus project and container or volume name. It never runs `zfs destroy`.
 - Right before it makes them, it reads each missing name again with its children.
 - A dataset that holds the name by then refuses the removal with `instance.removal_dataset_taken`. Nothing is made or deleted, so the step never adopts another dataset.
+- The Operation and the removal record that code, and the reaper leaves the removal to a person.
 
 The inner volume goes by name: each of its snapshots, then the volume. A copy's inner volume can be a clone of a snapshot of a volume that Incus already deleted. Incus keeps that origin under `deleted/` for the clone. The removal never names the origin or another Instance's volume. A missing ACL, firewall rule, mail folder, marker or mirror needs no action.
 
@@ -137,7 +138,7 @@ A session or lock on an owned server database still makes its drop refuse before
 
 Known limit: an Instance with databases on several servers runs one database child per server, and the run data keys their steps by name only. The removal's code then comes from the last server's child, so a refusal on one server can be reported as `database.destroy_incomplete` of another.
 
-A container removal step that fails writes the failed task, its message and the end of its stderr into its result file. Swamp keeps no stderr for a failed command step, so the Gateway takes this text instead. It records the text in `error.detail` with `error.stderr_recorded: true`, redacted and cut to the last 4 KiB like the stderr of other Operations ([Operations](/reference/operations)).
+A container removal step that fails writes the failed task, its message and the end of its stderr into its result file. When the stderr is longer than the room, it keeps whole lines only: the text up to the first newline of the kept end goes, so no half line, such as a cut secret, escapes redaction. Swamp keeps no stderr for a failed command step, so the Gateway takes this text instead. It records the text in `error.detail` with `error.stderr_recorded: true`, redacted and cut to the last 4 KiB like the stderr of other Operations ([Operations](/reference/operations)).
 
 When the removed Instance is a [task copy](/reference/tasks#task-copy), the successful removal also releases its task before the row goes: a task that still runs is `cancelled` with its open subtasks, and an ended task only lets go of the copy. A failed removal leaves the task bound to the copy.
 
@@ -147,7 +148,7 @@ The Gateway records the member set as Removing in the same admission transaction
 
 A failed removal does not wait for a person. Every five minutes, without overlap, the Gateway's `orbit:instance-removal-reap` finds each `failed` removal of kind `destroy`. It starts that removal again through the same admission as `instance:destroy`, with the same removal and the same `--force`. The Operation records `triggered_by: orbit:instance-removal-reap` and the idempotency key `removal-reaper:<removal>:<count>`, so two passes never start two runs.
 
-The reaper waits after each failure, counted from the end of the last run: 5 minutes, 15 minutes, 1 hour, then every 6 hours. The removal record keeps the count in `retry_count`. A start that admission refuses, such as `operation.target_busy`, is not counted, and the next pass tries again.
+The reaper waits after each failure: 5 minutes, 15 minutes, 1 hour, then every 6 hours. It counts from the removal record's last change, which a failed run and a refused start both make. A failed removal that no Operation carries is retried too, counted from the same change. The removal record keeps the count in `retry_count`. A start that admission refuses counts as a failed retry, so a removal that admission refuses for good becomes stuck too.
 
 The operator turns the reaper off with `ORBIT_INSTANCE_REMOVAL_REAPER=false` in the Gateway's environment; its scheduled pass then does nothing. It is on by default. A HOLD on Operations is a convention between people, not a Gateway setting: use this switch to stop new reaper starts during one.
 
@@ -158,7 +159,7 @@ The reaper starts nothing when:
 - the Instance has an open transfer;
 - an Operation of the Instance runs, or one holds the Instance lock, such as a create.
 
-After 3 failed reaper starts, Doctor reports `instance.removal_stuck` on the Instance in the `instance` family, with the failed step and the error code. The Gateway also records one Activity entry `instance.removal_stuck`. The reaper keeps trying every 6 hours. The issue goes when the Instance is gone.
+After 3 failed reaper starts, or at once for a removal that failed with `instance.removal_dataset_taken`, Doctor reports `instance.removal_stuck` on the Instance in the `instance` family, with the failed step and the error code. The Gateway also records one Activity entry `instance.removal_stuck`. The reaper keeps trying every 6 hours, except a removal with `instance.removal_dataset_taken`: it never starts that one again, because a person must look at the dataset first. The issue goes when the Instance is gone.
 
 ## Available placements
 
