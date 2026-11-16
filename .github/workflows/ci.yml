@@ -903,7 +903,7 @@ jobs:
     if: always() && github.ref != 'refs/heads/main'
     needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
     runs-on: ubuntu-26.04
-    timeout-minutes: ${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' && 275 || 2 }}
+    timeout-minutes: ${{ vars.ORBIT_PROOF_ENABLED == 'true' && github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' && 275 || 2 }}
     permissions:
       contents: read
       statuses: read
@@ -916,7 +916,8 @@ jobs:
       - name: Require builds, static checks and Gateway, CLI and SDK tests
         env:
           NEEDS: ${{ toJSON(needs) }}
-          PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}
+          # The execution switch selects the proof, as it starts the eligibility and proof jobs: off, no proof gates.
+          PROOF_REQUIRED: ${{ vars.ORBIT_PROOF_ENABLED == 'true' && github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}
           CI_RUN_ID: ${{ github.run_id }}
           FORK_PROOF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           # run: a branch of this repository runs the self-hosted shards; fork: a selection fails; none: no other event runs them.

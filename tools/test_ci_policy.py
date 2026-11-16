@@ -240,6 +240,39 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn('without ineligible metadata evidence', error)
         sleep.assert_not_called()
 
+    def proof_selected(self, context, key='PROOF_REQUIRED: '):
+        """Evaluate the Required step's proof selection, a conjunction of `name == 'value'` terms, for one context."""
+        import re
+        caller = (ROOT / '.github/workflows/ci.yml').read_text()
+        expression = caller.split('  required:\n', 1)[1].split(key + '${{ ', 1)[1].split(' }}', 1)[0]
+        terms = [re.fullmatch(r"([a-z_.-]+(?:\.[A-Za-z_]+)*) == '([^']*)'", term.strip()) for term in expression.split('&&')]
+        if key != 'PROOF_REQUIRED: ':
+            terms = terms[:-1]  # the timeout's `275 || 2` tail
+        self.assertTrue(all(terms), expression)
+        return all(context[term[1]] == term[2] for term in terms)
+
+    def test_the_execution_switch_selects_the_proof_for_required_checks(self):
+        # The proof jobs start only with the switch on; Required must expect them under the same condition.
+        selected_pr = {'github.event_name': 'pull_request', 'needs.changes.outputs.proof_run': 'true'}
+        switched_off = self.proof_selected({**selected_pr, 'vars.ORBIT_PROOF_ENABLED': 'false'})
+        self.assertFalse(switched_off)
+        error, _, sleep = self.run_required(proof_required=switched_off,
+                                            results={'CI proof eligibility': 'skipped', 'CI proof': 'skipped'})
+        self.assertIsNone(error)
+        sleep.assert_not_called()
+        switched_on = self.proof_selected({**selected_pr, 'vars.ORBIT_PROOF_ENABLED': 'true'})
+        self.assertTrue(switched_on)
+        error, _, _ = self.run_required(proof_required=switched_on,
+                                        results={'CI proof eligibility': 'skipped', 'CI proof': 'skipped'})
+        self.assertEqual(error, 'Proof eligibility failed: skipped')
+        # Required keeps the proof's wait budget only while a proof can run.
+        for switch in ('true', 'false'):
+            self.assertEqual(self.proof_selected({**selected_pr, 'vars.ORBIT_PROOF_ENABLED': switch}, key='timeout-minutes: '),
+                             switch == 'true')
+        caller = (ROOT / '.github/workflows/ci.yml').read_text()
+        for job in ('proof-eligibility', 'proof-run'):
+            self.assertIn("vars.ORBIT_PROOF_ENABLED == 'true'", caller.split(f'\n  {job}:\n', 1)[1].split('\n    runs-on:', 1)[0])
+
     def test_missing_or_stale_eligibility_evidence_fails_closed(self):
         from unittest.mock import patch
         proof = {'name': 'CI proof', 'status': 'completed', 'conclusion': 'skipped', 'id': 2, 'run_attempt': 2}
