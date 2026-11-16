@@ -8,7 +8,6 @@ use Orbit\Sdk\Requests\Nodes\CiPlacesInput;
 use Orbit\Sdk\Requests\Nodes\UpdateNodeRequest;
 use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
-use Orbit\Sdk\Responses\Nodes\TaskVmsSettings;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -54,16 +53,6 @@ it('sends a partial settings patch and preserves omitted members', function (): 
         ->toBeInstanceOf(NodeResponse::class)
         ->and($response->settings?->apps?->path)
         ->toBe('/srv/orbit/apps');
-});
-
-it('sends task host intent and explicit clearing without touching apps', function (): void {
-    $host = new TaskVmsSettings(cidr: '10.251.77.0/24', task_places: 2, operator_owned: [], ci_places: 2);
-    $request = new UpdateNodeRequest(nodeId: 9, hasTaskVms: true, taskVms: $host);
-    expect($request->body()->all())->toBe(['task_vms' => [
-        'cidr' => '10.251.77.0/24', 'task_places' => 2, 'operator_owned' => [], 'ci_places' => 2,
-    ]]);
-    $clear = new UpdateNodeRequest(nodeId: 9, hasTaskVms: true);
-    expect($clear->body()->all())->toBe(['task_vms' => null]);
 });
 
 it('sends only the CI members it names, and an explicit null to clear them', function (?CiPlacesInput $ci, ?array $body): void {
@@ -161,12 +150,7 @@ it('transports explicit reboot holds and clearing while omitting an unspecified 
     }
 });
 
-it('transports explicit image refresh holds and omits an unspecified hold', function (): void {
-    expect((new UpdateNodeRequest(nodeId: 12))->body()->all())->toBe([]);
-    foreach ([true, false] as $hold) {
-        $request = new UpdateNodeRequest(nodeId: 12, imageRefreshHold: $hold);
-        expect($request->body()->all())->toBe(['image_refresh_hold' => $hold]);
-        $node = NodeResponse::fromGatewayData(['id' => 12, 'image_refresh_hold' => $hold], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
-        expect($node->imageRefreshHold)->toBe($hold)->and($node->toArray()['image_refresh_hold'])->toBe($hold);
-    }
+it('reads a Node body without image_refresh_hold and returns none', function (): void {
+    expect(NodeResponse::fromGatewayData(['id' => 12], '0198e15c-bf97-7c23-8f1f-61b8fe67a844')->toArray())->not->toHaveKey('image_refresh_hold')
+        ->and(NodeResponse::fromGatewayData(['id' => 12, 'image_refresh_hold' => true], '0198e15c-bf97-7c23-8f1f-61b8fe67a844')->toArray())->not->toHaveKey('image_refresh_hold');
 });
