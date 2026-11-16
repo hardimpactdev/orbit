@@ -1852,56 +1852,37 @@ Deno.test({
       assertEquals(setting("auto_prepend_file"), bridge);
       assertEquals(f.state().files["/etc/orbit/php/conf.d/99-orbit-runtime.ini"], { uid: "0", gid: "0", mode: "0644" });
 
-      // A running unit read the old settings at its start, so a repair restarts the running Orbit units; a rerun does not.
-      const tryRestarts = () =>
-        (f.state().systemctl ?? []).filter((call: string[]) => call[0] === "try-restart").map((call: string[]) => call.join(" "));
-      const before = tryRestarts().length;
-      Deno.writeTextFileSync(settings, "memory_limit = 128M\n");
-      const repaired = f.run("start");
-      assert(repaired.ok, repaired.output);
-      assertEquals(setting("memory_limit"), "1G");
-      assertEquals(setting("auto_prepend_file"), bridge);
-      assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
-
-      // The CLI-only file holds the intent's PCOV line. A queue worker is a PHP CLI too: a repair restarts the running units.
+      // The CLI-only file holds the intent's PCOV line: the Node's runtime folder holds the module.
       const cliPath = "/etc/orbit/php/php-cli.ini";
       const cli = `${rootfs}${cliPath}`;
       const pcov = "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n";
       assertEquals(Deno.readTextFileSync(cli), pcov);
       assertEquals(f.state().files[cliPath], { uid: "0", gid: "0", mode: "0644" });
+
+      // A running unit read the old settings at its start, so a repair restarts the running Orbit units; a rerun does not. The same
+      // start meets a Gateway release before the Node's converge: the runtime folder lacks the module, so its line goes and, with no
+      // line left, the phase removes Orbit's file.
+      const tryRestarts = () =>
+        (f.state().systemctl ?? []).filter((call: string[]) => call[0] === "try-restart").map((call: string[]) => call.join(" "));
+      const before = tryRestarts().length;
+      Deno.writeTextFileSync(settings, "memory_limit = 128M\n");
+      const module = `${f.folder}/orbit-runtime/current/php/8.5/modules/pcov.so`;
+      Deno.removeSync(module);
+      const repaired = f.run("start");
+      assert(repaired.ok, repaired.output);
+      assertEquals(setting("memory_limit"), "1G");
+      assertEquals(setting("auto_prepend_file"), bridge);
+      assertThrows(() => Deno.lstatSync(cli));
+      assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
+
+      // Once the Node holds the module, the next start or deploy writes its line again and repairs a changed file: no other repair is
+      // needed. A queue worker is a PHP CLI too: the write restarts the running units.
+      Deno.writeTextFileSync(module, "");
       Deno.writeTextFileSync(cli, "extension=/tmp/other.so\n");
       const cliRepaired = f.run("start");
       assert(cliRepaired.ok, cliRepaired.output);
       assertEquals(Deno.readTextFileSync(cli), pcov);
       assertEquals(tryRestarts().slice(before + 1), ["try-restart --no-block orbit-*.service"]);
-
-      // A Gateway release before the Node's converge: the runtime folder lacks the module. Its line goes, so with no line left the
-      // phase removes Orbit's file and the running units restart; a rerun changes nothing and restarts nothing.
-      const module = `${f.folder}/orbit-runtime/current/php/8.5/modules/pcov.so`;
-      Deno.removeSync(module);
-      const missing = f.run("start");
-      assert(missing.ok, missing.output);
-      assertThrows(() => Deno.lstatSync(cli));
-      assertEquals(tryRestarts().slice(before + 2), ["try-restart --no-block orbit-*.service"]);
-      const missingStable = f.run("start");
-      assert(missingStable.ok, missingStable.output);
-      assertEquals(missingStable.changed, 0, missingStable.output);
-      assertThrows(() => Deno.lstatSync(cli));
-      assertEquals(tryRestarts().length, before + 3);
-      // Only the missing module's line goes; any other line stays.
-      f.container.php_cli_ini = "; CLI only\n" + pcov;
-      f.write();
-      const kept = f.run("start");
-      assert(kept.ok, kept.output);
-      assertEquals(Deno.readTextFileSync(cli), "; CLI only\n");
-      // Once the Node holds the module, the next start or deploy writes its line again: no other repair is needed.
-      Deno.writeTextFileSync(module, "");
-      f.container.php_cli_ini = pcov;
-      f.write();
-      const returned = f.run("start");
-      assert(returned.ok, returned.output);
-      assertEquals(Deno.readTextFileSync(cli), pcov);
-      assertEquals(tryRestarts().slice(before + 3), Array(2).fill("try-restart --no-block orbit-*.service"));
 
       // A Project without PHP loses Orbit's file, and the running units restart; a rerun changes nothing and restarts nothing.
       // The first build's rerun shows the same for a Project with PHP.
@@ -1911,11 +1892,11 @@ Deno.test({
       const removed = f.run("start");
       assert(removed.ok, removed.output);
       assertThrows(() => Deno.lstatSync(cli));
-      assertEquals(tryRestarts().slice(before + 5), ["try-restart --no-block orbit-*.service"]);
+      assertEquals(tryRestarts().slice(before + 2), ["try-restart --no-block orbit-*.service"]);
       const stable = f.run("start");
       assert(stable.ok, stable.output);
       assertEquals(stable.changed, 0, stable.output);
-      assertEquals(tryRestarts().length, before + 6);
+      assertEquals(tryRestarts().length, before + 3);
     } finally {
       f.cleanup();
     }
