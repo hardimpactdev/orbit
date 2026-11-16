@@ -32,13 +32,12 @@ class MandatoryAdmissionTest(unittest.TestCase):
 
     def assert_partition(self, result):
         expected = [name for f in self.fixtures.values() for name, _ in units.units_for(f, self.budget)]
-        self.assertCountEqual(names(result) + result['deferred'], expected)
+        self.assertCountEqual(names(result) + units.unplaced_units(result), expected)
 
-    def test_required_unit_is_reserved_before_ordinary_work_and_remainder_defers_together(self):
+    def test_required_unit_is_reserved_before_ordinary_work_and_the_unplaced_remainder_fails(self):
         result = self.plan()
         self.assertCountEqual(names(result), ['swamp/ordinary.py', 'swamp/image.ts#0/3'])
-        self.assertEqual(result['deferred'], ['swamp/image.ts#1/3', 'swamp/image.ts#2/3'])
-        self.assertFalse(result.get('capacity'))
+        self.assertEqual(result['capacity'], [{'unplaced': ['swamp/image.ts#1/3', 'swamp/image.ts#2/3']}])
         self.assert_partition(result)
 
     def test_unrelated_input_keeps_original_whole_file_admission(self):
@@ -49,8 +48,10 @@ class MandatoryAdmissionTest(unittest.TestCase):
 
     def test_source_inventory_registry_and_shared_machinery_reserve_cases(self):
         scenarios = [([self.image['file']], {}), ([], {'inventory_changed': [self.image['file']]}),
-                     ([], {'registry_changed': [self.image['file']]}), ([], {'shared_registry': True})]
-        scenarios += [([path], {}) for path in ('bin/ci-units', 'bin/ci-registry', units.PRELOAD)]
+                     ([], {'registry_changed': [self.image['file']]})]
+        # The machinery selects its canary set; a canary file's required cases are reserved.
+        self.budget['machinery_canary'] = [self.image['file']]
+        scenarios += [([], {'shared_registry': True})] + [([path], {}) for path in units.MACHINERY]
         for paths, options in scenarios:
             with self.subTest(paths=paths, options=options):
                 result = self.plan(paths, **options)
@@ -103,8 +104,7 @@ class MandatoryRegistryTest(unittest.TestCase):
         invalid = [([], {}), ({HOST: []}, {}), ({HOST: 'case'}, {}), ({HOST: [42]}, {}),
                    ({HOST: ['renamed case']}, {}), ({HOST: [BOUNDARIES[0]] * 2}, {}),
                    ({'undeclared/input': [BOUNDARIES[0]]}, {}),
-                   ({HOST: [BOUNDARIES[0]]}, {'after_merge_cases': [BOUNDARIES[0]]}),
-                   ({HOST: [BOUNDARIES[0]]}, {'after_merge': True, 'reason': 'slow'})]
+                   ({'undeclared/input': [BOUNDARIES[0]]}, {'self_hosted': True})]
         for mapping, extra in invalid:
             config = copy.deepcopy(original)
             entry = next(f for f in config['fixture'] if f['file'] == IMAGE)
@@ -121,15 +121,16 @@ class MandatoryRegistryTest(unittest.TestCase):
         # independently of metadata order and specificity of ordinary fixtures.
         pressure = {f'swamp/pressure{i}.py': fixture(f'swamp/pressure{i}.py', budget['shard_seconds'], [HOST])
                     for i in range(budget['pr_shards'] * budget['shard_workers'])}
-        for paths, entries in [([HOST], fixtures), (['bin/ci-units'], fixtures), ([HOST], pressure | fixtures)]:
+        for paths, entries in [([HOST], fixtures), ([HOST], pressure | fixtures)]:
             with self.subTest(paths=paths, pressure=len(entries) != len(fixtures)):
                 result = units.plan(paths, budget, entries, defaults)
-                self.assertFalse(result.get('capacity'))
+                # Pressure beyond the shards is named and fails Required; the reserved proofs still run.
+                self.assertEqual([row for row in result.get('capacity', []) if 'unplaced' not in row], [])
                 self.assertEqual(result['mandatory'][0]['cases'], BOUNDARIES)
                 reserved = result['mandatory'][0]['units']
                 self.assertEqual(len(reserved), 5)
                 self.assertTrue(set(reserved) <= set(names(result)))
-                self.assertFalse(set(reserved) & set(result['deferred']))
-                all_units = names(result) + result['deferred']
+                self.assertFalse(set(reserved) & set(units.unplaced_units(result)))
+                all_units = names(result) + units.unplaced_units(result)
                 self.assertEqual(len(all_units), len(set(all_units)))
                 self.assertCountEqual([case for unit in reserved for case in units.case_names(unit, fixtures)], BOUNDARIES)

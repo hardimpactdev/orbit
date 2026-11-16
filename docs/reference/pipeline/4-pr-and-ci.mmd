@@ -62,7 +62,7 @@ sequenceDiagram
       %%> - the Gateway side, `proof:run` refusing an untrusted commit with `proof.commit_untrusted`
       %%> Decided by the orchestrator, for Nick's review:
       %%> - a workflow of its own, not a trigger on `ci.yml`: `pull_request_target` on `ci.yml` would run every job of the PR with the secrets and the write token of the base repository
-      %%> - the outside workflow publishes its proof status on the exact fork head; `Required checks` requires that status to succeed only when both `ORBIT_SLOW_CHECKS_BLOCKING` and `ORBIT_PROOF_BLOCKING` are not `false`. After the outside proof succeeds, rerun the failed Required job. A new head needs its own proof status.
+      %%> - the outside workflow publishes its proof status on the exact fork head; while proof admission is on, `Required checks` requires that status to succeed. After the outside proof succeeds, rerun the failed Required job. A new head needs its own proof status.
     end
     CI->>GW: Run the proof CI<br/>proof:run COMMIT
     %%> What it does:
@@ -79,7 +79,7 @@ sequenceDiagram
     %%> - when the PR adds or changes a case with `fails_on_base: true`, the same proof VM then switches its checkout to the merge base with the head cases file and must see every selected flagged case fail with cause `assertion`; unflagged and unchanged cases never replay; see `Select replay cases` in the [stage 3 chart](/reference/command-development-pipeline#3-proof)
     %%> Built:
     %%> - CI proof admission, including outside PRs, requires `ORBIT_PROOF_ENABLED=true`; it stays disabled until container proofs are ready
-    %%> - the proof CI is part of Required checks only when both `ORBIT_SLOW_CHECKS_BLOCKING` and `ORBIT_PROOF_BLOCKING` are not `false`: the job `proof-run` calls `proof:run`, requires every selected case verdict and fails on a failed case or missing verdict; no selected command passes
+    %%> - the proof CI is part of Required checks whenever it runs; no switch makes it report-only: the job `proof-run` calls `proof:run`, requires every selected case verdict and fails on a failed case or missing verdict; no selected command passes
     GW-->>CI: Verdict per case
     %%> Result:
     %%> - the job reads the operation until it ends; a missing result or a failed assertion fails the CI result
@@ -182,7 +182,7 @@ sequenceDiagram
     GH->>CI: CI on main<br/>after the merge
     %%> What it does:
     %%> - main CI verifies the actual tested merge-ref tree of the latest green PR run, its live Docs body and web artifact digest; equal trees reuse that evidence and publish the artifact under the main SHA
-    %%> - a different tree or missing evidence runs normal main CI; Required checks and Gateway release inputs keep their names, and the Gateway release (stage 5) takes only a green commit
+    %%> - a different tree or missing evidence runs the selected quick checks again on the merged tree; main runs no proof, and no after-merge workflow runs fixtures, proof or a nightly sweep; Required checks and Gateway release inputs keep their names, and the Gateway release (stage 5) takes only a green commit
     %%> - when main moved after a PR went green, update its branch, wait for green and merge promptly to retain the tested tree
     %%> When it fails:
     %%> - two green PRs can still break main together; main is fixed forward, and no release takes the red commit

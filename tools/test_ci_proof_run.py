@@ -134,24 +134,14 @@ class TrustLossReportTest(unittest.TestCase):
         self.assertEqual(proof.report(code, output, SHA, 'key', allow_trust_skip=True)[0], 'failed')
 
 
-class MainConsumerTest(unittest.TestCase):
-    def test_all_flag_is_explicit_and_does_not_change_the_default_call(self):
-        for all_cases in (False, True):
-            child = Mock(returncode=0)
-            child.communicate.return_value = ('{}', None)
-            with patch.object(proof.subprocess, 'Popen', return_value=child) as start, patch.object(proof.signal, 'signal'):
-                proof.run(SHA, 'key', 'orbit', all_cases=all_cases)
-            self.assertEqual(all_cases, '--all' in start.call_args.args[0])
-
-    def test_range_sends_ancestor_and_newest_without_all(self):
+class CallTest(unittest.TestCase):
+    def test_proof_runs_the_cases_orbit_selects_for_one_commit(self):
+        # No range and no run-everything path: those served only the removed after-merge proof.
         child = Mock(returncode=0)
         child.communicate.return_value = ('{}', None)
-        base = 'a' * 40
         with patch.object(proof.subprocess, 'Popen', return_value=child) as start, patch.object(proof.signal, 'signal'):
-            proof.run(SHA, 'key', 'orbit', base=base)
-        self.assertEqual(['orbit', 'proof:run', SHA, '--base', base, '--json', '--idempotency-key', 'key'], start.call_args.args[0])
-        with self.assertRaises(ValueError):
-            proof.run(SHA, 'key', 'orbit', base=base, all_cases=True)
+            proof.run(SHA, 'key', 'orbit')
+        self.assertEqual(['orbit', 'proof:run', SHA, '--json', '--idempotency-key', 'key'], start.call_args.args[0])
 
 
 

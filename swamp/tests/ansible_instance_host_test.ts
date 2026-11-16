@@ -649,7 +649,23 @@ Deno.test({
                 ),
             );
 
-            // A Node prepared before these rules, as Beast was: the bridge's dnsmasq answers DNS, and the ACL rejects all that goes to
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name:
+        "a build-list Node prepared before the bridge DNS and container ACL rules gets both on its next converge",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            let result = await f.run();
+            assert(result.ok, result.output);
+            const state = f.state();
+            // A Node prepared before these rules: the bridge's dnsmasq answers DNS, and the ACL rejects all that goes to
             // a container. The next converge gives the existing bridge and ACL both.
             const old = f.state();
             delete old.networks.find((n: { name: string }) =>

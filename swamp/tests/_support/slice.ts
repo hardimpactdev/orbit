@@ -3,7 +3,6 @@ const value = Deno.env.get("ORBIT_TEST_SLICE") ?? "0/1";
 if (!/^\d+\/[1-9]\d*$/.test(value)) throw new Error(`Invalid ORBIT_TEST_SLICE: ${value}`);
 const [k, n] = value.split("/").map(Number);
 if (k >= n) throw new Error(`Invalid ORBIT_TEST_SLICE: ${value}`);
-const skip = new Set<string>(JSON.parse(Deno.env.get("ORBIT_TEST_SKIP") ?? "[]"));
 const expected: string[] | undefined = JSON.parse(Deno.env.get("ORBIT_TEST_CASES") ?? "null") ?? undefined;
 const collect = Deno.env.get("ORBIT_TEST_COLLECT");
 const file = Deno.env.get("ORBIT_TEST_TIMING_FILE");
@@ -11,8 +10,8 @@ const register = Deno.test;
 // deno-lint-ignore no-explicit-any
 type Callback = (...args: any[]) => any;
 const pending: { register: Callback; args: unknown[]; name: string }[] = [];
-const receipt: { startup_seconds?: number; registered: string[]; excluded: string[]; cases: { name: string; status: string; seconds: number; started_at_ms?: number }[] } = {
-  registered: [], excluded: [], cases: [],
+const receipt: { startup_seconds?: number; registered: string[]; cases: { name: string; status: string; seconds: number; started_at_ms?: number }[] } = {
+  registered: [], cases: [],
 };
 function save() {
   if (file) Deno.writeTextFileSync(file, JSON.stringify(receipt));
@@ -57,16 +56,13 @@ addEventListener("load", () => {
     Deno.writeTextFileSync(collect, JSON.stringify(receipt.registered));
     return;
   }
-  receipt.excluded = receipt.registered.filter((name) => skip.has(name));
   save();
-  const stale = [...skip].filter((name) => !receipt.registered.includes(name));
-  if (stale.length) throw new Error(`Stale after_merge_cases: ${JSON.stringify(stale)}`);
   if (!pending.length) throw new Error("Fixture registered zero tests");
   if (expected && JSON.stringify(expected) !== JSON.stringify(receipt.registered)) {
     throw new Error(`Stale fixture case population: expected ${expected.length}, registered ${pending.length}; actual names: ${JSON.stringify(receipt.registered)}`);
   }
-  const selected = pending.filter((test) => !skip.has(test.name)).filter((_, index) => index % n === k);
-  if (!selected.length) throw new Error(`Fixture slice ${value} registered zero tests after exclusions`);
+  const selected = pending.filter((_, index) => index % n === k);
+  if (!selected.length) throw new Error(`Fixture slice ${value} registered zero tests`);
   for (const test of selected) {
     const options = test.args[0];
     const ignored = test.register === register.ignore || typeof options === "object" && options && "ignore" in options && options.ignore;

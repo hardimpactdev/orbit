@@ -28,6 +28,8 @@ use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationBudgetTable;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofSeedCopyProjection;
 use App\Domain\Proof\ProofSeeds;
@@ -652,7 +654,8 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and($operation->node_id)->toBe($default->node_id)
             ->and($operation->lock_key)->toBe('instance_seed_copy:'.$default->id)
             ->and($operation->input)->toBe(['default_instance_id' => $default->id, 'commit' => str_repeat('a', 40),
-                'taken_at' => $runtime->refresh()->seed_taken_at?->toIso8601String(), 'targets' => [$node->id], 'release_base' => true])
+                'taken_at' => $runtime->refresh()->seed_taken_at?->toIso8601String(), 'targets' => [$node->id], 'release_base' => true,
+                'run_budget_seconds' => 900 + 2500])
             // One copy at a time: the open copy admits the next one when it ends.
             ->and(app(ProofSeeds::class)->admit('seed'))->toBeNull()
             ->and(Operation::query()->where('kind', 'instance.seed_copy')->count())->toBe(1);
@@ -666,6 +669,37 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and(collect($intent['targets'][0])->except('ssh_execution')->all())->toBe(['node_id' => $node->id, 'remote' => 'proof-node-'.$node->id,
                 'listen' => '10.44.0.30:8444'])
             ->and($intent['targets'][0]['ssh_execution']['target']['host'])->toBe('10.44.0.30');
+    });
+
+    it('captures a run budget that holds the copies of its targets in series, and takes no more targets than the serve run cap holds', function (): void {
+        proofSeedDefault();
+        seedSwampNode();
+        $nodes = array_map(static fn (int $index): Node => ciNode(2, LifecycleStatus::Active, 'ci-'.$index, '10.44.0.'.(40 + $index)), range(1, 6));
+        seedListening(...$nodes);
+        $budget = static fn (Operation $copy): int => OperationRunBudgets::seconds($copy->forceFill(['attempts' => 1]));
+
+        // docs/reference/operations.md: the fixed phases, plus one copy step per target, because the copies run one target at a time.
+        $one = app(ProofSeeds::class)->admit('seed', array_map(static fn (Node $node): int => $node->id, array_slice($nodes, 1)));
+        expect($one?->input['targets'])->toBe([$nodes[0]->id])
+            ->and($budget($one))->toBe(900 + 2500);
+        Operation::query()->where('kind', ProofSeeds::Kind)->delete();
+        $three = app(ProofSeeds::class)->admit('seed', array_map(static fn (Node $node): int => $node->id, array_slice($nodes, 3)));
+        expect($three?->input['targets'])->toHaveCount(3)
+            ->and($budget($three))->toBe(900 + 3 * 2500);
+        Operation::query()->where('kind', ProofSeeds::Kind)->delete();
+
+        // Six Nodes behind: the run takes the five that fit in the cap and may not release the base; its end admits the sixth.
+        $capped = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        expect(ProofSeeds::maxTargets())->toBe(5)
+            ->and($capped->input['targets'])->toBe(array_map(static fn (Node $node): int => $node->id, array_slice($nodes, 0, 5)))
+            ->and($capped->input['release_base'])->toBeFalse()
+            ->and($budget($capped))->toBe(900 + 5 * 2500)
+            ->and($budget($capped))->toBeLessThanOrEqual(OperationBudgetTable::longestFixedSeconds());
+        $capped->forceFill(['status' => 'running', 'state' => [...($capped->state ?? []), 'swamp_run_id' => 'run-1']])->save();
+        app(ProofSeedCopyProjection::class)->apply($capped, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['targets' => array_map(static fn (int $node): array => ['node_id' => $node,
+                'status' => 'succeeded'], $capped->input['targets'])]]);
+        expect(Operation::query()->where('kind', ProofSeeds::Kind)->whereKeyNot($capped->id)->sole()->input['targets'])->toBe([$nodes[5]->id]);
     });
 
     it('records the seed of each passed Node and an Activity problem for each failed one, and tries no failed Node again at the same seed', function (): void {
@@ -817,6 +851,23 @@ describe('the seed of the proof default on each Node that offers proof places', 
 
         expect($assignment->refresh()->status)->toBe(LifecycleStatus::Active)
             ->and(Operation::query()->where('kind', 'instance.seed_copy')->sole()->input['targets'])->toBe([$node->id]);
+    });
+
+    it('keeps the converged Node in the run when more Nodes are behind the seed than one run takes', function (): void {
+        proofSeedDefault();
+        seedSwampNode();
+        $nodes = array_map(static fn (int $index): Node => ciNode(2, LifecycleStatus::Active, 'ci-'.$index, '10.44.0.'.(40 + $index)), range(1, 6));
+        seedListening(...array_slice($nodes, 0, 5));
+        $converged = $nodes[5];
+        Node::withoutEvents(fn (): bool => $converged->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+
+        // The end of a run admits only Nodes that no copy has tried at the seed, so a run without the converged Node would leave it behind.
+        endCiRunnerConverge($converged, 'succeeded');
+
+        $targets = Operation::query()->where('kind', ProofSeeds::Kind)->sole()->input['targets'];
+        expect($targets)->toHaveCount(ProofSeeds::maxTargets())
+            ->and($targets)->toContain($converged->id)
+            ->and($targets)->toBe([...array_map(static fn (Node $node): int => $node->id, array_slice($nodes, 0, 4)), $converged->id]);
     });
 
     it('targets only a Node whose passed ci-runner converge opened the seed listener for the default\'s Node, and never marks another tried', function (): void {

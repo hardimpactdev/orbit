@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=10, default_cost=30)
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=10, self_hosted_shards=8, self_hosted_workers=2, default_cost=30, machinery_canary=[], capacity_gap=[])
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -37,6 +37,10 @@ def names(result):
     return [name for shard in result['shards'] for name in shard['units']]
 
 
+def scheduled(result):
+    return units.planned_units(result) + units.unplaced_units(result) + [u for row in result.get('not_run', []) for u in row['units']]
+
+
 class PlanningTest(unittest.TestCase):
     def test_largest_first_packing_fills_holes_and_is_deterministic(self):
         fixtures = [fixture(f'swamp/{name}.py', cost, ['swamp/input']) for name, cost in [('a', 40), ('b', 60), ('c', 50), ('d', 50)]]
@@ -44,12 +48,12 @@ class PlanningTest(unittest.TestCase):
         self.assertEqual(result['shards'], [{'name': '01', 'units': ['swamp/b.py', 'swamp/c.py', 'swamp/d.py', 'swamp/a.py']}])
         self.assertEqual(result, planned(['swamp/input'], list(reversed(fixtures))))
 
-    def test_six_shards_have_four_bounded_lanes_and_defer_the_twenty_fifth_full_lane(self):
+    def test_six_shards_have_four_bounded_lanes_and_name_the_twenty_fifth_full_lane(self):
         fixtures = [fixture(f'swamp/{i:02d}.py', 100, ['swamp/input']) for i in range(25)]
         result = planned(['swamp/input'], fixtures, budget={**BUDGET, 'pr_shards': 6})
         self.assertEqual(len(result['shards']), 6)
         self.assertTrue(all(len(shard['units']) == 4 for shard in result['shards']))
-        self.assertEqual(result['deferred'], ['swamp/24.py'])
+        self.assertEqual(result['capacity'], [{'unplaced': ['swamp/24.py']}])
         # Mixed sizes require real lane packing, not just a 400-second total.
         mixed = [fixture(f'swamp/{i}.py', 100, ['swamp/input']) for i in range(5)]
         self.assertEqual(len(planned(['swamp/input'], mixed)['shards']), 2)
@@ -74,20 +78,20 @@ class PlanningTest(unittest.TestCase):
         self.assertEqual(step.argv, ['python3', '-I', 'tests/ansible_instance_mail_test.py'])
         result = units.plan([file], budget, fixtures, defaults)
         self.assertIn(file, names(result))
-        self.assertNotIn(file, result['deferred'])
-        self.assertFalse(fixtures[file].get('after_merge'))
+        self.assertNotIn('capacity', result)
+        self.assertFalse(fixtures[file].get('self_hosted'))
         self.assertLessEqual(fixtures[file]['cost'], 15)
 
-    def test_limit_defers_names_and_keeps_direct_matches_over_shared_globs(self):
+    def test_limit_names_overflow_and_keeps_direct_matches_over_shared_globs(self):
         fixtures = [fixture('swamp/direct.py', 100, ['swamp/tasks/input.yml']),
                     fixture('swamp/other.py', 100, ['swamp/**']),
                     fixture('swamp/third.py', 100, ['swamp/**'])]
         result = planned(['swamp/tasks/input.yml'], fixtures, budget={**BUDGET, 'pr_shards': 2, 'shard_workers': 1})
         self.assertEqual(len(result['shards']), 2)
         self.assertIn('swamp/direct.py', names(result))
-        self.assertEqual(result['deferred'], ['swamp/third.py'])
+        self.assertEqual(units.unplaced_units(result), ['swamp/third.py'])
 
-    def test_admission_uses_table_order_and_defers_every_slice_of_a_file_together(self):
+    def test_admission_uses_table_order_and_leaves_every_slice_of_a_file_out_together(self):
         budget = {**BUDGET, 'pr_shards': 1, 'shard_workers': 1, 'shard_seconds': 100}
         first, second = fixture('swamp/first.py', 40, ['swamp/input']), fixture('swamp/second.py', 70, ['swamp/input'])
         self.assertEqual(names(planned(['swamp/input'], [first, second], budget=budget)), ['swamp/first.py'])
@@ -95,11 +99,93 @@ class PlanningTest(unittest.TestCase):
         sliced = fixture('swamp/sliced.ts', 121, ['swamp/input'], slices=5)
         result = planned(['swamp/input'], [sliced, first], budget=budget)
         self.assertEqual(names(result), ['swamp/first.py'])
-        self.assertEqual(set(result['deferred']), {f'swamp/sliced.ts#{k}/5' for k in range(5)})
+        self.assertEqual(set(units.unplaced_units(result)), {f'swamp/sliced.ts#{k}/5' for k in range(5)})
 
-    def test_after_merge_is_named_when_selected_and_never_runs_in_pr_shards(self):
-        result = planned(['swamp/slow.ts'], [fixture('swamp/slow.ts', 233, slices=False, after_merge=True, reason='one long case')])
-        self.assertEqual(result, dict(shards=[], deferred=['swamp/slow.ts'], unmapped=[]))
+    def test_overflow_fails_the_plan_and_names_every_unplaced_unit(self):
+        budget = {**BUDGET, 'pr_shards': 1, 'shard_workers': 1, 'self_hosted_shards': 1, 'self_hosted_workers': 1}
+        fixtures = [fixture(f'swamp/{name}.py', 100, ['swamp/input']) for name in ('a', 'b', 'c')]
+        fixtures += [fixture(f'swamp/{name}.py', 100, ['swamp/input'], self_hosted=True) for name in ('d', 'e')]
+        result = planned(['swamp/input'], fixtures, budget=budget)
+        self.assertEqual(names(result), ['swamp/a.py'])
+        self.assertEqual([u for s in result['self_hosted_shards'] for u in s['units']], ['swamp/d.py'])
+        self.assertEqual(result['capacity'], [{'unplaced': ['swamp/b.py', 'swamp/c.py', 'swamp/e.py']}])
+        self.assertNotIn('deferred', result)
+        text = units.plan_summary(result, {f['file']: f for f in fixtures})
+        for unit in ('swamp/b.py', 'swamp/c.py', 'swamp/e.py'):
+            self.assertIn(unit, text)
+        self.assertIn('Required checks will fail', text)
+
+    def test_a_self_hosted_shard_has_self_hosted_workers_lanes_and_a_hosted_shard_keeps_shard_workers(self):
+        budget = {**BUDGET, 'pr_shards': 1, 'self_hosted_shards': 1}
+        fixtures = [fixture(f'swamp/{side}{i}.py', 100, ['swamp/input'], self_hosted=side == 'runner') for side in ('hosted', 'runner')
+                    for i in range(4)]
+        result = planned(['swamp/input'], fixtures, budget=budget)
+        self.assertEqual(sorted(names(result)), [f'swamp/hosted{i}.py' for i in range(4)])
+        self.assertEqual(sorted(u for s in result['self_hosted_shards'] for u in s['units']), ['swamp/runner0.py', 'swamp/runner1.py'])
+        self.assertEqual(result['capacity'], [{'unplaced': ['swamp/runner2.py', 'swamp/runner3.py']}])
+        # A file that needs more self-hosted shards than the pool has names them by its own lane count.
+        big = [fixture('swamp/big.ts', 500, ['swamp/input'], self_hosted=True, slices=5)]
+        row = planned(['swamp/input'], big, budget=budget)['capacity'][0]
+        self.assertEqual((row['shards'], row['workers']), (3, 6))
+
+    def test_self_hosted_units_run_only_in_their_own_shards_with_their_own_limit(self):
+        fixtures = [fixture('swamp/hosted.py', 100, ['swamp/input']),
+                    fixture('swamp/runner.ts', 200, ['swamp/input'], self_hosted=True, slices=4)]
+        result = planned(['swamp/input'], fixtures)
+        self.assertEqual(names(result), ['swamp/hosted.py'])
+        self.assertEqual(sorted(u for s in result['self_hosted_shards'] for u in s['units']),
+                         [f'swamp/runner.ts#{k}/4' for k in range(4)])
+        self.assertNotIn('capacity', result)
+        # The self-hosted limit is separate: a full hosted pool does not take its shards, and its overflow fails.
+        full = planned(['swamp/input'], fixtures, budget={**BUDGET, 'pr_shards': 1, 'self_hosted_shards': 0})
+        self.assertEqual(names(full), ['swamp/hosted.py'])
+        self.assertEqual(full['self_hosted_shards'], [])
+        self.assertEqual(units.unplaced_units(full), [f'swamp/runner.ts#{k}/4' for k in range(4)])
+        self.assertTrue(full['capacity'][0]['self_hosted'])
+        self.assertIn('above the self-hosted shard limit', units.plan_summary(full, {f['file']: f for f in fixtures}))
+
+    def test_a_named_capacity_gap_runs_what_fits_names_the_rest_and_never_blocks(self):
+        budget = {**BUDGET, 'self_hosted_shards': 1, 'self_hosted_workers': 1, 'capacity_gap': ['swamp/gap.ts']}
+        gap = fixture('swamp/gap.ts', 180, ['swamp/input'], self_hosted=True, slices=3)
+        other = fixture('swamp/other.py', 100, ['swamp/input'], self_hosted=True)
+        fixtures = [gap, other]
+        result = planned(['swamp/input'], fixtures, budget=budget)
+        # The other file is admitted first even though the gap file comes first in the table.
+        self.assertEqual([u for s in result['self_hosted_shards'] for u in s['units']], ['swamp/other.py'])
+        self.assertEqual(result['not_run'], [{'file': 'swamp/gap.ts', 'units': [f'swamp/gap.ts#{k}/3' for k in range(3)],
+                                              'reason': 'capacity gap per ADR 0262'}])
+        self.assertNotIn('capacity', result)
+        self.assertIn('Not run: `swamp/gap.ts`, 3 units, reason: capacity gap per ADR 0262',
+                      units.plan_summary(result, {f['file']: f for f in fixtures}))
+        # With room, the gap file's units that fit run; an oversized unit is named, not a blocker.
+        roomy = {**budget, 'self_hosted_shards': 2, 'self_hosted_workers': 4}
+        gap.update(cost=300, cases=['a', 'b', 'c'], case_costs={'a': 100, 'b': 160, 'c': 40})
+        result = planned(['swamp/input'], fixtures, budget=roomy)
+        self.assertEqual(sorted(u for s in result['self_hosted_shards'] for u in s['units']),
+                         ['swamp/gap.ts#0/3', 'swamp/gap.ts#2/3', 'swamp/other.py'])
+        self.assertEqual(result['not_run'][0]['units'], ['swamp/gap.ts#1/3'])
+        self.assertNotIn('capacity', result)
+        # Without the name, the same overflow fails Required.
+        result = planned(['swamp/input'], fixtures, budget={**roomy, 'capacity_gap': []})
+        self.assertIn('swamp/gap.ts#1/3', units.unplaced_units(result))
+        self.assertNotIn('not_run', result)
+
+    def test_a_capacity_gap_must_name_registered_self_hosted_files(self):
+        original, inventory = units.registry.load(ROOT)
+        hosted = next(f['file'] for f in original['fixture'] if not f.get('self_hosted'))
+        for gaps in (['swamp/tests/missing_test.ts'], [hosted], 'swamp/tests/ansible_instance_migrate_move_test.ts',
+                     ['swamp/tests/ansible_instance_migrate_move_test.ts'] * 2):
+            config = json.loads(json.dumps(original))
+            config['budget']['capacity_gap'] = gaps
+            with self.subTest(gaps=gaps), patch.object(units.registry, 'load', return_value=(config, inventory)):
+                with self.assertRaisesRegex(ValueError, 'capacity_gap must list unique registered self_hosted fixtures'):
+                    units.configuration()
+
+    def test_self_hosted_units_follow_the_unit_ceiling_with_startup(self):
+        result = planned(['swamp/runner.ts'], [fixture('swamp/runner.ts', 145, cases=['long'], self_hosted=True)])
+        self.assertEqual(result['self_hosted_shards'], [])
+        self.assertEqual(result['capacity'][0]['oversize'], [{'unit': 'swamp/runner.ts', 'seconds': 151, 'cases': ['long']}])
+        self.assertEqual(units.unplaced_units(result), ['swamp/runner.ts'])
 
     def test_unknown_swamp_path_selects_default_and_names_it(self):
         fixtures = [fixture('swamp/default.py'), fixture('swamp/specific.py', inputs=['swamp/known/**'])]
@@ -110,20 +196,26 @@ class PlanningTest(unittest.TestCase):
 
     def test_self_support_globs_and_control_files(self):
         fixtures = [fixture('swamp/tests/a.ts', inputs=['swamp/tests/_support/helper.ts', 'swamp/ansible/tasks/a-*.yml']),
-                    fixture('swamp/tests/b.py'), fixture('swamp/tests/c.ts', after_merge=True, reason='pending mapping')]
+                    fixture('swamp/tests/b.py'), fixture('swamp/tests/c.ts', self_hosted=True)]
         for path in ('swamp/tests/a.ts', 'swamp/tests/_support/helper.ts', 'swamp/ansible/tasks/a-b.yml'):
             self.assertEqual(names(planned([path], fixtures)), ['swamp/tests/a.ts'])
         self.assertEqual(names(planned(['swamp/ansible/tasks/a-sub/file.yml'], fixtures)), [])
-        for path in ('bin/ci-units', 'bin/ci-registry', units.PRELOAD):
-            result = planned([path], fixtures)
-            self.assertEqual(set(names(result)), {'swamp/tests/a.ts', 'swamp/tests/b.py'})
-            self.assertEqual(result['deferred'], ['swamp/tests/c.ts'])
+        # The machinery selects the canary set, not every fixture, even one that lists a machinery path as an input.
+        budget = {**BUDGET, 'machinery_canary': ['swamp/tests/b.py']}
+        fixtures[0]['inputs'].append('bin/swamp-shape-gate')
+        for path in ('bin/ci-units', 'bin/ci-registry', 'bin/swamp-shape-gate', units.PRELOAD):
+            result = planned([path], fixtures, budget=budget)
+            self.assertEqual(scheduled(result), ['swamp/tests/b.py'])
+        self.assertEqual(scheduled(planned(['bin/ci-units', 'swamp/tests/a.ts'], fixtures, budget=budget)),
+                         ['swamp/tests/a.ts', 'swamp/tests/b.py'])
+        shared = units.plan([], budget, {f['file']: f for f in fixtures}, [], shared_registry=True)
+        self.assertEqual(scheduled(shared), ['swamp/tests/b.py'])
         self.assertIsNotNone(units.selection_regex('swamp/**/a?.ts').fullmatch('swamp/deep/path/ab.ts'))
         self.assertIsNotNone(units.selection_regex('swamp/**/a?.ts').fullmatch('swamp/ab.ts'))
 
-    def test_plan_summary_explains_deferral_and_unmapped_paths(self):
-        text = units.plan_summary(dict(shards=[], deferred=['slow'], unmapped=['swamp/new']), {'slow': {'reason': 'one long case'}})
-        self.assertIn('one long case', text)
+    def test_plan_summary_names_unplaced_units_and_unmapped_paths(self):
+        text = units.plan_summary(dict(shards=[], self_hosted_shards=[], unmapped=['swamp/new'], capacity=[{'unplaced': ['slow']}]), {})
+        self.assertIn('`slow`', text.replace('"slow"', '`slow`'))
         self.assertIn('swamp/new', text)
         self.assertIn('selected default', text)
 
@@ -231,8 +323,32 @@ class RegistrySelectionTest(unittest.TestCase):
         with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root):
             return units.registry_changes(self.base, head)
 
-    def test_fixture_cost_edit_selects_only_its_file_through_cli(self):
-        head = self.commit(self.initial.replace('cost = 40', 'cost = 45'))
+    def test_removing_the_after_merge_keys_is_a_machinery_change(self):
+        deferred = self.initial.replace('cost = 40', 'cost = 40\nafter_merge = true\nreason = "slow"\nafter_merge_cases = ["late"]')
+        before = self.commit(deferred)
+        after = self.commit(self.initial.replace('cost = 40', 'cost = 40\nself_hosted = true'))
+        with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root):
+            self.assertEqual(units.registry_changes(before, after), ([], True))
+            # The same edit with a changed input still selects the fixture.
+            moved = self.commit(self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/new.yml"]'))
+            self.assertEqual(units.registry_changes(before, moved), (['swamp/process.ts'], False))
+
+    def test_scheduling_metadata_alone_is_a_machinery_change(self):
+        fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
+        budget = {**BUDGET, 'machinery_canary': ['swamp/egress.py']}
+        for edit in ('cost = 45', 'cost = 40\nself_hosted = true', 'cost = 40\nslices = 3',
+                     'cost = 40\n[fixture.case_costs]\nfirst = 40'):
+            with self.subTest(edit=edit):
+                changed, shared = self.changes(self.initial.replace('cost = 40', edit))
+                self.assertEqual((changed, shared), ([], True))
+                result = units.plan(['.github/ci/checks.toml'], budget, fixtures, [], registry_changed=changed, shared_registry=shared)
+                self.assertEqual(names(result), ['swamp/egress.py'])
+        for edit in ('cost = 40\ninputs = ["swamp/new.yml"]', 'cost = 40\nhost_programs = ["jq"]', 'cost = 45\ninputs = ["swamp/a.yml"]'):
+            with self.subTest(edit=edit):
+                self.assertEqual(self.changes(self.initial.replace('cost = 40', edit))[0], ['swamp/process.ts'])
+
+    def test_fixture_inputs_edit_selects_only_its_file_through_cli(self):
+        head = self.commit(self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/new.yml"]'))
         fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
         with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root), \
              patch.object(units, 'configuration', return_value=(BUDGET, fixtures, [])), \
@@ -246,7 +362,7 @@ class RegistrySelectionTest(unittest.TestCase):
     def test_formatting_and_check_edits_do_not_select_fixture_bodies(self):
         self.assertEqual(self.changes(self.initial + '\n# comment\n[check.docs]\ncost = 40\n'), ([], False))
 
-    def test_shared_budget_defaults_and_order_select_all(self):
+    def test_shared_budget_defaults_and_order_select_the_machinery_canary(self):
         for text in (self.initial.replace('default_cost = 30', 'default_cost = 31'),
                      self.initial.replace('default = []', 'default = ["swamp/egress.py"]'),
                      self.initial.replace('file = "swamp/process.ts"', 'file = "TEMP"')
@@ -256,9 +372,9 @@ class RegistrySelectionTest(unittest.TestCase):
                 changed, shared = self.changes(text)
                 self.assertTrue(shared)
                 fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
-                result = units.plan(['.github/ci/checks.toml'], BUDGET, fixtures, [],
+                result = units.plan(['.github/ci/checks.toml'], {**BUDGET, 'machinery_canary': ['swamp/egress.py']}, fixtures, [],
                                     registry_changed=changed, shared_registry=shared)
-                self.assertCountEqual(names(result), fixtures)
+                self.assertCountEqual(names(result), {'swamp/egress.py', *changed})
 
     def test_first_table_addition_compares_against_empty_registry(self):
         self.table.unlink()
@@ -277,24 +393,33 @@ class RegistrySelectionTest(unittest.TestCase):
 
     def test_merge_base_excludes_main_only_table_edits(self):
         self.git('checkout', '-qb', 'topic')
-        topic = self.commit(self.initial.replace('cost = 40', 'cost = 45'))
+        topic = self.commit(self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/topic.yml"]'))
         self.git('checkout', '-qb', 'base', self.base)
-        main = self.commit(self.initial.replace('cost = 117', 'cost = 118'))
+        main = self.commit(self.initial.replace('cost = 117', 'cost = 117\ninputs = ["swamp/main.yml"]'))
         with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root):
             self.assertEqual(units.registry_changes(self.git('merge-base', main, topic), topic),
                              (['swamp/process.ts'], False))
 
-    def test_hub_lan_role_is_narrow_and_known_slow_file_is_deferred(self):
+    def test_hub_lan_role_is_narrow_and_its_three_files_run_self_hosted_within_the_lane_or_a_named_gap(self):
         budget, fixtures, defaults = units.configuration()
-        file = 'swamp/tests/ansible_wireguard_hub_lan_test.py'
+        files = [f'swamp/tests/ansible_wireguard_hub_lan_{part}_test.py' for part in ('rules', 'recovery', 'load')]
+        # The rules file ran past the lane on the self-hosted pool: ADR 0262 names it a capacity gap.
+        gap, fitting = files[0], files[1:]
         unrelated = units.plan(['swamp/ansible/tasks/instance-container-process.yml',
                                 'swamp/workflows/workflow-operation-process-container.yaml'], budget, fixtures, defaults)
-        self.assertNotIn(file, names(unrelated) + unrelated['deferred'])
-        for path in (file, 'swamp/ansible/tasks/node-hub-lan-proof.yml'):
+        self.assertFalse(set(files) & {u.split('#')[0] for u in scheduled(unrelated)})
+        for file in files:
+            self.assertTrue(fixtures[file]['self_hosted'])
+        for file in fitting:
+            self.assertLessEqual(fixtures[file]['cost'], budget['shard_seconds'], file)
+        self.assertIn(gap, budget['capacity_gap'])
+        for path in (*files, 'swamp/ansible/tasks/node-hub-lan-proof.yml', 'swamp/tests/_support/wireguard_hub_lan.py'):
             result = units.plan([path], budget, fixtures, defaults)
-            self.assertNotIn(file, names(result))
-            self.assertIn(file, result['deferred'])
-            self.assertIn('cannot be sliced', units.plan_summary(result, fixtures))
+            self.assertFalse(set(files) & set(names(result)))
+            self.assertNotIn('capacity', result)
+        result = units.plan(['swamp/ansible/tasks/node-hub-lan-proof.yml'], budget, fixtures, defaults)
+        self.assertEqual({u for s in result['self_hosted_shards'] for u in s['units']}, set(fitting))
+        self.assertEqual(result['not_run'], [{'file': gap, 'units': [gap], 'reason': 'capacity gap per ADR 0262'}])
 
 
 class TableTest(unittest.TestCase):
@@ -309,19 +434,20 @@ class TableTest(unittest.TestCase):
                      'swamp/models/@nckrtl/orbit-gateway/orbit-gateway.yaml', 'bin/ci-units'):
             with self.subTest(path=path):
                 result = units.plan([path], budget, fixtures, defaults)
-                scheduled = {unit.split('#')[0] for unit in names(result) + result['deferred']}
-                self.assertNotIn(file, scheduled)
+                self.assertNotIn(file, {unit.split('#')[0] for unit in scheduled(result)})
 
     def test_table_files_costs_and_unsliceable_rules(self):
         budget, fixtures, defaults = units.configuration()
-        self.assertEqual(budget, BUDGET)
+        self.assertEqual({**budget, 'machinery_canary': [], 'capacity_gap': []}, BUDGET)
         self.assertTrue(defaults)
         for f in fixtures.values():
             self.assertTrue((ROOT / f['file']).is_file(), f['file'])
-            if f.get('after_merge'):
-                self.assertTrue(f.get('reason', '').strip(), f['file'])
-            elif not units.sliceable(f):
-                self.assertLessEqual(f['cost'], budget['shard_seconds'], f['file'])
+            # Every unit fits the 150-second lane with its startup, except in a capacity gap that ADR 0262 names;
+            # no key keeps a file out of pull requests.
+            for name, cost in units.units_for(f, budget):
+                if f['file'] not in budget['capacity_gap']:
+                    self.assertLessEqual(cost, budget['shard_seconds'], name)
+            self.assertFalse({'after_merge', 'after_merge_cases', 'reason'} & set(f), f['file'])
         self.assertLessEqual(set(units.fixture_steps()), set(fixtures))
         must = {str(p.relative_to(ROOT)) for p in (ROOT / 'swamp/tests').glob('*instance*') if p.is_file()}
         must.update('swamp/tests/' + name for name in ['ansible_task_container_host_prepare_test.ts',
@@ -329,7 +455,7 @@ class TableTest(unittest.TestCase):
         self.assertLessEqual(must, set(fixtures))
         for f in fixtures.values():
             result = units.plan([f['file']], budget, fixtures, defaults)
-            self.assertIn(f['file'], {u.split('#')[0] for u in names(result) + result['deferred']})
+            self.assertIn(f['file'], {u.split('#')[0] for u in scheduled(result)})
 
     def test_required_planner_rejects_live_python_cost_drift_even_when_unselected(self):
         file = 'swamp/tests/instance_clone_test.py'
@@ -340,7 +466,7 @@ class TableTest(unittest.TestCase):
                 def changed_population(path):
                     return {**current, 'cases': cases} if path == file else collect(path)
                 with patch.object(units, 'collect', side_effect=changed_population):
-                    with self.assertRaisesRegex(ValueError, file + ': case_costs must name every retained case'):
+                    with self.assertRaisesRegex(ValueError, file + ': case_costs must name every case'):
                         budget, fixtures, defaults = units.configuration()
                         units.plan(['docs/mission.md'], budget, fixtures, defaults)
 
@@ -361,11 +487,6 @@ class TableTest(unittest.TestCase):
             with patch.object(units, 'fixture_steps', return_value=steps):
                 with self.assertRaisesRegex(ValueError, 'Invalid fixture file'):
                     units.configuration(path)
-            config, inventory = units.registry.load(ROOT)
-            config['fixture'].append(fixture('swamp/tests/_support/fixture_supervisor.py', cost=151))
-            with patch.object(units.registry, 'load', return_value=(config, inventory)):
-                with self.assertRaisesRegex(ValueError, 'unsliceable cost exceeds'):
-                    units.configuration(path)
 
     def test_run_takes_its_worker_count(self):
         import signal
@@ -378,6 +499,26 @@ class TableTest(unittest.TestCase):
                     self.assertEqual(units.main(), 0)
                 self.assertEqual(run.call_args.args[1]['shard_workers'], workers)
 
+    def test_run_of_a_self_hosted_shard_uses_self_hosted_workers_and_refuses_a_mixed_shard(self):
+        import signal
+        handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+        self.addCleanup(lambda: [signal.signal(sig, handler) for sig, handler in handlers.items()])
+        budget, fixtures, _ = units.configuration()
+        runner = next(file for file, f in fixtures.items() if f.get('self_hosted'))
+        hosted = next(file for file, f in fixtures.items() if not f.get('self_hosted'))
+        for chosen, extra, workers in (([runner], [], budget['self_hosted_workers']), ([hosted], [], budget['shard_workers']),
+                                       ([runner, hosted], ['--workers', '1'], 1)):
+            with self.subTest(units=chosen, extra=extra):
+                with patch.object(sys, 'argv', ['ci-units', 'run', '--units', json.dumps(chosen), *extra]), \
+                        patch.object(units, 'run', return_value=0) as run:
+                    self.assertEqual(units.main(), 0)
+                self.assertEqual(run.call_args.args[1]['shard_workers'], workers)
+        self.assertLess(budget['self_hosted_workers'], budget['shard_workers'])
+        with patch.object(sys, 'argv', ['ci-units', 'run', '--units', json.dumps([runner, hosted])]), \
+                patch.object(units, 'run', return_value=0) as run, patch('sys.stderr'), self.assertRaises(SystemExit):
+            units.main()
+        run.assert_not_called()
+
     def test_host_programs_list_unique_program_names(self):
         for programs in ([], 'zip', ['zip', 'zip'], ['zip; rm'], [1]):
             with self.subTest(programs=programs):
@@ -388,13 +529,55 @@ class TableTest(unittest.TestCase):
                         units.configuration()
         self.assertEqual(units.configuration()[1]['swamp/tests/gateway_swamp_load_test.ts']['host_programs'], ['jq'])
 
-    def test_case_exclusions_cannot_survive_a_test_rename(self):
-        config, inventory = units.registry.load(ROOT)
-        entry = next(f for f in config['fixture'] if f.get('after_merge_cases'))
-        entry['after_merge_cases'][0] = 'renamed case no longer in source'
+    def test_self_hosted_is_a_boolean_and_never_a_default(self):
+        original, inventory = units.registry.load(ROOT)
+        for change in ({'self_hosted': 'yes'}, {'self_hosted': 1}):
+            config = json.loads(json.dumps(original))
+            config['fixture'][0].update(change)
+            with self.subTest(change=change), patch.object(units.registry, 'load', return_value=(config, inventory)):
+                with self.assertRaisesRegex(ValueError, 'self_hosted must be a boolean'):
+                    units.configuration()
+        config = json.loads(json.dumps(original))
+        next(f for f in config['fixture'] if f['file'] == config['fixtures']['default'][0])['self_hosted'] = True
         with patch.object(units.registry, 'load', return_value=(config, inventory)):
-            with self.assertRaisesRegex(ValueError, 'every after_merge_cases name must be registered'):
+            with self.assertRaisesRegex(ValueError, 'Invalid default fixture'):
                 units.configuration()
+
+    def test_an_ansible_toolchain_pin_selects_the_canary_with_ansible_in_every_family(self):
+        budget, fixtures, defaults = units.configuration()
+        canary = budget['machinery_canary']
+        for path in units.ANSIBLE_TOOLCHAIN:
+            # Nearly every Ansible fixture lists the toolchain pins; a change to one still selects only the canary set.
+            self.assertGreater(sum(path in f['inputs'] for f in fixtures.values()), 100, path)
+            with self.subTest(path=path):
+                result = units.plan([path], budget, fixtures, defaults)
+                self.assertEqual(sorted({u.split('#')[0] for u in units.planned_units(result)}), sorted(canary))
+                self.assertNotIn('capacity', result)
+                self.assertEqual(len(result['shards']), 1)
+        families = {'container': 'swamp/tests/ansible_container_host_system_test.py',
+                    'host': 'swamp/tests/ansible_task_host_firewall_remove_test.ts', 'node': 'swamp/tests/node_converge_test.ts',
+                    'migrate': 'swamp/tests/ansible_instance_migrate_source_test.ts',
+                    'worker': 'swamp/tests/ansible_gateway_swamp_pin_test.ts'}
+        for family, file in families.items():
+            self.assertIn(file, canary, family)
+            self.assertIn('swamp/ansible/ansible.cfg', fixtures[file]['inputs'], family)
+            self.assertIn('ansible-playbook', (units.ROOT / file).read_text(), family)
+
+    def test_the_machinery_canary_is_registered_hosted_and_fits_one_shard(self):
+        budget, fixtures, _ = units.configuration()
+        self.assertTrue(budget['machinery_canary'])
+        original, inventory = units.registry.load(ROOT)
+        self_hosted = next(f['file'] for f in original['fixture'] if f.get('self_hosted'))
+        large = [f['file'] for f in original['fixture'] if not f.get('self_hosted') and f['file'] in fixtures and
+                 sum(c for _, c in units.units_for(fixtures[f['file']], budget)) > 300]
+        for canary, message in [([], 'unique registered hosted'), (['swamp/tests/missing_test.ts'], 'unique registered hosted'),
+                                ([self_hosted], 'unique registered hosted'), (budget['machinery_canary'] * 2, 'unique registered hosted'),
+                                (large[:3], 'fit one shard'), ('swamp/tests/ansible_inputs_test.py', 'unique registered hosted')]:
+            config = json.loads(json.dumps(original))
+            config['budget']['machinery_canary'] = canary
+            with self.subTest(canary=canary), patch.object(units.registry, 'load', return_value=(config, inventory)):
+                with self.assertRaisesRegex(ValueError, message):
+                    units.configuration()
 
     def test_container_dependency_closure_selects_the_affected_files(self):
         budget, fixtures, defaults = units.configuration()
@@ -403,13 +586,13 @@ class TableTest(unittest.TestCase):
             ('swamp/ansible/schedule-logs.yml', 'swamp/tests/ansible_schedule_logs_test.ts'),
             ('swamp/ansible/library/orbit_schedule_journal.py', 'swamp/tests/ansible_schedule_logs_test.ts'),
             ('apps/gateway/app/Infrastructure/AgentView/StreamWebSocketClient.php', 'swamp/tests/ansible_schedule_logs_test.ts'),
-            ('swamp/ansible/tasks/instance-migrate-retire.yml', 'swamp/tests/ansible_instance_migrate_test.ts'),
+            ('swamp/ansible/tasks/instance-migrate-retire.yml', 'swamp/tests/ansible_instance_migrate_preflight_test.ts'),
             ('swamp/ansible/instance_bridge.py', 'swamp/tests/ansible_instance_container_test.ts'),
             ('swamp/tests/_support/instance_host.ts', 'swamp/tests/ansible_instance_host_image_test.ts'),
             ('swamp/ansible/tasks/task-container-host-system.yml', 'swamp/tests/ansible_container_host_system_test.py'),
         ]:
             result = units.plan([path], budget, fixtures, defaults)
-            self.assertIn(expected, [u.split('#')[0] for u in names(result) + result['deferred']])
+            self.assertIn(expected, [u.split('#')[0] for u in scheduled(result)])
 
 
 class ExecutionTest(unittest.TestCase):
@@ -437,12 +620,13 @@ class ExecutionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Invalid slice'):
                 units.unit_step(file + invalid, fixtures, steps, Path('/collections'))
 
-    def test_case_exclusions_reach_the_preload_even_without_slicing(self):
-        file = 'swamp/tests/ansible_instance_host_runtime_test.ts'
+    def test_every_case_reaches_the_preload_and_none_is_skipped(self):
+        file = 'swamp/tests/node_worker_systemd_cleanup_test.ts'
         _, fixtures, _ = units.configuration()
         step = units.unit_step(file, fixtures, units.fixture_steps(), Path('/collections'))
         self.assertIn('--preload', step.argv)
-        self.assertEqual(json.loads(step.env['ORBIT_TEST_SKIP']), fixtures[file]['after_merge_cases'])
+        self.assertEqual(json.loads(step.env['ORBIT_TEST_CASES']), fixtures[file]['cases'])
+        self.assertNotIn('ORBIT_TEST_SKIP', step.env)
         self.assertNotIn('ORBIT_TEST_SLICE', step.env)
 
     def test_each_step_has_its_own_temp_directory_and_gate_worker_environment(self):
@@ -607,16 +791,13 @@ class ExecutionTest(unittest.TestCase):
                     self.assertIn(name + ' ...', result.stdout)
                 for name in {'zero', 'one', 'two', 'three'} - set(expected):
                     self.assertNotIn(name + ' ...', result.stdout)
-            # Drop exact names before assigning slice indexes: after skipping zero,
-            # slice 0/2 contains one and three, while two belongs to slice 1/2.
+            # No case is skipped: a leftover skip list has no effect on the slice.
             result = subprocess.run(['deno', 'test', '-A', '--preload', str(ROOT / units.PRELOAD), str(file)],
                                     env={**os.environ, 'ORBIT_TEST_SLICE': '0/2', 'ORBIT_TEST_SKIP': '["zero"]', 'NO_COLOR': '1'},
                                     capture_output=True, text=True, timeout=15)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn('one ...', result.stdout)
-            self.assertIn('three ...', result.stdout)
-            self.assertNotIn('zero ...', result.stdout)
-            self.assertNotIn('two ...', result.stdout)
+            self.assertIn('zero ...', result.stdout)
+            self.assertNotIn('one ...', result.stdout)
             file.write_text('Deno.test.only("only-case", () => {}); Deno.test("ordinary", () => {});')
             result = subprocess.run(['deno', 'test', '-A', '--preload', str(ROOT / units.PRELOAD), str(file)],
                                     env={**os.environ, 'ORBIT_TEST_SLICE': '0/2', 'NO_COLOR': '1'}, capture_output=True, text=True, timeout=15)
@@ -654,7 +835,6 @@ class PopulationTest(unittest.TestCase):
         for source, env, message in [
             ('', {}, 'registered zero tests'),
             ('Deno.test("one", () => { BODY; });', {'ORBIT_TEST_SLICE': '1/2'}, 'registered zero tests'),
-            ('// old-name\nDeno.test("new-name", () => { BODY; });', {'ORBIT_TEST_SKIP': '["old-name"]'}, 'Stale after_merge_cases'),
             ('Deno.test("renamed", () => { BODY; });', {'ORBIT_TEST_CASES': '["original"]'}, 'Stale fixture case population'),
         ]:
             result, ran, _ = self.preload(source, **env)
@@ -710,15 +890,14 @@ class PopulationTest(unittest.TestCase):
 
     def test_docs_select_no_fixture_and_a_fixture_selects_itself(self):
         budget, fixtures, defaults = units.configuration()
-        file = 'swamp/tests/ansible_instance_migrate_test.ts'
+        file = 'swamp/tests/ansible_instance_migrate_move_test.ts'
         self.assertEqual(units.plan(['docs/mission.md'], budget, fixtures, defaults)['shards'], [])
         selected = units.plan(['swamp/tests/ansible_instance_container_test.ts'], budget, fixtures, defaults)
-        self.assertIn('swamp/tests/ansible_instance_container_test.ts', {u.split('#')[0] for u in names(selected)})
+        self.assertIn('swamp/tests/ansible_instance_container_test.ts', {u.split('#')[0] for s in selected['self_hosted_shards'] for u in s['units']})
         self.assertNotIn('capacity', selected)
         migration = units.plan([file], budget, fixtures, defaults)
-        self.assertTrue(migration['deferred'])
-        self.assertNotIn('capacity', migration)
-        self.assertIn('12 hosted shards', units.plan_summary(migration, fixtures))
+        self.assertEqual(migration['shards'], [])
+        self.assertTrue(migration['self_hosted_shards'])
 
     def test_named_case_costs_and_startup_replace_the_equal_share_estimate(self):
         f = fixture('swamp/cases.ts', 140, cases=['large', 'small'], slices=2,
@@ -729,8 +908,8 @@ class PopulationTest(unittest.TestCase):
         result = planned(['swamp/cases.ts'], [fixture('swamp/cases.ts', 2500, cases=[f'case-{i}' for i in range(25)], slices=25)],
                          budget={**BUDGET, 'pr_shards': 6})
         self.assertEqual(result['shards'], [])
-        self.assertEqual(len(result['deferred']), 25)
-        self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2650, 'shards': 7, 'workers': 28}])
+        self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2650, 'self_hosted': False, 'shards': 7, 'workers': 28},
+                                              {'unplaced': sorted(f'swamp/cases.ts#{k}/25' for k in range(25))}])
 
     def test_fleet_refresh_costs_keep_every_case_and_bound_each_refresh(self):
         budget, fixtures, defaults = units.configuration()
@@ -741,8 +920,6 @@ class PopulationTest(unittest.TestCase):
             self.assertIn(name, fixtures[file]['cases'])
             self.assertLessEqual(fixtures[file]['case_costs'][name] + budget['slice_startup_seconds'], 90, name)
         self.assertFalse(result.get('capacity'))
-        self.assertFalse(result['deferred'])
-        self.assertFalse(result.get('excluded'))
         self.assertLessEqual(len(result['shards']), budget['pr_shards'])
         seen = []
         for shard in result['shards']:
@@ -765,8 +942,6 @@ class PopulationTest(unittest.TestCase):
         self.assertCountEqual(evidence['case_seconds'], fixtures[file]['cases'])
         result = units.plan([file], budget, fixtures, defaults)
         self.assertFalse(result.get('capacity'))
-        self.assertFalse(result['deferred'])
-        self.assertFalse(result.get('excluded'))
         selected = [unit for shard in result['shards'] for unit in shard['units']
                     if unit.split('#')[0] == file]
         self.assertEqual(len(selected), evidence['slices'])
@@ -785,8 +960,6 @@ class PopulationTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         file = 'swamp/tests/ansible_instance_host_image_test.ts'
         result = units.plan([file], budget, fixtures, defaults)
-        self.assertFalse(result['deferred'])
-        self.assertFalse(result.get('excluded'))
         self.assertFalse(result.get('capacity'))
         seen = []
         for shard in result['shards']:
@@ -817,9 +990,8 @@ class PopulationTest(unittest.TestCase):
         f = fixture('swamp/large.ts', 180, cases=['unresolved large case'])
         result = planned(['swamp/large.ts'], [f])
         self.assertEqual(result['shards'], [])
-        self.assertEqual(result['deferred'], ['swamp/large.ts'])
         self.assertEqual(result['capacity'][0]['oversize'], [{'unit': 'swamp/large.ts', 'seconds': 186, 'cases': ['unresolved large case']}])
-        self.assertNotIn('after_merge_cases', f)
+        self.assertEqual(result['capacity'][1], {'unplaced': ['swamp/large.ts']})
 
     def test_tool_setup_is_inside_the_shard_deadline_and_empty_runs_fail(self):
         step = units.gate.Step('shape', 'setup stand-in', [sys.executable, '-c', 'import signal; signal.pause()'])
@@ -854,7 +1026,7 @@ class PopulationTest(unittest.TestCase):
 class WorkflowTest(unittest.TestCase):
     def test_hosted_matrix_budget_tools_artifacts_and_output(self):
         source = (ROOT / '.github/workflows/ci.yml').read_text()
-        block = source.split('  fixtures:\n', 1)[1].split('\n  proof:\n', 1)[0]
+        block = source.split('  fixtures:\n', 1)[1].split('\n  self-hosted-fixtures:\n', 1)[0]
         for text in ['needs: changes', "needs.changes.outputs.fixture_shards != '[]'", 'runs-on: ubuntu-26.04',
                      'timeout-minutes: 4', 'fail-fast: false', 'shard: ${{ fromJSON(needs.changes.outputs.fixture_shards) }}',
                      'name: Fixtures (${{ matrix.shard.name }})', 'ci-unit-times-${{ matrix.shard.name }}',
@@ -863,6 +1035,42 @@ class WorkflowTest(unittest.TestCase):
         self.assertNotIn('self-hosted', block)
         self.assertIn("fixture_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_shards }}", source)
         self.assertIn('bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT"', source)
+
+    def test_self_hosted_shards_run_only_for_a_branch_of_this_repository(self):
+        source = (ROOT / '.github/workflows/ci.yml').read_text()
+        block = source.split('\n  self-hosted-fixtures:\n', 1)[1].split('\n  proof:\n', 1)[0]
+        self.assertIn("if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository "
+                      "&& needs.changes.outputs.self_hosted_shards != '[]' }}", block)
+        for text in ('name: Self-hosted fixtures (${{ matrix.shard.name }})', 'runs-on: [self-hosted, hardimpact, orbit-shard]',
+                     'timeout-minutes: 4', 'shard: ${{ fromJSON(needs.changes.outputs.self_hosted_shards) }}', 'bin/ci-units run'):
+            self.assertIn(text, block)
+        self.assertIn("self_hosted_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.self_hosted_shards }}", source)
+        for gate in ('required', 'delivery'):
+            self.assertIn('self-hosted-fixtures]', source.split(f'\n  {gate}:\n', 1)[1].split('\n    runs-on:', 1)[0])
+        self.assertIn("SELF_HOSTED_FIXTURES: ${{ github.event_name != 'pull_request' && 'none' || "
+                      "github.event.pull_request.head.repo.full_name == github.repository && 'run' || 'fork' }}", source)
+        self.assertIn('SELF_HOSTED_FIXTURES: none', source.split('\n  delivery:\n', 1)[1])
+
+    def test_required_fails_a_fork_that_selects_self_hosted_units_and_requires_a_branch_run(self):
+        from test_ci_delivery import delivery, needs_for
+        shards = [{'name': '01', 'units': ['swamp/tests/frankenphp_proxy_test.ts']}]
+        def gate(mode, shards, result):
+            needs = needs_for('required')
+            needs['changes']['outputs']['self_hosted_shards'] = json.dumps(shards)
+            needs['self-hosted-fixtures']['result'] = result
+            with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES=mode):
+                delivery.validate(needs)
+        with self.assertRaisesRegex(SystemExit, "run only on Orbit's runners.*frankenphp_proxy_test.ts.*push the branch"):
+            gate('fork', shards, 'skipped')
+        gate('fork', [], 'skipped')
+        gate('run', shards, 'success')
+        gate('run', [], 'skipped')
+        gate('none', shards, 'skipped')
+        for result in ('failure', 'cancelled', 'skipped'):
+            with self.subTest(result=result), self.assertRaisesRegex(SystemExit, 'Required self-hosted fixtures failed'):
+                gate('run', shards, result)
+        with self.assertRaisesRegex(SystemExit, 'Unexpected self-hosted fixture state'):
+            gate('none', shards, 'success')
 
     def test_required_stays_red_when_whole_file_capacity_is_exceeded(self):
         from test_ci_delivery import delivery, needs_for
@@ -874,14 +1082,13 @@ class WorkflowTest(unittest.TestCase):
     def test_required_accepts_skipped_only_with_empty_shards_and_preserves_job_selection_rules(self):
         from test_ci_delivery import delivery, needs_for
         source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
-        self.assertIn('changes, swamp, fixtures]', source)
+        self.assertIn('changes, swamp, fixtures, self-hosted-fixtures]', source)
         for shards in ([], [{'name': '01', 'units': ['a']}]):
             for result in ('success', 'skipped', 'failure', 'cancelled'):
                 needs = needs_for('required')
                 needs['changes']['outputs']['fixture_shards'] = json.dumps(shards)
                 needs['fixtures']['result'] = result
-                with self.subTest(shards=shards, result=result), patch.dict(os.environ, PROOF_REQUIRED='false',
-                        PROOF_BLOCKING='false', SLOW_CHECKS_BLOCKING='false'):
+                with self.subTest(shards=shards, result=result), patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'):
                     if result == 'success' or (result == 'skipped' and not shards):
                         delivery.validate(needs)
                     else:

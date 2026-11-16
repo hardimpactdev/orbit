@@ -101,72 +101,13 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 5235
+self_hosted = true
+cost = 7690
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
-after_merge_cases = [
-  # The run after a fast wake of its Operation (41s locally, run in full before the PR): a 72nd slice would push the file to 9 hosted
-  # shards. The PR keeps the safety-net race and the late outcome in InstanceSleepWakeTest.php and the worker's outcome files in
-  # instance_container_wake_test.ts.
-  "a wake that follows the Node's fast wake of its Operation reports that wake's ready file, and no other Operation's",
-  # The proof checkout of a copy (21s locally, run in full before the PR): the file sits at the 8-shard PR limit. The PR keeps the
-  # workflow's expressions in workflow_start_resolution_test.ts and the Gateway's input in ProofRunCopiesTest.php.
-  "a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name",
-  # The sleep and wake of defaults and nested-fleet Instances in the start part (20s, 56s and 42s locally, run in full before the PR): the
-  # file sits at the 8-shard PR limit, so any added cost defers it whole. The PR keeps the swap close (each recorded cgroup that still
-  # exists, none outside the container, the record removed) and the nested never-stop of a sleep in ansible_instance_container_power_test.ts.
-  "a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit",
-  "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one",
-  "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait",
-  # The merged deploy steps' equivalence (two fixtures, separate and merged plays, a phase handler before the seed, a play killed after
-  # its start phase, and a later phase's failure; about 145s locally): a 72nd slice would push the file above the 8-shard PR limit. The PR keeps the merged plays of a normal
-  # default's deploy (start,fetch and seed,check), a failed first phase in "a deployment checks out the branch's new
-  # commit" and a refusal in the second phase in "a deployment refuses a pinned commit off the branch", and a failed fleet_refresh in a four-phase play in "a nested-fleet default runs its
-  # fleet phases by tag"; the workflow test checks the handler flush after each phase.
-  "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase",
-  # The deploy-step record across four checkouts (45s locally, run in full before the PR): a 72nd slice would defer the whole file. The PR
-  # keeps the decision's expressions in cases.yaml (deploy-steps-read) and the guard and argv in workflow_instance_deploy_steps_test.ts.
-  "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing",
-  # The bundle's edge cases (44s locally, run in full before the PR): with it the file needs a 72nd slice and defers whole. The PR keeps
-  # the fast-forward prerequisite of a normal default's deploy in "a deployment checks out the branch's new commit".
-  "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
-  # The inner volume's flush before its half of the seed (89s locally, 33s to fail without the flush): like the seed pair cases.
-  "the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes",
-  # The seed-retake cases of slice-seed-safe, 30 to 60s each locally: any of them pushes the file to 9 hosted shards, above the 8-shard
-  # PR limit. The PR keeps the same-commit retake order (next- first, then delete and rename, never --reuse) in "a deployment at the
-  # seed's commit retakes the seed"; these four ran in full locally before the PR.
-  "a retake on a host with no free ID range keeps the old seed, starts the Processes again and names the cause",
-  "a retake that stopped between the delete and the rename is finished first; any other leftover retake goes",
-  "a same-commit retake of a pair takes both new halves under next- first, and a failure of either half keeps the old pair whole",
-  "a whole next- pair that an earlier run left takes the seed's name; a next- half without its other half is dropped",
-  # The seed pair cases of the inner volume (slice 3), 27 to 48s each locally: like the inner volume cases below, they would push the
-  # file above the 8-shard PR limit. The PR keeps the changed seed and restore tasks for a normal and a 2454-shaped default in
-  # "a deployment at the seed's commit retakes the seed" and "a failed nested-fleet deployment restores the newest seed", and the
-  # clone's volume copy in instance_clone_test.py.
-  "a default with an inner volume seeds the container and the volume under one name, retakes both, and keeps only the current pair",
-  "a failed volume snapshot deletes the container half of the seed, keeps the older pair and fails the seed by name",
-  "a failed deployment of a default with an inner volume restores both halves of the newest seed, and refuses a seed without its volume half",
-  "a normal default and a nested-fleet default without an inner volume (Instance 2454's shape) seed, retake and restore with no volume call",
-  # The conversion of Instance 2454's shape in place (37s locally, run in full before the PR): like the seed pair cases. The PR keeps the
-  # guard over the Gateway's converted intent in NestedFleetHostingTest ("the inner volume of a converted default").
-  "a default converted in place starts only with both records, its next deployment takes the seed pair, and a failure before it restores nothing",
-  # The inner volume cases, 20 to 31s each locally: any of them pushes the file to 9 hosted shards, above the 8-shard PR limit.
-  # The PR keeps the guard's volume keys in instance_clone_test.py (InnerVolumeGuardTest).
-  "a new nested-fleet default gets its inner volume before the container, its disk before the first start and the inner pool after it",
-  "a nested-fleet default without an inner volume (Instance 2454's shape) and a normal default make no volume, disk or inner pool",
-  "the start gate admits the inner volume only with its exact keys, never a delegated volume, and never its disk without the intent",
-  "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
-  # 144.1s on PR run 43421256788 and cut at the 180s unit ceiling on main run 43423841440 (job 131880584016): two converges of a
-  # switched-on host do not fit a 150-second lane. The Main full set runs it with its own ceiling.
-  "only a switched-on host prepares the nested project, its profile and the nesting modules",
-  # 52s estimated: with it the file needs 9 hosted shards, above the 8-shard PR limit, and the whole file would defer. The PR
-  # keeps the same rule in the clone tests (the NIC check and the nested guard refuse a NIC without the filters with exit 2, a real
-  # defect keeps exit 1, and the native clone maps exit 2 to instance.nic_filters_missing).
-  "start refuses a NIC without the address filters with its own code, and starts it once the device set adds them",
-]
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
 # 75 slices give each of the 75 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 75
+slices = 99
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -281,3 +222,27 @@ inputs = [
   "the proof default's retake keeps the seed that a CI Node holds as its one base pair, and a second retake at that commit keeps it" = 98 # LOCAL measure until a hosted run: 49s alone x 2
   "the proof default's retake at a new commit keeps the seed that a CI Node holds as the base and drops every other base pair" = 96 # LOCAL measure until a hosted run: 48s alone x 2
   "the proof default's retake at a new commit keeps the base it holds while the Gateway names it, and drops it once the Gateway names none" = 92 # LOCAL measure until a hosted run: 46s alone x 2
+"a wake that follows the Node's fast wake of its Operation reports that wake's ready file, and no other Operation's" = 88 # ESTIMATE: local 41s * 2.1, rounded up + 1s
+"a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name" = 46 # ESTIMATE: local 21s * 2.1, rounded up + 1s
+"a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit" = 43 # ESTIMATE: local 20s * 2.1, rounded up + 1s
+"a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one" = 119 # ESTIMATE: local 56s * 2.1, rounded up + 1s
+"a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait" = 90 # ESTIMATE: local 42s * 2.1, rounded up + 1s
+"one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase" = 164 # local 142s x 1.15; above the 150-second lane, a named capacity gap (ADR 0262)
+"a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing" = 96 # ESTIMATE: local 45s * 2.1, rounded up + 1s
+"a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs" = 94 # ESTIMATE: local 44s * 2.1, rounded up + 1s
+"the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes" = 173 # local 150s x 1.15; above the 150-second lane, a named capacity gap (ADR 0262)
+"a retake on a host with no free ID range keeps the old seed, starts the Processes again and names the cause" = 127 # ESTIMATE: local 30-60s; 60s * 2.1, rounded up + 1s
+"a retake that stopped between the delete and the rename is finished first; any other leftover retake goes" = 127 # ESTIMATE: local 30-60s; 60s * 2.1, rounded up + 1s
+"a same-commit retake of a pair takes both new halves under next- first, and a failure of either half keeps the old pair whole" = 127 # ESTIMATE: local 30-60s; 60s * 2.1, rounded up + 1s
+"a whole next- pair that an earlier run left takes the seed's name; a next- half without its other half is dropped" = 127 # ESTIMATE: local 30-60s; 60s * 2.1, rounded up + 1s
+"a default with an inner volume seeds the container and the volume under one name, retakes both, and keeps only the current pair" = 103 # ESTIMATE: local 27-48s; 48s * 2.1, rounded up + 1s
+"a failed volume snapshot deletes the container half of the seed, keeps the older pair and fails the seed by name" = 103 # ESTIMATE: local 27-48s; 48s * 2.1, rounded up + 1s
+"a failed deployment of a default with an inner volume restores both halves of the newest seed, and refuses a seed without its volume half" = 103 # ESTIMATE: local 27-48s; 48s * 2.1, rounded up + 1s
+"a normal default and a nested-fleet default without an inner volume (Instance 2454's shape) seed, retake and restore with no volume call" = 103 # ESTIMATE: local 27-48s; 48s * 2.1, rounded up + 1s
+"a default converted in place starts only with both records, its next deployment takes the seed pair, and a failure before it restores nothing" = 79 # ESTIMATE: local 37s * 2.1, rounded up + 1s
+"a new nested-fleet default gets its inner volume before the container, its disk before the first start and the inner pool after it" = 67 # ESTIMATE: local 20-31s; 31s * 2.1, rounded up + 1s
+"a nested-fleet default without an inner volume (Instance 2454's shape) and a normal default make no volume, disk or inner pool" = 67 # ESTIMATE: local 20-31s; 31s * 2.1, rounded up + 1s
+"the start gate admits the inner volume only with its exact keys, never a delegated volume, and never its disk without the intent" = 67 # ESTIMATE: local 20-31s; 31s * 2.1, rounded up + 1s
+"a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing" = 67 # ESTIMATE: local 20-31s; 31s * 2.1, rounded up + 1s
+"only a switched-on host prepares the nested project, its profile and the nesting modules" = 165 # local 143s x 1.15; above the 150-second lane, a named capacity gap (ADR 0262)
+"start refuses a NIC without the address filters with its own code, and starts it once the device set adds them" = 110 # ESTIMATE: estimated 52s * 2.1, rounded up + 1s

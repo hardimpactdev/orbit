@@ -1524,6 +1524,8 @@ Incus writes `memory.swap.max = 0` for every Instance container from `limits.mem
 
 One helper on the Node, `/usr/local/libexec/orbit-instance-power`, does this work for every sleep, wake, deployment, start and destroy. [Prepared restore](/reference/prepared-restore) owns its contract: the plan, the bounds, the wake's state table, the fast wake's files and the result fields.
 
+> **Target design, not built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) a Rust executor on the Node replaces this helper and the fast wake's file flow. It acts on Gateway-signed orders over the observer's WebSocket, and Swamp and the SSH fallback reach it through one relay command. A visit waits a short bound for the wake, and then goes to the app in the same request. Every sleep and wake stays an Operation.
+
 **The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
 
 So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. Before it pauses the container, it records what it opened in the [limits record](/reference/prepared-restore#files-on-the-node), `/var/lib/orbit/hibernation/instances/<id>/limits.json`. Its result counts the inner cgroups as `swap_subtree`. Each resume by a wake, a deployment or a start writes 0 to the container's own cgroup and to each recorded path that still exists, then removes the record. A resume reads no other record.
@@ -2360,7 +2362,7 @@ The fleet's egress proxy lies in the Instance container's own bridge, in `10.253
 
 **Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has the part `host`. It digests what the container branch reads: the `swamp/ansible` tree, the machine-software recipe, and `nested-app-dev`'s branch intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, the folders, Incus, without the admission time). When it differs from the record, `nested-app-dev` joins the due converges, and its converge takes `{"roles":["app-dev"]}` instead of the base only. That is the nested Gateway's own `node.converge`, through its Swamp. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
 
-A refresh with no change keeps the host and adds no time. The host is built only when the default's recorded ID map size is 2,000,000 or more: the fleet intent's `host` says so. Below that no isolated Instance fits on `nested-app-dev`, so the refresh changes nothing there. The result names `host` as `converged`, `kept` or `skipped_idmap_small`.
+A refresh with no change keeps the host and adds no time. The host is built only when the default's recorded ID map size is 2,000,000 or more: the fleet intent's `host` says so. Below that no isolated Instance fits on `nested-app-dev`, so the refresh changes nothing there. The result names `host` as `converged`, `kept` or `skipped_idmap_small`; the Operation's `fleet_refresh` keeps it, and leaves it out when the run names none ([What a refresh skips](#what-a-refresh-skips)).
 
 **Time bounds.** The first host build installs Incus, downloads the shared folders, and builds the stock image and the Instance image. On a task copy at 1,165,536 the converge took 325 s for the base packages and 428 s for the roles phase up to the stock image (2026-11-16). The images could not be built there. So the roles phase of a fleet Node's `app-dev` converge has 1,800 s, from `roles_seconds` in its intent.
 
@@ -2804,6 +2806,8 @@ The Operation's result has `fleet_refresh`. It holds these fields:
 - `base`: `retaken` or `kept`. `base_containers`: the containers whose `base` was retaken.
 - `record`: `present`, `missing` or `unreadable`. `seconds`: the seconds of each part.
 
+It may also hold `host`: `converged`, `kept` or `skipped_idmap_small` ([Instance host in the fleet](#instance-host-in-the-fleet)). This field is optional. A run of an older Ansible names no `host`, so the field is absent and the other fields are recorded as before. A word not these is left out the same way.
+
 The seed is taken while the inner fleet runs, also after a retaken `base`. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
 
 The first seed of every run, the `seed` phase of "Prepare the container", was always taken with the fleet running. On a nested proof Node with a directory pool, the seed is a file copy and not one point in time; that affects only proofs.
@@ -2868,16 +2872,24 @@ A CI Node is ready when the Gateway records, from its last `ci-runner` converge,
 - at the end of a seed copy during which the default's seed moved: for every Node behind the new seed;
 - at the end of a seed copy at the same seed: for the Nodes that no seed copy has tried at that seed.
 
+One seed copy takes at most as many targets as its [run budget](/reference/operations) can hold, and it leaves the other Nodes behind the seed untried. So its end admits the next copy for them. A copy that a `ci-runner` add or converge admits always takes that Node: the Node may have failed a copy at this seed, so the end of another copy would not admit it.
+
 So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own `ci-runner` converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no free ID range, does not repeat with a new Operation each time.
 
 A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The default's runtime records both (`seed_commit`, `seed_taken_at`). The Gateway records the seed of each CI Node in `proof_seeds`: its holder, its commit and that time (`ProofSeeds`).
 
 ##### How the seed moves
 
-Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for each target side by side:
+Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for one target at a time:
 
 - `incus copy <default> proof-node-<id>:proof-seed --refresh --mode=push`, in the project `orbit-instances-nested`;
 - `incus storage volume copy` of the default's inner volume to `proof-seed-inner` on the same remote, with `--refresh --mode=push`.
+
+The copies to the targets never overlap. Each push of the inner volume takes a snapshot of it on the default's Node. The volume is mounted in the default, so Incus freezes its file system (`fsfreeze --freeze`) for that snapshot. A second freeze of a frozen file system fails with `Device or resource busy`. So two copies of one source side by side can fail a target.
+
+The certificate reads and the checks run on the CI Nodes, and they still run side by side. Because the copies run one at a time, the run time grows with the number of targets, and the Gateway captures the run budget from it at admission. Each `incus` push stops after 1,200 seconds: a first full copy of the seed pair is a few GB over WireGuard, and a refresh is small.
+
+A retake of the default and a seed copy can still freeze the same volume at the same time. The seed-copy lock is not the default's Instance lock, so a deployment of the default can run beside a copy.
 
 An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The holder volume gets the default's `size`, but each snapshot that it receives records `size: 0`; a clone [sets its own size](#the-inner-volume). The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
 

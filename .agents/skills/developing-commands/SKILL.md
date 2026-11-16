@@ -113,13 +113,13 @@ Classify a no-start failure at the submission boundary, including execution-copy
 
 Fixture calibration binds to source and registered case names, including loop-generated cases. Include startup in each slice cost, distinguish a completed case from a censored unit, and report whole-file capacity failures instead of packing new cases into old slices.
 
-Audit fixture headroom across several hosted runs, using exact case names and source hashes. A passing case near its ceiling still needs splitting or explicit after-merge coverage; a larger slice count cannot split one state transition across consecutive converges. Planner tests use the checked-in case inventory: the selection job runs before fixture runtimes such as Deno are installed.
+Audit fixture headroom across several hosted runs, using exact case names and source hashes. A passing case near its ceiling still needs splitting or a proof case; CI has [no after-merge stage](../../../docs/reference/implementation-loop.md#no-after-merge-stage); a larger slice count cannot split one state transition across consecutive converges. Planner tests use the checked-in case inventory: the selection job runs before fixture runtimes such as Deno are installed.
 
-A release gate that excludes after-merge fixtures must verify the exact SHA, main event and CI workflow through Actions run and job records. The workflow may finish red. Give skipped PR and main gates distinct names when a reader counts every check with the required name.
+A release gate must verify the exact SHA, main event and CI workflow through Actions run and job records. The workflow may finish red. Give skipped PR and main gates distinct names when a reader counts every check with the required name.
 
 For CI or CLI release workflow changes, run `apps/cli/tests/Feature/CliReleaseContractTest.php` with the CLI’s Pest runner as well as the CI tooling tests. The CLI suite owns release-contract assertions that workflow lint and Python tests do not exercise.
 
-CI metadata preflights share one API deadline and run only for selected work. Ineligibility skips; an API error fails. A runtime trust refusal skips only with explicit admission failure and no case evidence; preserve interrupted and completed failures. Keep report-only checks outside Required dependencies.
+CI metadata preflights share one API deadline and run only for selected work. Ineligibility skips; an API error fails. A runtime trust refusal skips only with explicit admission failure and no case evidence; preserve interrupted and completed failures. A check that runs is part of its gate; add no report-only switch.
 
 Child-process timeout tests must observe the PID returned by spawn, not require a startup log that the deadline may prevent. Keep a silent-child regression and assert real process termination.
 
@@ -131,26 +131,20 @@ When splitting a shared test registry, preserve admission order as well as recor
 
 For Python fixture registration, whole-file costs and shared test harnesses, follow [fixture policy](../../../docs/reference/implementation-loop.md#ci-budget).
 
-Saved fixture boundaries need pre-merge producer checks when their source tasks change. Declare required cases through [fixture admission](../../../docs/reference/implementation-loop.md#ci-budget); test that pressure cannot defer them and that insufficient capacity fails Required.
+Saved fixture boundaries need pre-merge producer checks when their source tasks change. Declare required cases through [fixture admission](../../../docs/reference/implementation-loop.md#ci-budget); test that insufficient capacity fails Required.
 
-A deferred fixture is covered only after its real assertions run. A sweep’s commit range is attribution, not proof of every intermediate tree; inspect the exact-push deferred report when a newer push replaces a waiting sweep. For native auth and user-systemd prerequisites, follow [Main full set](../../../docs/reference/main-full-set.md); check named case receipts, since an ignored case or setup refusal does not test the product.
+No registry flag keeps a fixture or case out of pull requests, and the planner defers nothing: overflow fails Required. Split a slow case or make it faster. A file that needs runner tools sets `self_hosted` and runs only in [self-hosted fixture shards](../../../docs/reference/implementation-loop.md#self-hosted-fixture-shards), never for a fork. Check named case receipts, since an ignored case or setup refusal does not test the product.
 
 When a production input bundle gains a helper, update fixture copies and their registry inputs together. Exercise transport stand-ins with real pipelined input: an early exit can replace the intended remote diagnostic with a local broken pipe.
 
 A fast caller-contract proof should derive its input from the shipped producer and invoke the shipped guard. Keep the guard's own truth-table cases separate, and prove that bypassing the guard fails the caller test before making it mandatory.
 
-Fixture intents must include the fields their Gateway producer always sends, even empty lists. A missing field can stop an after-merge case before its assertions; repair the fixture payload and run the named case through its final assertion before claiming coverage.
+Fixture intents must include the fields their Gateway producer always sends, even empty lists. A missing field can stop a case before its assertions; repair the fixture payload and run the named case through its final assertion before claiming coverage.
 
 A proof CLI timeout does not settle its Operation. Cancel and confirm settlement or stop admission of later cases in that batch, retaining an explicit receipt for each unrun case. Account for CLI waits separately from setup and assertion budgets, and preserve product timing assertions.
-
-A coalesced CI receiver must select each waiting commit before taking the union: a net diff loses reverted inputs and historical deferrals. Publish every commit link before advancing a durable answer marker, and keep a failed run’s claim so a collector can report missing work. Intersect the union with the tested tree and report removed names as gone, without failing the run. Never call newest-only proof selection range coverage.
 
 A coalesced proof range selects each intervening commit against its own first parent and then intersects case IDs with the tested tree. A net diff loses reverted inputs. Share variant expansion with batch admission, and refuse an incomplete history instead of claiming partial coverage.
 
 A manual hosted proof checks out trusted workflow code, passes the tested SHA only as data, and preserves the existing caller’s signal forwarding. A successful zero-case selection does not prove hosted execution.
 
-Give scheduled full sweeps their own default-off switch when rolling out an incremental consumer. Enabling range processing must not silently enable a longer nightly run.
-
 A fixture that replaces a subprocess environment must retain the interpreter's loader paths. Mint-order audits must distinguish a vault name from the resolved key on each live path. Size long fixture files from completed per-case receipts; keep censored estimates explicit and split before the whole-file ceiling.
-
-A main proof checkpoint records completed verdicts, never admission or transport failures. Keep retry accounting separate from coverage and keyed to the unproven base, so new merges cannot hide a lost interval or reset a bounded retry. Test collector recovery and checkpoint restoration as well as the normal publisher.

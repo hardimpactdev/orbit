@@ -6,6 +6,7 @@
 #
 #   tools/ci-runners/setup.sh container NAME [AGENT SHA256] # optional source-built agent for rollout
 #   tools/ci-runners/setup.sh user_manager NAME     # start the runner user manager without restarting a runner
+#   tools/ci-runners/setup.sh runtime_device NAME   # mount the Node's runtime folder read-only; restart the runner only when idle
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh actions NAME           # cache pinned actions; restart the service only when idle
 #   tools/ci-runners/setup.sh hook NAME              # job-started hook that resets the checkout; restart only when idle
@@ -33,6 +34,15 @@ BUN_VERSION=1.4.2
 BUN_SHA256=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
 COMPOSER_VERSION=2.10.3
 COMPOSER_SHA256=7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
+# The recipe's pinned Swamp binary, for the self-hosted native fixtures (ADR 0262).
+SWAMP_BINARY=/usr/local/bin/orbit-swamp-proof
+read -r SWAMP_URL SWAMP_SHA256 < <(python3 -c 'import json,sys; a=json.load(open(sys.argv[1]))["tools"]["swamp"]["artifacts"]["amd64"]; print(a["url"], a["sha256"])' \
+  "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json")
+# The Node's runtime folder, read-only in each runner container: its FrankenPHP serves the FrankenPHP fixtures. The PHP
+# version is the recipe's CI version, which the Instance runtime must also build.
+RUNTIME=/opt/orbit-runtime
+FRANKENPHP=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); v=r["php"]["ci"]; assert v in r["instances"]["php"]["versions"], v; print(sys.argv[2] + "/current/php/" + v + "/bin/frankenphp")' \
+  "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json" "$RUNTIME")
 REPO_URL=https://github.com/hardimpactdev
 # The labels every hardimpactdev shard runner carries. No runner carries a host label: all CI Nodes form one pool.
 LABELS=self-hosted,Linux,X64,hardimpact,orbit-shard
@@ -82,7 +92,8 @@ container() {
 
   in_ct "$name" env RUNNER_VERSION="$RUNNER_VERSION" RUNNER_SHA256="$RUNNER_SHA256" \
     COMPOSER_VERSION="$COMPOSER_VERSION" COMPOSER_SHA256="$COMPOSER_SHA256" \
-    DENO_VERSION="$DENO_VERSION" DENO_SHA256="$DENO_SHA256" BUN_VERSION="$BUN_VERSION" BUN_SHA256="$BUN_SHA256" bash -euo pipefail <<'SH'
+    DENO_VERSION="$DENO_VERSION" DENO_SHA256="$DENO_SHA256" BUN_VERSION="$BUN_VERSION" BUN_SHA256="$BUN_SHA256" \
+    SWAMP_URL="$SWAMP_URL" SWAMP_SHA256="$SWAMP_SHA256" SWAMP_BINARY="$SWAMP_BINARY" bash -euo pipefail <<'SH'
 export DEBIAN_FRONTEND=noninteractive
 caddy_key=/usr/share/keyrings/caddy-stable-archive-keyring.gpg
 if [ ! -s "$caddy_key" ]; then
@@ -172,6 +183,13 @@ if [ "$(bun --version 2>/dev/null)" != "$BUN_VERSION" ]; then
   install -m 0755 "$tool_directory/bun-linux-x64/bun" /usr/local/bin/bun
   rm -rf "$tool_archive" "$tool_directory"
 fi
+if ! echo "${SWAMP_SHA256}  $SWAMP_BINARY" | sha256sum -c - >/dev/null 2>&1; then
+  tool_archive=$(mktemp)
+  curl -fsSLo "$tool_archive" "$SWAMP_URL"
+  echo "${SWAMP_SHA256}  $tool_archive" | sha256sum -c - >/dev/null
+  install -m 0755 "$tool_archive" "$SWAMP_BINARY"
+  rm -f "$tool_archive"
+fi
 
 if [ ! -x /home/runner/actions-runner/config.sh ]; then
   curl -fsSLo /tmp/runner.tgz "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
@@ -181,8 +199,24 @@ if [ ! -x /home/runner/actions-runner/config.sh ]; then
   chown -R runner:runner /home/runner/actions-runner
 fi
 SH
+  runtime_device "$name"
   actions "$name"
   hook "$name"
+}
+
+# A read-only disk device of the Node's runtime folder at the same path. Incus refuses shift on a restricted source
+# path; none is needed: the files are root's with mode 755, so the runner user reads and runs them. The project's
+# restricted.devices.disk.paths admits this one path. A rerun sets the same keys on an existing device.
+runtime_device() {
+  local name=$1 key
+  if incus config device get "$name" orbit-runtime type --project "$PROJECT" >/dev/null 2>&1; then
+    for key in source="$RUNTIME" path="$RUNTIME" readonly=true; do
+      incus config device set "$name" orbit-runtime "$key" --project "$PROJECT"
+    done
+  else
+    incus config device add "$name" orbit-runtime disk source="$RUNTIME" path="$RUNTIME" readonly=true --project "$PROJECT"
+  fi
+  in_ct "$name" test -x "$FRANKENPHP" || { echo "$name: $FRANKENPHP is missing in the runtime folder" >&2; return 1; }
 }
 
 # GitHub images use this runner-native cache, which survives the per-job _actions cleanup:
@@ -233,10 +267,12 @@ hook() {
   in_ct "$name" bash -euo pipefail -c '
     env_file=/home/runner/actions-runner/.env
     touch "$env_file"
-    sed -i "/^ACTIONS_RUNNER_HOOK_JOB_STARTED=/d" "$env_file"
+    sed -i "/^ACTIONS_RUNNER_HOOK_JOB_STARTED=/d;/^ORBIT_SWAMP_PROOF_BINARY=/d;/^ORBIT_FRANKENPHP=/d" "$env_file"
     echo "ACTIONS_RUNNER_HOOK_JOB_STARTED=/home/runner/actions-runner/job-started-hook.sh" >> "$env_file"
+    echo "ORBIT_SWAMP_PROOF_BINARY=$1" >> "$env_file"
+    echo "ORBIT_FRANKENPHP=$2" >> "$env_file"
     chown runner:runner "$env_file"
-  '
+  ' hook "$SWAMP_BINARY" "$FRANKENPHP"
   echo "$name: job-started hook installed; restart its runner service when idle to load it"
 }
 
@@ -303,6 +339,6 @@ verify() {
 }
 
 case "${1:-}" in
-  container | actions | hook | proof_hook | register | user_manager | verify) "$@" ;;
-  *) sed -n '2,19p' "$0" >&2; exit 2 ;;
+  runtime_device | container | actions | hook | proof_hook | register | user_manager | verify) "$@" ;;
+  *) sed -n '2,20p' "$0" >&2; exit 2 ;;
 esac
