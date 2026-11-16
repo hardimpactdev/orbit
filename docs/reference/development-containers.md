@@ -134,7 +134,7 @@ T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address. 
 
 ### The build list
 
-Until every `app-dev` Node switches, only the Nodes on the build list run container Instances. The list is the Gateway setting `instances.container_nodes`, a JSON list of Node ids in `ORBIT_INSTANCES_CONTAINER_NODES`, such as `[12]`. It is empty by default. A malformed list fails with `instance.container_nodes_invalid` (500), so a typo puts no Node on it. The list exists for the build only; the switch removes it ([plan](/solutions/development-container-runtime#rules-for-every-pr)).
+Until every `app-dev` Node switches, only the Nodes on the build list run container Instances. The list is the Gateway setting `instances.container_nodes`, a JSON list of Node ids in `ORBIT_INSTANCES_CONTAINER_NODES`, such as `[12]`. It is empty by default. A malformed list fails with `instance.container_nodes_invalid` (500), so a typo puts no Node on it. The list exists for the build only; the switch removes it ([plan](/solutions/development-container-runtime#rules-for-every-pr)). On the nested Gateway of an Instance fleet, which has the fleet marker, the fleet's own `app-dev` Node is on the list too: the [Instance host in the fleet](#instance-host-in-the-fleet).
 
 The Node must meet the host requirements of ADR 0250: current kernel, SCTP off and no secrets. A Node that still has checkout Instances keeps them until [migration](#migrate-a-checkout-instance) moves them into containers. The `app-prod` role follows the same model in step 10 ([Production Instances](#production-instances)).
 
@@ -2205,13 +2205,14 @@ Each nested-fleet runtime records the size of its isolated ID map in `idmap_size
 | A new nested-fleet default, or a migrated nested Instance | 101,000,000 |
 | A copy, a plain clone or a task copy | Its default's size at the copy's reservation |
 | A converted default | 1,165,536, which gives the inner fleet 165,536 IDs |
+| A default raised for an [Instance host in the fleet](#instance-host-in-the-fleet) | 2,000,000, which gives the inner fleet 1,000,000 IDs |
 | A normal container | None: Incus's 65,536 |
 
 The inner range is the outer size minus 1,000,000, at base 1,000,000. The nested image has no `newuidmap`, so the inner Incus ignores `/etc/subuid` and takes this range from its own process map. The floor is 1,065,536. Below it the inner base moves to 65,536 and every inner file is remapped; below 131,072 the inner Incus gets no map at all and runs only privileged containers.
 
 The inner fleet's three containers share that range. They use IDs up to 65,534 (`nobody`), and Docker in them runs without user namespaces, so 65,536 IDs are enough; a converted default gives them 165,536. Every nested container mounts its root disk idmapped (`volatile.last_state.idmap` is `[]`), so a changed outer size moves no file on the host.
 
-A copy keeps its size for its whole life. So copies made before a conversion keep 101,000,000 and still match their start guard, beside new copies of 1,165,536. The [task start check](#the-check-at-a-task-start) and the converge's [subordinate-ID demand](/reference/node-settings#nested-fleet-instance-hosting) read the recorded sizes.
+A copy keeps its size for its whole life. So copies made before a conversion keep 101,000,000 and still match their start guard, beside new copies of 1,165,536 or 2,000,000. The [task start check](#the-check-at-a-task-start) and the converge's [subordinate-ID demand](/reference/node-settings#nested-fleet-instance-hosting) read the recorded sizes.
 
 #### Convert a default
 
@@ -2260,6 +2261,46 @@ More notes on the steps:
 - From the seed of step 8 on, clones are admitted again.
 
 On the copy the fleet was down about 5 minutes; on 2454, with its load and the two Gateway commands and the deployment, expect about 10 to 13 minutes. The container's own workspace and T3 are down only for the two outer restarts, steps 1 to 5 and the deployment's restart. Copies made before the window keep their full size and their directory pool and still start: their runtime records their own shape.
+
+### Instance host in the fleet
+
+`nested-app-dev` runs real Instance containers, a third level below the host: Node, then the Instance container, then `nested-app-dev`, then an Instance. The nested Gateway leads it as an `app-dev` Node on its build list, so `instance:create`, sleep, wake and destroy of a Project clone run through the nested Gateway and its Swamp. Proof cases that need an Instance host in the proof fleet use it ([ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request)).
+
+What the host needs, measured by hand on a task copy at 1,165,536 on 2026-11-16:
+
+| Need | Finding |
+| --- | --- |
+| Nesting keys | `security.nesting=true` and the interception of `mknod` and `setxattr`; user namespaces stay on. Set while the container is stopped |
+| Incus | The recipe's pinned 7.0.2 packages install in 32 s; the server runs with the `lxc` driver, no VMs |
+| AppArmor | The third-level Incus cannot load a profile (`apparmor_parser: Access denied`), so the bridge's dnsmasq fails. The drop-in `INCUS_SECURITY_APPARMOR=false` for `incus.service` turns its AppArmor off; the Incus one level up still confines `nested-app-dev` |
+| ID map | Base 65,536 with 100,000 IDs. See below the table |
+| Isolated maps | The first isolated map starts at the base plus 65,536: 131,072. So at 1,165,536 no isolated 65,536 map fits (`Not enough uid/gid available`). One of 34,464 IDs started at 131,072 |
+| Pool | A directory pool: a copy is a full copy. `btrfs` would clone on `nested-app-dev`'s btrfs root, but the container branch accepts only `zfs` and `dir` |
+| Network | The Node's input rules drop DHCP on `orbitinst0` until the role converge adds `orbit:instances-*` |
+| Egress | One isolated container launched in 10 s and ran `apt-get update`, a `git` install and an HTTPS request through the egress proxy in 11 s |
+
+`nested-app-dev`'s own map is 0 to 165,535, with the three `raw.idmap` holes below 2,751. Its `/etc/subuid` names root's range at 1,000,000, outside that map, so Incus ignores the file and takes the rest of the map above 65,536. The holes lie below that base and change nothing.
+
+So the host needs the 2,000,000 size of [The ID map size](#the-id-map-size). The inner Incus then hands `nested-app-dev` 1,000,000 IDs, its own Incus keeps base 65,536 with 934,464 IDs, and `(1,000,000 − 131,072) / 65,536` gives 13 isolated Instances. 2,165,536 would be wrong: the outer range crosses the floor again.
+
+The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys and the Incus drop-in. A nested Gateway with the [fleet marker](#fleet-rules) counts the fleet's `app-dev` Node, the Node at `nested-app-dev`'s address, as on its [build list](#the-build-list), so its role converge runs the [container branch](/reference/compute-drivers#prepare-an-instance-container-host). The fast wake stays off for nested-fleet Instances ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)); sleep and wake use the normal path.
+
+#### Raise a default to 2,000,000
+
+The window raises the converted default 2454 from 1,165,536 to 2,000,000 once, after the release. Copies keep their size for life, and `gateway:instance-idmap-size` refuses with `instance.idmap_size_copies_smaller` while a copy at 1,165,536 exists. **B** is a hand step on the Node, **G** a command on the Gateway host, **P** a product Operation.
+
+| Step | Who | Action |
+| --- | --- | --- |
+| 0 | P | Destroy every copy of the default; pause automatic release; no task turn runs on the Project |
+| 1 | B | Stop the inner fleet inside the container, then the container |
+| 2 | B | `incus snapshot create instance-<id> pre-2m` |
+| 3 | B | `incus config set instance-<id> security.idmap.size=2000000` |
+| 4 | G | `php artisan gateway:instance-idmap-size <id> 2000000`. It clears the seed |
+| 5 | B | Start the container. Inner root disks are idmapped, so no inner file moves |
+| 6 | P | `orbit instance:deploy <id>`: the refresh writes the new fleet rules with the fleet stopped, retakes `base` and the seed pair |
+| 7 | P | `orbit instance:create <project> <node> window-check --wait-active` reaches `active` at 2,000,000; destroy it |
+
+Every hand command takes `--project orbit-instances-nested`. The rollback runs steps 1 to 6 with 1,165,536 and the snapshot `pre-2m`. The command allows it while copies at 2,000,000 exist, because a copy's larger map still holds the smaller seed's range. Destroy them first anyway: at 1,165,536 no Instance fits on `nested-app-dev`.
 
 The start guard names each half-converted shape:
 
@@ -2327,6 +2368,8 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 | A read-only disk device that shows `N` at `/sys/module/apparmor/parameters/enabled`, from `/etc/orbit/apparmor-off` | `nested-app-dev`, `nested-app-prod` | `docker run` fails without it: Docker's own profile cannot load two levels below the host |
 | `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` in the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service`, one `Environment=` line | `nested-gateway` | Swamp verifies a new Club key at Swamp Club, and the fleet reaches the internet only through the Node's [egress proxy](#egress-and-dns) |
 | The same proxy settings as `environment.*` keys in the inner Incus. `NO_PROXY` is `localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24` | All three | A nested Node downloads the agent and packages; fleet names stay off the proxy. PHP's HTTP clients may not match `10.45.0.1` to its range |
+| `security.nesting=true`, `security.syscalls.intercept.mknod=true` and `security.syscalls.intercept.setxattr=true` | `nested-app-dev` | Its own Incus runs the [Instance containers of the fleet](#instance-host-in-the-fleet). The fleet must be stopped to set them |
+| The drop-in `/etc/systemd/system/incus.service.d/50-orbit-nested.conf` with `Environment=INCUS_SECURITY_APPARMOR=false` | `nested-app-dev` | Its Incus cannot load AppArmor profiles three levels below the host, so its bridge's dnsmasq would not start |
 | The egress files: the egress proxy for apt in `/etc/apt/apt.conf.d/95orbit-nested-egress`, and the same proxy settings, `NO_PROXY` included, in `/etc/environment` after the image's `PATH` line | All three | A Node's base converge runs apt and downloads the agent over SSH with sudo. See below the table |
 | The marker `/etc/orbit/instance-fleet` | `nested-gateway` | The nested Gateway names no task VM package cache for its Nodes. See below the table |
 | The size files: `APT::Keep-Downloaded-Packages "false";` in `/etc/apt/apt.conf.d/91orbit-nested-package-files`, and `SystemMaxUse=64M` in `/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf` | All three | Every nested root disk is in every copy. See below the table |
