@@ -88,11 +88,18 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         shutil.rmtree(repository, ignore_errors=True)
         self.git('init', '--quiet', '--bare', str(repository), cwd=self.root)
         self.git('fetch', '--quiet', str(self.work), '+refs/heads/task-1:refs/heads/candidate', cwd=repository)
+        # The step's fixed merge identity, as written; the intent values through the step's own expressions.
+        identity = {name: value for name, value in self.step(READ)['task']['inputs']['env'].items() if name.startswith(('GIT_AUTHOR_', 'GIT_COMMITTER_'))}
+        self.assertEqual(len(identity), 4)
         done = subprocess.run(['/bin/sh', '-c', self.cel(READ, 'run', self.copy)], capture_output=True, text=True, check=False, timeout=120,
-                              env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
-                                   'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(self.scratch),
-                                   'ORBIT_REMOTE': str(self.origin), 'ORBIT_BASE': self.cel(READ, 'env.ORBIT_BASE', self.copy)})
+                              env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1', **identity,
+                                   'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(self.scratch), 'ORBIT_REMOTE': str(self.origin),
+                                   **{name: self.cel(READ, 'env.' + name, self.copy) for name in ('ORBIT_BASE', 'ORBIT_BRANCH')}})
         return done.returncode
+
+    @staticmethod
+    def step(name):
+        return next(item for job in yaml.safe_load(PUBLISH.read_text())['jobs'] for item in job['steps'] if item['name'] == name)
 
     def behavior(self, method, args):
         file = self.root / ('args-' + method + '.json')
@@ -288,7 +295,7 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         self.assertIn({'step': CHECK, 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}}, push['dependsOn'])
         # Only keys the publish intent already had: an older Gateway's run reaches these steps with the same intent.
         keys = set(re.findall(r'inputs\.intent\.(\w+)', json.dumps(read) + json.dumps(check)))
-        self.assertEqual(keys, {'node_id', 'remote', 'base'})
+        self.assertEqual(keys, {'node_id', 'remote', 'base', 'branch'})
 
 
 if __name__ == '__main__':
