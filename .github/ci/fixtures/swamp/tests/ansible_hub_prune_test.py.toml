@@ -3,9 +3,17 @@ cases = [
   "test_a_node_created_after_the_intent_keeps_its_peer_file",
   "test_the_hub_converge_runs_this_prune",
   "test_node_add_loads_the_peer_files_the_hub_has_when_it_applies",
+  "test_a_hub_with_the_filter_ends_without_it",
+  "test_a_second_run_changes_nothing",
+  "test_a_hub_that_never_had_the_filter_changes_nothing",
+  "test_a_task_vm_folder_with_other_files_stays",
+  "test_a_stopped_and_disabled_unit_loses_only_its_files",
+  "test_a_table_left_alone_is_deleted",
+  "test_the_hub_converge_removes_the_filter",
 ]
 file = "swamp/tests/ansible_hub_prune_test.py"
-cost = 4
+# ESTIMATE: supervised local run 16.3s for the ten cases; confirm the 36s allowance on hosted CI.
+cost = 36
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -14,6 +22,8 @@ inputs = [
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/node-add-hub-peers.yml",
+  "swamp/ansible/tasks/node-converge-hub-filter-absent.yml",
   "swamp/ansible/tasks/node-converge-hub-prune.yml",
   "swamp/ansible/tasks/node-converge-hub.yml",
+  "swamp/ansible/tasks/node-converge-network.yml",
 ]
