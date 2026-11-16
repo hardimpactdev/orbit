@@ -3,6 +3,8 @@
 # (docs/reference/development-containers.md#instance-host-in-the-fleet). The Gateway sends `instances.fleet_node` only for it, so a real
 # app-dev or CI Node keeps the branch as it was. The Node has no Incus and no pool: this part installs Incus first, runs it without
 # AppArmor, which cannot load a profile there, and creates the directory pool. The rest of the branch then finds both.
+- name: Make the folder of the Incus drop-in
+  ansible.builtin.file: { path: /etc/systemd/system/incus.service.d, state: directory, owner: root, group: root, mode: "0755" }
 - name: Run the fleet Node's Incus without AppArmor
   ansible.builtin.copy:
     dest: /etc/systemd/system/incus.service.d/50-orbit-nested.conf

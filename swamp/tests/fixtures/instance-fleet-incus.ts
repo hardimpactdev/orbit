@@ -484,7 +484,9 @@ if (command[0] === "curl") {
   }
   const converge = /^\/nodes\/(\d+)\/converge$/.exec(path);
   if (method === "POST" && converge) {
-    if (command.at(-1) !== '{"base":true}') fail("A refresh converges the base");
+    // A refresh converges the base, or nested-app-dev's base and `app-dev` role when its `host` part is due (`state.roleConverges`).
+    if (command.at(-1) === '{"roles":["app-dev"]}' && converge[1] === "2") (state.roleConverges ??= []).push(2);
+    else if (command.at(-1) !== '{"base":true}') fail("A refresh converges the base");
     state.operations ??= [];
     const node = Number(converge[1]);
     // `convergeRefused`: the Nodes whose admission the nested Gateway refuses, as curl --fail reports a 409.

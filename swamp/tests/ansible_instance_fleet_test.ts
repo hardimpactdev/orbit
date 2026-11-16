@@ -48,11 +48,10 @@ const owned = { ...egress, ...sizeFiles };
 /** The marker of the nested Gateway of an Instance fleet (InstanceFleetGateway::Marker): its Nodes get no task VM package cache. */
 const marker = "/etc/orbit/instance-fleet";
 const markerFile = "# Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).\n";
-/** nested-app-dev is an Instance host (development-containers.md#instance-host-in-the-fleet): nesting keys, and its Incus runs without AppArmor. */
+/** nested-app-dev is an Instance host (development-containers.md#instance-host-in-the-fleet): its nesting keys. */
 const instanceHostKeys = { "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true" };
-const incusDropIn = { "/etc/systemd/system/incus.service.d/50-orbit-nested.conf": "[Service]\nEnvironment=INCUS_SECURITY_APPARMOR=false\n" };
-/** The files each container owns: the egress and size files, and nested-app-dev's Incus drop-in. */
-const ownedBy = (name: string) => name === "nested-app-dev" ? { ...owned, ...incusDropIn } : owned;
+/** The files each container owns: the egress and size files. The container branch writes nested-app-dev's Incus drop-in. */
+const ownedBy = (_name: string) => owned;
 /** Each file rule in the order the rules read it: the nested Gateway's drop-ins and marker, then the owned files of each container. */
 const fileRules: [string, string][] = [
   ...units.map((unit): [string, string] => ["nested-gateway", unit]),
@@ -283,11 +282,15 @@ const tokenShaped = /[a-z0-9-]+\.[A-Za-z0-9_-]{20,}/;
 const convergeApi = (call: string) => call.startsWith(api) && (call.includes("/converge ") || call.includes("/operations/"));
 /** The due Nodes converge side by side: every one is admitted first, then each Operation is read. The fake numbers each admitted
  * Operation from 901 in admission order. */
-const convergeAdmit = (node: number) =>
-  `${api} --fail -X POST https://10.45.0.1/api/v1/nodes/${node}/converge -H Content-Type: application/json -d {"base":true}`;
+const convergeAdmit = (node: number, host = false) =>
+  `${api} --fail -X POST https://10.45.0.1/api/v1/nodes/${node}/converge -H Content-Type: application/json -d ${
+    host && node === 2 ? '{"roles":["app-dev"]}' : '{"base":true}'}`;
 const convergeRead = (operation: number) => `${api} --fail https://10.45.0.1/api/v1/operations/${operation}`;
-const convergeCallsFor = (nodes: number[]) => [...nodes.map(convergeAdmit), ...nodes.map((_, index) => convergeRead(901 + index))];
-const convergeCalls = convergeCallsFor([1, 2, 3]);
+/** With `host`, the refresh's `host` part is due: nested-app-dev (2) converges its base and its `app-dev` role, the Instance host. */
+const convergeCallsFor = (nodes: number[], host = false) =>
+  [...nodes.map((node) => convergeAdmit(node, host)), ...nodes.map((_, index) => convergeRead(901 + index))];
+/** A refresh without a record: every Node converges, nested-app-dev with its Instance host. */
+const convergeCalls = convergeCallsFor([1, 2, 3], true);
 /** The record keys of the three nested Nodes' converge digests and last converge times. */
 const convergeKeys = ["gateway", "app_dev", "app_prod"].map((role) => `converge_${role}`);
 const convergedKeys = ["gateway", "app_dev", "app_prod"].map((role) => `converged_${role}`);
@@ -1748,6 +1751,31 @@ Deno.test({
       assert(JSON.parse(f.state().outer.files[record]).tokens >= tokenMark(Date.now() - 60_000));
       assert(f.run("refresh").ok);
       assertEquals([f.calls().includes(tokenRead), f.refreshed()?.tokens_reason], [false, "recorded"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      const kept = f.run("refresh");
+      assert(kept.ok, kept.output);
+      assertEquals([f.refreshed()!.host, f.calls().filter((call) => call.includes("/converge ")).length], ["kept", 0]);
+      f.change((state) => {
+        state.outer.files[record] = JSON.stringify({ ...JSON.parse(state.outer.files[record]), host: "0".repeat(64) });
+        delete state.roleConverges;
+      });
+      const changed = f.run("refresh");
+      assert(changed.ok, changed.output);
+      assertEquals(f.calls().filter((call) => call.includes("/converge ")), [convergeAdmit(2, true)]);
+      const result = f.refreshed()!;
+      assertEquals([result.host, result.converge_nodes, f.state().roleConverges], ["converged", ["app-dev"], [2]]);
+      assert(JSON.parse(f.state().outer.files[record]).host !== "0".repeat(64));
     } finally {
       f.cleanup();
     }
