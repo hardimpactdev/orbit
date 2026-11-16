@@ -258,7 +258,7 @@ const record = "/var/lib/orbit/fleet-refresh.json";
 /** What a base converge reads from `swamp/` (fleet-converge-inputs.json): their Git object IDs join the `converge` digest. */
 const convergeInputs: string[] = JSON.parse(Deno.readTextFileSync(new URL("fleet-converge-inputs.json", root))).inputs;
 const recordReads = [`cat ${record}`,
-  `git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract ${convergeInputs.map((path) => `HEAD:${path}`).join(" ")} HEAD:swamp`];
+  `git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract ${convergeInputs.map((path) => `HEAD:${path}`).join(" ")} HEAD:swamp/ansible HEAD:apps/gateway/resources/machine-software HEAD:swamp`];
 /** After the migrate, the nested Gateway prints the digest of each Node's base converge intent; it admits and writes nothing. */
 const intentRead = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan orbit:node-converge-digest --base gateway app-dev app-prod";
 /** With the Club key every refresh reads the nested Gateway's Swamp tokens: names and dates, no secret. */
@@ -974,7 +974,8 @@ Deno.test({
   name: "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture(withStatus("Running"), { club: true, base: true });
+    // Below 2,000,000: the three base converges run side by side.
+    const f = fixture(withStatus("Running"), { club: true, base: true, host: false });
     f.change((state) => {
       state.tunnel = structuredClone(tunnelUp);
       state.egressNeeded = ["/etc/apt/apt.conf.d/missing-in-this-case"];
@@ -1228,7 +1229,7 @@ Deno.test({
       }
       const result = f.refreshed()!;
       assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped", converge_reason: "unchanged",
-        converge_nodes: [], changed: 0, tokens: "young", tokens_reason: "recorded", base: "kept", base_containers: [], record: "present", tools: "present",
+        converge_nodes: [], host: "kept", changed: 0, tokens: "young", tokens_reason: "recorded", base: "kept", base_containers: [], record: "present", tools: "present",
         tools_reason: "current", shrink: "skipped", shrink_reason: "current", swamp: "pinned", swamp_reason: "pinned",
         swamp_version: "20261114.210101.0-sha.537e03d1", seconds: undefined });
       // Nothing changed in the nested containers' packages: one shrink check, no shrink run.
@@ -1241,7 +1242,7 @@ Deno.test({
       assertEquals(f.state().outer.modes[record], "root:root 0644");
       // The record keeps the time of the last converge that ran; the seeded record of the short cases is the one a refresh writes.
       assertEquals(JSON.parse(f.state().outer.files[record]), { ...written, grants: sha256("a1 e1") });
-      assertEquals(Object.keys(written), ["code", ...convergeKeys.toSorted(), ...convergedKeys.toSorted(), "grants", "rules", "tokens"].toSorted());
+      assertEquals(Object.keys(written), ["code", ...convergeKeys.toSorted(), ...convergedKeys.toSorted(), "grants", "host", "rules", "tokens"].toSorted());
       assertEquals(seededRecord(Number(written.converged_gateway), fixtureFleet, written.tokens), written);
     } finally {
       f.cleanup();
@@ -1664,6 +1665,8 @@ function seededRecord(converged: number | number[], fleet = fixtureFleet, tokens
     ...Object.fromEntries(convergedKeys.map((key, index) => [key, String(times[index])])),
     grants: sha256("a1 c3"),
     rules: sha256(pythonJson(fleetFiles)),
+    // The Instance host: the `swamp/ansible` tree and the machine-software recipe.
+    host: sha256("host c3 e5"),
     tokens,
   };
 }

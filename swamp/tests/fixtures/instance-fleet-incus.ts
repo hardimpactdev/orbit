@@ -145,7 +145,7 @@ if (command[0] === "git" && command.includes("rev-parse")) {
   if (state.digestsFail) fail("fatal: not a git repository");
   const digests: Record<string, string> = { "apps/agent/contract": "d4", ...(state.digests ?? { "apps/gateway": "a1" }) };
   done(command.slice(command.indexOf("rev-parse") + 1).map((object) => object.slice("HEAD:".length))
-    .map((path) => digests[path] ?? (path === "swamp" || path.startsWith("swamp/") ? "c3" : "")).join("\n"));
+    .map((path) => digests[path] ?? (path === "swamp" || path.startsWith("swamp/") ? "c3" : path === "apps/gateway/resources/machine-software" ? "e5" : "")).join("\n"));
 }
 
 if (command[0] === "incus") {

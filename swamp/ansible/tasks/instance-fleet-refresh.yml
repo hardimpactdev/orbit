@@ -39,7 +39,7 @@
     argv: >-
       {{ ['timeout', '30'] + fleet_outer + ['git', '-c', 'safe.directory=*', '-C', intent.container.workspace, 'rev-parse',
           'HEAD:apps/gateway', 'HEAD:apps/agent/contract'] + (fleet_converge_inputs.inputs | map('regex_replace', '^', 'HEAD:') | list)
-         + ['HEAD:swamp'] }}
+         + ['HEAD:swamp/ansible', 'HEAD:apps/gateway/resources/machine-software', 'HEAD:swamp'] }}
   register: fleet_digests_read
   changed_when: false
   failed_when: false
@@ -49,7 +49,7 @@
       {{ fleet_record_read.rc == 0 and fleet_record_read.stdout | trim is match('^\{"[a-z_]+": ?"[0-9a-f]+"(, ?"[a-z_]+": ?"[0-9a-f]+")*\}$') }}
     fleet_ids: >-
       {{ fleet_digests_read.stdout_lines if fleet_digests_read.rc == 0
-         and fleet_digests_read.stdout_lines | length == 3 + fleet_converge_inputs.inputs | length else [] }}
+         and fleet_digests_read.stdout_lines | length == 5 + fleet_converge_inputs.inputs | length else [] }}
   ansible.builtin.set_fact:
     fleet_record_state: >-
       {{ 'present' if fleet_record_valid else 'missing' if fleet_record_read.rc != 0 and 'No such file' in fleet_record_read.stderr
@@ -58,9 +58,9 @@
     fleet_now: >-
       {{ {} if fleet_ids | length == 0 else {'code': (fleet_ids[0] ~ fleet_ids[1]) | hash('sha256'),
          'rules': fleet_files | to_json(sort_keys=true) | hash('sha256')}
-         | combine({'host': ('host ' ~ fleet_ids[0] ~ ' ' ~ fleet_ids[-1]) | hash('sha256')} if intent.fleet.host | default(false) | bool else {})
+         | combine({'host': ('host ' ~ fleet_ids[-3] ~ ' ' ~ fleet_ids[-2]) | hash('sha256')} if intent.fleet.host | default(false) | bool else {})
          | combine({'grants': (fleet_ids[0] ~ ' ' ~ fleet_ids[-1]) | hash('sha256')} if fleet_club.rc == 0 else {}) }}
-    fleet_swamp_ids: "{{ fleet_ids[2:-1] }}"
+    fleet_swamp_ids: "{{ fleet_ids[2:-3] }}"
     fleet_converge_changed: 0
     fleet_converge_changed_roles: []
     fleet_started_at: "{{ now(utc=true).timestamp() }}"
@@ -78,7 +78,8 @@
       tokens: "{{ fleet_club.rc == 0 and not fleet_tokens_recorded | bool }}"
       rules: "{{ 'rules' not in fleet_now or fleet_recorded.rules | default('') != fleet_now.rules }}"
       # The Instance host on nested-app-dev (docs/reference/development-containers.md#instance-host-in-the-fleet): its `app-dev` role
-      # converge runs the container branch when the nested Gateway's code or Swamp changed, so a seed holds a ready host. Only a default
+      # converge runs the container branch when what that branch reads changed: the `swamp/ansible` tree or the machine-software recipe
+      # (Incus pins, shared folders, the image). A test, a workflow or Gateway code alone rebuilds nothing. Only a default
       # whose ID map leaves room for isolated Instances there (`intent.fleet.host`, 2,000,000 or more) builds it; below that nothing changes.
       host: "{{ intent.fleet.host | default(false) | bool and ('host' not in fleet_now or fleet_recorded.host | default('') != fleet_now.host) }}"
 
