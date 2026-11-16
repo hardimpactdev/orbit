@@ -361,7 +361,9 @@ With P = 5, B = 0 and two holds, two idle runners stop and three run. When the b
 
 The test for busy is the one that the runner state script uses: the runner is busy while a `Runner.Worker` process runs in its container. The script reads it in the same command that stops the service. A runner that takes a job in that short moment between the two keeps its job. The Node then runs one more job than its places until that job ends.
 
-The release runs in every destroy of a proof copy. A run end of any kind cancels the group with discard, which destroys the copy, and the watchdog asks again for every group of a proof that still owns a copy. So the stopped runners start again after a pass, a failure, a cancel and a timeout. A runner that is gone by then is skipped. The [runner view](/reference/ci-runner-view) shows a stopped runner as stopped.
+The release is the last step of a proof copy's destroy, after the container is gone. So the stopped runners start again only when the destroy of the last copy on the Node succeeds. A run end of any kind, a pass, a failure, a cancel or a timeout, cancels the group with discard, which destroys the copy.
+
+A destroy that fails keeps the copy and its hold, and the runners stay stopped. The watchdog asks again for the cancel of each group that still owns a copy, until `ProofRunWatch::CopyGiveUpHours` after the run's end. After that, the copy shows in the Instance list, and its runners start again only when an operator destroys it. A runner that is gone by the release is skipped. The [runner view](/reference/ci-runner-view) shows a stopped runner as stopped.
 
 The script never registers, deletes or creates a runner, and never stops a container. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) still owns the containers.
 
