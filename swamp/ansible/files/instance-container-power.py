@@ -327,9 +327,10 @@ def subtree_pids(host, relative):
 
 
 def subtree_cgroups(host, relative):
-    """The relative path of each cgroup in the subtree, the root first."""
+    """The relative path of each cgroup in the subtree, sorted, so the root comes first and the order is the same on every
+    filesystem."""
     root = os.path.join(host.cgroups, relative)
-    return [os.path.relpath(directory, host.cgroups) for directory, _, _ in os.walk(root)]
+    return sorted(os.path.relpath(directory, host.cgroups) for directory, _, _ in os.walk(root))
 
 
 # ---------------------------------------------------------------------------------------------------------------------------

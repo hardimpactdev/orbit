@@ -327,6 +327,15 @@ class SwapTest(Fixture):
             self.assertEqual(power.read_value(os.path.join(self.container, path, "memory.swap.max")), value)
         self.assertFalse(os.path.exists(os.path.join(self.state, "instances", str(ID), "limits.json")))
 
+    def test_the_subtree_is_sorted_whatever_order_the_filesystem_lists_it_in(self):
+        walk = power.os.walk
+        power.os.walk = lambda root: reversed(list(walk(root)))
+        try:
+            cgroups = power.subtree_cgroups(self.host, RELATIVE)
+        finally:
+            power.os.walk = walk
+        self.assertEqual(cgroups, [RELATIVE, f"{RELATIVE}/app", f"{RELATIVE}/app/worker", f"{RELATIVE}/init.scope"])
+
     def test_a_record_of_another_boot_closes_only_the_container_and_an_open_record_is_closed_before_the_next_sleep(self):
         self.prepare()
         self.boot("boot-2")
