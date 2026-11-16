@@ -45,6 +45,7 @@ jobs:
               ANSIBLE_FORCE_COLOR: '0'
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
               ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'

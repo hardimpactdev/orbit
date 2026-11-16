@@ -32,9 +32,23 @@ Deno.test("the sleep and the wake each run one charted phase with the shipped An
             assertEquals(env.ORBIT_RUN_ID, runId);
             assert(Deno.statSync(`${shipped}/${playbook}`).isFile);
             assert(evaluate(step.task.behaviorName!).endsWith("-9"), name);
-            if (kind === "sleep") assertEquals(env.ORBIT_OPERATION_ID, "41");
+            assertEquals(env.ORBIT_OPERATION_ID, "41");
         }
     }
+});
+
+Deno.test("every workflow step that runs instance-container.yml names its Operation, which the power helper's restore records", () => {
+    const context = { inputs: { operation_id: 41, node_id: 9, intent: {} }, steps: {}, run: { id: runId } };
+    let found = 0;
+    for (const kind of ["wake", "start", "deploy-direct", "create"]) {
+        for (const step of steps(kind).filter((candidate) => candidate.task?.inputs?.run?.includes("instance-container.yml"))) {
+            found++;
+            const value = step.task.inputs.env?.ORBIT_OPERATION_ID;
+            assert(value !== undefined, `${kind}: ${step.name}`);
+            assertEquals(String(cel.evaluate(value.slice(3, -2).trim(), context)), "41");
+        }
+    }
+    assert(found >= 14, String(found));
 });
 
 Deno.test("a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet", () => {
