@@ -391,7 +391,7 @@ describe('proof:run in copies: admission', function (): void {
         foreach ($copies as $copy) {
             $create = Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)->sole();
             expect($create->input['direct_provisioning']['container']['clone']['ci_hold'] ?? null)
-                ->toBe(['places' => ProofCopyHosts::places(Node::query()->findOrFail($copy->node_id))])
+                ->toBe(['places' => ProofCopyHosts::places(Node::query()->findOrFail($copy->node_id)), 'node' => Node::query()->findOrFail($copy->node_id)->name])
                 ->and(app(ContainerInstanceDestroy::class)->capture($copy)['ci_hold'] ?? null)->toBeTrue();
         }
         copyProofOtherCopies(1);

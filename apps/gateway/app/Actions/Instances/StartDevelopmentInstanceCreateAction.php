@@ -253,9 +253,10 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $containerIntent['branch_selection'] = $selection->toArray();
             }
             // A proof copy holds its CI place before it starts: the create stops the Node's idle runners down to the places left to
-            // runners (docs/reference/node-provisioning.md#proof-places-on-a-ci-node). Its destroy releases the hold.
+            // runners (docs/reference/node-provisioning.md#proof-places-on-a-ci-node). Its destroy releases the hold. The intent names the
+            // Node, so the refusal of a Node without the hold script names it.
             if ($proofPlace && is_array($containerIntent['clone'] ?? null)) {
-                $containerIntent['clone']['ci_hold'] = ['places' => ProofCopyHosts::places($node)];
+                $containerIntent['clone']['ci_hold'] = ['places' => ProofCopyHosts::places($node), 'node' => $node->name];
             }
             $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database,
                 'server_database' => $server['input'] ?? null, 'server_valkey' => $valkey['input'] ?? null, 'container' => $containerIntent];

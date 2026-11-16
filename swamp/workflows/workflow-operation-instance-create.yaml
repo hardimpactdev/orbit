@@ -390,7 +390,8 @@ jobs:
     steps:
       # A proof copy holds its CI place before the copy exists: the role's hold script stops idle runners on the Node down to the
       # places left to runners (docs/reference/node-provisioning.md#proof-places-on-a-ci-node). Every other create skips it; its
-      # destroy releases the hold, also after a failed create.
+      # destroy releases the hold, also after a failed create. A Node without the script calls nothing: the step prints the refusal
+      # line, clone-container skips, and the result fails the create with `instance.ci_hold_unavailable`.
       - name: clone-ci-hold
         labels: {role: swamp}
         writes: true
@@ -404,7 +405,7 @@ jobs:
           inputs:
             hosts: name:target
             sudo: true
-            argv: '${{ inputs.intent.container != null && inputs.intent.container.clone != null && has(inputs.intent.container.clone.ci_hold) ? ["timeout", "240", "/usr/local/libexec/orbit-ci-runner-hold", "hold", inputs.intent.container.name, string(inputs.intent.container.clone.ci_hold.places)] : ["true"] }}'
+            argv: '${{ inputs.intent.container != null && inputs.intent.container.clone != null && has(inputs.intent.container.clone.ci_hold) ? ["timeout", "240", "sh", "-c", "[ -x \"$1\" ] || { echo orbit-ci-hold=unavailable; exit 0; }; exec \"$@\"", "orbit-ci-hold", "/usr/local/libexec/orbit-ci-runner-hold", "hold", inputs.intent.container.name, string(inputs.intent.container.clone.ci_hold.places)] : ["true"] }}'
             timeoutSec: 250
           globalArgs:
             name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
@@ -425,7 +426,7 @@ jobs:
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: clone-ci-hold, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
-        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) || ("clone-ci-hold" in steps && steps["clone-ci-hold"].status == "succeeded" && steps["clone-ci-hold"].outputs.stdout.split("\n").exists(line, line == "orbit-ci-hold=unavailable")) }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -626,7 +627,7 @@ jobs:
             route: '${{ (inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route" : "route") in steps ? steps[inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route" : "route"].status : "skipped" }}'
             certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ((inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)) in steps ? steps[(inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)].status : "skipped") }}'
             container: '${{ inputs.intent.container == null ? dyn(null) : {"mail": (inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"] : null) : ("container" in steps ? steps.container : null)), "launch": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"].status : "skipped") : ("container" in steps ? steps.container.status : "skipped")), "workspace": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-t3" in steps ? steps["clone-t3"] : null) : ("workspace" in steps ? steps.workspace : null)), "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "t3": "clone-t3" in steps ? steps["clone-t3"].status
-              : "skipped", "register": "clone-session-copy" in steps && steps["clone-session-copy"].status == "failed" ? "failed" : ("clone-register" in steps ? steps["clone-register"].status : "skipped"), "server": dyn(null), "club_key": "clone-club-key" in steps && steps["clone-club-key"].status == "succeeded" ? {"status": "succeeded", "outputs": {"stdout": steps["clone-club-key"].outputs.stdout} } : dyn(null)} }}'
+              : "skipped", "register": "clone-session-copy" in steps && steps["clone-session-copy"].status == "failed" ? "failed" : ("clone-register" in steps ? steps["clone-register"].status : "skipped"), "server": dyn(null), "club_key": "clone-club-key" in steps && steps["clone-club-key"].status == "succeeded" ? {"status": "succeeded", "outputs": {"stdout": steps["clone-club-key"].outputs.stdout} } : dyn(null), "ci_hold": "clone-ci-hold" in steps && steps["clone-ci-hold"].status == "succeeded" ? {"status": "succeeded", "outputs": {"stdout": steps["clone-ci-hold"].outputs.stdout} } : dyn(null)} }}'
             t3_observation: '${{ "clone-t3" in steps && steps["clone-t3"].status == "succeeded" ? steps["clone-t3"].outputs.stdout : "" }}'
             route_observation: '${{ "route" in steps && steps.route.status == "succeeded" ? steps.route.outputs : ("clone-route" in steps && steps["clone-route"].status == "succeeded" ? steps["clone-route"].outputs : {}) }}'
       # The checks of POST /conn/environments, then both sessions as native sensitive fields, then the create's result with only their

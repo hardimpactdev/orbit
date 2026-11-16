@@ -285,6 +285,18 @@ Deno.test("a clone finishes only with its registered T3 server, which the receip
     assertEquals("workspace_cleaned" in create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n${printed}\n` } } }), false);
     const failure = (changes: Partial<typeof container>) => [create(changes).failed_step, create(changes).error_code];
     assertEquals(failure({ launch: "failed", workspace: null }), ["clone", "instance.create_clone_failed"]);
+    // A proof copy's Node without the hold script: clone-ci-hold printed its refusal, so the copy never started. The code names the cause,
+    // and the detail the Node; a hold that ran keeps the clone's own outcome.
+    const held = (stdout: string) => JSON.parse(createResult({ ...intent, setup_steps: [], route: { route_id: 1 },
+        container: { clone: { source: "instance-1", ci_hold: { places: 3, node: "ci-a" } } } }, {
+        ...phases, checkout: { status: "skipped" }, setup: "skipped", processes: [], route: "succeeded",
+        container: { ...container, launch: "skipped", workspace: null, t3: "skipped", register: "skipped", server: null,
+            ci_hold: { status: "succeeded", outputs: { stdout } } },
+    }).stdout);
+    const refused = held("orbit-ci-hold=unavailable\n");
+    assertEquals([refused.ready, refused.failed_step, refused.error_code], [false, "ci_hold", "instance.ci_hold_unavailable"]);
+    assertEquals(refused.detail, "The Node ci-a has no hold script of its ci-runner role. Converge the role on the Node.");
+    assertEquals([held("").failed_step, held("").error_code, held("").detail], ["clone", "instance.create_clone_failed", undefined]);
     // The T3 step, whose first part writes the agent's files, has its own code, and the registration after it did not run; the
     // Operation's failure detail names the part (instance.container_agent_failed or instance.container_t3_failed).
     assertEquals(failure({ t3: "failed", register: "skipped", server: null }), ["t3", "instance.t3_unready"]);
