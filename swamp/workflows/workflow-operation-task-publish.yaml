@@ -867,7 +867,8 @@ jobs:
           asks() { answer=0; repo "$@" || answer=$?; [ "$answer" -le 1 ] || exit 2; return "$answer"; }
           repo fetch --quiet --no-tags --no-write-fetch-head -- "$ORBIT_REMOTE" "+refs/heads/$ORBIT_BASE:refs/orbit/base" 2>/dev/null
           head=$(repo rev-parse --verify 'refs/orbit/base^{commit}')
-          # The task branch's tip on origin, when it exists: exit 2 of ls-remote is no such branch.
+          # The task branch's tip on origin, when it exists: exit 2 of ls-remote is no such branch. A tip of an earlier read goes first.
+          repo update-ref -d refs/orbit/published
           found=0
           repo ls-remote --exit-code --heads -- "$ORBIT_REMOTE" "refs/heads/$ORBIT_BRANCH" >/dev/null 2>&1 || found=$?
           case $found in

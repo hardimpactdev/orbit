@@ -317,13 +317,20 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         _, merged, error = self.publish()
         self.assertNotEqual(merged, '')
         self.assertEqual(error, 'tasks.not_fast_forward')
-        # A merge whose message names main but whose second parent is not main's is no publish merge either.
-        self.git('fetch', '--quiet', 'origin', cwd=other)
-        self.git('merge', '--quiet', '--no-ff', '-m', 'Merge main ' + tip + ' at publish', 'origin/main', cwd=other)
-        self.git('push', '--quiet', 'origin', 'HEAD:refs/heads/task-1', cwd=other)
-        _, _, error = self.publish()
-        self.assertEqual(error, 'tasks.not_fast_forward')
-        self.assertEqual(self.git('rev-parse', 'refs/heads/task-1', cwd=self.origin), self.git('rev-parse', 'HEAD', cwd=other))
+        # Each condition of an earlier publish merge decides on its own; the tip stays where it was put.
+        candidate = self.git('rev-parse', 'task-1', cwd=self.fetched())
+        head = self.git('rev-parse', 'origin/main', cwd=self.work)
+        tree = self.git('rev-parse', 'task-1^{tree}', cwd=self.work)
+        beside = self.git('commit-tree', tree, '-p', head, '-m', 'not on main', cwd=self.work)
+        for name, parents, message in [('a message that is no publish merge', [candidate, head], f'Merge main {head} by hand'),
+                                       ('a second parent outside main', [candidate, beside], f'Merge main {beside} at publish'),
+                                       ('a first parent outside the candidate', [tip, head], f'Merge main {head} at publish')]:
+            with self.subTest(name):
+                forged = self.git('commit-tree', tree, *[arg for parent in parents for arg in ('-p', parent)], '-m', message, cwd=self.work)
+                self.git('push', '--quiet', 'origin', '+' + forged + ':refs/heads/task-1', cwd=self.work)
+                _, _, error = self.publish()
+                self.assertEqual(error, 'tasks.not_fast_forward')
+                self.assertEqual(self.git('rev-parse', 'refs/heads/task-1', cwd=self.origin), forged)
 
     def test_the_same_branch_after_it_merged_the_default_head_publishes(self):
         self.commit(self.work, 'agent work', {'a.txt': 'one\ntwo\nthree\nfour\nfive\nsix\n'})

@@ -1,7 +1,7 @@
 file = "swamp/tests/task_copy_publish_base_test.py"
 slices = false
-cost = 48
-source_sha256 = "875fa1a823c3ebcea3202d54038cd71a0a5769772b11b558f3b0a36561dc2d77"
+cost = 52
+source_sha256 = "1b35be96ec604bb76142f86422d49b1a7d26ecda29680aef080ab7bc46cbafaf"
 cases = [
   "test_a_branch_level_with_main_is_zero_behind_and_overlaps_nothing",
   "test_a_branch_behind_without_a_shared_path_is_stated_and_publishes",
@@ -39,7 +39,7 @@ inputs = [
 "test_a_workflow_change_merged_on_main_after_the_sync_is_no_change_of_the_copy_and_publishes_through_a_merge" = 3
 "test_a_branch_without_a_workflow_difference_pushes_its_candidate_and_merges_nothing" = 4
 "test_a_republish_after_a_merge_at_publish_is_a_fast_forward_over_that_merge" = 6
-"test_a_tip_that_is_no_earlier_publish_merge_is_not_a_fast_forward" = 5
+"test_a_tip_that_is_no_earlier_publish_merge_is_not_a_fast_forward" = 9
 "test_the_same_branch_after_it_merged_the_default_head_publishes" = 2
 "test_a_default_commit_that_changed_a_workflow_carried_in_by_hand_is_no_change_of_the_copy" = 2
 "test_a_workflow_change_of_the_copy_that_a_later_commit_undoes_is_no_change" = 2
