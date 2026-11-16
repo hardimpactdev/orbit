@@ -1750,11 +1750,12 @@ Deno.test({
       f.change((state) => state.intentDigestFail = true);
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
-      assertEquals(f.calls().filter(convergeApi), convergeCalls);
+      // The host is recorded and its inputs did not move: the three converge their bases only.
+      assertEquals(f.calls().filter(convergeApi), convergeCallsFor([1, 2, 3]));
       const result = f.refreshed()!;
       assertEquals([result.converge, result.converge_reason, result.record], ["ran", "digest_unreadable", "present"]);
       // Without its digest the next refresh converges again.
-      assertEquals(Object.keys(JSON.parse(f.state().outer.files[record])), ["code", ...convergedKeys.toSorted(), "grants", "rules", "tokens"]);
+      assertEquals(Object.keys(JSON.parse(f.state().outer.files[record])), ["code", ...convergedKeys.toSorted(), "grants", "host", "rules", "tokens"]);
     } finally {
       f.cleanup();
     }
