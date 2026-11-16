@@ -75,6 +75,7 @@ Deno.test("role-add composes observed PHP and DNS with the existing merge policy
                         account: JSON.stringify({
                             user: "orbit",
                             group: "1000",
+                            group_name: null,
                             home: "/home/orbit",
                         }),
                     }),

@@ -3,6 +3,7 @@ import {
     assertRejects,
     assertThrows,
 } from "jsr:@std/assert@1.0.19";
+import { parse } from "jsr:@std/yaml@1.0.12";
 import { composeCaddy, composePhp, planPhp } from "./assets.ts";
 import { mergeCaddy, mergePhp } from "./sections.ts";
 const header = "# Managed by Orbit: Node Caddy build\n{ admin off }\n";
@@ -34,6 +35,7 @@ const account = JSON.stringify({
     user: "orbit",
     home: "/home/orbit",
     group: "1000",
+    group_name: null,
 });
 async function caddy(content: string) {
     return {
@@ -266,6 +268,64 @@ Deno.test("a restore takes back a scope written with the group name and keeps th
             "php.owned_revision_conflict",
         );
     }
+    // A forward edit of the Route's own scope accepts it in either form and writes the gid.
+    const edit = composePhp({
+        ...placement,
+        before: php(captured(1) + captured(2)),
+        after: php(captured(1).replace("app-1", "app-3") + captured(2)),
+        account: named,
+        current: JSON.stringify({
+            "8.4": scope(1, "orbit") + scope(2, "orbit"),
+        }),
+    });
+    assertEquals(
+        edit.files[0].content,
+        scope(1, "1000").replace("app-1", "app-3") + scope(2, "orbit"),
+    );
+});
+Deno.test("the PHP delta's account read gives composePhp the primary group's gid and name", async () => {
+    const workflow = parse(
+        await Deno.readTextFile(
+            new URL(
+                "../../../../../workflows/workflow-operation-route-php-delta.yaml",
+                import.meta.url,
+            ),
+        ),
+    ) as {
+        jobs: {
+            steps: { name: string; task: { inputs: { argv: string[] } } }[];
+        }[];
+    };
+    const step = workflow.jobs.flatMap((job) => job.steps).find((step) =>
+        step.name === "read-account"
+    )!;
+    const user = Deno.env.get("USER") ?? "root";
+    const run = async (argv: string[]) =>
+        new TextDecoder().decode(
+            (await new Deno.Command(argv[0], { args: argv.slice(1) }).output())
+                .stdout,
+        ).trim();
+    const argv = step.task.inputs.argv.map((arg) =>
+        arg.startsWith("${{") ? `ORBIT_NODE_USER=${user}` : arg
+    );
+    const read = JSON.parse(await run(argv));
+    assertEquals(read.group, await run(["id", "-g", user]));
+    assertEquals(read.group_name, await run(["id", "-gn", user]));
+    const captured =
+        "[orbit-instance-1]\ngroup = __ORBIT_NODE_GROUP__\nchdir = /__ORBIT_NODE_HOME__/app-1\n";
+    const result = composePhp({
+        ...placement,
+        user,
+        connection: { ...placement.connection, nodeUser: user },
+        before: { account_user: user, configurations: { "8.4": captured } },
+        after: { account_user: user, configurations: {} },
+        account: JSON.stringify(read),
+        current: JSON.stringify({
+            "8.4": captured.replace("__ORBIT_NODE_GROUP__", read.group_name)
+                .replace("/__ORBIT_NODE_HOME__", read.home),
+        }),
+    });
+    assertEquals(result.files[0].ensure, "absent");
 });
 Deno.test("PHP account and version-move policy are checked before any file operation", () => {
     const before = php(pool(1, 5)), after = php(pool(1, 7));
@@ -303,6 +363,7 @@ Deno.test("PHP account and version-move policy are checked before any file opera
                     user: "other",
                     home: "/home/other",
                     group: "1001",
+                    group_name: null,
                 }),
                 current: "{}",
             }),
@@ -361,6 +422,7 @@ Deno.test("a pool that route-create-site wrote with the account gid withdraws wi
                     user: "orbit",
                     home: "/home/orbit",
                     group: "orbit",
+                    group_name: null,
                 }),
                 current: "{}",
             }),

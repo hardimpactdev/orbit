@@ -140,8 +140,7 @@ export function composePhp(raw: unknown) {
     const account = z.object({
         user: Name,
         group: z.string().regex(/^[0-9]{1,10}$/),
-        group_name: z.string().regex(/^[\w.][\w.$-]{0,63}$/).nullable()
-            .optional(),
+        group_name: z.string().min(1).nullable(),
         home: z.string().startsWith("/"),
     }).strict().parse(JSON.parse(value.account));
     if (account.user !== value.user) throw new Error("php.account_conflict");
@@ -149,7 +148,7 @@ export function composePhp(raw: unknown) {
         JSON.parse(value.current),
     );
     const resolve = (text: string, group = account.group) =>
-        text.replaceAll("__ORBIT_NODE_GROUP__", group).replaceAll(
+        text.replaceAll("__ORBIT_NODE_GROUP__", () => group).replaceAll(
             "/__ORBIT_NODE_HOME__",
             account.home,
         );

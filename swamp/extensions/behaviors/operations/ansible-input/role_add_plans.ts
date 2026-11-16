@@ -79,6 +79,7 @@ export async function roleAddPlans(
                 account: JSON.stringify({
                     user,
                     group: observed.account[user][2],
+                    group_name: null,
                     home: observed.account[user][4],
                 }),
             });
