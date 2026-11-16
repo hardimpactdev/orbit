@@ -30,7 +30,7 @@ const PUBLIC_KEY: &str = "/etc/orbit-spike/gateway.pub";
 const NODE_ID: &str = "/etc/orbit-spike/node-id";
 const TARGETS: &str = "/etc/orbit-spike/targets";
 const RELAY_USER: &str = "orbit-spike-relay";
-/// Test settings, read per wake: the restore thread count, and a crash-test pause after the restore.
+/// Test settings: the restore pool size (read at start; default the CPU count), and a crash-test pause.
 const THREADS: &str = "/etc/orbit-spike/restore-threads";
 const TEST_PAUSE: &str = "/etc/orbit-spike/test-pause-ms";
 const JOURNAL: &str = "/var/lib/orbit-spike/journal";
@@ -179,9 +179,8 @@ impl Executor {
         }
         st.open.insert(op.to_owned(), action.to_owned());
         let (t, a) = (target.to_owned(), action.to_owned());
-        let threads = std::fs::read_to_string(THREADS).ok().and_then(|t| t.trim().parse().ok()).unwrap_or(32usize);
         let pause = std::fs::read_to_string(TEST_PAUSE).ok().and_then(|t| t.trim().parse().ok());
-        let mut result = tokio::task::spawn_blocking(move || if a == "sleep" { power::sleep(&t) } else { power::wake(&t, threads, pause) })
+        let mut result = tokio::task::spawn_blocking(move || if a == "sleep" { power::sleep(&t) } else { power::wake(&t, pause) })
             .await
             .unwrap_or_else(|_| json!({"status":"failed","error":"action panicked"}));
         result["operation"] = json!(op);
@@ -339,7 +338,8 @@ async fn serve() {
         let gid = std::fs::read_to_string("/etc/passwd").ok().and_then(|p| p.lines().find(|l| l.starts_with(&format!("{RELAY_USER}:"))).and_then(|l| l.split(':').nth(3)?.parse().ok())).unwrap_or(uid);
         unsafe { libc::chown(std::ffi::CString::new(SOCKET).unwrap().as_ptr(), 0, gid) };
     }
-    eprintln!("executor ready: {} open order(s) to finish", open.len());
+    let pool = power::init_pool(THREADS);
+    eprintln!("executor ready: restore pool of {pool} threads, {} open order(s) to finish", open.len());
     for (op, target, action) in open {
         let exec = exec.clone();
         tokio::spawn(async move {

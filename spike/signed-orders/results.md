@@ -2,7 +2,7 @@
 
 Task group 5552, subtask 5553, 16 November 2026. Built and measured in this task copy's nested fleet: `nested-gateway` (Node 1) and `nested-app-dev` (Node 3). Nothing merges and nothing touched production. Every spike unit, file, key and process has been removed from the fleet again, and the Node runs its original `orbit-agent` binary.
 
-> **Round 3** (sleep and wake in-process, under decisions D1–D5) is the last section: [Round 3](#round-3-sleep-and-wake-in-the-executor). **Round 2 is after round 1** ([Round 2](#round-2-no-systemd-on-the-orders-path)). It replaces the socket-activated executor with a long-running one that does the action itself. Everything from here to "How to run it again" is round 1.
+> **Round 4 (with swap)** is the last section: [Round 4](#round-4-with-swap). **Round 3** (sleep and wake in-process, under decisions D1–D5) comes before it: [Round 3](#round-3-sleep-and-wake-in-the-executor). **Round 2 is after round 1** ([Round 2](#round-2-no-systemd-on-the-orders-path)). It replaces the socket-activated executor with a long-running one that does the action itself. Everything from here to "How to run it again" is round 1.
 
 ## Summary
 
@@ -622,3 +622,132 @@ In two of the caller tests the executor refused and closed the connection before
 | D3, every millisecond | **Partly** | Every step was timed, but the restore is a CPU floor, not swap-in. The target is a cgroup stand-in, and the Incus unfreeze API was not in the path. |
 | D4, no Node-to-Node traffic | **Fully** | Everything, the SSH fallback included, goes Gateway → Node. |
 | D5, results over the WebSocket | **Fully, except the fallback** | The fallback's result comes back on its own SSH stdout, as any SSH call's does. |
+
+## Round 4 (with swap)
+
+This round re-measures round 3 with real swap. The design is unchanged and D1–D5 hold exactly. Measured on 16 November 2026, 15:22–15:30 UTC.
+
+Afterwards every spike unit, target cgroup, process, file, user and Valkey key was removed, and both Nodes run their original `orbit-agent` again. The three empty template slices left from round 1 on nested-app-dev are gone too.
+
+### Setup, and one limit I closed by mistake
+
+**What was open.** You opened `memory.swap.max` to `max` on the task copy, nested-gateway, nested-app-dev and nested-app-prod, and 96 GB of host swap was visible in all of them.
+
+**What I closed by mistake.** I ran `incus config set nested-app-dev limits.cpu=4 limits.memory=7GiB` for step 2. The inner Incus then rewrote **`/sys/fs/cgroup/lxc.payload.nested-app-dev/memory.swap.max` to `0`**.
+
+- `limits.memory.swap=true` did not reopen it, and Incus refused `limits.memory.swap.priority` ("Cgroup controller is missing").
+- Root inside the Node may not write its own namespace root ("Permission denied"). In the copy, I am `agent`, and the file belongs to root.
+- So **nested-app-dev cannot swap until it is reopened from the host.** That limit is still `0`. I put nested-app-dev back to `limits.cpu=2` and `limits.memory=3GiB`.
+
+**Where round 4 ran instead.** On **nested-app-prod (Node 4)**, whose swap was still `max`, **without touching its Incus config**. That means:
+
+- **CPU:** 2 (cpuset 12–13), not 4.
+- **Memory:** 3 GiB.
+- **Concurrency:** 3 stand-in targets fit in 3 GiB, not 5, so the burst test used **3 targets at once**.
+- **The rest is unchanged:** the same stand-in, executor, observer and listener.
+
+**Shared restore pool** (round 3's finding). The executor starts one restore pool for the Node. Its size is the CPU count by default, or the number in `/etc/orbit-spike/restore-threads`, read when the executor starts. Every wake submits its 2048-page items to this one pool, in arrival order, and waits for its own items. Concurrent wakes therefore share the threads instead of each starting 32 of their own. The bench restarts the executor to change the size, outside the timed path.
+
+### Swap really works
+
+After a sleep, the target's `memory.current` was **10 MB** and its `swap.current` **767–848 MB**, with anon and file both 0, in every cycle.
+
+### Sleep
+
+30 cycles, 7 processes ([`r4-cycle-t32.jsonl`](r4-cycle-t32.jsonl)), ms:
+
+| Measure | Median | p90 | Max |
+| --- | --- | --- | --- |
+| **Sleep total, in the executor** | **281.9** | **495.2** | **600.5** |
+| Record and open swap limits (4 opened) | 14.6 | 31.0 | 353.2 |
+| Freeze | 0.2 | 0.5 | 3.4 |
+| Scan maps and pagemap | 24.1 | 29.2 | 71.5 |
+| Plan write (fsync, rename) | 9.0 | 18.0 | 49.8 |
+| **Reclaim to swap until settled** | **232.8** | **289.9** | **491.8** |
+| Result in the waiting Gateway request | 289.2 | 535.3 | 644.2 |
+| Pages recorded / plan size | 223,318 / 22.7 KB | | |
+| `memory.current` before → **asleep** | 662 → **10.1 MB** | | |
+| **`swap.current` asleep** | **767 MB** | | |
+| anon / file asleep | 0.0 / 0.0 MB | | |
+
+The first sleep of a fresh target pushed 927 MB to 12.9 MB in 726 ms, of which reclaim was 684 ms.
+
+### Wake
+
+30 cycles with a 32-thread pool, from the Gateway's broadcast; 223,318 pages (872 MB) restored from swap:
+
+| Step | Median | p90 | Max |
+| --- | --- | --- | --- |
+| Order received by the observer | 3.9 | 6.0 | 9.6 |
+| Executor checks pass | 4.2 | 6.3 | 9.8 |
+| **Restore done, still frozen** | **251.4** | **291.7** | **297.0** |
+| Restore rate | 3,544 MB/s | 4,477 MB/s | 4,640 MB/s |
+| Thawed | 251.8 | 291.9 | 297.5 |
+| **Target answers HTTP** | **252.1** | **292.2** | **297.9** |
+| **Result in the waiting request (Valkey pop)** | **254.0** | **294.8** | **301.0** |
+| Restore alone | 246.2 | 287.2 | 291.3 |
+
+- **Misses: 6 of 30.** These are wakes whose result came after 300 ms; they were ready at 304–373 ms. The steps above are the 24 that came in time. For each miss, the fallback relayed the same order over SSH, was refused as `replayed nonce`, and the wake ran once.
+- **Outside the restore** the whole path cost ~8 ms, as in round 3.
+
+**Compared with today's live Python helper** (0.72 s total, restore 0.39–0.45 s from swap):
+
+| | Live helper | Spike, 32 threads |
+| --- | --- | --- |
+| Restore from swap | 0.39–0.45 s | **0.18 s** (sweep, 264k–234k pages) to **0.25 s** (30-cycle run, 223k pages), median |
+| Total, to the target answering | 0.72 s | **0.18–0.25 s**, including the WebSocket order |
+| To the result in the waiting request | — | **0.18–0.25 s** |
+
+This holds on a stand-in in a delegated cgroup, with no Incus unfreeze API in the path, on 2 CPUs. Swap was host swap files under concurrent load from other Instances, so its speed varied: the same 32-thread pool restored at 5.2 GB/s in the sweep and 3.5 GB/s in the 30-cycle run.
+
+### Pool size
+
+8 cycles per size; the order of the runs was 2, 4, 8, 16, 32, 64 ([`r4-sweep-t*.jsonl`](r4-sweep-t2.jsonl)):
+
+| Pool threads | Wakes | Restore median | p90 | Max | MB/s median | Target answers, median | p90 | Misses (300 ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2 (= CPU count) | 8 | 1,619 | 1,726 | 1,953 | 637 | 1,627 | 1,731 | 8/8 |
+| 4 | 8 | 1,014 | 1,128 | 2,072 (partial) | 1,012 | 1,023 | 1,135 | 8/8 |
+| 8 | 8 | 776 | 809 | 884 | 1,181 | 782 | 819 | 8/8 |
+| 16 | 8 | 254 | 290 | 361 | 3,606 | 260 | 296 | 2/8 |
+| **32** | 8 | **176** | **180** | **198** | **5,182** | **181** | **184** | **0/8** |
+| 64 | 8 | 193 | 197 | 213 | 4,742 | 198 | 203 | 0/8 |
+
+- **Swap-in waits on disk, not on CPU.** A pool sized to the CPU count (2) is 9× slower than 32 threads.
+- **The best size is 32 here.** Between 8 and 16 threads the rate jumps by 3×: enough reads in flight to fill the swap device's queue. 64 adds nothing.
+- **Product sizing.** The pool should be sized from the swap device's queue depth: about 32 per Node, not a function of the CPU count. 16 is the floor.
+
+### Concurrency: 3 targets at once
+
+4 rounds. Each slept 101–103 (about 237k pages and 767 MB of swap each), then broadcast three wakes back to back. All three share one pool ([`r4-burst-t32.jsonl`](r4-burst-t32.jsonl), [`r4-burst-t64.jsonl`](r4-burst-t64.jsonl)).
+
+| Measure (ms from the first broadcast) | Pool 32: median | p90 | Max | Pool 64: median | p90 | Max |
+| --- | --- | --- | --- | --- | --- | --- |
+| Executor checks pass | 9.9 | 16.0 | 25.2 | 12.9 | 52.4 | 83.5 |
+| Restore done, per target | 592.4 | 787.2 | 1,014.1 | 613.1 | 1,237.1 | 1,425.4 |
+| Restore rate, per target | 1,591 MB/s | | | 1,548 MB/s | | |
+| Target answers, per target | 595.0 | 790.7 | 1,014.8 | 616.1 | 1,254.1 | 1,426.4 |
+| **Last of the 3 targets answers** | **747.2** | **1,014.8** | **1,014.8** | 676.2 | 1,426.4 | 1,426.4 |
+| Last result in its request | 748.5 | 1,016.1 | 1,016.1 | 677.4 | 1,430.1 | 1,430.1 |
+
+- **All 12 wakes in each run restored completely.**
+- **Order checks were no longer starved** (10 ms against 87 ms in round 3), because the shared pool replaces the per-wake threads.
+- **Shared rate.** The three wakes shared ~4.8 GB/s at 32 threads, the same swap rate as one wake, so each took about three times as long.
+- **64 threads are worse in a burst.** The median is about the same, but the tail is longer.
+- **Order of service.** The pool serves items in arrival order, so every target finishes late. Serving targets one after another would finish the first in ~0.25 s, and the last no later than now.
+
+### A new finding: pages left in swap drop out of every later plan
+
+The sleep's scan records only pages **present in RAM** (pagemap bit 63).
+
+- **What happened.** One wake in the pool-of-4 run hit the 2 s bound and stopped `partial` at 189,959 of 263,757 pages. From then on, every plan recorded about 30k fewer pages: 263,757 → 234,089.
+- **Why.** The pages left in swap were never restored, so they were not present at the next sleep, and nothing recorded them again. A smaller step (234,105 → 223,317) followed in the pool-of-64 run with no partial restore.
+- **The cost.** Each lost page is faulted back from swap on first use. This breaks D2 ("restore everything") over time.
+- **The fix.** Record present **or swapped** pages (bit 63 or bit 62). That is still the kernel's own record of the process's memory.
+
+### What changed for product form
+
+- **Pool size.** One pool per Node, ~32 threads, sized from swap I/O, not from the CPU count.
+- **Pool order.** Serve one target's items before the next target's, to cut the first wake's time in a burst.
+- **Scan.** Record swapped pages as well as present ones.
+- **Incus.** A change to an Instance's `limits.memory` through Incus rewrites its `memory.swap.max`. Every path that changes memory limits must reapply the swap state the sleep and wake expect.

@@ -3,7 +3,7 @@
 // as orbit. The result reaches this request through the agent-view subscriber and a blocking pop on
 // `spike:op:<Operation>`. Prints JSON lines.
 //   php bench3.php cycle <cycles> <threads> [target]   sleep, then wake, of one target
-//   php bench3.php burst <rounds>                      sleep 101..105, then wake all five at once
+//   php bench3.php burst <rounds> <threads>            sleep 101..105, then wake all five at once
 //   php bench3.php crash                               the wake of 105 with the executor killed mid-wake
 // After 300 ms without a result, the fallback hands the same signed order to the Node's relay over SSH.
 require 'vendor/autoload.php';
@@ -11,12 +11,20 @@ $app = require 'bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 require '/opt/orbit-spike/order.php';
 
-$nodeId = 3;
+// Round 4: the Node comes from SPIKE_NODE (3 = nested-app-dev, 4 = nested-app-prod).
+define('SPIKE_NODE', (int) (getenv('SPIKE_NODE') ?: 3));
+$nodeId = SPIKE_NODE;
 $bound = 0.300;
 $node = App\Models\Node::query()->findOrFail($nodeId);
 $key = app(App\Infrastructure\Ssh\SshKeyProvider::class)->privateKeyPath();
 $ssh = sprintf('ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/orbit-spike-known-hosts -i %s -o ControlMaster=auto -o ControlPath=/tmp/orbit-spike-ssh-%%C -o ControlPersist=300 %s@%s',
     escapeshellarg($key), escapeshellarg($node->user), escapeshellarg($node->wireguard_ip));
+
+/** Round 4: the restore pool is the Node's; its size is set before the executor starts. */
+function pool_size(string $ssh, int $threads): void
+{
+    on_node($ssh, "echo $threads | sudo -n tee /etc/orbit-spike/restore-threads >/dev/null && sudo -n systemctl restart orbit-spike-executor3 && sleep 0.5");
+}
 
 function on_node(string $ssh, string $command): string
 {
@@ -55,9 +63,9 @@ function ms(?string $ns, float $t0): ?float
 /** Sends one order and waits for its result; on a miss, the fallback. */
 function order(string $ssh, string $target, string $action, string $op, float $bound, float $wait): array
 {
-    $o = spike_order(3, $target, $op, action: $action);
+    $o = spike_order(SPIKE_NODE, $target, $op, action: $action);
     $t0 = microtime(true);
-    spike_broadcast(3, $o['envelope'], 'channel');
+    spike_broadcast(SPIKE_NODE, $o['envelope'], 'channel');
     $r = wait_op($op, $bound);
     $row = ['t0' => $t0, 'miss' => $r === null];
     if ($r === null) {
@@ -115,7 +123,7 @@ $run = bin2hex(random_bytes(3));
 
 if ($mode === 'cycle') {
     $target = $argv[4] ?? '101';
-    on_node($ssh, 'echo '.(int) $argv[3].' | sudo -n tee /etc/orbit-spike/restore-threads');
+    pool_size($ssh, (int) $argv[3]);
     for ($i = 0; $i < (int) $argv[2]; $i++) {
         $s = order($ssh, $target, 'sleep', "sleep-$run-$i", 10.0, 5.0);
         echo json_encode(['kind' => 'sleep', 'i' => $i] + sleep_row($s)), "\n";
@@ -127,13 +135,13 @@ if ($mode === 'cycle') {
 }
 
 if ($mode === 'burst') {
-    $targets = ['101', '102', '103', '104', '105'];
-    on_node($ssh, 'echo 32 | sudo -n tee /etc/orbit-spike/restore-threads');
+    $targets = array_slice(['101', '102', '103', '104', '105'], 0, (int) (getenv('SPIKE_TARGETS') ?: 5));
+    pool_size($ssh, (int) ($argv[3] ?? 4));
     for ($round = 0; $round < (int) $argv[2]; $round++) {
         $ops = [];
         foreach ($targets as $t) {
             $ops[$t] = "bsleep-$run-$round-$t";
-            spike_broadcast(3, spike_order(3, $t, $ops[$t], action: 'sleep')['envelope'], 'channel');
+            spike_broadcast(SPIKE_NODE, spike_order(SPIKE_NODE, $t, $ops[$t], action: 'sleep')['envelope'], 'channel');
         }
         foreach ($ops as $t => $op) {
             $r = wait_op($op, 15.0);
@@ -142,11 +150,11 @@ if ($mode === 'burst') {
         usleep(300_000);
         $orders = [];
         foreach ($targets as $t) {
-            $orders[$t] = spike_order(3, $t, "bwake-$run-$round-$t", action: 'wake');
+            $orders[$t] = spike_order(SPIKE_NODE, $t, "bwake-$run-$round-$t", action: 'wake');
         }
         $t0 = microtime(true);
         foreach ($orders as $o) {
-            spike_broadcast(3, $o['envelope'], 'channel');
+            spike_broadcast(SPIKE_NODE, $o['envelope'], 'channel');
         }
         foreach ($targets as $t) {
             $r = wait_op("bwake-$run-$round-$t", 10.0);
@@ -165,15 +173,15 @@ if ($mode === 'crash') {
     on_node($ssh, 'echo 3000 | sudo -n tee /etc/orbit-spike/test-pause-ms');
     file_put_contents('/tmp/orbit-spike-crash-go', '1');
     $op = "cwake-$run";
-    $o = spike_order(3, '105', $op, action: 'wake');
+    $o = spike_order(SPIKE_NODE, '105', $op, action: 'wake');
     $t0 = microtime(true);
-    spike_broadcast(3, $o['envelope'], 'channel');
+    spike_broadcast(SPIKE_NODE, $o['envelope'], 'channel');
     $first = spike_redis()->blPop(["spike:op:$op", 'spike:results'], 10.0);
     echo json_encode(['kind' => 'crash', 'step' => 'original order', 'after_ms' => (microtime(true) - $t0) * 1000, 'result' => $first ? json_decode($first[1], true)['body'] : null]), "\n";
     sleep(2);
-    $again = spike_order(3, '105', $op, action: 'wake');
+    $again = spike_order(SPIKE_NODE, '105', $op, action: 'wake');
     $t0 = microtime(true);
-    spike_broadcast(3, $again['envelope'], 'channel');
+    spike_broadcast(SPIKE_NODE, $again['envelope'], 'channel');
     $r = wait_op($op, 5.0);
     echo json_encode(['kind' => 'crash', 'step' => 'same Operation resent', 'result' => $r['body'] ?? null]), "\n";
     $relayed = relay($ssh, $again['envelope']);
@@ -186,11 +194,11 @@ if ($mode === 'relay') {
     // WebSocket, which must not act twice.
     $s = order($ssh, '104', 'sleep', "rsleep-$run", 10.0, 5.0);
     $op = "rwake-$run";
-    $o = spike_order(3, '104', $op, action: 'wake');
+    $o = spike_order(SPIKE_NODE, '104', $op, action: 'wake');
     $t0 = microtime(true);
     $relayed = relay($ssh, $o['envelope']);
     echo json_encode(['kind' => 'relay', 'step' => 'wake through the SSH relay', 'ms' => (microtime(true) - $t0) * 1000, 'status' => $relayed['status'] ?? null, 'peer' => $relayed['peer'] ?? null, 'pages' => $relayed['restore']['pages'] ?? null]), "\n";
-    spike_broadcast(3, $o['envelope'], 'channel');
+    spike_broadcast(SPIKE_NODE, $o['envelope'], 'channel');
     $r = wait_op($op, 3.0);
     echo json_encode(['kind' => 'relay', 'step' => 'same signed order through the WebSocket', 'status' => $r['body']['status'] ?? null, 'reason' => $r['body']['reason'] ?? null, 'first_result' => isset($r['body']['first_result'])]), "\n";
 }

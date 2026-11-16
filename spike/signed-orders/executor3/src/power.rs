@@ -8,7 +8,8 @@
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::os::unix::fs::{FileExt, MetadataExt};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PAGE: u64 = 4096;
@@ -280,6 +281,56 @@ pub fn sleep(target: &str) -> Value {
     })
 }
 
+#[derive(Default)]
+struct Progress {
+    done: AtomicU64,
+    failed: AtomicU64,
+    taken: AtomicU64,
+    left: Mutex<usize>,
+    cv: Condvar,
+}
+
+type Job = Box<dyn FnOnce() + Send>;
+
+/// The Node's one restore pool: a fixed set of threads that take jobs in arrival order, so concurrent
+/// wakes share the cores and the swap device instead of each starting its own threads.
+pub struct Pool {
+    tx: Mutex<mpsc::Sender<Job>>,
+    pub size: usize,
+}
+
+impl Pool {
+    fn submit(&self, job: Job) {
+        self.tx.lock().unwrap().send(job).expect("restore pool");
+    }
+}
+
+static POOL: OnceLock<Pool> = OnceLock::new();
+
+/// Size: the number in `size_file`, else the CPU count. Read once, when the executor starts.
+pub fn init_pool(size_file: &str) -> usize {
+    let size = std::fs::read_to_string(size_file).ok().and_then(|t| t.trim().parse().ok())
+        .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4));
+    let (tx, rx) = mpsc::channel::<Job>();
+    let rx = Arc::new(Mutex::new(rx));
+    for _ in 0..size {
+        let rx = rx.clone();
+        std::thread::spawn(move || loop {
+            let job = rx.lock().unwrap().recv();
+            match job {
+                Ok(job) => job(),
+                Err(_) => return,
+            }
+        });
+    }
+    POOL.get_or_init(|| Pool { tx: Mutex::new(tx), size });
+    size
+}
+
+fn pool() -> &'static Pool {
+    POOL.get().expect("restore pool started")
+}
+
 struct Work {
     pidfd: i32,
     pid: i32,
@@ -317,7 +368,7 @@ fn restore_item(w: &Work, done_pages: &AtomicU64, failed_pages: &AtomicU64) {
     flush(&mut remote);
 }
 
-pub fn wake(target: &str, threads: usize, test_pause_ms: Option<u64>) -> Value {
+pub fn wake(target: &str, test_pause_ms: Option<u64>) -> Value {
     let root = cgroup_of(target);
     let t0 = Instant::now();
     let start_ns = now_ns();
@@ -372,29 +423,40 @@ pub fn wake(target: &str, threads: usize, test_pause_ms: Option<u64>) -> Value {
                     work.push(Work { pidfd: *fd, pid: p.pid, runs: cur });
                 }
             }
-            let next = AtomicUsize::new(0);
-            let (done, failed) = (AtomicU64::new(0), AtomicU64::new(0));
+            // Round 4: the items go to the Node's one restore pool, shared by every target's wake.
+            let items = work.len();
+            let progress = Arc::new(Progress::default());
             let t = Instant::now();
             let deadline = t + BOUND;
-            std::thread::scope(|s| {
-                for _ in 0..threads.max(1) {
-                    s.spawn(|| loop {
-                        let i = next.fetch_add(1, Ordering::Relaxed);
-                        if i >= work.len() || Instant::now() > deadline {
-                            break;
-                        }
-                        restore_item(&work[i], &done, &failed);
-                    });
+            for w in work {
+                let progress = progress.clone();
+                pool().submit(Box::new(move || {
+                    if Instant::now() <= deadline {
+                        restore_item(&w, &progress.done, &progress.failed);
+                        progress.taken.fetch_add(1, Ordering::Relaxed);
+                    }
+                    let mut left = progress.left.lock().unwrap();
+                    *left += 1;
+                    progress.cv.notify_all();
+                }));
+            }
+            {
+                let mut finished = progress.left.lock().unwrap();
+                while *finished < items {
+                    finished = progress.cv.wait(finished).unwrap();
                 }
-            });
+            }
+            let (done, failed) = (&progress.done, &progress.failed);
+            let next = &progress.taken;
+            let threads = pool().size;
             let secs = t.elapsed().as_secs_f64();
             restore_end_ns = now_ns();
             pidfds.iter().for_each(|fd| unsafe { libc::close(*fd); });
             let pages = done.load(Ordering::Relaxed);
-            let complete = next.load(Ordering::Relaxed) >= work.len();
+            let complete = next.load(Ordering::Relaxed) as usize >= items;
             restore = json!({
                 "status": if complete { "complete" } else { "partial" }, "identity_ms":identity_ms,
-                "pages":pages,"failed_pages":failed.load(Ordering::Relaxed),"items":work.len(),"threads":threads,
+                "pages":pages,"failed_pages":failed.load(Ordering::Relaxed),"items":items,"threads":threads,
                 "restore_ms":secs*1000.0,"mb_per_s":pages as f64 * PAGE as f64 / 1048576.0 / secs.max(1e-9),
             });
         }
