@@ -61,7 +61,7 @@ final readonly class ContainerDeployOutcome
             $payload['started'] = ! in_array($step, ['native_execution', 'Write the container intent'], true)
                 && ($step !== self::PrepareStep || in_array('start', $passed, true));
             $code = match (true) {
-                str_starts_with($step, 'Run dev deploy steps') => 'deployment.step_failed',
+                str_starts_with($step, self::DeployStepsStep) => 'deployment.step_failed',
                 is_string($file['error_code'] ?? null) && preg_match('/\A[a-z]+\.[a-z_]+\z/', $file['error_code']) === 1 => $file['error_code'],
                 default => 'operation.native_failed',
             };
