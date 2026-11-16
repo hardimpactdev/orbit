@@ -55,7 +55,7 @@ sequenceDiagram
   %%> Which Nodes:
   %%> - Every Node that offers proof places (ProofCopyHosts::offersPlaces) and holds the default's current seed. The default's own Node holds it.
   %%> Places on a Node:
-  %%> - Its ci_places minus its busy runners, and no more than its MemAvailable holds whole copy peaks (proof.copy_memory). One rule, in ProofCopyHosts.
+  %%> - Its ci_places minus its busy runners minus the proof copies already on it (any proof's; task copies take no place). No more than its MemAvailable holds whole copy peaks (proof.copy_memory). One rule, in ProofCopyHosts.
   %%> How:
   %%> - Read the runner state and MemAvailable of each Node from Prometheus before the admission transaction. A Node without a fresh read offers no place.
   %%> When:
@@ -70,7 +70,9 @@ sequenceDiagram
   %%> Why:
   %%> - A place runs one runner job or one proof copy. A Node's idle runners would take new jobs in the places that the proof holds.
   %%> When:
-  %%> - In each copy's create, before the copy starts its inner fleet. Under one lock per Node, the copy records its hold, then every idle runner service of the Node stops and is recorded.
+  %%> - In each copy's create, before the copy starts its inner fleet. Under one lock per Node, the copy records its hold.
+  %%> How many:
+  %%> - Idle runners stop only down to a limit: the running runners must not exceed ci_places minus the proof holds on the Node. Idle runners stop down to that number, and only those are recorded. With 5 places, no busy runner and 2 holds, 2 idle runners stop and 3 run.
   %%> Busy runners:
   %%> - A runner whose Runner.Worker process runs is busy. It finishes its job and is never stopped.
   GW->>GW: Hold admitted child starts
@@ -104,7 +106,7 @@ sequenceDiagram
   %%> When:
   %%> - In each copy's destroy, so after every run end, also a failure or a cancel. Under the Node's lock the copy drops its hold.
   %%> What it does:
-  %%> - When no hold is left on the Node, start every runner that the holds stopped. A runner that is gone is skipped. A second release changes nothing.
+  %%> - When no hold is left on the Node, start exactly the runners that the holds stopped, and no other. A runner that is gone is skipped. A second release changes nothing.
   GW->>GW: Merge all shard verdicts
   %%> Wait for every admitted child, require every expected case and every selected command, and close one proof result. Preserve a native interrupted shard as inconclusive interrupted coverage, even with all passed rows. A completed failed case or a non-interrupted child that did not pass takes precedence and fails the proof. Keep every case verdict, including synthesized unrun rows. Cancellation and admission interruption keep their existing failure semantics.
   GW-->>CLI: One merged report

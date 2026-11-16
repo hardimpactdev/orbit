@@ -91,14 +91,14 @@ A Node offers places to a proof when it [offers proof places](/reference/node-pr
 
 The free places of a Node are the smaller of two counts:
 
-- its `ci_places` minus its busy runners;
+- its `ci_places` minus its busy runners and minus the proof copies already on it, of any proof (task copies take no place);
 - the number of whole copy peaks that its available memory holds. One copy's peak is the Gateway setting `proof.copy_memory`.
 
 Before the admission transaction, the Gateway reads each Node's runner state and its available memory (Linux `MemAvailable`) from Prometheus: the series of the [runner state](/reference/node-provisioning#runner-state-for-the-runner-view) and of the node exporter. A Node without a fresh read offers no place now. `ProofCopyHosts` holds this rule.
 
 With no free place on any Node, the proof waits with the step "Wait for a free CI place" and retries every 20 seconds, within the same two-hour allowance. A busy pool makes a proof wait or take fewer copies; it never takes a busy runner's place.
 
-While a proof holds places on a Node, that Node's idle runners stop, so the one count stays true. Each copy's create holds its place before the copy starts its inner fleet: under one lock per Node, it records its hold and stops the service of every idle runner of the Node. A runner is busy while a `Runner.Worker` process runs in it. A busy runner finishes its job and is never stopped. Each copy's destroy drops its hold. When the last hold on the Node goes, the destroy starts every runner that the holds stopped. The destroy runs after every run end, a failure and a cancel too, so the runners always start again. [Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node) gives the steps on the Node.
+While a proof holds places on a Node, that Node's idle runners stop, so the one count stays true. Each copy's create holds its place before the copy starts its inner fleet: under one lock per Node, it records its hold and stops idle runner services only down to a limit: the running runners must not exceed the Node's `ci_places` minus the proof holds on it. Exactly the stopped runners are recorded. A proof that takes 2 places on a Node with 5 places and no busy runner stops 2 idle runners and leaves 3 running. A runner is busy while a `Runner.Worker` process runs in it. A busy runner finishes its job and is never stopped. Each copy's destroy drops its hold. When the last hold on the Node goes, the destroy starts exactly the recorded runners again. The destroy runs after every run end, a failure and a cancel too, so the runners always start again. [Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node) gives the steps on the Node.
 
 A runner can take a job between the read and its stop. It then keeps the job, and the Node runs one more job than its places until that job ends.
 

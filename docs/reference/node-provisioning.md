@@ -350,12 +350,14 @@ The `ci-runner` role installs the script `/usr/local/libexec/orbit-ci-runner-hol
 
 | Call | When | What it does |
 | --- | --- | --- |
-| `hold <copy>` | In each proof copy's create on the Node, before the copy starts its inner fleet | Records the hold of the copy, then stops each idle runner service in `orbit-ci` and records it |
+| `hold <copy>` | In each proof copy's create on the Node, before the copy starts its inner fleet | Records the hold of the copy, then stops idle runner services in `orbit-ci` down to the places left to runners, and records each one |
 | `release <copy>` | In each proof copy's destroy on the Node, also after a failed create | Removes the hold of the copy. When no hold is left, it starts the service of each recorded runner and clears the record |
 
 An idle runner service is active, and no `Runner.Worker` process runs in its container. Both calls run under one lock file per Node, so two copies never read the holds at the same time. The holds and the record of stopped runners are files under `/var/lib/orbit/ci-hold`, readable by root only. Each call changes nothing when it finds nothing to do, so a rerun is safe.
 
-Each hold stops every idle runner, not only the first one. A runner that was busy at the first copy's hold and has since finished stops at the next copy's hold.
+Each hold stops idle runners only down to a limit. Let P be the Node's `ci_places`, B its busy runners, and H the proof holds on the Node with the new one. The running runners, busy and idle, must not exceed P - H; the hold stops idle runners down to that number and records exactly those.
+
+With P = 5, B = 0 and two holds, two idle runners stop and three run. When the busy runners alone already exceed P - H, every idle runner stops and the busy ones finish. A runner that was busy at one hold and has since finished can stop at the next hold. The release starts exactly the recorded runners, no other.
 
 The test for busy is the one that the runner state script uses: the runner is busy while a `Runner.Worker` process runs in its container. The script reads it in the same command that stops the service. A runner that takes a job in that short moment between the two keeps its job. The Node then runs one more job than its places until that job ends.
 
