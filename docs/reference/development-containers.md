@@ -308,11 +308,11 @@ The software that the app and the agents run lives once per Node, in two version
 | `/opt/orbit-runtime/<version>/{lib,fonts}` | The [browser libraries and fonts](#browser-libraries-and-fonts) | Everyone |
 | `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |
 | `/opt/orbit-runtime/vite-plus/<digest>` | The [Vite+ home](/reference/compute-drivers#the-vite-home) that `vp` runs from, linked as `<version>/vite-plus-home` | Everyone |
-| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex`, and `conn-server` once the recipe pins it ([Container server](#container-server)) | `root:2750`, mode 0750 |
+| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex` and `conn-server` ([Container server](#container-server)) | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/agent/{t3,claude-code,codex}` | The releases | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
 
-The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)): T3, Claude Code and Codex in the agent folder; Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds in the runtime folder. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
+The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, Claude Code and Codex. The runtime folder holds Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
 
 A folder's version is the first 12 hex digits of a digest of everything in it, the notes included, so any change is a new version. Each program in `bin` links to its path in its part.
 
@@ -343,7 +343,7 @@ The record names the program that every call inside the container runs: the crea
 
 The image and its unit do not change. The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
 
-The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins no Conn Server release yet, so `conn` is refused. The releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host. Once the recipe pins a release as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, every agent folder holds both programs. The new folder version only adds files, so no running server restarts.
+The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins the Conn Server as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, so every agent folder holds both programs. Its releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host. A folder version that only adds the part adds files, so no running server restarts.
 
 ## Workspace volumes (draft)
 
