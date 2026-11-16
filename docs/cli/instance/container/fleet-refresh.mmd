@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Container runtime (ADR 0250 step 5, docs/reference/development-containers.md#refresh-after-a-release): after each Gateway release, the deployment of each nested-fleet default Instance to the release commit. It is `instance.deploy` with the fleet steps that only a nested-fleet default's intent runs. It refreshes the inner fleet and takes the seed that new Instances of that Project clone. For the nested-fleet path it replaces the release trigger and the daily run of the task VM base refresh, which is removed.
+  %% Decided by the owner (2026-11-15, ADR 0260 build step 4): when the proof Project's default records its seed, the Gateway copies it to each other Node that offers proof places (docs/cli/instance/seed-copy.mmd); a copy on a CI Node starts from that Node's seed.
   %% status: draft
   %% command: none · after each Gateway release · instance:deploy on the default runs the same flow
   %% kind: instance.deploy
@@ -40,7 +41,7 @@ sequenceDiagram
   %%> - the code and the detail name the failed phase, such as `instance.container_fleet_start_failed`, or the code is the phase's own refusal; nothing is restored
   %%> Phase start:
   %%> - the one start of a container; the Club key is delivered there, outside the container's disk
-  %%> - a default frozen by a sleep resumes with its fleet, `wg-nested` and the Club key; swap closes on each recorded cgroup that still exists, and the asleep marker goes once the `start` part passed (the container runs and its units are active; no web probe); a stopped default boots as before
+  %%> - a default frozen by a sleep resumes with its fleet, `wg-nested` and the Club key, through the power helper's `restore` (no plan: a nested-fleet sleep records none); swap closes on each cgroup of `limits.json` that still exists, and the asleep marker goes once the `start` part passed (the container runs and its units are active; no web probe); a stopped default boots as before
   %%> - the end of the deployment counts as activity: the idle sleep waits a full window (`deployed_recently`) before it freezes the default again
   %%> - the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
   %%> - grows the default's root disk to the intent's size (`ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`) before the start guard, online; never shrinks it
@@ -150,6 +151,16 @@ sequenceDiagram
     Note over GW: Record the seed commit
     %%> Result:
     %%> - new Instances of the Project clone the new seed; existing clones keep the fleet they have
+    opt default of the proof Project
+      Note over GW: Admit the seed copy<br/>instance.seed_copy
+      %%> When:
+      %%> - one Node or more that offers proof places, other than the default's Node, has a seed that is not this new seed (docs/reference/development-containers.md#the-seed-on-each-ci-node)
+      %%> - a seed copy is open: refused by its lock, `operation.target_busy`; the open copy admits the next one when it ends
+      %%> Why:
+      %%> - each CI Node keeps its own seed, so a proof copy there starts from its own Node; one refresh makes one fleet, and the copy moves it once per seed and Node
+      %%> Result:
+      %%> - best effort: the refresh has ended, and nothing in the release waits for the copy
+    end
   else a step fails from the checkout on
     SW->>N: Restore the old seed<br/>Ansible · tags fleet_restore
     %%> What it does:

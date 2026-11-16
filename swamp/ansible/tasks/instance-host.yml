@@ -1,8 +1,15 @@
 ---
-# The container branch of the app-dev role on a Node of the build list (docs/reference/compute-drivers.md#prepare-an-instance-container-host).
-# The Gateway sends `instances` only for such a Node, so every other Node runs none of this. It shares the kernel, Incus and container
+# The container branch of the app-dev role on a Node of the build list (docs/reference/compute-drivers.md#prepare-an-instance-container-host),
+# and of the ci-runner role on a CI Node that hosts proof copies (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node). The
+# Gateway sends `instances` only for such a Node, so every other Node runs none of this. A CI Node runs no Caddy: its intent has no
+# `dev_ports` and no `own_site`, so it gets no development port redirect, no own-site rules and no wake of frozen containers. It shares the kernel, Incus and container
 # side with a task container host, then installs the two shared folders and builds the image. It creates no Instance.
 # The Node provides the Incus pool: ZFS, where a copy is a clone, or a directory pool on a nested proof Node, where a copy is a full copy.
+# A CI-only Node's converge creates it first (instance-pool-create.yml).
+- name: Create the Instance pool of a CI-only Node
+  when: instances.create_pool | default(false)
+  ansible.builtin.include_tasks: instance-pool-create.yml
+
 - name: Read the Instance pool
   ansible.builtin.command: { argv: [incus, query, "--", "/1.0/storage-pools/{{ instances.pool }}"] }
   register: instance_pool_read
@@ -184,12 +191,13 @@
     # Network-only baseline. Endpoint rules are merged below; NICs use the separate proxy ACL.
     container_acl_rules:
       description: Orbit Instance boundary
-      # The model forwarder, the egress proxy, and a container's own site on 443 and the development listener (InstanceOwnSite).
+      # The model forwarder, the egress proxy, and a container's own site on 443 and the development listener (InstanceOwnSite) where
+      # the Node's Caddy serves it.
       egress: &instance_bridge_egress >-
         {{ [{'action': 'allow', 'destination': instances.address.split('/')[0] ~ '/32', 'protocol': 'tcp',
              'destination_port': instances.forwarder_port | string, 'state': 'enabled'},
             {'action': 'allow', 'destination': instances.address.split('/')[0] ~ '/32', 'protocol': 'tcp',
-             'destination_port': instances.egress.port | string, 'state': 'enabled'}] + instances.own_site.acl }}
+             'destination_port': instances.egress.port | string, 'state': 'enabled'}] + (instances.own_site.acl if instances.own_site is defined else []) }}
       # Incus checks the bridge ACL before a container's own, and its default rejects what the Node sends or forwards to the bridge.
       # So it admits what a container's ACL may admit: the Node's Caddy to FrankenPHP and the development ports, and T3's clients.
       ingress: "{{ instances.ingress }}"
@@ -265,6 +273,7 @@
 # WireGuard peers to a free port of the development range on the Node's WireGuard address go to Caddy's development listener, which
 # routes them by host name to the same port in a clone. The table binds nothing, so a port in use on the Node keeps its program.
 - name: Redirect agent development ports to Caddy
+  when: instances.dev_ports is defined
   vars:
     dev_ports_file: /etc/orbit/instance-dev-ports.nft
   block:
@@ -323,17 +332,27 @@
       when: (dev_ports_ruleset.changed or dev_ports_live.rc != 0) and not dev_ports_started.changed
       changed_when: true
 
-# The fast wake of a frozen container (docs/reference/development-containers.md#the-node-resumes-a-frozen-container): the Gateway's
-# wake request in /dev/shm/orbit/hibernation (root:caddy 0755, so only root writes there) starts the fixed script below. It runs as
-# root with no capabilities: the Incus socket and the container's cgroup file belong to root, and `incus-admin` is root's equal.
-# The files only add a unit: a converge that changes them restarts nothing that runs.
+- name: Install the power helper
+  ansible.builtin.include_tasks: instance-power-helper.yml
+
+# The fast wake of a frozen container (docs/reference/prepared-restore.md#the-fast-wake): the Gateway's operation-qualified wake
+# request in /dev/shm/orbit/hibernation (root:caddy 0755, so only root writes there) starts the dispatcher, which starts one worker
+# unit per Operation. Both run as root with no capabilities: the Incus socket, systemd's private socket, the helper's state and the
+# outcome folder belong to root, and `incus-admin` is root's equal. The worker calls the power helper through its own unit, which
+# holds the helper's capabilities. The Gateway reads the outcomes in /var/lib/orbit/hibernation/outcomes (root:caddy 0755, status
+# files 0644) and tells a Node with the fast wake by the worker template. The files only add units: a converge that changes them
+# restarts nothing that runs.
+# Only a Node whose Caddy serves the containers' own sites puts a container to sleep and wakes it.
 - name: Install the wake of frozen Instance containers
+  when: instances.own_site is defined
   block:
     - name: Make the folder of the wake script
       ansible.builtin.file: { path: /usr/local/libexec, state: directory, owner: root, group: root, mode: "0755" }
+    - name: Make the folder of the wake outcomes
+      ansible.builtin.file: { path: /var/lib/orbit/hibernation/outcomes, state: directory, owner: root, group: caddy, mode: "0755" }
     - name: Write the wake script
       ansible.builtin.copy: { src: files/instance-container-wake.sh, dest: /usr/local/libexec/orbit-instance-wake, owner: root, group: root, mode: "0755" }
-    - name: Write the wake service
+    - name: Write the wake dispatcher
       ansible.builtin.copy:
         dest: /etc/systemd/system/orbit-instance-wake.service
         owner: root
@@ -341,13 +360,37 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=Orbit Instance containers: resume a frozen container on a wake request
+          Description=Orbit Instance containers: hand each wake request to its worker
           # Several Instances may wake at once; the start limit must never switch the wake requests off.
           StartLimitIntervalSec=0
 
           [Service]
           Type=oneshot
-          ExecStart=/usr/local/libexec/orbit-instance-wake
+          ExecStart=/usr/local/libexec/orbit-instance-wake dispatch
+          TimeoutStartSec=10
+          CapabilityBoundingSet=
+          AmbientCapabilities=
+          NoNewPrivileges=yes
+          PrivateTmp=yes
+          PrivateNetwork=yes
+          ProtectSystem=strict
+          ProtectHome=yes
+          ReadWritePaths=-/dev/shm/orbit/hibernation
+      register: wake_service
+    - name: Write the wake worker
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/orbit-instance-wake@.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Orbit Instance containers: the fast wake of Operation %i
+          StartLimitIntervalSec=0
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/libexec/orbit-instance-wake work %i
           TimeoutStartSec=30
           CapabilityBoundingSet=
           AmbientCapabilities=
@@ -356,10 +399,10 @@
           PrivateNetwork=no
           ProtectSystem=strict
           ProtectHome=yes
-          ReadWritePaths=-/dev/shm/orbit/hibernation -/data/caddy/orbit/hibernation /sys/fs/cgroup
-          RuntimeDirectory=orbit-instance-wake
-          Environment=INCUS_CONF=/run/orbit-instance-wake
-      register: wake_service
+          ReadWritePaths=-/dev/shm/orbit/hibernation -/data/caddy/orbit/hibernation /var/lib/orbit/hibernation/outcomes
+          RuntimeDirectory=orbit-instance-wake-%i
+          Environment=INCUS_CONF=/run/orbit-instance-wake-%i
+      register: wake_worker
     - name: Write the wake request watch
       ansible.builtin.copy:
         dest: /etc/systemd/system/orbit-instance-wake.path
@@ -371,23 +414,25 @@
           Description=Orbit Instance containers: wake requests
 
           [Path]
-          PathExistsGlob=/dev/shm/orbit/hibernation/app-instance-*.wake
+          PathExistsGlob=/dev/shm/orbit/hibernation/app-instance-*-op-*.wake
           Unit=orbit-instance-wake.service
 
           [Install]
           WantedBy=paths.target
       register: wake_path
+    # A changed request pattern takes effect when the watch restarts.
     - name: Watch for wake requests
       ansible.builtin.systemd_service:
         name: orbit-instance-wake.path
-        daemon_reload: "{{ wake_service.changed or wake_path.changed }}"
+        daemon_reload: "{{ wake_service.changed or wake_worker.changed or wake_path.changed }}"
         enabled: true
-        state: started
+        state: "{{ 'restarted' if wake_path.changed else 'started' }}"
 
 # A container's own site (docs/reference/development-containers.md#the-own-site-from-inside): UFW admits 443 and the development
 # listener in from the bridge to its gateway address, where the table above sends the development range. Caddy admits only the
 # container that a site belongs to.
 - name: Admit the containers to their own sites
+  when: instances.own_site is defined
   community.general.ufw:
     rule: "{{ item.action }}"
     interface_in: "{{ item.in_interface }}"

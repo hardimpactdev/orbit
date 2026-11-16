@@ -229,6 +229,7 @@ it('records a running container but no seed when a deployment fails after the co
     $runtime = InstanceRuntime::query()->where('instance_id', $instance->id)->firstOrFail();
     expect($runtime->power_state)->toBe(InstanceRuntimePowerState::Running)
         ->and($runtime->seed_commit)->toBeNull()
+        ->and($runtime->seed_taken_at)->toBeNull()
         ->and($operation->refresh()->error_code)->toBe('deployment.checkout_dirty');
 });
 
@@ -297,6 +298,8 @@ it('records the seed commit and a running container after a deployment passes, a
 
     $runtime = InstanceRuntime::query()->where('instance_id', $instance->id)->firstOrFail();
     expect($runtime->seed_commit)->toBe($commit)
+        // A retake at the same commit keeps the seed's name, so the time names the seed too (docs/reference/development-containers.md#records).
+        ->and($runtime->seed_taken_at)->not->toBeNull()
         ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Running)
         ->and($instance->refresh()->seed_commit)->toBeNull()
         ->and($instance->auto_deploy_state['result'])->toBe('up_to_date')

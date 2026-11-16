@@ -206,7 +206,7 @@ Deno.test("a duplicate, wrong base or failed lookup refuses the write", () => {
 
 const files = (
     overrides: Partial<
-        Record<"head" | "base" | "behind" | "overlap" | "merge", string> & { workflows: string | null }
+        Record<"head" | "base" | "behind" | "overlap" | "merge", string> & { workflows: string | null; merged: string | null }
     > = {},
 ) => ({
     head: "c".repeat(40) + "\n",
@@ -215,6 +215,7 @@ const files = (
     overlap: "",
     merge: "",
     workflows: "" as string | null,
+    merged: "" as string | null,
     ...overrides,
 });
 
@@ -227,7 +228,9 @@ Deno.test("a copy's base is stated, behind or not, and only a real conflict refu
             behind_by: 2,
             overlapping_paths: [],
             overlapping_more: 0,
+            merged_default: null,
         },
+        merged: "",
         error_code: "",
     });
     assertEquals(
@@ -242,6 +245,7 @@ Deno.test("a copy's base is stated, behind or not, and only a real conflict refu
         ),
         {
             facts: null,
+            merged: "",
             error_code: 'tasks.publish_conflict: "app/a.php", "x\\ny"',
         },
     );
@@ -260,7 +264,7 @@ Deno.test("a copy's base is stated, behind or not, and only a real conflict refu
 Deno.test("a workflow change the default head lacks refuses with its paths, before a conflict", () => {
     const workflows = ".github/workflows/x.yml\0.github/workflows/y.yml\0";
     const line = 'tasks.publish_workflow_change: ".github/workflows/x.yml", ".github/workflows/y.yml"';
-    assertEquals(baseFacts(0, files({ workflows })), { facts: null, error_code: line });
+    assertEquals(baseFacts(0, files({ workflows })), { facts: null, merged: "", error_code: line });
     // A conflict as well: the workflow change refuses first, because the token could never push it.
     assertEquals(baseFacts(3, files({ workflows, merge: "d".repeat(40) + "\0app/a.php\0" })).error_code, line);
     // A list the read did not write, or a read that failed, is an error: never a pass, never a refusal.
@@ -268,6 +272,57 @@ Deno.test("a workflow change the default head lacks refuses with its paths, befo
     assertEquals(baseFacts(3, files({ workflows: null, merge: "d".repeat(40) + "\0app/a.php\0" })).error_code, "tasks.publish_failed");
     assertEquals(baseFacts(2, files({ workflows })).error_code, "tasks.publish_failed");
     assertEquals(baseFacts(0, files({ workflows, head: "" })).error_code, "tasks.publish_failed");
+});
+
+Deno.test("a merge at publish names the default head in the facts and passes its commit to the push", () => {
+    const merged = "e".repeat(40);
+    assertEquals(baseFacts(0, files({ merged: merged + "\n" })), {
+        facts: {
+            base_commit: "a".repeat(40),
+            default_commit: "c".repeat(40),
+            behind_by: 2,
+            overlapping_paths: [],
+            overlapping_more: 0,
+            merged_default: "c".repeat(40),
+        },
+        merged,
+        error_code: "",
+    });
+    // No merge: the push sends the candidate, and no head is named.
+    assertEquals([baseFacts(0, files()).merged, baseFacts(0, files()).facts?.merged_default], ["", null]);
+    // A merge file the read did not write, or one that holds no commit, is an error, never a push of the candidate.
+    assertEquals(baseFacts(0, files({ merged: null })).error_code, "tasks.publish_failed");
+    assertEquals(baseFacts(0, files({ merged: "not a commit\n" })).error_code, "tasks.publish_failed");
+    // An own workflow change still refuses first.
+    const workflows = ".github/workflows/x.yml\0";
+    assertEquals(baseFacts(0, files({ workflows, merged })).error_code, 'tasks.publish_workflow_change: ".github/workflows/x.yml"');
+});
+
+Deno.test("the Base section names a merge at publish with the default branch and its head", () => {
+    const facts = baseFacts(0, files({ merged: "e".repeat(40) + "\n" })).facts;
+    const once = withBase("Adds the export.", facts, "trunk");
+    assertEquals(
+        once,
+        [
+            "Adds the export.",
+            "",
+            BASE_MARK,
+            "## Base",
+            "",
+            "- Checked base: `" + "a".repeat(40) + "`",
+            "- Default branch head: `" + "c".repeat(40) + "`",
+            "- Behind by: 2 commits",
+            "- Merged trunk `" + "c".repeat(40) + "` at publish",
+            "- Overlapping paths: none",
+            "",
+        ].join("\n"),
+    );
+    // A re-publish replaces the section, the merge line with it; one without a merge drops the line.
+    assertEquals(withBase(once, facts, "trunk"), once);
+    assertEquals(withBase(once, baseFacts(0, files()).facts, "trunk"), withBase("Adds the export.", baseFacts(0, files()).facts, "trunk"));
+    // The planned pull request names the admitted default branch.
+    const plan = pullPlan({ input: publishInput(), steps: { read_pull: out(0, "[]") }, base: JSON.stringify(facts) });
+    assertEquals(JSON.parse(plan.body).body.includes("- Merged " + publishInput().base + " `" + "c".repeat(40) + "` at publish\n"), true);
 });
 
 Deno.test("the base path lists stop at their bound and count the rest", () => {
@@ -294,7 +349,7 @@ Deno.test("the base path lists stop at their bound and count the rest", () => {
 
 Deno.test("the body ends with one Base section, also on a re-publish", () => {
     const facts = baseFacts(0, files({ overlap: "app/a.php\0" })).facts;
-    const once = withBase("Adds the export.", facts);
+    const once = withBase("Adds the export.", facts, "main");
     assertEquals(
         once,
         [
@@ -311,16 +366,17 @@ Deno.test("the body ends with one Base section, also on a re-publish", () => {
             "",
         ].join("\n"),
     );
-    assertEquals(withBase(once, facts), once);
+    assertEquals(withBase(once, facts, "main"), once);
     assertEquals(
         withBase(
             "Adds the export.",
             baseFacts(0, files({ behind: "1\n" })).facts,
+            "main",
         ).includes("- Behind by: 1 commit\n- Overlapping paths: none"),
         true,
     );
     // A task VM publish, or a run before the base step, leaves the caller's body as it is.
-    assertEquals(withBase("Adds the export.", null), "Adds the export.");
+    assertEquals(withBase("Adds the export.", null, "main"), "Adds the export.");
 });
 
 Deno.test("the planned pull request carries the Base section on creation and update", () => {
@@ -334,7 +390,7 @@ Deno.test("the planned pull request carries the Base section on creation and upd
         });
         assertEquals(
             JSON.parse(plan.body).body,
-            withBase("Adds the export. $(touch inert)", facts),
+            withBase("Adds the export. $(touch inert)", facts, "main"),
         );
     }
     const plain = pullPlan({
@@ -384,12 +440,12 @@ Deno.test("the waiver lines stop where the body would pass the publish limit", (
 Deno.test("waiver lines after an earlier Base section stay, before the one new section", () => {
     const facts = baseFacts(0, files({ overlap: "app/a.php\0" })).facts;
     const waiver = "Docs-unaffected: docs/reference/x.md: no change.";
-    const earlier = withBase("Adds the export.", facts);
+    const earlier = withBase("Adds the export.", facts, "main");
     // A re-publish: the caller's body carries the earlier section, and withWaivers appends a line after it.
     const body = withWaivers(earlier, waiver);
     assertEquals(body.endsWith(waiver), true);
-    const republished = withBase(body, facts);
-    assertEquals(republished, withBase("Adds the export.\n\n" + waiver, facts));
+    const republished = withBase(body, facts, "main");
+    assertEquals(republished, withBase("Adds the export.\n\n" + waiver, facts, "main"));
     assertEquals(republished.split(BASE_MARK).length, 2);
     assertEquals(
         republished.indexOf(waiver) < republished.indexOf(BASE_MARK),
@@ -404,10 +460,10 @@ Deno.test("the Base section keeps the body within its limit", () => {
     );
     const facts = baseFacts(0, files({ overlap: paths.join("\0") + "\0" }))
         .facts;
-    const full = withBase("x", facts);
+    const full = withBase("x", facts, "main");
     // A body that leaves no room for the path list states their count instead.
     const tight = "x".repeat(BodyLimit - (full.length - 1) + 1);
-    const counted = withBase(tight, facts);
+    const counted = withBase(tight, facts, "main");
     assertEquals(counted.length <= BodyLimit, true);
     assertEquals(
         counted.endsWith(
@@ -417,7 +473,7 @@ Deno.test("the Base section keeps the body within its limit", () => {
     );
     // A body at the limit gets no section; the publish result still states the base.
     const limit = "x".repeat(BodyLimit);
-    assertEquals(withBase(limit, facts), limit);
+    assertEquals(withBase(limit, facts, "main"), limit);
 });
 
 Deno.test("a long conflict or overlap stays within its byte bound and counts the rest", () => {

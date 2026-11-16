@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Actions\Schedules\RunScheduleAction;
 use App\Data\Nodes\NodeTaskVmsData;
 use App\Domain\Doctor\DoctorFamily;
@@ -10,29 +11,49 @@ use App\Domain\Instances\BaselineNormalInstanceContainer;
 use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\NativeNodeRoleRemovalInput;
+use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeBridges;
+use App\Domain\Nodes\NodeRoleDirectProjection;
+use App\Domain\Nodes\NodeRoleRemovalProjection;
+use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Proof\ProofCopyHosts;
+use App\Domain\Proof\ProofSeedCopyProjection;
+use App\Domain\Proof\ProofSeeds;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Nodes\NodeRoleFirewallInput;
+use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
+use App\Models\ProofSeed;
 use App\Models\Schedule;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketAppTarget;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -141,6 +162,649 @@ describe('the one placement rule', function (): void {
                 'security.nesting' => 'true', 'security.syscalls.intercept.mknod' => 'true', 'security.syscalls.intercept.setxattr' => 'true',
                 'security.idmap.isolated' => 'true', 'security.idmap.size' => '101000000', 'limits.memory' => '12GiB', 'boot.autostart' => 'false',
             ]);
+    });
+});
+
+/** A CI Node: the `ci-runner` role in the given state, `ci.places` CI places, not on the build list and with no `app-dev` role. */
+function ciNode(int $places = 3, LifecycleStatus $status = LifecycleStatus::Active, string $name = 'ci', string $ip = '10.44.0.30'): Node
+{
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => $ip,
+        'public_ssh_host' => $ip, 'user' => 'orbit', 'settings' => ['ci' => ['places' => $places, 'proof_only' => false]],
+    ]));
+    $node->roles()->create(['role' => RoleName::CiRunner, 'status' => $status]);
+
+    return $node->refresh();
+}
+
+/** @return array<string, mixed> */
+function ciRunnerRuntime(Node $node): array
+{
+    $assignment = $node->roles()->where('role', RoleName::CiRunner)->firstOrFail();
+
+    return app(NativeNodeRoleRuntimeInput::class)->capture($node, $assignment, [], new Operation)['intent'];
+}
+
+describe('a CI Node that hosts proof copies', function (): void {
+    it('is CI-only with the ci-runner role, a CI place and no app-dev role; a role being added counts, one being removed does not', function (): void {
+        expect(ProofCopyHosts::ciOnly(ciNode()))->toBeTrue()
+            ->and(ProofCopyHosts::ciOnly(ciNode(1, LifecycleStatus::Provisioning, 'ci-new', '10.44.0.31')))->toBeTrue()
+            ->and(ProofCopyHosts::ciOnly(ciNode(1, LifecycleStatus::Failed, 'ci-failed', '10.44.0.32')))->toBeTrue()
+            ->and(ProofCopyHosts::ciOnly(ciNode(3, LifecycleStatus::Removing, 'ci-gone', '10.44.0.33')))->toBeFalse()
+            ->and(ProofCopyHosts::ciOnly(ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34')))->toBeFalse();
+        $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
+        $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        expect(ProofCopyHosts::ciOnly($both))->toBeFalse()
+            ->and(ProofCopyHosts::ciOnly(containerDefaultNode()))->toBeFalse();
+    });
+
+    it('offers proof places with the ci-runner role and a CI place, with or without app-dev', function (): void {
+        $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
+        $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+
+        expect(ProofCopyHosts::offersPlaces(ciNode()))->toBeTrue()
+            ->and(ProofCopyHosts::offersPlaces($both))->toBeTrue()
+            ->and(ProofCopyHosts::offersPlaces(ciNode(1, LifecycleStatus::Provisioning, 'ci-new', '10.44.0.31')))->toBeTrue()
+            ->and(ProofCopyHosts::offersPlaces(ciNode(3, LifecycleStatus::Removing, 'ci-gone', '10.44.0.33')))->toBeFalse()
+            ->and(ProofCopyHosts::offersPlaces(ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34')))->toBeFalse()
+            ->and(ProofCopyHosts::offersPlaces(containerDefaultNode()))->toBeFalse();
+    });
+
+    it('gives its ci-runner converge the container branch with the nested part, the CI demand and no Caddy parts', function (): void {
+        $node = ciNode();
+        app(NodeRoleRuntimeInput::class)->prepare($node, $node->roles()->sole());
+
+        $host = ciRunnerRuntime($node->refresh())['instances'];
+        expect($node->instance_bridge)->toBe('10.253.0.0/24')
+            ->and($host['project'])->toBe('orbit-instances')
+            ->and($host['cidr'])->toBe('10.253.0.0/24')
+            ->and($host['nested']['project'])->toBe('orbit-instances-nested')
+            ->and($host['nested']['image']['alias'])->toStartWith('orbit-instance-nested-')
+            // Three places, the seed holder and the next holder, each of a new nested default's size while the proof Project has none.
+            ->and($host['ids'])->toBe(13_172_736 + 5 * 101_000_000)
+            ->and($host)->not->toHaveKeys(['dev_ports', 'own_site'])
+            // Its converge creates the Instance pool (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
+            ->and($host['create_pool'])->toBeTrue();
+
+        $project = otherProject('orbit', true);
+        config(['proof.project' => $project->id]);
+        seedSwampNode();
+        recordedNestedInstance($project, nestedSwitch(containerDefaultNode(), true))->runtime()->firstOrFail()->update(['idmap_size' => 1_165_536]);
+        expect(ciRunnerRuntime($node)['instances']['ids'])->toBe(13_172_736 + 5 * 1_165_536);
+    });
+
+    it('gives the bridge DHCP and the proxy, and no own-site rules', function (): void {
+        $node = ciNode();
+        app(InstanceHostIntent::class)->prepare($node);
+
+        expect(array_map(static fn ($rule): string => $rule->shape->comment, app(NodeFirewallRuleCatalog::class)->instanceHostInput($node->refresh())))
+            ->toBe(array_slice(NodeFirewallRuleCatalog::InstanceInputComments, 0, 2));
+    });
+
+    it('leaves the ci-runner intent of a CI Node without CI places, or with app-dev beside it, as it was', function (): void {
+        $none = ciNode(0);
+        $before = ciRunnerRuntime($none);
+        $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
+        $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        config(['instances.container_nodes' => [$both->id]]);
+        app(NodeRoleRuntimeInput::class)->prepare($none, $none->roles()->sole());
+
+        expect($before)->not->toHaveKey('instances')
+            ->and(ciRunnerRuntime($none))->toBe($before)
+            ->and($none->refresh()->instance_bridge)->toBeNull()
+            ->and(ciRunnerRuntime($both))->not->toHaveKey('instances')
+            ->and(app(InstanceHostIntent::class)->role($both))->toBe(RoleName::AppDev);
+        // An app-dev Node's operator provides the pool: its intent never asks the converge to create one.
+        app(InstanceHostIntent::class)->prepare($both);
+        expect(app(InstanceHostIntent::class)->for($both->refresh()))->not->toHaveKey('create_pool');
+    });
+
+    it('refuses every create there first with instance.node_ci_only, before any record', function (bool $nested): void {
+        $node = ciNode();
+        $project = otherProject('tool', $nested);
+
+        expect(placementRefusal(fn () => InstancePlacement::assert($project, $node)))->toBe('instance.node_ci_only 409')
+            ->and(placementRefusal(fn () => containerCreate($project, $node)))->toBe('instance.node_ci_only 409')
+            ->and(Instance::query()->count())->toBe(0)
+            ->and(placementRefusal(fn () => InstancePlacement::assert($project, ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34'))))
+            ->not->toBe('instance.node_ci_only 409');
+        // A Node with both roles offers proof places and still takes normal Instances through app-dev.
+        $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
+        $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        expect(placementRefusal(fn () => InstancePlacement::assert($project, $both)))->not->toBe('instance.node_ci_only 409');
+    })->with([false, true]);
+});
+
+/** The run's Swamp Node, whose worker reaches the default's Node over SSH for the seed listener's certificate. */
+function seedSwampNode(): void
+{
+    $swamp = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'swamp', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.15', 'public_ssh_host' => '10.44.0.15', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+    $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+}
+
+/** The proof Project's nested default on the build-list Node, active with a seed taken at the given time. */
+function proofSeedDefault(string $takenAt = '2026-11-16 00:00:00'): Instance
+{
+    $project = otherProject('orbit', true);
+    config(['proof.project' => $project->id]);
+    $default = recordedNestedInstance($project, nestedSwitch(containerDefaultNode(), true));
+    $default->update(['status' => InstanceState::Active]);
+    $default->runtime()->firstOrFail()->update(['seed_commit' => str_repeat('a', 40), 'seed_taken_at' => $takenAt]);
+
+    return $default->refresh();
+}
+
+/** Ends a ci-runner add or converge of the Node, with the role runtime that the Gateway sends now, passed or failed. */
+function endCiRunnerConverge(Node $node, string $status): void
+{
+    $assignment = $node->roles()->where('role', RoleName::CiRunner)->sole();
+    app(NodeRoleRuntimeInput::class)->prepare($node, $assignment);
+    $node->refresh();
+    $run = 'run-converge-'.bin2hex(random_bytes(4));
+    $converge = Operation::query()->create(['kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+        'status' => 'running', 'triggered_by' => 'test', 'state' => ['swamp_run_id' => $run],
+        'input' => ['_role' => ['assignment_id' => $assignment->id, 'role' => 'ci-runner', 'created' => true, 'certificates' => ['leaves' => []]],
+            'native_role' => ['runtime' => ciRunnerRuntime($node), 'publications' => [], 'artifact_digests' => []]]]);
+    $failed = $status === 'failed';
+    app(NodeRoleDirectProjection::class)->apply($converge, ['run_id' => $run, 'status' => $status, 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['steps' => $failed ? ['Apply the role on the Node' => ['status' => 'failed']]
+            : ['Check the role' => ['status' => 'succeeded']], 'summary' => ['failed_steps' => $failed ? ['Apply the role on the Node'] : []]]]);
+}
+
+/** The Nodes' seed listeners trust the proof default's Node, as their passed ci-runner converge recorded it. */
+function seedListening(Node ...$nodes): void
+{
+    $sender = app(ProofSeeds::class)->defaultNode()->id ?? throw new LogicException('The proof Project has no default.');
+    Node::query()->whereKey(array_map(static fn (Node $node): int => $node->id, $nodes))->update(['seed_sender_id' => $sender]);
+}
+
+describe('the CI bridge of a Node (docs/reference/development-containers.md#nodes)', function (): void {
+    it('allocates no Instance bridge in a /24 that any Node\'s orbitci0 holds', function (): void {
+        $other = ciNode(3, LifecycleStatus::Active, 'ci-other', '10.44.0.31');
+        NodeBridges::recordCiBridge($other->id, '10.253.0.1/24');
+        $node = ciNode();
+        NodeBridges::recordCiBridge($node->id, '10.253.1.1/24');
+
+        expect($other->refresh()->ci_bridge)->toBe('10.253.0.0/24')
+            ->and(app(AllocateInstanceBridgeAction::class)->execute($node->refresh()))->toBe('10.253.2.0/24');
+    });
+
+    it('gives back an unused Instance bridge that clashes with the recorded CI bridge, so the next admission allocates around it', function (): void {
+        $node = ciNode();
+        expect(app(AllocateInstanceBridgeAction::class)->execute($node))->toBe('10.253.0.0/24');
+
+        NodeBridges::recordCiBridge($node->id, '10.253.0.1/24');
+        expect($node->refresh()->instance_bridge)->toBeNull()
+            ->and(app(AllocateInstanceBridgeAction::class)->execute($node))->toBe('10.253.1.0/24');
+        // An unreadable read records nothing.
+        NodeBridges::recordCiBridge($node->id, '');
+        NodeBridges::recordCiBridge($node->id, 'none');
+        expect($node->refresh()->ci_bridge)->toBe('10.253.0.0/24');
+    });
+
+    it('keeps an Instance bridge that a container uses, whatever the CI bridge', function (): void {
+        $node = containerDefaultNode();
+        $bridge = app(AllocateInstanceBridgeAction::class)->execute($node);
+        recordedNestedInstance(otherProject('tool', true), nestedSwitch($node, true));
+
+        NodeBridges::recordCiBridge($node->id, $bridge);
+        expect($node->refresh()->instance_bridge)->toBe($bridge)
+            // The database keeps the rule too.
+            ->and(fn () => Node::query()->whereKey($node->id)->update(['instance_bridge' => null]))->toThrow(QueryException::class, 'A Node keeps its Instance bridge.');
+    });
+
+    it('records the CI bridge from a ci-runner run, also a failed one, and not from another role', function (): void {
+        $node = ciNode(3, LifecycleStatus::Provisioning);
+        $assignment = $node->roles()->sole();
+        $run = function (string $role, int $assignmentId, string $status) use ($node): void {
+            $operation = Operation::query()->create(['kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+                'status' => 'running', 'triggered_by' => 'test', 'state' => ['swamp_run_id' => 'run-'.$role],
+                'input' => ['_role' => ['assignment_id' => $assignmentId, 'role' => $role, 'created' => true, 'certificates' => ['leaves' => []]],
+                    'native_role' => ['runtime' => [], 'publications' => [], 'artifact_digests' => []]]]);
+            $failed = $status === 'failed';
+            app(NodeRoleDirectProjection::class)->apply($operation, ['run_id' => 'run-'.$role, 'status' => $status, 'started_at' => now()->toIso8601String(),
+                'finished_at' => now()->toIso8601String(), 'result' => ['steps' => [
+                    'Read the CI bridge' => ['status' => 'succeeded', 'stdout' => $role === 'ci-runner' ? "10.253.7.1/24\n" : "10.253.9.1/24\n"],
+                    ...($failed ? ['Apply the role on the Node' => ['status' => 'failed']] : ['Check the role' => ['status' => 'succeeded']])],
+                    'summary' => ['failed_steps' => $failed ? ['Apply the role on the Node'] : []]]]);
+        };
+        $run('ci-runner', $assignment->id, 'failed');
+        expect($node->refresh()->ci_bridge)->toBe('10.253.7.0/24');
+
+        $database = $node->roles()->create(['role' => RoleName::Database, 'status' => 'provisioning']);
+        $run('database', $database->id, 'succeeded');
+        expect($node->refresh()->ci_bridge)->toBe('10.253.7.0/24');
+    });
+});
+
+describe('the seed of the proof default on each Node that offers proof places', function (): void {
+    it('targets each other Node that offers proof places and is behind the default\'s current seed, never the default\'s Node', function (): void {
+        $default = proofSeedDefault();
+        $defaultNode = $default->node()->firstOrFail();
+        $defaultNode->update(['settings' => [...$defaultNode->settings, 'ci' => ['places' => 2, 'proof_only' => false]]]);
+        $defaultNode->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+        $behind = ciNode();
+        $both = ciNode(2, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
+        $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        $current = ciNode(2, LifecycleStatus::Active, 'ci-now', '10.44.0.36');
+        ProofSeed::query()->create(['node_id' => $current->id, 'holder' => 'proof-seed', 'commit' => str_repeat('a', 40),
+            'taken_at' => '2026-11-16 00:00:00', 'operation_id' => 7]);
+        // A retake at the same commit is a new seed: the time differs.
+        $retaken = ciNode(2, LifecycleStatus::Active, 'ci-old', '10.44.0.37');
+        ProofSeed::query()->create(['node_id' => $retaken->id, 'holder' => 'proof-seed', 'commit' => str_repeat('a', 40),
+            'taken_at' => '2026-11-15 00:00:00', 'operation_id' => 6]);
+        seedListening($behind, $both, $current, $retaken, ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34'));
+
+        expect(array_map(static fn (Node $node): string => $node->name, app(ProofSeeds::class)->targets()))->toBe(['ci', 'ci-app', 'ci-old'])
+            ->and(app(ProofSeeds::class)->holder($current)?->operation_id)->toBe(7)
+            ->and(app(ProofSeeds::class)->holder($retaken))->toBeNull()
+            ->and(app(ProofSeeds::class)->holder($behind))->toBeNull();
+    });
+
+    it('gives the ci-runner converge of a Node that offers proof places the seed listener of the default\'s Node, and every other Node its removal', function (): void {
+        $default = proofSeedDefault();
+        $defaultNode = $default->node()->firstOrFail();
+        seedSwampNode();
+        $node = ciNode();
+        app(NodeRoleRuntimeInput::class)->prepare($node, $node->roles()->sole());
+
+        $seed = ciRunnerRuntime($node->refresh())['proof_seed'];
+        expect(collect($seed)->except('sender')->all())->toBe(['present' => true, 'listen' => '10.44.0.30:8444', 'trust' => 'orbit-proof-seed',
+            'project' => 'orbit-instances-nested'])
+            ->and($seed['sender']['node_id'])->toBe($defaultNode->id)
+            ->and($seed['sender']['ssh']['target']['host'])->toBe($defaultNode->wireguard_ip);
+
+        // No places: the converge removes the listener of this address and the trust.
+        $none = ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34');
+        expect(ciRunnerRuntime($none)['proof_seed'])->toBe(['present' => false, 'listen' => '10.44.0.34:8444', 'trust' => 'orbit-proof-seed',
+            'project' => 'orbit-instances-nested', 'sender' => null]);
+
+        // The default's own Node holds the seed and listens for nobody.
+        $defaultNode->update(['settings' => [...$defaultNode->settings, 'ci' => ['places' => 2, 'proof_only' => false]]]);
+        $defaultNode->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+        expect(ciRunnerRuntime($defaultNode->refresh())['proof_seed']['present'])->toBeFalse();
+    });
+
+    it('admits the seed port from the default\'s Node alone, in front of the WireGuard member trust, and removes both rules on a Node without places', function (): void {
+        $default = proofSeedDefault();
+        $source = (string) $default->node()->firstOrFail()->wireguard_ip;
+        $node = ciNode();
+        $firewall = app(NodeRoleFirewallInput::class);
+
+        $desired = $firewall->convergeCommands($node, RoleName::CiRunner)['desired'];
+        $seed = array_values(array_filter($desired, static fn (array $command): bool => str_starts_with((string) end($command), 'orbit:proof-seed')));
+        // Each goes in at the top: the allow last, so it is the first match.
+        expect($seed)->toBe([
+            ['ufw', 'insert', '1', 'deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed-deny'],
+            ['ufw', 'insert', '1', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed'],
+        ])
+            ->and(collect(app(NodeFirewallDesiredRules::class)->forNode($node))->pluck('name')->filter(static fn (string $name): bool => str_starts_with($name, 'orbit:proof-seed'))->values()->all())
+            ->toBe(['orbit:proof-seed', 'orbit:proof-seed-deny']);
+
+        $none = ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34');
+        $commands = $firewall->convergeCommands($none, RoleName::CiRunner);
+        expect(array_filter($commands['desired'], static fn (array $command): bool => str_starts_with((string) end($command), 'orbit:proof-seed')))->toBe([])
+            ->and(array_values(array_filter($commands['remove'], static fn (array $command): bool => str_starts_with((string) end($command), 'orbit:proof-seed'))))->toBe([
+                ['ufw', '--force', 'delete', 'deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.34', 'port', '8444', 'comment', 'orbit:proof-seed-deny'],
+                ['ufw', '--force', 'delete', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', '10.44.0.34', 'port', '8444', 'comment', 'orbit:proof-seed'],
+            ])
+            ->and(collect($firewall->remove($node, RoleName::CiRunner)['remove'])->pluck('comment')->filter(static fn (string $name): bool => str_starts_with($name, 'orbit:proof-seed'))->values()->all())
+            ->toBe(['orbit:proof-seed-deny', 'orbit:proof-seed']);
+    });
+
+    it('removes the seed listener, its trust entry by name and both firewall rules at a ci-runner removal', function (): void {
+        $source = (string) proofSeedDefault()->node()->firstOrFail()->wireguard_ip;
+        seedSwampNode();
+        $node = ciNode(3, LifecycleStatus::Removing);
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        $removal = app(NativeNodeRoleRemovalInput::class)->capture($node, $node->roles()->sole(), []);
+
+        expect(collect($removal['firewall'])->pluck('input.argv')->filter(static fn (array $argv): bool => str_starts_with((string) end($argv), 'orbit:proof-seed'))->values()->all())->toBe([
+            ['ufw', '--force', 'delete', 'deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed-deny'],
+            ['ufw', '--force', 'delete', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed'],
+        ]);
+
+        // The commands run on a stub incus: the trust entry goes by the fingerprint the Node lists for its name, and only this listener goes.
+        $folder = sys_get_temp_dir().'/proof-seed-removal-'.bin2hex(random_bytes(4));
+        mkdir($folder.'/bin', 0700, true);
+        file_put_contents($folder.'/bin/incus', "#!/bin/sh\ncase \"\$1 \$2 \$3\" in\n"
+            ."  'config trust list') printf 'other,aaaa\\norbit-proof-seed,bbbb\\n';;\n"
+            ."  'config get core.https_address') cat {$folder}/listener;;\n"
+            ."  *) echo \"\$*\" >> {$folder}/calls;;\nesac\n");
+        chmod($folder.'/bin/incus', 0755);
+        $run = static function (array $action) use ($folder): void {
+            $env = ['PATH' => $folder.'/bin:/usr/bin:/bin'];
+            if (Process::fromShellCommandline($action['only_if'], env: $env)->run() === 0) {
+                Process::fromShellCommandline($action['command'], env: $env)->mustRun();
+            }
+        };
+        // Its own phase, before the firewall phase: the removal commands keep nothing of it.
+        $actions = collect($removal['seed_listener']);
+        expect($actions)->toHaveCount(2)
+            ->and(collect($removal['commands'])->filter(static fn (array $action): bool => str_contains($action['command'], 'incus config'))->all())->toBe([]);
+        foreach (['10.44.0.30:8444', '10.44.0.30:9443'] as $listener) {
+            @unlink($folder.'/calls');
+            file_put_contents($folder.'/listener', $listener."\n");
+            $actions->each($run);
+            expect(file($folder.'/calls', FILE_IGNORE_NEW_LINES))->toBe($listener === '10.44.0.30:8444'
+                ? ['config trust remove bbbb', 'config unset core.https_address'] : ['config trust remove bbbb']);
+        }
+        exec('rm -rf '.escapeshellarg($folder));
+    });
+
+    it('renders a CI Node\'s firewall with the seed allow, then the seed deny, both before the WireGuard member trust', function (): void {
+        $source = (string) proofSeedDefault()->node()->firstOrFail()->wireguard_ip;
+        $node = ciNode();
+        $commands = app(NodeRoleFirewallInput::class)->convergeCommands($node, RoleName::CiRunner)['desired'];
+        // tasks/firewall.yml pairs an inserted deny with the command right after it, its allow, and checks the order against desired[0].
+        $deny = array_search('orbit:proof-seed-deny', array_map(static fn (array $command): string => (string) end($command), $commands), true);
+        expect(end($commands[0]))->toBe('orbit:wireguard-members')
+            ->and($deny)->toBeInt()
+            ->and(end($commands[$deny + 1]))->toBe('orbit:proof-seed');
+
+        // UFW applies the commands in order: `insert 1` puts a rule first, any other rule goes last, and an existing rule is skipped.
+        foreach ([[], ['orbit:wireguard-members', 'orbit-ci-runners']] as $installed) {
+            $rules = array_map(static fn (string $comment): array => ['comment' => $comment, 'argv' => []], $installed);
+            foreach ($commands as $command) {
+                if (in_array(end($command), array_column($rules, 'comment'), true)) {
+                    continue;
+                }
+                $rule = ['comment' => (string) end($command), 'argv' => $command];
+                $command[1] === 'insert' ? array_splice($rules, (int) $command[2] - 1, 0, [$rule]) : $rules[] = $rule;
+            }
+            $order = array_column($rules, 'comment');
+            $allow = $rules[array_search('orbit:proof-seed', $order, true)]['argv'];
+            $denied = $rules[array_search('orbit:proof-seed-deny', $order, true)]['argv'];
+            expect(array_search('orbit:proof-seed', $order, true))->toBeLessThan(array_search('orbit:proof-seed-deny', $order, true))
+                ->and(array_search('orbit:proof-seed-deny', $order, true))->toBeLessThan(array_search('orbit:wireguard-members', $order, true))
+                ->and(array_slice($allow, 3))->toBe(['allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed'])
+                ->and(array_slice($denied, 3))->toBe(['deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed-deny']);
+        }
+
+        // The Gateway's desired rule list, which the firewall check compares with the Node, holds both rules with their shapes.
+        $desired = collect(app(NodeFirewallDesiredRules::class)->forNode($node))->keyBy('name');
+        expect($desired['orbit:proof-seed']->shape->source)->toBe($source)
+            ->and($desired['orbit:proof-seed']->shape->port)->toBe('8444')
+            ->and($desired['orbit:proof-seed-deny']->shape->action)->toBe('deny')
+            ->and($desired['orbit:proof-seed-deny']->shape->source)->toBe('any')
+            ->and($desired->has('orbit:wireguard-members'))->toBeTrue();
+    });
+
+    it('admits one seed copy to the Nodes behind the seed, under the default\'s seed-copy lock, with the push intent', function (): void {
+        $default = proofSeedDefault();
+        $runtime = $default->runtime()->firstOrFail();
+        $runtime->update(['inner_volume' => 'inner-'.$default->id]);
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($node);
+
+        $operation = app(ProofSeeds::class)->admit('seed');
+        expect($operation?->kind)->toBe('instance.seed_copy')
+            ->and($operation->target_id)->toBe($default->id)
+            ->and($operation->node_id)->toBe($default->node_id)
+            ->and($operation->lock_key)->toBe('instance_seed_copy:'.$default->id)
+            ->and($operation->input)->toBe(['default_instance_id' => $default->id, 'commit' => str_repeat('a', 40),
+                'taken_at' => $runtime->refresh()->seed_taken_at?->toIso8601String(), 'targets' => [$node->id]])
+            // One copy at a time: the open copy admits the next one when it ends.
+            ->and(app(ProofSeeds::class)->admit('seed'))->toBeNull()
+            ->and(Operation::query()->where('kind', 'instance.seed_copy')->count())->toBe(1);
+
+        $intent = app(ProofSeedCopyProjection::class)->input($operation)['intent'];
+        expect(collect($intent)->except(['source', 'targets'])->all())->toBe(['project' => 'orbit-instances-nested', 'pool' => 'orbit-instances',
+            'snapshot' => 'seed-'.str_repeat('a', 40), 'holder' => 'proof-seed', 'holder_volume' => 'proof-seed-inner', 'holder_nic_acl' => 'orbitinst0-proxy'])
+            ->and(collect($intent['source'])->except('ssh_execution')->all())->toBe(['node_id' => $default->node_id,
+                'container' => $runtime->container_name, 'inner_volume' => 'inner-'.$default->id])
+            ->and(collect($intent['targets'][0])->except('ssh_execution')->all())->toBe(['node_id' => $node->id, 'remote' => 'proof-node-'.$node->id,
+                'listen' => '10.44.0.30:8444'])
+            ->and($intent['targets'][0]['ssh_execution']['target']['host'])->toBe('10.44.0.30');
+    });
+
+    it('records the seed of each passed Node and an Activity problem for each failed one, and tries no failed Node again at the same seed', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $passed = ciNode();
+        $failed = ciNode(2, LifecycleStatus::Active, 'ci-two', '10.44.0.31');
+        foreach ([$passed, $failed] as $node) {
+            Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        }
+        seedListening($passed, $failed);
+        $operation = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        $operation->forceFill(['status' => 'running', 'state' => [...($operation->state ?? []), 'swamp_run_id' => 'run-1']])->save();
+
+        app(ProofSeedCopyProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['targets' => [['node_id' => $passed->id, 'status' => 'succeeded'],
+                ['node_id' => $failed->id, 'status' => 'failed', 'failed_phase' => 'copy', 'detail' => 'Error: no free ID range']]]]);
+
+        $seed = ProofSeed::query()->where('node_id', $passed->id)->sole();
+        expect([$seed->holder, $seed->commit, $seed->operation_id])->toBe(['proof-seed', str_repeat('a', 40), $operation->id])
+            ->and(app(ProofSeeds::class)->holder($passed)?->holder)->toBe('proof-seed')
+            ->and(ProofSeed::query()->where('node_id', $failed->id)->exists())->toBeFalse()
+            ->and($operation->refresh()->result['failed'])->toBe([['node_id' => $failed->id, 'detail' => 'Error: no free ID range']]);
+        $problem = Activity::query()->where('description', 'instance.seed_copy_failed')->sole();
+        expect($problem->subject_id)->toBe($failed->id)
+            ->and($problem->properties['operation_id'])->toBe($operation->id);
+        // A Node that failed at the same seed waits for the next seed or its own converge: a lasting failure does not repeat.
+        expect(Operation::query()->where('kind', 'instance.seed_copy')->count())->toBe(1);
+    });
+
+    it('admits the next copy at its end for every Node behind a seed that moved, and else only for Nodes that no copy has tried', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $first = ciNode();
+        Node::withoutEvents(fn (): bool => $first->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($first);
+        $end = function (Operation $copy): void {
+            $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-'.$copy->id]])->save();
+            app(ProofSeedCopyProjection::class)->apply($copy, ['status' => 'failed', 'run_id' => 'run-'.$copy->id, 'started_at' => now()->toIso8601String(),
+                'finished_at' => now()->toIso8601String(), 'result' => ['targets' => array_map(static fn (int $node): array => ['node_id' => $node,
+                    'status' => 'failed', 'detail' => 'no listener'], $copy->input['targets'])]]);
+        };
+        $copy = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        // A Node that became a target while the copy held the lock: its own converge was refused as busy.
+        $second = ciNode(2, LifecycleStatus::Active, 'ci-two', '10.44.0.31');
+        Node::withoutEvents(fn (): bool => $second->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($second);
+        $end($copy);
+        $next = Operation::query()->where('kind', 'instance.seed_copy')->whereKeyNot($copy->id)->sole();
+        expect($next->input['targets'])->toBe([$second->id])
+            ->and($next->triggered_by)->toBe('seed_copy');
+
+        // The default retakes its seed while the next copy runs: its end tries every Node behind the new seed.
+        $default->runtime()->firstOrFail()->update(['seed_taken_at' => '2026-11-16 02:00:00']);
+        $end($next);
+        $moved = Operation::query()->where('kind', 'instance.seed_copy')->whereKeyNot([$copy->id, $next->id])->sole();
+        expect($moved->input['targets'])->toBe([$first->id, $second->id])
+            ->and($moved->input['taken_at'])->toBe($default->runtime()->firstOrFail()->seed_taken_at?->toIso8601String());
+    });
+
+    it('stops two Nodes that keep failing at one seed after each was tried once, and tries both again at a moved seed', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = static function (string $name, string $ip): Node {
+            $node = ciNode(2, LifecycleStatus::Active, $name, $ip);
+            Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+            seedListening($node);
+
+            return $node;
+        };
+        $fail = function (Operation $copy): void {
+            $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-'.$copy->id]])->save();
+            app(ProofSeedCopyProjection::class)->apply($copy, ['status' => 'failed', 'run_id' => 'run-'.$copy->id, 'started_at' => now()->toIso8601String(),
+                'finished_at' => now()->toIso8601String(), 'result' => ['targets' => array_map(static fn (int $id): array => ['node_id' => $id,
+                    'status' => 'failed', 'detail' => 'no listener'], $copy->input['targets'])]]);
+        };
+        $first = $node('ci-a', '10.44.0.30');
+        $copyA = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        // The second Node's own trigger finds the copy's lock busy.
+        $second = $node('ci-b', '10.44.0.31');
+        $fail($copyA);
+        $copyB = Operation::query()->where('kind', 'instance.seed_copy')->whereKeyNot($copyA->id)->sole();
+        expect($copyB->input['targets'])->toBe([$second->id]);
+
+        // Each Node was tried once at this seed: the end of the second copy admits nothing, so the chain stops.
+        $fail($copyB);
+        expect(Operation::query()->where('kind', 'instance.seed_copy')->count())->toBe(2);
+
+        // A new seed tries both again.
+        $default->runtime()->firstOrFail()->update(['seed_taken_at' => '2026-11-16 03:00:00']);
+        expect(app(ProofSeeds::class)->admit('seed')?->input['targets'])->toBe([$first->id, $second->id]);
+    });
+
+    it('ends a copy whose passed target was deleted during the run, records no seed for it and frees the lock for the next trigger', function (): void {
+        proofSeedDefault();
+        seedSwampNode();
+        $gone = ciNode();
+        $kept = ciNode(2, LifecycleStatus::Active, 'ci-two', '10.44.0.31');
+        foreach ([$gone, $kept] as $node) {
+            Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        }
+        seedListening($gone, $kept);
+        $copy = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-1']])->save();
+        $gone->roles()->delete();
+        Node::withoutEvents(fn (): ?bool => $gone->delete());
+
+        app(ProofSeedCopyProjection::class)->apply($copy, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['targets' => [['node_id' => $gone->id, 'status' => 'succeeded'],
+                ['node_id' => $kept->id, 'status' => 'failed', 'detail' => 'no listener']]]]);
+
+        expect($copy->refresh()->status->terminal())->toBeTrue()
+            ->and($copy->lock_key)->toBeNull()
+            ->and(ProofSeed::query()->count())->toBe(0)
+            ->and($copy->result['passed'])->toBe([])
+            // The kept Node's own converge is the next trigger: the lock is free.
+            ->and(app(ProofSeeds::class)->admit('node_role')?->input['targets'])->toBe([$kept->id]);
+    });
+
+    it('admits the seed copy when a deployment of the proof default records a new seed', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($node);
+        $commit = str_repeat('b', 40);
+        $deploy = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id,
+            'node_id' => $default->node_id, 'status' => 'running', 'triggered_by' => 'release',
+            'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($default)], 'state' => ['swamp_run_id' => 'run-1']]);
+
+        app(InstanceDeployProjection::class)->apply($deploy, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)]],
+                'summary' => ['failed_steps' => []]]]);
+
+        $copy = Operation::query()->where('kind', 'instance.seed_copy')->sole();
+        expect($copy->input['commit'])->toBe($commit)
+            ->and($copy->input['targets'])->toBe([$node->id])
+            ->and($copy->triggered_by)->toBe('seed');
+    });
+
+    it('admits the seed copy when a ci-runner add of a Node that offers proof places passes', function (): void {
+        proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode(3, LifecycleStatus::Provisioning);
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        $assignment = $node->roles()->sole();
+
+        endCiRunnerConverge($node, 'succeeded');
+
+        expect($assignment->refresh()->status)->toBe(LifecycleStatus::Active)
+            ->and(Operation::query()->where('kind', 'instance.seed_copy')->sole()->input['targets'])->toBe([$node->id]);
+    });
+
+    it('targets only a Node whose passed ci-runner converge opened the seed listener for the default\'s Node, and never marks another tried', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $ready = ciNode();
+        $waiting = ciNode(2, LifecycleStatus::Active, 'ci-two', '10.44.0.31');
+        foreach ([$ready, $waiting] as $node) {
+            Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        }
+        seedListening($ready);
+        $tried = static fn (): array => Operation::query()->where('kind', 'instance.seed_copy')->get()
+            ->flatMap(static fn (Operation $copy): array => $copy->input['targets'])->unique()->values()->all();
+
+        // The Node with places whose converge has not opened the listener yet is no target: no copy fails on it.
+        $copy = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        expect($copy->input['targets'])->toBe([$ready->id]);
+        $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-1']])->save();
+        app(ProofSeedCopyProjection::class)->apply($copy, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['targets' => [['node_id' => $ready->id, 'status' => 'failed', 'detail' => 'no free ID range']]]]);
+        // The end of the copy admits nothing, and the waiting Node is not tried.
+        expect($tried())->toBe([$ready->id]);
+
+        // Its converge passes: the Gateway records the default's Node as its sender, and the converge's own trigger copies to it.
+        endCiRunnerConverge($waiting, 'succeeded');
+        expect($waiting->refresh()->seed_sender_id)->toBe($default->node_id)
+            ->and(Operation::query()->where('kind', 'instance.seed_copy')->latest('id')->firstOrFail()->input['targets'])->toBe([$ready->id, $waiting->id]);
+
+        // A failed converge may have changed the trust: the record goes. So does a record of a former default's Node.
+        endCiRunnerConverge($waiting, 'failed');
+        Node::query()->whereKey($ready->id)->update(['seed_sender_id' => $waiting->id]);
+        expect($waiting->refresh()->seed_sender_id)->toBeNull()
+            ->and(app(ProofSeeds::class)->targets())->toBe([]);
+    });
+
+    it('clears the record when the listener goes: a passed converge without places, and a ci-runner removal, passed or failed', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        $places = static fn (int $count): bool => Node::withoutEvents(fn (): bool => $node->update(['settings' => ['ci' => ['places' => $count, 'proof_only' => false]]]));
+
+        endCiRunnerConverge($node, 'succeeded');
+        expect($node->refresh()->seed_sender_id)->toBe($default->node_id);
+        $places(0);
+        endCiRunnerConverge($node->refresh(), 'succeeded');
+        expect($node->refresh()->seed_sender_id)->toBeNull();
+
+        foreach (['failed', 'succeeded'] as $status) {
+            $places(3);
+            endCiRunnerConverge($node->refresh(), 'succeeded');
+            expect($node->refresh()->seed_sender_id)->toBe($default->node_id);
+            $assignment = $node->roles()->sole();
+            $assignment->update(['status' => LifecycleStatus::Removing]);
+            $removal = Operation::query()->create(['kind' => 'node.role_remove', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+                'status' => 'running', 'triggered_by' => 'test', 'state' => ['swamp_run_id' => 'run-remove-'.$status],
+                'input' => ['_role_remove' => ['node_id' => $node->id, 'assignment_id' => $assignment->id, 'role' => 'ci-runner'], 'intent' => []]]);
+            app(NodeRoleRemovalProjection::class)->apply($removal, ['run_id' => 'run-remove-'.$status, 'status' => $status,
+                'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => $status === 'succeeded'
+                    ? ['steps' => ['Confirm role removal' => ['status' => 'succeeded']]] : ['failed_step' => 'Stop the seed listener', 'error_code' => 'node_role.removal_failed']]);
+
+            // A failed removal leaves the role, which offers places again; its listener may be gone, so it is no target.
+            expect($node->refresh()->seed_sender_id)->toBeNull()
+                ->and(app(ProofSeeds::class)->targets())->toBe([]);
+            if ($status === 'failed') {
+                expect($node->roles()->sole()->status)->toBe(LifecycleStatus::Failed);
+            }
+        }
+    });
+
+    it('has no targets while the proof default has no seed', function (): void {
+        $default = proofSeedDefault();
+        ciNode();
+        $default->runtime()->firstOrFail()->update(['seed_commit' => null]);
+
+        expect(app(ProofSeeds::class)->targets())->toBe([]);
+    });
+
+    it('starts a copy from the seed of its own Node: the default\'s pair on its Node, the current holder on another, none on an old seed', function (): void {
+        $default = proofSeedDefault();
+        $runtime = $default->runtime()->firstOrFail();
+        $runtime->update(['inner_volume' => 'inner-'.$default->id]);
+        $node = ciNode();
+        $commit = str_repeat('a', 40);
+
+        expect(TaskCopyStart::seed($runtime->refresh(), $default->node()->firstOrFail()))->toBe(['source' => $runtime->container_name,
+            'snapshot' => 'seed-'.$commit, 'seed_commit' => $commit, 'inner_volume' => 'inner-'.$default->id])
+            ->and(placementRefusal(fn () => TaskCopyStart::seed($runtime, $node)))->toBe('tasks.copy_source_unavailable 409');
+
+        ProofSeed::query()->create(['node_id' => $node->id, 'holder' => 'proof-seed', 'commit' => $commit, 'taken_at' => '2026-11-16 00:00:00', 'operation_id' => 9]);
+        expect(TaskCopyStart::seed($runtime, $node))->toBe(['source' => 'proof-seed', 'snapshot' => 'seed-'.$commit,
+            'seed_commit' => $commit, 'inner_volume' => 'proof-seed-inner']);
+
+        $runtime->update(['seed_taken_at' => '2026-11-16 01:00:00']);
+        expect(placementRefusal(fn () => TaskCopyStart::seed($runtime->refresh(), $node)))->toBe('tasks.copy_source_unavailable 409');
     });
 });
 
@@ -382,8 +1046,8 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
 });
 
 /**
- * The frozen baseline with the one intended change since it: a default's deploy steps put Playwright's browsers beside its package
- * (InstanceContainer::BrowserEnvironment).
+ * The frozen baseline with the intended changes since it: a default's deploy steps put Playwright's browsers beside its package
+ * (InstanceContainer::BrowserEnvironment), the machine name and the power helper's web port.
  *
  * @return array<string, mixed>
  */
@@ -394,6 +1058,9 @@ function normalContainerSinceMain(Instance $instance, InstanceRuntime $runtime):
     // The presented machine name came after main, right after the Incus name (InstanceMachineName).
     $name = array_search('name', array_keys($expected), true) + 1;
     $expected = [...array_slice($expected, 0, $name, true), 'machine_name' => InstanceMachineName::intent($instance), ...array_slice($expected, $name, null, true)];
+    // The power helper's readiness port came with prepared restore, right after the web config (docs/reference/prepared-restore.md).
+    $web = array_search('web_config', array_keys($expected), true) + 1;
+    $expected = [...array_slice($expected, 0, $web, true), 'web_port' => $expected['web_config'] === null ? null : InstanceContainer::WebPort, ...array_slice($expected, $web, null, true)];
     // The CLI-only PHP ini came after main, right after `php`; a Project without PHP has none (InstanceContainer::phpCliIni).
     $php = array_search('php', array_keys($expected), true) + 1;
     $expected = [...array_slice($expected, 0, $php, true), 'php_cli_ini' => null, ...array_slice($expected, $php, null, true)];

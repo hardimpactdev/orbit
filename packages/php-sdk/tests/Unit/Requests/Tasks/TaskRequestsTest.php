@@ -113,6 +113,11 @@ describe('task transport', function (): void {
             ->toBe('{"deliverables":[{"id":"done","type":"review","description":"Done."}]}');
     });
 
+    it('sends the reason of a correction after a failed check with its deliverables', function (): void {
+        expect(new UpdateTaskRequest(57, deliverables: [['id' => 'done', 'type' => 'review', 'description' => 'Done.']], reason: 'The ADR was renumbered.')->body()->all())
+            ->toBe('{"deliverables":[{"id":"done","type":"review","description":"Done."}],"reason":"The ADR was renumbered."}');
+    });
+
     it('sends the copy turn agent values a create or update names, with null to clear one', function (): void {
         $agents = new TaskAgentsInput(['implementer_model' => 'claude-sonnet-5-5', 'reviewer_effort' => 'max']);
 

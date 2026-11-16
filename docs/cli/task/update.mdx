@@ -3,10 +3,10 @@ title: "orbit task:update"
 sidebarTitle: "task:update"
 ---
 
-Change a task's title, brief, status, copy turn agent, or pull request mode. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` leaves the parent ready for `task:start`. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. See [external status rules](/reference/tasks#tasks-and-subtasks).
+Change a task's title, brief, status, copy turn agent, or pull request mode. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` leaves the parent ready for `task:start`. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. In a group whose workspace is a task copy, `--status=running` reopens the last completed subtask while the group is open. See [reopen the last subtask](/reference/tasks#reopen-the-last-subtask). See [external status rules](/reference/tasks#tasks-and-subtasks).
 
 ```bash
-orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--position=N] [--deliverables=FILE] [--implementer-provider=NAME] [--implementer-model=MODEL] [--implementer-effort=LEVEL] [--reviewer-provider=NAME] [--reviewer-model=MODEL] [--reviewer-effort=LEVEL] [--clear-implementer-agent] [--clear-reviewer-agent] [--pr-mode=MODE] [--json]
+orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--position=N] [--deliverables=FILE] [--reason=TEXT] [--implementer-provider=NAME] [--implementer-model=MODEL] [--implementer-effort=LEVEL] [--reviewer-provider=NAME] [--reviewer-model=MODEL] [--reviewer-effort=LEVEL] [--clear-implementer-agent] [--clear-reviewer-agent] [--pr-mode=MODE] [--json]
 ```
 
 | Option | Meaning |
@@ -16,6 +16,9 @@ orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--prev
 | `--status=STATUS` | `backlog` or `todo`; an external group also accepts its current status or an allowed active status move. |
 | `--preview` | Keep the sandbox running during review. It can change while the task is in `backlog`, waiting, or active. |
 | `--no-preview` | Let the sandbox park during review. Do not combine it with `--preview`. |
+| `--position=N` | A subtask's new position, starting at 1. |
+| `--deliverables=FILE` | A JSON file whose list replaces the subtask's deliverables. |
+| `--reason=TEXT` | Why a [correction after a failed check](/reference/tasks#correct-the-deliverables-of-a-started-subtask) replaces a started subtask's deliverables in a task copy, 1 to 500 characters. Only that correction takes it, and it needs it. |
 | `--implementer-provider=NAME` | The implementer's provider in a [task copy](/reference/tasks#copy-turn-agents), such as `claude`. |
 | `--implementer-model=MODEL` | The implementer's model in a task copy, such as `claude-opus-5-5`. |
 | `--implementer-effort=LEVEL` | The implementer's effort in a task copy: `low`, `medium`, `high`, `xhigh` or `max`. |
@@ -29,7 +32,10 @@ orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--prev
 ```bash
 orbit task:update 13 --status=todo
 orbit task:update 13 --reviewer-model=claude-sonnet-5-5 --clear-implementer-agent
+orbit task:update 5354 --deliverables=deliverables.json --reason="The tools tests need discover -s tools."
 ```
+
+In a task copy, the current subtask's deliverables change once after each failed handoff check, with `--reason`. Task activity records the old list, the new list, the reason and the check. The next handoff check runs the new list.
 
 A role's agent values change until the role has its first thread in the task copy; after that, its thread keeps the values it started with.
 
@@ -45,10 +51,14 @@ In a terminal, the task list includes active tasks for a status update. Title an
 | `task.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. The API answers `validation.failed` on `pr_mode`. |
 | `tasks.pr_mode_locked` | The group has a pull request, a publish of it runs, or it has ended. |
 | `tasks.already_claimed` | The scheduler claimed the task before the status change. |
-| `tasks.copy_turn_unended` | A move of a task copy's subtask to `completed` while a turn of its group still runs. Complete it once the turn has ended. |
+| `tasks.deliverables_locked` (409) | A `--deliverables` change of a subtask that has started, when no correction applies: before any check, after a passed newest check, a second correction before a new check, a subtask that is not current, or a group without a task copy. |
+| `task.reason_invalid` | `--reason` is blank or longer than 500 characters. Nothing is sent. |
+| `tasks.reason_unexpected` (422) | `--reason` on any update other than a correction after a failed check. |
+| `tasks.status_move_refused` (422) | The status move is not allowed. A `completed` subtask reopens only when it is the last subtask of an open group with a task copy and every other subtask has ended. |
+| `tasks.copy_turn_unended` | A move of a task copy's subtask to `completed`, or a reopen, while a turn of its group still runs. Repeat it once the turn has ended. |
 | `tasks.agent_settings_locked` (409) | An agent value of a role that already has a thread. `details.role` names the role. Nothing changes. |
 | `task.agent_conflict` | A role's clear option together with one of its values. |
 | `task.agent_invalid` | An agent option is empty. |
-| `validation.failed` | A provider or effort the task copy does not offer, or a model that is no model name. |
+| `validation.failed` | A provider or effort the task copy does not offer, or a model that is no model name. Also a correction after a failed check without a reason, or a reason over 500 characters. |
 
-The Task ID may select a parent or child. Children also accept `--position` and `--deliverables`; parents accept preview intent and `--pr-mode`. Each level keeps its existing status rules. Updating a parent to Todo does not start work.
+The Task ID may select a parent or child. Children also accept `--position`, `--deliverables` and `--reason`; parents accept preview intent and `--pr-mode`. Each level keeps its existing status rules. Updating a parent to Todo does not start work.

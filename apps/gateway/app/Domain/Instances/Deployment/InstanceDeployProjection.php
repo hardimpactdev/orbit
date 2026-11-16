@@ -15,6 +15,8 @@ use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\NativeOperationProjection;
+use App\Domain\Proof\ProofSeeds;
+use App\Domain\Proof\ProofSettings;
 use App\Domain\Tools\VpEnvironment;
 use App\Infrastructure\Swamp\SwampLockTimeout;
 use App\Models\Instance;
@@ -136,7 +138,12 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 // A deployment starts a stopped container; clones start at the snapshot a passed deployment took.
                 $runtime = $instance->runtime()->firstOrFail();
                 $runtime->update([...($payload['started'] ?? false) === true ? ['power_state' => InstanceRuntimePowerState::Running] : [],
-                    ...$status === 'succeeded' ? ['seed_commit' => $facts['commit']] : []]);
+                    ...$status === 'succeeded' ? ['seed_commit' => $facts['commit'], 'seed_taken_at' => now()] : []]);
+                // A new seed of the proof default goes to each other Node that offers proof places; nothing here waits for it
+                // (docs/reference/development-containers.md#the-seed-on-each-ci-node).
+                if ($status === 'succeeded' && $instance->project_id === app(ProofSettings::class)->projectId()) {
+                    DB::afterCommit(static fn (): ?Operation => app(ProofSeeds::class)->admit('seed'));
+                }
                 app(ContainerProcesses::class)->complete($instance, ValidatedData::object($admitted['container'])['processes'] ?? [],
                     $status === 'succeeded', ValidatedData::nullableString($data['error_code'] ?? null),
                     inactiveUnits: ValidatedData::stringList($payload['units_inactive'] ?? []));

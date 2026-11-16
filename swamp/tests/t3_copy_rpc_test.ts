@@ -9,7 +9,8 @@ const run = "run:thread:mcp%3A66105c2c:ordinal:1";
 const token = "t3-session-" + "x".repeat(40);
 
 type Request = { id: string; kind: string; status: string };
-type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[] };
+// `interrupt` is how T3 takes a `run.interrupt`: `end` ends the run, `refuse` answers a failure, `stuck` accepts it but the run never ends.
+type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck" };
 
 /** Answers T3's ticket and RPC as T3 0.1.7 does, for one thread whose state the test sets. A stop ends the run and cancels its requests. */
 function serve(state: Server) {
@@ -28,8 +29,14 @@ function serve(state: Server) {
                     turnItems: Object.entries(state.questions).map(([requestId, questions]) => ({ type: "user_input_request", requestId, questions })) };
             } else {
                 state.commands.push(frame.payload);
-                state.runStatus = "interrupted";
-                state.requests = state.requests.map((pending) => ({ ...pending, status: "cancelled" }));
+                if (state.interrupt === "refuse") {
+                    socket.send(JSON.stringify({ _tag: "Exit", requestId: frame.id, exit: { _tag: "Failure", cause: { _tag: "Fail", error: "run is not interruptible" } } }) + "\n");
+                    return;
+                }
+                if (state.interrupt !== "stuck") {
+                    state.runStatus = "interrupted";
+                    state.requests = state.requests.map((pending) => ({ ...pending, status: "cancelled" }));
+                }
                 value = { sequence: 9 };
             }
             socket.send(JSON.stringify({ _tag: "Exit", requestId: frame.id, exit: { _tag: "Success", value } }) + "\n");
@@ -116,3 +123,31 @@ Deno.test({ name: "a session issue that prints no JSON fails without quoting it 
     assertEquals([broken.code, broken.out, broken.revoked], [1, null, ["session-1"]]);
     assertEquals(broken.stderr.includes(token), false);
 } });
+
+Deno.test({ name: "the stop ends the thread's active run through the same interrupt and waits for its end; a thread with no active run is left alone",
+    ignore: !available, async fn() {
+        const state = waiting([], {});
+        const stopped = await helper(state, ["stop", thread]);
+        assertEquals([stopped.code, stopped.out, stopped.revoked], [0, { stopped: true, run, state: "interrupted" }, ["session-1"]]);
+        assertEquals([state.commands.length, state.commands[0].type, state.commands[0].threadId, state.commands[0].runId], [1, "run.interrupt", thread, run]);
+        // A run that asks is stopped too: its turn is over in Orbit, whatever the run waits for.
+        const asking = waiting([{ id: "a1", kind: "approval", status: "pending" }], {});
+        assertEquals((await helper(asking, ["stop", thread])).out, { stopped: true, run, state: "interrupted" });
+        // T3 is already done with the run: nothing is sent.
+        const over = { ...waiting([], {}), runStatus: "completed" };
+        const idle = await helper(over, ["stop", thread]);
+        assertEquals([idle.code, idle.out, over.commands, idle.revoked], [0, { stopped: false, run: null, state: null }, [], ["session-1"]]);
+    } });
+
+Deno.test({ name: "a stop that T3 refuses, or a run that does not end within the deadline, answers stopped: false with the run's last state",
+    ignore: !available, async fn() {
+        const refusing = { ...waiting([], {}), interrupt: "refuse" as const };
+        const refused = await helper(refusing, ["stop", thread]);
+        assertEquals([refused.code, refused.out, refusing.commands.length, refused.revoked], [0, { stopped: false, run, state: "running" }, 1, ["session-1"]]);
+        // The wait ends inside the phase's 60 s bound, so the answer is always written.
+        const stuck = { ...waiting([], {}), interrupt: "stuck" as const };
+        const began = Date.now();
+        const kept = await helper(stuck, ["stop", thread]);
+        assertEquals([kept.code, kept.out, kept.revoked], [0, { stopped: false, run, state: "running" }, ["session-1"]]);
+        assert(Date.now() - began < 60000, `the stop took ${Date.now() - began} ms`);
+    } });

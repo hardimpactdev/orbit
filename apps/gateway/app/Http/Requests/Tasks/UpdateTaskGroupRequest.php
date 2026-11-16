@@ -57,8 +57,8 @@ final class UpdateTaskGroupRequest extends FormRequest
     {
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), $this->route('task') instanceof Task && $this->route('task')->parent_id !== null
-                ? ['title', 'brief', 'position', 'deliverables', 'topology', 'status']
-                : ['title', 'brief', 'status', 'preview', 'pr_mode', ...TaskCopyAgent::fields()]);
+                ? ['title', 'brief', 'position', 'deliverables', 'topology', 'status', 'reason']
+                : ['title', 'brief', 'status', 'preview', 'pr_mode', 'reason', ...TaskCopyAgent::fields()]);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -66,6 +66,10 @@ final class UpdateTaskGroupRequest extends FormRequest
 
     public function parentPayload(): UpdateTaskGroupData
     {
+        // A reason goes only with a correction of a started subtask's deliverables (docs/reference/tasks.md#correct-the-deliverables-of-a-started-subtask).
+        if (array_key_exists('reason', $this->validationData())) {
+            throw TaskGroupGuard::reasonUnexpected();
+        }
         $status = $this->validated('status');
 
         return new UpdateTaskGroupData(
@@ -88,6 +92,7 @@ final class UpdateTaskGroupRequest extends FormRequest
             position: is_int($this->validated('position')) ? $this->validated('position') : null,
             status: is_string($this->validated('status')) ? TaskStatus::from($this->validated('status')) : null,
             deliverables: array_key_exists('deliverables', $this->validated()) ? CreateTaskRequest::deliverables($this->validated('deliverables')) : null,
+            reason: is_string($this->validated('reason')) ? $this->validated('reason') : null,
         );
     }
 }

@@ -81,7 +81,7 @@
                     "acl": "instance-2",
                     "nic_acl": "orbitinst0-proxy",
                     "bridge_cidr": "10.253.0.0/24",
-                    "bridge_admitted_at": 1794778544819133,
+                    "bridge_admitted_at": 1794798368697961,
                     "bridge_endpoints": [],
                     "acl_rules": {
                         "description": "Orbit Instance 2",
@@ -159,6 +159,7 @@
                     "mail_units": [],
                     "units": [],
                     "web_config": null,
+                    "web_port": null,
                     "php": null,
                     "php_cli_ini": null,
                     "clone": {
@@ -532,7 +533,7 @@
                         "acl": "instance-2",
                         "nic_acl": "orbitinst0-proxy",
                         "bridge_cidr": "10.253.0.0/24",
-                        "bridge_admitted_at": 1794778544819133,
+                        "bridge_admitted_at": 1794798368697961,
                         "bridge_endpoints": [],
                         "acl_rules": {
                             "description": "Orbit Instance 2",
@@ -610,6 +611,7 @@
                         "mail_units": [],
                         "units": [],
                         "web_config": null,
+                        "web_port": null,
                         "php": null,
                         "php_cli_ini": null,
                         "clone": {

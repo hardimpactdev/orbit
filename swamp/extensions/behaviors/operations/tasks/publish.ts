@@ -163,6 +163,8 @@ export const BaseFacts = z.object({
         (paths) => bytes(JSON.stringify(paths)) <= BASE_BYTES,
     ),
     overlapping_more: z.number().int().min(0),
+    // The default head the worker merged at publish, or null when the push sends the candidate itself.
+    merged_default: Sha.nullable(),
 }).strict();
 export type BaseFacts = z.infer<typeof BaseFacts>;
 
@@ -172,35 +174,38 @@ const names = (
 ) => [...new Set(text.split("\0").filter((name) => name !== ""))];
 
 /**
- * The files "Read the base" wrote: the default head, the merge base, how far behind, the overlapping paths, the workflow paths and
- * the merge-tree reply. A path under .github/workflows/ that differs between the default head and the candidate refuses first,
- * because GitHub refuses that net diff to a token without the workflows permission; then exit 0 states the base; exit 3 is a real conflict, refused with its paths; anything else is an error of the
- * read. A workflow list the read did not write is an error, never an empty list.
+ * The files "Read the base" wrote: the default head, the merge base, how far behind, the overlapping paths, the copy's own workflow
+ * paths, the merge-tree reply and the merge at publish. A path under .github/workflows/ that the candidate changed since the merge
+ * base refuses first, because the token has no workflows permission; then exit 0 states the base and passes the merge at publish,
+ * or "" when the push sends the candidate; exit 3 is a real conflict, refused with its paths; anything else is an error of the read.
+ * A workflow list or merge file the read did not write is an error, never an empty one.
  */
 export function baseFacts(
     exitCode: number,
-    files: Record<"head" | "base" | "behind" | "overlap" | "merge", string> & { workflows: string | null },
+    files: Record<"head" | "base" | "behind" | "overlap" | "merge", string> & { workflows: string | null; merged: string | null },
 ) {
     const head = files.head.trim(),
         base = files.base.trim(),
         behind = files.behind.trim();
     const read = Sha.safeParse(head).success && Sha.safeParse(base).success &&
         /^[0-9]+$/.test(behind) && files.workflows !== null;
+    const none = { facts: null, merged: "" };
     if (read && (exitCode === 0 || exitCode === 3)) {
         const workflows = names(files.workflows ?? "");
         if (workflows.length > 0) {
-            return { facts: null, error_code: refusal("tasks.publish_workflow_change: ", workflows, 0) };
+            return { ...none, error_code: refusal("tasks.publish_workflow_change: ", workflows, 0) };
         }
     }
     if (exitCode === 3 && read) {
         // merge-tree --name-only -z: the tree, then each conflicted path.
         const conflicts = names(files.merge).slice(1);
         if (conflicts.length > 0) {
-            return { facts: null, error_code: refusal("tasks.publish_conflict: ", conflicts, 0) };
+            return { ...none, error_code: refusal("tasks.publish_conflict: ", conflicts, 0) };
         }
     }
-    if (exitCode !== 0 || !read) {
-        return { facts: null, error_code: "tasks.publish_failed" };
+    const merged = (files.merged ?? "").trim();
+    if (exitCode !== 0 || !read || files.merged === null || (merged !== "" && !Sha.safeParse(merged).success)) {
+        return { ...none, error_code: "tasks.publish_failed" };
     }
     const overlap = bounded(names(files.overlap), BASE_BYTES);
     return {
@@ -210,7 +215,9 @@ export function baseFacts(
             behind_by: Number(behind),
             overlapping_paths: overlap.shown,
             overlapping_more: overlap.more,
+            merged_default: merged === "" ? null : head,
         }),
+        merged,
         error_code: "",
     };
 }
@@ -239,11 +246,11 @@ function withoutBase(body: string): string {
 
 /**
  * The body, then the fixed `## Base` section of a task copy's publish; without facts the body is left as it is. The body is the one
- * the copy's .env content check read: the caller's text and the waiver lines (withWaivers). The whole stays within BodyLimit: a
- * section whose path list does not fit names only their count, and one that does not fit at all is left out; the publish result
- * states the base either way.
+ * the copy's .env content check read: the caller's text and the waiver lines (withWaivers). A merge at publish names the default
+ * branch and its head. The whole stays within BodyLimit: a section whose path list does not fit names only their count, and one
+ * that does not fit at all is left out; the publish result states the base either way.
  */
-export function withBase(body: string, facts: BaseFacts | null): string {
+export function withBase(body: string, facts: BaseFacts | null, branch: string): string {
     if (facts === null) return body;
     const kept = withoutBase(body);
     const code = (text: string) => "`" + text.replaceAll("`", "'") + "`";
@@ -270,6 +277,7 @@ export function withBase(body: string, facts: BaseFacts | null): string {
             `- Behind by: ${facts.behind_by} ${
                 facts.behind_by === 1 ? "commit" : "commits"
             }`,
+            ...(facts.merged_default === null ? [] : [`- Merged ${branch} ${code(facts.merged_default)} at publish`]),
             ...paths,
         ].join("\n") + "\n";
     for (const paths of count === 0 ? [listed] : [listed, counted]) {
@@ -312,7 +320,7 @@ export function pullPlan(raw: unknown) {
             path,
             body: JSON.stringify({
                 ...input.pull_request,
-                body: withBase(input.pull_request.body, facts),
+                body: withBase(input.pull_request.body, facts, input.base),
                 head: input.branch,
                 base: input.base,
             }),
@@ -329,7 +337,7 @@ export function pullPlan(raw: unknown) {
         path: `${path}/${row.number}`,
         body: JSON.stringify({
             title: input.pull_request.title,
-            body: withBase(input.pull_request.body, facts),
+            body: withBase(input.pull_request.body, facts, input.base),
         }),
         number: row.number,
         error_code: "",

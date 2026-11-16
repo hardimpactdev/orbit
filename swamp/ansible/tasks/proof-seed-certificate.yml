@@ -1,0 +1,14 @@
+---
+# Root's Incus client certificate on the proof default's Node, which the seed listener of a CI Node trusts
+# (docs/reference/node-provisioning.md#the-seed-listener). Runs on the default's Node; nothing else changes there. Sets
+# `proof_seed_certificate`, which the node phase reads through the hostvars of the sender (node-role-runtime.yml).
+- name: Make the client certificate of root
+  ansible.builtin.command:
+    argv: [incus, remote, generate-certificate]
+    creates: /root/.config/incus/client.crt
+- name: Read the client certificate of root
+  ansible.builtin.slurp: { src: /root/.config/incus/client.crt }
+  register: proof_seed_client
+- name: Keep it for the CI Node
+  ansible.builtin.set_fact:
+    proof_seed_certificate: "{{ proof_seed_client.content | b64decode }}"

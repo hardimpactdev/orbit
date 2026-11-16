@@ -11,10 +11,12 @@ use App\Actions\Tasks\ReadAgentThreadAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
+use App\Actions\Tasks\UpdateTaskAction;
 use App\Data\Tasks\AgentThreadData;
 use App\Data\Tasks\StartTaskCheckData;
 use App\Data\Tasks\StartTaskPublishData;
 use App\Data\Tasks\TaskTurnData;
+use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerServer;
@@ -63,6 +65,7 @@ use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnPrompt;
 use App\Domain\Tasks\TaskVmRemoved;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Processes\CommandResult;
@@ -83,6 +86,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -1465,6 +1469,7 @@ describe('a turn of a group that owns a copy', function (): void {
     it('admits one tasks.copy_turn on the copy\'s Node with the composed prompt and the copy\'s model, and names no credential', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
+        $this->travelTo(CarbonImmutable::parse('2026-11-16T10:00:00.5Z'));
 
         $turn = copyTurn($group);
 
@@ -1477,15 +1482,18 @@ describe('a turn of a group that owns a copy', function (): void {
                 'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'candidate' => null, 'settle' => [], 'seconds' => 3600,
                 'title' => 'Orbit task '.$group->id.' thread '.$thread->id])
             // The implementer learns how to ask: a question ends the turn.
-            ->and($turn->input['turn']['prompt'])->toBe("Subtask: Step\n\nBrief:\nDo it\n\nPrompt of this turn:\nRun Doctor and commit a note.\n\n"
+            // The group's title and brief come first, the copy rules once, then the turn's clock: the admission's time and the end of its bound.
+            ->and($turn->input['turn']['prompt'])->toBe("Task group: Group\n\nGroup brief:\nBrief\n\nSubtask: Step\n\nBrief:\nDo it\n\n".TaskTurnPrompt::CopyRules
+                ."\n\nThis turn started at 2026-11-16T10:00:00Z and Orbit ends it at 2026-11-16T11:00:00Z. Commit your work before then."
+                ."\n\nPrompt of this turn:\nRun Doctor and commit a note.\n\n"
                 .'To ask a question, use your question tool. Asking ends this turn; the answer comes as the next turn.')
             ->and($thread->only(['driver', 'role', 'model', 'effort', 'provider_instance', 'node_id']))->toBe(['driver' => 't3', 'role' => 'implementer', 'model' => 'claude-opus-5-5',
                 'effort' => 'medium', 'provider_instance' => 'claudeMedium', 'node_id' => $copy->node_id])
             ->and($group->tasks()->firstOrFail()->implementer_agent_thread_id)->toBe($thread->id)
             ->and(TaskVm::query()->count())->toBe(0)
-            // T3 issues its own session inside the copy: no vault key, no token.
+            // T3 issues its own session inside the copy: no vault key, no token. The prompt, pinned above, is text: its copy rules name both.
             ->and(app(DirectOperation::class)->definition('tasks.copy_turn'))->not->toHaveKey('execution_copies')
-            ->and(json_encode($turn->input, JSON_THROW_ON_ERROR))->not->toContain('vault')->not->toContain('token')->not->toContain('session');
+            ->and(json_encode(Arr::except($turn->input, 'turn.prompt'), JSON_THROW_ON_ERROR))->not->toContain('vault')->not->toContain('token')->not->toContain('session');
     });
 
     it('moves the current subtask from todo to running at the turn\'s admission, and never completes it', function (): void {
@@ -1504,6 +1512,27 @@ describe('a turn of a group that owns a copy', function (): void {
         // A done reviewer turn leaves the subtask running: only the caller completes it (docs/reference/tasks.md#subtask-status-in-a-task-copy).
         expect($subtask->refresh()->status)->toBe(TaskStatus::Running)
             ->and(app(TaskGroupDone::class)->check($group->refresh()))->toBeNull();
+    });
+
+    it('admits an implementer turn on the reopened last subtask, which continues its thread (docs/reference/tasks.md#reopen-the-last-subtask)', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $subtask = $group->tasks()->firstOrFail();
+        $first = copyTurn($group);
+        copyTurnEnded($first, 'succeeded', copyTurnDone('mcp:1'));
+        copyTurnEnded(copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]), 'succeeded', copyTurnDone('mcp:2'));
+        $move = fn (TaskStatus $to): Task => app(UpdateTaskAction::class)->execute($group->refresh(), $subtask->refresh(), new UpdateTaskData(null, null, null, status: $to));
+        $move(TaskStatus::Completed);
+        expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.subtask_not_current 409');
+
+        expect($move(TaskStatus::Running)->status)->toBe(TaskStatus::Running);
+        $fix = copyTurn($group, ['prompt' => 'Fix the CI failure.']);
+
+        expect($fix->input['subtask'])->toBe($subtask->id)
+            ->and($fix->input['thread_id'])->toBe($first->input['thread_id'])
+            ->and($fix->input['turn']['thread'])->toBe('continue')
+            ->and($subtask->refresh()->status)->toBe(TaskStatus::Running);
     });
 
     it('leaves the subtask todo when the turn is refused', function (): void {
@@ -1727,7 +1756,11 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($review->input)->toMatchArray(['role' => 'reviewer', 'check' => $check->id, 'candidate' => $check->commit_sha])
             // The phase checks the candidate out for the reviewer, and the prompt names it.
             ->and($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'claudeHigh', 'candidate' => $check->commit_sha])
-            ->and($review->input['turn']['prompt'])->toContain("Prompt of this turn:\nReview the checked commit.\n\nThe checked commit under review: {$check->commit_sha}.")
+            // The reviewer gets the group's title and brief first, the copy rules once and its clock, as the implementer does.
+            ->and($review->input['turn']['prompt'])->toStartWith("Task group: Group\n\nGroup brief:\nBrief\n\nSubtask: Step\n\n")
+            ->and(substr_count($review->input['turn']['prompt'], TaskTurnPrompt::CopyRules))->toBe(1)
+            ->and($review->input['turn']['prompt'])->toMatch('/'.preg_quote(TaskTurnPrompt::CopyRules, '/').'\n\nThis turn started at \S+Z and Orbit ends it at \S+Z\. Commit your work before then\.\n\n'
+                .'Prompt of this turn:\nReview the checked commit\.\n\nThe checked commit under review: '.$check->commit_sha.'\./')
             // A reviewer that approves sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
             ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::PrTextRule)
             ->and($again->input['turn']['candidate'])->toBe($check->commit_sha)
@@ -1938,6 +1971,70 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(array_column($read['data']['entries'] ?? $read['entries'] ?? [], 'text'))->toBe(['Run Doctor.', 'Committed d867aba2.']);
     });
 
+    it('names the agent thread and the agent\'s last reply in the result, so a driver reads the turn in one call', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+        $transcript = [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'assistant', 'text' => 'An earlier reply.', 'at' => ''],
+            ['id' => 'run:1:1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Committed d867aba2.', 'at' => ''],
+            ['id' => 'run:1:2', 'kind' => 'message', 'label' => 'user', 'text' => 'Thanks.', 'at' => '']];
+
+        $ended = copyTurnEnded($turn, 'succeeded', [...copyTurnDone('mcp:1'), 'transcript' => $transcript]);
+
+        expect($ended->result)->toMatchArray(['agent_id' => $turn->input['thread_id'], 'reply' => 'Committed d867aba2.'])
+            ->and($ended->result)->not->toHaveKey('transcript');
+    });
+
+    it('cuts a reply longer than its bound at the end and says where the rest is', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+        $agent = $turn->input['thread_id'];
+        $long = str_repeat('é', TaskCopyTurnProjection::ReplyLimit).'tail';
+        $exact = str_repeat('é', TaskCopyTurnProjection::ReplyLimit);
+
+        $cut = copyTurnEnded($turn, 'succeeded', [...copyTurnDone('mcp:1'), 'transcript' => [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'assistant', 'text' => $long, 'at' => '']]]);
+        $whole = copyTurnEnded(copyTurn($group), 'succeeded', [...copyTurnDone('mcp:1'), 'transcript' => [['id' => 'run:2:0', 'kind' => 'message', 'label' => 'assistant', 'text' => $exact, 'at' => '']]]);
+
+        expect(TaskCopyTurnProjection::ReplyLimit)->toBe(16384)
+            ->and($cut->result['reply'])->toBe($exact." [cut: 4 more characters; read task:agent:show {$group->id} {$agent}]")
+            ->and($whole->result['reply'])->toBe($exact);
+    });
+
+    it('names no reply for a turn with no assistant entry', function (array $shaped): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+
+        $ended = copyTurnEnded($turn, 'succeeded', [...array_diff_key(copyTurnDone('mcp:1'), ['transcript' => true]), ...$shaped]);
+
+        expect($ended->result)->toHaveKey('reply')->and($ended->result['reply'])->toBeNull()
+            ->and($ended->result['agent_id'])->toBe($turn->input['thread_id']);
+    })->with([
+        'no transcript' => [[]],
+        'an empty transcript' => [['transcript' => []]],
+        'user entries only' => [['transcript' => [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'user', 'text' => 'Run Doctor.', 'at' => '']]]],
+        // Swamp's notice that it cut older entries is Orbit's text, not the agent's.
+        'the truncation notice and a user entry' => [['transcript' => [
+            ['id' => 'orbit-truncated', 'kind' => 'message', 'label' => 'system', 'text' => '[Transcript truncated: older entries omitted from the recorded turn.]', 'at' => ''],
+            ['id' => 'run:1:0', 'kind' => 'message', 'label' => 'user', 'text' => 'Run Doctor.', 'at' => '']]]],
+    ]);
+
+    it('names the agent thread and its last reply for a failed turn too', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+
+        $failed = copyTurnEnded($turn, 'failed', ['state' => 'failed', 'error' => 'Bound.', 'error_code' => 'tasks.turn_timeout', 'ended' => false, 't3_thread_id' => 'mcp:1',
+            'run_id' => null, 'transcript' => [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Half done.', 'at' => '']]]);
+
+        expect($failed->result)->toMatchArray(['agent_id' => $turn->input['thread_id'], 'reply' => 'Half done.']);
+    });
+
     it('hands the copy\'s new T3 thread and its title to the extensions once the turn\'s projection committed', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
@@ -1990,7 +2087,11 @@ describe('a turn of a group that owns a copy', function (): void {
         try {
             $check();
         } catch (ResourceOperationException $error) {
-            expect($error->details)->toBe(['operation_id' => $cut->id]);
+            // It names the way out: the next turn stops the earlier run and settles it.
+            expect($error->details)->toBe(['operation_id' => $cut->id])
+                ->and($error->getMessage())->toBe('An earlier turn may still run in the task copy or left its checkout unrestored. '
+                    .'A check, publish or proof waits for the next task:turn, which stops that run and settles it. operation:cancel ends a running turn, '
+                    .'and the next turn stops its run.');
         }
 
         // The next turn is admitted and settles the earlier one in its own phase first, also on another thread.

@@ -1,0 +1,134 @@
+id: f75bfa1c-7d1b-4571-a65f-b595e085f8bd
+name: operation-instance-seed-copy
+autoContinue: false
+description: Send the proof default's seed to each CI Node that is behind, with incus copy --refresh in push mode; each target may fail alone.
+queueTimeout: 30
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: instance.seed_copy}
+    intent: {type: object}
+    # The common Gateway envelope always supplies an empty map; this workflow accepts no secrets.
+    execution_secrets: {type: object, properties: {}, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+  - name: seed-copy
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ${{ "ansible-input" }}
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Read its Incus certificate
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: always}}]
+        forEach: {item: target, in: '${{ inputs.intent.targets }}'}
+        allowFailure: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "instance-seed-copy-certificate-" + string(self.target.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags certificate "$ORBIT_ANSIBLE/proof-seed-copy.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_TARGET: '${{ string(self.target.node_id) }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: Copy the seed
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Read its Incus certificate, condition: {type: always}}]
+        forEach: {item: target, in: '${{ inputs.intent.targets }}'}
+        allowFailure: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "instance-seed-copy-copy-" + string(self.target.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 7300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags copy "$ORBIT_ANSIBLE/proof-seed-copy.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_TARGET: '${{ string(self.target.node_id) }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: Check the holder
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Copy the seed, condition: {type: always}}]
+        forEach: {item: target, in: '${{ inputs.intent.targets }}'}
+        allowFailure: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "instance-seed-copy-check-" + string(self.target.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/proof-seed-copy.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_TARGET: '${{ string(self.target.node_id) }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: Report every target
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Check the holder, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-seed-copy-report" }}
+          methodName: execute
+          inputs:
+            run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags result "$ORBIT_ANSIBLE/proof-seed-copy.yml"
+            env:
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: result
+        labels: {role: swamp}
+        dependsOn: [{step: Report every target, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-seed-copy-result" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 cat "$ORBIT_RUN/result.json"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        labels: {role: swamp}
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-seed-copy-cleanup" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

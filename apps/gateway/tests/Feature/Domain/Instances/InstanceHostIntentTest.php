@@ -429,7 +429,7 @@ describe('the bridge check and write', function (): void {
         $base = DB::transactionLevel();
 
         $queries = bridgeQueries(fn () => app(AllocateInstanceBridgeAction::class)->execute($node));
-        $read = array_find(array_reverse($queries), static fn (array $q): bool => str_contains($q['sql'], 'select "id", "settings", "instance_bridge" from "nodes"'));
+        $read = array_find(array_reverse($queries), static fn (array $q): bool => str_contains($q['sql'], 'select "id", "settings", "instance_bridge", "ci_bridge" from "nodes"'));
         $write = array_find($queries, static fn (array $q): bool => str_starts_with($q['sql'], 'update "nodes" set "instance_bridge"'));
 
         expect($read['level'])->toBeGreaterThan($base)->and($write['level'])->toBe($read['level']);
@@ -450,7 +450,7 @@ describe('the bridge check and write', function (): void {
         $base = DB::transactionLevel();
         $queries = bridgeQueries(fn () => app(UpdateNodeAction::class)->persistDuringProvisioning($node, $settings));
         $write = array_find_key($queries, static fn (array $q): bool => str_starts_with($q['sql'], 'update "nodes" set "settings"'));
-        $reads = array_keys(array_filter($queries, static fn (array $q): bool => str_contains($q['sql'], 'select "id", "settings", "instance_bridge" from "nodes"')));
+        $reads = array_keys(array_filter($queries, static fn (array $q): bool => str_contains($q['sql'], 'select "id", "settings", "instance_bridge", "ci_bridge" from "nodes"')));
         $lastRead = max(array_filter($reads, static fn (int $index): bool => $index < $write));
 
         // The last bridge check before the write runs in the write's own transaction; before this change the write had none.

@@ -92,14 +92,25 @@ jobs:
       - job: phase_5
         condition: {type: succeeded}
     steps:
+      - name: Stop the seed listener
+        labels: *ref_0
+        writes: true
+        forEach: {item: action, in: '${{ inputs.intent.seed_listener.filter(a,!inputs.offline || inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/exec', behaviorName: '${{ ("remove-exec-stop-the-seed-listener-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, command: '${{ self.action.command }}', onlyIf: '${{ self.action.only_if }}'}, inputs: {}}
+        concurrency: 1
+  - name: phase_7
+    dependsOn:
+      - job: phase_6
+        condition: {type: succeeded}
+    steps:
       - name: Disable the services
         labels: *ref_0
         writes: true
         forEach: {item: action, in: '${{ inputs.intent.stop_units.filter(a,!inputs.offline || inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ ("remove-systemd-disable-the-services-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, service: '${{ self.action.input.unit }}', ensure: stopped, enabled: false}, inputs: {}}
-  - name: phase_7
+  - name: phase_8
     dependsOn:
-      - job: phase_6
+      - job: phase_7
         condition: {type: succeeded}
     steps:
       - name: Stop activating services
@@ -107,9 +118,9 @@ jobs:
         writes: true
         forEach: {item: action, in: '${{ inputs.intent.stop_units.filter(a,!inputs.offline || inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/exec', behaviorName: '${{ ("remove-exec-stop-activating-services-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, command: '${{ "timeout 60 systemctl stop " + self.action.input.unit }}', onlyIf: '${{ "test $(systemctl show --property=LoadState --value " + self.action.input.unit + ") = loaded" }}'}, inputs: {}}
-  - name: phase_8
+  - name: phase_9
     dependsOn:
-      - job: phase_7
+      - job: phase_8
         condition: {type: succeeded}
     steps:
       - name: Remove managed files
@@ -128,9 +139,9 @@ jobs:
         writes: true
         forEach: {item: action, in: '${{ inputs.intent.remove_containers.filter(a,!inputs.offline || inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ ("remove-docker_container-remove-the-containers-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, name: '${{ self.action.input.name }}', image: unused, ensure: absent}, inputs: {}}
-  - name: phase_9
+  - name: phase_10
     dependsOn:
-      - job: phase_8
+      - job: phase_9
         condition: {type: succeeded}
     steps:
       - name: Reload unit catalogue
@@ -138,9 +149,9 @@ jobs:
         writes: true
         forEach: {item: action, in: '${{ inputs.intent.reload_units.filter(a,!inputs.offline || inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
         task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("remove-reload-unit-catalogue-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("remove-reload-unit-catalogue-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}', hostKeys: '${{ self.action.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: [timeout, '60', systemctl, daemon-reload]}}
-  - name: phase_10
+  - name: phase_11
     dependsOn:
-      - job: phase_9
+      - job: phase_10
         condition: {type: succeeded}
     steps:
       - name: Withdraw firewall rules
@@ -148,9 +159,9 @@ jobs:
         writes: true
         forEach: {item: action, in: '${{ inputs.intent.firewall.filter(a,!inputs.offline || inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
         task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("remove-withdraw-firewall-rules-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("remove-withdraw-firewall-rules-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}', hostKeys: '${{ self.action.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60"] + self.action.input.argv }}', okExitCodes: [0, 1]}}
-  - name: phase_11
+  - name: phase_12
     dependsOn:
-      - job: phase_10
+      - job: phase_11
         condition: {type: succeeded}
     steps:
       - name: Remove role certificates
@@ -158,9 +169,9 @@ jobs:
         writes: true
         forEach: {item: action, in: '${{ inputs.intent.certificates.filter(a,!inputs.offline || inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
         task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("remove-remove-role-certificates-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("remove-remove-role-certificates-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}', hostKeys: '${{ self.action.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60","rm","-rf","--",self.action.path] }}'}}
-  - name: phase_12
+  - name: phase_13
     dependsOn:
-      - job: phase_11
+      - job: phase_12
         condition: {type: succeeded}
     steps:
       - name: Remove role data
@@ -169,9 +180,9 @@ jobs:
         forEach: {item: action, in: '${{ inputs.intent.commands.filter(a,!inputs.offline || inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/exec', behaviorName: '${{ ("remove-exec-remove-role-data-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, command: '${{ self.action.command }}', onlyIf: '${{ self.action.only_if }}'}, inputs: {}}
         concurrency: 1
-  - name: phase_13
+  - name: phase_14
     dependsOn:
-      - job: phase_12
+      - job: phase_13
         condition: {type: succeeded}
     steps:
       - name: Check removed files
@@ -189,7 +200,7 @@ jobs:
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ ("remove-docker_container-check-removed-containers-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: check, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, name: '${{ self.action.input.name }}', image: unused, ensure: absent}, inputs: {}}
   - name: remove
     dependsOn:
-      - job: phase_13
+      - job: phase_14
         condition: {type: succeeded}
     steps:
       - name: Confirm role removal

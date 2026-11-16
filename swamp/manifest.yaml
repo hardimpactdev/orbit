@@ -30,6 +30,12 @@ additionalFiles:
   - ansible/operation-node-converge.yml
   - ansible/fleet-converge-inputs.json
   - ansible/tasks/node-role-runtime.yml
+  - ansible/tasks/proof-seed-listener.yml
+  - ansible/tasks/proof-seed-listen.yml
+  - ansible/tasks/proof-seed-certificate.yml
+  - ansible/tasks/instance-pool-create.yml
+  - ansible/tasks/ci-bridge-read.yml
+  - ansible/proof-seed-copy.yml
   - ansible/tasks/node-converge-cli-absent.yml
   - ansible/tasks/node-converge-base.yml
   - ansible/tasks/node-kernel-policy.yml
@@ -47,6 +53,7 @@ additionalFiles:
   - ansible/tasks/fleet-reboot-rerun.yml
   - ansible/files/fleet-reboot-planned.sh
   - ansible/files/instance-container-wake.sh
+  - ansible/files/instance-container-power.py
   - ansible/files/instance-browser-trust.sh
   - ansible/files/fleet-reboot-ci-drain.sh
   - ansible/tasks/node-converge-replace.yml
@@ -168,6 +175,8 @@ additionalFiles:
   - ansible/tasks/instance-vite-plus-home.yml
   - ansible/tasks/instance-egress.yml
   - ansible/tasks/instance-host.yml
+  - ansible/tasks/instance-power-helper.yml
+  - ansible/tasks/instance-power-call.yml
   - ansible/tasks/instance-network-check.yml
   - ansible/tasks/instance-network-nic-check.yml
   - ansible/tasks/instance-network-move.yml
@@ -179,7 +188,6 @@ additionalFiles:
   - ansible/conn-environment-restart.yml
   - ansible/templates/t3-service-processes.j2
   - ansible/tasks/instance-container-power.yml
-  - ansible/tasks/instance-container-swap.yml
   - ansible/instance-connection-environment.yml
   - ansible/instance_env_keys.py
   - ansible/instance_node_services.py

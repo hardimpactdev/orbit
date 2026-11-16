@@ -129,9 +129,16 @@ For example, `instance.migrate` has 5,700 seconds and `node.converge` 3,900 seco
 
 `tasks.cancel` and `tasks.maintenance_finish` also have 3,900 seconds, derived from the work they compose: the former VM destroy bound of 2,700 seconds, the 540-second Project teardown cap, and 660 seconds for the workspace Route withdrawal. Withdrawal's only fixed wait is the 31-second DNS grace, so most of that allowance is deliberate margin until real runs are measured. Their history came from cancels with no VM to destroy and was too short for real cleanup.
 
-`tasks.copy_turn` has a fixed 4,560 seconds. Its Ansible phase ends after 4,400 seconds.
+`tasks.copy_turn` has a fixed 4,680 seconds. Its Ansible phase ends after 4,500 seconds.
 
-That holds the turn's own bound of 3,600 seconds and the 30-second kill grace. It holds six T3 or helper calls of up to a minute each: the settle's list, the list of a continued turn, the question's read and stop, and the list and show after the turn. It also holds sixteen Git commands of up to 20 seconds each, for the settle's restore and a reviewer's set-up and restore, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
+That holds the turn's own bound of 3,600 seconds and the 30-second kill grace. It holds eight T3 or helper calls of up to a minute each:
+
+- the settle's list, and its stops of up to two earlier runs, one in the implementer's thread and one in the reviewer's;
+- the list of a continued turn;
+- the question's read and stop, or a cut run's list and stop;
+- the list and show after the turn.
+
+It also holds sixteen Git commands of up to 20 seconds each, for the settle's restore and a reviewer's set-up and restore, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
 
 `proof.run` has no execution budget of its own: its children and the watchdog end it. Its execution duration starts at admission; its 7,200-second admission allowance starts at creation. Waiting for the working proof, an earlier parent or a copy place consumes that allowance, and the proof reads `waiting` until admission; expiry fails with `proof.capacity_timeout`. See [proof admission](/cli/proof/run#the-run).
 
@@ -245,7 +252,7 @@ A direct Operation may admit immutable `input.participant_node_ids`. A foreign p
 
 ## The record
 
-The optional `steps` list uses typed `OperationStep` metadata. Start responses can omit it; show and cancel responses include it. List rows never carry `steps`, `input` or `result`; [Page the list](#page-the-list) says why.
+The optional `steps` list uses typed `OperationStep` metadata. Start responses can omit it; show and cancel responses include it. List rows never carry `steps`, `input` or `result`; [Page the list](#page-the-list) says why. The record repeats one result field, `ready_at`, so one history request returns every wake's readiness time.
 
 `operation:show`, `operation:cancel` and `task:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. An admission that waits for a place keeps the caller's request as `input.capacity_request`; the summary keeps it as an object with the same filter, so a waiting Operation reads the same request on every read. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
 
@@ -272,6 +279,7 @@ Every operation has the same fields, whatever its kind.
 | `poll_after_seconds` | How long a polling client waits before its next read, or null once terminal. [Follow an operation by polling](#follow-an-operation-by-polling) gives the values |
 | `capacity_wait` | For an Operation on a task group that waits for a task place: `operation_id`, `position` and `holders`, as [Task places](/reference/tasks#task-places) defines. Null otherwise |
 | `hold_wait_reason` | For a Route write or a removal that waits in the Gateway: why, as [One Route write per Node](#one-route-write-per-node) lists. Null otherwise |
+| `ready_at` | For an `instance.wake`: its `result.ready_at`, the Node's UTC time when the website became ready ([Results](/reference/prepared-restore#results)). Null otherwise |
 
 A cancelled operation has an `error_code` only when a rollback superseded it: `operation.superseded`.
 
@@ -396,7 +404,7 @@ Four requests read and stop operations.
 | --- | --- |
 | `GET /api/v1/operations/{operation}` | The record with every step |
 | `GET /api/v1/operations/{operation}?after_sequence=N` | The record with only the steps whose `sequence` is greater than `N` |
-| `GET /api/v1/operations` | The newest records, 20 to a page, without `input`, `result` or `steps`. [Filter the list](#filter-the-list) with `status`, `kind`, `target_type`, and `target_id`, and [page it](#page-the-list) with `limit` and `cursor` |
+| `GET /api/v1/operations` | The newest records, 20 to a page, without `input`, `result` or `steps`; a wake's row carries `ready_at`. [Filter the list](#filter-the-list) with `status`, `kind`, `target_type`, and `target_id`, and [page it](#page-the-list) with `limit` and `cursor` |
 | `POST /api/v1/operations/{operation}/cancel` | Asks the operation to stop and returns the record |
 
 The list selects operations and caller Node names in one query. Show uses the bound operation and reads its steps in one query. Neither waits for the operation. A read needs access to the Node that serves the target, such as the Instance's Node. The list returns only operations on Nodes that the caller can access; the Gateway Node and a Node with an access grant to the Gateway see all of them.
@@ -841,6 +849,8 @@ A declared `OperationArtifactSource` may return a bounded existing-file referenc
 Development `instance.mail_update` holds the Instance lock and has a 120-second run budget. Its 90-second mail phase leaves room for input, result and cleanup. It returns path and mailer outcomes without environment values; see [`instance:mail:update`](/cli/instance/mail-update).
 
 Development `instance.sleep` and `instance.wake` hold the Instance lock. Their run budgets are 150 and 300 seconds: a 30-second marker phase and a 90-second freeze phase, or a 120-second start phase and a 120-second T3 and marker phase, plus input, result and cleanup. A second wake of the same Instance joins the open one. When the Instance is a clone of a nested-fleet default, the wake admits `instance.start` instead. That kind holds the Instance lock too. Its run budget is 1,200 seconds: a 240-second start phase, a 300-second fleet check and a 600-second fleet start. See [`instance:sleep`](/cli/instance/sleep) and [`instance:wake`](/cli/instance/wake).
+
+`instance.seed_copy` sends the proof default's seed to each CI Node that is behind it ([The seed on each CI Node](/reference/development-containers#the-seed-on-each-ci-node)). It holds the default's seed-copy lock, not its Instance lock, so a deployment of the default can run beside it. Its run budget is 7,800 seconds: the targets run side by side, and each target's copy phase allows two `incus copy` commands of up to 3,600 seconds each.
 
 Container `instance.node_service_detach` uses one `node-service` Ansible phase with a 90-second execution bound and a 120-second Operation budget. It removes only the detached Instance access, retaining a shared port for other attachments; terminal success removes the record. A checkout detach still completes immediately without Node work.
 

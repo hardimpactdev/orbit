@@ -15,7 +15,7 @@ const transcript: { id: string; kind: "message"; label: string; text: string; at
 const started = (status: string, error: string | null = null) =>
     JSON.stringify({ threadId: thread, runId: run, status, reply: status === "completed" ? "Committed d867aba2." : null, error });
 const read = { list_exit: 0, found: 1, status: "completed", show_exit: 0, show };
-const none = { resumed: null, review: null, model: null, detached: false, ask: null, interrupt: null, restore: null };
+const none = { resumed: null, review: null, model: null, detached: false, ask: null, interrupt: null, stop: null, restore: null };
 // The provider instance and model as T3 showed them, and no question.
 const named = { launched: true, provider_instance: "claudeMedium", model: "claude-opus-5-5", questions: [], settled: [] };
 const unlaunched = { launched: false, provider_instance: null, model: null, questions: [], settled: [] };
@@ -57,10 +57,10 @@ Deno.test("a run that asks has its question stored and its run stopped: it asks 
 });
 
 Deno.test("an earlier turn still running launches nothing and fails tasks.copy_turn_unended; the turns found settled are named", () => {
-    const held = shapeTurn({ ...none, settle: { list_exit: 0, settled: [11], open: [12] }, launched: false, start: null, read: null });
+    const held = shapeTurn({ ...none, settle: { list_exit: 0, settled: [11], open: [12], stopped: [] }, launched: false, start: null, read: null });
     assertEquals(held, { state: "failed", error: "An earlier turn may still run in the copy (Operation 12); nothing was launched.", error_code: "tasks.copy_turn_unended",
         ended: true, t3_thread_id: null, run_id: null, ...unlaunched, settled: [11], transcript: [] });
-    assertEquals(turn(0, started("completed"), { settle: { list_exit: 0, settled: [11, 12], open: [] } }),
+    assertEquals(turn(0, started("completed"), { settle: { list_exit: 0, settled: [11, 12], open: [], stopped: [{ operation_id: 12, run }] } }),
         { state: "done", error: null, ended: true, t3_thread_id: thread, run_id: run, ...named, settled: [11, 12], transcript });
 });
 
@@ -105,8 +105,29 @@ Deno.test("a wait that the bound killed is tasks.turn_timeout, records the threa
         assertEquals([cut.state, cut.error_code, cut.ended, cut.t3_thread_id, cut.transcript.length], ["failed", "tasks.turn_timeout", false, thread, 2]);
     }
     // The run ended inside the kill grace: T3 lists the thread as completed.
-    assertEquals(turn(124, "").ended, true);
+    assertEquals([turn(124, "").ended, turn(124, "").error], [true, "The turn ran longer than its bound. Its run has ended."]);
     assertEquals(turn(124, "", { read: { ...read, status: null } }).ended, false);
+});
+
+Deno.test("a wait that the bound killed and whose run the phase stopped is over and holds nothing, still failing tasks.turn_timeout", () => {
+    const halted = (answer: unknown, stop_exit = 0) => ({ stop_exit, stop: JSON.stringify(answer) });
+    for (const exit of [124, 137]) {
+        const cut = turn(exit, "", { read: { ...read, status: "running" }, stop: halted({ stopped: true, run, state: "interrupted" }) });
+        assertEquals([cut.state, cut.error_code, cut.ended, cut.error], ["failed", "tasks.turn_timeout", true, "The turn ran longer than its bound. Orbit stopped its run."]);
+    }
+    // The stop found no active run: the run ended on its own.
+    const idle = turn(124, "", { read: { ...read, status: "running" }, stop: halted({ stopped: false, run: null, state: null }) });
+    assertEquals([idle.ended, idle.error], [true, "The turn ran longer than its bound. Its run has ended."]);
+    // A stop that T3 refused, one cut by its own bound, or an answer that is no stop's, leaves the run going: the next turn stops it.
+    for (const stop of [halted({ stopped: false, run, state: "running" }), halted({}, 124), { stop_exit: 0, stop: "not json" }, halted({ interrupted: true })]) {
+        const held = turn(124, "", { read: { ...read, status: "running" }, stop });
+        assertEquals([held.error_code, held.ended, held.error], ["tasks.turn_timeout", false,
+            "The turn ran longer than its bound. Orbit could not stop its run; the next turn stops it."], JSON.stringify(stop));
+    }
+    // A cut reviewer whose run stopped and whose checkout was restored is free.
+    const reviewer = turn(124, "", { review: { ready: true, error_code: null }, detached: true, restore: { restored: true }, read: { ...read, status: "interrupted" },
+        stop: halted({ stopped: true, run, state: "interrupted" }) });
+    assertEquals([reviewer.error_code, reviewer.ended], ["tasks.turn_timeout", true]);
 });
 
 Deno.test("a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread", () => {
@@ -253,6 +274,25 @@ Deno.test("the method reads each evidence file on its own, so an oversized read 
         Deno.writeTextFileSync(`${folder}/read.json`, JSON.stringify({ ...read, status: "interrupted" }));
         const asking = await behavior.methods.result.execute({ folder }, context);
         assertEquals([asking.successful, asking.turn.state, asking.turn.ended, asking.turn.questions], [true, "asking_for_input", true, questions]);
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
+});
+
+Deno.test("the method reads the stop of a cut run and the runs the settle stopped", async () => {
+    const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
+    Deno.mkdirSync(folder);
+    try {
+        const context = { writeResource: () => Promise.resolve() };
+        Deno.writeTextFileSync(`${folder}/settle.json`, JSON.stringify({ list_exit: 0, settled: [11], open: [], stopped: [{ operation_id: 11, run: "run:earlier" }] }));
+        Deno.writeTextFileSync(`${folder}/launch.json`, "{}");
+        Deno.writeTextFileSync(`${folder}/start.json`, JSON.stringify({ start_exit: 124, start: "" }));
+        Deno.writeTextFileSync(`${folder}/read.json`, JSON.stringify({ ...read, status: "running" }));
+        const unstopped = await behavior.methods.result.execute({ folder }, context);
+        assertEquals([unstopped.successful, unstopped.turn.error_code, unstopped.turn.ended, unstopped.turn.settled], [false, "tasks.turn_timeout", false, [11]]);
+        Deno.writeTextFileSync(`${folder}/stop.json`, JSON.stringify({ stop_exit: 0, stop: JSON.stringify({ stopped: true, run, state: "interrupted" }) }));
+        const stopped = await behavior.methods.result.execute({ folder }, context);
+        assertEquals([stopped.successful, stopped.turn.error_code, stopped.turn.ended, stopped.turn.settled], [false, "tasks.turn_timeout", true, [11]]);
     } finally {
         Deno.removeSync(folder, { recursive: true });
     }

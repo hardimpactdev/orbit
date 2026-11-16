@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 261,
+      "pages": [
+        "decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes"
+      ]
+    }
+  ]
+}

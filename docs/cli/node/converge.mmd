@@ -88,6 +88,7 @@ sequenceDiagram
     SW->>N: Configure the roles<br/>Ansible phase: roles
     %%> What it does:
     %%> - repairs selected role configuration without changing an Instance or role assignment
+    %%> - on a Node that offers proof places, other than the proof default's Node: first reads root's Incus client certificate on the default's Node, as `node:role:converge` does, and writes the seed listener's trust; on any other Node with `ci-runner` it removes the trust and stops the listener; it never opens the listener or changes its firewall rules (docs/reference/node-provisioning.md#the-seed-listener)
     %%> - on an app-dev Node: writes each Instance container's presented machine name (`/etc/hostname`, `PRETTY_HOSTNAME` in `/etc/machine-info`, the `127.0.1.1` line of `/etc/hosts`) through the file API, running, stopped or frozen; nothing restarts, so the kernel hostname follows at the container's next start and T3's label at T3's next start
     SW->>N: Apply recorded Tools<br/>Ansible phase: tools
     %%> What it does:
@@ -133,6 +134,7 @@ sequenceDiagram
       SW-->>GW: Run succeeded<br/>terminal result
       %%> Result:
       %%> - the shared reader marks the Operation succeeded and records each Tool's result
+      %%> - with `ci-runner` in scope, records the seed listener in `nodes.seed_sender_id`: it keeps the sender it names when the intent names the same sender, and clears it otherwise (docs/reference/node-provisioning.md#the-seed-listener)
       %%> - the result lists each Instance container that got no Chromium trust store, with its reason
       %%> - a repeat is another full run, not an admission skip; matching tasks report zero changes
     else a phase fails
@@ -140,6 +142,7 @@ sequenceDiagram
       SW--xGW: Run failed<br/>error_code · failed step
       %%> Result:
       %%> - stop at the failed phase and mark the Operation failed; later phases do not run
+      %%> - with `ci-runner` in scope, records the seed listener as on success when the roles phase passed, and clears `nodes.seed_sender_id` when it did not
       %%> - the result names the earliest fatal task among hosts whose statistics fail: each host contributes its last failed or unreachable record; ties select hub; names are bounded and may be withheld
       %%> - censored-only evidence from a failed host reports a hidden task; missing, malformed or task-free reports leave `failure` absent; private callback output stays private
       %%> - unreachable targets fail here, not at a live admission check

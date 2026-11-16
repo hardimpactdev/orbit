@@ -19,5 +19,7 @@ final class UpdateTaskData extends Data
         /** @var list<array<string, string|bool|list<string>>>|null null leaves the deliverables unchanged */
         public ?array $deliverables = null,
         public ?TaskStatus $status = null,
+        /** why a correction after a failed check replaces a started subtask's deliverables; refused on any other update */
+        public ?string $reason = null,
     ) {}
 }

@@ -1309,7 +1309,7 @@ function threadLegacySnapshot(mixed $value, ?string $key = null): mixed
 // clone-register, and its database, fleet, Process and Route steps are the completion's; the container intent carries its presented
 // `machine_name`, and its boot files the `/etc/machine-info` that T3's first start reads; a clone links its agents to its own agent folder,
 // which its create fills from the type note (InstanceAgentInstructions); the container intent carries `php_cli_ini` after `php`, null for a Project
-// without PHP (InstanceContainer::phpCliIni). Conn maps only its four stable stage names
+// without PHP (InstanceContainer::phpCliIni); it carries `web_port` after `web_config`, null without a web app. Conn maps only its four stable stage names
 // (docs/reference/conn.md), so no delta reaches its card.
 it('matches the installed-client no-branch intent steps result and resume snapshot byte for byte', function (): void {
     $this->freezeTime();

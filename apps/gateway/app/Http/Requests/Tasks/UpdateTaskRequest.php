@@ -32,6 +32,7 @@ final class UpdateTaskRequest extends FormRequest
             'position' => ['sometimes', 'integer:strict', 'min:1'],
             'status' => ['sometimes', 'string', Rule::enum(TaskStatus::class)],
             'topology' => ['sometimes', 'array', 'list'],
+            'reason' => ['sometimes', 'filled', 'string', 'min:1', 'max:500'],
             'deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
             'deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],
             'deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
@@ -51,7 +52,7 @@ final class UpdateTaskRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'position', 'deliverables', 'topology', 'status']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'position', 'deliverables', 'topology', 'status', 'reason']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -67,6 +68,7 @@ final class UpdateTaskRequest extends FormRequest
             position: is_int($position) ? $position : null,
             status: is_string($this->validated('status')) ? TaskStatus::from($this->validated('status')) : null,
             deliverables: array_key_exists('deliverables', $this->validated()) ? CreateTaskRequest::deliverables($this->validated('deliverables')) : null,
+            reason: is_string($this->validated('reason')) ? $this->validated('reason') : null,
         );
     }
 }

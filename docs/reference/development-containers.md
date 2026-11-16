@@ -2,10 +2,10 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
+  - apps/gateway/app/{Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
-  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
+  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,25_000000_create_proof_seeds,26_000000_add_ci_bridge_to_nodes,26_000001_release_an_unused_instance_bridge,27_000000_add_seed_sender_id_to_nodes}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
@@ -54,12 +54,15 @@ Every `app-dev` Node runs its Instances in containers. There is no setting to op
 
 The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
 
+A [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) gets the same container setup through its `ci-runner` role, with nested-fleet hosting on. It never gets the `app-dev` role. It holds no default Instance: it holds a [seed of the proof default](#the-seed-on-each-ci-node), and it takes only proof copies.
+
 ### Prepare a Node
 
-This part is built. The `app-dev` role converge of a Node on the [build list](#the-build-list) runs a container branch; a task VM never does. The Gateway sends the branch's intent only for such a Node, so every other Node gets the same intent as before. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+This part is built. The `app-dev` role converge of a Node on the [build list](#the-build-list) runs a container branch; a task VM never does. The Gateway sends the branch's intent only for such a Node, so every other Node gets the same intent as before. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; that part is the target design of [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies). [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
 - **Allocation.** The admission of a role add or converge allocates the Node's bridge. The captured intent only reads it.
 - **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
+- **Pool of a CI-only Node.** Its `ci-runner` converge creates the pool on a new dataset of the zpool that its ZFS Incus pool uses ([Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node)).
 - **Missing pool.** A Node without the pool is refused with `instance.host_unavailable`.
 - **Project.** Containers of `orbit-instances` must set an isolated ID map. They may mount host folders and have proxy devices, and cannot be VMs. The profile mounts the two shared folders.
 - **Host paths.** The project sets no `restricted.devices.disk.paths`. Incus refuses `shift` on a disk under that list, and the shared folders need the idmapped mount.
@@ -121,7 +124,11 @@ A task VM host on the build list, such as Beast, gets the container branch besid
 
 Before it changes anything, the converge refuses a bridge range that another interface of the Node holds, with `instance.host_unavailable`. The Gateway only knows the bridges it records, not one an operator made, such as a CI bridge.
 
-The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253.0.0/16`, and records it on the Node. It takes the first `/24` that overlaps no recorded bridge and not the VPN subnet. A Node keeps its bridge. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A task VM host's bridges may not overlap an Instance bridge either: `node:update` refuses them with `node.settings_invalid`.
+The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253.0.0/16`, and records it on the Node. It takes the first `/24` that overlaps no recorded bridge and not the VPN subnet. The recorded bridges include each Node's CI bridge `orbitci0`, whose subnet Incus chose when the `ci-runner` role made it. Orbit never moves a CI bridge.
+
+Each `ci-runner` add and converge reads the subnet of `orbitci0` (`incus network get orbitci0 ipv4.address`), and the Gateway records it on the Node as `ci_bridge`. The node phase reads it twice: before the Instance container branch, so a refused clash is still recorded, and after the CI resources, so a new `orbitci0` is recorded in the same run.
+
+The admission of the first converge allocates before any read. When that bridge overlaps the CI bridge, the branch refuses with `instance.host_unavailable` before it changes anything. The Gateway records the CI bridge from that run and gives back the Node's Instance bridge, when no container uses it yet. The next `ci-runner` converge then allocates a `/24` around the CI bridge. A Node keeps its bridge while a container uses it. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A task VM host's bridges may not overlap an Instance bridge either: `node:update` refuses them with `node.settings_invalid`.
 
 T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address. The Node records the last T3 port it gave. A new runtime takes the first free port after it and wraps from 3999 to 3800, so a port freed by a destroy is given again only after the Node has used every other free port. A client that saved the destroyed server under its address therefore does not meet a new server there at once. When every port is held, the reservation fails with `instance.host_unavailable` (409).
 
@@ -1008,7 +1015,7 @@ A default sleeps like any other development container: after one idle window wit
 
 #### A retake keeps the seed
 
-A retake never leaves the default without a seed. It takes the new snapshot first, beside the old one. When `seed-<commit>` exists already, the new snapshot waits under `next-<commit>`. Only when the new snapshot exists does the old `seed-<commit>` go, and `next-<commit>` takes its name. Older seeds go last. The seed of a default with an [inner volume](#the-seed-pair) is a pair, and both halves follow the same order.
+A retake never leaves the default without a seed. It takes the new snapshot first, beside the old one. It holds the default's seed lock on the Node while it does so. When `seed-<commit>` exists already, the new snapshot waits under `next-<commit>`. Only when the new snapshot exists does the old `seed-<commit>` go, and `next-<commit>` takes its name. Older seeds go last. The seed of a default with an [inner volume](#the-seed-pair) is a pair, and both halves follow the same order.
 
 Incus maps a new snapshot as it maps a new container: it needs a free [isolated ID range](#isolated-id-ranges) for a moment, but a delete or a rename needs none. So the step never uses `incus snapshot create --reuse`, which deletes the old snapshot before it creates the new one. On 2026-11-14 a retake with `--reuse` on a host with no free range left Instance 2454 without a seed for seven minutes.
 
@@ -1028,7 +1035,7 @@ A separate job publishes the Route, certificate and DNS. Swamp runs jobs in leve
 
 #### What is built
 
-The first default Instance and its deployments are built for the Nodes of the [build list](#the-build-list). A Project has one `default` Instance in the whole fleet, and every clone of it is made on its Node. Deployment admission refreshes the Project’s [source facts at the deployed commit](/reference/deployments#container-source-facts).
+The first default Instance and its deployments are built for the Nodes of the [build list](#the-build-list). A Project has one `default` Instance in the whole fleet, and every clone of it is made on its Node. The one exception is a proof copy on a CI Node: it clones that Node's [seed](#the-seed-on-each-ci-node). Deployment admission refreshes the Project’s [source facts at the deployed commit](/reference/deployments#container-source-facts).
 
 | Part | What Orbit does |
 | --- | --- |
@@ -1497,19 +1504,19 @@ Names from the workspace never become arguments. Git returns them NUL-separated,
 
 A sleeping Instance's container is frozen. Its processes keep their state and memory, but the memory moves to swap: a frozen Laravel and T3 clone holds about 13 MiB of RAM and about 340 MiB of swap. Nothing boots at the wake, so a resume takes a fraction of a second. Its disk, databases, Route, T3 threads and sessions stay. A container never prunes its dependencies.
 
-Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, so a running container never swaps: a busy one meets its limit instead of filling the swap disk. A sleep opens swap (`max`) for every cgroup of the container's subtree that holds 0, freezes the container, and then asks the kernel to reclaim its memory. A wake writes 0 again to exactly the cgroups the sleep opened. Pages already in swap come back when they are used. No Incus setting changes.
+Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, so a running container never swaps: a busy one meets its limit instead of filling the swap disk. A sleep opens swap (`max`) for every cgroup of the container's subtree that holds 0, freezes the container, records which pages of its processes were resident, and then asks the kernel to reclaim its memory. A wake reads the recorded pages back while the container is still frozen, resumes it, and writes 0 again to exactly the cgroups the sleep opened. Other pages in swap come back when they are used. No Incus setting changes.
+
+One helper on the Node, `/usr/local/libexec/orbit-instance-power`, does this work for every sleep, wake, deployment, start and destroy. [Prepared restore](/reference/prepared-restore) owns its contract: the plan, the bounds, the wake's state table, the fast wake's files and the result fields.
 
 **The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
 
-So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. When it opened at least one inner cgroup, it records them in `/dev/shm/orbit/hibernation/app-instance-<id>.swap`, one path below the container's cgroup per line; when it opened none, it writes no record and removes one left from before. Its result counts them as `swap_subtree`. Each resume by a wake's run, a deployment or a start writes 0 to the container's own cgroup and to each recorded path that still exists, then removes the record.
+So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. Before it pauses the container, it records what it opened in the [limits record](/reference/prepared-restore#files-on-the-node), `/var/lib/orbit/hibernation/instances/<id>/limits.json`. Its result counts the inner cgroups as `swap_subtree`. Each resume by a wake, a deployment or a start writes 0 to the container's own cgroup and to each recorded path that still exists, then removes the record. A resume reads no other record.
 
-The sleep makes the record's folder first: `/dev/shm` is empty after a Node's reboot. A cgroup that vanishes during the walk, or that refuses the write, is not opened and fails nothing; its pages stay in RAM, and the check of the memory left in RAM below counts them.
-
-The record is written from what the walk opened before any later step can fail, and a rescue also closes what this run opened when the record could not be written. A sleep of a container that is already frozen keeps the earlier record and reports its count as `swap_subtree`. A destroy removes the record with the container.
+A cgroup that vanishes during the walk, or that refuses the write, is not opened and fails nothing; its pages stay in RAM, and the check of the memory left in RAM below counts them. A sleep that fails while the container still runs closes what it opened. A sleep of a container that is already frozen keeps the earlier record and reports its count as `swap_subtree`. A destroy removes the record with the container.
 
 A short-lived unit, such as `systemd-hostnamed.service`, can end while the container sleeps, and its cgroup goes with it; the resume skips that path and never fails on it. In practice only the container's own cgroup and the three inner payload roots matter.
 
-The Node's wake script closes only the container's own cgroup, and changing it would need an `app-dev` converge. So the Gateway skips [the Node's resume](#the-node-resumes-a-frozen-container) for a nested-fleet Instance and for any Instance whose last sleep has `swap_subtree` above 0; those wakes take the run. A cgroup with its own limit, such as polkit's 32 MiB, stays as it is. A plain clone has no inner cgroup with 0, so its sleep leaves no record, and the Node's resume has none to remove.
+A cgroup with its own limit, such as polkit's 32 MiB, stays as it is. The Node's fast resume closes the same record, so it serves any `swap_subtree`; it stays off for a nested-fleet Instance.
 
 Measured on a nested-fleet default on 2026-11-14, before this rule:
 
@@ -1522,7 +1529,7 @@ Measured on a nested-fleet default on 2026-11-14, before this rule:
 | Writing the 4 values back to 0 | 1.2 s |
 | Inner Doctor healthy, 3 agents online | 4.0 s after the resume |
 
-When swap cannot take the memory (it is full), more than 32 MiB of anonymous memory stays in RAM after the reclaim. A frozen container would then hold RAM, which a sleep exists to free, so the sleep resumes the container and stops it. Its result says `sleep: stopped`; otherwise `sleep: frozen`.
+After the reclaim, the sleep reads the container's memory counters until anonymous and file memory are both 0, at most 20 times 0.1 s apart. The last read is what stays in RAM; the result reports it. When swap cannot take the memory (it is full), more than 32 MiB of anonymous memory stays in RAM. A frozen container would then hold RAM, which a sleep exists to free, so the sleep resumes the container and stops it. Its result says `sleep: stopped`; otherwise `sleep: frozen`.
 
 A nested-fleet Instance never takes this stop: a stop loses the Club key in `/run` and the tunnel `wg-nested`, which only a deployment or a start gives back. The sleep resumes it, closes swap, removes the marker and fails with `instance.container_freeze_failed`.
 
@@ -1542,6 +1549,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
 | The Conn thread index reads the server one last time before a sleep is admitted, while its switch is on | Built. See [Thread index](/reference/conn#thread-index) |
 | A visit to a frozen container gets the waiting page at once and the app about a second later | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
+| The wake reads the pages that were resident at the freeze back from swap before it resumes | In progress ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)); off for nested-fleet Instances. See [Prepared restore](/reference/prepared-restore) |
 | A long freeze becomes a stop | Planned |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
 
@@ -1603,42 +1611,44 @@ A request with `X-Orbit-Probe: 1` and a request that meets the asleep marker wri
 
 The marker lives on disk, not in `/dev/shm`: a host reboot loses the frozen state, but not the marker. A sleep writes the marker before it freezes the container.
 
-**The Node resumes a frozen container.** <a id="the-node-resumes-a-frozen-container"></a>When the Instance's last sleep froze it with `swap_subtree` 0, it is not a nested-fleet Instance, and its site has a web unit, the wake does not start its run at once. The Gateway records the `instance.wake` Operation under the Instance lock, as always. After the commit it writes a wake request on the Instance's Node, `/dev/shm/orbit/hibernation/app-instance-<id>.wake`, with the agent's existing `hibernation.marker`. That folder belongs to root and the `caddy` group with mode `0755`, so only root writes in it. The agent stays frozen ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)).
+**The Node resumes a frozen container.** <a id="the-node-resumes-a-frozen-container"></a>When the Instance's last sleep froze it, it is not a nested-fleet Instance, and its Node's role installed the fast wake's worker template `orbit-instance-wake@.service`, the wake does not start its run at once. The Gateway records the `instance.wake` Operation under the Instance lock, as always. After the commit it writes a wake request named after the Instance and the Operation, `/dev/shm/orbit/hibernation/app-instance-<id>-op-<opid>.wake`, with the agent's existing `hibernation.marker`. That folder belongs to root and the `caddy` group with mode `0755`, so only root writes in it. The agent stays frozen ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)).
 
-The `app-dev` role installs the Node's part: the script `/usr/local/libexec/orbit-instance-wake`, the service `orbit-instance-wake.service` and the path unit `orbit-instance-wake.path`, which starts the service while a request exists. The service runs as root with no capabilities, a read-only file system except the two hibernation folders and the cgroup tree, and no new privileges. It needs root because the Incus socket and the container's cgroup file belong to root; membership of `incus-admin` would give the same power.
+The `app-dev` role installs the Node's part: the power helper, a path unit that watches the request folder, and the worker template `orbit-instance-wake@<id>-<opid>.service`.
 
-The script takes the Instance id only from the request's name, as digits, and never reads its content. It renames the request to `.taken`, and acts only when the request is at most one second old, the asleep marker exists, and Incus reports `instance-<id>` of `orbit-instances` as `Frozen`. Then it resumes the container, writes `memory.swap.max = 0`, and asks FrankenPHP once for an answer below 500, within 1.5 seconds. A resumed FrankenPHP still holds its socket, so one request tells. Then it removes the marker and writes `app-instance-<id>.resumed`. Last it removes the `.taken` file.
+The worker restores the recorded pages and resumes the container through the helper. Then it checks the web port once, removes the asleep marker, and writes the outcome files under `/var/lib/orbit/hibernation/outcomes`. [The fast wake](/reference/prepared-restore#the-fast-wake) has the files, the worker's steps and the rules for a decline.
 
-In any other case it changes nothing, and a failure after the resume keeps the marker, so the site never proxies to a frozen container. Each step writes one line to the journal of `orbit-instance-wake.service`, with the resume's and the probe's milliseconds.
+The Gateway reads the request and the outcome files with the agent's `hibernation.times`, every 25 ms within 6 seconds of the request. When the outcome shows, the Operation succeeds at once: `wake: resumed`, `trigger_seconds`, `confirm_seconds`, `ready_at` and `prepared_restore.status`.
 
-The Gateway reads the request, `.taken`, `.resumed` and the marker with the agent's `hibernation.times`, first after 0.35 seconds and then every 0.1 seconds, within 3 seconds of the request. When the resume shows, the Operation succeeds at once: `wake: resumed`, `trigger_seconds` (the request's call) and `confirm_seconds` (from the request until the Gateway read the resume).
-
-The `instance:wake` command waits for this, and a command that joins the wake waits for it too, up to the bound. A visitor never waits for it: Caddy's activation call admits the wake and gets the waiting page at once, and the Gateway writes the request after that answer went. The page polls the visitor's path every 250 ms and loads the app once the marker is gone, about a second after the visit.
+The `instance:wake` command waits for this, and a command that joins the wake waits for it too, up to the bound. A visitor never waits for it: Caddy's activation call admits the wake and gets the waiting page at once, and the Gateway writes the request after that answer went. The page polls the visitor's path every 250 ms and loads the app once the marker is gone.
 
 A request that arrives while the resume runs joins the wake and gets the waiting page at once. A wake cancelled before the Gateway writes the request gets no request.
 
-Anything else starts the run below, in the same Operation, and the waiting page stays until that run ends. That covers a Node without the script, such as one whose role predates it. The first read also asks for `/usr/local/libexec/orbit-instance-wake`. When it is missing, the Gateway leaves that Node out of the fast path for 10 minutes, so its other wakes cost nothing extra.
+Anything else starts the run below, in the same Operation, and the waiting page stays until that run ends. That covers a Node whose role has not installed the worker template (the first read asks for it, and such a Node is skipped for 10 minutes), a worker that declined or failed, a failed agent call, and the bound. The Gateway then removes a request still there.
 
-It also covers a script that declined (another state, FrankenPHP silent), a failed agent call, and the bound. The Gateway then removes a request still there. The script ignores a request older than one second, so a request left behind never wakes the Instance later.
+The worker ignores a request older than one second, so a request left behind never wakes the Instance later.
 
-Each Incus call in the script has its own bound, so a resume ends within about 6.5 seconds of the request, before the workflow reaches the container. The script takes every pending request, also one that arrived during a resume, before it checks any library cache. A Gateway worker that dies during the resume leaves a queued wake: a delayed start runs its workflow 15 seconds later. A cancel during the resume keeps the Operation cancelled.
+The run takes the helper's lock, so it waits for a worker still at work and then continues from the state the Node reached. A Gateway worker that dies during the resume leaves a queued wake: a delayed start runs its workflow 15 seconds later. A cancel during the resume keeps the Operation cancelled.
 
 A Stopped container whose last sleep froze it, such as after a host reboot, starts its run about a second later, while the Node declines the request.
 
-Measured on a frozen fixture clone before this path: the resume took 0.02 seconds and the web probe 0.4 seconds, but the run's start-up and playbook took 8 to 13 of the 9 to 19 seconds a visitor waited.
+Measured on a frozen fixture clone before the fast wake: the resume took 0.02 seconds and the web probe 0.4 seconds, but the run's start-up and playbook took 8 to 13 of the 9 to 19 seconds a visitor waited.
 
 **The wake's run.** One Ansible run reads the container's state and the marker:
 
 | Found | The wake |
 | --- | --- |
-| Frozen, marker | Resumes it, closes the swap the sleep opened, and gives FrankenPHP 10 tries one second apart (about 20 seconds at most). It boots nothing; a nested-fleet Instance keeps its inner fleet. `wake: resumed` |
+| Frozen, marker | Reads the recorded pages back, still frozen; resumes it, closes the opened swap, and gives FrankenPHP 10 tries one second apart. Nothing boots. `wake: resumed` |
 | Frozen, marker; FrankenPHP silent after the resume | Stops it by force, then boots it as below: a visitor would rather wait for a boot than for ever. `wake: restarted_after_resume`. A nested-fleet Instance is never stopped: the wake fails with `instance.web_unready` |
 | Stopped, marker (after a host reboot, or a sleep that fell back to a stop) | Boots it. `wake: started`. A nested-fleet Instance is never booted by a wake: it fails with `instance.nested_fleet_stopped`, and the marker stays |
 | Running, marker (after a host reboot with `boot.autostart`) | No start and no resume; checks FrankenPHP and removes the marker. `wake: already_running` |
 | Running, no marker | Nothing to do. `wake: already_running`, `marker_found: false` |
 | Frozen, no marker | A defect: the wake resumes it, and its result says `marker_found: false` |
 
-The result also gives `resume_seconds` and `web_probe_seconds` for a resume. A boot starts the container and waits until each running unit is active. Then the run waits until FrankenPHP answers. A web unit that listens before the app is ready answers 5xx for a moment, so the run waits up to 5 more seconds for an answer below 500; an app that answers 5xx by itself is then served as it is. Then the run removes the marker, and the next request gets the app. A Project without a web unit has no web wait.
+A resume boots nothing, so a nested-fleet Instance keeps its inner fleet.
+
+The result also gives `resume_seconds` and `web_probe_seconds` for a resume, and `restore_mode`, `ready_at` and `prepared_restore` ([Results](/reference/prepared-restore#results)). The web check goes from the Node to the container's address, not through `incus exec`. A boot starts the container and waits until each running unit is active. Then the run waits until FrankenPHP answers.
+
+A web unit that listens before the app is ready answers 5xx for a moment, so the run waits up to 5 more seconds for an answer below 500; an app that answers 5xx by itself is then served as it is. Then the run removes the marker, and the next request gets the app. A Project without a web unit has no web wait.
 
 A converge cannot run a command in a frozen container, so a container that slept through a converge may wake with a library cache that lacks the shared runtime libraries. After the marker went, so the visitor does not wait, each wake runs one check in the container: when `ldconfig -p` does not list a soname of `/opt/orbit-runtime/current/lib` at that path, it runs `ldconfig -X`.
 
@@ -1648,7 +1658,7 @@ A second check follows for the same reason. The converge keeps each container's 
 
 Only then does the run wait up to 30 seconds for T3 in an Instance with a T3 server, such as a clone; a default has none: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
 
-A destroy removes the marker and the swap record. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
+A destroy removes the marker, and the helper's `discard` removes the plan, the limits record and the fast wake's files after any helper call still at work has ended. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
 
 The [agent development servers](#agent-development-servers) site on port 444 has no asleep check: on a sleeping clone it answers 502 until a visit to the Route wakes the Instance.
 
@@ -1870,9 +1880,10 @@ The phase uses these commands, as `agent` in `/srv/workspace`.
 | Put a reviewer on the candidate | `git status --porcelain`, `git symbolic-ref --short HEAD`, `git rev-parse HEAD`, `git checkout --detach CANDIDATE` | Before a reviewer turn: a clean checkout on a branch, its tip, the detach mark at it, then the candidate, detached. Each bounded at 20 seconds |
 | Restore the checkout after a reviewer | `git reset --hard`, `git clean -fd`, `git checkout BRANCH`, then the status, branch and tip reads again | After a reviewer turn, also a cut one: the reviewer's changes go and the task branch is back at its earlier tip. A verified restore clears the detach mark |
 | Read the question of a run that asks | `node - T3 read T3THREAD`, with `t3_copy_rpc.mjs` on stdin | When the start exits 2. Prints the open runs, the pending requests with their questions, and whether Orbit may stop on them. Bounded at 60 seconds |
-| Stop the run that asks | `node - T3 interrupt T3THREAD RUN REQUESTS`, with `t3_copy_rpc.mjs` on stdin | After the question's evidence is written, only while the run waits for exactly the stored requests. Waits for its end within a 50-second deadline, inside a 60-second bound |
+| Stop the run that asks | `node - T3 interrupt T3THREAD RUN REQUESTS`, with `t3_copy_rpc.mjs` on stdin | After the question's evidence is written, only while the run waits for exactly the stored requests. Waits for its end within a 42-second deadline, inside a 60-second bound |
+| Stop a thread's active run | `node - T3 stop T3THREAD`, with `t3_copy_rpc.mjs` on stdin | After a wait cut by the bound, and before the launch for an earlier turn that T3 shows active. Same interrupt and wait; bounded at 60 seconds |
 
-The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input` once [the question ends the turn](#a-question-ends-the-turn), and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
+The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input` once [the question ends the turn](#a-question-ends-the-turn), and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`; the phase stops its run, and the turn is over once that stop ended it. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
 
 A continued turn whose title T3 lists not exactly once launches nothing and is `failed` with `tasks.copy_thread_missing`; a list that fails or is not JSON is `failed` with `tasks.copy_turn_failed`.
 
@@ -1893,7 +1904,7 @@ So the phase ends a turn at its question. When `--wait` exits 2, `t3_copy_rpc.mj
 
 The stop has two guards. The read must find questions alone: no approval, no request without a question, and no more text than the result can hold. And the run must still wait for exactly the stored requests. A run that someone answered meanwhile, or that now asks something else, goes on, so no new question is lost.
 
-The helper runs on the runtime's Node.js, `/opt/orbit-runtime/current/bin/node`, from stdin. It takes a session of one minute, read-only for the read, holds it only in its memory and revokes it before it exits. No session reaches an argument, a file, a log or the run folder. T3 stays stock.
+The helper runs on the runtime's Node.js, `/opt/orbit-runtime/current/bin/node`, from stdin. It takes a session of one minute, read-only for the read, holds it only in its memory and revokes it before it exits. Its `stop` finds the thread's active run, sends the same `run.interrupt` as `interrupt` and waits for the run's end the same way. It answers `{stopped, run, state}`. A thread with no active run answers `stopped: false` and no run. No session reaches an argument, a file, a log or the run folder. T3 stays stock.
 
 The turn is then `asking_for_input` and over, and its Operation succeeds. Its result and its thread keep the questions. The role's next turn quotes them before the caller's prompt and continues the thread with `t3 thread send`, as a normal follow-up. A question the helper could not read is `tasks.copy_question_unread`, and a run it could not stop is `tasks.copy_question_unstopped`. Neither is over, so the group holds.
 
@@ -1913,28 +1924,29 @@ Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes 
 
 These hold until a T3 server gives Swamp a full-access MCP session:
 
-- **No stop of a cut turn.** Orbit stops only a run that asks, through T3's own RPC. A turn cut by its bound may go on in the container.
 - **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
 - **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
 - **No consult and no caller's model.** Both were options of the removed Pi turn; a request with either answers `validation.failed` on that field.
 
 ### Hold after a turn that may still run
 
-A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that asks is over once Orbit stopped it. A reviewer turn whose checkout is not restored is not over. Nor is a turn cancelled before its run step reports.
+A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that asks is over once Orbit stopped it. A run cut by the turn's bound is stopped in the same phase, through T3's own RPC, and its turn is over once that stop ended the run or found none active. A reviewer turn whose checkout is not restored is not over. Nor is a turn cancelled before its run step reports, or a cut turn whose stop failed.
 
 One rule settles a turn that is not over: T3 lists its thread in no active state, or none of its title. For a reviewer's turn, its detach must also be undone. Only a turn's phase can read that, so the next turn settles it:
 
 - The Gateway puts every turn that is not settled into the next turn's intent, with its title. A reviewer's turn adds the task branch.
-- The phase lists T3's threads first. It touches nothing as long as an earlier run goes on.
-- The phase writes which turns it found settled.
-- While one is not settled, the phase launches nothing and fails with `tasks.copy_turn_unended`. The work in the copy stays.
+- Each of these turns is over in Orbit: it timed out, was cancelled or was lost.
 - The result names the settled turns. The Gateway counts them settled from then on.
+
+The phase lists T3's threads first. A thread that T3 still shows active is stopped with `t3_copy_rpc.mjs stop`, which interrupts its active run and waits for its end. A run that stopped, or a thread with no active run, has ended. The phase writes which turns it found settled, and names each run it stopped.
+
+When a stop fails, the earlier turn is not settled. The phase touches nothing and launches nothing, and fails with `tasks.copy_turn_unended`. The work in the copy stays.
 
 A reviewer's detach marks the copy with the ref `refs/orbit/review-detach`, at the tip the branch had. Only a verified restore clears the mark. The phase restores the checkout only when the mark is set, every earlier run is over, and the checkout is still detached. The restore is a reset, a clean and a checkout of the task branch. The checkout must then be clean on that branch at the mark's tip, and the phase clears the mark.
 
 Without the mark, the phase never touches the tree. The reviewer's turn is then settled once its run is over, so an implementer's uncommitted work stays.
 
-A check, a publish or a proof of the copy refuses with `tasks.copy_turn_unended` while a turn is not settled. Only a turn settles it. When no turn can run, because the subtask is completed or a reviewer turn needs a check first, `task:cancel` is the only way out: it ends the copy, its work and any run with it.
+A check, a publish or a proof of the copy refuses with `tasks.copy_turn_unended` while a turn is not settled, and waits for the next turn, which stops the earlier run and settles it. `operation:cancel <turn>` ends a running turn's Operation, and the next turn stops its run. When the last subtask is completed, the caller [reopens it](/reference/tasks#reopen-the-last-subtask) with `task:update <subtask> --status=running`, and its next turn settles the copy. When a completed subtask cannot reopen, no turn can run, and `task:cancel` is the only way out: it ends the copy, its work and any run with it.
 
 The threads and roles, thread state, provider errors, token metrics, retries and transcripts below remain the target. Their MCP and WebSocket calls need a T3 server that gives Swamp its own full-access session.
 
@@ -2014,11 +2026,11 @@ A Project setting turns on a nested fleet. Each Instance container of that Proje
 
 Built: placement, host preparation, the start guards, the readers below and the [nested-fleet image](#the-nested-fleet-image). The [fleet step](#the-fleet-step) is built. The deployment of the default calls it in the [refresh after a release](#refresh-after-a-release), and the create of a clone calls it to [start its fleet](#a-clone-starts-its-fleet).
 
-Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
+Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. A proof copy can also be on a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
 
 ### The container
 
-An Instance container with a nested fleet lives in its own Incus project on the Node, `orbit-instances-nested`, which allows what the fleet needs. `orbit-instances` keeps refusing it. A Node prepares that project, its profile and two kernel modules only when it is on the build list and its [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on. It shares the pool, the bridge, the ACLs and the egress proxy with `orbit-instances`. The container is unprivileged and sets these keys:
+An Instance container with a nested fleet lives in its own Incus project on the Node, `orbit-instances-nested`, which allows what the fleet needs. `orbit-instances` keeps refusing it. A Node prepares that project, its profile and two kernel modules only when it is on the build list and its [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on, or when it is a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). It shares the pool, the bridge, the ACLs and the egress proxy with `orbit-instances`. The container is unprivileged and sets these keys:
 
 | Key | Value | Why |
 | --- | --- | --- |
@@ -2281,6 +2293,8 @@ A deployment retakes the two halves one after the other. So a clone of such a de
 
 A copy of such a default, a plain clone or a task copy, gets its own volume `inner-<copy id>`, which its runtime records. The [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) checks that the default's volume holds the seed's half, else `instance.default_seed_incomplete`. It copies that snapshot to the new volume. Then it copies the container with its disk `inner-pool` set to the new volume, before the first start. Both copies are ZFS clones. Incus gives the copied volume a new btrfs fsid, so copies never share one. In the 2026-11-14 test the two copies took 3.8 to 4.2 s and the outer start about 1 s.
 
+A proof copy on a CI Node copies the same way from that Node's [seed holder](#the-seed-on-each-ci-node), `proof-seed` and `proof-seed-inner`.
+
 The start guard admits the copy's volume with exactly the keys above. A failed container copy deletes the volume it copied. A volume without its container, left by a failed copy, is deleted and copied again. Destroy of the copy deletes its volume. A copy shares blocks with the default's seed until it goes, as a container copy does.
 
 ### Fleet rules
@@ -2393,6 +2407,8 @@ Before the delivery, an operator placed the key by hand in `/etc/orbit/swamp-clu
 ### Refresh after a release
 
 After each Gateway release, Orbit deploys each nested-fleet default to the release commit. The deployment is `instance.deploy` with more steps, which only an intent with `fleet` runs. The inner fleet keeps running between releases. The run checks it once, first, then takes the seed of the default as it is, fleet included. Then it refreshes the fleet and takes the seed snapshot again. The [refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) has the steps. An `instance:deploy` of the default runs the same flow.
+
+When the run records the new seed of the proof Project's default, the Gateway copies that seed to each other Node that offers proof places ([The seed on each CI Node](#the-seed-on-each-ci-node)). The copies run after the refresh, and nothing in the release waits for them.
 
 A default gets `fleet` when its runtime is in `orbit-instances-nested`, its Project has `nested_fleet` on and its Node's switch is on (`InstancePlacement::keepsFleet`). Every other deployment runs the same steps and calls as before.
 
@@ -2705,6 +2721,74 @@ The run budget grows by the fleet's part of these bounds, 5,590 s: the check 400
 
 Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each, and each Node converge by 900 s.
 
+#### The seed on each CI Node
+
+This is the target design of ADR 0260, build step 4. Built, not yet proven on the live fleet: the listener of the `ci-runner` role, the `instance.seed_copy` run and its triggers, the record of each Node's seed, and the start of a copy from its own Node's seed. ADR 0260 build step 5 places copies on CI Nodes.
+
+Each Node that [offers proof places](/reference/node-provisioning#proof-copies-on-a-ci-node), other than the default's own Node, keeps its own seed of the proof Project's default: a copy of the default's [seed pair](#the-seed-pair) on the Node. A proof copy on that Node starts from it. The default's Node holds the seed itself, and a copy there clones the default, as before. In this section a CI Node is such a Node. No copy fetches a seed over the network when it starts.
+
+The holder of the seed on a CI Node is one stopped container, `proof-seed`, and its volume `proof-seed-inner`, in `orbit-instances-nested`. The holder never starts. It keeps the default's `seed-<commit>` snapshots, and a proof copy on the Node clones `proof-seed/seed-<commit>`.
+
+The Gateway copies the seed with one Operation, `instance.seed_copy`. Its targets are the CI Nodes whose seed is not the default's current seed and whose [seed listener](/reference/node-provisioning#the-seed-listener) is ready for the default's Node.
+
+A CI Node is ready when the Gateway records, from its last `ci-runner` converge, that the listener trusts the default's Node. A CI Node without that record is not a target. So no seed copy fails on it and no seed copy marks it tried. Its next `ci-runner` converge that passes makes it a target. When the default moves to another Node, the CI Nodes stay untargeted until the `ci-runner` role of each is converged again. The [seed copy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/seed-copy.mmd) has the steps. The Gateway admits a seed copy:
+
+- when the default records a new seed: after the [refresh after a release](#refresh-after-a-release), or after an `instance:deploy` of the default;
+- when a `ci-runner` add or converge of a CI Node passes, so a new CI Node does not wait for the next release;
+- at the end of a seed copy during which the default's seed moved: for every Node behind the new seed;
+- at the end of a seed copy at the same seed: for the Nodes that no seed copy has tried at that seed.
+
+So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own `ci-runner` converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no free ID range, does not repeat with a new Operation each time.
+
+A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The default's runtime records both (`seed_commit`, `seed_taken_at`). The Gateway records the seed of each CI Node in `proof_seeds`: its holder, its commit and that time (`ProofSeeds`).
+
+##### How the seed moves
+
+Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for each target side by side:
+
+- `incus copy <default> proof-node-<id>:proof-seed --refresh --mode=push`, in the project `orbit-instances-nested`;
+- `incus storage volume copy` of the default's inner volume to `proof-seed-inner` on the same remote, with `--refresh --mode=push`.
+
+An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
+
+`--refresh` sends only what changed since the last copy. Incus compares the snapshots on both sides and sends the newer ones as ZFS increments, so the holder gets the new `seed-<commit>` snapshot natively. The first copy to a Node sends the whole seed pair. The copy reads the default as an instance, not one snapshot of it: a snapshot source carries no snapshots, so `--refresh` could not find a common one and would send the whole pair each time.
+
+Push mode means that the source server sends the data to the target server, and only the target listens on the network (`incus copy --help` of the installed Incus client). So the default's Node gets no Incus listener and no change to its daemon config. Its only change is a client remote of root, `proof-node-<id>`, for each CI Node. The run adds the remote when it is missing. It reads the CI Node's server certificate on that Node first, and fails the target when the certificate that root's client stored for the remote is not that one.
+
+Each CI Node gets an Incus listener on its WireGuard address and one restricted trust entry: root's Incus client certificate of the default's Node, limited to the project `orbit-instances-nested`. The `ci-runner` converge adds both ([Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node)), and the Gateway records on the Node which Node the listener trusts. So a seed copy can change only that project on a CI Node, and only from the default's Node.
+
+Each target's step may fail alone. It does not stop the other targets. A Node whose copy failed keeps its recorded seed. That seed is not the default's current seed, so the Node offers no proof places. What the failed copy left in the holder does not matter: the next copy refreshes the holder again. Copies made earlier keep running, because ZFS keeps the blocks they share with a changed holder.
+
+A retake of the default during a copy does not wait for it. When the retake deletes a snapshot that the copy reads, that target fails. When the copy ends first, it records the seed it was admitted for; that seed is not the default's new seed, so the end of the copy admits the next one.
+
+Why `incus copy --refresh`, once per seed and Node:
+
+- One refresh makes one fleet. Every CI Node gets the same seed, so the shards of one proof run on the same fleet.
+- It reuses the refresh. A seed Instance on each CI Node would refresh its own fleet at every release. That repeats the work on every Node, and the fleets can drift apart.
+- A seed Instance on a new CI Node would also need a first build: a [rebuild from stock](#rebuild-from-stock), which is not built.
+- Incus does the incremental send, the snapshots and the records of the holder. Orbit adds no ZFS stream, bookmark or pin of its own.
+- The data goes from Node to Node. It does not pass the Swamp worker, which is on another host and is short of CPU.
+- It moves the seed once per seed and Node, not at each copy's start, which ADR 0260 rejects.
+
+The cost is one trust between Nodes: each CI Node trusts the default's Node for one Incus project. The listener answers only on the WireGuard address, and the firewall admits its port only from the default's Node.
+
+A proof copy on a CI Node is a clone with the same [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd). Its intent names the holder, its snapshot and its volume as the source, in place of the default's container and volume (`TaskCopyStart::seed`).
+
+A copy on a Node whose seed is not the default's current seed is refused with `tasks.copy_source_unavailable`. Until ADR 0260 build step 5, every copy still goes to the default's Node and clones the default. The fleet start, the Club key and the [reset](#reset) are the same as for a copy on the default's Node. The copy takes the default's [ID map size](#the-id-map-size). The holder does not need to run, as the default does not need to run for a copy on its own Node.
+
+The copy runs after the release, and nothing in a release or a proof waits for it.
+
+| Rule | What happens |
+| --- | --- |
+| Never blocks the release | The default's run has ended when the Gateway admits a seed copy. A failed copy changes neither the release nor the default |
+| No proof places on an old seed | While a Node's seed is not the default's current seed, the Node offers no proof places. So one proof never mixes the fleets of two seeds. Earlier copies keep running |
+| A failed target | The step fails with `instance.seed_copy_failed`, and the result names the failed command and its error output for that Node. The Node keeps its recorded seed |
+| One copy at a time | An open seed copy holds the default's seed-copy lock. A second admission refuses with `operation.target_busy`; the end of the open copy admits the next one |
+| No listener yet | A CI Node whose converge has not added the listener and the trust fails its target. A `ci-runner` converge of the Node adds them, and its end admits the next copy |
+| ID ranges on a CI Node | The holder and the snapshot it receives need a free range of the default's size. The [CI Node's demand](/reference/node-settings#a-ci-node) counts them. Without one, that target fails |
+| A failure shows | Nothing waits for the copy. So each failed target also writes the Activity row `instance.seed_copy_failed` with the Node, the Operation and the detail, as a failed refresh writes `instance.refresh_failed` |
+| A rerun is safe | The next seed, or the Node's own `ci-runner` converge, copies again. `--refresh` makes the holder equal to the default, whatever an earlier run left |
+
 ### A clone starts its fleet
 
 A new Instance or a task of the nested-fleet Project is a ZFS clone of the default's seed, as every [clone](#create) is. The clone then starts the outer container and places the Club key. Its step `clone-fleet` runs the [fleet step](#the-fleet-step)'s check and resume. It waits for the inner Incus and checks the fleet rules. It starts the nested containers and the operator tunnel `wg-nested`. Then it waits for the same Doctor check that a proof uses: the nested Gateway is healthy and its three agents are online.
@@ -2885,6 +2969,7 @@ Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each contai
 | `clone_source_instance_id` | The default Instance it was cloned from. Null for the default Instance and for a migrated checkout |
 | `power_state` | `running` or `stopped`. A sleeping container is stopped. The terminal results of create, deploy, migrate, sleep and wake write it |
 | `seed_commit` | A default Instance's commit of its newest `seed-<commit>` snapshot, which clones copy. Null before its first seed |
+| `seed_taken_at` | When the default took that seed. With `seed_commit` it names one seed, because a retake at the same commit keeps the name |
 | `agent_key_hash` | The SHA-256 hash of a task copy's [copy key](#the-copy-key). Null for every other container, and for a task copy made before the copy key existed |
 
 The database keeps these rules:
@@ -2928,6 +3013,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | --- | --- | --- |
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
+| `instance.node_ci_only` | 409 | `instance:create` on a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node): `ci-runner`, CI places and no `app-dev`. Only a proof copy is made there. Nothing is recorded |
+| `instance.seed_copy_failed` | 502 | A [seed copy](#the-seed-on-each-ci-node) could not copy the seed to a CI Node. That Node keeps its old seed and offers no proof places |
 | `project.container_server_unavailable` | 409 | `instance:create`, `instance:migrate` or `task:start` of a container with a server, while the recipe's agent folder does not pin the program of the Project's [container server](#container-server). Nothing is recorded |
 | `projects.agent_instructions_too_large` | 422 | `instance:create` or `task:start` of a clone while the Project's [agent instructions](#agent-instructions) hold more than 32 files or 32 KiB. Nothing is recorded |
 | `projects.agent_instructions_invalid` | 422 | `instance:create` or `task:start` of a clone while an agent instruction file breaks a rule of [What counts](#what-counts). Nothing is recorded |

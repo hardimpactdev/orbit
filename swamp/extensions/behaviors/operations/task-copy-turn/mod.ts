@@ -9,15 +9,17 @@ const ReadBytes = 16777216;
 const AskBytes = 1048576;
 const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 
-// What `task-copy-turn.yml` writes, each file as soon as its command ended: `settle.json` with the earlier turns it found settled and
-// those still open, for a continued turn `continue.json` with the exit code of
+// What `task-copy-turn.yml` writes, each file as soon as its command ended: `settle.json` with the earlier turns it found settled,
+// those still open and the runs it stopped for them, for a continued turn `continue.json` with the exit code of
 // `t3 thread list` (null when it printed no JSON) and how many T3 threads carry its title, for a reviewer turn `review.json` with whether
 // the candidate is checked out, `detach.json` as soon as the reviewer's candidate is checked out, for a new thread `model.json` with the
 // model, the slugs T3's catalog offers (null when it was not read) and whether it offers the model, `launch.json` before the start,
 // `start.json` with the exit code, stdout and a failed start's stderr tail of `t3 thread start` or `t3 thread send` with `--wait --json`, for a run that waits for an answer `ask.json` with the exit code and stdout of `t3_copy_rpc.mjs
-// read` and `interrupt.json` with those of `t3_copy_rpc.mjs interrupt`, `read.json` with what `t3 thread list` found and `t3 thread show`
+// read` and `interrupt.json` with those of `t3_copy_rpc.mjs interrupt`, for a wait the bound cut `stop.json` with the exit code and
+// stdout of `t3_copy_rpc.mjs stop`, `read.json` with what `t3 thread list` found and `t3 thread show`
 // read, and for a reviewer turn `restore.json` with whether the checkout is clean on its branch at its tip again.
-const Settle = z.object({ list_exit: z.number().int().nullable(), settled: z.array(z.number().int()), open: z.array(z.number().int()) }).strict();
+const Settle = z.object({ list_exit: z.number().int().nullable(), settled: z.array(z.number().int()), open: z.array(z.number().int()),
+    stopped: z.array(z.object({ operation_id: z.number().int(), run: z.string() }).strict()) }).strict();
 const Resumed = z.object({ list_exit: z.number().int().nullable(), found: z.number().int() }).strict();
 const Review = z.object({ ready: z.boolean(), error_code: z.enum(["tasks.copy_tree_dirty", "tasks.copy_turn_failed"]).nullable() }).strict();
 const Restore = z.object({ restored: z.boolean() }).strict();
@@ -25,6 +27,7 @@ const Start = z.object({ start_exit: z.number().int(), start: z.string(), error:
 const Model = z.object({ model: z.string(), offered: z.array(z.string()).nullable(), accepted: z.boolean() }).strict();
 const Ask = z.object({ ask_exit: z.number().int(), ask: z.string() }).strict();
 const Interrupt = z.object({ interrupt_exit: z.number().int(), interrupt: z.string() }).strict();
+const Stop = z.object({ stop_exit: z.number().int(), stop: z.string() }).strict();
 // One question as `t3_copy_rpc.mjs read` prints it from T3's `user_input_request` item: the agent's own words and options, with what T3
 // may leave out made explicit. The evidence file's bound is the only size bound, so a read the phase stopped on always parses.
 const Question = z.object({
@@ -44,6 +47,8 @@ const Asked = z.object({ runs: z.array(Run), requests: z.array(z.object({ reques
     stoppable: z.boolean() });
 // What `t3_copy_rpc.mjs interrupt` prints once the run ended or its wait for that did.
 const Stopped = z.object({ interrupted: z.boolean(), error: z.string().nullable(), runs: z.array(Run), pending: z.number().int() });
+// What `t3_copy_rpc.mjs stop` prints: whether the thread's active run stopped, its id and its last state; no run when none was active.
+const Halted = z.object({ stopped: z.boolean(), run: z.string().nullable(), state: z.string().nullable() });
 const Read = z.object({
     list_exit: z.number().int().nullable(),
     found: z.number().int(),
@@ -64,6 +69,7 @@ export type Evidence = {
     start: z.infer<typeof Start> | null;
     ask: z.infer<typeof Ask> | null;
     interrupt: z.infer<typeof Interrupt> | null;
+    stop: z.infer<typeof Stop> | null;
     read: z.infer<typeof Read> | null;
     restore: z.infer<typeof Restore> | null;
 };
@@ -153,15 +159,19 @@ export function shapeTurn(evidence: Evidence): Turn {
 /**
  * The run as T3 reported it. `t3 thread start --wait` and `t3 thread send --wait` end with the run's status: `completed` is done and
  * `waiting` asks for input. Any other status fails the turn. No JSON after `timeout` killed the wait (124, or 137 after the kill grace)
- * is the bound.
+ * is the bound; the phase then stopped the cut run.
  */
 function shapeRun(evidence: Evidence): Turn {
     const started = evidence.start === null ? null : parse(Started, evidence.start.start);
     const shown = evidence.read?.show_exit === 0 ? parse(Shown, evidence.read.show) : null;
-    // Over when nothing was launched, when the start printed an end that is not a wait for an answer, or when T3 holds no thread
-    // of this title or holds it in no active state. Anything else may still write in the checkout.
+    // The stop of a cut run ended it, or found no run of the thread active.
+    const halted = evidence.stop?.stop_exit === 0 ? parse(Halted, evidence.stop.stop) : null;
+    const cutEnded = halted !== null && (halted.stopped || halted.run === null);
+    // Over when nothing was launched, when the start printed an end that is not a wait for an answer, when the phase stopped the
+    // run its bound cut, or when T3 holds no thread of this title or holds it in no active state. Anything else may still write in the
+    // checkout.
     const listed = evidence.read?.list_exit === 0 ? evidence.read : null;
-    const ended = !evidence.launched || (started !== null && started.status !== "waiting")
+    const ended = !evidence.launched || (started !== null && started.status !== "waiting") || cutEnded
         || (listed !== null && (listed.found === 0 || (listed.found === 1 && listed.status !== null && !Active.has(listed.status))));
     const base = {
         ended,
@@ -186,7 +196,8 @@ function shapeRun(evidence: Evidence): Turn {
         return { ...base, state: "failed", error: `${status}${detail === "" ? "" : `: ${detail}`}`, error_code: "tasks.turn_failed" };
     }
     if (evidence.start !== null && [124, 137].includes(evidence.start.start_exit)) {
-        return { ...base, state: "failed", error: "The turn ran longer than its bound; T3 may still run it until the copy is destroyed.", error_code: "tasks.turn_timeout" };
+        const stop = halted?.stopped ? "Orbit stopped its run." : ended ? "Its run has ended." : "Orbit could not stop its run; the next turn stops it.";
+        return { ...base, state: "failed", error: `The turn ran longer than its bound. ${stop}`, error_code: "tasks.turn_timeout" };
     }
     if (evidence.model !== null && !evidence.model.accepted) {
         const offered = (evidence.model.offered ?? []).join(", ").slice(0, ErrorChars);
@@ -264,7 +275,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.14.7",
+    version: "2026.11.16.1",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -282,6 +293,7 @@ export const behavior = {
                     start: await evidence(args.folder + "/start.json", StartBytes, Start),
                     ask: await evidence(args.folder + "/ask.json", AskBytes, Ask),
                     interrupt: await evidence(args.folder + "/interrupt.json", AskBytes, Interrupt),
+                    stop: await evidence(args.folder + "/stop.json", 65536, Stop),
                     read: await evidence(args.folder + "/read.json", ReadBytes, Read),
                     restore: await evidence(args.folder + "/restore.json", 1024, Restore),
                 }));

@@ -5,14 +5,19 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\TaskVms\TaskVmHost;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 
 /**
- * The bridge networks the fleet records: each task VM host's task bridges in Node `settings.task_vms`, and each Node's
- * Instance bridge. No two of them overlap (docs/reference/development-containers.md#nodes).
+ * The bridge networks the fleet records: each task VM host's task bridges in Node `settings.task_vms`, each Node's
+ * Instance bridge, and each Node's CI bridge `orbitci0` as its ci-runner converge read it. No Instance bridge overlaps another of them
+ * (docs/reference/development-containers.md#nodes).
  */
 final readonly class NodeBridges
 {
+    /** The step of the role converge that prints the CI bridge's address. */
+    public const string CiBridgeStep = 'Read the CI bridge';
+
     /**
      * The task bridges of stored task VM host settings: `cidr` and `containers.cidr`.
      *
@@ -27,7 +32,7 @@ final readonly class NodeBridges
     }
 
     /**
-     * Every recorded bridge: each Node's Instance bridge and each host's task bridges, without the task bridges of
+     * Every recorded bridge: each Node's Instance bridge and CI bridge and each host's task bridges, without the task bridges of
      * `$replacing`, a Node whose task VM host settings are being replaced.
      *
      * @return list<string>
@@ -35,13 +40,35 @@ final readonly class NodeBridges
     public static function recorded(?int $replacing = null): array
     {
         $bridges = [];
-        foreach (Node::query()->get(['id', 'settings', 'instance_bridge']) as $node) {
+        foreach (Node::query()->get(['id', 'settings', 'instance_bridge', 'ci_bridge']) as $node) {
             $stored = $node->settings;
             $host = $node->id !== $replacing && is_array($stored) && is_array($stored['task_vms'] ?? null) ? $stored['task_vms'] : [];
-            $bridges = [...$bridges, ...self::taskBridges($host), ...($node->instance_bridge === null ? [] : [$node->instance_bridge])];
+            $bridges = [...$bridges, ...self::taskBridges($host), ...array_values(array_filter([$node->instance_bridge, $node->ci_bridge], is_string(...)))];
         }
 
         return $bridges;
+    }
+
+    /**
+     * Records the Node's CI bridge from the address that its ci-runner converge read (`incus network get orbitci0 ipv4.address`, such as
+     * `10.253.7.1/24`), as the subnet that the address lies in. A Node's Instance bridge that overlaps it and that no container uses
+     * yet goes, so the next admission allocates around it; one in use stays, and its converge keeps refusing the clash
+     * (docs/reference/development-containers.md#nodes). An empty or unreadable address records nothing.
+     */
+    public static function recordCiBridge(int $nodeId, string $address): void
+    {
+        [$host, $prefix] = array_pad(explode('/', trim($address), 2), 2, '');
+        $long = filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false ? false : ip2long($host);
+        $length = filter_var($prefix, FILTER_VALIDATE_INT, ['options' => ['min_range' => 8, 'max_range' => 30]]);
+        if ($long === false || ! is_int($length)) {
+            return;
+        }
+        $bridge = long2ip($long & ((-1 << (32 - $length)) & 0xFFFF_FFFF)).'/'.$length;
+        Node::query()->whereKey($nodeId)->update(['ci_bridge' => $bridge]);
+        $instance = Node::query()->whereKey($nodeId)->value('instance_bridge');
+        if (is_string($instance) && TaskVmHost::overlap($instance, $bridge) && ! InstanceRuntime::query()->where('node_id', $nodeId)->exists()) {
+            Node::query()->whereKey($nodeId)->update(['instance_bridge' => null]);
+        }
     }
 
     /** @param  list<string>  $bridges */
