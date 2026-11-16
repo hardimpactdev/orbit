@@ -1,0 +1,23 @@
+command: instance:unregister
+chart: instance/unregister
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  refused: "Need a container Instance fixture and a host Instance that owns a server database. Refuse each with instance.unregister_container and instance.unregister_owned_database, request none, unchanged Operations, Schedules and Route."
+  main: "Need a registered host checkout Instance fixture with a Process and a Schedule. Unregister it with --yes; the Instance, Process, Schedule, auto-deploy and environment records are gone, the unit and hibernation files are absent, and the checkout folder with its files, Git data and .env is unchanged."
+  route: "Same fixture with a published Route: the site, PHP pool, certificate and private DNS records are gone and other sites on the Node stay."
+  unregistered: "Repeat the command after success; it is refused with http.404 and starts no Operation."
+  failed: "Inject a Process removal failure: the Instance stays removing with a failed removal; a rerun converges and skips the held withdrawal."
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: Reject a nonnumeric Instance locally.
+    act:
+      - cli:
+          run: [instance:unregister, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

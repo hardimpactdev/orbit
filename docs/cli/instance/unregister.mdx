@@ -1,0 +1,69 @@
+---
+title: "orbit instance:unregister"
+sidebarTitle: "instance:unregister"
+description: "Make Orbit forget a host checkout Instance and keep its folder on the Node."
+---
+
+```bash
+orbit instance:unregister <instance> [--yes] [--idempotency-key=KEY] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Positive numeric Instance ID. An omitted ID uses the [finite record selector](/reference/cli-ux#prompt-selection) in a terminal. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--yes` | prompt | Confirm without prompting. Required without a terminal and with `--json`. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
+| `--json` | off | Print the final task as [JSON](/reference/cli-ux#input-and-output-modes). |
+
+```bash
+orbit instance:unregister 12
+orbit instance:unregister 12 --yes --json
+```
+
+`instance:unregister` is the inverse of [`instance:register`](/cli/instance/register). Register adopts a checkout in place; unregister lets it go in place. Orbit deletes its records of a host checkout Instance and removes what Orbit put on the Node for it. The checkout folder and every file in it stay: the source, its Git data, `.env`, SQLite files and dependencies. Use [`instance:destroy`](/cli/instance/destroy) to delete the source as well.
+
+In a terminal the CLI asks to confirm, with No selected. The prompt names the Instance's name and ID and the effect: Orbit forgets it; the folder stays. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts nothing. A noninteractive or `--json` call without `--yes` is refused with `input.confirmation_required`. Without `--yes` the CLI first reads the Instance, so an unknown Instance or a missing grant is reported before the prompt.
+
+The command works only on a host checkout development Instance. The Gateway refuses before any change:
+
+- a container Instance (a clone, a copy or a container default) with `instance.unregister_container`. Use `instance:destroy` for it.
+- an Instance that owns a database on a Database server with `instance.unregister_owned_database`. There is no option to keep the database, so no database is left without an owner. A registered external database or a SQLite file does not refuse; Orbit deletes only its record.
+- a production Instance with `operation.kind_unavailable`.
+
+Admission otherwise follows `instance:destroy`: the access grant, an active Instance, and no other lifecycle Operation, transfer or migration that holds it. Orbit removes the Instance's Schedule triggers before it records the task. A default Instance unregisters like any other host checkout; its Project's other Instances do not block it.
+
+The run withdraws the Route, frees the Route's Nodes, stops each Process and removes its unit, and removes the hibernation markers and the Caddy access log. It never runs the Project teardown steps, never deletes a SQLite file or drops a database, never checks or fetches Git, and never touches the checkout. On success the Gateway deletes the Instance with its Route, Processes, Schedules, auto-deploy, environment and database records. See [Unregister a host checkout](/reference/instance-removal#unregister-a-host-checkout).
+
+The command starts a task and follows it until it ends, as `instance:destroy` does. A failed run rolls nothing back: the Route stays withdrawn, the Schedule triggers stay removed, and the Instance stays, marked as having a failed removal. Run the same command again to finish; a withdrawal that held is skipped. After success the Instance is gone, so a repeat is refused with `http.404`. To use the folder with Orbit again, run `instance:register` on it.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/unregister"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing or is not a positive integer, and the CLI cannot prompt. |
+| `input.confirmation_required` | The call cannot prompt and has no `--yes`. |
+| `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
+| `instance.unregister_container` | The Instance is a container Instance. Use `instance:destroy`. HTTP 409 before admission. |
+| `instance.unregister_owned_database` | The Instance owns a database on a Database server. HTTP 409 before admission. |
+| `operation.kind_unavailable` | The Instance is not a host checkout development Instance, such as a production Instance. |
+| `instance.remove_refused` | The Instance is not active, or its Route cannot be withdrawn, such as multiple owning Routes. |
+| `instance.removal_conflict` | The Instance belongs to a removal of another kind, such as a failed `instance:destroy`, or the admitted set changed. |
+| `instance.destroy_unsupported` | The Node account is not an unprivileged account, or the placement is a member placement. |
+| `instance.lifecycle_busy` | A migration owns the Instance. |
+| `instance.transfer_incomplete` | An open transfer owns the Instance. Finish or roll it back first. |
+| `operation.target_busy` | Another Operation holds the Instance. |
+| `websocket.route_in_use` | The Route has public Reverb attachments. |
+| `analytics.tracking_hosts_exist` | The Instance has analytics tracking hosts. Disable analytics first. |
+| `database.removal_conflict` | A database record that the Instance owns is targeted by another Instance. |
+| `route.withdrawal_node_unavailable` | A Node that serves the Route is unavailable, so the Route cannot be withdrawn. |
+| `route.withdrawal_failed` | Withdrawing the Route failed. The Instance stays. |
+| `instance.removal_incomplete` | Another step failed. The Instance stays. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
