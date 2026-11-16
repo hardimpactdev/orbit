@@ -2724,18 +2724,32 @@ So a seed that moved during a copy reaches every Node. A Node that failed waits 
 
 A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The Gateway records the seed of each CI Node: its holder, its commit and that time.
 
+The copy is incremental. The seed stream passes through the Swamp worker, which is on another host than the CI Nodes and is short of CPU, and a full seed pair is large. So each CI Node keeps the last seed it received as the base of the next one, and the copy sends only the change since that base (`zfs send -i`). A full send happens only when the Node has no common seed with the default: the Node's first seed, or after a failure that lost the base.
+
 | Step | Where | What happens |
 | --- | --- | --- |
-| Pin the seed | The default's Node | ZFS clones of the seed pair make a stopped pair `seed-copy-<operation id>`, under the default's seed lock |
-| Send the seed | Each target, side by side | The pinned container and its volume go as ZFS streams (`--optimized-storage`) through the Swamp worker's two SSH connections into one file on the CI Node. No file stays on the worker |
-| Import the holder | Each target | The holder `proof-seed-<operation id>` and its volume `proof-seed-<operation id>-inner`, in `orbit-instances-nested`, beside the recorded holder. Both get the snapshot `seed-<commit>`, and the file goes |
+| Pin the seed | The default's Node | ZFS clones of the seed pair make a stopped pair `seed-copy-<operation id>`, under the default's seed lock. The bookmark `proof-seed-<operation id>` marks both seed snapshots |
+| Choose the base | Each target | The Node's recorded holder, when both halves of the base are still there. Else the Node has no base |
+| Send the seed | Each target, side by side | The change since the base (`zfs send -i`), or the full seed pair when the Node has no base |
+| Make the holder | Each target | The holder `proof-seed-<operation id>` and its volume `proof-seed-<operation id>-inner`, in `orbit-instances-nested`, beside the recorded holder |
 | Check the holder | Each target | The check compares the holder's config and devices with the default's, as the [start guard](#the-container) does, and the volume's keys with [The inner volume](#the-inner-volume) |
-| Unpin the seed | The default's Node | The pinned pair goes, also after a failure |
+| Unpin the seed | The default's Node | The pinned pair goes, also after a failure. So do the bookmarks that no CI Node needs |
 | Record each seed | The Gateway | Each Node whose step passed records the new holder as its seed |
 
 The pin keeps the copy's source fixed: a later retake of the default cannot change what the copy reads. The pin and the default's seed step take the same lock on the Node, so the pin never reads a pair that a retake is replacing. The holder never starts.
 
-Each target's step may fail alone. A failed step deletes what it made on that Node and does not stop the other targets. Before the import, the step deletes every holder on the Node that is neither recorded nor its own. So an old holder goes at the next copy, after the Gateway has recorded the new one, and a run that stopped halfway leaves nothing that a later run does not remove.
+The base has two halves with one name:
+
+- on the CI Node, the snapshot `seed-<commit>` of the recorded holder `proof-seed-<operation id>` and of its volume;
+- on the default's Node, the bookmark `proof-seed-<operation id>` on the container and on its volume.
+
+A bookmark holds no data. It does not stop a retake from deleting the default's old seed, but `zfs send -i` can start from it. The unpin step keeps each bookmark that a CI Node's recorded holder names, and deletes the others. So the default's Node keeps one small bookmark per seed that a CI Node holds.
+
+The streams go from `zfs send` on the default's Node through the Swamp worker's two SSH connections, straight into `zfs receive` on the CI Node. Nothing stays on the worker or in a file. With a base, the new holder and its volume start as clones of the base, and the change rolls them forward. Without a base, they receive the full seed pair. The received snapshot is the holder's snapshot `seed-<commit>`. Incus takes no new snapshot, so the snapshot keeps the identity that the next change needs.
+
+Each target's step may fail alone. A failed step deletes what it made on that Node and does not stop the other targets.
+
+Before it makes the new holder, the step deletes every holder on the Node that is neither recorded nor its own. So the old holder goes only at the next copy, after the Gateway has checked and recorded the new one. Until then, the old holder's snapshot stays. If the new holder fails, the old one is still the base of the next copy. A run that stopped halfway leaves nothing that a later run does not remove. ZFS keeps the blocks that a newer holder or a proof copy still shares with a deleted holder.
 
 A proof copy on a CI Node is a clone with the same [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd). Its intent names the Node's recorded holder and its volume as the source, in place of the default's container and volume. The fleet start, the Club key and the [reset](#reset) are the same as for a copy on the default's Node. The copy takes the default's [ID map size](#the-id-map-size). The holder does not need to run, as the default does not need to run for a copy on its own Node.
 
@@ -2746,9 +2760,10 @@ Why a copy of the seed, once per seed and Node:
 - A seed Instance on a new CI Node would also need a first build: a [rebuild from stock](#rebuild-from-stock), which is not built.
 - It adds no trust between Nodes. An Incus copy from one Node to another needs each Node's Incus API to trust the other. The Swamp worker already reaches every Node over SSH.
 - It moves the seed once per seed and Node, not at each copy's start, which ADR 0260 rejects.
+- It sends only the change since the Node's last seed. A release changes a small part of the seed pair. So the worker's CPU and the network carry a small stream, not the whole pair.
 - One pin serves every target, so the default's Node gives one extra ID range for the copy, not one per CI Node.
 
-The copy sends the whole seed each time. It runs after the release, and nothing in a release or a proof waits for it.
+The copy runs after the release, and nothing in a release or a proof waits for it.
 
 | Rule | What happens |
 | --- | --- |
@@ -2757,9 +2772,10 @@ The copy sends the whole seed each time. It runs after the release, and nothing 
 | No proof places on an old seed | While a Node's seed is not the default's current seed, the Node offers no proof places. So one proof never mixes the fleets of two seeds. Earlier copies keep running |
 | One copy at a time | An open seed copy holds the default's seed-copy lock. A second admission refuses with `operation.target_busy`; the end of the open copy admits the next one |
 | A failed pin | The pin fails with `instance.seed_copy_failed` when the default's Node has no free [isolated ID range](#isolated-id-ranges) or the seed is gone. No target is tried |
-| ID ranges on a CI Node | The import and its snapshot each need a free range of the default's size. The [CI Node's demand](/reference/node-settings#a-ci-node) counts them. Without one, that target fails with the detail `No free ID range for the new seed` |
+| ID ranges on a CI Node | Making the holder needs a free range of the default's size. The [CI Node's demand](/reference/node-settings#a-ci-node) counts them. Without one, that target fails with the detail `No free ID range for the new seed` |
 | A failure shows | Nothing waits for the copy. So each failed target also writes the Activity row `instance.seed_copy_failed` with the Node, the Operation and the detail, as a failed refresh writes `instance.refresh_failed` |
-| A rerun is safe | The next trigger copies again. A run deletes the holders and the pinned pairs that an earlier run left behind |
+| A rerun is safe | The next trigger copies again. A run deletes the holders, the pinned pairs and the bookmarks that an earlier run left behind |
+| A lost base | When the base of a Node is gone on either side, that Node gets a full send. The other targets still get the change only |
 
 ### A clone starts its fleet
 

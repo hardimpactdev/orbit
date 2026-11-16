@@ -259,13 +259,13 @@ Clearing the switch removes nothing: the nested project, its profile and the mod
 
 A CI Node that [hosts proof copies](/reference/node-provisioning#proof-copies-on-a-ci-node) has nested-fleet hosting on without the switch: its `ci-runner` converge prepares it. Every rule that needs the switch on, such as `InstancePlacement::keepsFleet`, also holds for such a Node. Its demand is:
 
-`13,172,736 + (P + 3) × D`
+`13,172,736 + (P + 2) × D`
 
 | Term | Meaning |
 | --- | --- |
 | `13,172,736` | The normal Instance demand, as above: the branch is the same |
 | `P` | The Node's CI places. Each place holds at most one proof copy |
 | `D` | The recorded [ID map size](/reference/development-containers#the-id-map-size) of the proof Project's default, which every copy and every seed holder on the Node takes. 101,000,000 while that Project has no default |
-| `3` | The [seed holder](/reference/development-containers#the-seed-on-each-ci-node), the next holder during a seed copy, and the moment of a snapshot |
+| `2` | The [seed holder](/reference/development-containers#the-seed-on-each-ci-node) and the next holder during a seed copy. The holder keeps the snapshot it received, so Incus maps no new snapshot |
 
 Task IDs, `S` and the two spare maps do not apply: a CI Node has no task container places and no nested default. The converge checks and refuses as above, and it never enlarges a range.
