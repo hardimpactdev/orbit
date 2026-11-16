@@ -108,9 +108,12 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
         }
         $busy = Operation::query()->where('target_type', 'project')->whereIn('kind', self::Kinds)
             ->whereNotIn('status', OperationStatus::terminalValues())->pluck('target_id')->all();
-        // A group that has not ended and holds a pull request, or waits for capacity, makes an observation due.
-        $waiting = Task::topLevel()->whereNotIn('status', array_map(static fn (TaskGroupStatus $status): string => $status->value, TaskGroupStatus::endedStatuses()))
-            ->get(['project_id', 'pr_url', 'watched_pr_url', 'maintenance'])
+        // A group that has not ended and holds a pull request, or waits for capacity, makes an observation due; so does a completed copy
+        // group whose destroy failed (TaskCopySettle).
+        $waiting = Task::topLevel()->where(static fn (Builder $open) => $open
+            ->whereNotIn('status', array_map(static fn (TaskGroupStatus $status): string => $status->value, TaskGroupStatus::endedStatuses()))
+            ->orWhere(static fn (Builder $kept) => $kept->where('status', TaskGroupStatus::Completed)->whereNotNull('taskable_id')->where('watched_pr_completion', 'merged')))
+            ->get(['project_id', 'status', 'pr_url', 'watched_pr_url', 'watched_pr_completion', 'taskable_id', 'maintenance'])
             ->filter(static fn (Task $group): bool => (bool) ($group->pr_url ?: $group->watched_pr_url ?: ($group->maintenance['admission_pending'] ?? false)))
             ->pluck('project_id')->unique()->all();
         $due = [];
