@@ -258,11 +258,11 @@ Verify each Node with `orbit doctor --node=<numeric-node-id>`. For a failed role
 
 ### Runner state for the runner view
 
-The role installs the Node's part of the [CI runner view](/reference/ci-runner-view): the script `/usr/local/libexec/orbit-ci-runner-state`, the service `orbit-ci-runner-state.service` and the timer `orbit-ci-runner-state.timer`, which starts the service every 15 seconds. Role convergence writes and repairs all three and enables the timer. Role removal stops the timer and removes the three files and the script's output, so Prometheus drops the series.
+The role installs the Node's part of the [CI runner view](/reference/ci-runner-view): the script `/usr/local/libexec/orbit-ci-runner-state`, the service `orbit-ci-runner-state.service` and the timer `orbit-ci-runner-state.timer`, which starts the service every 15 seconds. Role convergence first creates `/usr/local/libexec` as root with mode `0755`, because a Node that hosts no Instance does not have that folder. It then writes and repairs all three and enables the timer. Role removal stops the timer and removes the three files and the script's output, so Prometheus drops the series.
 
 The script only reads. For each container in the Incus project `orbit-ci`, it reads the state from Incus. Inside a running container it reads, under `/home/runner/actions-runner`, the runner version from the `bin` link and the state of the runner service that `.service` names. The runner is busy while a `Runner.Worker` process runs. A container that does not run reports the service as `unknown`. The script starts, stops and registers nothing.
 
-It writes the result in the node exporter's text format to `/var/lib/prometheus/node-exporter/orbit_ci_runners.prom`. It writes a temporary file in the same folder first and renames it, so the exporter never reads half a file.
+It writes the result in the node exporter's text format to `/var/lib/prometheus/node-exporter/orbit_ci_runners.prom`. The service's `StateDirectory=prometheus/node-exporter` makes that folder, owned by root, when no exporter package made it. It writes a temporary file in the same folder first and renames it, so the exporter never reads half a file.
 
 | Series | Labels | Value |
 | --- | --- | --- |

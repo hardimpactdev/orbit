@@ -22,6 +22,16 @@ final class CiRunnerStateFiles
 
     public const string Output = MetricsFootprint::ExporterTextfileDirectory.'/orbit_ci_runners.prom';
 
+    /**
+     * The script's folder. A Node that hosts no Instance has no `/usr/local/libexec`, and the file copy does not create its parent.
+     *
+     * @return list<array{path: string, owner: string, group: string, mode: string}>
+     */
+    public static function directories(): array
+    {
+        return [['path' => dirname(self::Script), 'owner' => 'root', 'group' => 'root', 'mode' => '0755']];
+    }
+
     /** @return list<array{path: string, ensure: string, content: string, owner: string, group: string, mode: string}> */
     public static function files(): array
     {

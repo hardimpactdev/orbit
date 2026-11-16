@@ -36,6 +36,8 @@ describe('the ci-runner role runner state timer', function (): void {
         $files = collect($runtime['files'])->keyBy('path');
 
         expect($runtime['ci_host'])->toBeTrue()
+            // A CI-only Node has no /usr/local/libexec; "Create runtime folders" makes it before "Write runtime files".
+            ->and($runtime['directories'])->toBe([['path' => '/usr/local/libexec', 'owner' => 'root', 'group' => 'root', 'mode' => '0755']])
             ->and($files->keys()->all())->toBe(['/usr/local/libexec/orbit-ci-runner-state', '/etc/systemd/system/orbit-ci-runner-state.service'])
             ->and($files['/usr/local/libexec/orbit-ci-runner-state'])->toMatchArray(['ensure' => 'present', 'owner' => 'root', 'group' => 'root', 'mode' => '0755',
                 'content' => file_get_contents(resource_path('ci-runner/state.py'))])

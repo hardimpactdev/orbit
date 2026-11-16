@@ -36,6 +36,7 @@ final readonly class NativeNodeRoleRuntimeInput
             'ci_host' => $assignment->role === RoleName::CiRunner];
         $copies = [];
         if ($assignment->role === RoleName::CiRunner) {
+            $runtime['directories'] = CiRunnerStateFiles::directories();
             $runtime['files'] = CiRunnerStateFiles::files();
             $runtime['units'] = CiRunnerStateFiles::units();
         }
