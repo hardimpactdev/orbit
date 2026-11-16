@@ -121,8 +121,12 @@ A retry repeats every step; each converges, and a checkout that is already gone 
 
 Each container removal step treats a part that is already gone as done. A retry then finishes a removal whose earlier run, or a person, already removed some of it:
 
-- A container or inner volume that Incus still records, but whose ZFS dataset is gone, gets an empty dataset with the record's own name, and one empty snapshot for each snapshot Incus records. Incus then deletes the record its own way. Incus refuses to delete a record without its dataset; Instance 3427 stayed `removing` for 8 hours that way. The step only makes the missing names of this Instance and never runs `zfs destroy`.
-- The inner volume goes by name: each of its snapshots, then the volume. A copy's inner volume can be a clone of a snapshot whose volume went with its own Instance. Incus keeps that origin under `deleted/` for as long as a clone needs it. The removal never names the origin or another Instance's volume.
+- Incus refuses to delete a container or inner volume record whose ZFS dataset is gone. Instance 3427 stayed `removing` for 8 hours that way.
+- The step then makes an empty dataset with the record's own name, and one empty snapshot for each snapshot Incus records. Incus then deletes the record its own way.
+- It only makes the missing names of this Instance, and it never runs `zfs destroy`.
+- The inner volume goes by name: each of its snapshots, then the volume.
+- A copy's inner volume can be a clone of a snapshot of a volume that Incus already deleted. Incus keeps that origin under `deleted/` for the clone.
+- The removal never names the origin or another Instance's volume.
 - A missing ACL, firewall rule, mail folder, marker or mirror needs no action.
 
 The end check `Check the container and volume are gone` stays strict: it reads the container, its root volume and the inner volume by this Instance's names.
