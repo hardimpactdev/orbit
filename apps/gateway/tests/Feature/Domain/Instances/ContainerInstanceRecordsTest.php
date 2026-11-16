@@ -167,6 +167,7 @@ describe('Instance runtimes', function (): void {
         'no seed on the Node' => [null, false],
         'an older seed' => [['commit' => str_repeat('b', 40), 'taken_at' => '2026-11-15 06:00:00'], false],
         'the same commit taken at another time' => [['commit' => str_repeat('c', 40), 'taken_at' => '2026-11-16 05:00:00'], false],
+        'another commit taken at the same time' => [['commit' => str_repeat('b', 40), 'taken_at' => '2026-11-16 06:00:00'], false],
         'the current seed' => [['commit' => str_repeat('c', 40), 'taken_at' => '2026-11-16 06:00:00'], true],
     ]);
 
