@@ -682,6 +682,22 @@ class PlanValidationTest(Fixture):
 
 
 class EntryTest(Fixture):
+    def test_the_probe_target_stops_a_leftover_first_and_ends_after_thirty_seconds(self):
+        calls = []
+
+        def run(argv, **_):
+            calls.append(argv)
+            if argv[0] == "systemd-run":
+                raise subprocess.TimeoutExpired(argv, 10)
+        original, power.subprocess.run = power.subprocess.run, run
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                power.Host(cgroups=self.cgroups).probe_target()
+        finally:
+            power.subprocess.run = original
+        self.assertEqual(calls[0], ["systemctl", "stop", "orbit-power-probe-target.service"])
+        self.assertIn("--property=RuntimeMaxSec=30", calls[1])
+
     def test_the_probe_runs_only_in_its_own_unit(self):
         self.assertEqual(self.call(["capabilities"], unit=f"orbit-instance-power-{ID}.service")[0], 70)
         code, out = self.call(["capabilities"], unit="orbit-instance-power-probe.service")

@@ -209,12 +209,14 @@ class Host:
 
     def probe_target(self):
         """The capability probe's target: a process of another uid that systemd starts as its own unit, as a container's processes
-        run under another uid. It reserves memory, touches it, reports ready and waits. Returns (pid, stop)."""
-        subprocess.run(["systemd-run", f"--unit={PROBE_TARGET}", "--uid=nobody", "--gid=nogroup", "--property=Type=notify",
-                        "--property=NotifyAccess=main", "--quiet", "--collect", sys.executable, "-I", "-c", PROBE_CHILD],
-                       check=True, timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        run under another uid. It reserves memory, touches it, reports ready and waits. Returns (pid, stop). A target that an earlier
+        probe left behind is stopped first, and systemd ends any target after 30 s, so a dead probe never blocks the next one."""
         stop = lambda: subprocess.run(["systemctl", "stop", f"{PROBE_TARGET}.service"], timeout=10,  # noqa: E731
                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stop()
+        subprocess.run(["systemd-run", f"--unit={PROBE_TARGET}", "--uid=nobody", "--gid=nogroup", "--property=Type=notify",
+                        "--property=NotifyAccess=main", "--property=RuntimeMaxSec=30", "--quiet", "--collect", sys.executable, "-I",
+                        "-c", PROBE_CHILD], check=True, timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             with open(os.path.join(self.cgroups, "system.slice", f"{PROBE_TARGET}.service", "cgroup.procs")) as handle:
                 return int(handle.read().split()[0]), stop
