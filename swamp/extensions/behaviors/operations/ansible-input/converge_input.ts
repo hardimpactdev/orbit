@@ -1,3 +1,5 @@
+import { z } from "npm:zod@4.4.3";
+
 type Ssh = { target: { host: string; port: number; user: string; host_keys: string[] }; identity_file: string };
 
 /** Every string is literal, including nested Tool values and private environment files. */
@@ -14,7 +16,73 @@ export function unsafeYaml(value: unknown, depth = 0): string {
  * compiled Swamp binary, so `Deno.execPath()` names Swamp, which cannot run a script. */
 export const toolRuntime = "/usr/local/bin/deno";
 
-export async function convergeInput(folder: string, builder: string, toolHelper: string) {
+/** The phases that skip when their digest is unchanged (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
+export const skippable = ["agent", "software", "roles", "tools", "network"] as const;
+
+async function sha256(text: string | Uint8Array): Promise<string> {
+    const bytes = typeof text === "string" ? new TextEncoder().encode(text) : text;
+    return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as BufferSource)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** The files and folders the phases run beside their written input: the Ansible bundle, which also builds each role's variables, the
+ * Tool helper and the shipped Tool files it imports. The input behaviour is bundled on a worker; its output is in the written files. */
+export function phaseCode(builder: string, toolHelper: string): string[] {
+    return [builder.slice(0, builder.lastIndexOf("/")), toolHelper, `${toolHelper.slice(0, toolHelper.lastIndexOf("/ansible-input/"))}/tools`];
+}
+
+/** Every file of the given files and folders, by relative path and content, in path order. */
+export async function codeDigest(paths: string[]): Promise<string> {
+    const rows: string[] = [];
+    const walk = async (root: string, path: string): Promise<void> => {
+        if ((await Deno.stat(path)).isFile) {
+            rows.push(`${path.slice(root.length)}\0${await sha256(await Deno.readFile(path))}`);
+            return;
+        }
+        const entries = [];
+        for await (const entry of Deno.readDir(path)) entries.push(entry);
+        for (const entry of entries.sort((a, b) => a.name < b.name ? -1 : 1)) {
+            if (entry.isDirectory || entry.isFile) await walk(root, `${path}/${entry.name}`);
+        }
+    };
+    for (const path of paths) await walk(path.slice(0, path.lastIndexOf("/")), path);
+    return sha256(rows.join("\n"));
+}
+
+/**
+ * What the phases read (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change): every file written for them, that is
+ * the run folder without the Gateway's intent files and the digests, with this Operation's ID replaced by a fixed mark, and their code.
+ */
+export async function readDigest(folder: string, operationId: number, code: string[]): Promise<string> {
+    const mark = new RegExp(`operation-${operationId}(?![0-9])`, "g");
+    const rows: string[] = [];
+    const walk = async (path: string): Promise<void> => {
+        const entries = [];
+        for await (const entry of Deno.readDir(path)) entries.push(entry);
+        for (const entry of entries.sort((a, b) => a.name < b.name ? -1 : 1)) {
+            if (entry.isDirectory) await walk(`${path}/${entry.name}`);
+            else if (entry.isFile && entry.name !== "intent.json" && entry.name !== "digests.json") {
+                const text = (await Deno.readTextFile(`${path}/${entry.name}`)).replace(mark, "operation-#");
+                rows.push(`${path.slice(folder.length)}/${entry.name}\0${await sha256(text)}`);
+            }
+        }
+    };
+    await walk(folder);
+    return sha256([...rows, await codeDigest(code)].join("\n"));
+}
+
+/** Each skippable phase's digest, and the phases whose digest equals the one the Node records. */
+const Hex = z.string().regex(/^[0-9a-f]{64}$/);
+const DigestIntent = z.object({ // PHP sends an empty map as an empty list.
+    recorded_digests: z.preprocess((value) => Array.isArray(value) && value.length === 0 ? {} : value, z.partialRecord(z.enum(skippable), Hex)) });
+
+export async function phaseDigests(raw: unknown, read: string) {
+    const intent = DigestIntent.parse(raw);
+    const digests: Record<string, string> = {};
+    for (const phase of skippable) digests[phase] = await sha256(`${phase}\0${read}`);
+    return { digests, unchanged: skippable.filter((phase) => intent.recorded_digests[phase] === digests[phase]) };
+}
+
+export async function convergeInput(folder: string, operationId: number, builder: string, toolHelper: string, code: string[]) {
     const intent = JSON.parse(await Deno.readTextFile(`${folder}/intent.json`));
     const hosts: Record<string, unknown> = {};
     const known = new Set<string>();
@@ -43,7 +111,9 @@ export async function convergeInput(folder: string, builder: string, toolHelper:
     const plans = JSON.parse(await Deno.readTextFile(`${folder}/plans.json`));
     await Deno.writeTextFile(`${folder}/inventory.json`, JSON.stringify({ all: { hosts, children: { proof_seed_sender: { hosts: senders } } } }), { mode: 0o600 });
     await Deno.writeTextFile(`${folder}/known_hosts`, [...known].sort().join("\n") + "\n", { mode: 0o600 });
-    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: intent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: toolRuntime, converge_secrets: secrets, converge_plans: plans }), { mode: 0o600 });
+    // The recorded digests are the input of the skip only; Ansible reads none of them, and a digest must not read its own record.
+    const { recorded_digests: _recorded, ...playIntent } = intent;
+    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: playIntent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: toolRuntime, converge_secrets: secrets, converge_plans: plans }), { mode: 0o600 });
     // Reuse the shipped role materializer. Only its literal variables are consumed: its cross-Node
     // inventory and publication plays are deliberately never used by a Node converge.
     for (const role of intent.roles) {
@@ -58,4 +128,8 @@ export async function convergeInput(folder: string, builder: string, toolHelper:
         if (!outcome.success) throw new Error('The recorded role input could not be materialized');
         await Deno.chmod(`${path}/vars.yml`, 0o600);
     }
+    // After every file the phases read is written.
+    const phases = await phaseDigests(intent, await readDigest(folder, operationId, code));
+    await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify(phases), { mode: 0o600 });
+    return phases;
 }

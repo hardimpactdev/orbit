@@ -19,7 +19,8 @@ class RoleEffectsTest(unittest.TestCase):
         loaded = spec.load(root / 'swamp/proof/node/role-add.cases.yaml', runner.BATCHES)
         assignments = [{'id': 7, 'role': 'app-dev', 'status': 'active'}, {'id': 9, 'role': 'database', 'status': 'active'}]
         for case_id in ['required-only', 'application-repeat', 'failure-after-partial-change']:
-            for stage in loaded.case(case_id).stages:
+            # application-repeat waits for the ID map window; it still loads.
+            for stage in (loaded.waiting.get(case_id) or loaded.case(case_id)).stages:
                 for step in stage.act:
                     if step.name != 'cli' or step.args['run'][0] != 'node:role:list':
                         continue
@@ -52,13 +53,13 @@ class RoleEffectsTest(unittest.TestCase):
     def test_role_success_cases_assert_effects_and_only_new_refusals_replay_on_base(self):
         root = Path(__file__).resolve().parents[4]
         loaded = spec.load(root / 'swamp/proof/node/role-add.cases.yaml', root / 'swamp/proof/batches.yaml')
-        self.assertEqual(len(loaded.cases), 18)
+        self.assertEqual((len(loaded.cases), list(loaded.waiting)), (17, ['application-repeat']))
         for case_id in ['required-only', 'application-repeat', 'failure-after-partial-change']:
-            case = loaded.case(case_id)
+            case = loaded.waiting.get(case_id) or loaded.case(case_id)
             checks = [step.name for stage in case.stages for step in stage.expect]
             self.assertIn('service', checks)
         for case_id in ['required-only', 'application-repeat']:
-            self.assertIn('ansible_changes', [step.name for stage in loaded.case(case_id).stages for step in stage.expect])
+            self.assertIn('ansible_changes', [step.name for stage in (loaded.waiting.get(case_id) or loaded.case(case_id)).stages for step in stage.expect])
         self.assertEqual([case.id for case in loaded.cases if case.fails_on_base], [
             'analytics-option-on-other-role[postgres]',
             'analytics-option-on-other-role[clickhouse]', 'shared-node-authority'])

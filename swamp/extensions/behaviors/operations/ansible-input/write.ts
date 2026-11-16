@@ -4,7 +4,7 @@ import { clickhouseFiles } from "../analytics/clickhouse_files.ts";
 import { roleAddPlans } from "./role_add_plans.ts";
 import { convergeResult, ReportInput } from "./converge_result.ts";
 import { fleetRebootResult, FleetRebootResultInput } from "./fleet_reboot_result.ts";
-import { convergeInput } from "./converge_input.ts";
+import { convergeInput, phaseCode } from "./converge_input.ts";
 
 const Path = z.string().regex(
     /^\/tmp\/orbit-ansible-[0-9a-f-]{36}\/intent\.json$/,
@@ -19,6 +19,9 @@ const Output = z.object({
     requirements: z.string(),
     collections: z.string(),
 });
+// The phases whose digest the Node records, which the workflow skips (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+const Phases = z.object({ ready: z.literal(true), unchanged: z.array(z.enum(["agent", "software", "roles", "tools", "network"])) });
+const ConvergeInputArgs = ReportInput.extend({ operation_id: z.number().int().positive() }).strict();
 type Context = {
     extensionFile(path: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
@@ -27,9 +30,10 @@ type Context = {
 /** Swamp expressions cannot encode an object as JSON; large intents exceed env limits. */
 export const behavior = {
     type: "@nckrtl/ansible-input",
-    version: "2026.11.11.1",
+    version: "2026.11.16.2",
     resources: {
         input: { schema: Output, lifetime: "1d", garbageCollection: 10 },
+        phases: { schema: Phases, lifetime: "1d", garbageCollection: 10 },
         output: { schema: z.object({ stdout: z.string() }), lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
@@ -81,11 +85,15 @@ export const behavior = {
         },
         convergeInput: {
             description: "Build a private, literal Node converge inventory with recorded SSH pins",
-            arguments: ReportInput,
-            async execute(raw: z.infer<typeof ReportInput>, ctx: Context) {
-                const { folder } = ReportInput.parse(raw);
-                await convergeInput(folder, ctx.extensionFile('ansible/build_vars.py'), ctx.extensionFile('extensions/behaviors/operations/ansible-input/converge_tool.ts'));
-                return { ready: true };
+            arguments: ConvergeInputArgs,
+            async execute(raw: z.infer<typeof ConvergeInputArgs>, ctx: Context) {
+                const { folder, operation_id } = ConvergeInputArgs.parse(raw);
+                const builder = ctx.extensionFile('ansible/build_vars.py');
+                const helper = ctx.extensionFile('extensions/behaviors/operations/ansible-input/converge_tool.ts');
+                const phases = await convergeInput(folder, operation_id, builder, helper, phaseCode(builder, helper));
+                const value = Phases.parse({ ready: true, unchanged: phases.unchanged });
+                await ctx.writeResource("phases", "phases", value);
+                return value;
             },
         },
         convergeResult: {

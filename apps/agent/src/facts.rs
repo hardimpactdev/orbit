@@ -1022,7 +1022,10 @@ mod tests {
             "instance.bridge_state_unresolved",
         ] {
             let body = json!({"error_code": code, "private": "not reported"}).to_string();
-            assert_eq!(bridge_health_data(body.as_bytes()), json!({"error_code": code}));
+            assert_eq!(
+                bridge_health_data(body.as_bytes()),
+                json!({"error_code": code})
+            );
         }
         for body in [
             b"damaged".as_slice(),

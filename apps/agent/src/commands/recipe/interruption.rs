@@ -27,15 +27,15 @@ impl Guard {
         INTERRUPTED.store(false, Ordering::Relaxed);
         let mut guard = Self { old: vec![] };
         for signal in [libc::SIGHUP, libc::SIGTERM, libc::SIGINT] {
-            // SAFETY: both sigactions are initialized, and the handler only writes a lock-free atomic.
+            // SAFETY: sigaction is plain C data, so all-zero bytes are a valid value.
             let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
             action.sa_sigaction = interrupted as *const () as usize;
+            // SAFETY: sigaction is plain C data, so all-zero bytes are a valid value.
             let mut old: libc::sigaction = unsafe { std::mem::zeroed() };
-            if unsafe {
-                libc::sigemptyset(&mut action.sa_mask);
-                libc::sigaction(signal, &action, &mut old)
-            } != 0
-            {
+            // SAFETY: sa_mask is a live, writable sigset_t inside `action`.
+            unsafe { libc::sigemptyset(&mut action.sa_mask) };
+            // SAFETY: both sigactions are initialized, and the handler only writes a lock-free atomic.
+            if unsafe { libc::sigaction(signal, &action, &mut old) } != 0 {
                 return Err(Failure::new("preflight", std::io::Error::last_os_error()));
             }
             guard.old.push((signal, old));

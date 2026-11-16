@@ -27,7 +27,8 @@ sequenceDiagram
   %%> Input:
   %%> - the task group, and the passed handoff check whose commit is published
   %%> - optionally a title and body together, to open or update the pull request; without them it only pushes
-  %%> - a task copy's group may omit `--check`, `--title` and `--body`: the release of its done check, with the reviewer's title and body, as a ready pull request
+  %%> - a task copy's group may omit `--check`, `--title` and `--body`: the release of its done check, with the reviewer's title and body, as a ready pull request; on a group that has its pull request, the release pushes its done check again
+  %%> - a task copy's `--check` without `--title` and `--body`, on a group without a pull request: when the check is the reviewed done check with the reviewer's text, the same Operation opens the pull request, as the release does; any other check only pushes
   Note over GW: Check the candidate<br/>task #5165 · record the key names
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
@@ -36,14 +37,16 @@ sequenceDiagram
   %%> - a task copy has no earlier turn that may still run (`tasks.copy_turn_unended`)
   %%> - a task copy's last completion did not fail (`tasks.copy_completion_failed`, with its Operation, failed step, error code and the retry `orbit instance:complete ID`), and the copy is `active` (`tasks.copy_not_ready`)
   %%> - check 17 passed for group 42, and required hosted CI passed on its commit, else `tasks.commit_not_checked`
-  %%> - without `--check`: the group's work is done, else `tasks.not_done`; the done check is the check, and the request is the same from here on (docs/reference/tasks.md#when-the-work-is-done)
-  %%> - without `--check`: the reviewer thread's newest turn sent its pull request text on the done check, else `tasks.pr_text_missing`; that text is the title and body, with `Closes #N` added for a group that names issue N and whose body does not close it (docs/reference/tasks.md#the-reviewers-pull-request-text)
+  %%> - without `--check`: the group's work is done, else `tasks.not_done`, also on a group that has its pull request; the done check is the check, and the request is the same from here on (docs/reference/tasks.md#when-the-work-is-done)
+  %%> - without `--check`, on a group without a pull request: the reviewer thread's newest turn sent its pull request text on the done check, else `tasks.pr_text_missing`; that text is the title and body, with `Closes #N` added for a group that names issue N and whose body does not close it (docs/reference/tasks.md#the-reviewers-pull-request-text)
   %%> - no other task runs on group 42; the Gateway holds one lock per group
+  %%> - a release, and a `--check` that takes the reviewer's text: the done check is read again under the group lock, else `tasks.not_done`
   %%> What it does:
   %%> - captures the repository, default branch, commit, checked tree and the task VM's SSH target
   %%> - for a task copy: its Node's SSH target, its container, its start commit and the path of the `.env` Orbit wrote, from the Instance's record
   %%> - names two `task-publish-token-<uuid>` vault keys for the token and the Git authorization header; it mints and writes no value at admission
   %%> - the `task:pr-when-done` tick admits through this same step, keyed `pr-when-done:<group>:<check>`; its refusal is stored on the group as the publication's error code
+  %%> - a copy's `--check` that only pushes records why no pull request opens, `pull_request_withheld`, on the Operation; the run's intent does not carry it
   %%> Result:
   %%> - task #5165 recorded with the full intent
   GW->>SW: Start run, full intent<br/>operation-task-publish
@@ -151,6 +154,7 @@ sequenceDiagram
     %%> - with no own workflow path and a clean merge, it writes a merge commit in the scratch repository when the trees under `.github/workflows/` of the head and the candidate differ: the merge-tree result, parents the candidate then the head, message `Merge main <head sha> at publish` with the default branch's name, author and committer `Orbit <orbit@users.noreply.github.com>`; the push sends it, because GitHub judges the pushed tree against the default branch
     %%> - a republish: a tip that is not an ancestor of the candidate, but an earlier publish merge whose first parent is an ancestor of the candidate and whose second parent is an ancestor of the head, always gets a merge with parents the candidate, the head and that tip, so the push is a fast-forward; a tip whose first two parents already are the candidate and the head is pushed again as it is
     %%> - with no workflow difference and no such tip, it makes no merge and the push sends the candidate
+    %%> - a copy's handoff check already merged the default head it judged against (`Merge main <sha> before the check`): when the default branch did not move since that check, `behind_by` is 0 and no merge at publish is needed; the merge at publish stays for a default branch that moved after the check
     %%> - of the intent it reads only `remote`, `base`, `branch` and `node_id`, which the publish intent already had; the candidate is the bundle it imported
     %%> - it writes its statement and exit code to the private scratch; Swamp keeps no stderr of a failed command step
     Note over SW: Check the base
@@ -251,4 +255,5 @@ sequenceDiagram
     GW-->>CLI: status + result
     %%> Returns:
     %%> - the current status, and the result once the task has ended
+    %%> - a copy's `--check` that only pushed names why in `pull_request_withheld`
   end

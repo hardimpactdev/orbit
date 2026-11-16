@@ -198,3 +198,31 @@ class ExpandTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class WaitsTest(unittest.TestCase):
+    """docs/reference/verification-cases: a case that waits for a named reason loads, but never runs or enters the plan."""
+
+    WAITING = GOOD + '''
+  - id: two
+    batch: fresh-fleet
+    waits: window
+    covers: [main]
+    summary: Two.
+    act:
+      - cli: {run: [firewall:allow, "81"], expect: {exit: 0}}
+    expect: []
+'''
+
+    def test_a_waiting_case_is_left_out_with_its_reason(self):
+        loaded = load_text('waits:\n  window: The owner schedules the window.\n' + self.WAITING)
+        self.assertEqual([case.id for case in loaded.cases], ['one'])
+        self.assertEqual({key: case.waits for key, case in loaded.waiting.items()}, {'two': 'The owner schedules the window.'})
+        self.assertIsNone(loaded.cases[0].waits)
+        self.assertEqual(spec.plan(loaded), [{'batch': 'fresh-fleet', 'summary': spec.plan(loaded)[0]['summary'], 'cases': ['one']}])
+
+    def test_a_wait_without_a_named_reason_is_refused(self):
+        with self.assertRaisesRegex(spec.SpecError, 'waits names no reason'):
+            load_text(self.WAITING)
+        with self.assertRaisesRegex(spec.SpecError, 'waits maps a name'):
+            load_text('waits:\n  window: ""\n' + self.WAITING)
