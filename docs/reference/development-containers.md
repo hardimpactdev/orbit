@@ -2188,6 +2188,10 @@ When the clone inherited `default`, the kernel made its device in `geom` mode. T
 
 So the host branch sets `volmode=dev` on the `custom` dataset. The clone inherits `dev`, its device is made once, and Incus changes nothing. Volumes that Incus creates or clones by other paths set their own `volmode`. A zvol that Incus receives, imports or copies in full into this subtree now inherits `dev` too: its device appears in dev mode until its first unmount, and Orbit's inner volumes use none of those paths.
 
+After the volume copy, the clone sets the volume's `size` to the intent's size, `container.inner_volume.size`, before the container copy. A volume copied from a snapshot takes the snapshot's Incus config, and a snapshot that a [seed copy](#how-the-seed-moves) moved to a CI Node records `size: 0`.
+
+Incus 7.0.2 writes the `size` of each snapshot that it sends from the size of the snapshot's block device, and it writes 0 for a volume with a file system. Incus cannot change a snapshot's config, so the seed copy cannot correct it. The ZFS volume keeps the full size, so the set changes only the record. The [start guard](#the-container) still requires that exact size.
+
 On this volume a [reset](#reset) of a copy's fleet, which a proof runs before each batch, takes about 16 seconds.
 
 Every Instance without `inner_volume`, the first nested-fleet default before its conversion and its copies included, keeps today's shape: no step makes, snapshots, copies or checks a volume for it.
@@ -2765,7 +2769,7 @@ Incus moves it, from the default's Node straight to each CI Node over WireGuard.
 - `incus copy <default> proof-node-<id>:proof-seed --refresh --mode=push`, in the project `orbit-instances-nested`;
 - `incus storage volume copy` of the default's inner volume to `proof-seed-inner` on the same remote, with `--refresh --mode=push`.
 
-An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
+An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The holder volume gets the default's `size`, but each snapshot that it receives records `size: 0`; a clone [sets its own size](#the-inner-volume). The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
 
 `--refresh` sends only what changed since the last copy. Incus compares the snapshots on both sides by name and creation time and sends the newer ones as ZFS increments from the newest snapshot that both sides share, so the holder gets the new `seed-<commit>` snapshot natively. The first copy to a Node sends the whole seed pair. The copy reads the default as an instance, not one snapshot of it: a snapshot source carries no snapshots, so `--refresh` could not find a common one and would send the whole pair each time.
 

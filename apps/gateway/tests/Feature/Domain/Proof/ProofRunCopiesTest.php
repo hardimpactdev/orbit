@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Data\Metrics\MetricsCredentialsData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
 use App\Domain\Instances\ContainerInstanceDestroy;
+use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -44,21 +47,27 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Jobs\Proof\AdmitProofRun;
 use App\Jobs\Proof\CancelProofGroup;
+use App\Jobs\Tasks\DestroyTaskCopy;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\ProofSeed;
 use App\Models\Route;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Tests\Support\WorkflowStartIntents;
 
 uses(LazilyRefreshDatabase::class);
@@ -571,11 +580,38 @@ describe('proof:run in copies: when a copy will never be ready', function (): vo
     })->with([
         'being made' => [static fn (Instance $copy) => null, 'pending'],
         'gone' => [static fn (Instance $copy) => Task::topLevel()->whereKey($copy->task_workspace_owner_id)->update(['taskable_id' => null]), 'failed'],
+        // A proof copy has no later create: a create that ended by its expired budget leaves a copy that is never ready.
+        'create timed out' => [static fn (Instance $copy) => Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)
+            ->update(['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'finished_at' => now(), 'lock_key' => null]), 'failed'],
         'completion failed' => [static function (Instance $copy): void {
             $copy->update(['status' => InstanceState::SourceResolved]);
             Operation::query()->create(['kind' => 'instance.complete', 'target_type' => 'instance', 'target_id' => $copy->id, 'node_id' => $copy->node_id,
                 'input' => [], 'state' => [], 'status' => OperationStatus::Failed, 'error_code' => 'instance.complete_failed', 'finished_at' => now(), 'sequence' => 1, 'attempts' => 0]);
         }, 'failed'],
+    ]);
+
+    // Swamp reopens an expiry whose run met its real budget (ExpireOperationAction::reopen): only a settled expiry ends the create.
+    it('reads a create whose budget expired as pending until the expiry is settled, then as failed', function (Closure $settle): void {
+        copyProofAdmitted();
+        $run = copyProofRuns()->first();
+        $create = Operation::query()->where('kind', 'instance.create')->where('target_id', $run->input['instance_id'])->sole();
+        $create->forceFill(['status' => 'running', 'started_at' => now()->subDay(), 'state' => [...($create->state ?? []), 'swamp_run_id' => 'run-1']])->save();
+        $create = app(ExpireOperationAction::class)->execute($create->refresh());
+
+        expect($create->status)->toBe(OperationStatus::Failed)->and($create->error_code)->toBe('operation.timed_out')
+            ->and(ExpireOperationAction::expiredUnsettled($create))->toBeTrue()
+            ->and(app(ProofCopies::class)->state($run->refresh()))->toBe('pending');
+
+        $settle($create);
+
+        expect(ExpireOperationAction::expiredUnsettled($create->refresh()))->toBeFalse()
+            ->and(app(ProofCopies::class)->state($run->refresh()))->toBe('failed');
+    })->with([
+        'Swamp proved the run ended' => [static fn (Operation $create) => app(ExpireOperationAction::class)->settle($create, 'run-1', 'failed')],
+        'no proof within the hold' => [static function (Operation $create): void {
+            test()->travel(ExpireOperationAction::HoldMinutes + 1)->minutes();
+            expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(1);
+        }],
     ]);
 });
 
@@ -630,6 +666,87 @@ describe('proof:run in copies: every end removes the copy', function (): void {
 
         expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue();
     });
+
+    // A create that fails after `clone-ci-hold` holds the copy's CI place: every end of it destroys the copy with the release
+    // (docs/reference/node-provisioning.md#proof-places-on-a-ci-node).
+    it('destroys a copy whose create ended without success, with the release of its hold, and fails its run', function (string $status, ?string $code): void {
+        copyProofAdmitted();
+        $run = copyProofRuns()->first();
+        $copy = Instance::query()->findOrFail($run->input['instance_id']);
+        $create = Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)->sole();
+        $create->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
+        app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), ['status' => $status, 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'error_code' => $code, 'result' => ['ready' => false, 'instance_id' => $copy->id, 'error_code' => $code]]);
+        if ($code === 'operation.timed_out') {
+            app(OperationStore::class)->change($create->refresh(), ['status' => OperationStatus::Failed, 'error_code' => $code, 'lock_key' => null]);
+        }
+        foreach (Queue::pushed(DestroyTaskCopy::class) as $job) {
+            app()->call([$job, 'handle']);
+        }
+        app(OperationStore::class)->change($run->refresh(), ['state' => [...($run->state ?? []), 'proof_child_start' => ['not_before' => now()->subSecond()->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+
+        expect(app(ProofChildStarts::class)->release($run->refresh()))->toBeFalse()
+            ->and($run->refresh()->status)->toBe(OperationStatus::Failed);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+        // A destroy that the create's end queued holds the copy, and the run's cancel waits for it; without one, the cancel destroys it.
+        if (! Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists()) {
+            app(ProofGroup::class)->cancel($run->refresh());
+        }
+        $destroys = Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->get();
+        expect($destroys)->toHaveCount(1)->and($destroys->sole()->input['container_destroy']['ci_hold'] ?? null)->toBeTrue();
+    })->with([
+        'failed at the copy' => ['failed', 'instance.container_network_unsafe'],
+        'cancelled' => ['cancelled', 'operation.cancelled'],
+        'its budget expired' => ['failed', 'operation.timed_out'],
+    ]);
+
+    // A CI-only Node has no app role: the removal contract places a copy there as the Gateway does (Instance::placementEnvironment), so
+    // the destroy of a copy whose create failed is admitted on every path, and once it succeeds the runner view counts no copy.
+    it('removes a failed copy on a CI-only Node with the release of its hold, by its group\'s failure, its destroy and its cancel', function (string $path): void {
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 3, busy: 3);
+        $ci = copyProofCiOnlyNode('ci-a', '10.44.0.21', current: true);
+        copyProofAdmitted();
+        $run = copyProofRuns()->first();
+        $copy = Instance::query()->findOrFail($run->input['instance_id']);
+        $create = Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)->sole();
+        $create->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
+        app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'error_code' => 'instance.create_clone_failed',
+            'result' => ['ready' => false, 'instance_id' => $copy->id, 'failed_step' => 'clone-container', 'error_code' => 'instance.create_clone_failed']]);
+        expect($copy->refresh()->node_id)->toBe($ci->id)->and($copy->status)->toBe(InstanceState::Reserved)
+            ->and(Task::topLevel()->findOrFail($run->input['group_id'])->status)->toBe(TaskGroupStatus::Failed)
+            ->and(ProofCopyHosts::copies()->whereKey($copy->id)->exists())->toBeTrue();
+
+        // The operator's call reaches the API from the Gateway Node, as the CLI's does.
+        Node::query()->where('name', 'control')->firstOrFail()->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $caller = $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.209']);
+        match ($path) {
+            'group failure' => Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $copy->id && app()->call([$job, 'handle']) === null),
+            'destroy' => $caller->deleteJson('/api/v1/instances/'.$copy->id, ['force' => true])->assertStatus(202),
+            'cancel' => $caller->withHeader('Idempotency-Key', 'cancel-copy')->postJson('/api/v1/tasks/'.$run->input['group_id'].'/cancel', ['discard' => true])->assertSuccessful(),
+        };
+
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->sole();
+        expect($destroy->input['container_destroy']['ci_hold'] ?? null)->toBeTrue();
+        $destroy->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-2'], 'input' => Arr::except($destroy->input, 'container_destroy')])->save();
+        app(DevelopmentInstanceDestroyProjection::class)->apply($destroy->refresh(), ['status' => 'succeeded', 'run_id' => 'run-2',
+            'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => []]);
+        expect(Instance::query()->find($copy->id))->toBeNull()->and(ProofCopyHosts::copies()->whereKey($copy->id)->exists())->toBeFalse();
+    })->with(['group failure', 'destroy', 'cancel']);
+
+    it('keeps the removal contract strict: a Node whose ci-runner role is being removed places no removal', function (string $role, bool $admitted): void {
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 3, busy: 3);
+        $ci = copyProofCiOnlyNode('ci-a', '10.44.0.21', current: true);
+        copyProofAdmitted();
+        $copy = Instance::query()->findOrFail(copyProofRuns()->first()->input['instance_id']);
+        $copy->update(['failed_step' => 'clone-container', 'error_code' => 'instance.create_clone_failed']);
+        NodeRole::query()->where('node_id', $ci->id)->where('role', RoleName::CiRunner)->update(['status' => $role]);
+        $insert = static fn () => DB::table('instance_removals')->insert(['kind' => 'destroy', 'id' => (string) Str::uuid(), 'requested_instance_id' => $copy->id,
+            'requested_name' => $copy->name, 'force' => true, 'inventory_digest' => str_repeat('a', 64), 'total' => 1, 'status' => 'removing',
+            'current_step' => 'source_preparation', 'created_at' => now(), 'updated_at' => now()]);
+
+        $admitted ? expect($insert())->toBeTrue() : expect($insert)->toThrow(QueryException::class, 'Invalid Instance removal contract.');
+    })->with(['an active role' => ['active', true], 'a role being removed' => ['removing', false]]);
 
     it('admits a new destroy when the copy\'s destroy failed, so a later cancel is never a replay of the failed one', function (): void {
         copyProofAdmitted();

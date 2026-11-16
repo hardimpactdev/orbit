@@ -656,6 +656,9 @@ def main():
                         change(project + ["storage", "volume", "delete", inner["pool"], inner["name"]])
                     change(project + ["storage", "volume", "copy", inner["pool"] + "/" + clone["inner_volume"] + "/" + clone["snapshot"],
                                       inner["pool"] + "/" + inner["name"]])
+                    # The copy takes the snapshot's config, and a seed that a seed copy moved to a CI Node records `size: 0`; the
+                    # zvol keeps its size, so this writes only the record that the start guard requires.
+                    change(project + ["storage", "volume", "set", inner["pool"], inner["name"], "size=" + inner["size"]])
                 argv = project + [
                     "copy",
                     clone["source"] + "/" + clone["snapshot"],
