@@ -135,6 +135,21 @@ class WorkspaceModesTest(unittest.TestCase):
         self.assertEqual(self.run_pass(NOBODY, CHOWN_LOG=str(log)).stdout, '')
         self.assertFalse(log.exists())
 
+    def test_an_orbit_file_hard_linked_from_outside_keeps_its_owner(self):
+        # A hard link in the workspace to a file outside it: giving the inode away would give away the outside name too.
+        outside = self.folder / 'outside'
+        outside.write_text('x')
+        os.chmod(outside, 0o600)
+        os.link(outside, self.workspace / 'hard')
+        log = self.folder / 'chown.log'
+        done = self.run_pass(os.getuid(), CHOWN_LOG=str(log))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        changes = log.read_text().splitlines()
+        self.assertFalse(any(line.endswith(f'/hard 2750') or str(outside) in line for line in changes), changes)
+        # Other entries are still given away, and the mode follows the group rule as before.
+        self.assertIn(f'fd {(self.workspace / "run.sh").resolve()} 2750', changes)
+        self.assertEqual(mode(outside), 0o660)
+
     def test_a_given_file_loses_setuid_and_setgid_and_a_socket_gets_its_owner_without_being_opened(self):
         # `orbit` must never make a program that runs as `agent`; a socket of an `orbit` Process cannot be opened (ENXIO).
         program = self.workspace / 'program'
