@@ -1,4 +1,6 @@
-"""The handoff check of a copy merges the default head it brought in when clean, and refuses a conflict with the tree untouched."""
+"""The handoff check of a copy merges the default head it brought in when clean, and refuses a conflict with the tree untouched.
+
+The base phase that brings the head in has its own tests (task_instance_workspace_base_test.py); these start from its result."""
 import json
 import runpy
 import subprocess
@@ -15,6 +17,10 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
     def merge(self, ok=True):
         return self.phase('base-merge', {**self.intent, 'message': MESSAGE}, ok)
 
+    def bring_in(self):
+        """What the base phase leaves, which its own tests prove: the default head in refs/remotes/origin/main, nothing else."""
+        self.git('fetch', '--quiet', '--no-tags', str(self.origin), '+refs/heads/main:refs/remotes/origin/main')
+
     def main_changes(self, name, content):
         """A new default head on origin that changes `name`; the next base brings it in."""
         work = self.root / 'work'
@@ -24,7 +30,7 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
         self.git('update-server-info', cwd=self.origin)
 
     def test_a_clean_merge_commits_the_uncommitted_work_first_then_merges_the_head(self):
-        self.phase('base')
+        self.bring_in()
         result = self.merge()
         self.assertEqual(self.evidence('base-merge'), result)
         commit = self.git('rev-parse', 'HEAD')
@@ -44,7 +50,7 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
         self.assertEqual(self.git('rev-list', '--count', 'HEAD..refs/remotes/origin/main'), '0')
 
     def test_a_branch_that_holds_the_head_merges_nothing(self):
-        self.phase('base')
+        self.bring_in()
         self.merge()
         before = self.state()
         again = self.merge()
@@ -54,7 +60,7 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
 
     def test_a_conflict_names_the_paths_and_leaves_the_workspace_exactly_as_it_was(self):
         self.main_changes('work.txt', 'main changed it\n')
-        self.phase('base')
+        self.bring_in()
         before = self.state()
         objects_before = self.git('for-each-ref')
         result = self.merge()
@@ -70,7 +76,7 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
         (self.checkout / '.git/info/exclude').write_text('build/\n')
         (self.checkout / 'build').mkdir()
         (self.checkout / 'build/out.txt').write_text('local ignored\n')
-        self.phase('base')
+        self.bring_in()
         before = self.state()
         self.assertIn('tasks.workspace_phase_failed', self.merge(ok=False))
         self.assertEqual(self.state(), before)
@@ -78,7 +84,7 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
 
     def test_a_main_only_workflow_change_merges_and_is_never_the_copys_own(self):
         self.main_changes('.github/workflows/ci.yml', 'on: push\n')
-        self.phase('base')
+        self.bring_in()
         result = self.merge()
         self.assertEqual(result['merged_default'], self.head)
         # The own-change rule of publish: the copy's own workflow paths since the merge base with the default head.
