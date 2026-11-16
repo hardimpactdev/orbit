@@ -206,7 +206,7 @@ Deno.test("a duplicate, wrong base or failed lookup refuses the write", () => {
 
 const files = (
     overrides: Partial<
-        Record<"head" | "base" | "behind" | "overlap" | "merge", string> & { workflows: string | null }
+        Record<"head" | "base" | "behind" | "overlap" | "merge", string> & { workflows: string | null; merged: string | null }
     > = {},
 ) => ({
     head: "c".repeat(40) + "\n",
@@ -215,6 +215,7 @@ const files = (
     overlap: "",
     merge: "",
     workflows: "" as string | null,
+    merged: "" as string | null,
     ...overrides,
 });
 
@@ -228,6 +229,7 @@ Deno.test("a copy's base is stated, behind or not, and only a real conflict refu
             overlapping_paths: [],
             overlapping_more: 0,
         },
+        merged: "",
         error_code: "",
     });
     assertEquals(
@@ -242,6 +244,7 @@ Deno.test("a copy's base is stated, behind or not, and only a real conflict refu
         ),
         {
             facts: null,
+            merged: "",
             error_code: 'tasks.publish_conflict: "app/a.php", "x\\ny"',
         },
     );
@@ -260,7 +263,7 @@ Deno.test("a copy's base is stated, behind or not, and only a real conflict refu
 Deno.test("a workflow change the default head lacks refuses with its paths, before a conflict", () => {
     const workflows = ".github/workflows/x.yml\0.github/workflows/y.yml\0";
     const line = 'tasks.publish_workflow_change: ".github/workflows/x.yml", ".github/workflows/y.yml"';
-    assertEquals(baseFacts(0, files({ workflows })), { facts: null, error_code: line });
+    assertEquals(baseFacts(0, files({ workflows })), { facts: null, merged: "", error_code: line });
     // A conflict as well: the workflow change refuses first, because the token could never push it.
     assertEquals(baseFacts(3, files({ workflows, merge: "d".repeat(40) + "\0app/a.php\0" })).error_code, line);
     // A list the read did not write, or a read that failed, is an error: never a pass, never a refusal.

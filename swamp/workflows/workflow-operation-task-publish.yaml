@@ -951,9 +951,10 @@ jobs:
         type: succeeded
     writes: true
   - name: Check the base
-    # A workflow path fails with tasks.publish_workflow_change and its paths, before the conflict: the token has no workflows permission.
-    # Exit 0 passes the facts, each path list bounded; exit 3 fails with tasks.publish_conflict and the conflicting paths; any other
-    # exit fails with tasks.publish_failed. Being behind or overlapping never refuses.
+    # An own workflow path fails with tasks.publish_workflow_change and its paths, before the conflict: the token has no workflows
+    # permission. Exit 0 passes the facts, each path list bounded, and the merge at publish or ""; exit 3 fails with
+    # tasks.publish_conflict and the conflicting paths; any other exit fails with tasks.publish_failed. Being behind or overlapping
+    # never refuses.
     labels:
       role: swamp
     queueTimeout: 30
@@ -1000,7 +1001,8 @@ jobs:
           ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
           ORBIT_DIRECTORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
           ORBIT_REMOTE: ${{ inputs.intent.remote }}
-          ORBIT_REFSPEC: ${{ inputs.intent.refspec }}
+          # A task copy's merge at publish goes instead of the checked candidate (docs/reference/tasks.md#merge-main-at-publish).
+          ORBIT_REFSPEC: '${{ "Check the base" in steps && steps["Check the base"].status == "succeeded" && steps["Check the base"].outputs.merged != "" ? steps["Check the base"].outputs.merged + ":refs/heads/" + inputs.intent.branch : inputs.intent.refspec }}'
         ignoreExitCode: true
     dependsOn:
     - step: Mint the push token

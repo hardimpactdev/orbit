@@ -172,35 +172,38 @@ const names = (
 ) => [...new Set(text.split("\0").filter((name) => name !== ""))];
 
 /**
- * The files "Read the base" wrote: the default head, the merge base, how far behind, the overlapping paths, the workflow paths and
- * the merge-tree reply. A path under .github/workflows/ that differs between the default head and the candidate refuses first,
- * because GitHub refuses that net diff to a token without the workflows permission; then exit 0 states the base; exit 3 is a real conflict, refused with its paths; anything else is an error of the
- * read. A workflow list the read did not write is an error, never an empty list.
+ * The files "Read the base" wrote: the default head, the merge base, how far behind, the overlapping paths, the copy's own workflow
+ * paths, the merge-tree reply and the merge at publish. A path under .github/workflows/ that the candidate changed since the merge
+ * base refuses first, because the token has no workflows permission; then exit 0 states the base and passes the merge at publish,
+ * or "" when the push sends the candidate; exit 3 is a real conflict, refused with its paths; anything else is an error of the read.
+ * A workflow list or merge file the read did not write is an error, never an empty one.
  */
 export function baseFacts(
     exitCode: number,
-    files: Record<"head" | "base" | "behind" | "overlap" | "merge", string> & { workflows: string | null },
+    files: Record<"head" | "base" | "behind" | "overlap" | "merge", string> & { workflows: string | null; merged: string | null },
 ) {
     const head = files.head.trim(),
         base = files.base.trim(),
         behind = files.behind.trim();
     const read = Sha.safeParse(head).success && Sha.safeParse(base).success &&
         /^[0-9]+$/.test(behind) && files.workflows !== null;
+    const none = { facts: null, merged: "" };
     if (read && (exitCode === 0 || exitCode === 3)) {
         const workflows = names(files.workflows ?? "");
         if (workflows.length > 0) {
-            return { facts: null, error_code: refusal("tasks.publish_workflow_change: ", workflows, 0) };
+            return { ...none, error_code: refusal("tasks.publish_workflow_change: ", workflows, 0) };
         }
     }
     if (exitCode === 3 && read) {
         // merge-tree --name-only -z: the tree, then each conflicted path.
         const conflicts = names(files.merge).slice(1);
         if (conflicts.length > 0) {
-            return { facts: null, error_code: refusal("tasks.publish_conflict: ", conflicts, 0) };
+            return { ...none, error_code: refusal("tasks.publish_conflict: ", conflicts, 0) };
         }
     }
-    if (exitCode !== 0 || !read) {
-        return { facts: null, error_code: "tasks.publish_failed" };
+    const merged = (files.merged ?? "").trim();
+    if (exitCode !== 0 || !read || files.merged === null || (merged !== "" && !Sha.safeParse(merged).success)) {
+        return { ...none, error_code: "tasks.publish_failed" };
     }
     const overlap = bounded(names(files.overlap), BASE_BYTES);
     return {
@@ -211,6 +214,7 @@ export function baseFacts(
             overlapping_paths: overlap.shown,
             overlapping_more: overlap.more,
         }),
+        merged,
         error_code: "",
     };
 }
