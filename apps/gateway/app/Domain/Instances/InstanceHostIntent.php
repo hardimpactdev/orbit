@@ -15,7 +15,6 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
-use App\Models\TaskVm;
 use LogicException;
 
 /**
@@ -119,13 +118,10 @@ final readonly class InstanceHostIntent
 
     /**
      * The role whose converge runs the branch on the Node: `ci-runner` on a CI-only Node (ProofCopyHosts::ciOnly), `app-dev` on a Node of
-     * the build list, and null for every other Node and for a task VM's own Node.
+     * the build list, and null for every other Node.
      */
     public function role(Node $node): ?RoleName
     {
-        if (TaskVm::query()->where('node_id', $node->id)->exists()) {
-            return null;
-        }
         if (ProofCopyHosts::ciOnly($node)) {
             return RoleName::CiRunner;
         }

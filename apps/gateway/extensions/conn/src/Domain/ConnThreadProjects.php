@@ -8,7 +8,6 @@ use App\Actions\Projects\ListProjectsAction;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\InstanceContainer;
-use App\Domain\Instances\NativeInstanceProvisioningIntent;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -40,7 +39,7 @@ final readonly class ConnThreadProjects
     {
         $projects = $this->projects->handle($caller);
         $projects->load(['instances' => static fn (HasMany $query): HasMany => $query
-            ->where('name', DefaultInstanceName::Name)->with(['runtime', 'node.roles', 'node.liveTaskVm', 'node.cluster'])]);
+            ->where('name', DefaultInstanceName::Name)->with(['runtime', 'node.roles', 'node.cluster'])]);
         $reachable = $this->access->accessibleNodeIds($caller);
         $runtimeRefusals = $this->runtimeRefusals();
 
@@ -85,7 +84,7 @@ final readonly class ConnThreadProjects
     private function defaultInstance(Project $project): ?Instance
     {
         return Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)
-            ->with(['runtime', 'node.roles', 'node.liveTaskVm'])->first();
+            ->with(['runtime', 'node.roles'])->first();
     }
 
     /**
@@ -140,9 +139,6 @@ final readonly class ConnThreadProjects
             ['key' => 'model_route', 'label' => 'Model router',
                 'message' => 'Set up the model router and apply its guard in Orbit.',
                 'check' => fn () => $this->assertRuntimeCheck($runtimeRefusals['model_route'])],
-            ['key' => 'native_create', 'label' => 'Create support',
-                'message' => 'Use an app-dev Node instead of a task VM for this Project.',
-                'check' => fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($node())],
         ];
         $checks = [];
         $refusal = null;

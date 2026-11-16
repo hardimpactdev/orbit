@@ -28,7 +28,5 @@ enum TaskVmError: string
 
     // Workspace ownership.
     case WorkspaceMismatch = 'task_vm.workspace_mismatch';
-    case ForeignInstance = 'task_vm.foreign_instance';
     case Parked = 'task_vm.parked';
-    case AccessRefused = 'task_vm.access_refused';
 }

@@ -7,9 +7,7 @@ namespace App\Domain\Fleet;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Operation;
-use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -79,13 +77,6 @@ final readonly class FleetRebootProjection implements DirectOperationProjection
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($terminal || ! $projected->status->terminal()) {
                 return $projected;
-            }
-            foreach ($nodes as $node) {
-                $parked = is_array($node['parked'] ?? null) ? array_values(array_filter($node['parked'], is_string(...))) : [];
-                if ($parked !== []) {
-                    TaskVm::query()->where('host_node_id', ValidatedData::integer($node['node_id']))->whereIn('name', $parked)->where('state', TaskVmState::Ready)
-                        ->update(['state' => TaskVmState::Parked]);
-                }
             }
             DB::afterCommit(static function () use ($projected, $nodes, $failed): void {
                 $alerts = app(FleetRebootAlerts::class);

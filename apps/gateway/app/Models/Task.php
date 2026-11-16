@@ -567,12 +567,6 @@ final class Task extends Model
         return $this->hasOne(TaskCheck::class)->latestOfMany();
     }
 
-    /** @return HasOne<TaskVm, $this> */
-    public function latestVm(): HasOne
-    {
-        return $this->hasOne(TaskVm::class, 'group_id')->latestOfMany();
-    }
-
     /** @return HasMany<TaskComment, $this> */
     public function comments(): HasMany
     {

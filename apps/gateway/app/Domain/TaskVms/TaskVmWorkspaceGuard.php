@@ -9,18 +9,12 @@ use App\Models\Task;
 use App\Models\TaskVm;
 
 /**
- * Guards workspace ownership on task VMs: a Node with a live task VM serves only its group's
- * workspace, and a `vm` group works only in that workspace. A live task VM is any row that is
- * not Destroyed.
+ * Guards a task workspace command: a group works only in the workspace it owns on its ready task VM. No task VM
+ * exists any more, so every command fails with `task_vm.workspace_mismatch`. The guard goes with the task VM
+ * tables (docs/reference/old-paths.md#the-task-vm-readers).
  */
 final class TaskVmWorkspaceGuard
 {
-    /**
-     * The checkout of the one workspace on a task VM, below the Project's directory in the apps root. The name is
-     * fixed across claims so imported CI caches retain their absolute paths.
-     */
-    public const string WorkspaceCheckout = 'workspace';
-
     /**
      * A group's workspace must be the Instance it owns in its Project, on the Node of its Ready task VM. A parked VM
      * fails with `task_vm.parked`: no command reaches a VM that is stopped or starting.
@@ -38,18 +32,6 @@ final class TaskVmWorkspaceGuard
         }
     }
 
-    /** Whether `assertWorkspace` accepts the workspace. */
-    public static function allowsWorkspace(Task $group, Instance $workspace): bool
-    {
-        try {
-            self::assertWorkspace($group, $workspace);
-
-            return true;
-        } catch (TaskVmException) {
-            return false;
-        }
-    }
-
     /**
      * A task workspace is the Instance a group owns, on that group's ready task VM. An Instance without an owner is no
      * task workspace, so no task operation reaches it.
@@ -61,22 +43,5 @@ final class TaskVmWorkspaceGuard
             throw new TaskVmException(TaskVmError::WorkspaceMismatch, "Instance [{$workspace->name}] is not a task workspace.");
         }
         self::assertWorkspace($group, $workspace);
-    }
-
-    /** An Instance on a task VM Node must be the workspace that the VM's group owns, in the group's Project. A pool VM serves none. */
-    public static function assertInstance(Instance $instance): void
-    {
-        $vm = TaskVm::forNode($instance->node_id);
-        if (! $vm instanceof TaskVm) {
-            return;
-        }
-
-        $group = $vm->group;
-        if (! $group instanceof Task) {
-            throw new TaskVmException(TaskVmError::ForeignInstance, "Node [{$instance->node_id}] is an unassigned task VM. It serves no Instance.");
-        }
-        if ($instance->project_id !== $group->project_id || $instance->task_workspace_owner_id !== $group->id) {
-            throw new TaskVmException(TaskVmError::ForeignInstance, "Node [{$instance->node_id}] is a task VM and serves only the workspace of task group [{$group->id}].");
-        }
     }
 }

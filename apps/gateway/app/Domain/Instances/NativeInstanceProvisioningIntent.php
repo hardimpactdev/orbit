@@ -15,23 +15,14 @@ use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Models\Instance;
 use App\Models\Node;
-use App\Models\TaskVm;
 use App\Support\ValidatedData;
 
 /** Immutable parent admission. No child Operations and no Node effects. */
 final readonly class NativeInstanceProvisioningIntent
 {
-    public function assertCreateSupported(Node $node): void
-    {
-        if ($node->liveTaskVm !== null) {
-            throw new ResourceOperationException('instance.task_vm_node', 'A task VM gets its workspace from task:start, not instance:create.', 409);
-        }
-    }
-
     public function assertCloneSupported(Instance $candidate, Node $node, ?string $sqliteSource): void
     {
-        if (TaskVm::forNode($node) !== null
-            || TaskVm::forNode($candidate->node) !== null || $candidate->databaseConnectionTargets()->exists()) {
+        if ($candidate->databaseConnectionTargets()->exists()) {
             $this->unavailable();
         }
     }
@@ -42,7 +33,6 @@ final readonly class NativeInstanceProvisioningIntent
     public function create(Instance $instance, array $input): array
     {
         $instance->loadMissing(['node', 'project']);
-        $this->assertCreateSupported($instance->node);
         // An already active Instance runs no phase; otherwise only the database copy this create owns may be attached.
         $alreadyActive = $instance->status === InstanceState::Active && ! $instance->first_setup_pending;
         if (! $alreadyActive && $instance->databaseConnectionTargets()

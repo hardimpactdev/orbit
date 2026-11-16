@@ -20,7 +20,6 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
-use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 
 /** Record exporter intent and its complete public scrape configuration. */
@@ -44,7 +43,7 @@ final readonly class AdmitMetricsExporterAction
         if (! $enabled && $node->roles()->where('role', RoleName::Metrics)->exists()) {
             throw new ResourceOperationException('node.role_conflict', 'The metrics node exporter cannot be disabled.', 422);
         }
-        if (! $this->eligibility->allows($node) || TaskVm::forNode($node) instanceof TaskVm) {
+        if (! $this->eligibility->allows($node)) {
             throw new ResourceOperationException('metrics.exporter_node_ineligible', 'Metrics exporters require managed WireGuard SSH access.', 409);
         }
 

@@ -14,7 +14,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\NodeRole;
-use App\Models\TaskVm;
 
 final readonly class NativeMetricsExporterProjection implements MetricsExporterProjection
 {
@@ -76,11 +75,9 @@ final readonly class NativeMetricsExporterProjection implements MetricsExporterP
                 ->all(),
         );
 
-        // A task VM Node never hosts an exporter: the hub filter lets only the Gateway reach it, so the
-        // Metrics Node could not scrape it, and its enrollment skips the Metrics reconcile.
         $selection = $this->selector->select(
             $roles,
-            $this->eligibility->allows($node) && ! TaskVm::forNode($node) instanceof TaskVm,
+            $this->eligibility->allows($node),
             $this->preferences->get($node->id),
             $node->is($metricsNode),
         );

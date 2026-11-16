@@ -8,14 +8,13 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Models\Node;
 use Illuminate\Support\Facades\Config;
 
-/** Explicit operator rollout; task workers have their own lifecycle. */
+/** Explicit operator rollout. */
 final readonly class NodeWorkerRollout
 {
     public function allows(Node $node): bool
     {
         return in_array($node->id, Config::array('swamp_workers.nodes'), true)
             && app(ManagedNodeEligibility::class)->allows($node)
-            && in_array($node->architecture, ['x86_64', 'amd64'], true)
-            && $node->taskVms->isEmpty();
+            && in_array($node->architecture, ['x86_64', 'amd64'], true);
     }
 }

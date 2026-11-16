@@ -7,7 +7,6 @@ use App\Providers\GatewayBoostServiceProvider;
 use App\Providers\GatewayQueueServiceProvider;
 use App\Providers\GatewayReleasesServiceProvider;
 use App\Providers\TasksServiceProvider;
-use App\Providers\TaskVmServiceProvider;
 use Orbit\Extensions\AiRouter\AiRouterServiceProvider;
 use Orbit\Extensions\Conn\ConnServiceProvider;
 use Orbit\Extensions\Documents\DocumentsServiceProvider;
@@ -26,7 +25,6 @@ return [
     GatewayReleasesServiceProvider::class,
     // Tasks, AiRouter, Documents, Vault, and Conn are extensions: their providers implement App\Domain\Extensions\Extension.
     TasksServiceProvider::class,
-    TaskVmServiceProvider::class,
     AiRouterServiceProvider::class,
     DocumentsServiceProvider::class,
     VaultServiceProvider::class,
