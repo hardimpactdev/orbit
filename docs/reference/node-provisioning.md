@@ -644,7 +644,7 @@ An agent command can record a failed agent pin outside any Operation, so admissi
 
 Drift is not an input. A skipped phase does not see a change that someone made on the Node by hand. The `check` phase always reads the selected software, units, role configuration and tunnel; the role `check` always reads the role's services, ports, sites and rules. When it finds drift, the Operation fails, the record stays clear, and the next one runs every phase. Run `node:converge --full` or `node:role:add NODE ROLE --converge --full` to repair drift that the check does not read.
 
-The Operation steps show a skipped phase as a skipped step. The Operation's `result.phases` and the `node:converge` output show it as `unchanged`, with no changes and no time. A role Operation's result names its skipped phases in `result.unchanged`.
+The Operation steps show a skipped phase as a skipped step. The Operation's `result.phases` and the `node:converge` output show it as `unchanged`, with no changes and no time. A role Operation shows them only as skipped steps.
 
 The Tool helper is the TypeScript policy that judges each Tool. It runs on the Swamp Node, with the Deno at `/usr/local/bin/deno`; on its first run for a worker, Deno downloads the helper's two pinned npm imports. A helper that cannot run is not a Tool failure: the `tools` phase fails before it judges a Tool, and no Tool is marked failed. Converge the Swamp Node to install its Deno, then converge the Node again.
 
