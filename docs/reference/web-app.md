@@ -93,7 +93,9 @@ The dashboard and Nodes page group Nodes by the existing Metrics status. Tracked
 
 The runner view is `/runners` in the main navigation, after Activity. It reads `GET /api/v1/ci/runners`. [CI runner view](/reference/ci-runner-view) owns its content, sources and freshness.
 
-The page draws one frame for each CI Node. The places bar has one cell for each place: a runner job, then a proof copy, then a free place. A Node without a count shows only its used places. The reading of a proof-only Node ends with "proof copies only". The frame also shows CPU pressure, memory and disk, and a table of its runners with their state, version, current job and how long that job has run. On a phone, the current job and its time read on their own line under the runner. The frame border names a missing or stale runner state, or an outdated metrics snapshot.
+The page draws one frame for each CI Node. The places bar has one cell for each place: a runner job, then a proof copy, then a free place.
+
+A Node without a count shows only its used places. The reading of a proof-only Node ends with "proof copies only". The frame also shows CPU pressure, memory and disk, and a table of its runners with their state, version, current job and how long that job has run. On a phone, the current job and its time read on their own line under the runner. The frame border names a missing or stale runner state, or an outdated metrics snapshot.
 
 Below the frames are three panes: the running and queued jobs, each runner's jobs, failures, median queue wait, median run time and busy share over the window, and the recent completed jobs. A job row opens the job on GitHub. A repository that GitHub did not answer for, or that the Gateway read only in part, is named in the bottom border of these panes.
 

@@ -83,11 +83,18 @@ Each entry of `nodes`:
 | Field | Meaning |
 | --- | --- |
 | `node_id`, `node_name` | The Node's ID and name. |
-| `places` | `total`, `proof_only`, `runner_jobs`, `proof_copies` and `free`. `total` is the Node's `ci.places` setting, or null when the Node has no `ci` setting. `proof_only` is the Node's `ci.proof_only`, false when it has none. `runner_jobs` counts the busy runners, and is 0 on a proof-only Node. `free` is `total` minus `runner_jobs` and `proof_copies`, never below 0, and null when `total` is null. |
+| `places` | `total`, `proof_only`, `runner_jobs`, `proof_copies` and `free`. See below the table. |
 | `proof_copies` | Each proof copy on the Node: `instance_id`, `instance_name` and `task_group_id`. |
 | `resources` | Null when the agent reported no metrics snapshot yet. Else `observed_at`, `possibly_outdated`, `cpu_pressure` and `memory_pressure` (the `some` `avg10` values), `memory` and `disk` (each `used_bytes` and `total_bytes`; `disk` is the `/` mount). |
 | `runner_state` | `observed_at`, the time the Node's timer read its runners; `stale`, true when that is more than 60 seconds ago; and `error_code`, null when Prometheus answered with a reading for the Node. |
 | `runners` | Each runner container, ordered by name. Empty when `runner_state.error_code` is set. See below. |
+
+In `places`:
+
+- `total` is the Node's `ci.places` setting. It is null when the Node has no `ci` setting.
+- `proof_only` is the Node's `ci.proof_only`. It is false when the Node has no `ci` setting.
+- `runner_jobs` counts the busy runners. It is 0 on a proof-only Node.
+- `free` is `total` minus `runner_jobs` and `proof_copies`, never below 0. It is null when `total` is null.
 
 Each entry of `runners`:
 
