@@ -606,7 +606,7 @@ Before it writes, the gate removes the `review-*` directories its own Unix user 
 
 ### The scoped task check
 
-`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks only what the task changed since its start commit, so it catches in the copy what CI would otherwise catch after the push. It runs in under five minutes.
+`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks what the task changed since its start commit, and the pin tests of the Pest jobs that change selects, so it catches in the copy what CI would otherwise catch after the push. It runs in under five minutes.
 
 ```bash
 bin/task-check                    # against the start commit
@@ -645,11 +645,11 @@ The Pest jobs are `gateway-tests`, `cli-tests`, `sdk-tests` and `docs` for the d
 - `apps/gateway`, `apps/cli` and `apps/docs` run their changed test files in one Pest run. `apps/cli` also runs the CLI tests that replay a changed SDK fixture, as `bin/cli-contract --changed <start commit>` names them.
 - `apps/gateway` and `apps/cli` also run their pin test files in that run, whatever changed. The `PIN_TESTS` table in `bin/task-check` lists them.
 - The line's detail counts the changed and pin files and names the pins, such as `0 changed or contract-mapped, 1 pin test files: CommandSurfaceTest`.
-
-A pin test checks a whole surface: a whole intent, a digest or every command's approved options. A change far from it can break it, so no file mapping finds it. Gateway: `GatewayRuntimeFilesTest` (the recipe digests), `NestedFleetHostingTest`, `ConnThreadStartTest`, `ProofRunCopiesTest`, `InstanceNodeServiceTargetsTest` and `CollectionAccessContractTest`. CLI: `CommandSurfaceTest`. Add a test to the table when CI's full suite catches a break in it that the check missed, and it fits the budget. Together they take about 37 seconds in a warm copy with one process: 34 for the Gateway and 3 for the CLI.
 - The whole suite of `apps/gateway`, `apps/cli` and `apps/docs` is a `pest <project> suite` line, `skipped` with the reason "CI runs the full suite".
 
 A job that CI does not select is `not selected`.
+
+A pin test checks a whole surface: a whole intent, a digest or every command's approved options. A change far from it can break it, so no file mapping finds it. Gateway: `GatewayRuntimeFilesTest` (the recipe digests), `NestedFleetHostingTest`, `ConnThreadStartTest`, `ProofRunCopiesTest`, `InstanceNodeServiceTargetsTest` and `CollectionAccessContractTest`. CLI: `CommandSurfaceTest`. Add a test to the table when CI's full suite catches a break in it that the check missed, and it fits the budget. Together they take about 37 seconds in a warm copy with one process: 34 for the Gateway and 3 for the CLI.
 
 The Swamp checkers read committed `HEAD` and the tracked files. When the tree has uncommitted work, `swamp-shape` runs in a temporary Git worktree of the candidate commit and removes it afterwards, so an untracked Swamp file is checked too. A SIGTERM, such as Orbit's outer timeout, ends the check through its cleanup, which removes the worktree.
 
@@ -694,9 +694,10 @@ The seeded file holds one change set for each real failure that CI caught after 
 
 - From #3713: an SDK Pest test and a strict docs-lint finding.
 - From #3715: a PHPStan error, a stale fixture case population and a flow chart finding.
+- From #3854: a CLI option added in app code alone, which `CommandSurfaceTest` pins.
 - An uncommitted Swamp file that breaks a shape rule.
 
-Each case applies its change set in a scratch clone of the checkout and runs the part that must fail. The cases need the vendor folders of `packages/php-sdk` and `apps/docs`, Deno and Node.
+Each case applies its change set in a scratch clone of the checkout and runs the part that must fail. The cases need the vendor folders of `packages/php-sdk`, `apps/cli` and `apps/docs`, Deno and Node. A case asserts only its own part: a Pest part whose project has no vendor folder in the clone, such as the Gateway pins that a CLI change selects, fails there too.
 
 ### Gateway test databases
 
