@@ -12,6 +12,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketRegistry;
 use App\Infrastructure\Swamp\NativeRunResult;
@@ -61,6 +62,9 @@ final readonly class NodeRoleRemovalProjection implements DirectOperationProject
             }
             $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $snapshot['role'])->firstOrFail();
             $node = $assignment->node;
+            if ($assignment->role === RoleName::CiRunner) {
+                ProofSeeds::forgetListener($node->id);
+            }
             if ($status === OperationStatus::Succeeded) {
                 self::recordCleanup($snapshot);
                 $assignment->delete();
