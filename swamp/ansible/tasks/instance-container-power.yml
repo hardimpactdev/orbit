@@ -161,15 +161,11 @@
            if sleep_held | bool else sleep_prepared_restore }}
 
 # A wake's start (instance-container.yml, `start` with the marker in the intent) waited for every desired-running unit. FrankenPHP
-# then answers once it listens: `intent.web.ready_seconds` tries 1 s apart, each bounded by curl's own 2 s. Only no answer at all
+# then answers once it listens: `intent.web.ready_seconds` tries 1 s apart, each the play's `web_probe` from the Node, bounded to 1.5 s. Only no answer at all
 # refuses the wake. A Project without a web unit has nothing to wait for.
 - name: Wait for the web unit to answer
   when: power == 'awake' and container.web_config | default(none) is not none
-  ansible.builtin.command:
-    argv: &web_probe >-
-      {{ ['incus', 'exec', '--project', container.project, container.name, '--',
-          'curl', '--silent', '--output', '/dev/null', '--write-out', '%{http_code}', '--max-time', '2',
-          'http://127.0.0.1:' ~ intent.web.port ~ '/'] }}
+  ansible.builtin.command: { argv: "{{ web_probe }}" }
   register: web_ready
   until: web_ready.rc == 0 and web_ready.stdout | int > 0
   retries: "{{ intent.web.ready_seconds }}"
@@ -188,8 +184,7 @@
 # `intent.web.settle_seconds`. An app that answers 5xx by itself (maintenance mode, an error on `/`) is then served as it is.
 - name: Wait for the app behind the web unit
   when: power == 'awake' and container.web_config | default(none) is not none and web_ready.stdout | int >= 500
-  ansible.builtin.command:
-    argv: *web_probe
+  ansible.builtin.command: { argv: "{{ web_probe }}" }
   register: app_ready
   until: app_ready.rc == 0 and app_ready.stdout | int > 0 and app_ready.stdout | int < 500
   retries: "{{ intent.web.settle_seconds }}"

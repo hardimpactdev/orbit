@@ -334,3 +334,16 @@ Deno.test("the CA bundle check refreshes the bundle only when it lacks the conta
         assertEquals(await run(), "", "a container without the CA file skips the check");
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
+
+Deno.test("the worker and the wake's run send the same readiness request from the Node, and no run asks the web port through incus exec", () => {
+    const flags = (text: string) => text.replaceAll("'", "").match(/--silent --output \/dev\/null --write-out \S+ --max-time [0-9.]+/)![0];
+    const worker = Deno.readTextFileSync(script).match(/curl (--silent[^\n]*?) "http:\/\/\$address:\$port\/"/)![1];
+    const plays = parse(Deno.readTextFileSync(new URL("../ansible/instance-container.yml", import.meta.url))) as Record<string, any>[];
+    const probe = (plays.find((play) => play.vars?.web_probe)!.vars.web_probe as string).replace(/[\[\],]/g, " ").replace(/\s+/g, " ");
+    assertEquals(flags(worker), flags(probe));
+    assertStringIncludes(probe, "'http://' ~ container.address ~ ':' ~ container.web_port ~ '/'");
+    for (const file of ["instance-container-power.yml", "instance-container-phase.yml"]) {
+        const text = Deno.readTextFileSync(new URL(`../ansible/tasks/${file}`, import.meta.url));
+        assert(!text.match(/127\.0\.0\.1:' ~ intent\.web\.port/), file);
+    }
+});

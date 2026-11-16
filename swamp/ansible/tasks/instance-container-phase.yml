@@ -127,10 +127,7 @@
       ansible.builtin.set_fact: { resume_probe_started: "{{ now().timestamp() }}" }
     - name: Wait for the resumed web unit
       when: intent.web is defined and container.web_config | default(none) is not none
-      ansible.builtin.command:
-        argv: >-
-          {{ as_root + ['curl', '--silent', '--output', '/dev/null', '--write-out', '%{http_code}', '--max-time', '1',
-                        'http://127.0.0.1:' ~ intent.web.port ~ '/'] }}
+      ansible.builtin.command: { argv: "{{ web_probe }}" }
       register: resumed_web
       until: resumed_web.rc == 0 and resumed_web.stdout | int > 0
       retries: "{{ intent.web.resume_seconds }}"

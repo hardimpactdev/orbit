@@ -140,6 +140,7 @@ function fixture() {
     environment_file: "/srv/workspace/.env",
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
     web_config: { path: "/etc/orbit/frankenphp.Caddyfile", content: ":8080 {\n    php_server\n}\n" },
+    web_port: 8080,
     php: "/opt/orbit-runtime/current/php/8.5/bin/php" as string | null,
     processes: [] as { id: number; name: string; content: string; environment: string | null; desired: string }[],
   };
@@ -1271,7 +1272,7 @@ function asleep(f: ReturnType<typeof fixture>, container: Partial<{ web: number[
   Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
   const before = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").length;
   const webChecks = () => Deno.readTextFileSync(`${f.folder}/calls`).split("\n").slice(before - 1)
-    .filter((line) => line.includes("http://127.0.0.1:8080/")).length;
+    .filter((line) => line.startsWith('["curl"') && line.includes(":8080/")).length;
   const present = () => { try { return Deno.statSync(marker).isFile; } catch { return false; } };
   return { marker, webChecks, present };
 }
@@ -1370,7 +1371,7 @@ Deno.test({
     const f = fixture();
     try {
       f.container.units = [];
-      (f.container as Record<string, unknown>).web_config = null;
+      Object.assign(f.container as Record<string, unknown>, { web_config: null, web_port: null });
       f.write();
       const sleeping = asleep(f, {});
       Object.assign(f.intent, { marker: sleeping.marker, web: { port: 8080, ready_seconds: 3, settle_seconds: 4 } });
