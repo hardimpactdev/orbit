@@ -16,7 +16,7 @@ use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRemovalReaper;
-use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\NodeFacts\NodeAgentLiveness;
 use App\Domain\NodeFacts\NodeAgentState;
 use App\Domain\NodeFacts\NodeFactKind;
@@ -300,17 +300,24 @@ final readonly class FactDoctor
 
     /**
      * A failed destroy that the removal reaper started again MaxRetries times and that failed again (InstanceRemovalReaper::stuck).
-     * It reads the Gateway's own records, so it needs no fact; the Instance's deletion resolves its Problem as `resource_gone`.
+     * It reads the Gateway's own records, so it needs no fact. Every Instance of the Node is checked, so one whose removal was
+     * restored resolves the Problem; the Instance's deletion resolves it as `resource_gone`. While a later retry runs, the
+     * removal is `removing` again and the check gives no verdict, so the Problem neither resolves nor opens again each retry.
      */
     private function instanceFamily(DoctorFamilyInspection $check): DoctorFamilyReportData
     {
-        $instances = Instance::query()->where('node_id', $check->node->id)->where('status', InstanceState::Removing)->orderBy('id')->get();
+        $instances = Instance::query()->where('node_id', $check->node->id)->orderBy('id')->get();
+        $removals = InstanceRemovalMember::query()->live()->whereIn('instance_id', $instances->modelKeys())->with('removal')->get()
+            ->keyBy('instance_id');
         foreach ($instances as $instance) {
-            $removal = InstanceRemovalMember::query()->live()->where('instance_id', $instance->id)->with('removal')->first()?->removal;
-            if ($removal === null || $removal->requested_instance_id !== $instance->id) {
+            $removal = $removals->get($instance->id)?->removal;
+            if ($removal !== null && $removal->requested_instance_id !== $instance->id) {
+                $removal = null;
+            }
+            if ($removal !== null && $removal->status === InstanceRemovalStatus::Removing && $removal->retry_count >= InstanceRemovalReaper::MaxRetries) {
                 continue;
             }
-            if (InstanceRemovalReaper::stuck($removal)) {
+            if ($removal !== null && InstanceRemovalReaper::stuck($removal)) {
                 $step = $removal->failed_step->value ?? 'unknown';
                 $check->issue(InstanceDoctorIssueCode::RemovalStuck->value, $instance->id, $instance->name,
                     sprintf('Removal %s failed at %s with %s after %d automatic retries.', $removal->id, $step, $removal->error_code ?? 'unknown', $removal->retry_count),
