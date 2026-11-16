@@ -22,7 +22,6 @@ final class TasksStatusData extends Data
         public array $assistance,
         public ?string $lastTickAt,
         public array $merges,
-        public TaskCapacityData $capacity,
         public array $releases = [],
     ) {}
 }

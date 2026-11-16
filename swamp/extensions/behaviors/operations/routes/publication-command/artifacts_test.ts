@@ -122,6 +122,7 @@ Deno.test("Gateway sparse artifacts equal full canonical composition through eve
         user: "orbit",
         home: "/home/orbit",
         group: "1000",
+        group_name: null,
     });
     for (
         const [from, to] of [

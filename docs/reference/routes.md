@@ -748,7 +748,7 @@ A failed test puts every written file back before any reload, and keeps no copy.
 
 Some writers take no Node lock, such as the Gateway's whole-file Caddy builds. So right before it writes a file, and again right before it renames the Caddy candidate, the withdrawal checks that the file is still as it read it. A file that changed refuses with `route.live_changed` and every file is put back; run the removal again.
 
-A revision of the Route's own sections that matches no captured state still refuses with `caddy.owned_revision_conflict`, `php.owned_revision_conflict` or `dns.owned_revision_conflict`. A file that a withdrawal would leave unchanged is not written and its service is not reloaded, so a second withdrawal of the same Route changes nothing.
+A revision of the Route's own sections that matches no captured state still refuses with `caddy.owned_revision_conflict`, `php.owned_revision_conflict` or `dns.owned_revision_conflict`. A PHP scope of the Route matches when its `group` names the account's primary group by name or by gid ([route child contracts](#route-child-contracts)). A file that a withdrawal would leave unchanged is not written and its service is not reloaded, so a second withdrawal of the same Route changes nothing.
 
 The lock files are regular files owned by root that no group or other may write; a lock that is not refuses with `route.publish_lock_invalid`. The withdrawal sets each to mode `0600`, so only root can open it. They are never replaced or removed. Closing the descriptor releases a lock, including when the process dies. No SSH round trip occurs while a lock is held.
 
@@ -786,7 +786,7 @@ When a waiting `instance:create`, `instance:clone`, `instance:restore` or `route
 
 A timed-out task keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. The DNS Node is not held: its records are keyed. A withdrawal merges them under `/run/lock/orbit-dnsmasq.lock`, the lock the Gateway's DNS publication also takes, and reads them right before it writes. The Swamp DNS writers (`route-create-dns`, `route-dns-publish`, `node-private-dns` and the role publication) write the files whole without that lock. One that writes in the milliseconds between the withdrawal's last check and its write can still lose the withdrawal's change or its own, as before.
 
-Task provision and cancel, `instance:register` and the Cluster Router writes also publish sites, but their run does much else. They hold the Nodes of their Route-publish step only (decided by the orchestrator, for Nick's review, 2026-11-06). Before that step the run calls `operation:direct:route-hold` with its run ID. The Gateway reads the Nodes from the admitted intent and answers when it holds all of them, after at most 5 s.
+`instance:register` and the Cluster Router writes also publish sites, but their run does much else. They hold the Nodes of their Route-publish step only (decided by the orchestrator, for Nick's review, 2026-11-06). Before that step the run calls `operation:direct:route-hold` with its run ID. The Gateway reads the Nodes from the admitted intent and answers when it holds all of them, after at most 5 s.
 
 The call is repeated for up to 2 minutes. Then the step fails (the Gateway answered `423 route_hold.busy`) and the Route step does not run. After the Route step the run calls `operation:direct:route-release`, which cannot fail the run. The hold has a 5-minute lease that only a repeated hold call renews, and the end of the Operation frees it too. A Route write that waits for a Node starts before a new hold on that Node is granted.
 
@@ -873,7 +873,7 @@ A configured LAN address is operator intent. A LAN path that fails shows as a vi
 
 ### WireGuard membership is the private trust boundary
 
-Access grants authorize Orbit commands. They do not describe which services Nodes may reach. Applying grants to private traffic would need a per-port authorization model. Limiting private traffic to Route HTTPS would block the general connectivity that trusted Nodes need. So removing a Node from WireGuard revokes its private network trust. [Task VMs](/reference/compute-drivers#limit-fleet-traffic-on-the-hub) are untrusted peers in a reserved range. Their bridge ACL, hub filter, and Caddy guard limit private traffic. The optional Swamp hostname admits one HTTPS site for worker enrollment and execution, without trusting task VMs to reach other private sites.
+Access grants authorize Orbit commands. They do not describe which services Nodes may reach. Applying grants to private traffic would need a per-port authorization model. Limiting private traffic to Route HTTPS would block the general connectivity that trusted Nodes need. So removing a Node from WireGuard revokes its private network trust. [Task VMs](/reference/compute-drivers#limit-fleet-traffic-on-the-hub) are untrusted peers in a reserved range. Their bridge ACL and hub filter limited private traffic; the task VM path and its Caddy guard are removed, and the WireGuard address allocator still keeps the range off every Node.
 
 ### One publication field and Let's Encrypt on public Ingress
 
@@ -911,7 +911,7 @@ Production publication prepares PHP and served web roots as native steps on the 
 
 Shared native Route publication artifacts contain only affected Caddy groups, PHP pools and DNS entries. A Caddy artifact's `unserved` flag means it contains no affected blocks. Its `had_served_groups` flag records whether the full source snapshot had served groups, including unaffected sites. If that flag is true and `/etc/caddy/Caddyfile` is missing, forward or restore refuses with `caddy.current_config_missing` before publication. A genuinely empty Node may create its first file. Marker text inside a comment does not split the global Caddy header; only a complete Orbit marker at the start of a line does.
 
-Every PHP pool names the account's primary group by its numeric gid, so the site step that writes a pool and the delta that later withdraws it compare the same text.
+Every PHP pool names the account's primary group by its numeric gid, so the site step that writes a pool and the delta that later withdraws it compare the same text. Pools written before route-create-site name the group instead. FPM reads both the same, so a PHP delta or withdrawal accepts a scope of its Route in either form, and a scope it writes names the gid.
 
 The Gateway captures `target_instance_ids`, `previous_target_instance_ids`, and `removed_instance_ids` at admission. The plan retains every admitted placement in `placements` and removed target snapshots in `detached_instances`, with `instance_id`, `node_id`, and `checkout_path` captured before association changes. A target disposition retains its previous ownership proof after associations change. Recovery preserves these snapshots after a removed Instance disappears. A replacement also records `candidate_route_id`. Secret environment values remain Gateway references.
 

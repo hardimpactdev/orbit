@@ -20,13 +20,29 @@ The Gateway is a Laravel application, so it reads its own settings from a `.env`
 
 A setting that no code reads any more leaves the file through the `gateway` role's convergence, never by hand. `GatewayRuntimeFiles::RetiredSettings` lists them, and the role's runtime phase removes each key from `shared/gateway.env`. Every release links that file as its `.env`. It now lists these settings:
 
-- `ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE`
-- `ORBIT_TASK_VMS_UPCLOUD_MAX_VMS`
-- `ORBIT_TASK_VMS_UPCLOUD_PLAN`
-- `ORBIT_TASK_VMS_UPCLOUD_DISK_GB`
-- `ORBIT_SWAMP_DIRECT_WRITERS`
+| Setting |
+| --- |
+| `ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE` |
+| `ORBIT_TASK_VMS_UPCLOUD_MAX_VMS` |
+| `ORBIT_TASK_VMS_UPCLOUD_PLAN` |
+| `ORBIT_TASK_VMS_UPCLOUD_DISK_GB` |
+| `ORBIT_SWAMP_DIRECT_WRITERS` |
+| `ORBIT_TASK_VMS_ENABLED` |
+| `ORBIT_TASK_VMS_CONTAINER_PLACEMENT` |
+| `ORBIT_TASK_VMS_DEV_CLUSTER_ID` |
+| `ORBIT_TASK_VMS_WIREGUARD_RANGE` |
+| `ORBIT_TASK_VMS_SWAMP_HOST` |
+| `ORBIT_TASK_VMS_MEDIUM_PROJECTS` |
+| `ORBIT_TASK_VMS_LARGE_PROJECTS` |
+| `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` |
+| `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` |
+| `ORBIT_TASK_VMS_PI_MODELS` |
+| `ORBIT_TASK_VMS_INCUS_HOSTS` |
+| `ORBIT_TASK_VMS_TOPOLOGY_PATHS` |
+| `ORBIT_PI_PORT` |
+| `ORBIT_SWAMP_PROOF_CLUB_API_KEY` |
 
-The four UpCloud task VM settings are unread since #3181 removed UpCloud. `ORBIT_SWAMP_DIRECT_WRITERS` chose a writer per Operation kind; every kind now has one writer.
+The four UpCloud task VM settings are unread since #3181 removed UpCloud. `ORBIT_SWAMP_DIRECT_WRITERS` chose a writer per Operation kind; every kind now has one writer. The other `ORBIT_TASK_VMS_*` settings, `ORBIT_PI_PORT` and `ORBIT_SWAMP_PROOF_CLUB_API_KEY` configured task VMs, the removed Pi server and the proof topologies of task VMs; the Gateway reads none of them since the task VM settings went ([old paths](/reference/old-paths#task-vm-settings)). Port 3774 is free again: a Node service may use it.
 
 ## Services dependency detection
 
@@ -57,8 +73,7 @@ The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with the
 | `ORBIT_SWAMP_READ_TOKEN_NAME` | Installed token name, written by `gateway:swamp-reader:install`. |
 | `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` | Installed UTC expiry, written by the installer and checked hourly. |
 | `ORBIT_SWAMP_CA_PATH` | Orbit root CA file. Default `<ORBIT_HOME>/ca/root.pem`, with `ORBIT_HOME` defaulting to `$HOME/.orbit`. |
-| `ORBIT_SWAMP_PROOF_CLUB_API_KEY` | Dedicated club credential for disposable proof topologies. Keep its value in the Gateway environment. |
-| `ORBIT_NESTED_FLEET_CLUB_API_KEY` | The Swamp Club key of nested fleets' Gateways, separate from the proof key. Written by `gateway:nested-fleet-club-key:install`; each run start reads this file. Empty: a nested-fleet container starts without it. |
+| `ORBIT_NESTED_FLEET_CLUB_API_KEY` | The Swamp Club key of nested fleets' Gateways. Written by `gateway:nested-fleet-club-key:install`; each run start reads this file. Empty: a nested-fleet container starts without it. |
 
 Two provisions receive a names-only execution copy: Project 62 (`swamp-proof`), and the task group that a `proof:run` on a task VM creates. Every other task, in the Orbit Project too, gets none. A `proof:run` in copies gets no proof credential: each copy's nested Gateway gets the nested-fleet key at its start.
 
@@ -193,12 +208,6 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 
 [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes the installed host rules and Gateway record cleanup. The [gateway role convergence](/cli/node/role-add) installs the host retention files; releases leave them unchanged. The release run has fixed disk, snapshot and verification limits, as [Environment variables](/reference/environment-variables) describes. Record retention uses `ORBIT_FAILED_JOBS_HOURS`, `ORBIT_JOB_BATCH_HOURS`, and `ORBIT_ACTIVITY_LOG_DAYS`; their defaults are in `config/retention.php`.
 
-`ORBIT_TASK_VMS_SWAMP_HOST` names the one private HTTPS site task VM workers may reach, such as `swamp.orbit`. Set it for the managed Swamp Route on the `swamp` Node. After applying the environment change, rebuild Caddy on that Node; Doctor reports `role.caddy_build_drift` until then. See [Refuse task VMs in Caddy](/reference/compute-drivers#refuse-task-vms-in-caddy).
-
-Task VMs run only on Incus. Provider API credentials are not part of Gateway configuration. Task publication deletes the VM; no environment setting delays release for review. The operator sets the separate task and CI pool sizes on each host Node.
-
-`ORBIT_TASK_VMS_CONTAINER_PLACEMENT` lets normal placement take the task container places of hosts. It is `false` by default, and nothing turns it on: tasks move into [Instance containers](/reference/development-containers#tasks-in-an-instance-container), and [the plan](/solutions/development-container-runtime#pr-17-remove-task-vms-the-pi-server-and-the-task-container-setting) removes this setting. See [Configure task VMs](/reference/compute-drivers#configure-task-vms).
-
 The fleet-owned `instances.mailpit` configuration names the main Docker Node Process and SMTP port. It needs no Gateway environment key or contributor setting; [development mail](/reference/development-containers#development-mail) applies only on a Node with that active publication.
 
 `ORBIT_INSTANCES_CONTAINER_NODES` is the build list of [Instance containers](/reference/development-containers#the-build-list): a JSON list of the Node ids that run container Instances. It is empty by default.
@@ -212,7 +221,5 @@ A list that is not a JSON array, such as `{}` or `{"0":123}`, is malformed: enab
 `ORBIT_INSTANCES_NESTED_FLEET_REFRESH` turns on the [refresh after a release](/reference/development-containers#refresh-after-a-release), read as `instances.nested_fleet_refresh`. It defaults to off; the live fleet has it on since 13 November 2026. While it is off, the release step prints one line and admits nothing. Turn it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
 
 `ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE` is the [root disk size of a nested-fleet default](/reference/development-containers#the-root-disk), read as `instances.nested_default_root_size`. It defaults to `80GiB`. Write `<n>GiB`, at least `40GiB`; any other value refuses with `instance.nested_root_size_invalid`. A default grows to it at its next start; a lowered value shrinks nothing. Apply a change with [Apply an env change](/reference/gateway-recovery#apply-an-env-change).
-
-Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 
 A Gateway release runs no smoke step. Remove the former `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT` and `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` variables from the shared env file with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read them.

@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Task VM capacity is counted in places (`task_places`, `ci_places`; docs/reference/tasks.md#task-places). Step names reach users
+ * Task VM capacity is counted in places (`task_places`, `ci_places`; docs/reference/compute-drivers.md#place-task-vms). Step names reach users
  * through operation:show and failed_step, so none of them says "slot". Internal workflow and class names may.
  */
 it('names no workflow job or step after a slot', function (): void {

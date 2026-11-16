@@ -248,6 +248,55 @@ class RouteWithdrawTest(unittest.TestCase):
         self.withdraw(plan(9, php=True, caddy=False))
         self.assertFalse(self.pool.exists())
 
+    # A publisher before route-create-site wrote the account's primary group by name; FPM reads it as the gid.
+    def scope(self, instance, group):
+        return pool(instance).replace("__ORBIT_NODE_GROUP__", group).replace("/__ORBIT_NODE_HOME__", "/home/orbit")
+
+    def named_group(self, name="orbit"):
+        lookup = patch("grp.getgrgid", return_value=SimpleNamespace(gr_gid=ACCOUNT.pw_gid, gr_name=name))
+        lookup.start()
+        self.addCleanup(lookup.stop)
+
+    def test_a_scope_with_the_group_name_is_withdrawn_and_the_other_keeps_its_bytes(self):
+        self.named_group()
+        live = self.scope(7, "orbit") + self.scope(9, "orbit")
+        self.pool.write_text(live)
+        self.withdraw(plan(7, php=True))
+        self.assertEqual(self.pool.read_text(), self.scope(9, "orbit"))
+        self.assertEqual((self.previous / "php-8.4-orbit-scopes.conf").read_text(), live)
+
+    def test_a_captured_scope_that_stays_keeps_its_group_name(self):
+        self.named_group()
+        value = plan(7, php=True)
+        value["php"].update(before={"8.4": pool(7) + pool(9)}, after={"8.4": pool(9)})
+        self.pool.write_text(self.scope(7, "orbit") + self.scope(9, "orbit"))
+        self.withdraw(value)
+        self.assertEqual(self.pool.read_text(), self.scope(9, "orbit"))
+
+    def test_a_scope_with_the_gid_is_withdrawn_beside_one_with_the_group_name(self):
+        self.named_group()
+        self.pool.write_text(self.scope(7, "1000") + self.scope(9, "orbit"))
+        self.withdraw(plan(7, php=True))
+        self.assertEqual(self.pool.read_text(), self.scope(9, "orbit"))
+
+    def test_a_scope_with_the_group_name_that_differs_otherwise_is_a_revision_conflict(self):
+        self.named_group()
+        live = self.scope(7, "orbit").replace("user = orbit", "user = www-data") + self.scope(9, "orbit")
+        self.pool.write_text(live)
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            self.withdraw(plan(7, php=True))
+        self.assertEqual(refused.exception.code, "php.owned_revision_conflict")
+        self.assertEqual(self.pool.read_text(), live)
+
+    def test_another_group_name_is_a_revision_conflict(self):
+        self.named_group("staff")
+        live = self.scope(7, "orbit")
+        self.pool.write_text(live)
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            self.withdraw(plan(7, php=True))
+        self.assertEqual(refused.exception.code, "php.owned_revision_conflict")
+        self.assertEqual(self.pool.read_text(), live)
+
     def test_a_failed_caddy_reload_puts_the_previous_caddyfile_back_and_reloads_again(self):
         live = self.caddy.read_text()
         tools = Tools(fail=["once:systemctl reload caddy"])

@@ -11,13 +11,12 @@ use App\Data\Tasks\TaskReleaseData;
 use App\Data\Tasks\TasksStatusData;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskPlaces;
 use App\Models\Instance;
 use App\Models\Task;
 
 final readonly class ShowTasksStatusAction
 {
-    public function __construct(private TaskExtensionState $extension, private TaskPlaces $places) {}
+    public function __construct(private TaskExtensionState $extension) {}
 
     public function execute(): TasksStatusData
     {
@@ -55,7 +54,6 @@ final readonly class ShowTasksStatusAction
             assistance: $assistance,
             lastTickAt: null,
             merges: $merges,
-            capacity: $this->places->capacity(),
             releases: $releases,
         );
     }

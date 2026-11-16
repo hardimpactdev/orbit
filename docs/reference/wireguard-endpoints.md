@@ -195,7 +195,9 @@ The converge's Ansible `network` phase reaches the hub over SSH as root:
 6. It requires every recorded peer on the interface, or fails with the assertion `vpn.hub_peer_missing`.
 7. It waits up to a minute for each peer that was live in step 1 to have a handshake in the last 180 seconds.
 
-Step 3 also removes the [task VM hub filter](/reference/old-paths#the-task-vm-lifecycle) that the removed `task_vm.hub_converge` installed. It stops and disables `orbit-task-vms-hub.service` when its unit file exists, deletes the unit file and `/etc/orbit/task-vms/hub.nft`, and deletes the folder `/etc/orbit/task-vms` when it is then empty. It reloads systemd only when it deleted the unit file, and deletes the nft table `inet orbit_task_vms` only when `nft list table` finds it. A hub that never had the filter, or had it removed by an earlier converge, changes nothing.
+Step 3 also removes the [task VM hub filter](/reference/old-paths#the-task-vm-lifecycle) that the removed `task_vm.hub_converge` installed. It stops and disables `orbit-task-vms-hub.service` when its unit file exists, deletes the unit file and `/etc/orbit/task-vms/hub.nft`, and deletes the folder `/etc/orbit/task-vms` when it is then empty. It reloads systemd only when it deleted the unit file, and deletes the nft table `inet orbit_task_vms` only when `nft list table` finds it.
+
+It then reads `ufw status numbered` and deletes every rule whose comment starts with `orbit:task-vm-`, by number and highest number first. Those are the route rules from the range `10.44.0.128/25` that the task VM hub kept, such as `orbit:task-vm-control-ssh` and `orbit:task-vm-router-web-10-44-0-7-443`. It deletes no other rule, and reports a change only when it deleted one. A hub that never had the filter or those rules, or had them removed by an earlier converge, changes nothing.
 
 The same hub tasks run when the target of `node:converge` is the hub itself and when the converge of another Node reconciles its hub first, so the converge of the vpn Node removes the filter.
 

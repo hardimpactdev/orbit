@@ -8,13 +8,7 @@ use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Testing\TestResponse;
 
-use function Pest\Laravel\getJson;
-use function Pest\Laravel\travel;
-use function Pest\Laravel\withServerVariables;
-
 uses(LazilyRefreshDatabase::class);
-
-const UnchangedHost = ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 1]];
 
 function unchangedNode(): Node
 {
@@ -43,20 +37,18 @@ it('reports node.unchanged and writes nothing when a record-only request repeats
 
     expect($node->refresh()->only(['name', 'platform', 'settings', 'updated_at']))->toEqual($stored);
 })->with([
-    'task VM host settings with containers' => [['task_vms' => UnchangedHost]],
     'the same name' => [['name' => 'beast']],
-    'the same name and host settings' => [['name' => 'beast', 'task_vms' => UnchangedHost]],
+    'the same name and reboot hold' => [['name' => 'beast', 'reboot_hold' => true]],
 ]);
 
 it('reports no skip when any value of the request changes', function (array $second): void {
     $node = unchangedNode();
-    unchangedPatch($node, ['name' => 'beast', 'task_vms' => UnchangedHost])->assertOk();
+    unchangedPatch($node, ['name' => 'beast', 'reboot_hold' => true])->assertOk();
 
     unchangedPatch($node, $second)->assertOk()->assertJsonMissingPath('meta.skipped');
 })->with([
-    'another name' => [['name' => 'beast-2', 'task_vms' => UnchangedHost]],
-    'other container places' => [['task_vms' => [...UnchangedHost, 'containers' => [...UnchangedHost['containers'], 'task_places' => 2]]]],
-    'other VM places' => [['task_vms' => [...UnchangedHost, 'ci_places' => 3]]],
+    'another name' => [['name' => 'beast-2', 'reboot_hold' => true]],
+    'another reboot hold' => [['name' => 'beast', 'reboot_hold' => false]],
 ]);
 
 it('stores and clears a reboot hold through node update and shows it in every Node read', function (): void {
@@ -82,28 +74,23 @@ it('rejects a reboot hold that is not a JSON boolean without changing the Node',
     expect($node->refresh()->name)->toBe('enrolled')->and($node->reboot_hold)->toBeFalse();
 })->with(['string' => ['true'], 'number' => [1], 'null' => [null], 'object' => [(object) []]]);
 
-it('stores and clears an image refresh hold through node update and shows it in every Node read', function (): void {
+it('refuses the removed task_vms and image_refresh_hold members as it refuses any unknown member, and keeps the stored value', function (string $member, mixed $value): void {
     $node = unchangedNode();
-    unchangedPatch($node, ['task_vms' => UnchangedHost])->assertOk();
-    $settings = $node->refresh()->settings;
-    withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
-    getJson("/api/v1/nodes/{$node->id}")->assertOk()->assertJsonPath('data.image_refresh_hold', false);
-    foreach ([true, false] as $hold) {
-        unchangedPatch($node, ['image_refresh_hold' => $hold])->assertOk()->assertJsonPath('data.image_refresh_hold', $hold);
-        expect($node->refresh()->image_refresh_hold)->toBe($hold)
-            ->and($node->settings)->toBe($settings);
-        getJson("/api/v1/nodes/{$node->id}")->assertOk()->assertJsonPath('data.image_refresh_hold', $hold);
-        getJson('/api/v1/nodes')->assertOk()->assertJsonPath('data.0.image_refresh_hold', $hold);
-        $stored = $node->refresh()->updated_at;
-        travel(5)->minutes();
-        unchangedPatch($node, ['image_refresh_hold' => $hold])->assertOk()->assertJsonPath('meta.skipped', 'node.unchanged');
-        expect($node->refresh()->updated_at)->toEqual($stored);
-    }
-    expect(Operation::query()->count())->toBe(0);
-});
+    $stored = ['task_vms' => ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2]];
+    Node::withoutEvents(fn (): bool => $node->update(['settings' => $stored]));
+    $unknown = unchangedPatch($node, ['name' => 'changed', 'colour' => $value])->assertUnprocessable();
 
-it('rejects an image refresh hold that is not a JSON boolean without changing the Node', function (mixed $hold): void {
-    $node = unchangedNode();
-    unchangedPatch($node, ['name' => 'changed', 'image_refresh_hold' => $hold])->assertUnprocessable();
-    expect($node->refresh()->name)->toBe('enrolled')->and($node->image_refresh_hold)->toBeFalse();
-})->with(['string' => ['true'], 'number' => [1], 'null' => [null], 'object' => [(object) []]]);
+    $removed = unchangedPatch($node, ['name' => 'changed', $member => $value])->assertUnprocessable();
+
+    expect($removed->json('error.code'))->toBe($unknown->json('error.code'))
+        ->and(str_replace($member, 'colour', (string) $removed->json('error.message')))->toBe($unknown->json('error.message'))
+        ->and($node->refresh()->name)->toBe('enrolled')
+        ->and($node->settings)->toBe($stored)
+        ->and(Operation::query()->count())->toBe(0);
+    // A later update leaves the stored value, which no code reads, as it is.
+    unchangedPatch($node, ['name' => 'changed'])->assertOk()->assertJsonMissingPath('data.settings.task_vms')->assertJsonMissingPath('data.image_refresh_hold');
+    expect($node->refresh()->settings)->toBe($stored);
+})->with([
+    'task_vms' => ['task_vms', ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2]],
+    'image_refresh_hold' => ['image_refresh_hold', true],
+]);

@@ -49,7 +49,6 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
         public string $review = 'manual',
         public ?string $lastActivityAt = null,
         public ?string $previewUrl = null,
-        public ?TaskPlaceWaitResponse $capacityWait = null,
         public ?string $implementerProvider = null,
         public ?string $implementerEffort = null,
         public ?string $reviewerProvider = null,
@@ -106,7 +105,6 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             reviewAndMerge: TaskReviewAndMergeResponse::fromGatewayData($data['review_and_merge'] ?? null, $requestId),
             lastActivityAt: TaskFields::nullableText($data, 'last_activity_at'),
             previewUrl: TaskFields::nullableText($data, 'preview_url'),
-            capacityWait: TaskPlaceWaitResponse::fromGatewayData($data['capacity_wait'] ?? null, $requestId),
             implementerProvider: TaskFields::nullableText($data, 'implementer_provider'),
             implementerEffort: TaskFields::nullableText($data, 'implementer_effort'),
             reviewerProvider: TaskFields::nullableText($data, 'reviewer_provider'),
@@ -186,7 +184,6 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             ...($this->issue === null ? [] : ['issue' => $this->issue]),
             'last_activity_at' => $this->lastActivityAt,
             'preview_url' => $this->previewUrl,
-            'capacity_wait' => $this->capacityWait?->toArray(),
             ...($this->reviewAndMerge === null ? [] : ['review_and_merge' => $this->reviewAndMerge->toArray()]),
             'request_id' => $this->requestId,
         ];

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
-use App\Data\Nodes\NodeTaskVmContainersData;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Proof\ProofCopyHosts;
@@ -165,19 +164,17 @@ final readonly class InstanceHostIntent
         if (! is_string($cidr)) {
             throw new ResourceOperationException('instance.host_unavailable', 'The Node has no Instance bridge yet: the admission of a role add or converge allocates it.', 409);
         }
-        // Instance containers and the task containers of the same host take their isolated ID maps from root's one range.
+        // Instance containers and the CI places of the same host take their isolated ID maps from root's one range.
         $settings = app(NodeSettingsNormalizer::class)->fromStored($node->settings);
-        $taskHost = $settings?->task_vms;
         // Each nested-fleet container takes the map its runtime records. A switched-on Node keeps two spare maps of a new default's size.
         // A CI Node hosts nested-fleet copies without the switch.
         $nested = $ci || $settings?->nested_fleet === true;
         $nestedMaps = InstanceRuntime::query()->where('node_id', $node->id)->where('incus_project', InstancePlacement::NestedProject)->pluck('idmap_size');
         $nestedRuntimes = $nestedMaps->count();
         $nestedIds = $nestedMaps->sum(static fn (mixed $size): int => is_int($size) ? $size : throw new LogicException('A nested-fleet runtime records its ID map size.'));
-        // Each task container place and each CI place gets one full map, and the base one more (docs/reference/node-settings.md#nested-fleet-instance-hosting).
-        $containerPlaces = $taskHost?->containers instanceof NodeTaskVmContainersData ? $taskHost->containers->task_places : null;
+        // Each CI place gets one full map, and the base one more (docs/reference/node-settings.md#nested-fleet-instance-hosting).
         $ciPlaces = $settings?->ci()?->places;
-        $taskIds = $containerPlaces === null && $ciPlaces === null ? 0 : (($containerPlaces ?? 0) + ($ciPlaces ?? 0) + 1) * self::TaskPlaceIds;
+        $taskIds = $ciPlaces === null ? 0 : ($ciPlaces + 1) * self::TaskPlaceIds;
         $subnet = Ipv4Subnet::from($cidr);
         [$gateway, $last] = $subnet->usableRange();
 
@@ -204,9 +201,6 @@ final readonly class InstanceHostIntent
             'ids' => (self::Containers + 1) * self::IdMapSize + ($ci
                 ? (ProofCopyHosts::places($node) + 2) * ProofCopyHosts::idMapSize()
                 : $taskIds + $nestedIds + ($nested ? 2 : 0) * self::TaskPlaceIds),
-            // A task VM host sizes the ARC for its task side, or keeps the Node's own (task-vm-host-prepare.yml): the Instance side
-            // never changes it there.
-            'arc' => $taskHost === null,
             'incus' => $incus,
             'image' => InstanceImage::for($gateway),
             // Only a switched-on Node prepares the nested-fleet project and builds its image there

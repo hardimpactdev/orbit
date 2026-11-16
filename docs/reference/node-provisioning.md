@@ -982,7 +982,7 @@ The Node with the `vpn` role holds the WireGuard hub: its private key, address, 
 
 The hub keeps one peer file per Node. A hub converge prunes only the files of Nodes that are gone or being removed, and never the file of a Node created after its intent; [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) has the rule.
 
-The hub converge also removes the task VM hub filter that the removed `task_vm.hub_converge` installed, so `node:converge` of the `vpn` Node clears it; [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) lists what it deletes.
+The hub converge also removes the task VM hub filter that the removed `task_vm.hub_converge` installed, and the UFW rules whose comment starts with `orbit:task-vm-`, so `node:converge` of the `vpn` Node clears both; [Converge the hub](/reference/wireguard-endpoints#converge-the-hub) lists what it deletes.
 
 Repeating the same key still projects the hub when it has no collision; after a projection failure, the stored key remains and the operator retries after repairing the hub. A crash can leave either the old or new hub configuration, without guaranteed rollback or automatic reconciliation. [WireGuard key recovery](/cli/node/wireguard-key) explains how to restore an authorized management path and replay the desired key.
 
@@ -1004,7 +1004,7 @@ Removal captures its role publication, private DNS, hub, Router firewall and Met
 
 `orbit node:remove <node> [--offline] [--force] [--idempotency-key=KEY]` records one `node.remove` Operation. The Gateway captures the full public intent, stored WireGuard addresses and full host pins before starting its native Swamp workflow. Every step runs on Node 209. Host effects use official `@swamp/ssh` with the approved 209 identity; removal needs no worker on the departing Node or its participants.
 
-Remove Instances, Database servers, Schedules, Routes and user firewall rules first, including before offline removal. Use `--force` to consent to shedding the Node’s mutable roles. Protected roles stay with their owning lifecycle. The caller, Gateway, VPN and Swamp control Node are protected. Drain a task VM host and clear `settings.task_vms` before removing it. TaskVM guests stay with their owning lifecycle; standalone removal accepts no provider-deletion assertion.
+Remove Instances, Database servers, Schedules, Routes and user firewall rules first, including before offline removal. Use `--force` to consent to shedding the Node’s mutable roles. Protected roles stay with their owning lifecycle. The caller, Gateway, VPN and Swamp control Node are protected. TaskVM guests stay with their owning lifecycle; standalone removal accepts no provider-deletion assertion.
 
 The parent sheds admitted roles through native workflow children, restores public SSH, removes the obsolete worker and observer footprint, revokes the departing worker credentials, and then removes only its admitted management SSH keys. The hub peer withdrawal follows those target-side actions. It retains user data, package managers and unrelated SSH keys.
 

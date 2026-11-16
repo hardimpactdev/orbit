@@ -8,8 +8,6 @@ use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskableType;
-use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
@@ -43,14 +41,6 @@ final readonly class NodeRemovalPolicy
         }
         if (TaskVm::query()->live()->where('host_node_id', $node->id)->exists()) {
             throw $this->conflict('node.has_task_vms', 'The Node still hosts live task VMs.');
-        }
-        try {
-            $host = app(TaskVmSettings::class)->hasHost($node->id);
-        } catch (TaskVmException) {
-            $host = false;
-        }
-        if ($host) {
-            throw $this->conflict('node.task_vm_host_configured', 'Drain task VMs and clear the Node task VM host setting first.');
         }
         if ($node->is($caller)) {
             throw $this->conflict('node.self_removal_forbidden', 'A Node cannot remove itself.');

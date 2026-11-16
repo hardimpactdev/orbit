@@ -1,7 +1,7 @@
 ---
 title: "ADR 0258: Choose the container server per Project"
 sidebarTitle: "0258 Container server"
-description: "In progress. A Project chooses which server runs in its Instance containers: the T3 server (default) or the Conn Server. The runtime records the choice when Orbit reserves it, and every later step reads that record. Only the program differs; credentials and the client contract stay. The recipe pins Conn Server 0.1.0."
+description: "In progress. A Project chooses which server runs in its Instance containers: the T3 server (default) or the Conn Server. The runtime records the choice when Orbit reserves it, and every later step reads that record. Only the program differs; credentials and the client contract stay. The recipe pins Conn Server 0.1.1."
 ---
 
 # ADR 0258: Choose the container server per Project
@@ -12,7 +12,7 @@ A Project chooses the server that runs in its Instance containers: `t3`, the T3 
 
 In progress.
 
-The owner decided on 2026-11-15. The recipe pins the first Conn Server release, 0.1.0, as the agent folder's part `conn-server`, so Orbit accepts the `conn` choice. A live create and turn on a Node are the open part.
+The owner decided on 2026-11-15. The recipe pins Conn Server 0.1.1 as the agent folder's part `conn-server`, so Orbit accepts the `conn` choice. On 2026-11-16 a clone of the first Project that chose `conn` ran the Conn Server on Beast, and one agent turn through `thread start --wait` completed.
 
 Principle: [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles).
 

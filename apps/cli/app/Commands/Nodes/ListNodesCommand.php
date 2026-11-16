@@ -61,7 +61,6 @@ final class ListNodesCommand extends NodeCommand
                 $node->wireguardIp ?? null,
                 $node->lanIp ?? null,
                 $node->rebootHold ? 'yes' : 'no',
-                $node->imageRefreshHold ? 'yes' : 'no',
             ];
         }
 
@@ -85,7 +84,6 @@ final class ListNodesCommand extends NodeCommand
             'WireGuard',
             'LAN',
             'Reboot hold',
-            'Image refresh hold',
         ], $rows));
 
         $this->writeHumanMessage("Request ID: {$response->requestId}");

@@ -23,7 +23,6 @@ use App\Domain\Releases\ReleaseAlertReceipt;
 use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
@@ -184,7 +183,7 @@ it('never overlaps a rollout or a Gateway release, and the rollout waits for the
         ->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_in_progress'));
 });
 
-it('holds task work and new task VMs off a host while its pass runs', function (): void {
+it('holds task work off a host while its pass runs', function (): void {
     $group = Task::query()->create(['project_id' => null, 'title' => 'g', 'brief' => 'b', 'status' => 'running']);
     TaskVm::query()->create(['host_node_id' => $this->beast->id, 'group_id' => $group->id, 'name' => 'beast-tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.153',
         'provider' => 'incus', 'capacity_pool' => 'task']);
@@ -192,8 +191,7 @@ it('holds task work and new task VMs off a host while its pass runs', function (
         'input' => ['task_hosts' => [$this->beast->id]]]);
 
     expect(fn () => FleetReboot::refuseTaskWork($group))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('tasks.host_rebooting'))
-        ->and(array_map(static fn (array $host): int => $host[1]->id, app(TaskVmCapacity::class)->activeHosts()))->not->toContain($this->beast->id);
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('tasks.host_rebooting'));
 });
 
 it('records each Node in pass order, parks the stopped task VMs and alerts on the failed Node', function (): void {

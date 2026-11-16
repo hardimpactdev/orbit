@@ -20,7 +20,7 @@ The Project's [development deploy steps](/reference/deployments#development-depl
 
 `process-update` replaces an installed Process specification. Supply its numeric ID as `process` and the complete replacement fields; it keeps the Process identity and desired state. Both `process-create` and `process-update` accept Docker `environment` as an object such as `{"EMPTY":"","LABEL":"  literal  "}`, with string values preserved. Omit or set `working_directory` to null to use the Docker image default. Responses expose environment names with redacted values. [Update in place](/reference/processes-and-schedules#update-in-place) defines omitted fields, refusals, and retry recovery.
 
-`node-update` takes `apps`, the [apps root](/reference/node-settings#set-the-apps-root), and `task_vms`, the [typed task VM host configuration](/reference/node-settings#configure-a-task-vm-host). Supply `task_vms` as an object, not a JSON string, and omit `node_id` inside it: the tool's `node` selects the owner. An absent member stays unchanged; `task_vms: null` removes host intent. The API validates the same closed host object used by the CLI, including capacity, image alias, resources, and operator-owned entries. An `app-dev` role does not substitute for host intent.
+`node-update` takes `apps`, the [apps root](/reference/node-settings#set-the-apps-root). An absent member stays unchanged. The removed `task_vms` and `image_refresh_hold` members are unknown members, and the API refuses them.
 
 `node-wireguard-key` takes the numeric `node` ID and `wireguard_public_key`, a canonical base64 encoding of exactly 32 bytes. It dispatches `PATCH /api/v1/nodes/{node}/wireguard-key` to set an unmanaged peer's desired public key and reconverge the hub. The API refuses Gateway Nodes, managed peers, missing WireGuard addresses, and collisions with another peer or the configured hub key. Activity input is empty. A projection failure can leave the new key stored; replaying the same key retries convergence rather than skipping it. Follow [WireGuard key recovery](/cli/node/wireguard-key) if the change interrupts the caller's management path.
 
@@ -119,7 +119,7 @@ The `task-*` tools belong to the Gateway-switched [tasks](/reference/tasks) exte
 
 `task-comment-create` and `task-comment-list` use a numeric `group` and require Gateway access. Create accepts only `type` (`assistance_requested` or `resolution`), nonblank `body`, and `author`; list accepts optional `type` and `limit` filters and returns an array. These are [group-owned assistance comments](/reference/tasks#group-assistance-after-all-children-end), separate from child comments, with the same guards and no-work semantics as the API. A successful create returns 201, not an exact-retry 200 receipt.
 
-`task-status` returns whether the extension is on, the groups asking for assistance, the open review-and-merge pull requests, and the [task places](/reference/tasks#task-places) of each host with the waiting queue.
+`task-status` returns whether the extension is on, the groups asking for assistance and the open review-and-merge pull requests.
 
 ## Connect a client
 

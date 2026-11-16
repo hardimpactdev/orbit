@@ -51,7 +51,7 @@ it('admits exactly the public SMTP target in the own ACL and bridge for defaults
             ->and($intent['acl_rules']['egress'])->toBe([['action' => 'allow', 'destination' => '10.253.0.1/32',
                 'protocol' => 'tcp', 'destination_port' => '1025', 'state' => 'enabled', 'description' => 'Orbit development SMTP']])
             ->and($intent['bridge_endpoints'])->toBe([$endpoint])
-            ->and($intent['firewall'])->toHaveCount($candidate->is($instance) ? 0 : 2);
+            ->and($intent['firewall'])->toHaveCount($candidate->is($instance) ? 0 : 1);
         $units = $intent['mail_units'];
         expect(array_column($units, 'name'))->toBe(['orbit-mail-1025.socket', 'orbit-mail-1025.service', 'orbit-mail-2525.socket', 'orbit-mail-2525.service']);
         foreach ([0 => 1025, 2 => 2525] as $index => $port) {

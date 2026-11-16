@@ -8,6 +8,7 @@ Node therefore both land: the second reads what the first wrote. The merge is a 
 dns.ts); swamp/tests/route_withdraw_parity_test.ts holds the two to the same result.
 """
 
+import grp
 import json
 import os
 import pwd
@@ -111,9 +112,14 @@ def php_sections(text):
     return prefix, groups
 
 
-def merge_php(before, after, current):
-    observed = php_sections(current)
-    groups = merge_sections(php_sections(before)[1], php_sections(after)[1], observed[1], "php")
+def merge_php(before, after, current, alternatives=()):
+    """`alternatives` are before and after in another form FPM reads the same. They count only for the scopes the two change, so a
+    scope that stays keeps its bytes."""
+    original, desired, observed = php_sections(before)[1], php_sections(after)[1], php_sections(current)
+    changed = {key for key in {*original, *desired} if original.get(key) != desired.get(key)}
+    forms = [{**{key: value for key, value in desired.items() if key not in changed},
+              **{key: value for key, value in php_sections(state)[1].items() if key in changed}} for state in alternatives]
+    groups = merge_sections(original, desired, observed[1], "php", forms)
     if observed[1] and not groups:
         return ""
     return observed[0] + "".join(groups[key] for key in sorted(groups))
@@ -189,13 +195,24 @@ def merge_dns(before, after, current, alternatives=()):
             "catalog": json.dumps(catalog, separators=(",", ":"), ensure_ascii=False) + "\n"}
 
 
-def _resolve(text, account):
-    """The account placeholders that route-create-site fills in every pool."""
-    return text.replace("__ORBIT_NODE_GROUP__", str(account.pw_gid)).replace("/__ORBIT_NODE_HOME__", account.pw_dir)
+def _resolve(text, account, group=None):
+    """The account placeholders that route-create-site fills in every pool: the primary gid, or `group` in its place."""
+    return text.replace("__ORBIT_NODE_GROUP__", group or str(account.pw_gid)).replace("/__ORBIT_NODE_HOME__", account.pw_dir)
 
 
-def compose(plan, live, account=None):
-    """The withdrawal applied to what the Node holds: {caddy, pools: {version: text}, dns: {records, catalog}} -> the same shape."""
+def group_name(account):
+    """The name of the account's primary group, or None when its gid has none."""
+    try:
+        return grp.getgrgid(account.pw_gid).gr_name
+    except KeyError:
+        return None
+
+
+def compose(plan, live, account=None, group=None):
+    """The withdrawal applied to what the Node holds: {caddy, pools: {version: text}, dns: {records, catalog}} -> the same shape.
+
+    `group` is the name of the account's primary group. A publisher before route-create-site wrote it in place of the gid, so a scope of
+    the Route in that form counts as the captured one."""
     out = {"caddy": None, "pools": {}, "dns": None}
     if plan.get("caddy"):
         chain, content = plan["caddy"]["chain"], live["caddy"]
@@ -203,14 +220,12 @@ def compose(plan, live, account=None):
             content = merge_caddy(chain[step["from"]], chain[step["to"]], content, chain, step["had_served_groups"])
         out["caddy"] = content
     if plan.get("php"):
-        def resolve(text):
-            return _resolve(text, account)
-
         for version in plan["php"]["versions"]:
-            previous = resolve(_normalize(plan["php"]["before"]).get(version, ""))
-            desired = resolve(_normalize(plan["php"]["after"]).get(version, ""))
+            states = [_normalize(plan["php"][side]).get(version, "") for side in ("before", "after")]
+            previous, desired = (_resolve(text, account) for text in states)
             if previous != desired:
-                out["pools"][version] = merge_php(previous, desired, live["pools"].get(version, ""))
+                named = [_resolve(text, account, group) for text in states] if group else []
+                out["pools"][version] = merge_php(previous, desired, live["pools"].get(version, ""), named)
     if plan.get("dns"):
         chain, dns = plan["dns"]["chain"], dict(live["dns"])
         for step in plan["dns"]["steps"]:
@@ -430,7 +445,7 @@ def _transaction(plan, run, at, previous, caddy_gid):
              for version in (plan["php"]["versions"] if plan.get("php") else [])}
     served = {**plan, "dns": None}
     live = {"caddy": caddy.text() if caddy else "", "pools": {v: f.text() for v, f in pools.items() if f.old is not None}, "dns": None}
-    composed = compose(served, live, account)
+    composed = compose(served, live, account, group_name(account) if account else None)
     check_untouched(served, live, composed, account)
     caddy_changed = caddy is not None and composed["caddy"].encode() != caddy.old
     pool_changes = {v: text for v, text in composed["pools"].items() if (text.encode() if text else None) != pools[v].old}
