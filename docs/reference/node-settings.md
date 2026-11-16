@@ -257,7 +257,7 @@ Clearing the switch removes nothing: the nested project, its profile and the mod
 
 ### A CI Node
 
-A CI Node that [hosts proof copies](/reference/node-provisioning#proof-copies-on-a-ci-node) has nested-fleet hosting on without the switch: its `ci-runner` converge prepares it. Every rule that needs the switch on, such as `InstancePlacement::keepsFleet`, also holds for such a Node. Its demand is:
+A [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) has nested-fleet hosting on without the switch: its `ci-runner` converge prepares it. Every rule that needs the switch on, such as `InstancePlacement::keepsFleet`, also holds for such a Node. Its demand is:
 
 `13,172,736 + (P + 2) × D`
 

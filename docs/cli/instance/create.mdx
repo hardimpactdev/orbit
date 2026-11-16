@@ -96,7 +96,7 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | --- | --- |
 | `instance.candidate_required` | The Node is a production Node. Create a production Instance with [`instance:clone`](/cli/instance/clone). |
 | `instance.node_inactive`, `instance.node_not_app_dev` | The Node is not active, or has no active `app-dev` role. |
-| `instance.node_ci_only` | The Node is a CI Node that [hosts proof copies](/reference/node-provisioning#proof-copies-on-a-ci-node). Only a proof copy is made there. |
+| `instance.node_ci_only` | The Node is a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). Only a proof copy is made there. |
 | `instance.task_vm_node` | The Node is a task VM. A task gets its workspace from [`task:start`](/reference/tasks#provision-an-external-group). |
 | `instance.clone_launch_too_large` | A clone's launch copy (its release scripts and container intent) would be larger than 1 MiB. The create is refused before its run; see [the launch copy](/reference/development-containers#create). |
 | `instance.default_path_occupied`, `instance.path_taken` | The checkout path is in use on the Node. |

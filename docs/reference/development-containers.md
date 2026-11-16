@@ -54,7 +54,7 @@ Every `app-dev` Node runs its Instances in containers. There is no setting to op
 
 The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
 
-A CI Node that [hosts proof copies](/reference/node-provisioning#proof-copies-on-a-ci-node) gets the same container setup through its `ci-runner` role, with nested-fleet hosting on. It never gets the `app-dev` role. It holds no default Instance: it holds a [seed of the proof default](#the-seed-on-each-ci-node), and it takes only proof copies.
+A [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) gets the same container setup through its `ci-runner` role, with nested-fleet hosting on. It never gets the `app-dev` role. It holds no default Instance: it holds a [seed of the proof default](#the-seed-on-each-ci-node), and it takes only proof copies.
 
 ### Prepare a Node
 
@@ -2013,11 +2013,11 @@ A Project setting turns on a nested fleet. Each Instance container of that Proje
 
 Built: placement, host preparation, the start guards, the readers below and the [nested-fleet image](#the-nested-fleet-image). The [fleet step](#the-fleet-step) is built. The deployment of the default calls it in the [refresh after a release](#refresh-after-a-release), and the create of a clone calls it to [start its fleet](#a-clone-starts-its-fleet).
 
-Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. A proof copy can also be on a CI Node that [hosts proof copies](/reference/node-provisioning#proof-copies-on-a-ci-node). One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
+Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. A proof copy can also be on a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
 
 ### The container
 
-An Instance container with a nested fleet lives in its own Incus project on the Node, `orbit-instances-nested`, which allows what the fleet needs. `orbit-instances` keeps refusing it. A Node prepares that project, its profile and two kernel modules only when it is on the build list and its [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on, or when it is a CI Node that [hosts proof copies](/reference/node-provisioning#proof-copies-on-a-ci-node). It shares the pool, the bridge, the ACLs and the egress proxy with `orbit-instances`. The container is unprivileged and sets these keys:
+An Instance container with a nested fleet lives in its own Incus project on the Node, `orbit-instances-nested`, which allows what the fleet needs. `orbit-instances` keeps refusing it. A Node prepares that project, its profile and two kernel modules only when it is on the build list and its [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on, or when it is a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). It shares the pool, the bridge, the ACLs and the egress proxy with `orbit-instances`. The container is unprivileged and sets these keys:
 
 | Key | Value | Why |
 | --- | --- | --- |
@@ -2395,7 +2395,7 @@ Before the delivery, an operator placed the key by hand in `/etc/orbit/swamp-clu
 
 After each Gateway release, Orbit deploys each nested-fleet default to the release commit. The deployment is `instance.deploy` with more steps, which only an intent with `fleet` runs. The inner fleet keeps running between releases. The run checks it once, first, then takes the seed of the default as it is, fleet included. Then it refreshes the fleet and takes the seed snapshot again. The [refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) has the steps. An `instance:deploy` of the default runs the same flow.
 
-When the run records the new seed of the proof Project's default, the Gateway copies that seed to each CI Node that hosts proof copies ([The seed on each CI Node](#the-seed-on-each-ci-node)). The copies run after the refresh, and nothing in the release waits for them.
+When the run records the new seed of the proof Project's default, the Gateway copies that seed to each other Node that offers proof places ([The seed on each CI Node](#the-seed-on-each-ci-node)). The copies run after the refresh, and nothing in the release waits for them.
 
 A default gets `fleet` when its runtime is in `orbit-instances-nested`, its Project has `nested_fleet` on and its Node's switch is on (`InstancePlacement::keepsFleet`). Every other deployment runs the same steps and calls as before.
 
@@ -2712,7 +2712,7 @@ Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each
 
 This is the target design of ADR 0260, build step 4.
 
-Each CI Node that [hosts proof copies](/reference/node-provisioning#proof-copies-on-a-ci-node) keeps its own seed of the proof Project's default: a copy of the default's [seed pair](#the-seed-pair) on the Node. A proof copy on that Node starts from it. No copy fetches a seed over the network when it starts.
+Each Node that [offers proof places](/reference/node-provisioning#proof-copies-on-a-ci-node), other than the default's own Node, keeps its own seed of the proof Project's default: a copy of the default's [seed pair](#the-seed-pair) on the Node. A proof copy on that Node starts from it. The default's Node holds the seed itself, and a copy there clones the default, as before. In this section a CI Node is such a Node. No copy fetches a seed over the network when it starts.
 
 The Gateway copies the seed with one Operation, `instance.seed_copy`. Its targets are the CI Nodes whose seed is not the default's current seed. The [seed copy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/seed-copy.mmd) has the steps. The Gateway admits it:
 
@@ -2999,7 +2999,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | --- | --- | --- |
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
-| `instance.node_ci_only` | 409 | `instance:create` on a CI Node that [hosts proof copies](/reference/node-provisioning#proof-copies-on-a-ci-node). Only a proof copy is made there. Nothing is recorded |
+| `instance.node_ci_only` | 409 | `instance:create` on a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node): `ci-runner`, CI places and no `app-dev`. Only a proof copy is made there. Nothing is recorded |
 | `instance.seed_copy_failed` | 502 | A [seed copy](#the-seed-on-each-ci-node) could not pin the seed or copy it to a CI Node. That Node keeps its old seed and offers no proof places |
 | `project.container_server_unavailable` | 409 | `instance:create`, `instance:migrate` or `task:start` of a container with a server, while the recipe's agent folder does not pin the program of the Project's [container server](#container-server). Nothing is recorded |
 | `projects.agent_instructions_too_large` | 422 | `instance:create` or `task:start` of a clone while the Project's [agent instructions](#agent-instructions) hold more than 32 files or 32 KiB. Nothing is recorded |

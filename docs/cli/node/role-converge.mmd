@@ -52,7 +52,7 @@ sequenceDiagram
   SW->>N: Apply the role<br/>Ansible phase: node
   %%> What it does:
   %%> - the role's files, units, ports and storage directory owner and mode; protected paths are refused before any host work
-  %%> On a CI Node that hosts proof copies (`ci-runner`, CI places, no `app-dev`):
+  %%> On a CI-only Node (`ci-runner`, CI places, no `app-dev`):
   %%> - the same phase runs the Instance container branch of `app-dev` from the same `instances` intent, with its nested part: the projects `orbit-instances` and `orbit-instances-nested`, the bridge, the ACLs, the egress proxy, the shared folders, both images; it checks the CI Node's subordinate-ID demand first
   %%> - the intent leaves out the own-site rules, the development port redirect and the wake of frozen containers: the Node runs no Caddy
   %%> - the runner side (`orbit-ci`, `orbitci0`) stays as it is; a bridge range that overlaps it refuses `instance.host_unavailable` before any change
@@ -107,10 +107,10 @@ sequenceDiagram
     Note over GW: Record the role active
     %%> Result:
     %%> - the assignment is `active` and an earlier failed step is cleared; a second convergence reports no changes
-    opt CI Node hosts proof copies
+    opt Node offers proof places
       Note over GW: Admit the seed copy<br/>instance.seed_copy
       %%> When:
-      %%> - the Node's recorded seed is not the proof default's current seed, and no seed copy is open; an open copy admits it when it ends
+      %%> - the Node offers proof places (`ci-runner`, CI places, with or without `app-dev`), is not the proof default's Node, and its recorded seed is not the default's current seed, and no seed copy is open; an open copy admits it when it ends
       %%> Result:
       %%> - the role stays active either way; until the copy passes, the Node offers no proof places (docs/reference/development-containers.md#the-seed-on-each-ci-node)
     end

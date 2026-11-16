@@ -22,7 +22,7 @@ use LogicException;
 /**
  * The container branch of the `app-dev` role converge (docs/reference/development-containers.md#nodes): the Incus project on the
  * Node's pool, the Instance bridge, the image and the two shared folders. Only a Node on the build list gets it, and never a task
- * VM's own Node: a task VM keeps its checkout workspace. A CI Node that hosts proof copies gets the same branch through its
+ * VM's own Node: a task VM keeps its checkout workspace. A CI-only Node (ProofCopyHosts::ciOnly) gets the same branch through its
  * `ci-runner` converge, with its nested part and without the parts that its Caddy would serve: it runs no Caddy
  * (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node). A task VM host does get it, beside its task side: the two sides keep their
  * own Incus projects, bridges, pools and firewall rules, and the task side keeps the ZFS ARC. The admission that writes allocates
@@ -119,7 +119,7 @@ final readonly class InstanceHostIntent
     }
 
     /**
-     * The role whose converge runs the branch on the Node: `ci-runner` on a CI Node that hosts proof copies, `app-dev` on a Node of
+     * The role whose converge runs the branch on the Node: `ci-runner` on a CI-only Node (ProofCopyHosts::ciOnly), `app-dev` on a Node of
      * the build list, and null for every other Node and for a task VM's own Node.
      */
     public function role(Node $node): ?RoleName
@@ -127,7 +127,7 @@ final readonly class InstanceHostIntent
         if (TaskVm::query()->where('node_id', $node->id)->exists()) {
             return null;
         }
-        if (ProofCopyHosts::includes($node)) {
+        if (ProofCopyHosts::ciOnly($node)) {
             return RoleName::CiRunner;
         }
 

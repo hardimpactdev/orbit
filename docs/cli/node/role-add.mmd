@@ -139,7 +139,7 @@ sequenceDiagram
     SW->>N: Apply the role<br/>Ansible phase: node
     %%> When:
     %%> - For Swamp, repair an existing compile cache before service startup and checks.
-    %%> On a CI Node that hosts proof copies (`ci-runner`, CI places, no `app-dev`):
+    %%> On a CI-only Node (`ci-runner`, CI places, no `app-dev`):
     %%> - the same phase runs the Instance container branch of `app-dev` from the same `instances` intent, with its nested part: the projects `orbit-instances` and `orbit-instances-nested`, the bridge, the ACLs, the egress proxy, the shared folders, both images; it checks the CI Node's subordinate-ID demand first
     %%> - the intent leaves out the own-site rules, the development port redirect and the wake of frozen containers: the Node runs no Caddy
     %%> - the runner side (`orbit-ci`, `orbitci0`) stays as it is; a bridge range that overlaps it refuses `instance.host_unavailable` before any change
@@ -197,10 +197,10 @@ sequenceDiagram
       SW-->>GW: Run succeeded<br/>terminal event
       %%> When:
       %%> - Clear earlier failure details only after the terminal result proves the role is ready.
-      opt CI Node hosts proof copies
+      opt Node offers proof places
         Note over GW: Admit the seed copy<br/>instance.seed_copy
         %%> When:
-        %%> - the Node's recorded seed is not the proof default's current seed, and no seed copy is open; an open copy admits it when it ends
+        %%> - the Node offers proof places (`ci-runner`, CI places, with or without `app-dev`), is not the proof default's Node, and its recorded seed is not the default's current seed, and no seed copy is open; an open copy admits it when it ends
         %%> Why:
         %%> - a new CI Node gets its seed now, not at the next release (docs/reference/development-containers.md#the-seed-on-each-ci-node)
         %%> Result:

@@ -171,16 +171,28 @@ function ciRunnerRuntime(Node $node): array
 }
 
 describe('a CI Node that hosts proof copies', function (): void {
-    it('is a Node with the ci-runner role, a CI place and no app-dev role; a role being added counts, one being removed does not', function (): void {
-        expect(ProofCopyHosts::includes(ciNode()))->toBeTrue()
-            ->and(ProofCopyHosts::includes(ciNode(1, LifecycleStatus::Provisioning, 'ci-new', '10.44.0.31')))->toBeTrue()
-            ->and(ProofCopyHosts::includes(ciNode(1, LifecycleStatus::Failed, 'ci-failed', '10.44.0.32')))->toBeTrue()
-            ->and(ProofCopyHosts::includes(ciNode(3, LifecycleStatus::Removing, 'ci-gone', '10.44.0.33')))->toBeFalse()
-            ->and(ProofCopyHosts::includes(ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34')))->toBeFalse();
+    it('is CI-only with the ci-runner role, a CI place and no app-dev role; a role being added counts, one being removed does not', function (): void {
+        expect(ProofCopyHosts::ciOnly(ciNode()))->toBeTrue()
+            ->and(ProofCopyHosts::ciOnly(ciNode(1, LifecycleStatus::Provisioning, 'ci-new', '10.44.0.31')))->toBeTrue()
+            ->and(ProofCopyHosts::ciOnly(ciNode(1, LifecycleStatus::Failed, 'ci-failed', '10.44.0.32')))->toBeTrue()
+            ->and(ProofCopyHosts::ciOnly(ciNode(3, LifecycleStatus::Removing, 'ci-gone', '10.44.0.33')))->toBeFalse()
+            ->and(ProofCopyHosts::ciOnly(ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34')))->toBeFalse();
         $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
         $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
-        expect(ProofCopyHosts::includes($both))->toBeFalse()
-            ->and(ProofCopyHosts::includes(containerDefaultNode()))->toBeFalse();
+        expect(ProofCopyHosts::ciOnly($both))->toBeFalse()
+            ->and(ProofCopyHosts::ciOnly(containerDefaultNode()))->toBeFalse();
+    });
+
+    it('offers proof places with the ci-runner role and a CI place, with or without app-dev', function (): void {
+        $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
+        $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+
+        expect(ProofCopyHosts::offersPlaces(ciNode()))->toBeTrue()
+            ->and(ProofCopyHosts::offersPlaces($both))->toBeTrue()
+            ->and(ProofCopyHosts::offersPlaces(ciNode(1, LifecycleStatus::Provisioning, 'ci-new', '10.44.0.31')))->toBeTrue()
+            ->and(ProofCopyHosts::offersPlaces(ciNode(3, LifecycleStatus::Removing, 'ci-gone', '10.44.0.33')))->toBeFalse()
+            ->and(ProofCopyHosts::offersPlaces(ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34')))->toBeFalse()
+            ->and(ProofCopyHosts::offersPlaces(containerDefaultNode()))->toBeFalse();
     });
 
     it('gives its ci-runner converge the container branch with the nested part, the CI demand and no Caddy parts', function (): void {
@@ -235,6 +247,10 @@ describe('a CI Node that hosts proof copies', function (): void {
             ->and(Instance::query()->count())->toBe(0)
             ->and(placementRefusal(fn () => InstancePlacement::assert($project, ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34'))))
             ->not->toBe('instance.node_ci_only 409');
+        // A Node with both roles offers proof places and still takes normal Instances through app-dev.
+        $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
+        $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        expect(placementRefusal(fn () => InstancePlacement::assert($project, $both)))->not->toBe('instance.node_ci_only 409');
     })->with([false, true]);
 });
 

@@ -14,22 +14,30 @@ use App\Models\Node;
 use App\Models\NodeRole;
 
 /**
- * The one rule of a CI Node that hosts proof copies (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node, ADR 0260 build
- * step 3): the Node has the `ci-runner` role, at least one CI place and no `app-dev` role. A `ci-runner` role that is being added or
- * converged counts, so its own converge prepares the Node; one that is being removed does not. Such a Node runs the Instance
- * container branch through its `ci-runner` converge (InstanceHostIntent::role) and takes no Instance but a proof copy.
+ * The two rules of a Node with the `ci-runner` role for proof copies (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node,
+ * ADR 0260 build steps 3 and 4). For both, a `ci-runner` role that is being added or converged counts, so its own converge prepares
+ * the Node; one that is being removed does not.
  */
 final readonly class ProofCopyHosts
 {
-    public static function includes(Node $node): bool
+    /**
+     * A CI-only Node: `ci-runner`, at least one CI place and no `app-dev`. Its `ci-runner` converge runs the Instance container branch
+     * (InstanceHostIntent::role), and it takes no Instance but a proof copy (InstancePlacement::assert).
+     */
+    public static function ciOnly(Node $node): bool
     {
-        if (self::places($node) < 1) {
-            return false;
-        }
-        $roles = NodeRole::query()->where('node_id', $node->id)->get(['role', 'status']);
+        return self::offersPlaces($node)
+            && ! NodeRole::query()->where('node_id', $node->id)->where('role', RoleName::AppDev)->exists();
+    }
 
-        return $roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::CiRunner && $role->status !== LifecycleStatus::Removing)
-            && ! $roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev);
+    /**
+     * The Node offers proof places: `ci-runner` and at least one CI place, with or without `app-dev`. A Node with both, such as the
+     * proof default's own Node, hosts containers through `app-dev`. Every such Node but the default's keeps a seed of the default.
+     */
+    public static function offersPlaces(Node $node): bool
+    {
+        return self::places($node) > 0 && NodeRole::query()->where('node_id', $node->id)->where('role', RoleName::CiRunner)
+            ->where('status', '!=', LifecycleStatus::Removing)->exists();
     }
 
     /** The Node's CI places: its `ci.places` setting (docs/reference/node-settings.md, ADR 0260), 0 while the Node has none. */
