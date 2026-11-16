@@ -1,5 +1,5 @@
 order = 390
-source_sha256 = "70184a217947c4457e688c4e624dd7825cb7b96aae48fa67587d7fb96e42efcb"
+source_sha256 = "9368b4b956054e83ef2ebb68987d5b0d98b6ce377bfb3808227e92e3075cfaa2"
 cases = [
   "the sleep and the wake each run one charted phase with the shipped Ansible settings; the sleep's names its Operation",
   "every workflow step that runs instance-container.yml names its Operation, which the power helper's restore records",
@@ -18,9 +18,10 @@ cases = [
   "a failed pause leaves the container running with its swap closed, removes the marker and fails with the helper's code",
   "a sleep leaves a Frozen container with its earlier result and a Stopped one as it is, without counter reads",
   "a busy lock is tried again; one that stays busy fails `instance.power_helper_busy` and a crash `instance.power_helper_failed`, both behind the marker",
+  "the role probes the helper's primitives through the helper's own unit properties, which hold no CAP_KILL",
 ]
 file = "swamp/tests/ansible_instance_container_power_test.ts"
-cost = 145
+cost = 146
 # Local Deno case times on a task copy rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
@@ -61,3 +62,4 @@ inputs = [
   "a failed pause leaves the container running with its swap closed, removes the marker and fails with the helper's code" = 7
   "a sleep leaves a Frozen container with its earlier result and a Stopped one as it is, without counter reads" = 11
   "a busy lock is tried again; one that stays busy fails `instance.power_helper_busy` and a crash `instance.power_helper_failed`, both behind the marker" = 38
+  "the role probes the helper's primitives through the helper's own unit properties, which hold no CAP_KILL" = 1
