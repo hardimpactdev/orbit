@@ -505,6 +505,26 @@ class TableTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Invalid default fixture'):
                 units.configuration()
 
+    def test_an_ansible_toolchain_pin_selects_the_canary_with_ansible_in_every_family(self):
+        budget, fixtures, defaults = units.configuration()
+        canary = budget['machinery_canary']
+        for path in units.ANSIBLE_TOOLCHAIN:
+            # Nearly every Ansible fixture lists the toolchain pins; a change to one still selects only the canary set.
+            self.assertGreater(sum(path in f['inputs'] for f in fixtures.values()), 100, path)
+            with self.subTest(path=path):
+                result = units.plan([path], budget, fixtures, defaults)
+                self.assertEqual(sorted({u.split('#')[0] for u in units.planned_units(result)}), sorted(canary))
+                self.assertNotIn('capacity', result)
+                self.assertEqual(len(result['shards']), 1)
+        families = {'container': 'swamp/tests/ansible_container_host_system_test.py',
+                    'host': 'swamp/tests/ansible_task_host_firewall_remove_test.ts', 'node': 'swamp/tests/node_converge_test.ts',
+                    'migrate': 'swamp/tests/ansible_instance_migrate_source_test.ts',
+                    'worker': 'swamp/tests/ansible_gateway_swamp_pin_test.ts'}
+        for family, file in families.items():
+            self.assertIn(file, canary, family)
+            self.assertIn('swamp/ansible/ansible.cfg', fixtures[file]['inputs'], family)
+            self.assertIn('ansible-playbook', (units.ROOT / file).read_text(), family)
+
     def test_the_machinery_canary_is_registered_hosted_and_fits_one_shard(self):
         budget, fixtures, _ = units.configuration()
         self.assertTrue(budget['machinery_canary'])

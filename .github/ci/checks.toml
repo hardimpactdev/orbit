@@ -15,12 +15,18 @@ pr_shards = 10
 # Shards of self_hosted fixture files, on the self-hosted CI pool; they do not count against pr_shards.
 self_hosted_shards = 8
 default_cost = 30
-# A change to the fixture machinery (this table's shared sections, the loader, planner, runner or slice preload)
-# selects these files, not every fixture: a Python unit, a Python unit with case_costs and a Deno unit with a receipt.
+# A change to the fixture machinery (this table's shared sections, the loader, planner, runner, slice preload, shape gate
+# or Ansible toolchain pins) selects these files, not every fixture: a Python unit, a Python unit with case_costs and a
+# Deno unit with a receipt, then one small hosted Ansible fixture per family: container, host, node, migrate and worker.
 machinery_canary = [
   "swamp/tests/ansible_inputs_test.py",
   "swamp/tests/instance_machine_name_test.py",
   "swamp/tests/clone_launch_redactor_test.ts",
+  "swamp/tests/ansible_container_host_system_test.py",
+  "swamp/tests/ansible_task_host_firewall_remove_test.ts",
+  "swamp/tests/node_converge_test.ts",
+  "swamp/tests/ansible_instance_migrate_source_test.ts",
+  "swamp/tests/ansible_gateway_swamp_pin_test.ts",
 ]
 # ADR 0262 step 2 names each file here: it cannot fit the self-hosted shards when selected. Units that fit run;
 # the rest are named "not run" in the plan and do not block the merge. Overflow of any other file fails Required.
