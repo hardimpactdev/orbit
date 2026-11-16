@@ -10,6 +10,7 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationBudgetTable;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -31,6 +32,24 @@ use Throwable;
 final readonly class ProofSeeds
 {
     public const string Kind = 'instance.seed_copy';
+
+    /**
+     * The bound of one `incus` push, the `timeout` of each push in the playbook `proof-seed-copy.yml`. A first full copy of the seed
+     * pair is a few GB over WireGuard; a refresh sends only the new snapshot, which is small.
+     */
+    public const int PushSeconds = 1200;
+
+    /**
+     * The bound of one target's copy step, the `timeout` of "Copy the seed" in the workflow: its two pushes, plus 100 s for the
+     * remote and snapshot reads, the renames and the SSH set-up. The steps run one target at a time (docs/cli/instance/seed-copy.mmd).
+     */
+    public const int CopySeconds = 2 * self::PushSeconds + 100;
+
+    /**
+     * The phases of a run that do not grow with its targets: the certificate read (120 s) and the check (120 s), each side by side,
+     * the release of the base (300 s) and the report (60 s), plus 300 s for the input, the queue wait, the result and the cleanup.
+     */
+    public const int PhaseSeconds = 900;
 
     /** The holder of the seed on each CI Node, a stopped container, and its inner volume, both in the nested Incus project. */
     public const string Holder = 'proof-seed';
@@ -176,7 +195,25 @@ final readonly class ProofSeeds
     }
 
     /**
-     * Admits one seed copy to the Nodes that are behind. Best effort: nothing waits for it, so a refusal or an error is a log line, never
+     * The run budget of a seed copy to this many targets, captured at admission: the fixed phases and one copy step per target, in
+     * series (docs/reference/operations.md).
+     */
+    public static function budgetSeconds(int $targets): int
+    {
+        return self::PhaseSeconds + $targets * self::CopySeconds;
+    }
+
+    /**
+     * The most targets that one run takes: its budget must fit in the Swamp serve run cap ({@see OperationBudgetTable::longestFixedSeconds()}),
+     * which cuts any longer run. The Nodes that a run leaves out are untried at the seed, so its end admits them ({@see self::admitAfter()}).
+     */
+    public static function maxTargets(): int
+    {
+        return intdiv(OperationBudgetTable::longestFixedSeconds() - self::PhaseSeconds, self::CopySeconds);
+    }
+
+    /**
+     * Admits one seed copy to the Nodes that are behind, at most {@see self::maxTargets()} of them. Best effort: nothing waits for it, so a refusal or an error is a log line, never
      * an exception. An open copy refuses by its lock (`operation.target_busy`); its end admits the next one ({@see self::admitAfter()}).
      * `$except` names Nodes that this admission leaves out.
      *
@@ -187,14 +224,15 @@ final readonly class ProofSeeds
         try {
             $source = $this->source();
             $behind = $this->targets();
-            $targets = array_values(array_filter($behind, static fn (Node $node): bool => ! in_array($node->id, $except, true)));
+            $targets = array_slice(array_values(array_filter($behind, static fn (Node $node): bool => ! in_array($node->id, $except, true))), 0, self::maxTargets());
             if ($source === null || $targets === []) {
                 return null;
             }
             // A copy to every Node behind the seed may release the default's base when all of them pass: no other Node needs it.
             $input = ['default_instance_id' => $source->instance_id, 'commit' => $source->seed_commit,
                 'taken_at' => $source->seed_taken_at?->toIso8601String(),
-                'targets' => array_map(static fn (Node $node): int => $node->id, $targets), 'release_base' => count($targets) === count($behind)];
+                'targets' => array_map(static fn (Node $node): int => $node->id, $targets), 'release_base' => count($targets) === count($behind),
+                'run_budget_seconds' => self::budgetSeconds(count($targets))];
 
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $source->instance_id, $source->node_id, $input,
                 $trigger, null, lockKey: OperationStore::lockKey('instance_seed_copy', $source->instance_id));

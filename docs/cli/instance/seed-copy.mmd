@@ -17,7 +17,7 @@ sequenceDiagram
   %%> Started by:
   %%> - the proof default records a new seed: the refresh after a release, or an `instance:deploy` of the default
   %%> - a `ci-runner` add or converge of a Node that offers proof places passes
-  %%> - a seed copy ends, only when the default's seed moved during it (all Nodes behind the new seed), or for Nodes that no seed copy has tried at the same seed (a Node that became a target while the copy held the lock)
+  %%> - a seed copy ends, only when the default's seed moved during it (all Nodes behind the new seed), or for Nodes that no seed copy has tried at the same seed (a Node that became a target while the copy held the lock, or one that the run's target limit left out)
   %%> Never started by:
   %%> - the end of a copy for a Node that any seed copy has tried at the same seed: it waits for the next seed or for its own `ci-runner` converge, so lasting failures do not repeat, also not two Nodes for each other
   %%> Requirements:
@@ -28,8 +28,10 @@ sequenceDiagram
   %%> Not a target:
   %%> - a Node whose listener is not ready: no copy fails on it and no copy marks it tried; its next passed `ci-runner` converge makes it a target
   %%> - one copy at a time: an open copy holds the default's seed-copy lock, `operation.target_busy`
+  %%> - a Node past the run's target limit: the copies run one target at a time, so the run budget grows with the targets and must fit in the Swamp serve run cap; the limit is the number of copy steps that fit beside the fixed phases (`ProofSeeds::maxTargets`), and the end of the run admits the Nodes it left out
   %%> Result:
   %%> - a task is recorded with the full intent: the default's Node, container and inner volume, per target its Node and WireGuard address, and `release_base` when the run's targets are all the Nodes behind the seed
+  %%> - the run budget is captured: the fixed phases plus one copy step bound per target (`ProofSeeds::budgetSeconds`)
   GW->>SW: Start run, full intent<br/>instance-seed-copy
   loop each CI Node, side by side
     SW->>C: Read its Incus certificate<br/>Ansible · tags certificate
