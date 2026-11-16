@@ -14,6 +14,9 @@ slice_startup_seconds = 6
 pr_shards = 10
 # Shards of self_hosted fixture files, on the self-hosted CI pool; they do not count against pr_shards.
 self_hosted_shards = 8
+# Concurrent units in one self-hosted shard. Its runner container shares the Node's memory with proof copies; four
+# Ansible units at once made the cgroup reclaim memory until the heaviest units ran past unit_ceiling_seconds.
+self_hosted_workers = 2
 default_cost = 30
 # A change to the fixture machinery (this table's shared sections, the loader, planner, runner, slice preload, shape gate
 # or Ansible toolchain pins) selects these files, not every fixture: a Python unit, a Python unit with case_costs and a
@@ -34,6 +37,10 @@ capacity_gap = [
   "swamp/tests/ansible_instance_migrate_preflight_test.ts",
   "swamp/tests/ansible_instance_migrate_move_test.ts",
   "swamp/tests/ansible_instance_container_test.ts",
+  # A case above the 150-second lane on the self-hosted pool; ADR 0262 names each case.
+  "swamp/tests/ansible_instance_host_test.ts",
+  "swamp/tests/ansible_instance_host_acl_test.ts",
+  "swamp/tests/ansible_wireguard_hub_lan_rules_test.py",
 ]
 
 [fixtures]

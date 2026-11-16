@@ -7,8 +7,9 @@ cases = [
 file = "swamp/tests/ansible_instance_migrate_static_test.ts"
 self_hosted = true
 # This part of the move fixture reads the shipped task files only; runs no phase.
-# Case costs keep the measured or estimated values of the single move file; startup is added per slice.
-cost = 7
+# The hosted case costs came from the single move file; startup is added per slice.
+# Self-hosted costs: pool run 43904342622 with 4 workers per shard, an upper bound for 2; each case names its source.
+cost = 10
 slices = 3
 inputs = [
   "swamp/tests/_support/instance_migrate.ts",
@@ -17,6 +18,6 @@ inputs = [
   "bin/swamp-shape-gate",
 ]
 [case_costs]
-"retention keeps real Git edge cases intact" = 3
-"the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step" = 2
-"directory modes stay in the protected result and restore through the workspace owner" = 2
+"retention keeps real Git edge cases intact" = 4 # no pool time (NOT RUN); hosted 3 x the median ratio of all passed pool units 1.04
+"the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step" = 3 # no pool time (NOT RUN); hosted 2 x the median ratio of all passed pool units 1.04
+"directory modes stay in the protected result and restore through the workspace owner" = 3 # no pool time (NOT RUN); hosted 2 x the median ratio of all passed pool units 1.04

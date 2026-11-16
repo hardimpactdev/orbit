@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=10, self_hosted_shards=8, default_cost=30, machinery_canary=[], capacity_gap=[])
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=10, self_hosted_shards=8, self_hosted_workers=2, default_cost=30, machinery_canary=[], capacity_gap=[])
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -102,7 +102,7 @@ class PlanningTest(unittest.TestCase):
         self.assertEqual(set(units.unplaced_units(result)), {f'swamp/sliced.ts#{k}/5' for k in range(5)})
 
     def test_overflow_fails_the_plan_and_names_every_unplaced_unit(self):
-        budget = {**BUDGET, 'pr_shards': 1, 'shard_workers': 1, 'self_hosted_shards': 1}
+        budget = {**BUDGET, 'pr_shards': 1, 'shard_workers': 1, 'self_hosted_shards': 1, 'self_hosted_workers': 1}
         fixtures = [fixture(f'swamp/{name}.py', 100, ['swamp/input']) for name in ('a', 'b', 'c')]
         fixtures += [fixture(f'swamp/{name}.py', 100, ['swamp/input'], self_hosted=True) for name in ('d', 'e')]
         result = planned(['swamp/input'], fixtures, budget=budget)
@@ -114,6 +114,19 @@ class PlanningTest(unittest.TestCase):
         for unit in ('swamp/b.py', 'swamp/c.py', 'swamp/e.py'):
             self.assertIn(unit, text)
         self.assertIn('Required checks will fail', text)
+
+    def test_a_self_hosted_shard_has_self_hosted_workers_lanes_and_a_hosted_shard_keeps_shard_workers(self):
+        budget = {**BUDGET, 'pr_shards': 1, 'self_hosted_shards': 1}
+        fixtures = [fixture(f'swamp/{side}{i}.py', 100, ['swamp/input'], self_hosted=side == 'runner') for side in ('hosted', 'runner')
+                    for i in range(4)]
+        result = planned(['swamp/input'], fixtures, budget=budget)
+        self.assertEqual(sorted(names(result)), [f'swamp/hosted{i}.py' for i in range(4)])
+        self.assertEqual(sorted(u for s in result['self_hosted_shards'] for u in s['units']), ['swamp/runner0.py', 'swamp/runner1.py'])
+        self.assertEqual(result['capacity'], [{'unplaced': ['swamp/runner2.py', 'swamp/runner3.py']}])
+        # A file that needs more self-hosted shards than the pool has names them by its own lane count.
+        big = [fixture('swamp/big.ts', 500, ['swamp/input'], self_hosted=True, slices=5)]
+        row = planned(['swamp/input'], big, budget=budget)['capacity'][0]
+        self.assertEqual((row['shards'], row['workers']), (3, 6))
 
     def test_self_hosted_units_run_only_in_their_own_shards_with_their_own_limit(self):
         fixtures = [fixture('swamp/hosted.py', 100, ['swamp/input']),
@@ -132,7 +145,7 @@ class PlanningTest(unittest.TestCase):
         self.assertIn('above the self-hosted shard limit', units.plan_summary(full, {f['file']: f for f in fixtures}))
 
     def test_a_named_capacity_gap_runs_what_fits_names_the_rest_and_never_blocks(self):
-        budget = {**BUDGET, 'self_hosted_shards': 1, 'shard_workers': 1, 'capacity_gap': ['swamp/gap.ts']}
+        budget = {**BUDGET, 'self_hosted_shards': 1, 'self_hosted_workers': 1, 'capacity_gap': ['swamp/gap.ts']}
         gap = fixture('swamp/gap.ts', 180, ['swamp/input'], self_hosted=True, slices=3)
         other = fixture('swamp/other.py', 100, ['swamp/input'], self_hosted=True)
         fixtures = [gap, other]
@@ -145,7 +158,7 @@ class PlanningTest(unittest.TestCase):
         self.assertIn('Not run: `swamp/gap.ts`, 3 units, reason: capacity gap per ADR 0262',
                       units.plan_summary(result, {f['file']: f for f in fixtures}))
         # With room, the gap file's units that fit run; an oversized unit is named, not a blocker.
-        roomy = {**budget, 'self_hosted_shards': 2, 'shard_workers': 4}
+        roomy = {**budget, 'self_hosted_shards': 2, 'self_hosted_workers': 4}
         gap.update(cost=300, cases=['a', 'b', 'c'], case_costs={'a': 100, 'b': 160, 'c': 40})
         result = planned(['swamp/input'], fixtures, budget=roomy)
         self.assertEqual(sorted(u for s in result['self_hosted_shards'] for u in s['units']),
@@ -387,21 +400,26 @@ class RegistrySelectionTest(unittest.TestCase):
             self.assertEqual(units.registry_changes(self.git('merge-base', main, topic), topic),
                              (['swamp/process.ts'], False))
 
-    def test_hub_lan_role_is_narrow_and_its_three_files_run_self_hosted_within_the_lane(self):
+    def test_hub_lan_role_is_narrow_and_its_three_files_run_self_hosted_within_the_lane_or_a_named_gap(self):
         budget, fixtures, defaults = units.configuration()
         files = [f'swamp/tests/ansible_wireguard_hub_lan_{part}_test.py' for part in ('rules', 'recovery', 'load')]
+        # The rules file ran past the lane on the self-hosted pool: ADR 0262 names it a capacity gap.
+        gap, fitting = files[0], files[1:]
         unrelated = units.plan(['swamp/ansible/tasks/instance-container-process.yml',
                                 'swamp/workflows/workflow-operation-process-container.yaml'], budget, fixtures, defaults)
         self.assertFalse(set(files) & {u.split('#')[0] for u in scheduled(unrelated)})
         for file in files:
             self.assertTrue(fixtures[file]['self_hosted'])
+        for file in fitting:
             self.assertLessEqual(fixtures[file]['cost'], budget['shard_seconds'], file)
+        self.assertIn(gap, budget['capacity_gap'])
         for path in (*files, 'swamp/ansible/tasks/node-hub-lan-proof.yml', 'swamp/tests/_support/wireguard_hub_lan.py'):
             result = units.plan([path], budget, fixtures, defaults)
             self.assertFalse(set(files) & set(names(result)))
             self.assertNotIn('capacity', result)
         result = units.plan(['swamp/ansible/tasks/node-hub-lan-proof.yml'], budget, fixtures, defaults)
-        self.assertEqual({u for s in result['self_hosted_shards'] for u in s['units']}, set(files))
+        self.assertEqual({u for s in result['self_hosted_shards'] for u in s['units']}, set(fitting))
+        self.assertEqual(result['not_run'], [{'file': gap, 'units': [gap], 'reason': 'capacity gap per ADR 0262'}])
 
 
 class TableTest(unittest.TestCase):
@@ -480,6 +498,26 @@ class TableTest(unittest.TestCase):
                         patch.object(units, 'run', return_value=0) as run:
                     self.assertEqual(units.main(), 0)
                 self.assertEqual(run.call_args.args[1]['shard_workers'], workers)
+
+    def test_run_of_a_self_hosted_shard_uses_self_hosted_workers_and_refuses_a_mixed_shard(self):
+        import signal
+        handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+        self.addCleanup(lambda: [signal.signal(sig, handler) for sig, handler in handlers.items()])
+        budget, fixtures, _ = units.configuration()
+        runner = next(file for file, f in fixtures.items() if f.get('self_hosted'))
+        hosted = next(file for file, f in fixtures.items() if not f.get('self_hosted'))
+        for chosen, extra, workers in (([runner], [], budget['self_hosted_workers']), ([hosted], [], budget['shard_workers']),
+                                       ([runner, hosted], ['--workers', '1'], 1)):
+            with self.subTest(units=chosen, extra=extra):
+                with patch.object(sys, 'argv', ['ci-units', 'run', '--units', json.dumps(chosen), *extra]), \
+                        patch.object(units, 'run', return_value=0) as run:
+                    self.assertEqual(units.main(), 0)
+                self.assertEqual(run.call_args.args[1]['shard_workers'], workers)
+        self.assertLess(budget['self_hosted_workers'], budget['shard_workers'])
+        with patch.object(sys, 'argv', ['ci-units', 'run', '--units', json.dumps([runner, hosted])]), \
+                patch.object(units, 'run', return_value=0) as run, patch('sys.stderr'), self.assertRaises(SystemExit):
+            units.main()
+        run.assert_not_called()
 
     def test_host_programs_list_unique_program_names(self):
         for programs in ([], 'zip', ['zip', 'zip'], ['zip; rm'], [1]):

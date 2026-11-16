@@ -18,7 +18,8 @@ cases = [
 ]
 file = "swamp/bin/swamp-shape-python_test.ts"
 self_hosted = true
-cost = 5
+# Self-hosted cost: no pool time (NOT RUN); hosted 5 x the median ratio of all passed pool units 1.04.
+cost = 6
 inputs = [
   "swamp/bin/bounded-phase-scripts.ts",
   "swamp/bin/check-swamp-shape.ts",

@@ -9,8 +9,8 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_host_acl_test.ts"
 self_hosted = true
-cost = 796
-# 180.026s, hosted four-worker run 43002948719 (unit cutoff; case unfinished).
+# Self-hosted costs: pool run 43904342622 with 4 workers per shard, an upper bound for 2; each case names its source.
+cost = 768
 slices = 6
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
@@ -44,9 +44,9 @@ inputs = [
 ]
 
 [case_costs]
-"bridge remains reject after a late unsafe running attachment, and profile NICs use only the proxy ACL" = 127 # ESTIMATE: local 68s x 1.62 (hosted/local converge time of the endpoint-union case, run 43011901748) x 1.15; one stage
-"a running attachment without its own NIC device passes the audit through the profile gate" = 138 # ESTIMATE: local 74s x 1.62 (hosted/local converge time of the endpoint-union case, run 43011901748) x 1.15; one stage
-"bridge remains reject after a late unsafe stopped attachment, and profile NICs use only the proxy ACL" = 127 # ESTIMATE: local 68 (the running stage)s x 1.62 (hosted/local converge time of the endpoint-union case, run 43011901748) x 1.15; one stage
-"a stopped attachment without its own NIC device passes the audit through the profile gate" = 138 # ESTIMATE: local 74 (the running stage)s x 1.62 (hosted/local converge time of the endpoint-union case, run 43011901748) x 1.15; one stage
-"host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate" = 131 # ESTIMATE: local 70s x 1.62 (hosted/local converge time of the endpoint-union case, run 43011901748) x 1.15; one stage
-"a legacy allow bridge with an unsafe stopped second NIC is closed before the failed audit" = 135 # ESTIMATE: local 72s x 1.62 (hosted/local converge time of the endpoint-union case, run 43011901748) x 1.15; one stage
+"bridge remains reject after a late unsafe running attachment, and profile NICs use only the proxy ACL" = 174 # pool run 43904342622: cut at 173.3s, a lower bound above hosted 127 x the median pool ratio of this file's passed units 0.74 = 95
+"a running attachment without its own NIC device passes the audit through the profile gate" = 106 # pool run 43904342622, 4 workers: passed 105.1s
+"bridge remains reject after a late unsafe stopped attachment, and profile NICs use only the proxy ACL" = 177 # pool run 43904342622: cut at 176.3s, a lower bound above hosted 127 x the median pool ratio of this file's passed units 0.74 = 95
+"a stopped attachment without its own NIC device passes the audit through the profile gate" = 102 # pool run 43904342622, 4 workers: passed 101.4s
+"host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate" = 106 # pool run 43904342622, 4 workers: passed 105.6s
+"a legacy allow bridge with an unsafe stopped second NIC is closed before the failed audit" = 103 # pool run 43904342622, 4 workers: passed 102.9s

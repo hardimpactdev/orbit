@@ -66,8 +66,9 @@ cases = [
 file = "swamp/tests/ansible_instance_migrate_move_test.ts"
 self_hosted = true
 # This part of the move fixture runs the full move: every phase up to the processes and the seed.
-# Case costs keep the measured or estimated values of the single move file; startup is added per slice.
-cost = 5021
+# The hosted case costs came from the single move file; startup is added per slice.
+# Self-hosted costs: pool run 43904342622 with 4 workers per shard, an upper bound for 2; each case names its source.
+cost = 5025
 slices = 62
 inputs = [
   "swamp/tests/_support/instance_migrate.ts",
@@ -102,7 +103,7 @@ inputs = [
   "swamp/tests/fixtures/instance-migrate*",
 ]
 [case_costs]
-"file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links" = 62
+"file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links" = 65 # no pool time (OVER BUDGET); hosted 62 x the median ratio of all passed pool units 1.04
 "migration counts 0 files that Git does not ignore beside a large ignored tree" = 80
 "migration counts 1 files that Git does not ignore beside a large ignored tree" = 80
 "untracked non-ignored files and nested repository leaves migrate with an exact archived file count" = 80
@@ -112,7 +113,7 @@ inputs = [
 "linked worktree preflight handles unstaged without touching its active owner or sibling" = 73
 "linked worktree preflight handles staged without touching its active owner or sibling" = 67
 "linked worktree preflight handles unpushed without touching its active owner or sibling" = 75
-"linked worktree preflight handles identity without touching its active owner or sibling" = 4
+"linked worktree preflight handles identity without touching its active owner or sibling" = 5 # no pool time (NOT RUN); hosted 4 x the median ratio of all passed pool units 1.04
 "linked worktree preflight handles nested without touching its active owner or sibling" = 10
 "linked retirement interrupted before unregister fails explicitly on repeat" = 68
 "the last worktree moves into a standalone workspace and retires its owner checkout in the same batch" = 100
