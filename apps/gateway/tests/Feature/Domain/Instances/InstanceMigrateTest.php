@@ -648,7 +648,6 @@ describe('migration without a default seed', function (): void {
     })->with(['missing' => true, 'another Node' => false]);
 
     it('records the Project\'s container server on the moved non-default, which its server drop-in and calls name', function (): void {
-        containerServerConnPinned();
         $node = containerDefaultNode();
         $project = containerDefaultProject();
         $project->update(['container_server' => ContainerServer::Conn]);
@@ -669,6 +668,7 @@ describe('migration without a default seed', function (): void {
         migrateCheckout($project, $node);
         $feature = migrateCheckout($project->refresh(), $node, 'feature');
         $lastPort = $node->refresh()->t3_port_last;
+        containerServerConnUnpinned();
 
         expect(containerRefusal(fn () => migrateStart($feature)))->toBe('project.container_server_unavailable')
             ->and($feature->runtime()->exists())->toBeFalse()
