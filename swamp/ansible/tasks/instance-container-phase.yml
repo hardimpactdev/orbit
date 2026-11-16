@@ -1350,7 +1350,8 @@
     - name: Make the agent's configuration folders
       ansible.builtin.command: { argv: "{{ as_agent + ['mkdir', '-p', '-m', '0700', '/home/agent/.claude', '/home/agent/.t3/userdata'] }}" }
       changed_when: false
-    # Git keeps the agent's own preferences; only its trust list is Orbit's. The workspace's .git belongs to orbit.
+    # Git keeps the agent's own preferences; only its trust list is Orbit's. A copy of an older seed may hold a .git of orbit's until
+    # its services part gives it to agent.
     - name: Read the agent's trusted Git directories
       ansible.builtin.command: { argv: "{{ as_agent + ['git', 'config', '--global', '--get-all', 'safe.directory'] }}" }
       register: agent_git_safe

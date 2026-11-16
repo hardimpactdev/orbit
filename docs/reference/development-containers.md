@@ -1057,7 +1057,7 @@ A proof copy's runtime still names the default as its clone source, so the defau
 | --- | --- |
 | Container | `instance-<id>` in the project `orbit-instances`, from the image `orbit-instance`, at the lowest free guest address of the bridge. It has no T3 port |
 | ACL | The NIC carries `orbitinst0-proxy` and the container's own ACL `instance-<id>`; `orbitinst0-egress` stays on the bridge only. Only the Node's Caddy, from the bridge's address, reaches port 8080 |
-| Git | The Node fetches with the read token into its mirror `/var/lib/orbit/instance-repositories/<id>.git`. A bundle carries the branch into the container, and `orbit` checks it out in `/srv/workspace` |
+| Git | The Node fetches with the read token into its mirror `/var/lib/orbit/instance-repositories/<id>.git`. A bundle carries the branch into the container, and `agent` checks it out in `/srv/workspace` |
 | Checkout path | The workspace's path on the Node, inside the container's root file system. It keeps the path unique on the Node; Orbit never works in it from the Node |
 | `.env` | In the workspace's application directory, for `orbit` with group `work`, mode 0640. Git never takes it: see [the `.env` stays out of Git](#the-env-stays-out-of-git) |
 | Deploy steps | Each runs as `agent` at `/srv/workspace`, from its own vault copy ([ADR 0266](/decisions/0266-one-owner-for-the-workspace)). Its environment holds only `HOME=/home/agent`, `USER=agent`, `LOGNAME=agent`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, the [proxy settings](#proxy-settings-in-a-container), and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |

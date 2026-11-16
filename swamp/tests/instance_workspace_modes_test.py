@@ -10,6 +10,7 @@ their modes or times: the pass now also gives each `orbit` entry to `agent` (ADR
 
 import os
 import re
+import socket
 import stat
 import subprocess
 import sys
@@ -55,7 +56,7 @@ def _locked_fchmod(fd, mode):
 import subprocess
 os.open, os.fchmod = _vanishing_open, _locked_fchmod
 # With CHOWN_LOG, an owner change is written to that file instead of made, as a test user may not give a file away: `fd <path> <uid>`
-# for a change through an open entry, `link <path> <uid>` for a link's own owner.
+# for a change through an open entry, `entry <path> <uid>` for the owner of a link or a socket itself.
 _fchown, _chown, _log = os.fchown, os.chown, os.environ.get('CHOWN_LOG', '')
 def _recorded_fchown(fd, uid, gid):
     if not _log:
@@ -67,7 +68,7 @@ def _recorded_chown(path, uid, gid, *, dir_fd=None, follow_symlinks=True):
         return _chown(path, uid, gid, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
     target = os.path.join(os.readlink(f'/proc/self/fd/{dir_fd}'), path) if dir_fd is not None else path
     with open(_log, 'a') as stream:
-        stream.write(f"{'path' if follow_symlinks else 'link'} {target} {uid}\\n")
+        stream.write(f"{'path' if follow_symlinks else 'entry'} {target} {uid}\\n")
 os.fchown, os.chown = _recorded_fchown, _recorded_chown
 '''
 
@@ -123,7 +124,7 @@ class WorkspaceModesTest(unittest.TestCase):
         entries = ['.', '.git', '.git/objects', '.git/objects/pack', '.git/objects/pack/.tmp-1-pack-2.pack', '.git/objects/pack/pack-1.pack',
                    'node_modules', 'node_modules/react', 'node_modules/react/index.js', 'run.sh', 'storage', 'storage/view.php']
         self.assertEqual(changes, sorted([f'fd {(self.workspace / entry).resolve()} 2750' for entry in entries]
-                                         + [f'link {self.workspace / "folder-link"} 2750', f'link {self.workspace / "storage/link"} 2750']))
+                                         + [f'entry {self.workspace / "folder-link"} 2750', f'entry {self.workspace / "storage/link"} 2750']))
         # No change reached a link's target.
         self.assertFalse(any(str(outside) in line for line in changes))
         self.assertNotIn(str(outside), done.stdout)
@@ -133,6 +134,26 @@ class WorkspaceModesTest(unittest.TestCase):
         log.unlink()
         self.assertEqual(self.run_pass(NOBODY, CHOWN_LOG=str(log)).stdout, '')
         self.assertFalse(log.exists())
+
+    def test_a_given_file_loses_setuid_and_setgid_and_a_socket_gets_its_owner_without_being_opened(self):
+        # `orbit` must never make a program that runs as `agent`; a socket of an `orbit` Process cannot be opened (ENXIO).
+        program = self.workspace / 'program'
+        program.write_text('x')
+        os.chmod(program, 0o6750)
+        listener = socket.socket(socket.AF_UNIX)
+        self.addCleanup(listener.close)
+        listener.bind(str(self.workspace / 'app.sock'))
+        log = self.folder / 'chown.log'
+        done = self.run_pass(os.getuid(), CHOWN_LOG=str(log))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(mode(program), 0o770)
+        changes = log.read_text().splitlines()
+        self.assertIn(f'fd {program.resolve()} 2750', changes)
+        self.assertIn(f'entry {self.workspace / "app.sock"} 2750', changes)
+        # A file that stays its owner's keeps its bits.
+        os.chmod(program, 0o4770)
+        self.assertEqual(self.run_pass().returncode, 0)
+        self.assertEqual(mode(program), 0o4770)
 
     def test_a_pass_that_changes_many_entries_prints_only_their_count(self):
         for index in range(25):

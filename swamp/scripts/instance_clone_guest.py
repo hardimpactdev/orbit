@@ -498,7 +498,8 @@ def phase_main(phase, raw):
         php_settings_changed = len(changes) > php_settings
         # Root's workspace pass, the one program a deployment runs too (instance_workspace_owner.py, ADR 0266): the group gets back what
         # the owner has, and `agent` gets each entry that `orbit` owns, so a copy of an older seed gets its one owner here.
-        if run(["python3", "-I", "-c", c["workspace_owner"], ws, "1000", "2750"]).stdout.strip():
+        # A copy of an older seed gives every entry away, `vendor` and `node_modules` too: it has the processes phase's whole time.
+        if run(["python3", "-I", "-c", c["workspace_owner"], ws, "1000", "2750"], timeout=120).stdout.strip():
             changes.append("workspace-rights")
         own = {x["name"] for x in c["processes"]}
         own_ids = {str(x["id"]) for x in c["processes"]}

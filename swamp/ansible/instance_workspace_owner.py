@@ -7,8 +7,9 @@ would (rwx for a folder, rw for a file and x for a file that someone may run), a
 
 The workspace is live while the pass runs: Git, an app or an agent may remove an entry between its listing and its change. An entry
 that is gone needs nothing; any other error fails the pass and names its path. Each entry is opened without following a link, and
-changed through that descriptor, so a link that replaces an entry never changes what it points at. A link itself gets its new owner
-with `lchown`, never its target.
+changed through that descriptor, so a link that replaces an entry never changes what it points at. An entry that is neither a folder
+nor a file, such as a link or a socket, gets only its new owner, with `lchown`, never through its target. A file given away loses its
+setuid and setgid bits, so `orbit` can never make a program that runs as `agent`.
 
 It prints each entry it changed, one per line, up to NAMED; above that, only the count. Arguments: the workspace, `from_uid`, `to_uid`.
 The container phase runs it as root ("Keep the workspace writable for its group"), and so does a clone's `services` part.
@@ -36,12 +37,17 @@ def main(workspace, from_uid, to_uid):
 
     def give(fd, path):
         status = os.fstat(fd)
-        mode = status.st_mode
-        if status.st_uid == from_uid:
+        mode, given = status.st_mode, status.st_uid == from_uid
+        wanted = stat.S_IMODE(mode)
+        if given:
             os.fchown(fd, to_uid, -1)
+            if stat.S_ISREG(mode):
+                wanted &= ~(stat.S_ISUID | stat.S_ISGID)
         if lacks(mode):
-            os.fchmod(fd, stat.S_IMODE(mode) | (0o070 if stat.S_ISDIR(mode) else 0o060 | (0o010 if mode & 0o111 else 0)))
-        if status.st_uid == from_uid or lacks(mode):
+            wanted |= 0o070 if stat.S_ISDIR(mode) else 0o060 | (0o010 if mode & 0o111 else 0)
+        # After a change of owner the mode is always written, as the kernel may have cleared bits that `wanted` keeps.
+        if given or wanted != stat.S_IMODE(mode):
+            os.fchmod(fd, wanted)
             changed.append(path)
 
     def visit(fd, path):
@@ -58,7 +64,7 @@ def main(workspace, from_uid, to_uid):
             try:
                 folder = entry.is_dir(follow_symlinks=False)
                 status = entry.stat(follow_symlinks=False)
-                if stat.S_ISLNK(status.st_mode):
+                if not folder and not stat.S_ISREG(status.st_mode):
                     if status.st_uid == from_uid:
                         os.chown(entry.name, to_uid, -1, dir_fd=fd, follow_symlinks=False)
                         changed.append(child)
