@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 /**
- * Records each Node's outcome of a `fleet.reboot` pass (ADR 0253) on the Operation, in pass order. Task VMs that the drain stopped are recorded `parked`, so the next task call wakes them. A failed
+ * Records each Node's outcome of a `fleet.reboot` pass (ADR 0253) on the Operation, in pass order. A failed
  * or unknown Node raises `reboot_halted`; a Node due for more than three days raises `reboot_overdue`.
  */
 final readonly class FleetRebootProjection implements DirectOperationProjection

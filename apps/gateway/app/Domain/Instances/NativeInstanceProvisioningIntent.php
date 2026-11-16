@@ -20,7 +20,7 @@ use App\Support\ValidatedData;
 /** Immutable parent admission. No child Operations and no Node effects. */
 final readonly class NativeInstanceProvisioningIntent
 {
-    public function assertCloneSupported(Instance $candidate, Node $node, ?string $sqliteSource): void
+    public function assertCloneSupported(Instance $candidate, ?string $sqliteSource): void
     {
         if ($candidate->databaseConnectionTargets()->exists()) {
             $this->unavailable();
