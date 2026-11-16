@@ -289,7 +289,7 @@ class ReceiptTest(unittest.TestCase):
         for name in needs:
             if name not in ('changes', 'gateway-release'):
                 needs[name]['result'] = 'skipped'
-        with patch.dict(os.environ, PROOF_REQUIRED='false', PROOF_BLOCKING='false', SLOW_CHECKS_BLOCKING='false'):
+        with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none', PROOF_BLOCKING='false', SLOW_CHECKS_BLOCKING='false'):
             delivery.validate(copy.deepcopy(needs))
             needs['gateway-release']['result'] = 'failure'
             with self.assertRaises(SystemExit):

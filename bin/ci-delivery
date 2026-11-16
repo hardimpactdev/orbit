@@ -21,6 +21,16 @@ def validate(needs):
     fixture_result = needs.pop('fixtures')['result']
     if fixture_result != 'success' and not (fixture_shards == [] and fixture_result == 'skipped'):
         sys.exit(f'Required fixtures failed: {fixture_result}')
+    self_hosted = [unit for shard in json.loads(needs['changes']['outputs']['self_hosted_shards']) for unit in shard['units']]
+    self_hosted_result = needs.pop('self-hosted-fixtures')['result']
+    mode = os.environ['SELF_HOSTED_FIXTURES']
+    if mode == 'fork' and self_hosted:
+        sys.exit("This change selects fixtures that run only on Orbit's runners, and a fork's code never reaches them: "
+                 f"{', '.join(self_hosted)}. A maintainer must push the branch to the repository.")
+    if mode == 'run' and self_hosted_result != 'success' and not (self_hosted == [] and self_hosted_result == 'skipped'):
+        sys.exit(f'Required self-hosted fixtures failed: {self_hosted_result}')
+    if mode not in ('run', 'fork', 'none') or mode != 'run' and self_hosted_result != 'skipped':
+        sys.exit(f'Unexpected self-hosted fixture state: {mode}, {self_hosted_result}')
     selected = json.loads(needs['changes']['outputs']['jobs'])
     selected['proof-run'] = os.environ['PROOF_REQUIRED'] == 'true'
     selected['gateway-release'] = needs['changes']['outputs']['gateway_release'] == 'true'

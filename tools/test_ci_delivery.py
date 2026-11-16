@@ -31,10 +31,13 @@ JOB = dict(id=43, name=delivery.DELIVERY, run_attempt=1, head_sha=SHA,
 
 def needs_for(name='delivery'):
     needs = {name: {'result': 'success'} for name in JOBS[name]['needs']}
-    selected = {name: True for name in needs if name not in ('changes', 'gateway-release', 'fixtures')}
+    selected = {name: True for name in needs if name not in ('changes', 'gateway-release', 'fixtures', 'self-hosted-fixtures')}
     needs['changes']['outputs'] = dict(jobs=json.dumps(selected), gateway_release='true',
                                       fixture_shards='[{"name":"01"}]',
-                                      fixture_capacity='[{"file":"overfull"}]' if name == 'fixture-report' else '[]')
+                                      fixture_capacity='[{"file":"overfull"}]' if name == 'fixture-report' else '[]',
+                                      self_hosted_shards='[]')
+    if 'self-hosted-fixtures' in needs:
+        needs['self-hosted-fixtures']['result'] = 'skipped'
     return needs
 
 
@@ -42,7 +45,7 @@ class DeliveryGateTest(unittest.TestCase):
     def test_blocking_monitor_allows_two_hour_wait_and_two_hour_execution(self):
         running = dict(id=1, name='CI proof', run_attempt=1, status='in_progress', conclusion=None)
         finished = running | dict(status='completed', conclusion='success')
-        with patch.dict(os.environ, PROOF_REQUIRED='true', PROOF_BLOCKING='true', SLOW_CHECKS_BLOCKING='true',
+        with patch.dict(os.environ, PROOF_REQUIRED='true', SELF_HOSTED_FIXTURES='none', PROOF_BLOCKING='true', SLOW_CHECKS_BLOCKING='true',
                         FORK_PROOF='false', GH_REPO=REPO, CI_RUN_ID='42'), \
              patch.object(delivery.subprocess, 'check_output', side_effect=[json.dumps([{'jobs': [job]}]) for job in (running, finished)]) as api, \
              patch.object(delivery.time, 'monotonic', side_effect=[0, 0, 240 * 60]), \
@@ -53,7 +56,7 @@ class DeliveryGateTest(unittest.TestCase):
     def run_gate(self, needs):
         block = CI.split('  delivery:\n', 1)[1].split('\n  main-required:', 1)[0]
         code = textwrap.dedent(block.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON', 1)[0])
-        with patch.dict(os.environ, NEEDS=json.dumps(needs), PROOF_REQUIRED='false',
+        with patch.dict(os.environ, NEEDS=json.dumps(needs), PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none',
                         PROOF_BLOCKING='false', SLOW_CHECKS_BLOCKING='false'):
             exec(code, {})
 
@@ -80,6 +83,8 @@ class DeliveryGateTest(unittest.TestCase):
     def test_every_selected_job_including_fixtures_must_pass(self):
         for job in JOBS['delivery']['needs']:
             for state in ('failure', 'cancelled', 'skipped', 'pending'):
+                if job == 'self-hosted-fixtures' and state == 'skipped':
+                    continue  # Main runs no self-hosted fixture.
                 needs = needs_for()
                 needs[job]['result'] = state
                 with self.subTest(job=job, state=state), self.assertRaises(SystemExit):

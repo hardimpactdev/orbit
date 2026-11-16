@@ -91,14 +91,15 @@ class RequiredGateTest(unittest.TestCase):
         code = textwrap.dedent(block.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON', 1)[0])
         jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
         needs = {job: {'result': 'success'} for job in jobs}
-        selection = {job: True for job in jobs if job not in ('changes', 'gateway-release', 'fixtures')}
+        needs['self-hosted-fixtures']['result'] = 'skipped'
+        selection = {job: True for job in jobs if job not in ('changes', 'gateway-release', 'fixtures', 'self-hosted-fixtures')}
         selection['swamp'] = True
         for name, value in (selections or {}).items():
             if value is None:
                 selection.pop(name, None)
             else:
                 selection[name] = value
-        needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false', 'fixture_shards': '[]', 'fixture_capacity': '[]'}
+        needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false', 'fixture_shards': '[]', 'fixture_capacity': '[]', 'self_hosted_shards': '[]'}
         rows = {name: {'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1} for name in (
             'Swamp / Swamp shape gate', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests', 'CI proof')}
         rows['CI proof eligibility'] = {'name': 'CI proof eligibility', 'status': 'completed', 'conclusion': 'success',
@@ -109,7 +110,7 @@ class RequiredGateTest(unittest.TestCase):
             else:
                 rows[name].update(status='in_progress' if result == 'pending' else 'completed', conclusion=result)
         env = {'NEEDS': json.dumps(needs), 'PROOF_REQUIRED': str(proof_required).lower(),
-               'FORK_PROOF': str(fork).lower(), 'PROOF_BLOCKING': proof_blocking,
+               'FORK_PROOF': str(fork).lower(), 'SELF_HOSTED_FIXTURES': 'fork' if fork else 'run', 'PROOF_BLOCKING': proof_blocking,
                'SLOW_CHECKS_BLOCKING': slow, 'CI_RUN_ID': '123',
                'PROOF_SHA': 'a' * 40, 'GH_REPO': 'hardimpactdev/orbit',
                'PROOF_RUN_URL_PREFIX': 'https://github.com/hardimpactdev/orbit/actions/runs/'}

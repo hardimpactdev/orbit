@@ -126,7 +126,7 @@ def budget_errors(workflows, checks, fixture_budget):
                    'swamp/validate': 'swamp-validate', 'swamp/tests': 'swamp-tests'}.get(label, name)
             if caller is None and name in NON_CHECKS:
                 expected = 275 if name == 'proof-run' else 1 if name == 'proof-eligibility' else PROOF_GATE_TIMEOUT if name == 'required' else 2
-            elif label == 'fixtures':
+            elif label in ('fixtures', 'self-hosted-fixtures'):
                 if 'shard_ceiling_seconds' not in fixture_budget:
                     reject(label, 'no entry in .github/ci/checks.toml')
                     expected = None
