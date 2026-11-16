@@ -12,7 +12,7 @@ description: "In progress. ADR 0266's executor becomes Orbit's one pattern for f
 
 In progress.
 
-The owner decided P1–P9 below on 2026-11-16. This record is design only: nothing is built.
+The owner decided P1–P10 below on 2026-11-16. This record is design only: nothing is built.
 
 Principle: [One way, one name](/mission#principles), [Deterministic first](/mission#principles) and [Security fits the real threat model](/mission#principles). One executor runs every fast Node action for every caller, and one Rust module holds each action's rule. The signature is the security boundary, as in ADR 0266. Exceptions:
 
@@ -35,7 +35,7 @@ The observer is one Rust package, `apps/agent`, with about 68,000 lines. CI runs
 
 ## Decision
 
-The owner's decisions P1–P9 bind every part of this design. The sections after them define the shared parts, the change to existing rules, the script inventory, the create case, the Rust rules and the slices.
+The owner's decisions P1–P10 bind every part of this design. The sections after them define the shared parts, the one binary, the change to existing rules, the script inventory, the create case, the Rust rules and the slices.
 
 ### The owner's decisions
 
@@ -48,6 +48,7 @@ The owner's decisions P1–P9 bind every part of this design. The sections after
 - **P7. Scripts move.** A custom Python or shell script that runs a Node-local action moves into the executor where it makes sense. The rest becomes an Ansible phase, as decided on 2026-11-06, or stays with a named reason.
 - **P8. The second case is the Node part of an Instance create**, today `instance_clone_launch.py`, `instance_clone.py` and `instance_clone_guest.py`, run by `@swamp/ssh` in `workflow-operation-instance-create`. The executor does the Node part. Route publication and the other multi-Node steps stay in Swamp.
 - **P9. BeautifulRust.** The executor and the observer (`apps/agent`, `orbit-agent`) follow [BeautifulRust](https://www.beautifulrust.dev/): its `rust-best-practices` rules, its `rust-review` tiers, its `rust-port` approach for the Python ports, and its clippy lints in CI.
+- **P10. One executor binary.** There is one executor binary, not one per role. Per-role differences live in code paths and config, never in separate binaries.
 
 ### Shared parts
 
@@ -58,7 +59,7 @@ Every action reuses these parts. ADR 0266 defines them; this record makes them g
 | Order format | `base64(payload).base64(signature)`. The payload holds `action`, `node`, `target`, `operation`, `nonce` and `expires_ms`, as in ADR 0266, plus `input`: the action's public typed input, checked against its schema. Unknown fields refuse |
 | Signing | One Gateway Ed25519 key, `verify_strict` against up to two keys pinned in `/etc/orbit/executor/gateway.pub` |
 | Caller check | Only the observer's cgroup, or the relay user running the executor binary, checked through `SO_PEERCRED` and a pidfd |
-| Order checks | Signature, action, Node, target, expiry, nonce, Operation id, input, in that order. Each refusal has its own reason |
+| Order checks | Signature, action, enabled on this Node, Node, target, expiry, nonce, Operation id, input, in that order. Each refusal has its own reason |
 | Target | Each action names its target kind, such as an Instance, and how the executor proves it exists on the Node from a source the observer cannot write |
 | Lock | One lock per target. Orders for one target run one at a time; different targets run in parallel |
 | Idempotency | The done record's key is the Operation, the action and the target. Only a repeat with all three equal returns the first result, marked `repeat` |
@@ -76,6 +77,18 @@ Every action reuses these parts. ADR 0266 defines them; this record makes them g
 4. The Gateway: the Operation kind, the signer call and the result projection.
 5. A Swamp proof that sends the same signed order through the relay (P5).
 6. The role install, if a new role needs the executor.
+
+### One binary (P10)
+
+`apps/agent` is one Cargo workspace:
+
+- **`core` crate:** the order format, the caller and signature checks, the per-target lock, the done records, the journal and crash recovery, and the relay.
+- **One crate per action family:** for example `power` for sleep, wake and discard, and `clone` for the create's Node part. The five shared rules of slice C1 form one family too.
+- **The observer's crate**, unchanged by this split.
+
+An agent that works on one family reads only that family's crate and `core`. One binary, `orbit-executor`, is built from `core` and every family. It is installed only on Nodes whose roles need any executor action.
+
+**Per-role allowlist.** The role converge writes `/etc/orbit/executor/enabled`, the action families that the Node's roles enable. `app-prod` enables only `power`. `app-dev` enables `power` and `clone`. Slice C1 adds the family of the shared rules to every role that runs them. A Node with several roles gets the union. The executor refuses an action whose family its Node does not enable, with `action_not_enabled`, even when the signature is valid. The Gateway signs only actions that the Node's roles enable.
 
 ### What this changes
 
@@ -154,7 +167,7 @@ The completion's Node step becomes `instance.clone-complete`, and a failed clone
 
 New executor code follows BeautifulRust from ADR 0266's slice 1:
 
-- **Lints.** `apps/agent` becomes a Cargo workspace in that slice, with the observer and the executor as members. Its root `Cargo.toml` takes BeautifulRust's `lints/lints.toml` as `[workspace.lints]`, and `lints/clippy.toml` goes beside it. `rust-version` is set to 1.81 or newer, which the suppression lints need. The executor crate sets `[lints] workspace = true` from its first commit. A lint that is wrong for one item gets `#[expect(lint, reason = "...")]` on that item; there is no `#[allow]` and no `#![deny(warnings)]`.
+- **Lints.** `apps/agent` becomes the Cargo workspace of P10 in that slice, with `core`, the family crates and the observer as members. Its root `Cargo.toml` takes BeautifulRust's `lints/lints.toml` as `[workspace.lints]`, and `lints/clippy.toml` goes beside it. `rust-version` is set to 1.81 or newer, which the suppression lints need. `core` and every family crate set `[lints] workspace = true` from their first commit. A lint that is wrong for one item gets `#[expect(lint, reason = "...")]` on that item; there is no `#[allow]` and no `#![deny(warnings)]`.
 - **CI.** The agent job runs `scripts/check-crates clippy --locked --all-targets -- -D warnings` beside its tests. A task copy cannot change `.github/workflows/`, so this step lands through the maintainer pull request that ADR 0266 slice 1 also needs.
 - **Types.** Invalid states are unrepresentable: newtypes for the Node, target, Operation and nonce; one enum for the allowlist with `FromStr`; an order is a `VerifiedOrder` only through the check function, and only a `VerifiedOrder` reaches an action.
 - **Errors.** Each area has its own error enum that implements `std::error::Error`, with one variant per refusal reason. There is no `unwrap()` outside tests; every `expect` says why it cannot fail. Public functions document `# Errors` and `# Panics`.
@@ -171,7 +184,7 @@ Each slice is one small pull request. It starts by updating the chart of the com
 
 | # | Slice | Proof | Needs 5513 |
 | --- | --- | --- | --- |
-| G1 | General order and contract: the `input` field, per-action schema and size bound, the exported allowlist the Gateway pins, the relay-only Swamp step rule in the shape guide | Order security tests with a typed input; an unknown action and an oversize input refused; a Swamp proof of a no-op action through the relay | No |
+| G1 | General order and contract: the `core` crate and per-role allowlist of P10, the `input` field and size bound, the pinned contract, the shape guide's relay step rule | Order security tests with a typed input; an unknown action and an oversize input refused; a Swamp proof of a no-op action through the relay | No |
 | C1 | The five shared rules into Rust, each an action; per-Instance orders signed at admission; Ansible steps call the relay; the Python files go | Tests ported first; an Ansible start and converge of a real clone with T3 and Vite, then its NIC, hosts, mail and machine name checked | **Yes** |
 | C2 | `instance.clone`, copy and start: seed copy, volume, NIC, files, start, services and mail | 30 copies of a real default with T3 and Vite; time against today's 5.4 s; a SIGKILL during a copy, then a repeat | **Yes** |
 | C3 | `instance.clone`, the checkout and T3: the guest part as the executor's guest mode, the Club key, the sessions check | 30 creates to a usable thread; time against today's 4.4 s; a failed checkout keeps its code | **Yes** |
@@ -185,7 +198,7 @@ G1 and B1 can run before group 5513 lands. C1–C6 need a nested `app-dev` Node 
 ## Rejected alternatives
 
 - **Action logic in the observer:** it is the only networked part and is frozen. Two roles in one binary would let a network bug act on the Node.
-- **One executor per action, or per role:** each would need its own socket, caller check, journal and release asset. The shared parts are most of the cost.
+- **One executor binary per action family, or per role:** each would need its own socket, caller check, journal and release asset. The shared parts are most of the cost (P10).
 - **Keeping the clone in Python behind a faster trigger:** the clone ships its code to `/tmp` on every run, and the Python start-up and the step dispatch stay on the path.
 - **Keeping the shared Python rules and calling them from Rust:** the executor would start Python and depend on files staged beside it. Each rule would still have one holder, but the Node would run two languages for one action.
 - **Swamp calling the executor without a signed order:** Swamp holds no key, and an unsigned path would be a second way in.
@@ -194,6 +207,7 @@ G1 and B1 can run before group 5513 lands. C1–C6 need a nested `app-dev` Node 
 ## Consequences
 
 - Each fast Node action has one implementation, whether the Gateway, the relay or a Swamp proof calls it.
+- A change to one action family ships a new executor binary to every Node that has the executor. This is accepted (P10). A family moves into its own binary only when a role needs a heavy dependency, and that needs its own ADR.
 - A create loses the dispatch of its Node steps and the staging of its scripts. The gain is not measured yet.
 - The executor grows with each action. Its whole input is still a signed order with a typed, bounded input.
 - Five Ansible steps start to call the relay instead of a Python file. Each role that runs them installs the executor: `app-dev`, and `ci-runner`, whose converge runs the same container branch for proof copies.
