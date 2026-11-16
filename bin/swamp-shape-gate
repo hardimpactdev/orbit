@@ -25,6 +25,7 @@ import fcntl
 import hashlib
 import os
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -163,9 +164,10 @@ def resolve_base(base):
 
 
 def venv_name():
-    """The venv folder of these pins. The task VM role playbook derives the same name from the same two files."""
+    """The venv folder of these pins, built by this interpreter. swamp/ansible/shape_tool_names.py holds the rule, which the task VM
+    role playbook runs on the VM."""
     pins = REQUIREMENTS.read_text() + (SWAMP / 'ansible/requirements.txt').read_text()
-    return f'venv-{hashlib.sha256(pins.encode()).hexdigest()[:16]}'
+    return runpy.run_path(str(SWAMP / 'ansible/shape_tool_names.py'))['venv_name'](pins)
 
 
 def collections_path(tools):

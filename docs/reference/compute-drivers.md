@@ -355,7 +355,16 @@ The check is the Ansible module `orbit_static_php`. The [runtime folder](/refere
 
 The `Static PHP build` workflow runs when the recipe, the build files or the workflow change. It requires every pin to name its definition. Compilation exceeds the [CI budget](/reference/implementation-loop#ci-budget), so a pull request only validates the pins. On main, a push or a manual run builds the versions whose release does not exist yet. The proof job keeps each archive it proved in the Actions cache under its build id, so a change to the proof alone does not build again.
 
-A proof job unpacks the archive, checks its SHA-256, refuses a binary that is not fully static, and runs the extension check. It then runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan and Pest with `php -d memory_limit=1G vendor/bin/pest`, and serves the Gateway's `/up` with `frankenphp php-server`.
+A proof job unpacks the archive, checks its SHA-256 and runs the extension check. Then `tools/static-php/prove.py` proves the build. It runs from the run's own commit, so a manual run from main uses main's copy, not the built branch's. A branch's change to its own proof is never what proves it. The branch's own code still runs in the job, so run only a reviewed ref.
+
+The proof has four parts:
+
+- **Linkage.** `php`, `frankenphp` and each CLI-only extension in `modules/` may need only glibc's own libraries, no newer than Ubuntu 26.04's glibc. A fully static binary also passes.
+- **CLI only.** The proof writes the `php-cli.ini` that a container has. It holds one `extension=` line for each CLI-only extension in the archive's `build.json`. `php -m` with it must list each one.
+- **Not in FrankenPHP.** `frankenphp php-server` serves a page with the same configuration. The page must run under the `frankenphp` SAPI and load no CLI-only extension.
+- **Coverage.** After the Gateway install, Pest runs with that `php-cli.ini`. It runs `tests/Unit/Infrastructure/MachineSoftware` with a clover report. The report must cover lines of `StaticPhpBuild.php`.
+
+The job also runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan, and serves the Gateway's `/up` with `frankenphp php-server`. A build whose `build.json` names no `cli_extensions`, such as a fully static musl build, fails the proof.
 
 On main, from a push or a manual run, the publish job creates the release with the archive and `SHA256SUMS`. It never replaces a release: a published SHA-256 may already be pinned. Pull requests never build, prove or publish.
 
@@ -638,7 +647,7 @@ The `tools` phase installs the shape gate linters and prepares the Incus client 
 
 - The intent names the nested subnet and the interface `nested` (`TaskVmNestedFleet`), so the VM leads the nested network of that subnet.
 - UFW then allows DHCP, DNS and the package cache from the nested bridge, and routes it out.
-- The linters build into `/opt/orbit-shape-gate`, named by the digest of the pins in `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`.
+- The linters build into `/opt/orbit-shape-gate`. The venv name covers the pins and the interpreter that builds it, by the rule of [the shape gate](/reference/implementation-loop#run-the-swamp-shape-gate-before-you-push).
 - `bin/swamp-shape-gate` finds the folder by that name. The handoff check then runs offline.
 
 The `check` phase is the one end check. It asserts every package at its pin, every runtime and tool at its version, and the package cache active.
