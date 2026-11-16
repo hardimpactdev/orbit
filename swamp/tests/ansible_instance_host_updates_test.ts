@@ -1,3 +1,4 @@
+import { hostTasks } from "./_support/host_task_scope.ts";
 /** Exercise the shipped Instance host tasks against disposable local boundaries. */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { fixture, hasAnsible } from "./_support/instance_host.ts";
@@ -9,6 +10,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
+            hostTasks(f.folder, ["Install the shared folders", "Bring the existing containers to the image's shared files"]);
             let result = await f.run();
             assert(result.ok, result.output);
             const state = f.state();
@@ -92,6 +94,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
+            hostTasks(f.folder, ["Run the egress proxy"]);
             let result = await f.run();
             assert(result.ok, result.output);
             f.write({
@@ -123,6 +126,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
+            hostTasks(f.folder, ["Read the Instance pool", "Install the shared folders", "Prepare the Instance bridge, project and profile"]);
             // Beast after the first release: every restriction, the idmapped folders, and the path list that refused every start.
             let result = await f.run();
             assert(result.ok, result.output);
@@ -167,6 +171,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
+            hostTasks(f.folder, ["Install the shared folders"]);
             let result = await f.run();
             assert(result.ok, result.output);
             const parts = await f.artifacts("1.1");

@@ -481,6 +481,22 @@ describe('proof:run in copies: the wait for a free CI place', function (): void 
         Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
     });
 
+    it('keeps the selection and the batch plan of its first pass on each retry, and reads GitHub no more', function (): void {
+        // docs/cli/proof/run.mmd: a retry after a wait for a place does not check the commit, select the cases or plan the batches again.
+        copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 2, busy: 2);
+        $proof = copyProofAdmitted();
+        $first = $proof->input;
+        $reads = $this->source->trustReads;
+        // A trust check now would refuse the commit: no branch holds it.
+        $this->source->branches = [];
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Waiting)->and($this->source->trustReads)->toBe($reads)
+            ->and($first['batches'])->not->toBe([])->and($proof->input['cases'])->toBe($first['cases'])
+            ->and($proof->input['batches'])->toBe($first['batches']);
+    });
+
     it('cancels a waiting proof, and its retry job then leaves it cancelled', function (): void {
         copyProofCiNode(Node::query()->where('name', 'beast')->firstOrFail(), 2, busy: 2);
         $proof = copyProofAdmitted();

@@ -581,9 +581,52 @@ export function observed(
         : { ...value, result: { ...result, outcome: "changed" } };
 }
 
+/**
+ * The base of a copy's handoff check (docs/reference/tasks.md#the-handoff-check-merges-main-first): the default head it judged
+ * against and the head it merged, or `unavailable` with the reason when the base phase failed. `requested` is false for a baseline
+ * and a task VM check, which state no base.
+ */
+export function baseFields(
+    base: Record<string, unknown>,
+): Record<string, unknown> {
+    if (base.requested !== true) return {};
+    if (base.status !== "succeeded") {
+        const read = ObjectValue.parse(base.evidence ?? {});
+        const evidence = ObjectValue.parse(read.evidence ?? {});
+        return {
+            base: "unavailable",
+            base_reason: typeof evidence.error_code === "string"
+                ? evidence.error_code
+                : "tasks.workspace_phase_failed",
+            default_commit: null,
+            merged_default: null,
+        };
+    }
+    const merge = ObjectValue.parse(base.merge ?? {});
+    const fields = {
+        base: "current",
+        default_commit: typeof merge.default_commit === "string"
+            ? merge.default_commit
+            : null,
+        merged_default: typeof merge.merged_default === "string"
+            ? merge.merged_default
+            : null,
+    };
+    return merge.error_code === "tasks.check_conflict"
+        ? {
+            ...fields,
+            conflicting_paths: merge.conflicting_paths,
+            conflicting_more: merge.conflicting_more,
+        }
+        : fields;
+}
+
 export function finish(args: Record<string, unknown>) {
     const input = CheckInput.parse(args.intent),
-        local = ObjectValue.parse(args.local);
+        local: Record<string, unknown> = {
+            ...ObjectValue.parse(args.local),
+            ...baseFields(ObjectValue.parse(args.base ?? {})),
+        };
     const steps = ObjectValue.parse(args.steps);
     if (
         typeof local.error_code === "string" || local.outcome !== "passed" ||
@@ -639,7 +682,7 @@ export function finish(args: Record<string, unknown>) {
 /** Public check data on Node 209; commands, Git and HTTP are placed steps. */
 export const behavior = {
     type: "@nckrtl/task-check-data",
-    version: "2026.11.14.2",
+    version: "2026.11.16.1",
     resources: {
         public: {
             description: "Public check observations",

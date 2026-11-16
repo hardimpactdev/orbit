@@ -22,6 +22,7 @@ const Phase = z.enum([
     "commit-ref",
     "base",
     "base-cleanup",
+    "base-merge",
 ]);
 // One guest command or Git read as the task check rules read a step: exit code and, for Git reads, stdout.
 const Run = z.object({
@@ -41,6 +42,29 @@ const Snapshot = z.object({
     changed: z.literal(false),
 });
 const Evidence = z.union([
+    // The handoff check of a copy: a conflict with the default head it brought in names the paths; it comes before the plain
+    // refusal, which would drop them.
+    z.object({
+        error_code: z.literal("tasks.check_conflict"),
+        default_commit: Hash,
+        conflicting_paths: z.array(z.string().min(1)).max(100).refine(
+            (paths) => new TextEncoder().encode(JSON.stringify(paths)).length <= 3000,
+        ),
+        conflicting_more: z.number().int().min(0),
+        changed: z.literal(false),
+    }).strict(),
+    // Its merge: nothing when HEAD holds the head, else the merge commit.
+    z.object({
+        default_commit: Hash,
+        merged_default: z.null(),
+        changed: z.literal(false),
+    }).strict(),
+    z.object({
+        default_commit: Hash,
+        merged_default: Hash,
+        commit: Hash,
+        changed: z.literal(true),
+    }).strict(),
     // The copy check adds a fixed reason to its refusal; it names no value.
     z.object({
         error_code: z.string().regex(/^tasks\.[a-z_]+$/),
@@ -103,6 +127,21 @@ const Evidence = z.union([
         start: Hash.nullable(),
         bundled: z.boolean(),
         changed: z.boolean(),
+        // The one content read (docs/reference/tasks.md#published-work-of-a-copy): what of the copy is not on the default head.
+        work: z.object({
+            state: z.enum(["clean", "dirty"]),
+            head: Hash,
+            default_commit: Hash,
+            empty: z.boolean(),
+            paths: z.object({
+                count: z.number().int().min(0),
+                names: z.array(z.string()).max(5),
+            }).strict(),
+            uncommitted: z.number().int().min(0),
+            untracked: z.number().int().min(0),
+            stashes: z.number().int().min(0),
+            approved_held: z.boolean().nullable(),
+        }).strict(),
     }).strict(),
     z.object({ cleaned: z.literal(true), changed: z.literal(false) })
         .strict(),
@@ -138,7 +177,7 @@ type Context = {
 // All machine work stays in Ansible; this method only bounds and validates its result.
 export const behavior = {
     type: "@nckrtl/task-instance-workspace",
-    version: "2026.11.15.1",
+    version: "2026.11.16.1",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },

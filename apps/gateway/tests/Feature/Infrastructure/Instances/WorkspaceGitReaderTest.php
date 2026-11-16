@@ -94,9 +94,11 @@ it('reads a clone of a default with local-only branches a stash and an untracked
     $baseline = workspaceRecord();
     expect($baseline['untracked'])->toBe(['notes.txt'])->and($baseline['stashes'])->toHaveCount(1)->and($baseline['heads'])->toHaveCount(3);
 
+    // `head` names the branch; `head_commit` is the commit a task copy's content read is held against.
     expect(workspaceState('instance-2', $baseline))->toBe(['state' => 'clean', 'reason' => null, 'baseline' => 'recorded', 'head' => 'main',
+        'head_commit' => trim(workspaceGit($this->folder.'/clone', 'rev-parse', 'HEAD')),
         'modified' => ['count' => 0, 'names' => []], 'untracked' => ['count' => 0, 'names' => []],
-        'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => []], 'stashes' => ['count' => 0, 'names' => []]]);
+        'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => [], 'head' => 0], 'stashes' => ['count' => 0, 'names' => []]]);
 });
 
 it('counts one new commit on an inherited branch, a new untracked file, a changed tracked file and a new stash', function (): void {
@@ -110,7 +112,7 @@ it('counts one new commit on an inherited branch, a new untracked file, a change
 
     $read = workspaceState('instance-2', $baseline);
     expect($read['state'])->toBe('dirty')->and($read['head'])->toBe('feature-a')
-        ->and($read['commits'])->toBe(['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'feature-a', 'count' => 1]]])
+        ->and($read['commits'])->toBe(['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'feature-a', 'count' => 1]], 'head' => 1])
         ->and($read['untracked'])->toBe(['count' => 1, 'names' => ['new-file.txt']])
         ->and($read['modified'])->toBe(['count' => 1, 'names' => ['a.txt']])
         ->and($read['stashes']['count'])->toBe(0);
@@ -136,8 +138,9 @@ it('compares an Instance without a baseline with the default as it is now, and r
 
     $plain = workspaceState('instance-1');
     expect($plain['baseline'])->toBe('none')->and($plain['state'])->toBe('dirty')
+        // main is checked out and holds none of them: only another branch's commits, which a content read never clears.
         ->and($plain['commits'])->toBe(['count' => 3, 'branch_count' => 2,
-            'branches' => [['name' => 'backup', 'count' => 1], ['name' => 'feature-a', 'count' => 2]]])
+            'branches' => [['name' => 'backup', 'count' => 1], ['name' => 'feature-a', 'count' => 2]], 'head' => 0])
         ->and($plain['stashes']['count'])->toBe(1)->and($plain['untracked']['names'])->toBe(['notes.txt']);
 
     $this->containers['instance-1']['status'] = 'Stopped';
@@ -198,7 +201,7 @@ it('counts no commit that a publish pushed, nor its history, and counts a later 
 
     workspaceCommit($clone, 'task.txt', "three\n");
     expect(workspaceState('instance-2', $baseline, published: [$published])['commits'])
-        ->toBe(['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'task-1', 'count' => 1]]])
+        ->toBe(['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'task-1', 'count' => 1]], 'head' => 1])
         // Only a hex id joins rev-list.
         ->and(workspaceState('instance-2', $baseline, published: ['--all', 'HEAD'])['commits']['count'])->toBe(3);
 });
@@ -227,7 +230,7 @@ it('skips baseline heads the workspace does not hold, as when the default commit
 
     workspaceCommit($this->folder.'/clone', 'mine.txt', "mine\n");
     expect(workspaceState('instance-2', null, withDefault: true)['commits'])
-        ->toBe(['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'main', 'count' => 1]]]);
+        ->toBe(['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'main', 'count' => 1]], 'head' => 1]);
 });
 
 it('leaves out only the untracked Orbit files at the root: a nested .env and a change to a tracked .env count', function (): void {

@@ -211,5 +211,6 @@ class ConvergeTimeoutTest(unittest.TestCase):
 
     def test_real_repeat_keeps_its_product_120_second_assertion(self):
         loaded = spec.load(Path(__file__).resolve().parents[2] / 'node/converge.cases.yaml', BATCHES)
-        assertions = loaded.case('repeat').stages[1].act[0].args['expect']['json']
+        # The repeat is the second stage of the default-scope case, which waits for the ID map window.
+        assertions = loaded.waiting['default-scope'].stages[1].act[0].args['expect']['json']
         self.assertIn({'path': 'result.elapsed_seconds', 'at_most': 120}, assertions)

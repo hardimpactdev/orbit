@@ -2,14 +2,17 @@
 use std::{ffi::CStr, net::Ipv4Addr};
 
 pub fn platform() -> std::io::Result<(String, String)> {
-    // SAFETY: uname fills the live utsname allocation with NUL-terminated fields.
+    // SAFETY: utsname holds only byte arrays, so all-zero bytes are a valid value.
     let mut value: libc::utsname = unsafe { std::mem::zeroed() };
+    // SAFETY: uname writes only into the live, writable utsname it is given.
     if unsafe { libc::uname(&mut value) } != 0 {
         return Err(std::io::Error::last_os_error());
     }
+    // SAFETY: a successful uname leaves sysname NUL-terminated inside `value`, which outlives the borrow.
     let platform = unsafe { CStr::from_ptr(value.sysname.as_ptr()) }
         .to_string_lossy()
         .to_lowercase();
+    // SAFETY: a successful uname leaves machine NUL-terminated inside `value`, which outlives the borrow.
     let architecture = unsafe { CStr::from_ptr(value.machine.as_ptr()) }
         .to_string_lossy()
         .into_owned();

@@ -1,6 +1,7 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { ciCacheImportProgram } from "../instance-deploy/app_step_runtime.ts";
 import {
+    baseFields,
     candidateResult,
     checkRuns,
     ciResult,
@@ -724,4 +725,76 @@ Deno.test("a mutating check cannot create a candidate", async () => {
     assertEquals(value.outcome, "changed");
     assertEquals(value.commit, null);
     assertEquals(candidateResult(input, value, {}).commit, null);
+});
+
+Deno.test("a copy's handoff check states its base, and a check without one states none", () => {
+    const head = "c".repeat(40);
+    const local = { outcome: "failed", check_id: 5 };
+    const copy = { ...input, check_name: null };
+    // A baseline and a task VM check request no base: the result is as before.
+    assertEquals(finish({ intent: copy, local, steps: {} }).result, local);
+    assertEquals(baseFields({ requested: false, status: "succeeded" }), {});
+    assertEquals(
+        finish({
+            intent: copy,
+            local,
+            steps: {},
+            base: {
+                requested: true,
+                status: "succeeded",
+                merge: { default_commit: head, merged_default: head, commit, changed: true },
+            },
+        }).result,
+        { ...local, base: "current", default_commit: head, merged_default: head },
+    );
+    assertEquals(
+        baseFields({
+            requested: true,
+            status: "succeeded",
+            merge: { default_commit: head, merged_default: null, changed: false },
+        }),
+        { base: "current", default_commit: head, merged_default: null },
+    );
+    // A conflict keeps its bounded paths in the result.
+    assertEquals(
+        finish({
+            intent: copy,
+            local: { error_code: "tasks.check_conflict", check_id: 5 },
+            steps: {},
+            base: {
+                requested: true,
+                status: "succeeded",
+                merge: {
+                    error_code: "tasks.check_conflict",
+                    default_commit: head,
+                    conflicting_paths: ["work.txt"],
+                    conflicting_more: 2,
+                    changed: false,
+                },
+            },
+        }).result,
+        {
+            error_code: "tasks.check_conflict",
+            check_id: 5,
+            base: "current",
+            default_commit: head,
+            merged_default: null,
+            conflicting_paths: ["work.txt"],
+            conflicting_more: 2,
+        },
+    );
+    // A failed base never blocks the check: it says why it had none.
+    assertEquals(
+        baseFields({
+            requested: true,
+            status: "failed",
+            evidence: { phase: "base", evidence: { error_code: "tasks.workspace_phase_failed" } },
+        }),
+        {
+            base: "unavailable",
+            base_reason: "tasks.workspace_phase_failed",
+            default_commit: null,
+            merged_default: null,
+        },
+    );
 });

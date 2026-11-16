@@ -1510,11 +1510,15 @@ Work is what lies beyond the Instance's baseline:
 
 Build output that appears after the create counts too. It stays work until the Project's `.gitignore` covers it.
 
+The read also names the checked-out branch as `head`, its commit as `head_commit`, and how many of the counted commits that branch holds as `commits.head`. A task copy's cancel and complete hold the copy's [content read](/reference/tasks#published-work-of-a-copy) against that commit. Only those commits can count as published by content.
+
 The baseline is what a new Instance held when it was made, so a fresh copy of a default with local branches, stashes or untracked files reads `clean`. It holds the local branch heads, the stash ids and the untracked set, in the Gateway's `instance_runtimes.workspace_baseline`, outside the container.
 
 A clone's create reads it before the transaction that ends the create, and writes it with `workspace_baseline_at` in that transaction. The user can reach T3 only through a pairing, and Conn pairs only after it reads the create `succeeded`, so the baseline holds no work of the user. The completion writes no tracked or unignored file, so the read stays `clean` while it runs.
 
-The read runs in Horizon on an SSH connection of its own. A failed try, such as a lost connect, is tried again after 1 second and again after 3 more seconds; each failed try writes its SSH exit code and the end of its stderr to the Gateway log. Only a third failed read fails the create with `instance.workspace_baseline_unavailable`. A resumed create keeps a recorded baseline.
+The read runs in Horizon on an SSH connection of its own, with bounds of its own for a loaded host: the reader's budget is 6 seconds, an outer `timeout 8` ends it, and the SSH command bound is 10 seconds. Other workspace reads keep 2, 3 and 4 seconds.
+
+A failed try, such as a lost connect, is tried once more after 1 second; each failed try writes its SSH exit code and the end of its stderr to the Gateway log. The second failed read fails the create with `instance.workspace_baseline_unavailable`, so a stuck read ends in about 21 seconds. The job that ends the create runs within its 150-second limit. A resumed create keeps a recorded baseline. A task copy's create that fails this way [starts once more](/reference/tasks#a-failed-create).
 
 When the untracked set has more than 2,000 entries, or the answer would pass 900 KB, Orbit drops it, so every untracked file counts. Nothing rewrites a recorded baseline: not a deploy, a rename or a removal restore.
 
@@ -2386,7 +2390,7 @@ A refresh with no change keeps the host and adds no time. The host is built only
 
 **Time bounds.** The first host build installs Incus, downloads the shared folders, and builds the stock image and the Instance image. On a task copy at 1,165,536 the converge took 325 s for the base packages and 428 s for the roles phase up to the stock image (2026-11-16). The images could not be built there. So the roles phase of a fleet Node's `app-dev` converge has 1,800 s, from `roles_seconds` in its intent.
 
-The converge workflow accepts only 900 to 1,800 for `roles_seconds` and refuses any other value before the playbook. The refresh waits up to 1,800 s for that converge while the record holds no `host` yet. That converge runs alone, after the other Nodes' base converges have ended: the hub's reservation refuses a converge with roles beside any other converge. Every other converge keeps 900 s for each phase and for the refresh's wait.
+The converge workflow accepts only 900 to 1,800 for `roles_seconds` and refuses any other value before the playbook. The refresh waits up to 1,800 s for that converge while the record holds no `host` yet. That converge runs last, after the other Nodes' converges have ended: the hub's reservation refuses a converge with roles beside any other converge. Every other converge keeps 900 s for each phase and for the refresh's wait.
 
 **Memory.** In an Instance fleet the nested containers get 4 GiB (`nested-gateway`), 5 GiB (`nested-app-dev`) and 2 GiB (`nested-app-prod`), 11 GiB of the Instance container's 12 GiB. These are owned fleet rules (`limits.memory`), so the next refresh writes them with the fleet stopped. On 2454, `nested-app-prod` used 124 MiB and `nested-gateway` 1.64 GiB. `nested-app-dev` with its Incus and no Instance used 178 MiB. A task VM's fleet keeps 4, 3 and 3 GiB.
 
@@ -2476,7 +2480,7 @@ The cost: while `raw.dnsmasq` is set, the inner Incus runs the inner bridge's dn
 
 Incus restarts the bridge's dnsmasq when the key changes, so only the refresh writes it, with the fleet stopped. A start only compares. A copy whose seed lacks the key starts as before. A bridge that cannot be read is refused with `instance.container_fleet_drift`.
 
-The `environment.*` keys reach only `incus exec`. SSH and sudo sessions read `/etc/environment` instead, so the egress files give the base converge its proxy. The refresh writes both files before the converge.
+The `environment.*` keys reach only `incus exec`. SSH and sudo sessions read `/etc/environment` instead, so the egress files give the converge its proxy. The refresh writes both files before the converge.
 
 The fleet has the subnet of a task VM's nested fleet, but no Instance runs the task VM's package cache. These rules keep apt on the egress proxy:
 
@@ -2614,7 +2618,7 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 | --- | --- | --- |
 | Migrate the nested Gateway, restart its services | Git object IDs of `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
 | Wait for the three agents | | The converges run |
-| Base converge of each nested Node | One digest per Node: the `swamp` files a base converge reads, the nested Gateway's digest of that Node's base intent, and the fleet intent | For that Node: its digest differs, or its last converge is more than 7 days old. For all three: a digest cannot be read |
+| Default converge of each nested Node | One digest per Node: the `swamp` files a default converge reads, the nested Gateway's digest of that Node's default intent, and the fleet intent | For that Node: its digest differs, or its last converge is more than 7 days old. For all three: a digest cannot be read |
 | Agent delivery | `code` | The code digest differs. The delivery writes into the checkout, from `apps/gateway` |
 | Reload the grants | Git object IDs of `apps/gateway` and `swamp`, from which the nested Gateway renders them; recorded only with the Club key | With the Club key: the digest differs. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken (a partly stopped fleet only compares) |
@@ -2626,17 +2630,19 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 
 The migrate follows `apps/gateway`, not only its migrations folder. Packages in its Composer lock ship migrations too, so a new lock can bring a migration.
 
-The converge digest follows what a base converge of a nested Node reads, so a release that changes only tests, other workflows or other Gateway code converges nothing. Each Node has its own digest, so a moved base intent converges only that Node. A digest has three inputs:
+The refresh converges each nested Node with the default scope, as `node:converge` with required arguments alone does: the base, the software, every recorded role, the Tools and the network. So `base` holds Nodes whose software and role state match the seed's commit, and a proof's converge after a reset finds nothing to change unless the commit under proof or the case changed an input. A base converge left the software, the roles, the Tools and the network to the first default converge after each reset, so every converge case of a proof installed the software and the role state again.
+
+The converge digest follows what a default converge of a nested Node reads, so a release that changes only tests, other workflows or other Gateway code converges nothing. Each Node has its own digest, so a moved base intent converges only that Node. A digest has three inputs:
 
 | Input | What it holds |
 | --- | --- |
-| The `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists | The converge workflow, the `ansible-input` behavior and the imports a converge runs, the playbook, its task files and copied files, its configuration, and the modules a task calls |
-| The nested Gateway's digest of each Node's base intent | The agent pin and its configuration, the recipe, the kernel and update policies, the SSH target, the CLI plan and the [units of the Node's roles](/reference/node-provisioning#role-units-at-a-converge) |
+| The `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists | The converge workflow, the `ansible-input` behavior and its imports, the playbook with all its includes, its task and copied files, its configuration, and the modules a task calls |
+| The nested Gateway's digest of each Node's default intent | The agent pin and its configuration, the recipe, the kernel and update policies, the SSH target, the CLI plan, the recorded roles with their [units](/reference/node-provisioning#role-units-at-a-converge), Tools and network |
 | The fleet intent | The fleet's names, layout, checkout and proxy |
 
 A cover test, `swamp/tests/fleet_converge_inputs_test.ts`, walks the playbook and the imports. It fails on a file that the list does not hold.
 
-A module in `swamp/ansible/library/` counts only when a task of the base converge names it. A `module_utils/` file counts only when such a module imports it. Every local module and util is named `orbit_<name>`, so none overrides one of Ansible's own, which the builtin tasks load. So a release that changes only a module of another play, such as a Route module, converges nothing.
+A module in `swamp/ansible/library/` counts only when a task of the default converge names it. A `module_utils/` file counts only when such a module imports it. Every local module and util is named `orbit_<name>`, so none overrides one of Ansible's own, which the builtin tasks load. So a release that changes only a module of another play, such as a Route module, converges nothing.
 
 The skip never leaves an old module in the fleet. The nested Gateway mounts the container's checkout, so the next inner play loads the new module from it.
 
@@ -2648,11 +2654,11 @@ The cover test fails, with the file and line, on what it cannot follow:
 - a role or `include_vars`;
 - a copy of a folder or of a templated source onto a Node.
 
-After the migrate, the refresh runs `php artisan orbit:node-converge-digest --base gateway app-dev app-prod` in the nested Gateway. The command builds each intent as `node.converge` with `base: true` does. It admits no Operation, makes no execution copy and writes nothing.
+After the migrate, the refresh runs `php artisan orbit:node-converge-digest gateway app-dev app-prod` in the nested Gateway. The command builds each intent as a default `node.converge` does. It admits no Operation, makes no execution copy and writes nothing.
 
 A file list cannot follow the Gateway code that builds an intent: through its models, that code reaches much of the Gateway. So the nested Gateway hashes the intent itself. The intent holds no time, token, signed URL or random id. The Operation id and the agent verifier live in the execution copies, which are not part of it.
 
-The list leaves out four include groups of the playbook: roles, software, Tools and the network. Each runs only when the intent selects roles, Tools or a network, and a base intent never does. The cover test fails when the guard of such an include changes.
+The list holds the four include groups of the playbook: roles, software, Tools and the network. A default intent selects each of them that the Node records.
 
 The list also leaves out two imports of the behavior file, `write.ts`. A converge never runs their code:
 
@@ -2665,16 +2671,13 @@ The cover test fails when the converge workflow calls such a method, or when an 
 
 The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). A digest that cannot be read makes all three converge and is not recorded, so the next refresh runs them too. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
 
-The `swamp` files are the same for the three Nodes. When the converge runs, the due Nodes converge side by side. Two things made them wait for each other before:
+The due Nodes converge one at a time: the nested Gateway first, which holds the hub, then `nested-app-prod`, then `nested-app-dev`. A default converge has a network, so it holds the hub's reservation, and the nested Gateway refuses any second converge beside it ([node:converge](/cli/node/converge)). The seven Ansible plays still lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`).
 
-| What | Now |
-| --- | --- |
-| The nested Gateway refused a second converge while one held the VPN hub, and every converge held it | Two base converges never conflict, the hub's own included: a base intent has no network. Against a converge with roles, Tools or a network, any converge still refuses ([node:converge](/cli/node/converge)) |
-| Every step of the converge workflow had a fixed behavior name, so a second run waited for the first one's Swamp lock | The seven Ansible plays lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`). The local steps of a second or less keep one name |
+The refresh admits the next Node only when the one before it has ended. A failed or refused converge stops the converges: the Nodes after it do not converge, and the error names the Node that failed. The run then restores the old seed.
 
-The refresh admits every due Node first, then reads each Operation until it has ended. A failed or refused converge fails the refresh only after every admitted converge has ended, so no run is still going when the run restores the old seed. The error names each Node that failed. Three base converges that changed nothing took 108 s one by one (refresh 22223) and 48 s side by side (measured in a copy of the Orbit container).
+A converge that changes nothing still reads every phase, so a due converge costs time even on an unchanged Node. Only a digest that changed, or a converge older than 7 days, makes a Node due.
 
-The bound is the nested Gateway's Swamp: three workers, one run each, and the workflow waits 30 s for a worker (`queueTimeout`). The three converges take all three workers, so nothing else should start on the nested Swamp during the converge.
+Below the 2,000,000 [ID map size](#instance-host-in-the-fleet), `nested-app-dev` cannot build its Instance image. There the refresh converges it with the base scope, as before, and its software and role state in `base` stay as they were. A proof needs a default at 2,000,000 when its converge or role-add cases run on `nested-app-dev`.
 
 A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `base` is the slow part: about 32 s for each container on the directory pool, plus its stop and start. So the refresh retakes `base` only for the containers whose disk changed, and the set stays consistent:
 

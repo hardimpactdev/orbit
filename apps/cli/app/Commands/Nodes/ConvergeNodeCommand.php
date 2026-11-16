@@ -22,6 +22,7 @@ final class ConvergeNodeCommand extends NodeCommand
         {node? : Positive numeric Node ID}
         {--base : Apply only Orbit-owned files, units, agent and CLI}
         {--roles= : Apply the base and these recorded roles (comma separated)}
+        {--full : Run every phase, also a phase whose input did not change}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
@@ -35,6 +36,24 @@ final class ConvergeNodeCommand extends NodeCommand
         GatewayFailureRenderer::write($this, $code, $message, $requestId, $humanMessage, $details, includeCode: true);
 
         return self::FAILURE;
+    }
+
+    /** Each phase and whether it ran: `unchanged` is a phase that skipped because its input did not change. */
+    protected function writeOperationResult(OperationResponse $operation): void
+    {
+        $phases = $operation->result['phases'] ?? null;
+        if (! is_array($phases)) {
+            return;
+        }
+        $rows = [];
+        foreach ($phases as $phase) {
+            if (is_array($phase) && is_string($phase['name'] ?? null) && is_string($phase['status'] ?? null)) {
+                $rows[] = $phase['name'].' '.$phase['status'];
+            }
+        }
+        if ($rows !== []) {
+            $this->writeHumanMessage('Phases: '.implode(', ', $rows));
+        }
     }
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
@@ -59,7 +78,7 @@ final class ConvergeNodeCommand extends NodeCommand
             $connector,
             new ConvergeNodeRequest($nodeId, $this->option('base') === true,
                 is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
-                is_string($roles) ? explode(',', $roles) : null),
+                is_string($roles) ? explode(',', $roles) : null, $this->option('full') === true),
             OperationResponse::class,
             ['Converge Node footprint', 'Converging Node footprint', 'Node footprint request completed'],
             static fn (OperationResponse $response): ProgressOutcome => new ProgressOutcome(ProgressState::Success,

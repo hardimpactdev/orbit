@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\SyncTaskGroupRequest",
+    "route": "POST /api/v1/tasks/{task}/sync",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.no_workspace",
+            "message": "The group requires its task copy.",
+            "details": {}
+        }
+    }
+}

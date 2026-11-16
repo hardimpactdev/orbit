@@ -64,9 +64,9 @@ A CI Node's [CI places](/reference/node-settings#ci-places) are set with `node:u
 
 ## Repair managed state
 
-[`node:converge`](/cli/node/converge) repairs an active, managed Linux Node, including one that owns Instances. With no scope flag it applies Orbit's base and every recorded role. `--base` selects only the agent, CLI and Orbit-owned files and units; `--roles=a,b` selects the base plus those existing assignments. The flags are mutually exclusive, and neither adds or removes a role. There is no `--force` or `--full` option.
+[`node:converge`](/cli/node/converge) repairs an active, managed Linux Node, including one that owns Instances. With no scope flag it applies Orbit's base and every recorded role. `--base` selects only the agent, CLI and Orbit-owned files and units; `--roles=a,b` selects the base plus those existing assignments. The two scope flags are mutually exclusive, and neither adds or removes a role. `--full` runs every phase, also a phase whose input did not change. There is no `--force` option.
 
-An ordinary repeat starts a new Operation and checks every phase again; matching state is not an admission skip. A retry with the same idempotency key reuses its Operation under the [keyed-start contract](/reference/operations#retry-a-start-with-a-key). [Node provisioning](/reference/node-provisioning#converge-the-orbit-footprint) owns the phase order and failure behavior.
+An ordinary repeat starts a new Operation; matching state is not an admission skip. In that Operation, a phase from `agent` to `network` whose input did not change is `unchanged` and does not run; `input` and `check` always run ([phase digest rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change)). A retry with the same idempotency key reuses its Operation under the [keyed-start contract](/reference/operations#retry-a-start-with-a-key). [Node provisioning](/reference/node-provisioning#converge-the-orbit-footprint) owns the phase order and failure behavior.
 
 ## Recorded role assignments
 

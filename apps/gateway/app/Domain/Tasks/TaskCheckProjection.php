@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -15,11 +16,27 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Projects the native check metadata onto the existing board. No execution or evidence judgment. */
-final readonly class TaskCheckProjection implements DirectOperationProjection
+final readonly class TaskCheckProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
     public function input(Operation $operation): array
     {
-        return self::workflowInput($operation->input);
+        return self::inputOf($operation->input);
+    }
+
+    /**
+     * The run starts now: a handoff check of a copy brings in the default branch first, so the Gateway mints its read token now and
+     * writes it, as a Git header, to the vault key that admission named, as for a sync. Any other check mints nothing here.
+     */
+    public function workflowInput(Operation $operation): array
+    {
+        $base = $operation->input['copy_base'] ?? null;
+        if (is_array($base)) {
+            $group = Task::topLevel()->with('project')->find($operation->target_id)
+                ?? throw new ResourceOperationException('tasks.no_workspace', 'The task group is gone, so the check cannot start.', 409);
+            app(TaskGitHubTokens::class)->writeClone($group, ValidatedData::object($base['git_authorization'] ?? null));
+        }
+
+        return self::inputOf($operation->input);
     }
 
     /**
@@ -28,7 +45,7 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
      * @param  array<string,mixed>  $input
      * @return array{intent: array<string,mixed>, execution_secrets: mixed}
      */
-    public static function workflowInput(array $input): array
+    public static function inputOf(array $input): array
     {
         $intent = array_diff_key($input, ['execution_secrets' => true]);
         $intent['command_deliverables'] = array_values(array_filter(array_map(ValidatedData::object(...), is_array($intent['deliverables']) ? $intent['deliverables'] : []), static fn (array $item): bool => $item['type'] === 'command'));

@@ -33,7 +33,7 @@ final readonly class ContainerWorkspaceRead
 {
     public const array Reasons = ['stopped', 'asleep', 'timeout', 'not_a_repository', 'unreachable'];
 
-    /** The reader's own budget on the Node; SSH adds its connect time inside the 4 s command bound. */
+    /** The normal read's budget on the Node; SSH adds its connect time inside the 4 s command bound. */
     public const float BudgetSeconds = 2.0;
 
     /** A read answers in a few KiB; a record carries the untracked set, up to 2,000 names. */
@@ -42,10 +42,21 @@ final readonly class ContainerWorkspaceRead
     private const int RecordBytes = 1_048_576;
 
     /**
-     * The pauses before the second and third baseline read. A clone's create fails when its baseline cannot be read, and Horizon
-     * reads it on a connection of its own: one lost connect, such as a dropped SYN on the WireGuard path, must not fail the create.
+     * The baseline read's bounds: the reader's budget, the outer `timeout` and the SSH command bound. A clone's create fails when its
+     * baseline cannot be read, and that read runs while the host may be under load, where a read took up to 2.2 s: the normal read's
+     * 2 s budget is too short for it. With its one retry, a stuck read ends in about 21 s (docs/reference/development-containers.md#workspace-work-state).
      */
-    public const array BaselineRetrySeconds = [1, 3];
+    public const float BaselineBudgetSeconds = 6.0;
+
+    public const int BaselineTimeoutSeconds = 8;
+
+    public const int BaselineCommandSeconds = 10;
+
+    /**
+     * The pause before the second and last baseline read. Horizon reads it on a connection of its own: one lost connect, such as a
+     * dropped SYN on the WireGuard path, must not fail the create.
+     */
+    public const array BaselineRetrySeconds = [1];
 
     public function __construct(private SshExecutor $ssh, private SshKeyProvider $keys, private KnownHostsStore $hosts) {}
 
@@ -55,8 +66,8 @@ final readonly class ContainerWorkspaceRead
      *
      * @param  list<string>  $published
      * @return array{instance_id: int, state: string, reason: ?string, read_at: string, duration_ms: int, baseline: ?string,
-     *     head: ?string, uncommitted: ?int, unpushed: ?int, modified: ?array<string, mixed>, untracked: ?array<string, mixed>,
-     *     commits: ?array<string, mixed>, stashes: ?array<string, mixed>}
+     *     head: ?string, head_commit: ?string, uncommitted: ?int, unpushed: ?int, modified: ?array<string, mixed>, untracked: ?array<string, mixed>,
+     *     commits: ?array{count: int, branch_count: int, branches: list<array{name: string, count: int}>, head: int}, stashes: ?array<string, mixed>}
      */
     public function read(Instance $instance, array $published = []): array
     {
@@ -92,7 +103,8 @@ final readonly class ContainerWorkspaceRead
             if ($pause > 0) {
                 Sleep::for($pause)->seconds();
             }
-            $result = $this->execute($instance, ['record', $runtime->incus_project, $runtime->container_name], null, self::RecordBytes);
+            $result = $this->execute($instance, ['record', $runtime->incus_project, $runtime->container_name], null, self::RecordBytes,
+                budget: self::BaselineBudgetSeconds, timeout: self::BaselineTimeoutSeconds, command: self::BaselineCommandSeconds);
             $answer = $this->decode($result);
             if ($answer !== null && is_array($answer['heads'] ?? null)) {
                 break;
@@ -138,7 +150,8 @@ final readonly class ContainerWorkspaceRead
      * @param  array<string, mixed>|null  $baseline
      * @param  list<string>  $published
      */
-    private function execute(Instance $instance, array $arguments, ?array $baseline, int $bytes = self::ReadBytes, array $published = []): CommandResult|string|null
+    private function execute(Instance $instance, array $arguments, ?array $baseline, int $bytes = self::ReadBytes, array $published = [],
+        float $budget = self::BudgetSeconds, int $timeout = 3, int $command = 4): CommandResult|string|null
     {
         $node = $instance->node;
         if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
@@ -147,16 +160,16 @@ final readonly class ContainerWorkspaceRead
         // Base64 keeps every byte of a stored name intact on its way into the reader's Python source.
         $literal = static fn (mixed $value): string => 'json.loads(base64.b64decode("'.base64_encode(json_encode($value, JSON_THROW_ON_ERROR)).'"))';
         $prelude = "import base64\nimport json\nINSTANCE_PROJECTS = ".$literal(InstancePlacement::projects())."\nBASELINE = ".$literal($baseline)
-            ."\nPUBLISHED = ".$literal($published)."\nBUDGET = ".self::BudgetSeconds."\n";
+            ."\nPUBLISHED = ".$literal($published)."\nBUDGET = ".$budget."\n";
         try {
             return $this->ssh->execute(new SshConnection(
                 host: $node->wireguard_ip, user: $node->user, port: 22,
                 identityFile: $this->keys->privateKeyPath(), knownHostsFile: $this->hosts->path(),
-                connectTimeout: 2, commandTimeout: 4,
+                connectTimeout: 2, commandTimeout: $command,
             ), new RemoteCommand(
-                ['timeout', '3', 'python3', '-', ...$arguments],
+                ['timeout', (string) $timeout, 'python3', '-', ...$arguments],
                 input: $prelude.File::get(resource_path('instances/workspace-git-read.py')),
-                maxOutputBytes: $bytes, timeout: 4,
+                maxOutputBytes: $bytes, timeout: $command,
             ));
         } catch (Throwable $error) {
             return $error instanceof ProcessTimedOutException || $error->getPrevious() instanceof ProcessTimedOutException
@@ -202,8 +215,8 @@ final readonly class ContainerWorkspaceRead
     /**
      * @param  array<string, mixed>|null  $answer
      * @return array{instance_id: int, state: string, reason: ?string, read_at: string, duration_ms: int, baseline: ?string,
-     *     head: ?string, uncommitted: ?int, unpushed: ?int, modified: ?array<string, mixed>, untracked: ?array<string, mixed>,
-     *     commits: ?array<string, mixed>, stashes: ?array<string, mixed>}
+     *     head: ?string, head_commit: ?string, uncommitted: ?int, unpushed: ?int, modified: ?array<string, mixed>, untracked: ?array<string, mixed>,
+     *     commits: ?array{count: int, branch_count: int, branches: list<array{name: string, count: int}>, head: int}, stashes: ?array<string, mixed>}
      */
     private static function shape(int $instanceId, ?array $answer, int $milliseconds): array
     {
@@ -220,7 +233,7 @@ final readonly class ContainerWorkspaceRead
 
             return ['instance_id' => $instanceId, 'state' => 'unknown',
                 'reason' => $state === 'unknown' && in_array($reason, self::Reasons, true) ? $reason : 'unreachable',
-                'read_at' => $at, 'duration_ms' => $milliseconds, 'baseline' => null, 'head' => null, 'uncommitted' => null,
+                'read_at' => $at, 'duration_ms' => $milliseconds, 'baseline' => null, 'head' => null, 'head_commit' => null, 'uncommitted' => null,
                 'unpushed' => null, 'modified' => null, 'untracked' => null, 'commits' => null, 'stashes' => null];
         }
         $uncommitted = $classes['modified']['count'] + $classes['untracked']['count'];
@@ -229,6 +242,7 @@ final readonly class ContainerWorkspaceRead
         return ['instance_id' => $instanceId, 'state' => $dirty ? 'dirty' : 'clean', 'reason' => null, 'read_at' => $at,
             'duration_ms' => $milliseconds, 'baseline' => $answer['baseline'],
             'head' => is_string($answer['head'] ?? null) ? $answer['head'] : null,
+            'head_commit' => is_string($answer['head_commit'] ?? null) && preg_match('/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/', $answer['head_commit']) === 1 ? $answer['head_commit'] : null,
             'uncommitted' => $uncommitted, 'unpushed' => $commits['count'],
             'modified' => $classes['modified'], 'untracked' => $classes['untracked'], 'commits' => $commits, 'stashes' => $classes['stashes']];
     }
@@ -244,12 +258,18 @@ final readonly class ContainerWorkspaceRead
         return ['count' => $class['count'], 'names' => array_slice($names, 0, 5)];
     }
 
-    /** @return array{count: int, branch_count: int, branches: list<array{name: string, count: int}>}|null */
+    /**
+     * `head`: how many of the counted commits the checked-out branch holds; an answer without it holds none, so none is cleared.
+     *
+     * @return array{count: int, branch_count: int, branches: list<array{name: string, count: int}>, head: int}|null
+     */
     private static function commits(mixed $class): ?array
     {
         if (! is_array($class) || ! is_int($class['count'] ?? null) || ! is_int($class['branch_count'] ?? null) || ! is_array($class['branches'] ?? null)) {
             return null;
         }
+        $head = $class['head'] ?? 0;
+        $head = is_int($head) && $head >= 0 && $head <= $class['count'] ? $head : 0;
         $branches = [];
         foreach (array_slice($class['branches'], 0, 5) as $branch) {
             if (is_array($branch) && is_string($branch['name'] ?? null) && is_int($branch['count'] ?? null)) {
@@ -257,6 +277,6 @@ final readonly class ContainerWorkspaceRead
             }
         }
 
-        return ['count' => $class['count'], 'branch_count' => $class['branch_count'], 'branches' => $branches];
+        return ['count' => $class['count'], 'branch_count' => $class['branch_count'], 'branches' => $branches, 'head' => $head];
     }
 }

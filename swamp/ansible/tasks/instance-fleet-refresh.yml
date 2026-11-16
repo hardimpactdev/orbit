@@ -4,7 +4,7 @@
 # The record `fleet_record` holds the digests of the parts the last passed refresh did; a part runs when its digest differs, and a
 # missing or unreadable record makes every part run. `code` migrates and restarts the nested Gateway and places the agent delivery,
 # `grants` reloads the nested Swamp's grants, `tokens` reads the nested Swamp's tokens when the oldest may be due, `rules` reads the fleet
-# files, and `converge` waits for the three agents and converges the base of each nested Node whose own digest changed, side by side. A
+# files, and `converge` waits for the three agents and converges each nested Node whose own digest changed, one at a time. A
 # Node's converge is also due 7 days after its last one. The fleet's devices and keys are read, and readiness is waited for once, every time. `base` is
 # retaken, with those containers stopped and started again, only for the containers whose disks changed: the grants, a remint or a Swamp
 # install changed the nested Gateway, a converge changed a task, a rule or file differed, a `base` is missing, or the record was. A migration
@@ -240,13 +240,14 @@
     fail_msg: "{{ fleet_services_down | join(', ') }} not active in {{ intent.fleet.guests.gateway }}"
     quiet: true
 
-# The nested Gateway, on its new code and schema, prints the digest of each Node's base converge intent (`orbit:node-converge-digest`): what
-# the Gateway would send, with no Operation and no write. A read that fails makes the converge due, and its digest is not recorded.
-- name: Read the base intent digests of the nested Nodes
+# The nested Gateway, on its new code and schema, prints the digest of each Node's default converge intent (`orbit:node-converge-digest`,
+# NodeDesiredConvergeInput::defaultDigest): what the Gateway would send, with no Operation and no write. A read that fails makes
+# the converge due, and its digest is not recorded.
+- name: Read the default intent digests of the nested Nodes
   ansible.builtin.command:
     argv: >-
       {{ ['timeout', '60'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--cwd', intent.fleet.checkout.path ~ '/apps/gateway', '--']
-         + fleet_as_app_user + ['php', 'artisan', 'orbit:node-converge-digest', '--host', 'app-dev', '--base'] + fleet_roles }}
+         + fleet_as_app_user + ['php', 'artisan', 'orbit:node-converge-digest', '--host', 'app-dev'] + fleet_roles }}
   register: fleet_intents_read
   changed_when: false
   failed_when: false
@@ -332,7 +333,7 @@
   ansible.builtin.set_fact:
     fleet_gateway_at: "{{ now(utc=true).timestamp() }}"
 
-# The base converge of each nested Node, so `base` holds the new agent and Orbit's files. It runs when the converge is due, and so
+# The default converge of each due nested Node, so `base` holds the new agent, Orbit's files and the role state. It runs when the converge is due, and so
 # does the wait for the agents: the readiness wait after it needs the agents anyway.
 # The converge needs each Node's agent; after the restart the agents come back within seconds. The wait reads the Nodes every
 # `fleet_ready_delay` seconds, `fleet_ready_seconds` (300 by default) worth of tries of at most 15 s each, and needs no Doctor.
@@ -398,23 +399,23 @@
   failed_when: fleet_updates.rc != 0 or not fleet_updates_idle
   changed_when: false
   loop: "{{ fleet_converge_roles }}"
-# The due Nodes converge side by side: all are admitted, then each is awaited, and a failure fails the refresh only after every
-# admitted converge has ended (instance-fleet-converge-node.yml). When the `host` part is due, nested-app-dev's converge comes after
-# them, alone, with its `app-dev` role: the hub's reservation refuses a converge with roles beside any other converge. Its wait is
-# always 1800 s, as its roles phase's bound (`roles_seconds`): it runs rarely and may build the stock and Instance images.
-- name: Converge the base of the due nested Nodes
+# Each due nested Node converges with the default scope (base, software, recorded roles, Tools, network), one at a time: the nested
+# Gateway, nested-app-prod, then nested-app-dev. A default converge has a network and holds the hub's reservation, so the nested Gateway
+# refuses a second converge beside it. A failed or refused converge fails the refresh before the next is admitted
+# (instance-fleet-converge-node.yml). So `base` holds Nodes converged at the seed's commit, and a proof's first converge after a reset
+# finds each phase unchanged (docs/reference/development-containers.md#refresh-after-a-release). Below the 2,000,000 ID map
+# (`intent.fleet.host` off), nested-app-dev keeps the base scope: its roles phase cannot build the Instance host there. Its default
+# converge waits 1800 s, as its roles phase's bound (`roles_seconds`): it may build the stock and Instance images.
+- name: Converge the due nested Nodes one at a time
   when: fleet_due.converge
   ansible.builtin.include_tasks: instance-fleet-converge-node.yml
+  loop: "{{ ['gateway', 'app-prod', 'app-dev'] | select('in', fleet_converge_roles) | map('extract', dict(fleet_nodes | map(attribute='name') | zip(fleet_nodes))) | list }}"
+  loop_control: { loop_var: fleet_converge_node, label: "{{ fleet_converge_node.name }}" }
   vars:
-    fleet_converge_nodes: >-
-      {{ fleet_nodes | selectattr('name', 'in', fleet_converge_roles | reject('eq', 'app-dev' if fleet_due.host | bool else '') | list) | list }}
-- name: Converge nested-app-dev's Instance host after the base converges
-  when: fleet_due.host | bool
-  ansible.builtin.include_tasks: instance-fleet-converge-node.yml
-  vars:
-    fleet_converge_nodes: "{{ fleet_nodes | selectattr('name', 'eq', 'app-dev') | list }}"
-    fleet_converge_body: '{"roles":["app-dev"]}'
-    fleet_converge_seconds: 1800
+    fleet_converge_nodes: "{{ [fleet_converge_node] }}"
+    fleet_converge_base: "{{ fleet_converge_node.name == 'app-dev' and not intent.fleet.host | default(false) | bool }}"
+    fleet_converge_body: "{{ '{\"base\":true}' if fleet_converge_base | bool else '{\"base\":false}' }}"
+    fleet_converge_seconds: "{{ 1800 if fleet_converge_node.name == 'app-dev' and not fleet_converge_base | bool else 900 }}"
 
 - name: Time the converge
   ansible.builtin.set_fact:
