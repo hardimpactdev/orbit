@@ -442,7 +442,7 @@ class WorkflowTest(unittest.TestCase):
                                 capture_output=True, text=True, timeout=90)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
-    def test_manual_full_set_uses_the_same_consumer_and_cannot_compete_for_sabre(self):
+    def test_manual_full_set_uses_the_same_consumer_and_cannot_compete_for_shard_runners(self):
         import yaml
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci-full-set.yml').read_text())
         self.assertEqual({'workflow_dispatch'}, set(workflow.get('on', workflow.get(True))))
