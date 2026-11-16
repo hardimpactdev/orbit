@@ -3,7 +3,6 @@ title: "Compute drivers"
 description: "Incus task VMs for every Project."
 covers:
   - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**}
-  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - "{bin/{php-build,git-build-watch}}"
@@ -396,7 +395,7 @@ Internal source commits and digests remain in the identity; relocating identical
 
 Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, external artifact URL, `artifact_mirror`, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit.
 
-A [refresh](#refresh-the-base-snapshot) records the same identity on the build row of the base snapshot. Schema version `1` and a short display hash are not substitutes. No code writes the `task_vm_image_recipe` row any more; only the recovery of an old `recipe-image:` problem reads it.
+A [refresh](#refresh-the-base-snapshot) records the same identity on the build row of the base snapshot. Schema version `1` and a short display hash are not substitutes. The table `task_vm_image_recipe` that held the current recipe is dropped ([old paths](/reference/old-paths#the-task-vm-tables)).
 
 ### Show and validate the recipe
 
@@ -459,7 +458,7 @@ Tracking a live PPA would make it a second owner of Git, and an exact APT versio
 
 ## Task VMs
 
-The task VM lifecycle is removed: no claim, resume or release runs, and every task runs in a [task copy](/reference/tasks#task-copy) ([old paths](/reference/old-paths#the-pi-task-loop)). This section describes what old `task_vms` rows and the Swamp workflows still hold until they go. The Node setting `task_vms` and the task VM settings are removed ([old paths](/reference/old-paths#task-vm-settings)).
+The task VM lifecycle is removed: no claim, resume or release runs, and every task runs in a [task copy](/reference/tasks#task-copy) ([old paths](/reference/old-paths#the-pi-task-loop)). The tables `task_vms`, `task_vm_image_builds` and `task_vm_image_recipe` are dropped ([old paths](/reference/old-paths#the-task-vm-tables)). This section describes what a task VM was, and what the Swamp workflows still hold until they go. The Node setting `task_vms` and the task VM settings are removed ([old paths](/reference/old-paths#task-vm-settings)).
 
 A host had a `containers` setting with separate container places and a placement switch. They were built for a separate task container runtime, which ADR 0250 dropped: tasks move into [Instance containers](/reference/development-containers#tasks-in-an-instance-container), and the setting is removed with `task_vms`. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). Before that, every task group ran on a task VM.
 
@@ -679,7 +678,7 @@ Doctor reads no task VM row. It reports no `node.task_vm_parked` and inspects ev
 
 ### States
 
-The `TaskVmState` enum has six cases.
+A task VM row had six states. The table and its states are dropped ([old paths](/reference/old-paths#the-task-vm-tables)).
 
 | State | Meaning |
 | --- | --- |
@@ -1234,16 +1233,11 @@ Every task VM error code starts with `task_vm.`. The setup commands print the co
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `task_vm.invalid_config` | 500 | A `task_vms` value is invalid. See [Configure task VMs](#configure-task-vms) |
-| `task_vm.unknown_host` | 409 | The Node is not active or has no valid `settings.task_vms` |
 | `task_vm.workspace_mismatch` | 409 | A task workspace command over SSH was refused. Task VMs are removed, so every such command fails with it |
-| `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
-| `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
-| `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
+| `task_vm.setup_failed` | 409 | The Ansible host preparation refused the host |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
-The build row records the step and error |
-| `task_vm.vm_missing` | 502 | The sweep found a `ready` or `parked` task VM gone from its host |
+| `task_vm.vm_missing` | 502 | A frozen `incus` agent command found the task VM gone from its host |
 | `task_vm.git_credential_refused` | 409 | A command that carries a GitHub credential was about to run through an `incus` command. See [Git on a task VM](#git-on-a-task-vm) |
 
 ### Limits
@@ -1304,7 +1298,7 @@ The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` s
 
 A subtask declares no topology. The API ignores an empty `topology` list and refuses any other list with `422 tasks.orchestration_unsupported`. A value that is not a list, such as a string or `null`, fails validation with `422 validation.failed`. This holds when a request creates a group, creates a subtask, or updates a subtask. Task responses have no `topology` field, and the CLI has no `--topology` option.
 
-Nothing reads a declaration that a group saved before this rule. The column `tasks.topology` is dropped ([old paths](/reference/old-paths#task-vm-settings)). The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` stay in the schema, and the Gateway neither reads nor writes them. A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
+Nothing reads a declaration that a group saved before this rule. The column `tasks.topology` is dropped ([old paths](/reference/old-paths#task-vm-settings)). The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` went with the table `task_vms` ([old paths](/reference/old-paths#the-task-vm-tables)). A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
 
 ## VM power
 
