@@ -2353,6 +2353,7 @@ What the host needs, measured by hand on a task copy at 1,165,536 on 2026-11-16:
 | Pool | A directory pool: a copy is a full copy. `btrfs` would clone on `nested-app-dev`'s btrfs root, but the container branch accepts only `zfs` and `dir` |
 | Network | The Node's input rules drop DHCP on `orbitinst0` until the role converge adds `orbit:instances-*` |
 | Egress | One isolated container launched in 10 s and ran `apt-get update`, a `git` install and an HTTPS request through the egress proxy in 11 s |
+| Shared folders | A read-only folder disk with `shift=true` fails the start: `idmapping abilities are required but aren't supported on system`. With `shift=false` an isolated container of 34,464 IDs started at once. Its uid 2750 read a file of mode 644 but not a `root:2750` directory of mode 0750, and read it once the directory was open to others (Incus 6.0.5, by hand, 2026-11-16) |
 
 `nested-app-dev`'s own map is 0 to 165,535, with the three `raw.idmap` holes below 2,751. Its `/etc/subuid` names root's range at 1,000,000, outside that map, so Incus ignores the file and takes the rest of the map above 65,536. The holes lie below that base and change nothing.
 
