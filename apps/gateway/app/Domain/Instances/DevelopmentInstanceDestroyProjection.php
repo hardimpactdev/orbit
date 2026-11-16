@@ -23,6 +23,9 @@ use Illuminate\Support\Facades\DB;
 /** Frozen public removal DAG input and terminal record projection only. */
 final readonly class DevelopmentInstanceDestroyProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
+    /** The refusals a container phase names itself (swamp/ansible/instance-container-destroy.yml); any other code stays generic. */
+    public const array PhaseCodes = ['instance.removal_dataset_taken'];
+
     public function __construct(private DirectOperation $direct) {}
 
     public function input(Operation $operation): array
@@ -174,6 +177,11 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             },
             default => 'instance.removal_incomplete',
         };
+        // The container phases name a refusal of their own in their result file; only a known one replaces the generic code.
+        $phase = $this->phaseFile($run, $label);
+        if (in_array($phase['error_code'] ?? null, self::PhaseCodes, true)) {
+            $code = $phase['error_code'];
+        }
         // A server child's steps are in this run's data. Its drop exits 1 on a blocker, which the child allows, so its end check is
         // the step that fails: the child's own outcome names the refusal, as it does for database:destroy.
         if (array_intersect(ValidatedData::stringList($summary['failed_steps'] ?? []), ['Fence new clients', 'Drop databases and users', 'Check they are gone']) !== []) {
@@ -214,16 +222,29 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
     private function failure(array $data, array $result, Operation $operation): mixed
     {
         $native = $data['failure'] ?? null;
-        $run = is_array($data['result'] ?? null) ? $data['result'] : [];
-        $read = is_array($run['steps'] ?? null) && is_array($run['steps']['Read container removal'] ?? null) ? $run['steps']['Read container removal'] : [];
-        $file = in_array($result['failed_step'] ?? null, ['Stop the container', 'Delete the container'], true) && is_string($read['stdout'] ?? null)
-            ? json_decode(trim($read['stdout']), true) : null;
-        if (! is_array($file) || ! is_string($file['detail'] ?? null) || trim($file['detail']) === '') {
+        $file = $this->phaseFile(is_array($data['result'] ?? null) ? $data['result'] : [], $result['failed_step'] ?? null);
+        if (! is_string($file['detail'] ?? null) || trim($file['detail']) === '') {
             return $native;
         }
         $step = is_array($native) && is_string($native['failed_step'] ?? null) ? $native['failed_step'] : ValidatedData::string($result['failed_step']);
 
         return app(NativeStepFailure::class)->written($step, $file['detail'], $operation);
+    }
+
+    /**
+     * The result file of a failed container phase, which "Read container removal" prints: its refusal code and its failed task with
+     * the end of its stderr. Empty for any other failed step.
+     *
+     * @param  array<mixed>  $run
+     * @return array<mixed>
+     */
+    private function phaseFile(array $run, mixed $failedStep): array
+    {
+        $read = is_array($run['steps'] ?? null) && is_array($run['steps']['Read container removal'] ?? null) ? $run['steps']['Read container removal'] : [];
+        $file = in_array($failedStep, ['Stop the container', 'Delete the container'], true) && is_string($read['stdout'] ?? null)
+            ? json_decode(trim($read['stdout']), true) : null;
+
+        return is_array($file) ? $file : [];
     }
 
     /** @param array<string,mixed> $result */

@@ -354,6 +354,26 @@ it('records a failed container stop\'s stderr from the removal file, and keeps t
         ->and(InstanceRemoval::query()->findOrFail($operation->input['removal_id'])->failed_step)->toBe(InstanceRemovalStep::RuntimeCleanup);
 });
 
+it('takes a known refusal code of the container phase from its result file, and keeps any other code generic', function (string $step, string $written, string $code): void {
+    $clone = destroyClone(destroyDefault());
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    $result = ['summary' => ['failed_steps' => [$step]], 'steps' => [
+        $step => ['status' => 'failed', 'exit_code' => 2],
+        'Read container removal' => ['status' => 'succeeded', 'stdout' => json_encode(['error_code' => $written,
+            'detail' => 'Refuse a name that a dataset holds now: instance.removal_dataset_taken'])]]];
+    $terminal = [...destroyTerminal($operation, 'failed', $result),
+        'failure' => ['failed_step' => $step, 'detail' => 'Command exited with code 2', 'stderr_recorded' => false]];
+
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, $terminal);
+
+    expect($operation->fresh()->error_code)->toBe($code)->and($operation->fresh()->failed_step)->toBe($step)
+        ->and(InstanceRemoval::query()->findOrFail($operation->input['removal_id'])->error_code)->toBe($code);
+})->with([
+    'taken dataset at the deletion' => ['Delete the container', 'instance.removal_dataset_taken', 'instance.removal_dataset_taken'],
+    'taken dataset at the stop' => ['Stop the container', 'instance.removal_dataset_taken', 'instance.removal_dataset_taken'],
+    'an unknown code' => ['Delete the container', 'instance.something_else', 'instance.removal_incomplete'],
+]);
+
 it('deletes every execution copy of a removed Instance over one connection', function (): void {
     $clone = destroyClone(destroyDefault());
     foreach (range(1, 60) as $index) {
