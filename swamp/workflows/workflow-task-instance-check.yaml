@@ -6,6 +6,9 @@ description: >-
   A handoff check first brings in the current default head through task-copy-base, as task:sync does, and merges it when clean.
 queueTimeout: 30
 labels: {role: swamp}
+# Only its base child reads the vault: the read token of a copy's handoff check.
+vaults:
+- orbit-control-inputs
 inputs:
   type: object
   properties:
