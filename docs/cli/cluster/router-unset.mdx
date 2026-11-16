@@ -30,7 +30,7 @@ Orbit refuses to clear the Router while the Cluster owns a Route (`cluster.route
 
 Clearing the Router removes its Router sites and certificates and reloads its Caddy, then removes the LAN rules that only the Router needed. Caddy and the packages stay, and the WireGuard baseline rules are never removed. If no Node holds any Router state, or the Cluster has no Router, the command clears the assignment at once and starts no Operation. Otherwise the CLI follows the Operation and prints the final result with the request ID.
 
-Each Cluster has one Router operation owner. A concurrent Router change on the same Cluster waits up to 30 seconds and then fails with `cluster.router_busy`.
+Each Cluster has one Router operation owner. A concurrent Router change on the same Cluster waits up to 30 seconds and then fails with `cluster.router_busy`. A call while [`node:role:remove`](/cli/node/role-remove#a-stale-router-assignment) removes a stale Router assignment of the Cluster fails with `cluster.router_transition_conflict`.
 
 A failed step leaves the Router's assignment marked failed. Steps that finished stay done and nothing is rolled back, because the Cluster serves no traffic through the Router. After you fix the cause, run the same command again; it skips what is already removed.
 
@@ -43,6 +43,7 @@ A failed step leaves the Router's assignment marked failed. Steps that finished 
 | `cluster.routes_require_router`, `route.reconciliation_required` | The Cluster owns a Route, or an active Route depends on the Router. |
 | `cluster.active_router_required` | The Cluster is active with a TLD. |
 | `cluster.router_busy` | Another Router change holds the Cluster. |
+| `cluster.router_transition_conflict` | A stale Router assignment of the Cluster is being removed. |
 | `http.404` | The Cluster is unknown. |
 | `node_access.required` | The caller has no access grant to a member Node of the Cluster. |
 

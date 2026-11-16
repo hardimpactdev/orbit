@@ -148,7 +148,7 @@ final readonly class NativeRouteRemovalIntent
         foreach ([$route->cluster?->routerAssignment?->node, $route->transitionCluster?->routerAssignment?->node] as $node) {
             if ($node !== null && ! in_array($node->id, $excludedEffectNodeIds, true)) {
                 $nodes[$node->id] ??= $this->memberForNode($node);
-                $nodes[$node->id]['certificate_scopes'] = [...$nodes[$node->id]['certificate_scopes'], "route-{$route->id}-router", "route-{$route->id}-router-hostname-change"];
+                $nodes[$node->id]['certificate_scopes'] = [...$nodes[$node->id]['certificate_scopes'], ...NativeClusterRouterIntent::certificateScopes([$route])];
             }
         }
         if ($route->publication === RoutePublication::Public) {

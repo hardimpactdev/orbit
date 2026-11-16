@@ -48,7 +48,7 @@ A failed `cluster:router:set` can leave a `router` assignment on a Node that is 
 - its failed step is not a step of a Router replacement (`router-certificate` to `cleanup`, or `rollback:` one of them), and no other `router` assignment of the Cluster is at such a step;
 - no `cluster:router:set` or `cluster:router:unset` Operation of the Cluster is queued or running.
 
-The Gateway checks this under the Cluster's Router lock, so no Router change starts meanwhile. Any other `router` removal is refused with `node_role.router_protected`; change the Router with `cluster:router:set` or `cluster:router:unset`.
+The Gateway checks this under the Cluster's Router lock. Until the run ends, `cluster:router:set` and `cluster:router:unset` on the Cluster are refused with `cluster.router_transition_conflict`. Any other `router` removal, including one of an assignment with no Cluster, is refused with `node_role.router_protected`; change the Router with `cluster:router:set` or `cluster:router:unset`.
 
 On that Node only, the run removes the Router LAN rules and the Router certificate folders of the Cluster's Routes (`/etc/caddy/orbit-certificates/route-ID-router` and `route-ID-router-hostname-change`). It rebuilds and reloads the Node's Caddy, which serves no Router site for a stale assignment, and never stops Caddy. Other Nodes, other roles, Instance sites, the Cluster and its private DNS answers do not change. When the run succeeds, the Gateway deletes the assignment.
 
@@ -59,7 +59,7 @@ On that Node only, the run removes the Router LAN rules and the Router certifica
 | `node.id_invalid` | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
 | `node_role.role_required` | The role is missing and the CLI cannot prompt. |
 | `validation.failed` | Consent is missing, the role is protected (`vpn`, `swamp`), the role is in progress, `app-dev` has Instances, or a Route depends on the role. Nothing changes. |
-| `node_role.router_protected` | The `router` assignment is its Cluster's Router or part of a Router change, or a Router Operation of the Cluster is open (409). `details.reason` names which. Nothing changes. |
+| `node_role.router_protected` | The `router` assignment is its Cluster's Router or part of a Router change, or a Router Operation of the Cluster is open (409). `details.reason` is `active_router`, `replacement_in_progress`, `router_operation_open` or `no_cluster`. Nothing changes. |
 | `cluster.router_busy` | Another Cluster Router request holds the Cluster's Router lock (409). Retry. |
 | `analytics.tracking_hosts_exist` | Tracking hosts still use the `analytics` role (409). |
 | `operation.kind_unavailable` | The Node is not active, or not managed over SSH. |

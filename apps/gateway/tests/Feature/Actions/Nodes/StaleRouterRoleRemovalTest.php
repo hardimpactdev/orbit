@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
+use App\Actions\Routes\AdmitClusterRouterOperationAction;
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeRoleValidationException;
@@ -21,6 +23,7 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -96,6 +99,9 @@ it('withdraws the Router sites, certificates and LAN rules on that Node only', f
     $project = Project::query()->create(['name' => 'bench', 'slug' => 'bench', 'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => 'main', 'root' => 'public']);
     $route = Route::query()->create(['kind' => 'app', 'project_id' => $project->id, 'cluster_id' => $shark->cluster_id, 'provenance' => 'explicit',
         'publication' => 'private', 'domain' => 'kept.bench.test', 'status' => 'pending']);
+    $prod = Cluster::query()->create(['name' => 'prod', 'tld' => 'prod']);
+    $candidate = staleRouterNode($prod, 'candidate', '10.44.0.20', '192.168.7.20');
+    NodeRole::query()->create(['node_id' => $candidate->id, 'cluster_id' => $prod->id, 'role' => RoleName::Router, 'status' => 'failed', 'failed_step' => 'cleanup']);
     $dnsBefore = app(ClusterRouterTransition::class)->dnsRouters();
 
     $intent = app(AdmitNodeRoleOperationAction::class)->remove($shark, RoleName::Router, force: true)->input['intent'];
@@ -116,8 +122,9 @@ it('withdraws the Router sites, certificates and LAN rules on that Node only', f
         ->and($intent['files'])->toBe([])
         ->and($intent['directories'])->toBe([])
         ->and($intent['certificates'])->toBe([])
+        ->and($dnsBefore)->toBe([$prod->id => $candidate->id])
         ->and(app(ClusterRouterTransition::class)->dnsRouters())->toBe($dnsBefore)
-        ->and(app(ClusterRouterTransition::class)->secondRouters())->toBe([]);
+        ->and(array_keys(app(ClusterRouterTransition::class)->secondRouters()))->not->toContain($shark->cluster_id);
 });
 
 it('deletes the router row once its removal run succeeds', function (): void {
@@ -216,3 +223,89 @@ it('keeps database and app-dev removals as before', function (RoleName $role): v
         ->and($assignment->refresh()->status)->toBe(LifecycleStatus::Removing)
         ->and($dispatch->started)->toBe([$operation->id]);
 })->with([RoleName::Database, RoleName::AppDev]);
+
+it('refuses a Router set or unset of the Cluster while the stale removal runs', function (): void {
+    Http::preventStrayRequests();
+    staleRouterDispatch();
+    [$shark, $stale, $active] = staleRouterCluster();
+    app(AdmitNodeRoleOperationAction::class)->remove($shark, RoleName::Router, force: true);
+    $cluster = $shark->cluster;
+    $conflict = static fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
+
+    expect(fn () => app(AdmitClusterRouterOperationAction::class)->set($cluster, $shark))->toThrow($conflict)
+        ->and(fn () => app(AdmitClusterRouterOperationAction::class)->set($cluster, $active->node))->toThrow($conflict)
+        ->and(fn () => app(AdmitClusterRouterOperationAction::class)->unset($cluster))->toThrow($conflict);
+    expect($stale->refresh()->status)->toBe(LifecycleStatus::Removing)
+        ->and(Operation::query()->where('kind', 'like', 'cluster.router_%')->count())->toBe(0);
+});
+
+it('checks the router row under its Cluster Router lock', function (): void {
+    Http::preventStrayRequests();
+    staleRouterDispatch();
+    [$shark, $stale] = staleRouterCluster();
+    app()->instance(ClusterRouterOperationLock::class, $lock = new class implements ClusterRouterOperationLock
+    {
+        /** @var list<int> */
+        public array $clusters = [];
+
+        public bool $busy = true;
+
+        public function run(int $clusterId, Closure $operation): mixed
+        {
+            $this->clusters[] = $clusterId;
+            if ($this->busy) {
+                throw new ResourceOperationException('cluster.router_busy', 'busy', 409);
+            }
+
+            return $operation();
+        }
+    });
+
+    expect(fn () => app(AdmitNodeRoleOperationAction::class)->remove($shark, RoleName::Router, force: true))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('cluster.router_busy'));
+    expect($stale->refresh()->status)->toBe(LifecycleStatus::Failed)
+        ->and(Operation::query()->count())->toBe(0);
+
+    $lock->busy = false;
+    app(AdmitNodeRoleOperationAction::class)->remove($shark, RoleName::Router, force: true);
+    expect($lock->clusters)->toBe([$shark->cluster_id, $shark->cluster_id])
+        ->and($stale->refresh()->status)->toBe(LifecycleStatus::Removing);
+});
+
+it('keeps a router row whose removal run failed, and admits the rerun', function (): void {
+    Http::preventStrayRequests();
+    staleRouterDispatch();
+    [$shark, $stale] = staleRouterCluster();
+    $operation = app(AdmitNodeRoleOperationAction::class)->remove($shark, RoleName::Router, force: true);
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'fixture-run']])->save();
+
+    app(NodeRoleRemovalProjection::class)->apply($operation, ['run_id' => 'fixture-run', 'status' => 'failed',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['error_code' => 'route.withdraw_failed', 'failed_step' => 'Remove role data',
+            'steps' => ['Remove role data' => ['status' => 'failed']], 'summary' => ['failed_steps' => ['Remove role data']]]]);
+
+    expect($stale->refresh()->status)->toBe(LifecycleStatus::Failed)
+        ->and($stale->failed_step)->toBe('remove:Remove role data');
+    $rerun = app(AdmitNodeRoleOperationAction::class)->remove($shark->refresh(), RoleName::Router, force: true);
+    expect($rerun->id)->not->toBe($operation->id)
+        ->and($stale->refresh()->status)->toBe(LifecycleStatus::Removing);
+});
+
+it('admits the stale removal and refuses the active Router over the API', function (): void {
+    Queue::fake();
+    Http::preventStrayRequests();
+    staleRouterDispatch();
+    [$shark, $stale, $active] = staleRouterCluster();
+    $caller = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'operator', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.50', 'public_ssh_host' => '10.44.0.50', 'user' => 'orbit']));
+    $caller->accessibleNodes()->attach([$shark->id, $active->node_id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+
+    $this->deleteJson('/api/v1/nodes/'.$active->node_id.'/roles/router', ['force' => true])
+        ->assertStatus(409)->assertJsonPath('error.code', 'node_role.router_protected');
+    $this->deleteJson('/api/v1/nodes/'.$shark->id.'/roles/router', ['force' => true])
+        ->assertStatus(202)->assertJsonPath('data.kind', 'node.role_remove');
+
+    expect($stale->refresh()->status)->toBe(LifecycleStatus::Removing)
+        ->and($active->refresh()->status)->toBe(LifecycleStatus::Active);
+});

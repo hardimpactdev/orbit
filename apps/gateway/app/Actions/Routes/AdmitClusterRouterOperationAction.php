@@ -15,6 +15,7 @@ use App\Domain\Routes\NativeClusterRouterPublicationInput;
 use App\Domain\Routes\NativeClusterRouterSteps;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteRemovalGuard;
+use App\Domain\Routes\StaleRouterAssignment;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -41,6 +42,7 @@ final readonly class AdmitClusterRouterOperationAction
                 throw new ResourceOperationException('cluster.router_node_invalid', 'A Cluster Router must be an active member Node.', 409);
             }
             $assignments = NodeRole::query()->where('cluster_id', $cluster->id)->where('role', RoleName::Router)->lockForUpdate()->get();
+            $this->refuseStaleRemoval($cluster);
             foreach ($assignments as $assignment) {
                 if ($assignment->node_id !== $node->id && in_array($assignment->status, [LifecycleStatus::Provisioning, LifecycleStatus::Failed, LifecycleStatus::Active], true)
                     && ClusterRouterReplacementStep::isReplacementProgress($assignment->failed_step)) {
@@ -74,6 +76,7 @@ final readonly class AdmitClusterRouterOperationAction
 
         return app(ClusterRouterOperationLock::class)->run($cluster->id, fn (): Operation => DB::transaction(function () use ($cluster, $requestId): Operation {
             $cluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
+            $this->refuseStaleRemoval($cluster);
             $this->routes->assertClusterRouterMutable($cluster->id);
             $this->removal->assertRouterRemovable($cluster);
             if ($cluster->state === ClusterState::Active && $cluster->tld !== null) {
@@ -104,6 +107,13 @@ final readonly class AdmitClusterRouterOperationAction
 
             return $this->operations->execute('cluster.router_unset', 'cluster_router', $cluster->id, $nodeId, $input, 'operator', $requestId)->refresh();
         }));
+    }
+
+    private function refuseStaleRemoval(Cluster $cluster): void
+    {
+        if (app(StaleRouterAssignment::class)->removalOpen($cluster->id)) {
+            throw new ResourceOperationException('cluster.router_transition_conflict', 'A stale router assignment of the Cluster is being removed. Retry when its node:role:remove ends.', 409);
+        }
     }
 
     /** @return list<int> */

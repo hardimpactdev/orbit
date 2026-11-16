@@ -23,7 +23,10 @@ final readonly class StaleRouterAssignment
         if ($assignment->role !== RoleName::Router) {
             throw new \LogicException('Only a router assignment can be a stale Router assignment.');
         }
-        if ($assignment->cluster_id === null || $assignment->status === LifecycleStatus::Active) {
+        if ($assignment->cluster_id === null) {
+            $this->refuse('no_cluster');
+        }
+        if ($assignment->status === LifecycleStatus::Active) {
             $this->refuse('active_router');
         }
         if ($assignment->status === LifecycleStatus::Removing) {
@@ -40,6 +43,16 @@ final readonly class StaleRouterAssignment
         if ($open) {
             $this->refuse('router_operation_open');
         }
+    }
+
+    /** Whether an admitted removal of a stale `router` row of the Cluster still runs; Router set and unset wait for it. */
+    public function removalOpen(int $clusterId): bool
+    {
+        $nodeIds = NodeRole::query()->where('cluster_id', $clusterId)->where('role', RoleName::Router)
+            ->where('status', LifecycleStatus::Removing)->pluck('node_id')->all();
+
+        return $nodeIds !== [] && Operation::query()->where('kind', 'node.role_remove')->where('target_type', 'node')
+            ->whereIn('target_id', $nodeIds)->whereNotIn('status', OperationStatus::terminalValues())->exists();
     }
 
     private function refuse(string $reason): never
