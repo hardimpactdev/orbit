@@ -22,6 +22,7 @@ use App\Domain\Nodes\NodeUpdatePolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Fleet\StaticCliRelease;
@@ -453,3 +454,21 @@ it('claims local DNS before dispatch and retains cleanup after a later machine f
     expect(array_column($plan['files'], 'path'))->toContain('/etc/systemd/system/orbit-private-dns.socket', '/etc/systemd/system/orbit-private-dns.service');
 })->with(['Node converge' => [false], 'role converge' => [true]])
     ->with(['later machine failure' => [false], 'process crash without receipt' => [true]]);
+
+it('bounds the roles phase of an Instance fleet Node\'s app-dev converge at 1800 s and leaves every other converge at the workflow\'s 900 s', function (): void {
+    // docs/reference/development-containers.md#instance-host-in-the-fleet: the first Instance host build includes the stock and Instance images.
+    $marker = sys_get_temp_dir().'/orbit-instance-fleet-converge-'.getmypid();
+    config(['instances.fleet_marker' => $marker]);
+    Node::query()->whereKey($this->node->id)->update(['public_ssh_host' => TaskVmNestedFleet::Layout['app-dev']['address']]);
+    $intent = fn (array $roles): array => new ReflectionMethod(NodeDesiredConvergeInput::class, 'intent')
+        ->invoke(app(NodeDesiredConvergeInput::class), $this->node->refresh(), [], $roles, false, null, [], null);
+    expect($intent(['app-dev']))->not->toHaveKey('roles_seconds');
+    touch($marker);
+    try {
+        expect($intent(['app-dev'])['roles_seconds'])->toBe(1800)
+            ->and($intent(['app-prod']))->not->toHaveKey('roles_seconds')
+            ->and($intent([]))->not->toHaveKey('roles_seconds');
+    } finally {
+        unlink($marker);
+    }
+});
