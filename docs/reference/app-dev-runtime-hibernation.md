@@ -91,6 +91,8 @@ The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-A
 
 A container Instance's site calls the same endpoint behind its asleep marker. The Gateway admits or joins the wake and answers the progress page at once; it never holds the visitor's request for the wake. A frozen container's resume through its Node ([the Node resumes a frozen container](/reference/development-containers#the-node-resumes-a-frozen-container)) starts after that answer. The Node first reads the container's recorded pages back from swap, still frozen, then resumes it ([Prepared restore](/reference/prepared-restore)), and the page's poll loads the app once the marker is gone.
 
+> **Target design, not built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) the endpoint holds a development container Instance's visit for a short bound, starting at 500 ms, while the Node's executor wakes it. When the wake ends in time, the endpoint answers 200 and Caddy passes the original request to the app. Otherwise it answers the progress page, as above.
+
 Planned: a production live gets no progress page. The Gateway still answers at once; then the Node's Caddy holds the visitor's request until the asleep marker is gone, up to 10 s, and proxies it to live ([Production containers](/reference/production-containers#sleep-and-wake)).
 
 The restore makes the app's first answer faster. It does not change this page, its 250 ms poll, or when the Gateway answers. The page polls the visitor's own path and query: control characters are dropped, and a path that starts with `//` or `/\` becomes `/`.
