@@ -84,7 +84,7 @@ function workspaceReader(?string $answer = null): object
 {
     $reader = new class($answer ?? (string) json_encode(['heads' => [str_repeat('a', 40), '--all'], 'stashes' => [], 'untracked' => ['notes.txt', 7]])) implements SshExecutor
     {
-        /** @var list<array{arguments: list<string>, level: int}> */
+        /** @var list<array{arguments: list<string>, level: int, command_timeout: float, timeout: float, budget: ?string}> */
         public array $calls = [];
 
         /** The first calls that fail as a lost connection does, before the answer. */
@@ -94,7 +94,8 @@ function workspaceReader(?string $answer = null): object
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
-            $this->calls[] = ['arguments' => $command->arguments, 'level' => DB::transactionLevel()];
+            $this->calls[] = ['arguments' => $command->arguments, 'level' => DB::transactionLevel(), 'command_timeout' => (float) $connection->commandTimeout,
+                'timeout' => (float) $command->timeout, 'budget' => preg_match('/^BUDGET = (.+)$/m', (string) $command->input, $match) === 1 ? $match[1] : null];
             if (count($this->calls) <= $this->lost) {
                 return new CommandResult(255, '', 'ssh: connect to host 10.44.0.7 port 22: Connection timed out', 2000, false);
             }
