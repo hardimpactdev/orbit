@@ -1,3 +1,4 @@
+import { hostTasks } from "./_support/host_task_scope.ts";
 /** Exercise the shipped Instance host tasks against disposable local boundaries. */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
@@ -22,6 +23,7 @@ Deno.test({
         const pin = recipe.tools[part.tool];
         const f = await fixture();
         try {
+            hostTasks(f.folder, ["Install the shared folders"]);
             // Match the upstream ZIP layout without downloading a release in this fixture.
             const source = `${f.folder}/deno`;
             Deno.writeTextFileSync(
@@ -89,6 +91,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
+            hostTasks(f.folder, ["Install the shared folders"]);
             const install = async (frankenphp: string[]) => {
                 const name = `static-php-${frankenphp.length}.tar.gz`;
                 const sha = await program(f.folder, name, {
@@ -154,62 +157,70 @@ Deno.test({
     },
 });
 
-Deno.test({
-    name:
-        "the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links",
-    ignore: !hasAnsible,
-    async fn() {
-        const f = await fixture();
-        try {
-            const calls = `${f.folder}/vp-calls`;
-            // npm installs the locked package under its --prefix; vp records its calls and runs the home's Node.
-            const npm = await program(f.folder, "node-1.0.tar.gz", {
-                "node/bin/npm": `while [ "$1" != --prefix ]; do shift; done
+async function viteFixture() {
+    const f = await fixture();
+    try {
+        hostTasks(f.folder, ["Install the shared folders"]);
+        const calls = `${f.folder}/vp-calls`;
+        // npm installs the locked package under its --prefix; vp records its calls and runs the home's Node.
+        const npm = await program(f.folder, "node-1.0.tar.gz", {
+            "node/bin/npm": `while [ "$1" != --prefix ]; do shift; done
 mkdir -p "$2/node_modules/vite-plus" && cp "$2/package-lock.json" "$2/node_modules/vite-plus/package.json"`,
-            });
-            const vp = await program(f.folder, "vp-1.4.0.tar.gz", {
-                vp: `echo "$VP_HOME $VP_NO_UPDATE_CHECK $*" >> ${calls}
+        });
+        const vp = await program(f.folder, "vp-1.4.0.tar.gz", {
+            vp: `echo "$VP_HOME $VP_NO_UPDATE_CHECK $*" >> ${calls}
 [ "$*" = "env exec node --version" ] && echo v24.22.1; exit 0`,
-            });
-            const runtime = (version: string, node: string, home: string) => ({
-                ...f.instances,
-                folders: {
-                    ...f.instances.folders,
-                    runtime: {
-                        ...f.instances.folders.runtime,
-                        version,
-                        parts: [{
-                            name: "node",
-                            version: "1.0",
-                            url: "https://example.test/download/node-1.0.tar.gz",
-                            archive: "tar",
-                            sha256: npm,
-                            bin: { npm: "node/bin/npm" },
-                        }, {
-                            name: "vite-plus",
+        });
+        const runtime = (version: string, node: string, home: string) => ({
+            ...f.instances,
+            folders: {
+                ...f.instances.folders,
+                runtime: {
+                    ...f.instances.folders.runtime,
+                    version,
+                    parts: [{
+                        name: "node",
+                        version: "1.0",
+                        url: "https://example.test/download/node-1.0.tar.gz",
+                        archive: "tar",
+                        sha256: npm,
+                        bin: { npm: "node/bin/npm" },
+                    }, {
+                        name: "vite-plus",
+                        version: "1.4.0",
+                        url: "https://example.test/download/vp-1.4.0.tar.gz",
+                        archive: "tar",
+                        sha256: vp,
+                        bin: [],
+                    },
+                    // Every runtime folder holds the trust module's part (docs/reference/development-containers.md#trust).
+                    ...f.instances.folders.runtime.parts.filter((part) => "trust_module" in part)],
+                    vite_plus: {
+                        part: "vite-plus",
+                        binary: "vp",
+                        home:
+                            `${f.folder}/opt/orbit-runtime/vite-plus/${home}`,
+                        version: "1.4.0",
+                        node,
+                        lock: JSON.stringify({
+                            name: "orbit-recipe-vite-plus",
                             version: "1.4.0",
-                            url: "https://example.test/download/vp-1.4.0.tar.gz",
-                            archive: "tar",
-                            sha256: vp,
-                            bin: [],
-                        },
-                        // Every runtime folder holds the trust module's part (docs/reference/development-containers.md#trust).
-                        ...f.instances.folders.runtime.parts.filter((part) => "trust_module" in part)],
-                        vite_plus: {
-                            part: "vite-plus",
-                            binary: "vp",
-                            home:
-                                `${f.folder}/opt/orbit-runtime/vite-plus/${home}`,
-                            version: "1.4.0",
-                            node,
-                            lock: JSON.stringify({
-                                name: "orbit-recipe-vite-plus",
-                                version: "1.4.0",
-                            }),
-                        },
+                        }),
                     },
                 },
-            });
+            },
+        });
+        return { ...f, calls, runtime };
+    } catch (error) { f.cleanup(); throw error; }
+}
+
+Deno.test({
+    name: "the runtime builds its Vite+ home and reuses it in another folder version",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await viteFixture();
+        const { calls, runtime } = f;
+        try {
             f.write(runtime("555555555555", "24.22.1", "aaaaaaaaaaaa"));
             let result = await f.run();
             assert(result.ok, result.output);
@@ -246,6 +257,21 @@ mkdir -p "$2/node_modules/vite-plus" && cp "$2/package-lock.json" "$2/node_modul
                 3,
             );
 
+        } finally { f.cleanup(); }
+    },
+});
+
+Deno.test({
+    name: "a mapped Vite+ home stays until no process maps it and no folder version links it",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await viteFixture();
+        const { runtime } = f;
+        try {
+            f.write(runtime("555555555555", "24.22.1", "aaaaaaaaaaaa"));
+            let result = await f.run();
+            assert(result.ok, result.output);
+            const home = `${f.folder}/opt/orbit-runtime/vite-plus/aaaaaaaaaaaa`;
             // Another release is another home. The old one stays while a process maps it, even after its version went.
             Deno.writeTextFileSync(
                 `${f.folder}/maps`,
@@ -255,7 +281,7 @@ mkdir -p "$2/node_modules/vite-plus" && cp "$2/package-lock.json" "$2/node_modul
             result = await f.run();
             assert(result.ok, result.output);
             assert(f.has("opt/orbit-runtime/vite-plus/bbbbbbbbbbbb/.complete"));
-            assert(!f.has("opt/orbit-runtime/666666666666"));
+            assert(!f.has("opt/orbit-runtime/555555555555"));
             assert(f.has("opt/orbit-runtime/vite-plus/aaaaaaaaaaaa/.complete"));
             // Once no process maps it and no version links it, it goes.
             Deno.writeTextFileSync(`${f.folder}/maps`, "");
@@ -263,6 +289,20 @@ mkdir -p "$2/node_modules/vite-plus" && cp "$2/package-lock.json" "$2/node_modul
             assert(result.ok, result.output);
             assert(!f.has("opt/orbit-runtime/vite-plus/aaaaaaaaaaaa"));
 
+        } finally { f.cleanup(); }
+    },
+});
+
+Deno.test({
+    name: "a Vite+ home with the wrong Node version is refused without replacing current",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await viteFixture();
+        const { runtime } = f;
+        try {
+            f.write(runtime("555555555555", "24.22.1", "aaaaaaaaaaaa"));
+            let result = await f.run();
+            assert(result.ok, result.output);
             // A home whose Node is not the recipe's is refused and never marked complete.
             f.write(runtime("888888888888", "24.23.0", "cccccccccccc"));
             result = await f.run();
@@ -276,10 +316,8 @@ mkdir -p "$2/node_modules/vite-plus" && cp "$2/package-lock.json" "$2/node_modul
             );
             assertEquals(
                 Deno.readLinkSync(`${f.folder}/opt/orbit-runtime/current`),
-                "777777777777",
+                "555555555555",
             );
-        } finally {
-            f.cleanup();
-        }
+        } finally { f.cleanup(); }
     },
 });
