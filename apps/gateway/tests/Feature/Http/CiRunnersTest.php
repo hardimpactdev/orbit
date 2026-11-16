@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofGroup;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
@@ -62,7 +63,8 @@ beforeEach(function (): void {
     $this->mock(MetricsCredentialManager::class, fn ($mock) => $mock->shouldReceive('storedCredentials')
         ->andReturn(new MetricsCredentialsData('https://metrics.orbit', 'admin', 'secret')));
     $this->ci = ciRunnersNode('ci-b', '10.44.0.7', ['ci' => ['places' => 3, 'proof_only' => false]]);
-    $this->ci->forceFill(['instance_bridge' => '10.253.0.0/24'])->saveQuietly();
+    // Its ci-runner converge installed this release's hold script and prepared nested hosting: it takes proof copies.
+    $this->ci->forceFill(['instance_bridge' => '10.253.0.0/24', 'ci_hold_digest' => ProofCopyHosts::holdDigest(), 'ci_nested_hosting' => true])->saveQuietly();
     $this->ci->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
     $this->other = ciRunnersNode('ci-a', '10.44.0.8');
     $this->other->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
@@ -173,6 +175,18 @@ describe('GET /api/v1/ci/runners', function (): void {
         expect($node['places'])->toBe(['total' => 3, 'proof_only' => true, 'runner_jobs' => 0, 'proof_copies' => 1, 'free' => 2])
             ->and(array_column($node['runners'], 'busy', 'name'))->toBe(['ci-b-1' => true, 'ci-b-2' => false]);
     });
+
+    it('shows no free place on a Node that takes no proof copies, by the placement rule', function (array $record): void {
+        // docs/reference/ci-runner-view.md: `free` never counts a place that a proof does not take.
+        $this->ci->forceFill($record)->saveQuietly();
+
+        $node = $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])->getJson('/api/v1/ci/runners')->assertOk()->json('data.nodes.1');
+
+        expect($node['places'])->toBe(['total' => 3, 'proof_only' => false, 'runner_jobs' => 1, 'proof_copies' => 0, 'free' => 0]);
+    })->with([
+        'a hold script of an older release' => [['ci_hold_digest' => str_repeat('0', 64)]],
+        'no nested hosting from its converge' => [['ci_nested_hosting' => false]],
+    ]);
 
     it('still answers when Prometheus and the GitHub App cannot', function (): void {
         $this->prometheus = static fn () => Http::response(['message' => 'down'], 502);

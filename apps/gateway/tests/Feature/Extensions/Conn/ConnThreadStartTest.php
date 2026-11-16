@@ -1580,7 +1580,7 @@ it('refuses a clone of a nested-fleet Project before it records an Instance or a
 
     threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login-k3j9'])
         ->assertStatus(409)->assertJsonPath('error.code', 'instance.nested_fleet_host_unavailable')
-        ->assertJsonPath('error.message', 'The Node has not switched on nested-fleet hosting.');
+        ->assertJsonPath('error.message', 'The Node hosts no nested fleets: switch on its nested-fleet hosting, or converge the ci-runner role of a CI-only Node.');
     expect(Instance::query()->count())->toBe($instances)->and(InstanceRuntime::query()->count())->toBe($runtimes)
         ->and(Operation::query()->count())->toBe($operations);
 });

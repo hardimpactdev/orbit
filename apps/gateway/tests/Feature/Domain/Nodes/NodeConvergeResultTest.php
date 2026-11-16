@@ -293,6 +293,23 @@ it('keeps the hold script record of a ci-runner node:converge only when it is th
     'a run whose roles phase failed' => ['this', 'roles', false],
 ]);
 
+it('keeps the nested hosting record of a ci-runner node:converge only when its intent carries the nested branch', function (bool $branch, ?string $failure, bool $kept): void {
+    // docs/reference/node-provisioning.md#proof-copies-on-a-ci-node: only a ci-runner add or role converge sets the record.
+    Node::query()->whereKey($this->node->id)->update(['ci_nested_hosting' => true]);
+    $input = $this->operation->input;
+    $input['_converge']['intent'] = ['tools' => [], 'roles' => [['role' => RoleName::CiRunner->value, 'runtime' => ['proof_seed' => ['present' => false, 'sender' => null],
+        'instances' => $branch ? ['nested' => ['project' => 'orbit-instances-nested']] : []]]]];
+    $this->operation->update(['input' => $input]);
+
+    app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => $failure === null ? 'succeeded' : 'failed', 'result' => converge_receipt($failure)]);
+
+    expect($this->node->refresh()->ci_nested_hosting)->toBe($kept);
+})->with([
+    'a passed run with the nested branch' => [true, null, true],
+    'a passed run without the nested branch' => [false, null, false],
+    'a run whose roles phase failed' => [true, 'roles', false],
+]);
+
 it('clears the seed listener record of a ci-runner converge whose result is refused', function (): void {
     $default = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'default', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit']));
     Node::query()->whereKey($this->node->id)->update(['seed_sender_id' => $default->id]);

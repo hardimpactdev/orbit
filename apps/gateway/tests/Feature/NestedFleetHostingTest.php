@@ -27,6 +27,7 @@ use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofSeedCopyProjection;
@@ -154,6 +155,42 @@ describe('the one placement rule', function (): void {
             // A switched-on Node lets it through to place(); a missing Node is the writer's own not-found, later.
             ->and(placementRefusal(fn () => InstancePlacement::assert($project, $on)))->toBe('')
             ->and(placementRefusal(fn () => InstancePlacement::assert($project, null)))->toBe('');
+    });
+
+    it('lets a proof copy onto a CI-only Node whose ci-runner converge prepared nested hosting, and keeps its fleet', function (): void {
+        // docs/reference/projects.md#nested-fleet-setting: a CI Node gets no switch; its own converge prepares the hosting.
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $proof = $default->project;
+        $ci = ciNode();
+        Node::withoutEvents(fn (): bool => $ci->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        $refused = 'instance.nested_fleet_host_unavailable 409';
+        expect(InstancePlacement::hostsNestedFleets($ci))->toBeFalse()
+            ->and(placementRefusal(fn () => InstancePlacement::assert($proof, $ci, taskCopy: true)))->toBe($refused)
+            ->and(placementRefusal(fn () => InstancePlacement::place($proof, $ci, true)))->toBe($refused)
+            ->and(InstancePlacement::keepsFleet($proof, $ci, InstancePlacement::NestedProject))->toBeFalse();
+
+        // Its passed ci-runner converge carried the nested branch: the Node hosts nested fleets, with no switch.
+        endCiRunnerConverge($ci, 'succeeded');
+        $ci->refresh();
+        expect($ci->ci_nested_hosting)->toBeTrue()->and(app(NodeSettingsNormalizer::class)->fromStored($ci->settings)?->nested_fleet)->not->toBeTrue()
+            ->and(placementRefusal(fn () => InstancePlacement::assert($proof, $ci, taskCopy: true)))->toBe('')
+            ->and(InstancePlacement::place($proof, $ci, true))->toBe(InstancePlacement::NestedProject)
+            ->and(InstancePlacement::keepsFleet($proof, $ci, InstancePlacement::NestedProject))->toBeTrue()
+            // A normal create of the nested-fleet Project is still refused there, first.
+            ->and(placementRefusal(fn () => InstancePlacement::assert($proof, $ci)))->toBe('instance.node_ci_only 409');
+
+        // A failed converge clears the record, and so does a Node that stopped being CI-only: an app-dev role takes the switch rule.
+        endCiRunnerConverge($ci, 'failed');
+        expect($ci->refresh()->ci_nested_hosting)->toBeFalse()->and(InstancePlacement::hostsNestedFleets($ci))->toBeFalse();
+        endCiRunnerConverge($ci, 'succeeded');
+        $ci->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        expect(InstancePlacement::hostsNestedFleets($ci->refresh()))->toBeFalse();
+
+        // A Node with the switch on hosts nested fleets as before, with no record.
+        $switched = Node::query()->findOrFail($default->node_id);
+        expect($switched->ci_nested_hosting)->toBeFalse()->and(InstancePlacement::hostsNestedFleets($switched))->toBeTrue()
+            ->and(InstancePlacement::keepsFleet($proof, $switched, InstancePlacement::NestedProject))->toBeTrue();
     });
 
     it('gives the nested project its six container keys and the normal project none', function (): void {
@@ -870,7 +907,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
             $assignment = $node->roles()->sole();
             $assignment->update(['status' => LifecycleStatus::Active]);
             endCiRunnerConverge($node->refresh(), 'succeeded');
-            expect($node->refresh()->ci_hold_digest)->not->toBeNull();
+            expect($node->refresh()->ci_hold_digest)->not->toBeNull()->and($node->ci_nested_hosting)->toBeTrue();
             $assignment->refresh()->update(['status' => LifecycleStatus::Removing]);
             $removal = Operation::query()->create(['kind' => 'node.role_remove', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
                 'status' => 'running', 'triggered_by' => 'test', 'state' => ['swamp_run_id' => 'run-hold-remove-'.$status],
@@ -879,7 +916,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
                 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => $status === 'succeeded'
                     ? ['steps' => ['Confirm role removal' => ['status' => 'succeeded']]] : ['failed_step' => 'Remove the role files', 'error_code' => 'node_role.removal_failed']]);
 
-            expect($node->refresh()->ci_hold_digest)->toBeNull();
+            expect($node->refresh()->ci_hold_digest)->toBeNull()->and($node->ci_nested_hosting)->toBeFalse();
         }
     });
 

@@ -89,8 +89,9 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
     }
 
     /**
-     * The roles phase of a converge with `ci-runner` writes or removes the seed listener's trust and writes the hold script, so its end
-     * records the listener by the one rule of {@see ProofSeeds::recordListener()} and the script by that of {@see ProofCopyHosts::recordHold()}.
+     * The roles phase of a converge with `ci-runner` writes or removes the seed listener's trust, writes the hold script and prepares the
+     * Instance container branch, so its end records the listener by the one rule of {@see ProofSeeds::recordListener()}, and the script and
+     * nested hosting by that of {@see ProofCopyHosts::recordConverge()}.
      * It never opens the listener.
      *
      * @param  array<string, mixed>  $intent
@@ -101,7 +102,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             $role = ValidatedData::object($role);
             if (($role['role'] ?? null) === RoleName::CiRunner->value) {
                 ProofSeeds::recordListener(ValidatedData::integer($operation->node_id), ValidatedData::object($role['runtime'] ?? []), $rolesPassed, opens: false);
-                ProofCopyHosts::recordHold(ValidatedData::integer($operation->node_id), ValidatedData::object($role['runtime'] ?? []), $rolesPassed, installs: false);
+                ProofCopyHosts::recordConverge(ValidatedData::integer($operation->node_id), ValidatedData::object($role['runtime'] ?? []), $rolesPassed, sets: false);
             }
         }
     }

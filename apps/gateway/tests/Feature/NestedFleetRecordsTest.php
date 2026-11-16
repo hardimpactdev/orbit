@@ -222,7 +222,7 @@ it('merges only owned nested settings after successful asynchronous storage prep
 
 const NestedFleetRefusal = 'Only instance:create makes Instances of a nested-fleet Project, as containers.';
 
-const NestedFleetHostRefusal = 'The Node has not switched on nested-fleet hosting.';
+const NestedFleetHostRefusal = 'The Node hosts no nested fleets: switch on its nested-fleet hosting, or converge the ci-runner role of a CI-only Node.';
 
 /** The flag as the Project update API stores it; a flagged Project's Instance rows below exist only as fixtures. */
 function nestedFleetProject(): Project

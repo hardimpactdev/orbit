@@ -65,7 +65,7 @@ final readonly class NodeRoleRemovalProjection implements DirectOperationProject
             $node = $assignment->node;
             if ($assignment->role === RoleName::CiRunner) {
                 ProofSeeds::forgetListener($node->id);
-                ProofCopyHosts::forgetHold($node->id);
+                ProofCopyHosts::forgetConverge($node->id);
             }
             if ($status === OperationStatus::Succeeded) {
                 self::recordCleanup($snapshot);
