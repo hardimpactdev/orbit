@@ -350,6 +350,39 @@ Deno.test("a proof copy's create holds its CI place before the copy; a failed ho
   assertEquals([refused["clone-container"].status, refused["clone-t3"].status], ["skipped", "skipped"]);
 });
 
+Deno.test("every create meets clone-ci-hold: each of its expressions resolves at run start, and only a proof copy runs it", () => {
+  // Serve resolves a step's expressions when the run starts, also of a step that its guard skips (workflow_start_resolution_test.ts),
+  // so each create kind reaches this step: a default, a normal clone, a non-container Instance and a proof copy.
+  const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as {
+    jobs: { name: string; steps: { name: string }[] }[];
+  };
+  const hold = workflow.jobs.find((job) => job.name === "clone")!.steps.find((step) => step.name === "clone-ci-hold")!;
+  const ssh_execution = { target: { host: "10.0.0.3", user: "orbit", port: 22n, host_keys: [] }, identity_file: "/none" };
+  const creates: Record<string, Record<string, unknown>> = {
+    default: { ...cloneIntent, container: { ...cloneIntent.container, clone: null } },
+    clone: cloneIntent,
+    plain: { ...cloneIntent, container: null },
+    proof: { ...cloneIntent, container: { ...cloneIntent.container, name: "instance-8", clone: { source: "instance-7", ci_hold: { places: 5n } } } },
+  };
+  const skipped: Record<string, unknown> = {};
+  for (const [kind, intent] of Object.entries(creates)) {
+    const inputs = { intent: { ...intent, instance_id: 8n, ssh_execution }, node_id: 3n, operation_id: 1n, kind: "instance.create" };
+    const resolve = (value: unknown): unknown =>
+      typeof value === "string" && value.includes("${{") ? environment.evaluate(swampExpression(value), { inputs })
+        : Array.isArray(value) ? value.map(resolve)
+        : value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolve(item)]))
+        : value;
+    const resolved = resolve(hold) as { guard: boolean; task: { inputs: { argv: unknown } } };
+    skipped[kind] = [resolved.guard, resolved.task.inputs.argv];
+  }
+  assertEquals(skipped, {
+    default: [true, ["true"]],
+    clone: [true, ["true"]],
+    plain: [true, ["true"]],
+    proof: [false, ["timeout", "240", "/usr/local/libexec/orbit-ci-runner-hold", "hold", "instance-8", "5"]],
+  });
+});
+
 // The publication's seconds from the outer fleet's Route clones (completions 21279, 21311, 21292): the CSR and its signature 3 to 4 s,
 // the Route create child with its TLS probe 5 to 7 s.
 const routeIntent = { ...cloneIntent, route: { leaf_indexes: [0] } };
