@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 260,
+      "pages": [
+        "decisions/0260-share-ci-places-between-runners-and-proof-copies"
+      ]
+    }
+  ]
+}

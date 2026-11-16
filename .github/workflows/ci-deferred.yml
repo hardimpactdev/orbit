@@ -108,7 +108,6 @@ jobs:
     runs-on:
     - self-hosted
     - orbit-shard
-    - sabre
     timeout-minutes: 50
     strategy:
       fail-fast: false
