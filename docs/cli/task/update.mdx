@@ -52,6 +52,7 @@ In a terminal, the task list includes active tasks for a status update. Title an
 | `tasks.pr_mode_locked` | The group has a pull request, a publish of it runs, or it has ended. |
 | `tasks.already_claimed` | The scheduler claimed the task before the status change. |
 | `tasks.deliverables_locked` (409) | A `--deliverables` change of a subtask that has started, when no correction applies: before any check, after a passed newest check, a second correction before a new check, a subtask that is not current, or a group without a task copy. |
+| `task.reason_invalid` | `--reason` is blank or longer than 500 characters. Nothing is sent. |
 | `tasks.reason_unexpected` (422) | `--reason` on any update other than a correction after a failed check. |
 | `tasks.copy_turn_unended` | A move of a task copy's subtask to `completed` while a turn of its group still runs. Complete it once the turn has ended. |
 | `tasks.agent_settings_locked` (409) | An agent value of a role that already has a thread. `details.role` names the role. Nothing changes. |
