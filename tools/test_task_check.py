@@ -81,6 +81,15 @@ class TaskCheckFailureTest(unittest.TestCase):
         # No test names the request's class by a rule of this command: the whole SDK suite runs.
         self.assertCaught('pest packages/php-sdk', self.check('pest'), 'TaskRequestsTest')
 
+    def test_cli_command_surface_pin_from_3854(self):
+        # node:update gained an option in its app code alone; CommandSurfaceTest pins every command's approved options.
+        self.vendor('apps/cli')
+        self.change('apps/cli/app/Commands/Nodes/UpdateNodeCommand.php',
+                    "        {--no-ci : Clear the CI places}\n",
+                    "        {--no-ci : Clear the CI places}\n        {--ci-labels= : CI runner labels}\n")
+        # No test file changed: the selected cli-tests job runs its pin test.
+        self.assertCaught('pest apps/cli', self.check('pest'), 'CommandSurfaceTest', '1 pin test files')
+
     def test_strict_docs_lint_from_3713(self):
         # A long sentence is a warning, and strict docs-lint fails on a warning.
         self.vendor('apps/docs')
