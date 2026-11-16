@@ -239,3 +239,74 @@ Deno.test("every type in the inputs schema is one value Swamp's schema allows", 
     };
     walk((flow as unknown as { inputs: unknown }).inputs, "inputs");
 });
+
+/**
+ * The pinned Swamp's own input validation (src/domain/inputs/input_validation_service.ts at 537e03d1), the check that refuses a run
+ * at start with `swamp.start_refused`. Its two imports are swapped: the schema types, and the serve policy that only stops the walk
+ * at the first error. Every other line runs as Swamp ships it.
+ */
+const swampInputErrors = async (
+    inputs: Record<string, unknown>,
+): Promise<string[]> => {
+    const pin = /^swampVersion: \S+-sha\.([0-9a-f]{8})$/m.exec(
+        read("../.swamp.yaml"),
+    )![1];
+    const commit = "537e03d18f517965c7a0e49b9f5954365f4da70c";
+    assertEquals(commit.slice(0, 8), pin, "move the validation import to the new Swamp pin");
+    const source = await (await fetch(
+        `https://raw.githubusercontent.com/swamp-club/swamp/${commit}/src/domain/inputs/input_validation_service.ts`,
+    )).text();
+    const imports = [
+        /import type \{[^}]*\} from "\.\.\/definitions\/definition\.ts";/,
+        'import { stopsAtFirstFailingArgument } from "../untrusted_parse.ts";',
+    ];
+    for (const i of imports) assert(source.search(i) >= 0, `Swamp's validation imports ${i}`);
+    const module = source
+        .replace(imports[0], "type InputsSchema = any; type JsonSchemaProperty = any;")
+        .replace(imports[1], "const stopsAtFirstFailingArgument = () => false;");
+    const { InputValidationService } = await import(
+        `data:application/typescript;base64,${btoa(module)}`
+    );
+    const result = new InputValidationService().validate(
+        inputs,
+        (flow as unknown as { inputs: unknown }).inputs,
+    ) as { errors: { message: string }[] };
+    return result.errors.map((e) => e.message);
+};
+
+Deno.test("Swamp's input validation accepts an Instance without a Route and a Process without Vite", async () => {
+    const inputs = (members: unknown[], processes: unknown[]) => ({
+        operation_id: 7,
+        node_id: 9,
+        kind: "instance.unregister",
+        intent: {
+            removal_id: "r",
+            node_id: 9,
+            instance_id: 315,
+            project_id: 46,
+            name: "default",
+            members,
+            additional_route_ids: [],
+            ssh_execution: {},
+            route_mutations: {},
+            processes,
+            hibernation: [],
+            check_paths: [],
+        },
+        execution_secrets: {},
+    });
+    assertEquals(
+        await swampInputErrors(inputs(
+            [{ instance_id: 315, route_id: null }],
+            [{ process_id: 1, runtime: "systemd", name: "w", on_demand: false, vite: null }],
+        )),
+        [],
+    );
+    // Swamp refuses null for a key it declares: the top-level inputs stay strict.
+    assertEquals(
+        await swampInputErrors({ ...inputs([], []), node_id: null }),
+        ["node_id cannot be null or undefined"],
+    );
+    const { intent: _, ...withoutIntent } = inputs([], []);
+    assertEquals(await swampInputErrors(withoutIntent), ["intent is required"]);
+});
