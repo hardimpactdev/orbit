@@ -126,7 +126,9 @@ The helper keeps its state in fixed folders. Private files belong to root alone;
 
 **Limits record.** `prepare` opens swap with `max` on each cgroup of the container's subtree whose `memory.swap.max` holds `0`. Before the pause, it writes what it opened to `limits.json`: `host_boot_id`, the container's `cgroup_inode`, and `opened: [{relative_cgroup_path, previous_value: "0"}]`. A cgroup with its own limit, such as 32 MiB, stays as it is. A cgroup that vanishes or refuses the write is not opened.
 
-Every resume writes `0` to the container's own cgroup, the value Incus keeps for every running container, and to each inner path of the record that still exists. Then it removes the record. A record whose `host_boot_id` or `cgroup_inode` differs from the live one is stale: the resume closes only the container's own cgroup. A sleep that finds a record no resume closed closes it first, so no inner path stays open. A resume learns inner paths only from `limits.json`; it reads no other record. A nested-fleet Instance frozen before this release has its inner paths only in the old `/dev/shm` record, so the release wakes each such Instance before it deploys.
+Every resume writes `0` to the container's own cgroup, the value Incus keeps for every running container, and to each inner path of the record that still exists. Then it removes the record.
+
+A record whose `host_boot_id` or `cgroup_inode` differs from the live one is stale: the resume closes only the container's own cgroup. A sleep that finds a record no resume closed closes it first, so no inner path stays open. A resume learns inner paths only from `limits.json`; it reads no other record. A nested-fleet Instance frozen before this release has its inner paths only in the old `/dev/shm` record, so the release wakes each such Instance before it deploys.
 
 This record is the only one; the plan does not repeat it.
 
