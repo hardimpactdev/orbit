@@ -34,16 +34,6 @@
     # Caddy's admin API on the Node, which listens on loopback only.
     caddy_admin: http://127.0.0.1:2019
     operation_id: "{{ lookup('ansible.builtin.env', 'ORBIT_OPERATION_ID') }}"
-    # The helper's intent (docs/reference/prepared-restore.md#the-power-helper): the recorded runtime, and the web port only when the
-    # container has a web unit.
-    power_intent:
-      schema_version: 1
-      instance_id: "{{ container.instance_id | int }}"
-      operation_id: "{{ operation_id | int }}"
-      incus_project: "{{ container.project }}"
-      incus_name: "{{ container.name }}"
-      web: >-
-        {{ none if container.web_config | default(none) is none else {'address': container.address, 'port': intent.web.port | int} }}
   tasks:
     - name: Run the part
       tags: [always]

@@ -171,12 +171,11 @@ async function sleep(
             `${folder}/run/intent.json`,
             JSON.stringify({
                 ssh_execution: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
-                container: { instance_id: 7, project, name: "instance-7", address: "10.10.0.7", clone, web_config: options.web ? { listen: 8080 } : null,
+                container: { instance_id: 7, project, name: "instance-7", address: "10.10.0.7", clone, web_config: options.web ? { listen: 8080 } : null, web_port: options.web ? 8080 : null,
                     ...(options.nested ? { allowed_devices: {} } : {}) },
                 marker,
                 ...(options.route === null ? {} : { route: options.route ?? true }),
                 freeze: { resident_anon_mib: 32 },
-                web: { port: 8080 },
             }),
         );
         const done = await new Deno.Command("ansible-playbook", {

@@ -54,7 +54,7 @@
   ansible.builtin.include_tasks: { file: instance-power-call.yml, apply: {tags: [always]} }
   vars:
     power_call: ['prepare', '--instance', '{{ container.instance_id }}', '--operation', '{{ operation_id }}']
-    power_call_stdin: "{{ power_intent | to_json }}"
+    power_call_intent: true
 
 - name: Note the prepared sleep
   when: power == 'prepared_sleep'
@@ -124,12 +124,11 @@
       ansible.builtin.include_tasks: { file: instance-power-call.yml, apply: {tags: [always]} }
       vars:
         power_call: ['discard', '--instance', '{{ container.instance_id }}', '--plan-only']
-        power_call_stdin: ""
     - name: Resume the container for a clean stop
       ansible.builtin.include_tasks: { file: instance-power-call.yml, apply: {tags: [always]} }
       vars:
         power_call: ['restore', '--instance', '{{ container.instance_id }}', '--operation', '{{ operation_id }}']
-        power_call_stdin: "{{ power_intent | to_json }}"
+        power_call_intent: true
     - name: Refuse the sleep whose resume failed
       when: power_called.outcome != 'resumed'
       ansible.builtin.fail: { msg: instance.container_freeze_failed }

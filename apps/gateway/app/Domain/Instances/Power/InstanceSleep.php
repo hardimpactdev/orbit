@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Power;
 
-use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceThreadContributions;
 use App\Domain\Operations\OperationStatus;
@@ -124,12 +123,10 @@ final readonly class InstanceSleep extends InstancePower
     /**
      * The anonymous memory that may stay in RAM after the reclaim; more means swap is full, and the sleep stops the container. `route`
      * says whether a published Route has a Caddy site for the Instance: only such a site must check the asleep marker before the freeze,
-     * and an Instance without one, such as a default without a Route, sleeps with nothing to check. `web.port` is the container's web
-     * port, which the power helper records for the wake's readiness check.
+     * and an Instance without one, such as a default without a Route, sleeps with nothing to check.
      */
     protected function intent(Instance $instance): array
     {
-        return ['freeze' => ['resident_anon_mib' => 32], 'route' => $instance->routes()->where('sites_published', true)->exists(),
-            'web' => ['port' => InstanceContainer::WebPort]];
+        return ['freeze' => ['resident_anon_mib' => 32], 'route' => $instance->routes()->where('sites_published', true)->exists()];
     }
 }

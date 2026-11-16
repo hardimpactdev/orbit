@@ -274,6 +274,7 @@ final readonly class InstanceContainer
         $environment = [...$environment, ...$proxy];
         $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url, $proxy, $ownProxy);
         ['vite' => $vitePort, 'server' => $devServerPort] = app(ContainerProcesses::class)->ports($instance);
+        $webConfig = $this->webConfig($instance, $runtime);
 
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
@@ -331,7 +332,9 @@ final readonly class InstanceContainer
             'mail' => $mail,
             'mail_units' => $mail === null ? [] : app(DevelopmentMail::class)->units($mail),
             'units' => $this->units($instance, $runtime, $application, $devServerPort),
-            'web_config' => $this->webConfig($instance, $runtime),
+            'web_config' => $webConfig,
+            // The power helper's readiness target (docs/reference/prepared-restore.md#the-power-helper): only a container with a web unit has one.
+            'web_port' => $webConfig === null ? null : self::WebPort,
             // `php` on every PATH in the container is the Project's static build, so `composer` runs for `agent` and `orbit` alike.
             'php' => $this->php($project),
             'clone' => $clone,

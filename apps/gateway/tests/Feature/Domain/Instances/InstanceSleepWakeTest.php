@@ -183,7 +183,7 @@ it('refuses a sleep that the Instance does not allow, before any run', function 
 it('keeps every existing sleep key and adds the typed prepared restore of the helper, dropping what the contract does not name', function (): void {
     $clone = sleepingClone();
     $sleep = app(InstanceSleep::class)->start($clone, null, null);
-    expect($sleep->input['web'])->toBe(['port' => 8080]);
+    expect($sleep->input['container']['web_port'])->toBe(8080);
 
     $done = powerRun($sleep, 'succeeded', ['sleep' => 'frozen', 'swap_subtree' => 2, 'prepared_restore' => ['version' => 1, 'status' => 'ready',
         'generation' => '6f1c1d1e-0000-4000-8000-000000000001', 'processes' => 18, 'resident_mapping_bytes' => 336117760, 'metadata_bytes' => 1357673,

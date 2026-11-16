@@ -1,5 +1,5 @@
 order = 390
-source_sha256 = "565f1fad9e971bacc102a6693372a087cd8d16b8ccd0234ec0441f2891228263"
+source_sha256 = "54d99c780a45b2d0fb3dfbe735dea8866fcecde1d323918a42c7e2c0a993e424"
 cases = [
   "the sleep and the wake each run one charted phase with the shipped Ansible settings; the sleep's names its Operation",
   "a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet",
