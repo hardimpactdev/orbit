@@ -364,12 +364,13 @@ if (command[0] === "incus") {
     }
     // A checkout that moved under the running nested Gateway (`schemaBehind`): Doctor is unhealthy until the migrate and a restart after it.
     // `pendingMigration`: the migrate applies one (Laravel prints each migration); otherwise it prints that nothing was due.
-    // The nested Gateway's digest of each named Node's base converge intent (`orbit:node-converge-digest`): `intentDigests` names a
+    // The nested Gateway's digest of each named Node's default converge intent (`orbit:node-converge-digest`): `intentDigests` names a
     // Node's digest, `intentDigestFail` makes the command fail.
     if (rest[0] === "php" && rest.includes("orbit:node-converge-digest")) {
-      if (state.intentDigestFail) fail("The base intent of app-dev cannot be built: RuntimeException");
+      if (rest.includes("--base")) fail("A refresh reads the default intent digest");
+      if (state.intentDigestFail) fail("The converge intent of app-dev cannot be built: RuntimeException");
       const own: Record<string, string> = { gateway: "1", "app-dev": "2", "app-prod": "3" };
-      const nodes = rest.slice(rest.indexOf("--base") + 1);
+      const nodes = rest.slice(rest.indexOf("--host") + 2);
       // `--host app-dev`: nested-app-dev's Instance host intent digest (`hostIntentDigest`), or empty before it has its bridge.
       const host = rest.includes("--host") ? { host: state.hostIntentDigest ?? "4".repeat(64) } : {};
       done(JSON.stringify({ ...Object.fromEntries(nodes.map((node) => [node, state.intentDigests?.[node] ?? own[node].repeat(64)])), ...host }));
@@ -486,18 +487,19 @@ if (command[0] === "curl") {
   }
   const converge = /^\/nodes\/(\d+)\/converge$/.exec(path);
   if (method === "POST" && converge) {
-    // A refresh converges the base, or nested-app-dev's base and `app-dev` role when its `host` part is due (`state.roleConverges`).
-    const roles = command.at(-1) === '{"roles":["app-dev"]}' && converge[1] === "2";
-    if (!roles && command.at(-1) !== '{"base":true}') fail("A refresh converges the base");
+    // A refresh converges each Node with the default scope; nested-app-dev keeps the base scope below the 2,000,000 ID map, and its
+    // default converge runs its `app-dev` role, the Instance host (`state.roleConverges`).
+    const roles = command.at(-1) === '{"base":false}';
+    if (!roles && !(command.at(-1) === '{"base":true}' && converge[1] === "2")) fail("A refresh converges the default scope, or app-dev's base");
     state.operations ??= [];
     const node = Number(converge[1]);
-    // NodeNetworkReservation: every converge goes through the hub. A converge with roles is refused while any other converge is open,
-    // and a base converge while one with roles is open. An Operation is open until a read has returned its end.
+    // NodeNetworkReservation: every converge goes through the hub. A default converge is refused while any other converge is open,
+    // and a base converge while a default one is open. An Operation is open until a read has returned its end.
     const open = state.operations.filter((op: { ended?: boolean }) => !op.ended);
     if (open.some((op: { node: number; roles?: boolean }) => op.node === node || roles || op.roles)) {
       fail("curl: (22) The requested URL returned error: 409", 22);
     }
-    if (roles) (state.roleConverges ??= []).push(2);
+    if (roles && node === 2) (state.roleConverges ??= []).push(2);
     // `convergeRefused`: the Nodes whose admission the nested Gateway refuses, as curl --fail reports a 409.
     if (state.convergeRefused?.includes(node)) fail("curl: (22) The requested URL returned error: 409", 22);
     // `egressNeeded`: a base converge runs apt and downloads the agent, so it fails on a Node without the egress files.
