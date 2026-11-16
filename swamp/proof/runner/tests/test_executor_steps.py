@@ -64,7 +64,7 @@ class ExecutorStepsTest(unittest.TestCase):
         args = {'on': 'app-dev', 'operation': 'proof-3', 'as': 'other_user', 'expect': {'connect': 'denied'}}
         denied = ('runuser -u nobody', done(code=1, err='orbit-executor: relay i/o: Permission denied (os error 13)'))
         self.assertEqual(self.run_step([signer, denied], args)[0], [])
-        self.assertTrue(self.run_step([signer, ('runuser -u nobody', done(reply := '{"status":"accepted"}\n'))], args)[0])
+        self.assertTrue(self.run_step([signer, ('runuser -u nobody', done('{"status":"accepted"}\n'))], args)[0])
 
 
 if __name__ == '__main__':
