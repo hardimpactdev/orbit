@@ -21,6 +21,8 @@ The `operations/operation-show/overdue` fixture records a timed-out Operation of
 
 The `operations/operation-show/fleet-reboot-unreachable` fixture records a failed Node with its redacted SSH diagnostic, a later halted Node and an unvisited Node. The `fleet-reboot-interrupted` fixture records unknown Node outcomes when the root delivered no Node report. The CLI replays both in human and JSON output. [Fleet reboot](/reference/gateway-recovery#one-node-of-the-pass) owns those outcomes.
 
+Deployment show and list rows carry a nullable `best_effort_steps`. The `instance-deployment-show/best-effort` case holds a passed deployment with one failed, one passed and one unreadable best-effort step. [Development deploy steps](/reference/deployments#development-deploy-steps) owns its meaning.
+
 Operation show and list responses carry a nullable `ready_at`. Only an `instance.wake` result sets it; every other recorded Operation fixture holds `null`. When this field changes, re-record the `operation-show` fixtures and regenerate OpenAPI and the web API types. [Prepared restore](/reference/prepared-restore) owns its meaning.
 
 Node enrollment fixtures record the real HTTP 202 admission and a separate terminal Operation read. The CLI replays both, so a queued response cannot be mistaken for an active Node. Native identity observations supply the completion fixture.
