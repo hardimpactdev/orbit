@@ -137,7 +137,7 @@ A run reported as `interrupted` keeps that status and records `outcome: interrup
 
 The CI summary and receipt preserve `interrupted` and the job exits nonzero. An interrupted outcome never passes, including with all passed rows. Malformed coverage or a nonzero CLI exit cannot pass either.
 
-The result names the commit, each case with its command, selection reason, verdict and duration, and the uncovered paths. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause and the failed checks. The copy is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
+The result names the commit, each case with its command, selection reason, verdict and duration, and the uncovered paths. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause, the failed checks and its failed CLI calls with their exit code, error code and stderr tail ([the run](/reference/verification-cases#the-run)). The copy is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
 
 | Outcome | Exit status |
 | --- | --- |

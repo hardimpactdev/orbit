@@ -307,6 +307,8 @@ Neither `failed` nor `unrun` is a pass. The full receipt of a case, with every s
 
 A failed CLI check includes the Operation's public `failed_step` and `error_code`, when present, in its failure message. This also applies to a failed setup command. Named-step checks read those fields from `operation:show`; human output uses its printed Operation ID. Private error details stay out of the verdict line.
 
+A case that did not pass also keeps its failed CLI calls in `calls`: one entry for each call whose check failed, the first three. An entry gives the command (`run`), its exit code (`exit`), its error code (`code`: the Operation's `error_code` or the refusal's `error.code`, else `null`) and the last 160 characters of its stderr on one line (`stderr`). A call that the Gateway refused before admission has no Operation, so `calls` is what names its cause. When the line is too long, the runner shortens the failure messages first and drops the last calls last.
+
 A case marked `fails_today` runs like any other and reports its real verdict. The build PR removes the mark when the command passes.
 
 ## Write and review

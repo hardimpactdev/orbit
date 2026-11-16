@@ -22,6 +22,7 @@ import steps
 
 BATCHES = Path(__file__).resolve().parents[1] / 'batches.yaml'
 LINE_LIMIT = 1000
+CALL_LIMIT = 3   # the failed CLI calls a verdict keeps, the first ones
 
 
 class ConvergeTimeout(Exception):
@@ -38,6 +39,7 @@ class Run:
         self.names, self.rules, self.baseline, self.sources = {}, {}, {}, {}
         self.log, self.calls, self.acted, self.timings = [], 0, time.time(), {}
         self.shimmed, self.background = set(), []
+        self.failed_calls = []   # steps.failed_call of each CLI call whose expectation failed
         self.converge_wait = 0.0
         self.evidence.mkdir(parents=True, exist_ok=True)
 
@@ -185,18 +187,24 @@ def execute(case, fleet, spec, evidence, negative=False):
     if cause:
         result['cause'] = cause
         result['failed'] = failures
+        if run.failed_calls:
+            result['calls'] = run.failed_calls[:CALL_LIMIT]
     receipt = {**result, 'summary': case.summary, 'steps': run.log, 'phase_secs': run.timings, 'names': run.names, 'sources': {f'{node}/v{family}': address for (node, family), address in run.sources.items()}, 'failed': failures}
     return result, receipt
 
 
 def verdict_line(result):
-    """One JSON line of at most 1 KB: long failure messages are cut and the failures that do not fit are counted."""
+    """One JSON line of at most 1 KB: long failure messages are cut and the failures that do not fit are counted. The failed CLI calls
+    are kept before the messages: their exit code, error code and stderr name a cause that no message does."""
     failed = [message[:200] for message in result.get('failed', [])]
-    for shown in range(len(failed), -1, -1):
-        trimmed = failed[:shown] + ([f'+{len(failed) - shown} more'] if shown < len(failed) else [])
-        line = json.dumps({**result, **({'failed': trimmed} if failed else {})}, separators=(', ', ': '))
-        if len(line) <= LINE_LIMIT:
-            return line
+    calls = result.get('calls', [])
+    for kept in range(len(calls), -1, -1):
+        for shown in range(len(failed), -1, -1):
+            trimmed = failed[:shown] + ([f'+{len(failed) - shown} more'] if shown < len(failed) else [])
+            line = json.dumps({**result, **({'failed': trimmed} if failed else {}), **({'calls': calls[:kept]} if calls else {})},
+                              separators=(', ', ': '))
+            if len(line) <= LINE_LIMIT:
+                return line
     return line[:LINE_LIMIT]
 
 

@@ -66,6 +66,18 @@ it('accounts for every assigned case and fails missing duplicate malformed and u
     'a verdict that also carries reset fields still counts' => ["ROW{\"batch\":\"fresh\",\"reset\":{\"reset_seconds\":1},\"id\":\"a\",\"verdict\":\"failed\",\"secs\":1}\nROW{\"id\":\"a\",\"verdict\":\"passed\",\"secs\":1}\nROW{\"id\":\"b\",\"verdict\":\"passed\",\"secs\":1}", false],
 ]);
 
+// Proof 25268 (release 2120): five node:converge calls exited 1 before admission, and the result kept no cause. A failed case keeps its calls.
+it('keeps the failed CLI calls of a case in its result row', function (): void {
+    $assignments = [['command' => 'node:converge', 'file' => 'cases.yaml', 'batch' => 'fresh', 'cases' => ['required-only']]];
+    $report = "node:converge\tcases.yaml\tfresh\t".'{"id": "required-only", "verdict": "failed", "cause": "assertion", "secs": 0.4, '
+        .'"failed": ["act[0] cli node:converge: exit 1, expected 0"], "calls": [{"run": "node:converge", "exit": 1, "code": "operation.target_busy", "stderr": "busy"}]}';
+
+    $rows = ProofShardVerdicts::rows($assignments, $report);
+
+    expect($rows['cases'])->toHaveCount(1)
+        ->and($rows['cases'][0]['calls'])->toBe([['run' => 'node:converge', 'exit' => 1, 'code' => 'operation.target_busy', 'stderr' => 'busy']]);
+});
+
 // The real Report output of the two copy runs of proof 22900 on release 2084 (Operations 22902 and 22904): verdict lines and one reset
 // line per batch, nothing else. Every case passed, so each shard passes, with no report row of its own.
 it('passes the real reports of two copy runs: one reset line per batch, every case passed', function (string $file, array $assignments): void {
