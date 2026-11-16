@@ -325,17 +325,21 @@ class RegistrySelectionTest(unittest.TestCase):
             self.assertEqual(units.registry_changes(self.git('merge-base', main, topic), topic),
                              (['swamp/process.ts'], False))
 
-    def test_hub_lan_role_is_narrow_and_its_file_runs_self_hosted(self):
+    def test_hub_lan_role_is_narrow_and_its_three_files_run_self_hosted_within_the_lane(self):
         budget, fixtures, defaults = units.configuration()
-        file = 'swamp/tests/ansible_wireguard_hub_lan_test.py'
+        files = [f'swamp/tests/ansible_wireguard_hub_lan_{part}_test.py' for part in ('rules', 'recovery', 'load')]
         unrelated = units.plan(['swamp/ansible/tasks/instance-container-process.yml',
                                 'swamp/workflows/workflow-operation-process-container.yaml'], budget, fixtures, defaults)
-        self.assertNotIn(file, scheduled(unrelated))
-        self.assertTrue(fixtures[file]['self_hosted'])
-        for path in (file, 'swamp/ansible/tasks/node-hub-lan-proof.yml'):
+        self.assertFalse(set(files) & {u.split('#')[0] for u in scheduled(unrelated)})
+        for file in files:
+            self.assertTrue(fixtures[file]['self_hosted'])
+            self.assertLessEqual(fixtures[file]['cost'], budget['shard_seconds'], file)
+        for path in (*files, 'swamp/ansible/tasks/node-hub-lan-proof.yml', 'swamp/tests/_support/wireguard_hub_lan.py'):
             result = units.plan([path], budget, fixtures, defaults)
-            self.assertNotIn(file, names(result))
-            self.assertIn(file, {u.split('#')[0] for s in result['self_hosted_shards'] for u in s['units']})
+            self.assertFalse(set(files) & set(names(result)))
+            self.assertNotIn('capacity', result)
+        result = units.plan(['swamp/ansible/tasks/node-hub-lan-proof.yml'], budget, fixtures, defaults)
+        self.assertEqual({u for s in result['self_hosted_shards'] for u in s['units']}, set(files))
 
 
 class TableTest(unittest.TestCase):
