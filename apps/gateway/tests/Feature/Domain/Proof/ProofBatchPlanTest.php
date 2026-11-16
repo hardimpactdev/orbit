@@ -161,3 +161,46 @@ it('gives a shard the budget of its batches and keeps more batches than one budg
         ->and(ProofBatchPlan::overBudget([['seconds' => 9000.0]]))->toBeFalse()
         ->and(ProofBatchPlan::budget([['seconds' => 9000.0]]))->toBe(ProofBatchPlan::MaxShardSeconds);
 });
+
+/**
+ * The worst case of the node proof: all 7 node commands on 10 copies, from case times measured on a nested fleet (proof 25268 and
+ * single cases run in a copy). Estimates where no case time was measured are marked. The batch seconds are the cases in series.
+ */
+it('plans the worst node selection at its floor, balances the other copies and names the batches that keep it over five minutes', function (): void {
+    $batches = [];
+    foreach ([
+        'node:converge' => ['fresh-fleet' => [506.0, 11.0], 'no-grant' => [220.0, null], 'node-down' => [10.0 /* estimate */, null]],
+        'node:role:add' => ['fresh-fleet' => [317.0, 14.0], 'ufw-fault' => [96.0, null], 'node-down' => [30.0 /* estimate */, null], 'no-grant' => [60.0 /* estimate */, null]],
+        'node:metrics' => ['fresh-fleet' => [80.0, 7.0], 'node-down' => [120.0, null], 'no-grant' => [23.0, null]],
+        'node:show' => ['fresh-fleet' => [70.0, 10.0], 'node-down' => [14.0, null], 'no-grant' => [14.0, null]],
+        'node:list' => ['fresh-fleet' => [null, 30.0], 'node-down' => [43.0, null], 'no-grant' => [20.0, null]],
+        'node:role:list' => ['fresh-fleet' => [null, 8.0], 'node-down' => [6.0, null], 'no-grant' => [15.0, null]],
+        'node:update' => ['fresh-fleet' => [3.0, 1.0]],
+    ] as $command => $named) {
+        foreach ($named as $name => $parts) {
+            foreach ($parts as $index => $seconds) {
+                if ($seconds !== null) {
+                    $batches[] = ['command' => $command, 'file' => $command.'.cases.yaml', 'batch' => $name, 'cases' => [], 'seconds' => $seconds, 'read_only' => $index === 1];
+                }
+            }
+        }
+    }
+    // Measured on the outer and the nested fleet: admission, the copy creates, the commit, one reset of the inner fleet, the longest setup.
+    $before = 57 + 75 + 9;
+    $reset = 60 + 36;
+    $limit = 300;
+    $copyEnds = static fn (array $shard): float => $before + max(1, count(array_filter($shard, static fn (array $batch): bool => ! $batch['read_only']))) * $reset
+        + array_sum(array_column($shard, 'seconds'));
+    $shards = ProofBatchPlan::split($batches, 10);
+    $ends = array_map($copyEnds, $shards);
+    // A batch never splits, so no plan ends before the longest batch on a copy of its own.
+    $floor = max(array_map(static fn (array $batch): float => $copyEnds([$batch]), $batches));
+
+    expect(count($shards))->toBe(10)
+        ->and(max($ends))->toBe($floor)
+        // The other copies end within one reset and setup of each other: the reset weight keeps short batches from piling up.
+        ->and(max(array_diff_key($ends, [array_search($floor, $ends, true) => 0])) - min($ends))->toBeLessThanOrEqual(ProofBatchPlan::BatchSeconds)
+        // Five minutes needs these batches shorter: their cases alone are longer than what is left after admission, copy, reset and setup.
+        ->and(array_values(array_map(static fn (array $batch): string => $batch['command'].' '.$batch['batch'], array_filter($batches, static fn (array $batch): bool => $copyEnds([$batch]) > $limit))))
+        ->toBe(['node:converge fresh-fleet', 'node:converge no-grant', 'node:role:add fresh-fleet', 'node:role:add ufw-fault', 'node:metrics fresh-fleet', 'node:metrics node-down', 'node:show fresh-fleet']);
+});
