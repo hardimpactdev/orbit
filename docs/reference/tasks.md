@@ -256,7 +256,7 @@ The role `consult` and the field `model` were options of the Pi turn on a task V
 
 No `tasks.provision` Operation starts any more: a task start makes a task copy. An old one that is still open holds its group as every open Operation does, so other work returns `operation.target_busy` until the reconcile pass ends it.
 
-A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission composes the prompt for every role, in this order: the group's title and brief, read from the subtask's parent; the title, brief and deliverables of the subtask; Orbit's copy rules; then the prompt of the caller. It records that text as the admitted prompt. A composed prompt over 100000 characters, the group's brief included, returns 422 `tasks.prompt_too_large`.
+A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission composes the prompt for every role. First come the group's title and brief, read from the subtask's parent, then the title, brief and deliverables of the subtask. Orbit's copy rules and the turn's clock follow, then the prompt of the caller. It records that text as the admitted prompt. A composed prompt over 100000 characters, the group's brief included, returns 422 `tasks.prompt_too_large`.
 
 The copy rules are one fixed text, the same for the implementer and the reviewer. They name no command of one Project:
 
@@ -879,6 +879,10 @@ Every earlier turn that is over in Orbit but may still run in the copy, because 
 
 A question ends a turn: Orbit stores it and stops the run, and the role's next turn, or a message to the thread from a T3 client, answers it. The thread and its transcript stay on the Gateway after the copy is gone.
 
+Each turn's prompt gives the agent its clock: the time Orbit admitted the turn and that time plus the one-hour bound, in UTC, with the ask to commit before the end. The turn's result names `agent_id`, the agent thread that [`task:agent:show`](/cli/task/agent-show) reads, and `reply`, the transcript's last entry that the agent wrote, bounded at 16,384 characters with a marker that says how much was cut. The transcript is the whole thread's, so a turn in which the agent wrote nothing shows an earlier turn's reply.
+
+A driver reads a turn from its result alone; the whole transcript stays in the archive ([result fields](/cli/task/turn#a-task-that-runs-in-a-copy)).
+
 [`task:sync`](/cli/task/sync#a-task-copy) brings the Project's newest default branch into it, as [bring main into a copy](#bring-main-into-a-copy) describes. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet.
 
 [`proof:run`](/cli/proof/run#the-run) starts its own copies, one per shard and at most two. Proof groups own them; each group has one subtask row and no agent thread. A proof never takes the last two copy places, and every end of a run destroys its copy. Consults, a handoff check with hosted CI, prep and build do not run in a copy yet.
@@ -1182,6 +1186,8 @@ When a page is neither changed nor waived, the part's output names the file and 
 #### Parts
 
 [The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. The `ci-policy` part runs the CI policy tests, `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, when the change touches what those tests read: the CI registry and its fixture tomls, the workflows, the CI scripts or a Swamp test file. It runs before Pest and the fixtures and prints the same summary line as every part.
+
+Within a selected Pest job, the check runs the project's changed test files and its pin test files: the Gateway and CLI tests that pin a whole intent, digest or command surface, such as `GatewayRuntimeFilesTest` and `CommandSurfaceTest`. A change far from such a test can break it, so the check runs them whenever CI selects their project's Pest job, and a handoff check finds what CI's full suite finds on them. The `PIN_TESTS` table in `bin/task-check` lists them.
 
 #### Stored result
 
