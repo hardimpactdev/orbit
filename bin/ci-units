@@ -78,7 +78,7 @@ def configuration(path=TABLE):
     config, inventory = registry.load(ROOT, table=path)
     budget = config['budget']
     if any(type(budget[key]) is not int or budget[key] <= 0 for key in
-           ('shard_seconds', 'shard_workers', 'shard_deadline_seconds', 'shard_ceiling_seconds', 'unit_ceiling_seconds', 'slice_seconds', 'slice_startup_seconds', 'pr_shards', 'self_hosted_shards', 'self_hosted_workers', 'default_cost')):
+           ('shard_seconds', 'shard_workers', 'shard_deadline_seconds', 'shard_ceiling_seconds', 'unit_ceiling_seconds', 'slice_seconds', 'slice_startup_seconds', 'pr_shards', 'runner_shards', 'self_hosted_shards', 'self_hosted_workers', 'default_cost')):
         raise ValueError('Fixture budgets must be positive integers')
     if budget['shard_deadline_seconds'] >= budget['shard_ceiling_seconds']:
         raise ValueError('shard_deadline_seconds must be below shard_ceiling_seconds')
@@ -227,10 +227,15 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
         # The machinery's pure-code tests cover it; a small declared set runs it end to end.
         for file in budget['machinery_canary']:
             selected.setdefault(file, (-1, 0, 0))
-    # Two pools: hosted shards and self-hosted shards. A unit runs only in its file's pool.
+    # Two packing classes share one runner pool. Keep their different worker counts.
     limits = {False: budget['pr_shards'], True: budget['self_hosted_shards']}
     pool = lambda file: bool(fixtures[file].get('self_hosted'))
-    fits = lambda rows, side: pack(rows, pool_budget(budget, side)) is not None
+    def fits_all(groups):
+        packed = [pack(groups[side], pool_budget(budget, side)) for side in (False, True)]
+        return all(shards is not None for shards in packed) and sum(len(shards) for shards in packed) <= budget['runner_shards']
+
+    def fits(rows, side):
+        return fits_all({**admitted, side: rows})
     admitted, unplaced, capacity, not_run = {False: [], True: []}, [], [], []
     gaps = budget['capacity_gap']
     mandatory, reserved = [], {False: [], True: []}
@@ -248,7 +253,7 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
                           'units': [name for name, _, _ in candidates]})
         reserved[pool(file)].extend(candidates)
     rows = [row for side in reserved.values() for row in side]
-    if rows and (any(cost > budget['shard_seconds'] for _, cost, _ in rows) or not all(fits(reserved[side], side) for side in reserved)):
+    if rows and (any(cost > budget['shard_seconds'] for _, cost, _ in rows) or not fits_all(reserved)):
         capacity.append({'mandatory': mandatory, 'seconds': round(sum(cost for _, cost, _ in rows), 3)})
     else:
         for side in reserved:
@@ -351,7 +356,7 @@ def unplaced_units(result):
 
 
 def plan_summary(result, fixtures):
-    lines = [f"Fixture plan: {len(result['shards'])} hosted shards; {len(result['self_hosted_shards'])} self-hosted shards; "
+    lines = [f"Fixture plan: {len(result['shards'])} ordinary shards; {len(result['self_hosted_shards'])} tool-dependent shards; "
              f"{len(planned_units(result))} units; {len(result['unmapped'])} unmapped."]
     for row in result.get('mandatory', []):
         lines.append(f"- Mandatory `{row['file']}`: {json.dumps(row['cases'])}")

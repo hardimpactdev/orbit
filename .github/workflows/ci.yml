@@ -681,7 +681,8 @@ jobs:
     name: Fixtures (${{ matrix.shard.name }})
     needs: changes
     if: ${{ needs.changes.outputs.fixture_shards != '[]' }}
-    runs-on: ubuntu-26.04
+    # Fork code stays on GitHub-hosted runners. All trusted shards share Sabre and Shark's nine runners.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-26.04' || fromJSON('["self-hosted","hardimpact","orbit-shard"]') }}
     timeout-minutes: 4
     strategy:
       fail-fast: false
@@ -692,9 +693,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        if: runner.environment != 'self-hosted'
         with:
           deno-version: v2.9.8
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: runner.environment != 'self-hosted'
         id: python
         with:
           python-version: '3.13'
@@ -718,6 +721,7 @@ jobs:
           coverage: none
       # A venv runs only with the interpreter that built it, so the key covers that interpreter, as the venv name does.
       - name: Cache pinned fixture tools and collections
+        if: runner.environment != 'self-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/orbit-shape-gate

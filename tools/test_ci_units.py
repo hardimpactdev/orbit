@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=10, self_hosted_shards=8, self_hosted_workers=2, default_cost=30, machinery_canary=[], capacity_gap=[])
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=9, runner_shards=9, self_hosted_shards=8, self_hosted_workers=2, default_cost=30, machinery_canary=[], capacity_gap=[])
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -1024,15 +1024,15 @@ class PopulationTest(unittest.TestCase):
 
 
 class WorkflowTest(unittest.TestCase):
-    def test_hosted_matrix_budget_tools_artifacts_and_output(self):
+    def test_ordinary_matrix_budget_tools_artifacts_and_output(self):
         source = (ROOT / '.github/workflows/ci.yml').read_text()
         block = source.split('  fixtures:\n', 1)[1].split('\n  self-hosted-fixtures:\n', 1)[0]
-        for text in ['needs: changes', "needs.changes.outputs.fixture_shards != '[]'", 'runs-on: ubuntu-26.04',
+        for text in ['needs: changes', "needs.changes.outputs.fixture_shards != '[]'", "'ubuntu-26.04' || fromJSON('[\"self-hosted\",\"hardimpact\",\"orbit-shard\"]')",
                      'timeout-minutes: 4', 'fail-fast: false', 'shard: ${{ fromJSON(needs.changes.outputs.fixture_shards) }}',
                      'name: Fixtures (${{ matrix.shard.name }})', 'ci-unit-times-${{ matrix.shard.name }}',
                      'bin/ci-units run', "if: steps.tools.outputs.php == 'true'", 'shape-gate-requirements.txt']:
             self.assertIn(text, block)
-        self.assertNotIn('self-hosted', block)
+        self.assertIn("github.event.pull_request.head.repo.full_name != github.repository", block)
         self.assertIn("fixture_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_shards }}", source)
         self.assertIn('bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT"', source)
 
