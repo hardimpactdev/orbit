@@ -22,7 +22,10 @@ sequenceDiagram
   %%> - the end of a copy for a Node that any seed copy has tried at the same seed: it waits for the next seed or for its own `ci-runner` converge, so lasting failures do not repeat, also not two Nodes for each other
   %%> Requirements:
   %%> - the proof Project's default is active and has a seed; a seed is its commit and the time the default took it
-  %%> - targets: every Node that offers proof places (`ci-runner`, CI places, with or without `app-dev`), other than the default's Node, whose recorded seed is not that seed (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node); with none, nothing is admitted
+  %%> - targets: every Node that offers proof places (`ci-runner`, CI places, with or without `app-dev`), other than the default's Node, whose recorded seed is not that seed (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node), and whose seed listener is ready: its `nodes.seed_sender_id` names the default's Node; with none, nothing is admitted
+  %%> - the last passed `ci-runner` add or converge of the Node records `seed_sender_id`; a failed one or a role removal clears it (docs/reference/node-provisioning.md#the-seed-listener)
+  %%> Not a target:
+  %%> - a Node whose listener is not ready: no copy fails on it and no copy marks it tried; its next passed `ci-runner` converge makes it a target
   %%> - one copy at a time: an open copy holds the default's seed-copy lock, `operation.target_busy`
   %%> Result:
   %%> - a task is recorded with the full intent: the default's Node, container and inner volume, and per target its Node and WireGuard address
@@ -32,7 +35,7 @@ sequenceDiagram
     %%> What it does:
     %%> - reads the Incus server certificate of the CI Node and checks that the Node listens on its WireGuard address
     %%> On failure:
-    %%> - no listener yet: this target fails; a `ci-runner` converge of the Node adds the listener and the trust
+    %%> - no listener: this target fails; a `ci-runner` converge of the Node adds the listener and the trust
     SW->>N: Copy the seed<br/>Ansible · tags copy
     %%> What it does:
     %%> - adds the client remote `proof-node-ID` of root when it is missing, and refuses when the certificate that root's client stored for it is not the one read on the CI Node

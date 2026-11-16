@@ -323,7 +323,17 @@ When a converge finds that the Node offers no proof places, or that the proof Pr
 
 A removal of the `ci-runner` role does the same. It stops the listener and removes the trust in a phase of its own, before the firewall rules go, so the port is never open to every WireGuard member while Incus still listens. The Node finds the trust entry by its name, so the Gateway never needs its fingerprint. The holder stays, as the other Incus resources of the branch do.
 
-The converge makes no seed. When a `ci-runner` add or converge of a Node that offers proof places passes, the Gateway admits a [seed copy](/reference/development-containers#the-seed-on-each-ci-node) to the Node if it is not the default's Node and its seed is not the proof default's current seed.
+The Gateway records the listener on the Node, in `nodes.seed_sender_id`: the Node whose certificate the listener trusts. One rule sets and clears it, at the end of each `ci-runner` add or converge:
+
+| The run | `seed_sender_id` |
+| --- | --- |
+| Passed, with a sender in its intent | The sender, the Node of the proof default when the run was admitted |
+| Passed, without a sender: the run removed the listener | Cleared |
+| Failed, cancelled or interrupted | Cleared: the run may have changed the trust, so the Gateway does not know the state |
+
+The end of a `ci-runner` removal clears it too, passed or failed, because its phase stops the listener. A [seed copy](/reference/development-containers#the-seed-on-each-ci-node) targets only a Node whose record names the default's current Node. A Node without it, or with the Node of a former default, is not a target and is not marked tried.
+
+The converge makes no seed. When a `ci-runner` add or converge of a Node that offers proof places passes, the Gateway admits a seed copy to the Node if it is not the default's Node and its seed is not the proof default's current seed.
 
 A CI-only Node takes no other Instance. `instance:create` refuses it with `instance.node_ci_only` (409) before any record. Only a proof copy is made there. A proof copy there gets no Route: the Node runs no Caddy and has no TLD.
 
