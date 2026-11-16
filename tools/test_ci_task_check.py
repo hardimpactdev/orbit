@@ -29,25 +29,54 @@ def pest_plan(jobs, paths, fixtures=()):
                 in check['pest_plan']({**JOBS, **jobs}, paths, 'BASE')}
 
 
+GATEWAY_PINS = ['apps/gateway/tests/Feature/Domain/Nodes/GatewayRuntimeFilesTest.php',
+                'apps/gateway/tests/Feature/Domain/Proof/ProofRunCopiesTest.php',
+                'apps/gateway/tests/Feature/Extensions/Conn/ConnThreadStartTest.php',
+                'apps/gateway/tests/Feature/Http/CollectionAccessContractTest.php',
+                'apps/gateway/tests/Feature/InstanceNodeServiceTargetsTest.php',
+                'apps/gateway/tests/Feature/NestedFleetHostingTest.php']
+GATEWAY_PIN_NAMES = ('GatewayRuntimeFilesTest, NestedFleetHostingTest, ConnThreadStartTest, ProofRunCopiesTest, '
+                     'InstanceNodeServiceTargetsTest, CollectionAccessContractTest')
+
+
 class PestSelectionTest(unittest.TestCase):
-    def test_a_selected_job_runs_its_changed_tests_and_leaves_its_suite_to_ci(self):
+    def test_a_selected_job_runs_its_changed_tests_and_pin_tests_and_leaves_its_suite_to_ci(self):
         plan = pest_plan({'gateway-tests': True}, [GATEWAY_TEST, 'apps/gateway/app/Domain/Tasks/TaskCopyTurn.php'])
-        self.assertEqual(plan['pest apps/gateway'], ([GATEWAY_TEST], 'run', '1 changed or contract-mapped test files'))
+        self.assertEqual(plan['pest apps/gateway'], (sorted([GATEWAY_TEST, *GATEWAY_PINS]), 'run',
+                                                     f'1 changed or contract-mapped, 6 pin test files: {GATEWAY_PIN_NAMES}'))
         self.assertEqual(plan['pest apps/gateway suite'], ([], 'skipped', 'CI runs the full suite'))
 
-    def test_a_changed_class_selects_no_test_by_its_name(self):
+    def test_a_change_to_app_code_alone_runs_the_pin_tests_of_its_selected_job(self):
         plan = pest_plan({'gateway-tests': True}, ['apps/gateway/app/Domain/Tasks/TaskCopyTurn.php'])
-        self.assertNotIn('pest apps/gateway', plan)
+        self.assertEqual(plan['pest apps/gateway'], (GATEWAY_PINS, 'run',
+                                                     f'0 changed or contract-mapped, 6 pin test files: {GATEWAY_PIN_NAMES}'))
+        self.assertEqual(plan['pest apps/cli'], ([], 'not selected', 'CI does not select the cli-tests job'))
+
+    def test_a_changed_pin_test_runs_once(self):
+        plan = pest_plan({'gateway-tests': True}, [GATEWAY_PINS[0]])
+        self.assertEqual(plan['pest apps/gateway'][0], GATEWAY_PINS)
+
+    def test_the_cli_pin_test_comes_with_the_cli_job(self):
+        plan = pest_plan({'cli-tests': True}, [])
+        self.assertEqual(plan['pest apps/cli'], (['apps/cli/tests/Feature/CommandSurfaceTest.php'], 'run',
+                                                 '0 changed or contract-mapped, 1 pin test files: CommandSurfaceTest'))
+        self.assertEqual(plan['pest apps/gateway'], ([], 'not selected', 'CI does not select the gateway-tests job'))
+
+    def test_every_pin_test_file_exists_in_a_project_of_a_pest_job(self):
+        for project, files in check['PIN_TESTS'].items():
+            self.assertIn(project, check['PEST_JOBS'].values())
+            for file in files:
+                self.assertTrue((ROOT / project / file).is_file(), f'{project}/{file}')
 
     def test_a_selected_suite_without_a_test_to_run_is_skipped_not_unselected(self):
-        for job, project in (('gateway-tests', 'apps/gateway'), ('cli-tests', 'apps/cli'), ('docs', 'apps/docs')):
-            plan = pest_plan({job: True}, [])
-            self.assertNotIn(f'pest {project}', plan)
-            self.assertEqual(plan[f'pest {project} suite'], ([], 'skipped', 'CI runs the full suite'))
+        plan = pest_plan({'docs': True}, [])
+        self.assertNotIn('pest apps/docs', plan)
+        self.assertEqual(plan['pest apps/docs suite'], ([], 'skipped', 'CI runs the full suite'))
 
-    def test_a_job_ci_does_not_select_is_not_selected(self):
-        plan = pest_plan({}, [GATEWAY_TEST])
+    def test_a_job_ci_does_not_select_is_not_selected_and_adds_no_pin_test(self):
+        plan = pest_plan({}, [GATEWAY_TEST, 'apps/gateway/app/Domain/Tasks/TaskCopyTurn.php'])
         self.assertEqual(plan['pest apps/gateway'], ([], 'not selected', 'CI does not select the gateway-tests job'))
+        self.assertEqual(plan['pest apps/cli'], ([], 'not selected', 'CI does not select the cli-tests job'))
         self.assertNotIn('pest apps/gateway suite', plan)
 
     def test_the_sdk_job_runs_the_whole_sdk_suite(self):
@@ -58,8 +87,16 @@ class PestSelectionTest(unittest.TestCase):
                          fixtures=['nodes/node-list/default'])
         files, status, _detail = plan['pest apps/cli']
         self.assertEqual(status, 'run')
-        self.assertEqual(files, sorted(str(path.relative_to(ROOT)) for path in check['contract'].replay_tests('nodes/node-list/default')))
+        self.assertEqual(files, sorted([*(str(path.relative_to(ROOT)) for path in check['contract'].replay_tests('nodes/node-list/default')),
+                                        'apps/cli/tests/Feature/CommandSurfaceTest.php']))
         self.assertIn('apps/cli/tests/Feature/Nodes/NodeContractTest.php', files)
+
+    def test_the_pest_line_names_its_changed_and_pin_test_files(self):
+        detail = '0 changed or contract-mapped, 1 pin test files: CommandSurfaceTest'
+        with patch.dict(check['pest'].__globals__, {'timed': lambda name, *_args, **_kwargs: Part(name, 'passed', 3.0)}):
+            part = check['pest']('pest apps/cli', 'apps/cli', ['apps/cli/tests/Feature/CommandSurfaceTest.php'], detail,
+                                 time.monotonic() + 30)
+        self.assertEqual((part.status, part.detail), ('passed', detail))
 
 
 class PhpstanSelectionTest(unittest.TestCase):
