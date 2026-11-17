@@ -98,6 +98,13 @@ class BuildPlanTest(unittest.TestCase):
                 with self.subTest(path=path, main=main):
                     self.assertTrue(plan.select([path], main)['jobs']['cli-tests'])
 
+    def test_cli_pest_follows_workflows_read_by_its_binary_and_release_contracts(self):
+        for path in ('.github/workflows/orbit-cli-release.yml', '.github/workflows/orbit-cli-binary.yml',
+                     '.github/workflows/ci.yml'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertTrue(plan.select([path], main, pull_request=not main)['jobs']['cli-tests'])
+
     def test_cli_pest_skips_unrelated_gateway_docs_web_and_swamp_inputs(self):
         for path in ('apps/gateway/app/Thing.php', 'apps/gateway/tests/Feature/ThingTest.php',
                      'docs/reference/tasks.md', 'docs/cli/instance/create.mmd', 'apps/docs/composer.lock',

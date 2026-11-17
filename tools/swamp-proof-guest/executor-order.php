@@ -3,8 +3,12 @@
 declare(strict_types=1);
 use App\Domain\Executor\ExecutorOrderPublisher;
 use App\Domain\Executor\ExecutorOrderSigner;
+use App\Domain\Executor\ExecutorProofOperation;
 use App\Domain\Executor\SignedExecutorOrder;
-use App\Models\Operation;
+use App\Infrastructure\Executor\ExecutorResults;
+use App\Infrastructure\Executor\ExecutorResultWait;
+use App\Infrastructure\Executor\ExecutorWaitResult;
+use App\Models\Node;
 use Illuminate\Contracts\Console\Kernel;
 
 // Test support only. Runs inside the nested Gateway as its managed user, never installed in a release.
@@ -13,8 +17,10 @@ use Illuminate\Contracts\Console\Kernel;
 // half stays in this Gateway's own `storage/app/private`, mode 0600, readable only by this user, and becomes its signing key
 // ORBIT_EXECUTOR_SIGNING_KEY; the public half is pinned through ORBIT_EXECUTOR_PUBLIC_KEYS in this Gateway's own `.env`, so its
 // next converge of an app-dev Node pins it there. `order` signs one `proof.noop` order with it, or a tampered one for the order
-// security tests. `publish` sends orders over the observer's WebSocket through the Gateway's own signer and publisher. No key is
-// ever committed, printed or leaves this Gateway.
+// security tests. `publish` sends orders over the observer's WebSocket through the Gateway's own signer and publisher.
+// `round_trip` and `lost_result` also wait for each result as a waiting request does. Every order published here belongs to a real
+// `executor.proof` Operation on the Node (docs/reference/executor.md#the-proof-operation): this script is the only caller of
+// ExecutorProofOperation. No key is ever committed, printed or leaves this Gateway.
 
 require __DIR__.'/../../apps/gateway/vendor/autoload.php';
 $app = require __DIR__.'/../../apps/gateway/bootstrap/app.php';
@@ -27,6 +33,8 @@ $result = match ($input['mode'] ?? null) {
     'key' => proofKey($secretPath, base_path('.env')),
     'order' => proofOrder($secretPath, $input),
     'publish' => proofPublish($secretPath, $input),
+    'round_trip' => proofRoundTrip($input),
+    'lost_result' => proofLostResult($input),
     default => throw new InvalidArgumentException('Unknown executor proof mode.'),
 };
 echo json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
@@ -104,40 +112,122 @@ function proofOrder(string $secretPath, array $input): array
 /**
  * Publishes `count` orders, one after another, as `executor-order` on the Node's channel through the Gateway's own publisher.
  * An untampered order goes through the Gateway's own signer (ORBIT_EXECUTOR_SIGNING_KEY); a tampered one is made by
- * {@see proofOrder}. `replay` publishes each order a second time, byte for byte, right after the first. The proof records no Operation: each order gets an in-memory Operation with an unused numeric id in a
- * high range and this Node as its `node_id`, so slice 3's listener finds no Operation for its result. Each entry records the
- * Gateway time just before its publish, for the latency to the executor.
+ * {@see proofOrder}. `replay` publishes each order a second time, byte for byte, right after the first. Each order gets its own
+ * `executor.proof` Operation on this Node, so the listener records its result. After the last publish each Operation waits once
+ * for its result and closes. Each entry records the Gateway time just before its publish, for the latency to the executor.
  *
  * @param  array<string, mixed>  $input
  * @return array{orders: list<array{operation: string, nonce: string, published_ms: int, replay: bool}>}
  */
 function proofPublish(string $secretPath, array $input): array
 {
-    $node = (int) $input['node'];
+    $node = Node::query()->findOrFail((int) $input['node']);
     $count = max(1, min(50, (int) ($input['count'] ?? 1)));
     $publisher = app(ExecutorOrderPublisher::class);
-    $base = random_int(9_000_000_000_000_000, 9_100_000_000_000_000);
-    $orders = [];
-    for ($index = 0; $index < $count; $index++) {
-        $operation = (new Operation)->forceFill(['id' => $base + $index, 'node_id' => $node]);
-        if (isset($input['tamper'])) {
-            $made = proofOrder($secretPath, ['node' => (string) $node, 'operation' => (string) ($base + $index)] + $input);
-            $order = new SignedExecutorOrder($made['order'], (string) ($base + $index), $made['nonce'], 0);
-        } else {
-            $order = ExecutorOrderSigner::fromConfig()->sign($operation, 'proof.noop', (string) $node);
-        }
-        $published = (int) floor(microtime(true) * 1000);
-        $publisher->publish($operation, $order);
-        $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $published, 'replay' => false];
-        // A true replay: the exact wire again, same signature and Operation, at once and so well inside its 5 s expiry.
-        if (($input['replay'] ?? false) === true) {
-            $replayed = (int) floor(microtime(true) * 1000);
-            $publisher->publish($operation, $order);
-            $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $replayed, 'replay' => true];
-        }
-    }
+    $proof = app(ExecutorProofOperation::class);
 
-    return ['orders' => $orders];
+    // One proof run: a throw at any point, in a publish or a wait, fails every Operation it recorded that is still open.
+    return $proof->run($node, function (Closure $start) use ($secretPath, $input, $node, $count, $publisher, $proof): array {
+        $operations = [];
+        $orders = [];
+        for ($index = 0; $index < $count; $index++) {
+            $operation = $operations[] = $start();
+            if (isset($input['tamper'])) {
+                $made = proofOrder($secretPath, ['node' => (string) $node->id, 'operation' => (string) $operation->id] + $input);
+                $order = new SignedExecutorOrder($made['order'], (string) $operation->id, $made['nonce'], 0);
+            } else {
+                $order = ExecutorOrderSigner::fromConfig()->sign($operation, 'proof.noop', (string) $node->id);
+            }
+            $published = (int) floor(microtime(true) * 1000);
+            $publisher->publish($operation, $order);
+            $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $published, 'replay' => false];
+            // A true replay: the exact wire again, same signature and Operation, at once and so well inside its 5 s expiry.
+            if (($input['replay'] ?? false) === true) {
+                $replayed = (int) floor(microtime(true) * 1000);
+                $publisher->publish($operation, $order);
+                $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $replayed, 'replay' => true];
+            }
+        }
+        foreach ($operations as $operation) {
+            $proof->finish($operation, $proof->wait($operation));
+        }
+
+        return ['orders' => $orders];
+    });
+}
+
+/**
+ * `count` round trips, one after another, on the waiting request's path (ADR 0266 "The path"): each records an `executor.proof`
+ * Operation, signs and publishes its order, and waits with ExecutorResultWait within ORBIT_EXECUTOR_WAIT_MS. `latency_ms` runs from
+ * just before the publish to the result in the waiter; `recorded` is what the listener stored on the Operation.
+ *
+ * @param  array<string, mixed>  $input
+ * @return array{wait_ms: int, round_trips: list<array<string, mixed>>}
+ */
+function proofRoundTrip(array $input): array
+{
+    $node = Node::query()->findOrFail((int) $input['node']);
+    $proof = app(ExecutorProofOperation::class);
+    $count = max(1, min(50, (int) ($input['count'] ?? 1)));
+
+    return $proof->run($node, function (Closure $start) use ($proof, $count): array {
+        $trips = [];
+        for ($index = 0; $index < $count; $index++) {
+            $operation = $start();
+            $started = hrtime(true);
+            $order = $proof->send($operation, ExecutorOrderSigner::fromConfig());
+            $result = $proof->wait($operation);
+            $trips[] = ['operation' => (string) $operation->id, 'nonce' => $order->nonce, 'latency_ms' => elapsedMs($started)] + waited($result)
+                + ['recorded' => $operation->refresh()->executor_result];
+            $proof->finish($operation, $result);
+        }
+
+        return ['wait_ms' => (int) round(ExecutorResultWait::boundSeconds() * 1000), 'round_trips' => $trips];
+    });
+}
+
+/**
+ * A lost result recovered by a repeat. The first order runs, and the listener records its result and hands it to Valkey. A request
+ * that takes the hand-off and dies loses it: here the first wait takes it and drops it, and the Operation's keys are deleted. A new
+ * waiting request then gets nothing within its bound. The Gateway signs a new order, with a new nonce, for the same Operation: the
+ * executor answers `repeat` with the first result, the listener pushes it again, and the waiting request gets it. The runner checks
+ * the executor's journal for one run.
+ *
+ * @param  array<string, mixed>  $input
+ * @return array<string, mixed>
+ */
+function proofLostResult(array $input): array
+{
+    $node = Node::query()->findOrFail((int) $input['node']);
+    $proof = app(ExecutorProofOperation::class);
+
+    return $proof->run($node, function (Closure $start) use ($proof): array {
+        $operation = $start();
+        $first = $proof->send($operation, ExecutorOrderSigner::fromConfig());
+        $dropped = $proof->wait($operation);
+        app('redis')->connection('gateway')->command('del', [ExecutorResults::resultKey($operation->id), ExecutorResults::acceptedKey($operation->id)]);
+        $lost = $proof->wait($operation);
+        $started = hrtime(true);
+        $repeat = $proof->send($operation, ExecutorOrderSigner::fromConfig());
+        $recovered = $proof->wait($operation);
+        $latency = elapsedMs($started);
+        $proof->finish($operation, $recovered);
+
+        return ['operation' => (string) $operation->id, 'first_nonce' => $first->nonce, 'repeat_nonce' => $repeat->nonce,
+            'recorded' => $operation->refresh()->executor_result, 'dropped' => waited($dropped), 'lost' => waited($lost),
+            'recovered' => ['latency_ms' => $latency] + waited($recovered), 'status' => $operation->status->value];
+    });
+}
+
+/** @return array{status: string, accepted_ms: float|null, wait_ms: float, line: array<string, mixed>|null} */
+function waited(ExecutorWaitResult $result): array
+{
+    return ['status' => $result->status->value, 'accepted_ms' => $result->acceptedMs, 'wait_ms' => $result->elapsedMs, 'line' => $result->line];
+}
+
+function elapsedMs(int $started): float
+{
+    return round((hrtime(true) - $started) / 1_000_000, 3);
 }
 
 function secret(string $secretPath): string

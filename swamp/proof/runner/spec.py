@@ -43,6 +43,8 @@ STEPS = {
     'executor_key': (('setup',), set(), set()),
     'executor_order': (('act', 'expect'), {'on', 'operation', 'expect'}, {'as', 'nonce', 'save'}),
     'executor_publish': (('act', 'expect'), {'on', 'operation', 'expect'}, {'count', 'tamper', 'replay'}),
+    'executor_round_trip': (('act', 'expect'), {'on', 'operation'}, {'count'}),
+    'executor_lost_result': (('act', 'expect'), {'on', 'operation'}, set()),
 }
 FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'waits', 'cases', 'spread', 'parallel'}
 CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'fails_on_base', 'negative', 'timeout', 'node', 'exclusive', 'read_only', 'waits'}

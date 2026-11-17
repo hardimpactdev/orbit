@@ -4,18 +4,24 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\Executor\ExecutorProofOperation;
+
 /**
  * The closed registry of operation kinds. A kind's name is `<family>.<verb>`; its target type is one word.
  */
 final readonly class OperationKinds
 {
-    /** Kinds the Gateway runs or closes itself, with no Swamp run: the WebSocket registry tasks and the proof run, which closes when its runs (`proof.command`) have ended. */
+    /**
+     * Kinds the Gateway runs or closes itself, with no Swamp run: the WebSocket registry tasks, the proof run, which closes when its
+     * runs (`proof.command`) have ended, and the executor proof, which closes when its no-op result reaches its waiter.
+     */
     private const array GatewayJobs = [
         'websocket.sync' => ['executor' => 'gateway'],
         'websocket.app_create' => ['executor' => 'gateway'],
         'websocket.app_destroy' => ['executor' => 'gateway'],
         'websocket.app_rotate' => ['executor' => 'gateway'],
         'proof.run' => ['executor' => 'gateway'],
+        'executor.proof' => ['executor' => 'gateway'],
     ];
 
     /** The form of every kind name, `<family>.<verb>` in lower case, such as `instance.deploy`. */
@@ -49,6 +55,9 @@ final readonly class OperationKinds
     public const string ProofRun = 'proof.run';
 
     public const string ProofVerify = 'proof.verify';
+
+    /** The proof-only executor round trip on a Node (docs/reference/executor.md#the-proof-operation). Only {@see ExecutorProofOperation} creates it. */
+    public const string ExecutorProof = 'executor.proof';
 
     /** The target type of every kind that changes an Instance, so they hold the same target. */
     public const string InstanceTarget = 'instance';

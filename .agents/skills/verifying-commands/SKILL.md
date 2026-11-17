@@ -1,11 +1,13 @@
 ---
 name: verifying-commands
-description: Use when defining or running the proof cases of an Orbit command on the nested fleet of a task VM (stages 2 and 3). For terminal rendering alone, use verifying-cli-output.
+description: Defines and runs Orbit command proofs on the nested fleet of a task copy. Use for fleet behavior checks and proof evidence (stages 2 and 3). For terminal rendering alone, use verifying-cli-output.
 ---
 
 # Prove a command (stages 2 and 3)
 
-The flows are the stage charts: [2, the proof environment](../../../docs/reference/command-development-pipeline.mdx#2-development-environment) and [3, the proof](../../../docs/reference/command-development-pipeline.mdx#3-proof). In the task VM, run the CLI and direct commands against the nested fleet, which mounts your checkout. To run the cases of a command, run `orbit proof FAMILY:COMMAND` there: it restores `base`, runs the cases and leaves a clean fleet on your code ([`orbit proof`](../../../docs/cli/proof/proof.mdx)). The same cases and the same runner run in CI ([stage 4](../../../docs/reference/pipeline/4-pr-and-ci.mmd)). Build no second runner.
+This is the entry point for fleet-proof work. Design and run the proofs before opening any PR, following [Build a feature in one copy](../../../docs/reference/tasks.md#build-a-feature-in-one-copy). Tasks use [task copies](../../../docs/reference/tasks.md#task-copy) of a container Instance; proofs act on their nested fleet, never on shared or production machines. The [workspace contract](../../../docs/reference/task-instance-workspace.md) owns checks and export. The stage charts own [the environment](../../../docs/reference/command-development-pipeline.mdx#2-development-environment) and [the proof](../../../docs/reference/command-development-pipeline.mdx#3-proof).
+
+Run `orbit proof FAMILY:COMMAND --group=ID --json` for the task group whose copy you are proving. It tests the current checkout, committed or not. Follow [`orbit proof`](../../../docs/cli/proof/proof.mdx) for prerequisites, refusals, resets and evidence: it resets the nested fleet before each batch and leaves the last batch's state for inspection, not a clean fleet. Build no second runner.
 
 ## The cases file
 
@@ -33,7 +35,7 @@ Setup can use other commands, but the case must invoke the command under test th
 - Give every refusal guard one case per bypass form: no source, one address, a CIDR that covers the management network.
 - Exercise failures after meaningful side effects. Verify that cleanup keeps pre-existing resources and that retained targets stay inspectable.
 - Wait for readiness within a bounded deadline. Report infrastructure failures separately from failed assertions; neither is a pass.
-- Prove a new case can fail: the proof CI does it on its proof VM, after the main verdicts, on the merge base with only your cases file; every new case must fail there. Never change your own checkout to try it. Built, not yet passed live (stage 3 chart).
+- Demonstrate that a regression case detects the intended failure and record the before/after evidence. Keep `fails_on_base` metadata where appropriate, but do not count it as executed proof: [copy proofs do not replay flagged cases on the merge base yet](../../../docs/cli/proof/run.mdx#the-run). Replay is unavailable until ported to copies. Task command deliverables have a separate [start-commit check](../../../docs/reference/tasks.md#prove-a-command-fails-on-the-start-commit); that is not proof-run merge-base replay.
 
 Cases have no undo. Each uses its own resources. A case that changes shared state (firewall off, an injected failure, a held lock) gets its own batch.
 
@@ -43,7 +45,7 @@ Derive Operation assertions and locks from every actual CLI call's write kind an
 
 ## CI
 
-Run the cases selected by `swamp/proof/selection.txt` and definition comparison ([choose the cases](../../../docs/reference/feature-flow.md#choose-the-cases)). Command code selects the whole file. Cases-only changes select changed or added entries and users of changed fixtures, vars or batch setup. Shared code selects nothing by itself. Documentation alone never starts the proof CI. A missing result or an unrun selected case fails the run.
+CI proof is intentionally off for now. Do not enable it or wait for it to discover failures: the agent's pre-PR proof is the evidence; a later CI proof should be a formality that always passes. [`proof:run`](../../../docs/cli/proof/run.mdx) owns the switch, selection and verdict contracts. Its invocation is `orbit proof:run COMMIT [--base=SHA | --all] --json`, without `--group`; it creates disposable copies of its own. Use [the selection mapping](../../../docs/reference/feature-flow.md#choose-the-cases) to cover the changed behavior before the PR. A skipped CI proof is not evidence that cases ran.
 
 ## Report
 
@@ -51,7 +53,7 @@ State the commit, the cases selected and run, the verdicts, the functional asser
 
 The runner owns case expansion and comparison. CI publishes its exact base/head result for Gateway admission. Never add a YAML comparator in another language; missing or invalid selection results run whole files.
 
-Keep the tested Operation's public failed step and error code in failed CLI checks, including setup failures. CI deletes full receipts with the VM, so a step-count mismatch alone loses the cause. Rerun with failed-VM retention when the existing verdict lacks it; never infer the failed phase from a skipped end check.
+Keep the tested Operation's public failed step and error code in failed CLI checks, including setup failures; never infer the failed phase from a skipped end check. Follow [`orbit proof` verdicts](../../../docs/cli/proof/proof.mdx#verdicts) for task-copy evidence and [`proof:run` cleanup](../../../docs/cli/proof/run.mdx#after-the-run) for disposable runs. `proof:run` destroys copies on every run end, failures included, and rejects `keep_failed`; preserve sanitized diagnostics before they disappear. Its verdicts stay in the result, but a durable receipt store is not built yet. Failed, unrun, interrupted or unavailable proof is not a pass.
 
 A disposable Gateway needs a revision and an installable CLI release even though a PR has no published release. Prepare its tested revision and the existing test-only static catalog before cases. Keep the CLI under test on candidate source, and pin the separate installation fixture to a real published binary and checksum.
 

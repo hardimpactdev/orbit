@@ -102,7 +102,7 @@ A Jinja decision template is read with `lookup('ansible.builtin.template', 'name
 Two things prove a command. The [porting guide](../../../docs/swamp/porting.md#5-prove-it) has the layout.
 
 1. **Template test:** run it in `swamp/` without a nested fleet. It proves the templates on fixed text.
-2. **Cases file:** in the nested fleet of your task VM (stage 2 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx)), the case runner runs `swamp/proof/<family>/<command>.cases.yaml` against the real CLI, `php apps/cli/orbit <command> --json`. Follow [verifying-commands](../verifying-commands/SKILL.md).
+2. **Cases file:** follow [verifying-commands](../verifying-commands/SKILL.md) for the task copy's nested-fleet proof before opening the PR. That skill routes to the current proof CLI, case format, replay limits and cleanup contracts; build no separate fleet runner here.
 3. **Idempotence:** run the command twice. The second run is `succeeded` with its skip reason and changes nothing on the Node. A phase run directly (`ansible-playbook -i inventory.yml -e @vars.yml --tags <phase> <playbook>` from the run folder) must report zero `changed` on a second run.
 4. **Negative:** break the effect and check that only that case fails.
 5. Attach the verdicts as [swamp-flow](../swamp-flow/SKILL.md) asks.
@@ -115,9 +115,7 @@ When a phase teaches a new rule or pitfall, add it here in the same PR. Replace 
 
 Incus boot configuration must converge on an existing base before it starts, not only at `incus init`. Snapshot copies inherit that configuration. Test a stale existing base and an already-current base as well as a new base.
 
-A direct SSH transport can target a VM that has just started. Keep its readiness budget in the shared wait task, including firmware boot and identity setup. Use `wait_for_connection` so fast boots return at once; transport choice must not shorten that budget.
-
-Detect a ZFS loop pool from its actual source file, not only a missing `zfs_dataset` setting: an existing native pool may omit that setting. Apply a loop host's ARC limit both in the running module and its boot configuration; leave native host ARC intent unchanged. Host capacity must include measured VM memory and a separate margin for host services.
+Detect a ZFS loop pool from its actual source file, not only a missing `zfs_dataset` setting: an existing native pool may omit that setting. Apply a loop host's ARC limit both in the running module and its boot configuration; leave native host ARC intent unchanged.
 
 An Incus bridge needs DHCP and DNS input allowances in UFW before a guest's first boot. A route allowance affects forwarded traffic only, and Incus's own accept rules cannot override another nftables input chain's drop. Scope DHCP to the bridge and DNS to its host address; keep the rest of host input closed. Give input rules catalog ownership and a shared settings/Node withdrawal phase. Assert the complete rendered input ruleset: a packet matcher that ignores unrestricted rules can miss a blanket allow.
 
@@ -133,7 +131,7 @@ A restored proof Gateway keeps the base image's installed collections and genera
 
 `command` expands `~user` even with `argv`. Set `expand_argument_vars: false` for literal arguments such as DNS routing domain `~orbit`; otherwise it becomes the account's home path and drifts on every run. Test with a domain that names an existing account and read back the arguments before checking a zero-change repeat.
 
-A proof candidate must install its own frozen observer pin after every base restore. A copied delivery manifest does not update running binaries. The disposable proof VM is the trust boundary; candidate code, including its installer, runs inside it. Require preparation in every batch and direct case, even when an older workflow skips setup. Share the normal checksum-verified installer and require the expected agent version and a new stored host fact before cases. Give preparation a separate bounded budget from batch setup.
+A proof candidate must install its own frozen observer pin after every base restore. A copied delivery manifest does not update running binaries. Keep candidate code and its installer on the isolated nested fleet; [verifying-commands](../verifying-commands/SKILL.md) owns fleet-proof entry and limits. Require preparation in every batch and direct case, even when an older workflow skips setup. Share the normal checksum-verified installer and require the expected agent version and a new stored host fact before cases. Give preparation a separate bounded budget from batch setup.
 
 `incus copy` applies device overrides to the snapshot's local devices. A profile-only root needs a complete disk definition: pass type, path, pool and size as separate `--device root,key=value` arguments. A comma after the value stays in that value.
 

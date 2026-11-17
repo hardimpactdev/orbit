@@ -26,7 +26,7 @@ A breach of this bar blocks a review under the [blocking rule](docs/reference/ta
 
 ## Feature contributions
 
-Follow the [contributor guide](docs/contributor-guide.md): **architecture → documentation → implementation → one PR → CI → gate → merge**. A command change is one PR whose first commit is the spec ([stage 1](docs/reference/pipeline/1-prep.mmd)); the PR, the gate and the merge are [stage 4](docs/reference/pipeline/4-pr-and-ci.mmd). In an Orbit task, Orbit reviews each subtask and opens the PR; the PR and merge steps do not apply to task agents.
+Follow the [contributor guide](docs/contributor-guide.md): **architecture → documentation → implementation → passing end-to-end proof → one PR → CI → gate → merge**. For a command change, commit the spec (chart, page and cases) first on the feature branch ([stage 1](docs/reference/pipeline/1-prep.mmd)); open no PR, draft or ready, until the feature is built and proven. CI confirms that result; [stage 4](docs/reference/pipeline/4-pr-and-ci.mmd) owns the PR and gate. In an Orbit task, Orbit reviews each subtask and opens the PR; the PR and merge steps do not apply to task agents.
 
 - Check existing ADRs and propose significant architectural changes in the feature PR.
 - Write documentation before coding. Keep the code, tests, documentation and ADRs consistent.
