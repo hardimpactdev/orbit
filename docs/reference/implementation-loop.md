@@ -679,17 +679,21 @@ The [start commit](/reference/tasks#start-commit) has one rule, which the tasks 
 | Part | Runs when | What it runs |
 | --- | --- | --- |
 | `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the branch's [waiver file](/reference/tasks#docs-impact-waivers-in-a-copy) as the candidate gate passes it |
-| `check-flows` | The plan selects the Docs job | `node bin/check-flows`, with `BASE` set to the start commit, as CI runs it |
-| `docs-lint` | The plan selects the Docs job | `bin/docs-openapi` when the plan selects the API reference job, as root `composer check` does, then `composer docs-build` and `composer docs-lint`, which is strict |
+| `check-flows` | Tooling, docs or API reference inputs changed | `node bin/check-flows`, with `BASE` set to the start commit, as CI runs it |
+| `docs-lint` | Tooling, docs or API reference inputs changed | `bin/docs-openapi` when the plan selects the API reference job, as root `composer check` does, then `composer docs-build` and `composer docs-lint`, which is strict |
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
 | `phpstan <project>` | The plan selects the project's static job | `vendor/bin/phpstan analyse` with the project's `phpstan.neon`, on the changed PHP files inside the paths that config analyses |
 | `swamp-shape` | The plan selects the Swamp checks | `bin/swamp-shape-gate --only control`, the static controls that CI's shape job runs, in a checkout of the candidate |
-| `ci-policy` | Always | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy and budget tests that CI's "CI policy" job runs on every PR |
+| `ci-policy` | Policy inputs changed | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy tests that CI's "CI policy" job runs on every PR |
 | `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
 | `pest <project>` | The plan selects the project's Pest job | See below |
 | `fixtures` | `bin/ci-units plan` plans units | Directly touched planned units, then other planned units that fit the budget, through `bin/ci-units run`; the rest are deferred to CI (see below) |
 
-The `ci-policy` part runs on every change, whatever it touched, as CI runs it. CI's budget tests catch a fixture unit above CI's lane even when no CI input changed. The part runs before Pest and the fixtures, so the budget never leaves it out for them. On a loaded Beast it takes about 65 seconds.
+Tooling inputs are paths under `bin/`, `tools/` or `.github/`. The CI checks table owns docs and API reference inputs. The local check uses those inputs, not CI's unconditional PR Docs job, to select expensive checks. The `ci-policy` part still runs before Pest and the fixtures when selected. CI runs its full policy suite on every PR.
+
+Policy inputs also include Swamp's fixtures and proof tooling, the agent, runner resources and machine-software recipes. The `CI_POLICY_INPUTS` table in `bin/task-check` names these source inputs and the files whose presence policy tests check. API inputs select flow checks too, since Gateway operation declarations choose which workflows a chart must match.
+
+Fixture budget validation and placement run on every change, even with `--only` or no time left. They refuse invalid budgets and units above the declared lane outside named capacity gaps. The population check reuses the fixture table already validated for this candidate.
 
 The check prints CI's per-unit time caps at its start: the most seconds a fixture unit declares, `shard_seconds`, and the ceiling that stops it, `unit_ceiling_seconds`, both from `.github/ci/checks.toml`, and the Pest per-test limit of each CI job that sets one. Keep each new or changed test unit within them.
 
@@ -726,7 +730,7 @@ The `fixtures` part runs units of CI's plan only: the same planner, changed-file
 
 First come the units the change touches directly: the units of a changed fixture file, of a fixture whose declared input changed, or of a fixture whose metadata file under `.github/ci/fixtures/` changed. `bin/ci-units` owns that input mapping, `path_matches`, and its planner uses the same one. A change to the fixture machinery touches no fixture directly. The other planned units follow. Each group runs cheapest first. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
 
-The units that did not join, or that the check's own time limit stopped, are deferred to CI. The `fixtures` line names them with their count and total declared seconds, such as `deferred to CI: 76 units, 3200s declared: …`. A deferral never fails the check: CI runs those units. A unit that ran and failed fails the check.
+The units that did not join, or that the check's own time limit stopped, are deferred to CI. The `fixtures` line names them with their count and total declared seconds, such as `deferred to CI: 76 units, 3200s declared: …`. A deferral never fails the check: CI runs those units. A unit that ran and failed fails the check. When the budget stops or omits a part, collection or unit, the final result says `PASSED with incomplete coverage (budget exhausted; CI must finish)` rather than an unqualified pass. The exit code remains zero if no part failed.
 
 The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`.
 
