@@ -85,7 +85,7 @@ final readonly class RunTaskMergeRoundAction
     /** @return Result */
     private function round(Task $group, Operation $publish): array
     {
-        if (TaskCopyTurn::unsettled($group) !== [] || Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+        if (Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
             ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
             return self::result($group, $publish, null, 'busy', null);
         }
@@ -199,6 +199,10 @@ final readonly class RunTaskMergeRoundAction
      */
     private function start(Task $group, Operation $publish, string $step, string $kind, Closure $admit): array
     {
+        // A turn that may still run holds the copy; a stop needs no step, so only a start waits for it to settle.
+        if (TaskCopyTurn::unsettled($group) !== []) {
+            return self::result($group, $publish, $step, 'busy', null);
+        }
         $key = self::prefix($group, $publish).$step;
         try {
             $operation = $this->idempotency->under($kind, $key, hash('sha256', "{$kind}|{$key}"), $admit);

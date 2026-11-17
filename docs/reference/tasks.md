@@ -413,9 +413,9 @@ A tick takes each open group whose workspace is a task copy, with or without its
 
 - the group's newest `tasks.publish`, P, failed with `tasks.publish_conflict`;
 - the group has no assistance request;
-- the group is idle: no Operation of the group runs, and no copy turn may still run.
+- no Operation of the group runs.
 
-From the group's Operations after P, the tick starts at most one step per group:
+From the group's Operations after P, the tick starts at most one step per group, and only while no copy turn of the group may still run:
 
 | After P | The tick starts |
 | --- | --- |

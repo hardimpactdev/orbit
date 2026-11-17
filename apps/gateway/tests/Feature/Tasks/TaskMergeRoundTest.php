@@ -330,6 +330,11 @@ describe('g. a stop', function (): void {
         'the sync failed' => ['sync', fn (Task $group, Operation $publish, Operation $sync): Operation => mergeRoundEnd($sync, OperationStatus::Failed, ['error_code' => 'tasks.sync_failed']), 'failed'],
         'the turn asked' => ['turn', fn (Task $group, Operation $publish, Operation $turn): Operation => mergeRoundTurnEnded($turn, 'asking_for_input'), 'asked'],
         'the turn failed' => ['turn', fn (Task $group, Operation $publish, Operation $turn): Operation => mergeRoundTurnEnded($turn, 'failed', OperationStatus::Failed), 'failed'],
+        'the turn failed and may still run' => ['turn', function (Task $group, Operation $publish, Operation $turn): Operation {
+            $turn->update(['state' => ['swamp_run_id' => 'run-1']]);
+
+            return mergeRoundEnd($turn, OperationStatus::Failed, ['state' => 'failed', 'error_code' => 'operation.timed_out']);
+        }, 'failed'],
         'the check failed' => ['check', function (Task $group, Operation $publish, Operation $check): Operation {
             mergeRoundChecked($group, $publish, TaskCheckStatus::Failed);
 
@@ -363,16 +368,28 @@ describe('i. a group the round skips', function (): void {
         expect(mergeRoundTick())->toBe([])->and(mergeRoundOperations($world->group))->toBe($count);
     });
 
-    it('skips a busy group: an open Operation, or a turn that may still run', function (bool $open): void {
+    it('skips a busy group: an open Operation', function (): void {
         [$world, $publish] = mergeRoundWorld();
         Operation::query()->create(['kind' => OperationKinds::TasksCopyTurn, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $world->group->id,
-            'input' => ['subtask' => $world->subtask->id, 'role' => 'implementer', 'turn' => ['title' => 'Orbit task']], 'status' => $open ? OperationStatus::Running : OperationStatus::Failed,
-            'sequence' => 1, 'attempts' => 1, 'state' => ['swamp_run_id' => 'run-1'], 'result' => $open ? null : ['state' => 'failed'], 'triggered_by' => 'person']);
+            'input' => ['subtask' => $world->subtask->id, 'role' => 'implementer', 'turn' => ['title' => 'Orbit task']], 'status' => OperationStatus::Running,
+            'sequence' => 1, 'attempts' => 1, 'state' => ['swamp_run_id' => 'run-1'], 'triggered_by' => 'person']);
         $count = mergeRoundOperations($world->group);
 
         expect(mergeRoundTick())->toBe([['group' => $world->group->id, 'publish' => $publish->id, 'step' => null, 'result' => 'busy', 'code' => null, 'operation' => null]])
             ->and(mergeRoundOperations($world->group))->toBe($count);
-    })->with(['an open Operation' => [true], 'an unsettled turn' => [false]]);
+    });
+
+    it('starts no step while a turn may still run, and starts it once the turn settled', function (): void {
+        [$world, $publish] = mergeRoundWorld();
+        $world->turn->update(['result' => ['state' => 'done', 'ended' => false]]);
+        $count = mergeRoundOperations($world->group);
+
+        expect(mergeRoundTick())->toBe([['group' => $world->group->id, 'publish' => $publish->id, 'step' => 'sync', 'result' => 'busy', 'code' => null, 'operation' => null]])
+            ->and(mergeRoundOperations($world->group))->toBe($count);
+
+        $world->turn->update(['result' => ['state' => 'done', 'ended' => true]]);
+        expect(mergeRoundTick()[0])->toMatchArray(['step' => 'sync', 'result' => 'admitted']);
+    });
 });
 
 it('j. runs task:merge-round every minute beside task:pr-when-done, only while the Tasks extension is on', function (): void {
