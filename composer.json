@@ -24,10 +24,9 @@
         "audit:dependencies": "bin/dependency-audit",
         "check": [
             "Composer\\Config::disableProcessTimeout",
-            "@docs-openapi",
-            "@mcp-tools",
+            "bin/build-api",
             "@docs-build",
-            "bin/review-check"
+            "bin/review-check --prepared-api"
         ]
     },
     "config": {

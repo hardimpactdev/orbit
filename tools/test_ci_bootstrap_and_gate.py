@@ -80,6 +80,7 @@ if sys.argv[1] == 'install':
             sys.exit('Concurrent Composer cache writers')
         with (cache / 'installs').open('a') as calls:
             calls.write(os.getcwd() + '\\n')
+    Path('vendor').mkdir(exist_ok=True)
 ''')
         composer.chmod(0o755)
         # Observe Bash's async-job state, including jobs that already exited.
@@ -111,9 +112,38 @@ if sys.argv[1] == 'install':
         git(root, 'init', '-b', 'main')
         for project in PROJECTS:
             (root / project).mkdir(parents=True)
+            (root / project / 'composer.json').write_text('{}')
+            (root / project / 'composer.lock').write_text('{}')
+        for name, outputs in {
+            'build-api': ('docs/openapi.json', 'docs/docs.json', 'apps/gateway/resources/mcp/tools.json'),
+            'docs-navigation': ('docs/docs.json',),
+        }.items():
+            path = root / 'bin' / name
+            path.write_text('#!/usr/bin/env python3\nimport os\nfrom pathlib import Path\n'
+                            f'root = Path({str(root)!r})\n'
+                            f'with Path(os.environ["BOOTSTRAP_TEST_CALLS"]).open("a") as calls: calls.write("{name}\\n")\n'
+                            'if os.environ.get("BOOTSTRAP_TEST_FAIL") == "generate": raise SystemExit(7)\n'
+                            f'for name in {outputs!r}:\n'
+                            '    output = root / name\n    output.parent.mkdir(parents=True, exist_ok=True)\n'
+                            '    output.write_text("generated")\n')
+            path.chmod(0o755)
+        (root / 'apps/docs/artisan').write_text('<?php mkdir(__DIR__."/../../docs/generated", 0777, true); file_put_contents(__DIR__."/../../docs/generated/context.json", "generated");')
         self.calls = root / 'calls'
         for name, script in {
-            'composer': '#!/bin/sh\nif [ "$1" = install ]; then test "$COMPOSER_CACHE_DIR" = "$BOOTSTRAP_TEST_COMPOSER_CACHE" || exit 8; fi\necho "composer $*" >> "$BOOTSTRAP_TEST_CALLS"\nif [ "$1" = "$BOOTSTRAP_TEST_FAIL" ]; then exit 7; fi\n',
+            'composer': '''#!/bin/sh
+if [ "$1" = --version ]; then echo fixture-composer; exit; fi
+if [ "$1" = install ]; then test "$COMPOSER_CACHE_DIR" = "$BOOTSTRAP_TEST_COMPOSER_CACHE" || exit 8; fi
+echo "composer $*" >> "$BOOTSTRAP_TEST_CALLS"
+if [ "$1" = "$BOOTSTRAP_TEST_FAIL" ]; then exit 7; fi
+if [ "$1" = install ]; then
+    mkdir -p vendor
+    touch vendor/autoload.php
+    case "$PWD" in
+        */apps/gateway) ../../bin/build-api ;;
+        */apps/docs) ../../bin/docs-navigation && php artisan ;;
+    esac
+fi
+''',
         }.items():
             path = root / 'bin' / name
             path.write_text(script)
@@ -137,9 +167,54 @@ if sys.argv[1] == 'install':
         driver = subprocess.run(['git', 'config', '--local', '--get', 'merge.orbit-generated.driver'], cwd=root)
         self.assertEqual(1, driver.returncode)
         lines = self.calls.read_text().splitlines()
-        self.assertEqual(['composer install --no-interaction --prefer-dist'] * 4, lines[:4])
+        composer_calls = [line for line in lines if line.startswith('composer ')]
+        self.assertEqual(['composer install --no-interaction --prefer-dist'] * 4, composer_calls[:4])
         # Without test impact analysis, the stock full suite is the only test command.
-        self.assertEqual(['composer test', 'composer check'] * 4, lines[4:])
+        self.assertEqual(['composer test', 'composer check'] * 4, composer_calls[4:])
+        # Seed refreshes still check everything when dependencies and generated outputs are current.
+        result = self.bootstrap(root)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(['composer test', 'composer check'] * 4, self.calls.read_text().splitlines())
+
+    def test_bootstrap_reuses_inputs_and_rebuilds_only_changed_or_missing_work(self):
+        root = self.bootstrap_fixture()
+        self.assertEqual(0, self.bootstrap(root, '--skip-checks').returncode)
+        key = (root / 'orbit-home/gateway.app-key').read_bytes()
+        self.assertEqual(0, self.bootstrap(root, '--skip-checks').returncode)
+        self.assertFalse(self.calls.exists(), 'Warm bootstrap should run no installs or generators')
+        self.assertEqual(key, (root / 'orbit-home/gateway.app-key').read_bytes())
+        for name, expected in (
+            ('apps/cli/composer.lock', ['composer install --no-interaction --prefer-dist']),
+            ('apps/gateway/routes/api.php', ['build-api']),
+            ('docs/example.md', ['docs-navigation']),
+            ('apps/gateway/routes/api.php', ['build-api']),
+        ):
+            with self.subTest(input=name):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(path.read_text() + 'changed' if path.exists() else 'changed')
+                result = self.bootstrap(root, '--skip-checks')
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(expected, self.calls.read_text().splitlines())
+        (root / 'apps/gateway/resources/mcp/tools.json').unlink()
+        self.assertEqual(0, self.bootstrap(root, '--skip-checks').returncode)
+        self.assertEqual(['build-api'], self.calls.read_text().splitlines())
+        (root / 'apps/cli/vendor/autoload.php').unlink()
+        self.assertEqual(0, self.bootstrap(root, '--dependencies-only').returncode)
+        self.assertEqual(['composer install --no-interaction --prefer-dist'], self.calls.read_text().splitlines())
+        self.assertEqual('.githooks', git(root, 'config', 'core.hooksPath'))
+
+    def test_bootstrap_retries_failed_generation_even_if_sources_are_restored(self):
+        root = self.bootstrap_fixture()
+        self.assertEqual(0, self.bootstrap(root, '--skip-checks').returncode)
+        path = root / 'apps/gateway/routes/api.php'
+        path.parent.mkdir(parents=True)
+        path.write_text('changed')
+        self.assertNotEqual(0, self.bootstrap(root, '--skip-checks', BOOTSTRAP_TEST_FAIL='generate').returncode)
+        path.unlink()
+        result = self.bootstrap(root, '--skip-checks')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(['build-api'], self.calls.read_text().splitlines())
 
     def test_bootstrap_with_skipped_checks_installs_dependencies_only(self):
         root = self.bootstrap_fixture()
@@ -153,16 +228,37 @@ if sys.argv[1] == 'install':
         root = self.bootstrap_fixture()
         for name in ('bun', 'cargo'):
             fake = root / 'bin' / name
-            fake.write_text(f'#!/bin/sh\necho "{name} $(basename "$PWD") $*" >> "$BOOTSTRAP_TEST_CALLS"\n')
+            fake.write_text(f'#!/bin/sh\nif [ "$1" = --version ]; then echo fixture-{name}; exit; fi\n'
+                            'if [ "$1" = metadata ]; then test -f "$CARGO_HOME/registry/cache/$(basename "$PWD").crate"; exit; fi\n'
+                            f'echo "{name} $(basename "$PWD") $*" >> "$BOOTSTRAP_TEST_CALLS"\n'
+                            'mkdir -p node_modules "$CARGO_HOME/registry/cache"\n'
+                            'touch "$CARGO_HOME/registry/cache/$(basename "$PWD").crate"\n')
             fake.chmod(0o755)
         for project in ('apps/web', 'apps/desktop/src-tauri', 'apps/agent'):
             (root / project).mkdir(parents=True, exist_ok=True)
+        self.bootstrap_env['CARGO_HOME'] = str(root / 'cargo-home')
         result = self.bootstrap(root, '--skip-checks', '--with-bun', '--with-rust')
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(['bun web install --frozen-lockfile',
                           'bun desktop install --frozen-lockfile', 'cargo agent fetch --locked',
                           'cargo src-tauri fetch --locked'],
                          [line for line in self.calls.read_text().splitlines() if line.startswith(('bun ', 'cargo '))])
+        result = self.bootstrap(root, '--skip-checks', '--with-bun', '--with-rust')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertFalse(self.calls.exists())
+        for name, expected in (('apps/web/bun.lock', 'bun web install --frozen-lockfile'),
+                               ('apps/desktop/bunfig.toml', 'bun desktop install --frozen-lockfile'),
+                               ('apps/agent/Cargo.lock', 'cargo agent fetch --locked'),
+                               ('apps/agent/crates/contract/Cargo.toml', 'cargo agent fetch --locked')):
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text('changed')
+            result = self.bootstrap(root, '--skip-checks', '--with-bun', '--with-rust')
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertEqual([expected], self.calls.read_text().splitlines())
+        (root / 'cargo-home/registry/cache/agent.crate').unlink()
+        result = self.bootstrap(root, '--skip-checks', '--with-bun', '--with-rust')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(['cargo agent fetch --locked'], self.calls.read_text().splitlines())
 
     def test_bootstrap_fails_when_any_step_fails_and_runs_no_tests_before_install_passes(self):
         root = self.bootstrap_fixture()
@@ -197,7 +293,7 @@ printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_DOCS"
 if [ "$GATE_TEST_MODE" = docs ]; then exit 5; fi
 """)
         docs_impact.chmod(0o755)
-        for name in ('check-operation-kinds', 'docs-openapi', 'mcp-tools', 'api-fixtures'):
+        for name in ('check-operation-kinds', 'build-api', 'api-fixtures'):
             check = self.root / 'bin' / name
             check.write_text('#!/bin/sh\nexit 0\n')
             check.chmod(0o755)
@@ -268,13 +364,22 @@ fi
         expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit, '--waiver-file', str(waiver)])]
         for project in PROJECTS:
             expected.extend((project, command) for command in [['composer', 'check']])
-        expected.extend(('repository', [f'bin/{name}']) for name in ('check-operation-kinds', 'docs-openapi', 'mcp-tools'))
+        expected.extend(('repository', [f'bin/{name}']) for name in ('check-operation-kinds', 'build-api'))
         expected.append(('repository', ['bin/api-fixtures', '--check']))
         self.assertEqual(expected, [(item['project'], item['command']) for item in report['checks']
                                     if item['project'] != 'swamp'])
         self.assertEqual([f'{self.root.resolve()}|--gate --base {self.commit} --waiver-file {waiver}'],
                          (self.common / 'docs').read_text().splitlines())
         self.assertEqual(4, len((self.common / 'calls').read_text().splitlines()))
+
+    def test_prepared_api_skips_generation_but_still_rejects_invalid_fixtures(self):
+        runner = self.gate_fixture()
+        (self.root / 'bin/build-api').write_text('#!/bin/sh\necho "API generated twice"\nexit 9\n')
+        (self.root / 'bin/api-fixtures').write_text('#!/bin/sh\necho "Invalid fixture"\nexit 7\n')
+        result = subprocess.run([str(runner), '--prepared-api'], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertNotIn('API generated twice', result.stdout)
+        self.assertIn('Invalid fixture', result.stdout)
 
     def test_gate_shards_split_every_lane_once_and_only_shard_one_runs_repository_checks(self):
         runner = self.gate_fixture()
@@ -454,7 +559,7 @@ fi
 
     def test_gate_records_missing_artifact_tools_and_failed_rust_formatting(self):
         runner = self.gate_fixture()
-        (self.root / 'bin/docs-openapi').unlink()
+        (self.root / 'bin/build-api').unlink()
         rust = self.root / 'apps/agent/src/main.rs'
         rust.parent.mkdir(parents=True)
         rust.write_text('fn main() {}')
@@ -463,7 +568,7 @@ fi
         cargo.chmod(0o755)
         result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
-        self.assertIn('bin/docs-openapi: required tool not found', result.stdout)
+        self.assertIn('bin/build-api: required tool not found', result.stdout)
         self.assertIn('Rust formatting differs', result.stdout)
         report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
         check = next(item for item in report['checks'] if item['project'] == 'apps/agent')
