@@ -34,9 +34,9 @@ final readonly class AllocateInstanceBridgeAction
 
                 return $current;
             }
-            $egress = InstanceFleetGateway::egressAddress();
+            $egress = InstanceFleetGateway::egressProxy();
             // The /24 of the egress proxy: the Instance container's own bridge one level up.
-            $outer = $egress === null ? [] : [long2ip((int) ip2long($egress) & ~0xFF).'/'.self::BridgePrefix];
+            $outer = $egress === null ? [] : [long2ip((int) ip2long($egress['host']) & ~0xFF).'/'.self::BridgePrefix];
             $taken = [$this->vpn->subnet(), ...NodeBridges::recorded(), ...$outer];
             $range = Ipv4Subnet::from(self::FleetRange);
             $size = 2 ** (32 - self::BridgePrefix);
