@@ -19,6 +19,8 @@ final readonly class TaskSchedule
         GatewaySchedule::command($schedule, 'task:pr-gate', uniqueFor: 300, overlapMinutes: 5)->everyMinute()->when($enabled);
         // A task copy in pr_when_done publishes its done check by itself; the tick only reads records and admits the publish.
         GatewaySchedule::command($schedule, 'task:pr-when-done', uniqueFor: 300, overlapMinutes: 5)->everyMinute()->when($enabled);
+        // A task copy whose publish conflicted gets the next step of its merge round; the tick only reads records and admits that step.
+        GatewaySchedule::command($schedule, 'task:merge-round', uniqueFor: 300, overlapMinutes: 5)->everyMinute()->when($enabled);
         // A task copy group whose watched pull request merged completes by itself, in every Project; the tick only reads the pull request.
         GatewaySchedule::command($schedule, 'task:copy-settle', uniqueFor: 300, overlapMinutes: 5)->everyFiveMinutes()->when($enabled);
         $hours = config()->integer('retention.job_batch_hours');
