@@ -25,9 +25,15 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
     /** The input key of why a publish of a named check opens no pull request: the Gateway's answer, never part of the run's intent. */
     public const string Withheld = 'pull_request_withheld';
 
+    /**
+     * The input key of the done check that the admission read under the group's lock, when the published check was it: the Gateway's
+     * record, never part of the run's intent. The merge round reads it (docs/reference/tasks.md#the-merge-round).
+     */
+    public const string DoneCheck = 'done_check';
+
     public function input(Operation $operation): array
     {
-        return ['intent' => array_diff_key($operation->input, ['execution_secrets' => true, self::Withheld => true]),
+        return ['intent' => array_diff_key($operation->input, ['execution_secrets' => true, self::Withheld => true, self::DoneCheck => true]),
             'execution_secrets' => $operation->input['execution_secrets']];
     }
 
