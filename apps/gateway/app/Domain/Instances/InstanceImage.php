@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
-use App\Domain\TaskVms\TaskVmNestedFleet;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 
 /**
  * The container image of a development Instance (docs/reference/development-containers.md#inside-a-container): the stock Ubuntu image
@@ -183,7 +182,7 @@ final readonly class InstanceImage
     public static function browserTrust(): array
     {
         $home = '/home/agent';
-        $module = app(RecipeImageBuilds::class)->currentRecipe()->instances?->trustModule()
+        $module = app(CurrentRecipe::class)->currentRecipe()->instances?->trustModule()
             ?? throw new \LogicException('The recipe holds no shared Instance folders.');
         $library = $module->trustModule['library'] ?? throw new \LogicException('The trust module part names no library.');
 
@@ -296,7 +295,7 @@ final readonly class InstanceImage
         $forwarder = InstanceHostIntent::ModelForwarderPort;
         $t3 = InstanceHostIntent::T3Port;
         $reset = $nested ? 'destroy table inet orbit_agent_guard' : 'flush ruleset';
-        $guard = $nested ? "\n        ip daddr { ".TaskVmNestedFleet::WireGuardSubnet.', '.TaskVmNestedFleet::Subnet.' } meta skuid '.InstanceHostIntent::OrbitUid.' drop' : '';
+        $guard = $nested ? "\n        ip daddr { ".NestedFleetLayout::WireGuardSubnet.', '.NestedFleetLayout::Subnet.' } meta skuid '.InstanceHostIntent::OrbitUid.' drop' : '';
 
         return <<<NFT
             #!/usr/sbin/nft -f

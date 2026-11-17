@@ -41,5 +41,10 @@
     "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing": 100,
     "a turn cut by its bound stops its never-ending run before the read back and reads over; a stop T3 refuses holds": 60,
     "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start": 40
+  },
+  "local_completed_seconds": {
+    "a continued answer resolves its stored requests before the send so a stale question cannot cut the work": 12,
+    "an answered request that stays pending refuses the turn before launch or reviewer checkout": 8,
+    "a failed or unreadable answered resolution launches nothing and names the resolution failure": 19
   }
 }

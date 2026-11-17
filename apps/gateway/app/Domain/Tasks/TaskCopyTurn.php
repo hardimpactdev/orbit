@@ -135,7 +135,10 @@ final readonly class TaskCopyTurn
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
             'turn' => ['t3' => $instance->runtime()->firstOrFail()->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
                 // A new thread's model options: T3 runs its every turn with them (InstanceContainer::providerOptions).
-                'options' => $options, 'candidate' => $candidate, 'settle' => $settle, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
+                'options' => $options, 'candidate' => $candidate, 'settle' => $settle,
+                'answered' => $provider === null ? array_values(array_unique(array_map(
+                    static fn (array $question): string => ValidatedData::string($question['request_id']), $thread->questions ?? []))) : [],
+                'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
                 'prompt' => TaskTurnPrompt::compose($task, $prompt, now())],
         ];
     }

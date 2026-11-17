@@ -1,8 +1,9 @@
-// Reads a waiting T3 run's question, or interrupts that run, or stops a thread's active run, or creates a new thread, through the stock
+// Reads a waiting T3 run's question, resolves its stored answered requests, interrupts that run, stops a thread's active run, or creates a new thread, through the stock
 // T3 server's own WebSocket RPC in a task copy (docs/cli/task/copy-turn.mmd). task-copy-turn.yml runs it as agent in the copy, on stdin of
 // the runtime's Node: `node - T3 read THREAD`, `node - T3 interrupt THREAD RUN REQUESTS`, `node - T3 stop THREAD` and
-// `node - T3 create TITLE INSTANCE MODEL OPTIONS`, T3 being the admitted path of T3's command, REQUESTS the stored request ids joined by
-// newlines and OPTIONS the thread's model options as JSON. `create` makes the thread with no message: stock T3's `thread start` takes
+// `node - T3 answered THREAD REQUEST...` and `node - T3 create TITLE INSTANCE MODEL OPTIONS`, T3 being the admitted path of T3's command.
+// Interrupt's REQUESTS are stored ids joined by newlines; answered takes one argument per id. OPTIONS is the thread's model options
+// as JSON. `create` makes the thread with no message: stock T3's `thread start` takes
 // no model options, and T3 0.1.7 runs a Codex thread at the effort of its `reasoningEffort` option alone. The first turn is then
 // `t3 thread send`. `stop` ends the run of a turn that is over in Orbit: one its bound cut,
 // or an earlier turn's. Both stops take one path: T3's `run.interrupt`, then the wait for the run's end. Stock T3's CLI can neither read
@@ -31,10 +32,12 @@ const Over = new Set(["completed", "failed", "cancelled", "interrupted", "rolled
 
 const [T3, command, ...rest] = process.argv.slice(2);
 const [threadId, runId, stored] = command === "create" ? [] : rest;
+const answeredRequests = command === "answered" ? rest.slice(1) : [];
 const [title, instance, model, options] = command === "create" ? rest : [];
-if (!T3 || !["read", "interrupt", "stop", "create"].includes(command) || (command !== "create" && !threadId)
-    || (command === "interrupt" && (!runId || !stored)) || (command === "create" && (!title || !instance || !model || options === undefined))) {
-    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 stop THREAD | T3 create TITLE INSTANCE MODEL OPTIONS\n");
+if (!T3 || !["read", "interrupt", "answered", "stop", "create"].includes(command) || (command !== "create" && !threadId)
+    || (command === "interrupt" && (!runId || !stored)) || (command === "answered" && (answeredRequests.length === 0 || answeredRequests.some((id) => !id)))
+    || (command === "create" && (!title || !instance || !model || options === undefined))) {
+    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 answered THREAD REQUEST... | T3 stop THREAD | T3 create TITLE INSTANCE MODEL OPTIONS\n");
     process.exit(64);
 }
 
@@ -99,6 +102,7 @@ async function state(rpc) {
     const all = projection.runs.map((run) => ({ id: run.id, status: run.status }));
     return {
         all,
+        owners: new Map(pending.map((request) => [request.id, projection.nodes.find((node) => node.id === request.nodeId)?.runId])),
         runs: all.filter((run) => !Over.has(run.status)),
         requests: pending.map((request) => ({ request_id: request.id, kind: request.kind,
             questions: (items.find((item) => item.requestId === request.id)?.questions ?? []).map(question) })),
@@ -108,6 +112,21 @@ async function state(rpc) {
 /** The run may be stopped only when every pending request is a question Orbit can store whole: no approval, no empty request. */
 const stoppable = (seen) => seen.requests.length > 0 && seen.requests.every((request) => request.kind === "user_input" && request.questions.length > 0);
 const live = (seen, run) => seen.runs.some((open) => open.id === run);
+
+/** Resolve only the answered turn's stored questions, without sending a message. A concurrent answer needs no second response. */
+async function answered(rpc) {
+    const wanted = new Set(answeredRequests);
+    const before = await state(rpc);
+    for (const request of before.requests.filter((request) => wanted.has(request.request_id) && request.kind === "user_input")) {
+        await rpc.call("orchestration.dispatchCommand", { type: "runtime-request.respond", commandId: `orbit:${randomUUID()}`,
+            threadId, requestId: request.request_id, decision: "cancel" }).catch(() => {
+                // It may have been answered meanwhile. The readback decides whether the continued turn may launch.
+            });
+    }
+    const pending = (await state(rpc)).requests.filter((request) => wanted.has(request.request_id)).map((request) => request.request_id);
+    return { resolved: pending.length === 0, pending,
+        error: pending.length === 0 ? null : "T3 still holds a stored answered request pending; no turn may be launched." };
+}
 
 /**
  * The one stop path of `interrupt` and `stop`: T3's `run.interrupt` for the run, then a wait for its end that takes what is left of the
@@ -160,6 +179,8 @@ try {
     rpc = await connect();
     if (command === "create") {
         out = await create(rpc);
+    } else if (command === "answered") {
+        out = await answered(rpc);
     } else if (command === "read") {
         const seen = await state(rpc);
         const read = { runs: seen.runs, requests: seen.requests };
@@ -170,7 +191,8 @@ try {
         const wanted = [...new Set(stored.split("\n"))].sort();
         const before = await state(rpc);
         const asking = before.requests.map((request) => request.request_id).sort();
-        const { error, after } = live(before, runId) && stoppable(before) && JSON.stringify(asking) === JSON.stringify(wanted)
+        const { error, after } = live(before, runId) && stoppable(before) && before.requests.every((request) => before.owners.get(request.request_id) === runId)
+            && JSON.stringify(asking) === JSON.stringify(wanted)
             ? await interrupt(rpc, runId, "Orbit ended the turn at its question; the answer comes as the next turn.")
             : { error: "The run no longer waits for the stored questions: it was answered, or it asks something else.", after: await state(rpc) };
         out = { interrupted: error === null && !live(after, runId), error, runs: after.runs, pending: after.requests.length };

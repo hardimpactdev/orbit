@@ -10,6 +10,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Instances\ClonePublication;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -24,7 +25,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\Swamp\NativeRunProgress;
@@ -68,7 +68,7 @@ beforeEach(function (): void {
     ]));
     $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
     app(ExtensionStore::class)->set('conn', true);
-    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
     {
         public function assertReady(): void {}
 

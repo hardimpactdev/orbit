@@ -36,7 +36,7 @@ A task that owns a [task copy](/reference/tasks#task-copy) runs its turns in it.
 - Human output prints `Agent thread: ID` and the reply under the outcome, or `Reply: none` when `reply` is null. A result without `agent_id`, such as a run that Swamp failed before the turn's result, prints neither. `--json` carries `agent_id` and `reply` in the Operation's `result`.
 - The implementer's prompt says how to ask: with the agent's question tool.
 - A question ends the turn. Orbit first stores the question, then stops the run. The Operation succeeds with the state `asking_for_input`. Its result holds each question with its header and options, in the agent's words, and `task:agent:list` shows them on the thread until its next turn.
-- The role's next turn answers the question. Its prompt quotes the questions first, then your prompt as the answer. A message to the thread from a T3 client answers it too.
+- The role's next turn answers the question. Orbit first resolves the stored question requests, then sends the prompt, which quotes the questions first and your prompt as the answer. Requests already resolved need no action. If Orbit cannot confirm resolution, it launches nothing and fails with `tasks.copy_question_unresolved`; the thread keeps its questions for the next attempt. A message to the thread from a T3 client answers it too.
 - A question Orbit could not read, or a run that Orbit could not stop, fails the Operation and holds the group like a turn that may still run.
 - The turn ends after one hour with `tasks.turn_timeout`. Orbit then stops its run in the copy and waits for the run's end; the work stays there. A turn whose run stopped holds nothing. Should the stop fail, the next turn stops the run.
 - `operation:cancel <turn>` ends a running turn's Operation. Its run may go on in the copy until the next turn stops it, so a cancel and a new turn stop a run.
@@ -80,6 +80,7 @@ A turn in a task copy adds these answers and Operation errors:
 | `tasks.copy_review_unrestored` | The Operation's error: after a reviewer turn, the checkout is not clean on its branch at the commit it had before. The next turn settles it once the checkout is clean on the task branch. |
 | `tasks.copy_question_unread` | The Operation's error: the run asked, but Orbit could not read the question, so it did not stop the run. The group holds. |
 | `tasks.copy_question_unstopped` | The Operation's error: Orbit stored the question but could not stop the run that asked. The result keeps the question, and the group holds. |
+| `tasks.copy_question_unresolved` | The Operation's error: Orbit could not confirm that the previous turn's stored question requests are resolved. Nothing was launched; the thread keeps its questions. |
 | `tasks.turn_timeout` | The Operation's error: the turn ran past its one-hour bound. The error says whether Orbit stopped its run; a run that did not stop is stopped by the next turn. |
 | `tasks.turn_failed` | The Operation's error: T3's run ended with a status other than `completed` or `waiting`. |
 | `tasks.copy_turn_failed` | The Operation's error: T3 did not report the turn's end, for example while its server was down or when it refused the start, or could not list its threads to find the one to continue. A refused start ends the error with T3's own message. |

@@ -9,6 +9,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\CloneStage;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceLifecycleContributions;
@@ -21,7 +22,6 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Activity;
@@ -50,7 +50,7 @@ beforeEach(function (): void {
     ]));
     $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
     app(ExtensionStore::class)->set('conn', true);
-    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
     {
         public function assertReady(): void {}
 

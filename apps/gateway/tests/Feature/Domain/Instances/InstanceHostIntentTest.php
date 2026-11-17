@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceDevPorts;
 use App\Domain\Instances\InstanceEgress;
@@ -10,24 +11,28 @@ use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstanceNotes;
+use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\MachineSoftware\ArtifactPin;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Infrastructure\MachineSoftware\FolderPin;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
 use App\Infrastructure\MachineSoftware\StaticPhpBuild;
 use App\Infrastructure\MachineSoftware\VitePlusHome;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
+use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -76,14 +81,14 @@ describe('the container branch of the app-dev converge', function (): void {
         file_put_contents($environment = $marker.'-environment', "HTTPS_PROXY=\"http://10.253.0.1:3128\"\n");
         config(['instances.fleet_marker' => $marker, 'instances.fleet_environment' => $environment]);
         $real = instanceHostNode();
-        $fleet = instanceHostNode('app-dev', TaskVmNestedFleet::Layout['app-dev']['address']);
+        $fleet = instanceHostNode('app-dev', NestedFleetLayout::Layout['app-dev']['address']);
         config(['instances.container_nodes' => [$real->id, $fleet->id]]);
         app(InstanceHostIntent::class)->prepare($real);
         app(InstanceHostIntent::class)->prepare($fleet);
         $intent = static fn (Node $node): array => array_diff_key(app(InstanceHostIntent::class)->for($node->refresh()), ['bridge_admitted_at' => true]);
         [$realBefore, $fleetBefore] = [$intent($real), $intent($fleet)];
         touch($marker);
-        $folders = app(RecipeImageBuilds::class)->currentRecipe()->instances;
+        $folders = app(CurrentRecipe::class)->currentRecipe()->instances;
         try {
             expect($intent($real))->toBe($realBefore)
                 ->and($realBefore)->not->toHaveKey('fleet_node')
@@ -110,7 +115,7 @@ describe('the container branch of the app-dev converge', function (): void {
         file_put_contents($environment = $marker.'-environment', "PATH=\"/usr/bin\"\n");
         config(['instances.fleet_marker' => $marker, 'instances.fleet_environment' => $environment]);
         $real = instanceHostNode();
-        $fleet = instanceHostNode('app-dev', TaskVmNestedFleet::Layout['app-dev']['address']);
+        $fleet = instanceHostNode('app-dev', NestedFleetLayout::Layout['app-dev']['address']);
         config(['instances.container_nodes' => [$real->id, $fleet->id]]);
         app(InstanceHostIntent::class)->prepare($real);
         app(InstanceHostIntent::class)->prepare($fleet);
@@ -128,7 +133,7 @@ describe('the container branch of the app-dev converge', function (): void {
 
     // docs/reference/development-containers.md#shared-folders: an unshifted folder says so, and is another version of the same content.
     it('marks each folder plan of unshifted mounts with shift false, under another version, and leaves the idmapped plans as they were', function (): void {
-        $folders = app(RecipeImageBuilds::class)->currentRecipe()->instances;
+        $folders = app(CurrentRecipe::class)->currentRecipe()->instances;
         $shifted = InstanceFolderPlan::for($folders);
         $unshifted = InstanceFolderPlan::for($folders, false);
         foreach (['runtime', 'agent'] as $name) {
@@ -160,7 +165,7 @@ describe('the container branch of the app-dev converge', function (): void {
     it('names the project, pool, image and folders of a prepared Node', function (): void {
         $node = instanceHostNode();
         config(['instances.container_nodes' => [$node->id]]);
-        $recipe = app(RecipeImageBuilds::class)->currentRecipe();
+        $recipe = app(CurrentRecipe::class)->currentRecipe();
         app(InstanceHostIntent::class)->prepare($node);
 
         $intent = app(InstanceHostIntent::class)->for($node);
@@ -171,6 +176,8 @@ describe('the container branch of the app-dev converge', function (): void {
             'forwarder_port' => 8319, 'bridge_endpoints' => [], 'ids' => 201 * 65536,
             // A Node without Instance runtimes names no container's machine name (InstanceMachineName::forNode).
             'machine_names' => [],
+            // ... and no container's T3 unit drop-ins.
+            't3_files' => [],
         ])
             ->and($intent['incus'])->toBe($recipe->incus('amd64'))
             ->and($intent['image'])->toBe(InstanceImage::for('10.253.0.1'))
@@ -181,6 +188,48 @@ describe('the container branch of the app-dev converge', function (): void {
                 'environment.VP_HOME' => '/var/lib/orbit/vite-plus-home', 'environment.VP_NO_UPDATE_CHECK' => '1',
                 'environment.HTTPS_PROXY' => 'http://10.253.0.1:3128', 'environment.no_proxy' => 'localhost,127.0.0.1,::1,10.253.0.1'])
             ->and($intent['profile_config'])->toHaveCount(count(InstanceImage::environment('10.253.0.1')) + 1);
+    });
+
+    // docs/reference/development-containers.md#existing-containers: the converge rewrites a changed drop-in in every container with a T3.
+    it('hands the converge the unit drop-ins of each container with a T3, as a clone\'s create writes them, and none of a default', function (): void {
+        $node = instanceHostNode();
+        config(['instances.container_nodes' => [$node->id]]);
+        app(InstanceHostIntent::class)->prepare($node);
+        $project = Project::query()->create(['name' => 'tool', 'slug' => 'tool', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/tool.git',
+            'default_branch' => 'main', 'root' => '.', 'is_laravel' => false]);
+        $runtime = static function (string $name, ?ContainerServer $server, string $incus = 'orbit-instances') use ($node, $project): InstanceRuntime {
+            $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => '/srv/'.$name, 'status' => 'active']);
+
+            return InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => $incus,
+                'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.'.($instance->id + 1), 'runtime_version' => 'r', 'agent_version' => 'a',
+                't3_port' => $server === null ? null : 3800 + $instance->id, 'container_server' => $server, 'power_state' => InstanceRuntimePowerState::Running,
+                ...($incus === 'orbit-instances' ? [] : ['idmap_size' => InstanceHostIntent::NestedIdMapSize])]);
+        };
+        $runtime('default', null);
+        $t3 = $runtime('feature', ContainerServer::T3);
+        $conn = $runtime('trial', ContainerServer::Conn, 'orbit-instances-nested');
+        $boot = "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n";
+        $serve = ' serve --host=0.0.0.0 --port=3773 --no-browser';
+
+        $files = app(InstanceHostIntent::class)->for($node->refresh())['t3_files'];
+
+        expect($files)->toBe([
+            ['project' => 'orbit-instances', 'container' => $t3->container_name, 'files' => [
+                ['path' => InstanceContainer::T3BootDropIn, 'mode' => '0644', 'content' => $boot],
+                ['path' => InstanceContainer::ServerDropIn, 'mode' => '0644',
+                    'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3{$serve}\n"],
+            ]],
+            // A Conn container's server drop-in carries the preview browser of the recipe's agent folder.
+            ['project' => 'orbit-instances-nested', 'container' => $conn->container_name, 'files' => [
+                ['path' => InstanceContainer::T3BootDropIn, 'mode' => '0644', 'content' => $boot],
+                ['path' => InstanceContainer::ServerDropIn, 'mode' => '0644',
+                    'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server{$serve}\n"
+                        ."Environment=CONN_SERVER_BROWSER_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\n"
+                        ."Environment=T3CODE_SERVER_BROWSER_SANDBOX=0\n"],
+            ]],
+        ])
+            // The same texts a clone's create writes before its first start.
+            ->and($files[1]['files'])->toBe(InstanceContainer::t3DropIns($conn, app(CurrentRecipe::class)->currentRecipe()->instances ?? throw new LogicException('no folders')));
     });
 
     it('lets the bridge ACL admit what a container\'s ACL may admit: the Node to FrankenPHP and the development ports, and T3\'s clients', function (): void {
@@ -286,7 +335,7 @@ describe('the Instance image', function (): void {
     });
 
     it('installs each published static PHP build as php/<version>, checked against its extensions, and no unpublished one', function (): void {
-        $recipe = app(RecipeImageBuilds::class)->currentRecipe()->instances;
+        $recipe = app(CurrentRecipe::class)->currentRecipe()->instances;
         $build = $recipe->php['8.5'];
         $published = new StaticPhpBuild('8.5', $build->phpVersion, $build->frankenphp, $build->extensions, $build->cliExtensions, $build->build, $build->url,
             new ArtifactPin($build->url, 'sha256', str_repeat('d', 64), $build->phpVersion));
@@ -338,7 +387,7 @@ describe('the Instance image', function (): void {
             ->and(array_column($shared, 'mode', 'path'))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf' => '0644', '/etc/fonts/fonts.conf' => '0644', '/etc/gitconfig' => '0644', '/etc/sudoers.d/orbit-agent' => '0440'])
             ->and($image['finish'])->toContain(['rm', '-f', '/etc/ld.so.cache'])
             ->and(array_key_last($image['finish']))->toBe(array_search(['rm', '-f', '/etc/ld.so.cache'], $image['finish'], true))
-            ->and(InstanceImage::for('10.253.0.1', app(RecipeImageBuilds::class)->currentRecipe()->incus('amd64'))['files'])->toContain(...InstanceImage::shared());
+            ->and(InstanceImage::for('10.253.0.1', app(CurrentRecipe::class)->currentRecipe()->incus('amd64'))['files'])->toContain(...InstanceImage::shared());
     });
 
     it('gives Vite+ a shared writable home for package managers while linking the pinned runtime', function (): void {
@@ -414,7 +463,7 @@ describe('the shared folders', function (): void {
     });
 
     it('installs the recipe\'s runtime and agent programs from their pinned artifacts', function (): void {
-        $plan = InstanceFolderPlan::for(app(RecipeImageBuilds::class)->currentRecipe()->instances);
+        $plan = InstanceFolderPlan::for(app(CurrentRecipe::class)->currentRecipe()->instances);
         $programs = static fn (array $folder): array => array_merge(...array_map(static fn (array $part): array => $part['bin'], $folder['parts']));
 
         $archives = array_column($plan['runtime']['parts'], 'archive', 'name');
@@ -432,7 +481,7 @@ describe('the shared folders', function (): void {
     });
 
     it('builds one Vite+ home from the recipe\'s vp release, runtime lock and Node, at a path named by what goes into it', function (): void {
-        $recipe = app(RecipeImageBuilds::class)->currentRecipe();
+        $recipe = app(CurrentRecipe::class)->currentRecipe();
         $plan = InstanceFolderPlan::for($recipe->instances)['runtime'];
         $vitePlus = $plan['vite_plus'];
 

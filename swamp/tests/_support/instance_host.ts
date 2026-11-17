@@ -96,6 +96,7 @@ const replacements = (folder: string): [string, string][] => [
     ["/var/lib/orbit/hibernation", `${folder}/hibernation`],
     ["/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`],
     ["/var/lib/orbit/instance-container-libraries", `${folder}/container-libraries`],
+    ["/var/lib/orbit/instance-t3-restart.json", `${folder}/t3-restart.json`],
     // The Node's own Orbit root CA, a real self-signed certificate of the fixture; the container path stays as it is.
     ['"instance_trust_source":"/etc/orbit/agent/ca.pem"', `"instance_trust_source":"${folder}/orbit-root-ca.crt"`],
     ["/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`],
@@ -482,6 +483,8 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
         forwarder_port: 8319,
         // The presented machine name of each container the Node's runtimes record (InstanceMachineName::forNode).
         machine_names: [] as Record<string, string>[],
+        // The T3 unit drop-ins of each container with a T3 (InstanceContainer::t3DropIns).
+        t3_files: [] as { project: string; container: string; files: { path: string; content: string; mode: string }[] }[],
         ingress: [{
             action: "allow",
             source: "10.253.0.1/32",

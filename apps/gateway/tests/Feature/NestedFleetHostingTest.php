@@ -20,6 +20,7 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Nodes\CiRunnerStateFiles;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
@@ -39,7 +40,6 @@ use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyStart;
-use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -1188,7 +1188,7 @@ describe('the recorded Incus project', function (): void {
         config(['instances.fleet_marker' => $marker]);
         $project = containerDefaultProject();
         $real = recordedNestedInstance($project, containerDefaultNode());
-        $fleet = recordedNestedInstance($project, containerDefaultNode('app-dev', TaskVmNestedFleet::Layout['app-dev']['address']), 'feature');
+        $fleet = recordedNestedInstance($project, containerDefaultNode('app-dev', NestedFleetLayout::Layout['app-dev']['address']), 'feature');
         $device = static fn (Instance $instance): array => app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail())['allowed_devices'][$folder];
         $path = $folder === 'orbit-runtime' ? '/opt/orbit-runtime' : '/opt/orbit-agent';
         $idmapped = ['type' => 'disk', 'source' => $path, 'path' => $path, 'readonly' => 'true', 'shift' => 'true'];
@@ -1294,7 +1294,9 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
         $default = Instance::query()->where('name', 'default')->sole();
         expect($actual['machine_names'] ?? null)->toBe([['project' => 'orbit-instances', 'container' => 'instance-'.$default->id,
             ...InstanceMachineName::intent($default)]])
-            ->and(json_encode(array_diff_key($actual ?? [], ['own_site' => true, 'machine_names' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
+            // So did `t3_files`; a default runs no T3, and InstanceHostIntentTest pins a clone's.
+            ->and($actual['t3_files'] ?? null)->toBe([])
+            ->and(json_encode(array_diff_key($actual ?? [], ['own_site' => true, 'machine_names' => true, 't3_files' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
             ->and($actual)->not->toHaveKeys(['nested', 'runtime_projects']);
     })->with(['absent', 'off'])->with([false, true]);
 
