@@ -73,7 +73,8 @@ describe('the container branch of the app-dev converge', function (): void {
     // docs/reference/development-containers.md#instance-host-in-the-fleet: only nested-app-dev of an Instance fleet installs Incus and a pool first.
     it('sends fleet_node only for the Instance fleet Node, and leaves a real app-dev intent as it was under the fleet marker', function (): void {
         $marker = sys_get_temp_dir().'/orbit-instance-fleet-intent-'.getmypid();
-        config(['instances.fleet_marker' => $marker]);
+        file_put_contents($environment = $marker.'-environment', "HTTPS_PROXY=\"http://10.253.0.1:3128\"\n");
+        config(['instances.fleet_marker' => $marker, 'instances.fleet_environment' => $environment]);
         $real = instanceHostNode();
         $fleet = instanceHostNode('app-dev', TaskVmNestedFleet::Layout['app-dev']['address']);
         config(['instances.container_nodes' => [$real->id, $fleet->id]]);
@@ -88,13 +89,40 @@ describe('the container branch of the app-dev converge', function (): void {
                 ->and($realBefore)->not->toHaveKey('fleet_node')
                 ->and($fleetBefore)->not->toHaveKey('fleet_node')
                 ->and($fleetBefore['folders'])->toBe(InstanceFolderPlan::for($folders))
-                // The fleet Node also mounts the shared folders unshifted, so its folder plans say so.
-                ->and(array_diff_key($intent($fleet), ['fleet_node' => true, 'folders' => true]))->toBe(array_diff_key($fleetBefore, ['folders' => true]))
+                // The fleet Node also mounts the shared folders unshifted, so its folder plans say so, and its egress proxy goes out through the fleet's.
+                ->and(array_diff_key($intent($fleet), ['fleet_node' => true, 'folders' => true, 'egress' => true]))->toBe(array_diff_key($fleetBefore, ['folders' => true, 'egress' => true]))
+                ->and($intent($fleet)['egress'])->toBe(InstanceEgress::for(InstanceHostIntent::Network, explode('/', $fleetBefore['address'])[0],
+                    $fleetBefore['cidr'], app(PeerDnsPolicy::class)->domains(), ['host' => '10.253.0.1', 'port' => 3128]))
+                ->and($intent($fleet)['egress']['parent'])->toBe(['host' => '10.253.0.1', 'port' => 3128])
+                ->and($fleetBefore['egress'])->not->toHaveKey('parent')
                 ->and($intent($fleet)['folders'])->toBe(InstanceFolderPlan::for($folders, false))
                 ->and(array_column($intent($fleet)['folders'], 'shift'))->toBe(['false', 'false'])
                 ->and($intent($fleet)['fleet_node'])->toBeTrue();
         } finally {
             unlink($marker);
+            unlink($environment);
+        }
+    });
+
+    // docs/reference/development-containers.md#instance-host-in-the-fleet: the fleet Node's proxy never goes direct.
+    it('refuses the Instance fleet Node\'s intent when the nested Gateway reads no egress proxy, and leaves a real Node as it was', function (): void {
+        $marker = sys_get_temp_dir().'/orbit-instance-fleet-refusal-'.getmypid();
+        file_put_contents($environment = $marker.'-environment', "PATH=\"/usr/bin\"\n");
+        config(['instances.fleet_marker' => $marker, 'instances.fleet_environment' => $environment]);
+        $real = instanceHostNode();
+        $fleet = instanceHostNode('app-dev', TaskVmNestedFleet::Layout['app-dev']['address']);
+        config(['instances.container_nodes' => [$real->id, $fleet->id]]);
+        app(InstanceHostIntent::class)->prepare($real);
+        app(InstanceHostIntent::class)->prepare($fleet);
+        touch($marker);
+        try {
+            expect(fn () => app(InstanceHostIntent::class)->for($fleet->refresh()))
+                ->toThrow(fn (ResourceOperationException $exception) => expect([$exception->errorCode, $exception->status])->toBe(['instance.fleet_egress_unavailable', 409]))
+                ->and(app(InstanceHostIntent::class)->digest($fleet))->toBeNull()
+                ->and(app(InstanceHostIntent::class)->for($real->refresh())['egress'])->not->toHaveKey('parent');
+        } finally {
+            unlink($marker);
+            unlink($environment);
         }
     });
 

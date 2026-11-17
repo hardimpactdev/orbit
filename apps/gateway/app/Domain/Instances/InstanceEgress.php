@@ -19,6 +19,9 @@ use App\Infrastructure\Firewall\UfwRuleShape;
  *   the bridge reaches the port. This is the only address rule: Squid holds IPv4 as mapped IPv6, so its own address lists cannot
  *   state IPv6 ranges safely. IPv6 is refused whole because a LAN often uses global IPv6 addresses, which no fixed range can tell
  *   from the internet.
+ * On an Instance fleet Node, which has no direct internet and no public DNS, Squid sends everything to the fleet's egress proxy as
+ * its only parent and never goes direct, and the table admits exactly that parent
+ * (docs/reference/development-containers.md#instance-host-in-the-fleet).
  */
 final readonly class InstanceEgress
 {
@@ -53,15 +56,17 @@ final readonly class InstanceEgress
 
     /**
      * @param  list<string>  $privateDomains  the fleet's private routing domains, which the Node's resolver sends to the VPN's DNS
+     * @param  array{host: string, port: int}|null  $parent  the fleet's egress proxy on an Instance fleet Node (InstanceFleetGateway::egressProxy), else null
      * @return array<string, mixed>
      */
-    public static function for(string $bridge, string $gateway, string $cidr, array $privateDomains): array
+    public static function for(string $bridge, string $gateway, string $cidr, array $privateDomains, ?array $parent = null): array
     {
         return [
             'port' => self::Port, 'user' => self::User, 'directory' => self::Directory, 'config' => self::Config, 'unit' => self::Unit, 'table_unit' => self::TableUnit,
             'table' => self::Table, 'origin' => self::origin($gateway),
-            'squid' => self::squid($gateway, $cidr, $privateDomains),
-            'ruleset' => self::ruleset($bridge, $gateway),
+            ...($parent === null ? [] : ['parent' => $parent]),
+            'squid' => self::squid($gateway, $cidr, $privateDomains, $parent),
+            'ruleset' => self::ruleset($bridge, $gateway, $parent),
             'rule' => self::rule($bridge, $gateway)->shape->toAgentInput(),
         ];
     }
@@ -91,14 +96,19 @@ final readonly class InstanceEgress
      * Squid as a forward proxy only: no cache, no disk, no headers that name the container, and one access log line per request to
      * the journal, with the container's address. Only the bridge may use it, and a name in a private domain is refused before Squid looks
      * it up, and so is Squid's own cache manager. The table refuses private addresses (`ruleset`), so a request for one ends in a 503.
+     * With a parent, Squid forwards every request, `CONNECT` too, to it and connects to no other server. It then has no `to_localhost`
+     * rule: that rule looks the destination up, a fleet Node resolves no public name, and the parent applies its own rules.
      *
      * @param  list<string>  $privateDomains
+     * @param  array{host: string, port: int}|null  $parent
      */
-    public static function squid(string $gateway, string $cidr, array $privateDomains): string
+    public static function squid(string $gateway, string $cidr, array $privateDomains, ?array $parent = null): string
     {
         $port = self::Port;
         $resolver = self::Resolver;
         $domains = implode(' ', array_map(static fn (string $domain): string => '.'.$domain, $privateDomains));
+        $toLocalhost = $parent === null ? "http_access deny to_localhost\n" : '';
+        $forward = $parent === null ? '' : "\ncache_peer {$parent['host']} parent {$parent['port']} 0 no-query no-digest default\nnever_direct allow all\n";
 
         return <<<SQUID
             # Managed by Orbit: the Instance egress proxy (/reference/development-containers#egress-and-dns).
@@ -125,11 +135,10 @@ final readonly class InstanceEgress
             acl private_name dstdomain {$domains}
             http_access deny !bridge
             http_access deny manager
-            http_access deny to_localhost
-            http_access deny private_name
+            {$toLocalhost}http_access deny private_name
             http_access allow bridge
             http_access deny all
-
+            {$forward}
             SQUID;
     }
 
@@ -140,9 +149,12 @@ final readonly class InstanceEgress
      * - The output chain rejects every new connection of `proxy` but to the Node's stub resolver: to any address of the Node itself,
      *   to the WireGuard interface, to every private or special IPv4 address, and to all of IPv6. Replies to containers belong to known
      *   connections.
+     * - With a parent, the output chain also returns new connections to exactly the parent's address and TCP port, before any reject.
      * The file replaces the table whole and atomically, so loading it again leaves no moment without it.
+     *
+     * @param  array{host: string, port: int}|null  $parent
      */
-    public static function ruleset(string $bridge, string $gateway): string
+    public static function ruleset(string $bridge, string $gateway, ?array $parent = null): string
     {
         $table = self::Table;
         $user = self::User;
@@ -150,6 +162,7 @@ final readonly class InstanceEgress
         $resolver = self::Resolver;
         $wireguard = self::WireGuardInterface;
         $v4 = implode(', ', self::PrivateV4);
+        $parentRule = $parent === null ? '' : "\n\t\tip daddr {$parent['host']} tcp dport {$parent['port']} return";
 
         return <<<NFT
             # Managed by Orbit: the Instance egress proxy (/reference/development-containers#egress-and-dns).
@@ -169,7 +182,7 @@ final readonly class InstanceEgress
             		type filter hook output priority filter - 10; policy accept;
             		meta skuid != "{$user}" return
             		ct state != new return
-            		ip daddr {$resolver} meta l4proto { tcp, udp } th dport 53 return
+            		ip daddr {$resolver} meta l4proto { tcp, udp } th dport 53 return{$parentRule}
             		fib daddr type local counter reject
             		oifname "{$wireguard}" counter reject
             		ip daddr @private_v4 counter reject

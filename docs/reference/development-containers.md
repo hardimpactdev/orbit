@@ -951,6 +951,7 @@ Readiness inspects the listening socket at the bridge address and port 3128, wit
 Names and the record:
 
 - **Names.** Containers have no resolver. The proxy resolves each name through the Node's stub resolver, `127.0.0.53`.
+- **On an Instance fleet Node.** The proxy sends every request to the fleet's egress proxy and never goes direct ([Instance host in the fleet](#instance-host-in-the-fleet)).
 - **Private names.** The proxy refuses a name in the fleet's private routing domains before any lookup. So such a lookup does not reach the VPN's DNS.
 - **Private domains.** `orbit`, the VPN domain, the Cluster and Node domains, and the private Route names. Each converge renews the list.
 - **A new domain.** A domain added after the last converge is looked up. The table still refuses its address.
@@ -965,7 +966,7 @@ The nftables table `orbit_instance_egress` keeps the proxy on the public interne
 - **Also refused.** Every private or special IPv4 address, and all of IPv6.
 - **IPv4 ranges.** `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `224.0.0.0/4` and `240.0.0.0/4`.
 - **No IPv6.** A LAN often uses global IPv6 addresses, which no fixed range tells from the internet. So the proxy uses IPv4 only.
-- **Admitted.** Only the stub resolver, on port 53.
+- **Admitted.** Only the stub resolver, on port 53. On an Instance fleet Node also the parent proxy: exactly its address and port.
 What that means:
 
 - **Effect.** The rule holds whatever a name resolves to. The proxy answers 503.
@@ -2413,6 +2414,8 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 4. It writes the marker `/etc/orbit/instance-fleet-node`.
 5. It runs the rest of the branch as on any `app-dev` Node: project, bridge, folders, egress proxy and the Instance image.
 
+Its egress proxy goes out through the fleet's proxy (see below).
+
 The [shared folders](#shared-folders) are the one other difference. An idmapped (`shift=true`) disk fails a third level below the host: the first window at 2,000,000 stopped at the start of the image's build container, and the journal showed the shifted mount of `orbit-agent` torn down at once.
 
 So the folder plans in the fleet Node's intent carry `shift: false`, and from them the profile `orbit-instances` mounts `orbit-runtime` and `orbit-agent` with `shift=false`. The start guard and the native clone of a nested-fleet container take the same two devices from the container intent's `allowed_devices`, so each admits only its Node's form: `shift=false` on the fleet Node and `shift=true` on every other Node. `InstanceFolderPlan::shift` is the one rule; it follows `ContainerNodes::fleetNode`. The Instance image does not change.
@@ -2420,6 +2423,20 @@ So the folder plans in the fleet Node's intent carry `shift: false`, and from th
 A real `app-dev` or CI Node gets no `fleet_node` and no folder `shift`, so its intent, its profile and its containers' devices stay as they were.
 
 The fleet's egress proxy lies in the Instance container's own bridge, in `10.253.0.0/16` one level up. The nested Gateway reads its address from `HTTPS_PROXY` in its `/etc/environment`, which the fleet rules write whole. It gives the fleet Node no Instance bridge in that /24: a bridge that holds the proxy address makes `nested-app-dev` dial itself, and its Incus cannot fetch the stock image.
+
+`nested-app-dev` reaches the internet only through that proxy: it has no route out and no public DNS. So the proxy of its own containers ([Egress and DNS](#egress-and-dns)) takes the fleet's proxy as its only parent. `InstanceFleetGateway::egressProxy` is the one reader of `HTTPS_PROXY`; it gives both the address that the bridge leaves out and this parent. The fleet Node's intent carries the parent in `instances.egress.parent`, and its Squid configuration and table follow from it:
+
+- **Parent.** `cache_peer <address> parent <port> 0 no-query no-digest default` and `never_direct allow all`. Plain requests and `CONNECT` both go to the parent. Squid connects to no other server.
+- **Table.** The proxy's table returns new connections of `proxy` to exactly the parent's address and TCP port, before it rejects private addresses. Every other private address stays refused.
+- **No lookup.** The fleet Node's Squid has no `to_localhost` rule, because that rule looks up the destination name.
+- **Why.** `nested-app-dev` cannot resolve a public name. Squid connects only to the parent, which applies its own rules.
+- **Private names.** The proxy still refuses a name in the fleet's private routing domains first, before it forwards anything.
+- **Refusal.** A nested Gateway that reads no proxy from `HTTPS_PROXY` fails the fleet Node's intent with `instance.fleet_egress_unavailable` (409).
+- **Before any change.** The converge then changes nothing, so Squid never goes direct there by mistake.
+
+A real Node gets no parent, so its Squid configuration, its table and its intent stay as they were.
+
+Measured by hand on a task copy on 2026-11-17, with Squid 7.7 on `nested-app-dev`, its product configuration and its table: without a parent, a `GET` of `http://archive.ubuntu.com/ubuntu/dists/resolute/InRelease` and a `CONNECT` to `example.com:443` each got 503 at once. With the parent, both succeeded.
 
 **Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has the part `host`. It digests what the container branch reads: the `swamp/ansible` tree, the machine-software recipe, and `nested-app-dev`'s branch intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, the folders, Incus, without the admission time). When it differs from the record, `nested-app-dev` joins the due converges, and its converge takes `{"roles":["app-dev"]}` instead of the base only. That is the nested Gateway's own `node.converge`, through its Swamp. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
 

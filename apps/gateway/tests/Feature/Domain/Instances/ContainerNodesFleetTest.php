@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Domain\Instances\ContainerNodes;
+use App\Domain\Instances\InstanceFleetGateway;
 use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,6 +38,24 @@ it('puts the fleet\'s app-dev Node on the build list of the nested Gateway of an
     expect($nodes->includes($appDev))->toBeTrue()
         ->and($nodes->includes($appProd))->toBeFalse()
         ->and($nodes->ids())->toBe([]);
+});
+
+it('reads the fleet\'s egress proxy from HTTPS_PROXY on the nested Gateway of an Instance fleet only', function (): void {
+    $environment = $this->marker.'-environment';
+    file_put_contents($environment, "PATH=\"/usr/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3129\"\n");
+    config(['instances.fleet_environment' => $environment]);
+    try {
+        expect(InstanceFleetGateway::egressProxy())->toBeNull();
+        touch($this->marker);
+        expect(InstanceFleetGateway::egressProxy())->toBe(['host' => '10.253.0.1', 'port' => 3129]);
+        file_put_contents($environment, "HTTPS_PROXY=\"http://proxy.example:3128\"\n");
+        expect(InstanceFleetGateway::egressProxy())->toBeNull();
+        // Squid's parent is a plain HTTP proxy, so a TLS proxy is no parent.
+        file_put_contents($environment, "HTTPS_PROXY=\"https://10.253.0.1:3128\"\n");
+        expect(InstanceFleetGateway::egressProxy())->toBeNull();
+    } finally {
+        unlink($environment);
+    }
 });
 
 it('gives the fleet Node no Instance bridge that holds the fleet\'s egress proxy', function (): void {
