@@ -8,9 +8,10 @@ use JsonException;
 
 /**
  * One reply line of the executor, as the observer sends it back in the client event `client-executor-result`
- * (ADR 0266, docs/reference/executor.md#the-listener-and-the-hand-off). The event's data is
- * `{"operation": "<id>", "line": "<reply line>"}`: the observer copies `operation` from the `executor-order`
- * envelope, because the `accepted` line and an order-check refusal do not name the Operation.
+ * (ADR 0266, docs/reference/executor.md#the-listener-and-the-hand-off). The event's data is exactly
+ * `{"operation": "<numeric string>", "line": "<reply line>"}`: the observer copies `operation` from the
+ * `executor-order` event `{"operation": ..., "order": ...}`, because the `accepted` line and an order-check refusal
+ * do not name the Operation.
  */
 final readonly class ExecutorReply
 {
@@ -40,12 +41,10 @@ final readonly class ExecutorReply
     {
         $operation = $data['operation'] ?? null;
         $raw = $data['line'] ?? null;
+        $keys = array_keys($data);
+        sort($keys);
 
-        if (is_int($operation)) {
-            $operation = (string) $operation;
-        }
-
-        if (! is_string($operation) || preg_match('/\A[1-9][0-9]{0,17}\z/D', $operation) !== 1
+        if ($keys !== ['line', 'operation'] || ! is_string($operation) || preg_match('/\A[1-9][0-9]{0,17}\z/D', $operation) !== 1
             || ! is_string($raw) || $raw === '' || strlen($raw) > self::MaxLineBytes) {
             return null;
         }

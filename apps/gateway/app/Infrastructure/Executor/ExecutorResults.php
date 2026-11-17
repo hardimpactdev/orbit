@@ -7,8 +7,6 @@ namespace App\Infrastructure\Executor;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
-use Closure;
-use Illuminate\Redis\Connections\Connection;
 use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -26,10 +24,7 @@ final readonly class ExecutorResults
 
     public const int ExpirySeconds = 60;
 
-    private const string PushScript = "redis.call('RPUSH', KEYS[1], ARGV[1]) return redis.call('EXPIRE', KEYS[1], ARGV[2])";
-
-    /** @param Closure(): Connection $redis The Gateway queue's Valkey connection. */
-    public function __construct(private Closure $redis, private LoggerInterface $log) {}
+    public function __construct(private ExecutorResultQueue $queue, private LoggerInterface $log) {}
 
     public static function resultKey(int $operation): string
     {
@@ -45,7 +40,7 @@ final readonly class ExecutorResults
     public function receive(int $nodeId, ExecutorReply $reply): void
     {
         if ($reply->isAccepted()) {
-            $this->push(self::acceptedKey($reply->operation), $reply->raw);
+            $this->queue->push(self::acceptedKey($reply->operation), $reply->raw, self::ExpirySeconds);
 
             return;
         }
@@ -58,7 +53,7 @@ final readonly class ExecutorResults
             return;
         }
 
-        $this->push(self::resultKey($reply->operation), $reply->raw);
+        $this->queue->push(self::resultKey($reply->operation), $reply->raw, self::ExpirySeconds);
 
         if ($reply->status === 'refused') {
             $this->refused($nodeId, $reply);
@@ -78,12 +73,6 @@ final readonly class ExecutorResults
 
         // A copy of a recorded result still goes to Valkey: it may be the one that recovers a lost push.
         return $changed === 1 || Operation::query()->whereKey($reply->operation)->where('node_id', $nodeId)->exists();
-    }
-
-    private function push(string $key, string $line): void
-    {
-        // One round trip, and the key never exists without its expiry.
-        ($this->redis)()->command('eval', [self::PushScript, 1, $key, $line, self::ExpirySeconds]);
     }
 
     /** Logs a refusal with its reason and leaves an Activity problem, the Gateway's alert path for a Node. */

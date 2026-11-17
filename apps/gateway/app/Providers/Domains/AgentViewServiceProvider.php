@@ -13,6 +13,7 @@ use App\Infrastructure\AgentView\ProcessAgentViewPublisher;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Executor\ExecutorResultWait;
+use App\Infrastructure\Executor\ValkeyExecutorResultQueue;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -69,7 +70,7 @@ final class AgentViewServiceProvider extends ServiceProvider
             ),
         );
         $this->app->bind(ExecutorResults::class, static fn ($app): ExecutorResults => new ExecutorResults(
-            redis: static fn () => $app->make('redis')->connection('gateway'),
+            queue: new ValkeyExecutorResultQueue(static fn () => $app->make('redis')->connection('gateway')),
             log: $app->make(LoggerInterface::class),
         ));
         $this->app->bind(ExecutorResultWait::class, static fn ($app): ExecutorResultWait => new ExecutorResultWait(

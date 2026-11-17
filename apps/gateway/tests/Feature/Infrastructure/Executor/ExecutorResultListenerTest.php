@@ -10,68 +10,23 @@ use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Executor\ExecutorResultQueue;
 use App\Infrastructure\Executor\ExecutorResults;
-use App\Infrastructure\Executor\ExecutorResultWait;
-use App\Infrastructure\Executor\ExecutorWaitStatus;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Redis\Connections\Connection;
 use Illuminate\Support\Facades\Cache;
 use Psr\Log\AbstractLogger;
 
 /*
- * ADR 0266 slice 3: the agent view subscriber takes `client-executor-result` from a fake Reverb stream and hands it
- * to a real Valkey server, which the test starts on a free port. Without a `valkey-server` binary the tests skip.
- * The server runs with `hz 100`, as the bound needs (docs/reference/executor.md#the-listener-and-the-hand-off).
+ * ADR 0266 slice 3: the agent view subscriber takes `client-executor-result` from a fake Reverb stream. The Valkey
+ * push goes to an in-memory queue, so these run without a server. ExecutorResultWaitTest covers the real BLPOP.
  */
 
 uses(LazilyRefreshDatabase::class);
 
-beforeAll(function (): void {
-    $binary = trim((string) shell_exec('command -v valkey-server 2>/dev/null'));
-
-    if ($binary === '') {
-        return;
-    }
-
-    $socket = stream_socket_server('tcp://127.0.0.1:0');
-    $port = (int) substr((string) stream_socket_get_name($socket, false), strrpos((string) stream_socket_get_name($socket, false), ':') + 1);
-    fclose($socket);
-    $GLOBALS['executorValkey'] = proc_open([$binary, '--port', (string) $port, '--bind', '127.0.0.1', '--save', '', '--appendonly', 'no', '--hz', '100'], [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
-    $GLOBALS['executorValkeyPort'] = $port;
-
-    for ($i = 0; $i < 100; $i++) {
-        $probe = @fsockopen('127.0.0.1', $port, $code, $error, 0.05);
-
-        if ($probe !== false) {
-            fclose($probe);
-
-            return;
-        }
-
-        usleep(20_000);
-    }
-});
-
-afterAll(function (): void {
-    if (isset($GLOBALS['executorValkey'])) {
-        proc_terminate($GLOBALS['executorValkey']);
-        proc_close($GLOBALS['executorValkey']);
-    }
-});
-
 beforeEach(function (): void {
-    if (! isset($GLOBALS['executorValkeyPort'])) {
-        $this->markTestSkipped('No valkey-server binary to run the hand-off against.');
-    }
-
-    config(['database.redis.gateway' => ['host' => '127.0.0.1', 'port' => $GLOBALS['executorValkeyPort'], 'database' => 0, 'options' => ['prefix' => 'orbit-gateway:']]]);
-    app()->forgetInstance('redis');
-    $this->redis = static fn (): Connection => app('redis')->connection('gateway');
-    ($this->redis)()->command('flushdb');
-
     $this->node = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'app-dev-1', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.8',
         'public_ssh_host' => '10.44.0.8', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:test',
@@ -86,6 +41,25 @@ beforeEach(function (): void {
         public function log($level, string|Stringable $message, array $context = []): void
         {
             $this->lines[] = [(string) $level, (string) $message, $context];
+        }
+    };
+    $this->queue = new class implements ExecutorResultQueue
+    {
+        /** @var list<array{key: string, line: string, expiry: int, recorded: mixed}> */
+        public array $pushes = [];
+
+        public bool $fails = false;
+
+        public function push(string $key, string $line, int $expirySeconds): void
+        {
+            if ($this->fails) {
+                throw new RuntimeException('Valkey is down.');
+            }
+
+            // What the Operation held at the moment of the push: the record must come first.
+            $operation = (int) explode(':', $key)[2];
+            $this->pushes[] = ['key' => $key, 'line' => $line, 'expiry' => $expirySeconds,
+                'recorded' => Operation::query()->find($operation)?->executor_result];
         }
     };
     $this->mock(WebSocketCredentialManager::class)->shouldReceive('current')
@@ -140,7 +114,7 @@ function executorStream(object $test, array $events): void
         commit: static fn (): ?string => null,
         clock: static fn (): float => microtime(true),
         sleep: static function (float $seconds): void {},
-        executor: new ExecutorResults($test->redis, $test->log),
+        executor: new ExecutorResults($test->queue, $test->log),
     );
     $subscriber->pass();
 }
@@ -152,30 +126,20 @@ function executorEvent(int $nodeId, int|string $operation, array|string $line, ?
         'data' => json_encode(['operation' => (string) $operation, 'line' => is_string($line) ? $line : json_encode($line)])];
 }
 
-function executorWait(object $test): ExecutorResultWait
-{
-    return new ExecutorResultWait($test->redis, static fn (): float => microtime(true));
-}
-
-it('records a result on the Operation, then pushes it to Valkey with a 60 s expiry', function (): void {
+it('records a result on the Operation first, then pushes it with a 60 s expiry, apart from the accepted line', function (): void {
     $id = $this->operation->id;
     $done = ['operation' => (string) $id, 'action' => 'proof.noop', 'target' => '7', 'status' => 'done', 'repeat' => false, 'node_clock_ms' => 1];
 
     executorStream($this, [executorEvent($this->node->id, $id, ['status' => 'accepted']), executorEvent($this->node->id, $id, $done)]);
 
     expect($this->operation->refresh()->executor_result)->toBe($done)
-        ->and(($this->redis)()->command('ttl', [ExecutorResults::resultKey($id)]))->toBeGreaterThan(55)->toBeLessThanOrEqual(60)
-        ->and(($this->redis)()->command('ttl', [ExecutorResults::acceptedKey($id)]))->toBeGreaterThan(55)->toBeLessThanOrEqual(60);
-
-    $result = executorWait($this)->wait($id, 0.5);
-
-    expect($result->status)->toBe(ExecutorWaitStatus::Done)
-        ->and($result->acceptedMs)->not->toBeNull()
-        ->and($result->line)->toBe($done)
-        ->and($result->elapsedMs)->toBeLessThan(50.0);
+        ->and($this->queue->pushes)->toBe([
+            ['key' => ExecutorResults::acceptedKey($id), 'line' => '{"status":"accepted"}', 'expiry' => 60, 'recorded' => null],
+            ['key' => ExecutorResults::resultKey($id), 'line' => json_encode($done), 'expiry' => 60, 'recorded' => $done],
+        ]);
 });
 
-it('drops a result from another member, a malformed line, and an Operation of another Node', function (): void {
+it('drops a result from another member, a malformed event, and an Operation of another Node', function (): void {
     $id = $this->operation->id;
     $otherNode = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'app-dev-2', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.9',
@@ -183,27 +147,31 @@ it('drops a result from another member, a malformed line, and an Operation of an
     ]));
     $other = Operation::query()->create(['kind' => 'instance.wake', 'target_type' => 'instance', 'target_id' => 8,
         'node_id' => $otherNode->id, 'status' => OperationStatus::Running, 'input' => []]);
+    $channel = "presence-node.{$this->node->id}";
+    $agent = "agent.{$this->node->id}";
 
     executorStream($this, [
         executorEvent($this->node->id, $id, ['status' => 'done'], member: 'viewer.3'),
         executorEvent($this->node->id, $id, ['status' => 'done'], member: 'agent.'.($this->node->id + 1)),
-        ['event' => 'client-executor-result', 'channel' => "presence-node.{$this->node->id}", 'data' => json_encode(['operation' => (string) $id, 'line' => '{"status":"done"}'])],
+        ['event' => 'client-executor-result', 'channel' => $channel, 'data' => json_encode(['operation' => (string) $id, 'line' => '{"status":"done"}'])],
         executorEvent($this->node->id, $id, '{"status":'),
         executorEvent($this->node->id, $id, ['status' => 'exploded']),
         executorEvent($this->node->id, $id, ['status' => 'done', 'operation' => '999']),
         executorEvent($this->node->id, 'op-1', ['status' => 'done']),
+        // The contract is exact: a numeric string, and no other key.
+        ['event' => 'client-executor-result', 'channel' => $channel, 'user_id' => $agent, 'data' => json_encode(['operation' => $id, 'line' => '{"status":"done"}'])],
+        ['event' => 'client-executor-result', 'channel' => $channel, 'user_id' => $agent, 'data' => json_encode(['operation' => (string) $id, 'line' => '{"status":"done"}', 'order' => 'x'])],
         executorEvent($this->node->id, $other->id, ['status' => 'done', 'operation' => (string) $other->id]),
     ]);
 
-    $messages = array_column($this->log->lines, 1);
+    $messages = array_count_values(array_column($this->log->lines, 1));
 
     expect($this->operation->refresh()->executor_result)->toBeNull()
         ->and($other->refresh()->executor_result)->toBeNull()
-        ->and(($this->redis)()->command('exists', [ExecutorResults::resultKey($id)]))->toBe(0)
-        ->and(($this->redis)()->command('exists', [ExecutorResults::resultKey($other->id)]))->toBe(0)
-        ->and(array_count_values($messages)['The agent view subscriber dropped an executor result from another member.'])->toBe(3)
-        ->and(array_count_values($messages)['The agent view subscriber dropped a malformed executor result.'])->toBe(4)
-        ->and($messages)->toContain('The agent view subscriber dropped an executor result for an Operation that is not on its Node.');
+        ->and($this->queue->pushes)->toBe([])
+        ->and($messages['The agent view subscriber dropped an executor result from another member.'])->toBe(3)
+        ->and($messages['The agent view subscriber dropped a malformed executor result.'])->toBe(6)
+        ->and($messages['The agent view subscriber dropped an executor result for an Operation that is not on its Node.'])->toBe(1);
 });
 
 it('logs a refusal with its reason and leaves an Activity problem', function (): void {
@@ -218,11 +186,8 @@ it('logs a refusal with its reason and leaves an Activity problem', function ():
         ->and($refusal[2])->toMatchArray(['node_id' => $this->node->id, 'operation_id' => $id, 'reason' => 'bad_signature', 'node_clock_ms' => 42])
         ->and($activity->error_code)->toBe('executor.order_refused')
         ->and($activity->subject_id)->toBe($this->node->id)
-        ->and($this->operation->refresh()->executor_result)->toMatchArray(['status' => 'refused']);
-
-    $result = executorWait($this)->wait($id, 0.5);
-
-    expect($result->status)->toBe(ExecutorWaitStatus::Refused)->and($result->reason())->toBe('bad_signature');
+        ->and($this->operation->refresh()->executor_result)->toMatchArray(['status' => 'refused'])
+        ->and(array_column($this->queue->pushes, 'key'))->toBe([ExecutorResults::resultKey($id)]);
 });
 
 it('records a result once and still pushes a repeat', function (): void {
@@ -235,28 +200,14 @@ it('records a result once and still pushes a repeat', function (): void {
     ]);
 
     expect($this->operation->refresh()->executor_result)->toBe($first)
-        ->and(($this->redis)()->command('llen', [ExecutorResults::resultKey($id)]))->toBe(2);
+        ->and(array_column($this->queue->pushes, 'line'))->toBe([json_encode($first), json_encode([...$first, 'repeat' => true])]);
 });
 
-it('returns a result that arrives while it waits, within the bound', function (): void {
-    $id = $this->operation->id;
-    // Another process pushes 100 ms into the wait, as the listener does.
-    $pusher = proc_open(['sh', '-c', 'sleep 0.1; exec valkey-cli -p "$1" rpush "$2" \'{"status":"partial"}\'', 'sh',
-        (string) $GLOBALS['executorValkeyPort'], 'orbit-gateway:'.ExecutorResults::resultKey($id)], [1 => ['file', '/dev/null', 'w']], $pipes);
+it('logs a failed push and keeps the loop going', function (): void {
+    $this->queue->fails = true;
 
-    $result = executorWait($this)->wait($id, 0.5);
-    proc_close($pusher);
+    executorStream($this, [executorEvent($this->node->id, $this->operation->id, ['status' => 'done'])]);
 
-    expect($result->status)->toBe(ExecutorWaitStatus::Partial)
-        ->and($result->elapsedMs)->toBeGreaterThan(90.0)->toBeLessThan(400.0);
-});
-
-it('times out at its bound when no result arrives', function (): void {
-    ($this->redis)()->command('rpush', [ExecutorResults::acceptedKey($this->operation->id), '{"status":"accepted"}']);
-
-    $result = executorWait($this)->wait($this->operation->id, 0.2);
-
-    expect($result->status)->toBe(ExecutorWaitStatus::Timeout)
-        ->and($result->acceptedMs)->not->toBeNull()
-        ->and($result->elapsedMs)->toBeGreaterThanOrEqual(195.0)->toBeLessThan(240.0);
+    expect(array_column($this->log->lines, 1))->toContain('The agent view subscriber could not hand off an executor result.')
+        ->and($this->operation->refresh()->executor_result)->toBe(['status' => 'done']);
 });

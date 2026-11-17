@@ -103,7 +103,7 @@ The observer sends each reply line back as the client event `client-executor-res
 {"operation": "42", "line": "{\"status\":\"accepted\"}"}
 ```
 
-`line` is the reply line, unchanged, at most 64 KB. `operation` is the Operation id that the Gateway put beside the order in the `executor-order` event. The observer copies it without reading the order. It is needed because the `accepted` line and the refusals of the first five order checks do not name the Operation.
+The data holds exactly these two keys. `line` is the reply line, unchanged, at most 64 KB. `operation` is the Operation id as a numeric string. The Gateway puts it beside the order in the `executor-order` event, `{"operation": "42", "order": "<wire>"}`. The observer copies it without reading the order. It is needed because the `accepted` line and the refusals of the first five order checks do not name the Operation.
 
 The [agent view subscriber](/reference/node-agent#gateway-view) is the listener. No other service and no second connection per Node takes part. For each event it:
 
@@ -124,7 +124,17 @@ Both keys live in the Gateway queue's Valkey, under its `orbit-gateway:` prefix.
 
 Valkey checks a blocked command's timeout on its server tick. With the default `hz 10`, a 200 ms bound ended after 297 ms. With `hz 100` it ended after 212 ms. A result that arrives is handed over at once, so only a timeout runs late. The Gateway's Valkey needs `hz 100` before slice 6 holds visits on this bound.
 
-The Pest test `tests/Feature/Infrastructure/Executor/ExecutorResultListenerTest.php` feeds the subscriber a fake Reverb stream and starts a real `valkey-server` with `hz 100` on a free port. It skips when the binary is missing.
+Two Pest files in `apps/gateway/tests/Feature/Infrastructure/Executor` test this. `ExecutorResultListenerTest.php` needs no server and runs in CI. It feeds the subscriber a fake Reverb stream and an in-memory queue, and covers:
+
+- the sender and form checks, and the Operation of another Node
+- the refusal's log and Activity problem
+- the record before the push, and a repeat
+
+`ExecutorResultWaitTest.php` starts a real `valkey-server` with `hz 100` on a free port. It skips where no `valkey-server` binary is installed, as in CI. It measures what a fake cannot:
+
+- the 60 s expiry
+- a result 100 ms into the wait
+- the timeout bound
 
 ## Checks
 
