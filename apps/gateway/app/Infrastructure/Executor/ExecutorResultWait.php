@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Executor;
 
 use Closure;
-use Illuminate\Redis\Connections\Connection;
 use Illuminate\Support\Facades\Config;
 use JsonException;
 
@@ -16,11 +15,8 @@ use JsonException;
  */
 final readonly class ExecutorResultWait
 {
-    /**
-     * @param  Closure(): Connection  $redis  The Gateway queue's Valkey connection.
-     * @param  Closure(): float  $clock
-     */
-    public function __construct(private Closure $redis, private Closure $clock) {}
+    /** @param Closure(): float $clock */
+    public function __construct(private ExecutorResultQueue $queue, private Closure $clock) {}
 
     /** The bound from the Gateway setting `orbit.executor.wait_ms`. */
     public static function boundSeconds(): float
@@ -33,6 +29,7 @@ final readonly class ExecutorResultWait
         $started = ($this->clock)();
         $deadline = $started + ($boundSeconds ?? self::boundSeconds());
         $resultKey = ExecutorResults::resultKey($operation);
+        $acceptedKey = ExecutorResults::acceptedKey($operation);
         $acceptedMs = null;
 
         while (true) {
@@ -44,13 +41,13 @@ final readonly class ExecutorResultWait
             }
 
             // The result key comes first, so a result that is already there wins over its `accepted` line.
-            $popped = ($this->redis)()->command('blpop', [[$resultKey, ExecutorResults::acceptedKey($operation)], round($left, 3)]);
+            $popped = $this->queue->pop([$resultKey, $acceptedKey], round($left, 3));
 
-            if (! is_array($popped) || ! is_string($popped[0] ?? null) || ! is_string($popped[1] ?? null)) {
+            if ($popped === null) {
                 continue;
             }
 
-            if (str_ends_with($popped[0], ':accepted')) {
+            if ($popped[0] === $acceptedKey) {
                 $acceptedMs ??= $this->elapsedMs($started);
 
                 continue;

@@ -7,6 +7,7 @@ namespace App\Providers\Domains;
 use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\WebSocket\WebSocketCredentialManager;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\ProcessAgentViewPublisher;
@@ -70,11 +71,15 @@ final class AgentViewServiceProvider extends ServiceProvider
             ),
         );
         $this->app->bind(ExecutorResults::class, static fn ($app): ExecutorResults => new ExecutorResults(
-            queue: new ValkeyExecutorResultQueue(static fn () => $app->make('redis')->connection('gateway')),
+            queue: $app->make(ValkeyExecutorResultQueue::class),
             log: $app->make(LoggerInterface::class),
+            sanitizer: $app->make(CommandActivityInputSanitizer::class),
+        ));
+        $this->app->bind(ValkeyExecutorResultQueue::class, static fn ($app): ValkeyExecutorResultQueue => new ValkeyExecutorResultQueue(
+            static fn () => $app->make('redis')->connection('gateway'),
         ));
         $this->app->bind(ExecutorResultWait::class, static fn ($app): ExecutorResultWait => new ExecutorResultWait(
-            redis: static fn () => $app->make('redis')->connection('gateway'),
+            queue: $app->make(ValkeyExecutorResultQueue::class),
             clock: static fn (): float => microtime(true),
         ));
     }

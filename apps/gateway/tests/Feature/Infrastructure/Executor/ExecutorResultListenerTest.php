@@ -3,9 +3,13 @@
 declare(strict_types=1);
 
 use App\Actions\Broadcasting\PresenceChannelSigner;
+use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Problems\ProblemCollector;
+use App\Domain\Problems\ProblemSource;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -15,8 +19,11 @@ use App\Infrastructure\Executor\ExecutorResults;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\ProblemCollectorState;
+use App\Models\ProblemFingerprint;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 use Psr\Log\AbstractLogger;
 
 /*
@@ -60,6 +67,11 @@ beforeEach(function (): void {
             $operation = (int) explode(':', $key)[2];
             $this->pushes[] = ['key' => $key, 'line' => $line, 'expiry' => $expirySeconds,
                 'recorded' => Operation::query()->find($operation)?->executor_result];
+        }
+
+        public function pop(array $keys, float $timeoutSeconds): ?array
+        {
+            return null;
         }
     };
     $this->mock(WebSocketCredentialManager::class)->shouldReceive('current')
@@ -114,7 +126,7 @@ function executorStream(object $test, array $events): void
         commit: static fn (): ?string => null,
         clock: static fn (): float => microtime(true),
         sleep: static function (float $seconds): void {},
-        executor: new ExecutorResults($test->queue, $test->log),
+        executor: new ExecutorResults($test->queue, $test->log, app(CommandActivityInputSanitizer::class)),
     );
     $subscriber->pass();
 }
@@ -174,7 +186,9 @@ it('drops a result from another member, a malformed event, and an Operation of a
         ->and($messages['The agent view subscriber dropped an executor result for an Operation that is not on its Node.'])->toBe(1);
 });
 
-it('logs a refusal with its reason and leaves an Activity problem', function (): void {
+it('logs a refusal and raises a Problem through the collector, with no broadcast from the loop', function (): void {
+    Event::fake([RecordBroadcast::class]);
+    ProblemCollectorState::query()->create(['activity_cursor' => 0]);
     $id = $this->operation->id;
 
     executorStream($this, [executorEvent($this->node->id, $id, ['status' => 'refused', 'reason' => 'bad_signature', 'node_clock_ms' => 42])]);
@@ -184,10 +198,35 @@ it('logs a refusal with its reason and leaves an Activity problem', function ():
 
     expect($refusal[0])->toBe('warning')
         ->and($refusal[2])->toMatchArray(['node_id' => $this->node->id, 'operation_id' => $id, 'reason' => 'bad_signature', 'node_clock_ms' => 42])
-        ->and($activity->error_code)->toBe('executor.order_refused')
+        ->and($activity->error_code)->toBe(ExecutorResults::RefusalCode)
         ->and($activity->subject_id)->toBe($this->node->id)
         ->and($this->operation->refresh()->executor_result)->toMatchArray(['status' => 'refused'])
         ->and(array_column($this->queue->pushes, 'key'))->toBe([ExecutorResults::resultKey($id)]);
+    Event::assertNotDispatched(RecordBroadcast::class);
+
+    // The existing alert path: the Problem collector selects the row and records its fingerprint.
+    $collector = app(ProblemCollector::class);
+    $signals = $collector->signals();
+
+    expect(array_column($signals['activities'], 'key'))->toBe(['orbit:agent-view|'.ExecutorResults::RefusalCode])
+        ->and($signals['activities'][0]['observation']['error_message'])->toContain('bad_signature');
+
+    $collector->recordSignals($signals);
+
+    expect(ProblemFingerprint::query()->where('source', ProblemSource::Activity)->count())->toBe(1);
+});
+
+it('reports a refusal even when the push fails', function (): void {
+    $this->queue->fails = true;
+
+    executorStream($this, [executorEvent($this->node->id, $this->operation->id, ['status' => 'refused', 'reason' => 'expired', 'node_clock_ms' => 1])]);
+
+    $messages = array_column($this->log->lines, 1);
+
+    expect($messages)->toContain('The executor refused an order.')
+        ->and($messages)->toContain('The agent view subscriber could not hand off an executor result.')
+        ->and(Activity::query()->where('error_code', ExecutorResults::RefusalCode)->count())->toBe(1)
+        ->and($this->operation->refresh()->executor_result)->toMatchArray(['status' => 'refused']);
 });
 
 it('records a result once and still pushes a repeat', function (): void {

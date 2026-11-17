@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Executor;
 
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
@@ -24,7 +25,14 @@ final readonly class ExecutorResults
 
     public const int ExpirySeconds = 60;
 
-    public function __construct(private ExecutorResultQueue $queue, private LoggerInterface $log) {}
+    /** The Problem collector selects Activity codes that end in `_failed` (docs/reference/tasks.md#fingerprints). */
+    public const string RefusalCode = 'executor.order_check_failed';
+
+    public function __construct(
+        private ExecutorResultQueue $queue,
+        private LoggerInterface $log,
+        private CommandActivityInputSanitizer $sanitizer,
+    ) {}
 
     public static function resultKey(int $operation): string
     {
@@ -53,13 +61,14 @@ final readonly class ExecutorResults
             return;
         }
 
-        $this->queue->push(self::resultKey($reply->operation), $reply->raw, self::ExpirySeconds);
-
+        // Reported before the push, so a Valkey failure never hides a refusal.
         if ($reply->status === 'refused') {
             $this->refused($nodeId, $reply);
         } elseif ($reply->status === 'failed') {
             $this->log->warning('The executor reported a failed order.', ['node_id' => $nodeId, 'operation_id' => $reply->operation, 'code' => $reply->reason]);
         }
+
+        $this->queue->push(self::resultKey($reply->operation), $reply->raw, self::ExpirySeconds);
     }
 
     /**
@@ -75,7 +84,11 @@ final readonly class ExecutorResults
         return $changed === 1 || Operation::query()->whereKey($reply->operation)->where('node_id', $nodeId)->exists();
     }
 
-    /** Logs a refusal with its reason and leaves an Activity problem, the Gateway's alert path for a Node. */
+    /**
+     * Logs a refusal with its reason and leaves a failed Activity that the Problem collector turns into a Problem, the
+     * Gateway's alert path. The row is saved without its model observers, because the broadcast observer sends a
+     * Reverb HTTP request at once and the socket loop must not wait for it. The properties sanitizer still runs.
+     */
     private function refused(int $nodeId, ExecutorReply $reply): void
     {
         $context = ['node_id' => $nodeId, 'operation_id' => $reply->operation, 'reason' => $reply->reason,
@@ -83,10 +96,12 @@ final readonly class ExecutorResults
         $this->log->warning('The executor refused an order.', $context);
 
         try {
-            Activity::query()->create(['log_name' => 'executor', 'description' => 'executor.order_refused',
+            $activity = new Activity(['log_name' => 'executor', 'description' => 'executor.order_refused',
                 'subject_type' => Node::class, 'subject_id' => $nodeId, 'command' => 'orbit:agent-view',
-                'request_id' => (string) Str::uuid(), 'status' => 'failed', 'error_code' => 'executor.order_refused',
-                'properties' => $context]);
+                'request_id' => (string) Str::uuid(), 'status' => 'failed', 'error_code' => self::RefusalCode,
+                'properties' => $this->sanitizer->sanitizeProperties([...$context,
+                    'error_message' => sprintf('The executor on Node %d refused the order of Operation %d: %s.', $nodeId, $reply->operation, $reply->reason ?? 'unknown')])]);
+            Activity::withoutEvents(static fn (): bool => $activity->save());
         } catch (Throwable $exception) {
             $this->log->warning('The agent view subscriber could not record an executor refusal.', ['node_id' => $nodeId, 'error' => $exception->getMessage()]);
         }
