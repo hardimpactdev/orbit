@@ -31,7 +31,7 @@ final readonly class NativeNodeRoleRuntimeInput
      * The CI runner's rendered runtime inputs, with no per-Operation data. The seed listener trusts the Incus client certificate
      * from the default's Node. With no sender, the converge removes the trust and its listener at the recorded address.
      *
-     * @return array<string, mixed>
+     * @return array{proof_seed: array<string,mixed>, directories: list<array<string,string>>, files: list<array<string,string>>, units: list<array<string,string>>}
      */
     public function ciRunner(Node $node): array
     {
