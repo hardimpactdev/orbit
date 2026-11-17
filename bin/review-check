@@ -34,7 +34,7 @@ WEB_TYPES = ('bash', '-c', 'generated=$(mktemp) && trap \'rm -f "$generated"\' E
 WEB_CHECK_COMMANDS = (('bun', 'run', 'check'), ('bun', 'run', 'build'), WEB_BUILD_OUTPUTS, WEB_TYPES)
 # The checks of CI's Generated contracts job. The generators write ignored build outputs; they fail when the sources
 # disagree with the API contract, and the recorded fixtures are then checked against the fresh OpenAPI document.
-CONTRACT_COMMANDS = (('bin/check-operation-kinds',), ('bin/docs-openapi',), ('bin/mcp-tools',),
+CONTRACT_COMMANDS = (('bin/check-operation-kinds',), ('bin/build-api',),
                      ('bin/api-fixtures', '--check'))
 RUST_FORMAT = ('cargo', 'fmt', '--all', '--', '--check')
 # CI's Swamp shape gate and workflow validation are one script, bin/swamp-shape-gate. Validation needs a Swamp account
@@ -229,6 +229,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--shard', type=shard, default=(1, 1))
     parser.add_argument('--base')
+    parser.add_argument('--prepared-api', action='store_true',
+                        help='root composer check already ran bin/build-api; keep fixture validation')
     args = parser.parse_args(argv)
     shard_index, shard_count = args.shard
     root = Path(__file__).resolve().parent.parent
@@ -284,6 +286,8 @@ def main(argv=None):
 
     def run_entry(lane, order, project, commands):
         for position, command in enumerate(commands):
+            if args.prepared_api and project == 'repository' and command == ('bin/build-api',):
+                continue
             lane_processes = budget.acquire(lane)
             log = directory / (project.replace('/', '-') + '-' + command_log_name(command) + '.log')
             started = time.monotonic()

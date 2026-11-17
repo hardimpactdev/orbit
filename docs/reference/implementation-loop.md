@@ -553,7 +553,7 @@ The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it con
 
 ### The candidate gate
 
-Root `composer check` builds OpenAPI, navigation, flow data and the documentation context index, then runs `bin/review-check`, the candidate gate. This refreshes ignored outputs from the current checkout before the impact and freshness checks read them.
+Root `composer check` runs `bin/build-api` once to build OpenAPI and MCP tools, then builds navigation, flow data and the documentation context index before running `bin/review-check --prepared-api`, the candidate gate. This refreshes ignored outputs from the current checkout before the impact and freshness checks read them.
 
 The Orbit Project uses it as its task check, so it runs in the task VM at every subtask handoff. The gate runs only fast checks and no test suite. CI omits the Project check and runs the selected jobs in [CI](#ci), including Gateway, CLI and SDK Pest when their inputs change. Required checks must pass on the final head before merge.
 
@@ -636,7 +636,7 @@ The gate fails when HEAD moves during the run. It also fails on formatter drift:
 
 #### Generated artifacts
 
-When `bin/ci-build-plan` selects CI's Generated contracts job, the gate runs the same checks: `bin/check-operation-kinds`, then `bin/docs-openapi` and `bin/mcp-tools`, then `bin/api-fixtures --check`. The generators write ignored build outputs and fail when the sources disagree with the API contract. The fixture check validates the SDK and web fixtures against the fresh OpenAPI document.
+When `bin/ci-build-plan` selects CI's Generated contracts job, the gate runs the same checks: `bin/check-operation-kinds`, then `bin/build-api`, then `bin/api-fixtures --check`. With `--prepared-api`, only generation is omitted because root `composer check` already ran it. The generators write ignored build outputs and fail when the sources disagree with the API contract. The fixture check validates the SDK and web fixtures against the fresh OpenAPI document in either mode.
 
 The gate checks the local candidate tree. CI runs the builds and static checks listed above on the PR merge tree. Test suites remain available for focused local verification.
 
@@ -782,7 +782,7 @@ An unexpected refusal usually means that Laravel loaded a stale cached configura
 
 ## Bootstrap
 
-`bin/bootstrap` installs all four Composer projects. Then it runs `composer test`, the project's full suite, and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the installs.
+`bin/bootstrap` prepares all four Composer projects, reusing successful installs and generated outputs when their inputs are unchanged. The [contributor guide](/contributor-guide) owns the fingerprint and rebuild rules. Then it runs `composer test`, the project's full suite, and `composer check` in each project, including on warm runs. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` omits those checks but still prepares the Gateway key.
 
 `bin/bootstrap --dependencies-only` installs dependencies, including any requested Bun and Rust dependencies, and the [pre-push docs gate](/contributor-guide). It prepares no application state and runs no checks.
 
