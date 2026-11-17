@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Actions\Nodes\StartNodeConvergeAction;
+use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetReboot;
@@ -48,8 +49,15 @@ final readonly class ContinueReleaseFleetAction
     /** Seconds before the admission job should continue, or null when it can end. */
     public function execute(GatewayRelease $release): ?int
     {
-        return DB::transaction(function () use ($release): ?int {
+        // A cold catalog can wait on GitHub and the cache lock. Pin its answer before taking the SQLite writer.
+        $cli = config('fleet.rollout') && array_any($this->members(), CliConvergePlan::required(...))
+            ? app(DesiredFleetState::class)->current()->cli : null;
+
+        return DB::transaction(function () use ($release, $cli): ?int {
             $release = GatewayRelease::query()->lockForUpdate()->findOrFail($release->id);
+            if ($cli !== null && $this->current()?->id !== $release->id) {
+                return null;
+            }
             $phase = ValidatedData::object($release->phases['fleet']);
             $members = $this->members();
             $this->preserveHostBaselines($release->previous_release_id, $members);
@@ -100,7 +108,7 @@ final readonly class ContinueReleaseFleetAction
                     }
                 }
                 try {
-                    $delay = $this->visit($release, $node, $row, $inputs, $host);
+                    $delay = $this->visit($release, $node, $row, $inputs, $host, $cli);
                     if ($delay !== null) {
                         $this->save($release, $phase, 'pending');
 
@@ -196,18 +204,23 @@ final readonly class ContinueReleaseFleetAction
     }
 
     /** @param array<string,mixed> $row */
-    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, string $host): ?int
+    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, string $host, ?DesiredCliReleaseData $cli): ?int
     {
         $recorded = $node->release_inputs ?? [];
         if (($recorded['host'] ?? null) !== $host) {
             throw new ResourceOperationException('fleet.host_inputs_changed', 'Host-wide inputs require an explicit Node converge.', 409);
+        }
+        if (! CliConvergePlan::required($node)) {
+            $cli = null;
+        } elseif ($cli === null) {
+            // Membership changed during catalog preflight. The next visit resolves the pin before admission.
+            return 10;
         }
         $desired = $inputs->roles($node);
         $applied = (array) ($recorded['roles'] ?? []);
         $changed = array_filter($desired, static fn (array $role, int $id): bool => ($applied[$id] ?? null) !== $role['digest'], ARRAY_FILTER_USE_BOTH);
         $delivery = app(AgentDelivery::class);
         $pin = $delivery->pin($node);
-        $cli = CliConvergePlan::required($node) ? app(DesiredFleetState::class)->current()->cli : null;
         $deliveryOperation = $this->operation($row, 'delivery_operation_id');
         $roleOperation = $this->operation($row, 'role_operation_id');
         $reported = app(AgentReportedVersions::class)->get($node->id);
@@ -290,7 +303,7 @@ final readonly class ContinueReleaseFleetAction
                 return 60;
             }
             $row['agent'] = 'pending';
-            $row['delivery_operation_id'] = app(AdmitFleetRolloutAction::class)->forRelease($node, (string) $release->sha)->id;
+            $row['delivery_operation_id'] = app(AdmitFleetRolloutAction::class)->forRelease($node, (string) $release->sha, $cli)->id;
 
             return 10;
         }

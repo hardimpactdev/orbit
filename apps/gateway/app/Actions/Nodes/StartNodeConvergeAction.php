@@ -59,7 +59,7 @@ final readonly class StartNodeConvergeAction
                 if ($release && count($roleInputs) !== count($selected)) {
                     throw new ResourceOperationException('fleet.role_scope_invalid', 'Automatic convergence requires active assignments.', 422);
                 }
-                $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $release ? null : $hub);
+                $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $release ? null : $hub, $release);
                 if ($release) {
                     $intent = $snapshot['intent'];
                     $intent['release_roles_only'] = true;

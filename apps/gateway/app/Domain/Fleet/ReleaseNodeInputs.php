@@ -37,10 +37,28 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/tasks/gateway-runtime.yml',
     ];
 
+    /** The plays and materializer shared by every role converge. */
+    private const array SharedRoleFiles = [
+        'swamp/ansible/ansible.cfg',
+        'swamp/ansible/build_vars.py',
+        'swamp/ansible/operation-node-converge.yml',
+        'swamp/ansible/tasks/node-converge-role.yml',
+        'swamp/ansible/tasks/node-role-runtime.yml',
+        'swamp/ansible/tasks/node-converge-role-check.yml',
+        'swamp/ansible/tasks/check-files.yml',
+        'swamp/ansible/tasks/check-runtime.yml',
+        'swamp/ansible/tasks/node-converge-software*.yml',
+        'swamp/ansible/tasks/node-converge-apt*.yml',
+        'swamp/ansible/tasks/node-converge-javascript.yml',
+        'swamp/ansible/tasks/javascript-version.yml',
+        'swamp/ansible/tasks/artifact-fetch.yml',
+        'swamp/ansible/library/orbit_artifact.py',
+        'swamp/ansible/transport-exit-codes.json',
+        'swamp/extensions/behaviors/operations/ansible-input/converge_input.ts',
+    ];
+
     /** Shipped assets consumed by the shared Instance-host branch on app-dev and CI-only Nodes. */
     private const array InstanceHostFiles = [
-        'apps/gateway/app/Domain/Instances/InstanceHostIntent.php',
-        'apps/gateway/app/Domain/Instances/InstanceContainer.php',
         'swamp/ansible/tasks/instance-host*.yml',
         'swamp/ansible/tasks/instance-folder*.yml',
         'swamp/ansible/tasks/instance-bridge-*.yml',
@@ -54,7 +72,9 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/tasks/instance-vite-plus-home.yml',
         'swamp/ansible/tasks/task-container-host-*.yml',
         'swamp/ansible/instance-nic-filters.json',
-        'swamp/ansible/transport-exit-codes.json',
+        'swamp/ansible/tasks/incus-install.yml',
+        'swamp/ansible/library/orbit_incus_images.py',
+        'swamp/ansible/library/orbit_static_php.py',
         'swamp/ansible/instance_container_files.py',
         'swamp/ansible/instance_machine_name.py',
         'swamp/ansible/instance_folder_*.py',
@@ -62,14 +82,16 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/files/instance-browser-trust.sh',
         'swamp/ansible/files/instance-container-wake.sh',
         'swamp/ansible/files/instance-container-power.py',
-        'swamp/ansible/templates/t3-service-processes.j2',
     ];
 
     private const array RoleFiles = [
-        'swamp' => ['swamp/ansible/tasks/swamp-start-cache.yml', 'swamp/ansible/swamp-worker-renewal.yml', 'swamp/ansible/tasks/swamp-worker-*.yml'],
+        'swamp' => ['swamp/ansible/tasks/swamp-start-cache.yml', 'swamp/ansible/swamp-worker-renewal.yml',
+            'swamp/ansible/tasks/swamp-worker-*.yml', 'swamp/ansible/tasks/node-converge-deno.yml'],
         'websocket' => ['swamp/ansible/tasks/websocket.yml'],
         'metrics' => ['swamp/ansible/tasks/metrics.yml'],
-        'ci-runner' => ['swamp/ansible/tasks/ci.yml', 'swamp/ansible/tasks/ci-*.yml', 'swamp/ansible/tasks/proof-seed-listener.yml'],
+        'ci-runner' => ['swamp/ansible/tasks/ci.yml', 'swamp/ansible/tasks/ci-*.yml', 'swamp/ansible/tasks/proof-seed-*.yml',
+            'swamp/extensions/behaviors/operations/node/ci_host_spec.ts'],
+        'app-prod' => ['swamp/ansible/tasks/node-converge-browser.yml'],
     ];
 
     public function host(?string $root = null): string
@@ -86,11 +108,14 @@ final readonly class ReleaseNodeInputs
      * @param  list<string>|null  $selected
      * @return array<int, array{role:string,digest:string}> Assignment IDs keep a recreated role from inheriting an apply.
      */
-    public function roles(Node $node, bool $release = true, ?array $selected = null): array
+    public function roles(Node $node, bool $release = true, ?array $selected = null, ?string $root = null): array
     {
-        $root = dirname(base_path(), 2);
+        $root ??= dirname(base_path(), 2);
         $recipe = new RecipeLoader()->source($root.'/'.self::Recipe);
         $raw = ValidatedData::object(json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR));
+        $host = app(InstanceHostIntent::class);
+        $hostRole = $host->role($node);
+        $sharedFiles = $this->files($root, self::SharedRoleFiles);
         $roles = [];
         foreach ($node->roles()->where('status', LifecycleStatus::Active)
             ->when($release, static fn ($query) => $query->where('role', '!=', RoleName::Gateway))
@@ -102,12 +127,15 @@ final readonly class ReleaseNodeInputs
             $runtime = app(NodeRoleRuntimeInput::class)->capture($node, $assignment);
             // Transport, exporter publication, and the pinned binary are separate inputs to their own Operations.
             unset($runtime['agent_sha256'], $runtime['ssh_execution'], $runtime['fleet']);
-            $instanceHost = app(InstanceHostIntent::class)->role($node) === $assignment->role;
+            $instanceHost = $hostRole === $assignment->role;
+            // The first converge allocates a missing bridge before capturing the applied plan.
+            $instances = $instanceHost && $node->instance_bridge !== null ? $host->for($node) : null;
             $executor = isset(NodeExecutorInput::RoleFamilies[$role]);
             $files = [
                 ...(self::RoleFiles[$role] ?? []),
                 ...($php !== [] ? ['swamp/ansible/tasks/php.yml'] : []),
-                ...($executor ? ['swamp/ansible/tasks/node-executor.yml'] : []),
+                ...($executor ? ['swamp/ansible/tasks/node-converge-base.yml', 'swamp/ansible/tasks/node-executor.yml',
+                    'swamp/ansible/tasks/node-converge-replace.yml'] : []),
                 ...($instanceHost ? self::InstanceHostFiles : []),
             ];
             $renderedFiles = match ($assignment->role) {
@@ -121,9 +149,9 @@ final readonly class ReleaseNodeInputs
             ));
             $roles[$assignment->id] = ['role' => $role, 'digest' => self::digest([
                 $this->pins($recipe, $profile), $php, in_array($role, $recipe->phpPolicy->pcovProfiles, true),
-                $instanceHost ? $raw['instances'] : null,
+                $instances === null ? null : InstanceHostIntent::withoutAdmission($instances),
                 $runtime, $executor ? NodeExecutorInput::for($node) : null,
-                $renderedFiles, $phpRuntime, NodeRoleUnits::for($node, [$role]), $this->files($root, $files),
+                $renderedFiles, $phpRuntime, NodeRoleUnits::for($node, [$role]), $sharedFiles, $this->files($root, $files),
             ])];
         }
 

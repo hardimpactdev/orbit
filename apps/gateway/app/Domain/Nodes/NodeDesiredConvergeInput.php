@@ -30,7 +30,7 @@ final readonly class NodeDesiredConvergeInput
     /** @param list<string> $roles
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
      */
-    public function capture(Node $node, array $roles, bool $all, Operation $operation, ?Node $hub): array
+    public function capture(Node $node, array $roles, bool $all, Operation $operation, ?Node $hub, bool $release = false): array
     {
         // The agent's configuration refuses an unsupported Node before any execution copy.
         $agent = $this->agent($node);
@@ -39,7 +39,7 @@ final readonly class NodeDesiredConvergeInput
         $plans = [];
         $playbook = null;
         foreach ($node->roles()->whereIn('role', $roles)->orderBy('id')->get() as $assignment) {
-            $snapshot = app(NodeRoleDirectInput::class)->capture($node, $assignment, false);
+            $snapshot = app(NodeRoleDirectInput::class)->capture($node, $assignment, false, includeCli: ! $release);
             $plan = app(NativeNodeRoleAddInput::class)->capture($node, $assignment, $snapshot, [], $operation, true);
             $rolePlan = $plan['intent'];
             $runtime = ValidatedData::object($rolePlan['runtime']);
@@ -63,7 +63,7 @@ final readonly class NodeDesiredConvergeInput
             $copies = [...$copies, ...$plan['execution_secrets']];
         }
 
-        return ['intent' => $this->intent($node, $agent, $roles, $all, $hub, $plans, $playbook), 'execution_secrets' => $copies];
+        return ['intent' => $this->intent($node, $agent, $roles, $all, $hub, $plans, $playbook, $release), 'execution_secrets' => $copies];
     }
 
     /**
@@ -120,7 +120,7 @@ final readonly class NodeDesiredConvergeInput
                 }
                 $runtime = is_array($role['runtime'] ?? null) ? $role['runtime'] : [];
                 if (is_array($runtime['instances'] ?? null)) {
-                    $runtime['instances'] = array_diff_key($runtime['instances'], ['bridge_admitted_at' => true]);
+                    $runtime['instances'] = InstanceHostIntent::withoutAdmission(ValidatedData::object($runtime['instances']));
                     $role['runtime'] = $runtime;
                 }
 
@@ -146,7 +146,7 @@ final readonly class NodeDesiredConvergeInput
      * @param  list<array<string,mixed>>  $plans
      * @return array<string,mixed>
      */
-    private function intent(Node $node, array $agent, array $roles, bool $all, ?Node $hub, array $plans, ?string $playbook): array
+    private function intent(Node $node, array $agent, array $roles, bool $all, ?Node $hub, array $plans, ?string $playbook, bool $release = false): array
     {
         $delivery = app(AgentDelivery::class);
         $recipe = new RecipeLoader()->source();
@@ -170,7 +170,7 @@ final readonly class NodeDesiredConvergeInput
         return ['node_id' => $node->id, 'user' => $node->user,
             'ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'roles' => $plans, 'selected_roles' => $roles,
             'agent' => [...$agent, 'sha256' => $delivery->pin($node), 'url' => $delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
-            'cli' => app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
+            'cli' => $release ? null : app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
             'tools' => $tools, 'network' => $network, 'role_units' => NodeRoleUnits::for($node),
             // Only a Node whose roles enable an executor family carries the install (docs/reference/executor.md).

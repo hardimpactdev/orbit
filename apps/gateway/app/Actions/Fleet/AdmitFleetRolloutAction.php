@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\FleetReboot;
 use App\Domain\Gateway\GatewayServingHost;
@@ -37,9 +38,9 @@ final readonly class AdmitFleetRolloutAction
     }
 
     /** One observer publication in the release’s ordered pass. */
-    public function forRelease(Node $node, string $commit): Operation
+    public function forRelease(Node $node, string $commit, ?DesiredCliReleaseData $pin): Operation
     {
-        return DB::transaction(fn (): Operation => $this->startRollout($commit, [$node], release: true));
+        return DB::transaction(fn (): Operation => $this->startRollout($commit, [$node], release: true, pin: $pin));
     }
 
     /** @param list<int>|null $nodeIds */
@@ -64,7 +65,7 @@ final readonly class AdmitFleetRolloutAction
     }
 
     /** @param list<Node> $targets */
-    private function startRollout(string $commit, array $targets, bool $release = false): Operation
+    private function startRollout(string $commit, array $targets, bool $release = false, ?DesiredCliReleaseData $pin = null): Operation
     {
         $root = $this->gateway->nodeId();
         if ($root === null) {
@@ -81,7 +82,7 @@ final readonly class AdmitFleetRolloutAction
             if (! is_array($agent) || ! is_string($agent['url'] ?? null)) {
                 throw new ResourceOperationException('agent.release_unavailable', 'The pinned agent has no published delivery.', 409);
             }
-            $cli = $this->cli->fleetInput($node, observer: true);
+            $cli = $this->cli->fleetInput($node, observer: true, pin: $pin);
             if ($release && $node->id === $root && $cli['skip_reason'] === 'gateway') {
                 $cli['skip_reason'] = 'cli_not_required';
             }

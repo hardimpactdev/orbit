@@ -13,6 +13,7 @@ use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\CiRunnerStateFiles;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Problems\ProblemRecovery;
@@ -406,3 +407,71 @@ it('fingerprints a state.py-only change on the CI runner and leaves another role
     expect($after[$runner->id]['digest'])->not->toBe($before[$runner->id]['digest'])
         ->and($after[$dev->id]['digest'])->toBe($before[$dev->id]['digest']);
 });
+
+it('fingerprints plan-only Instance host changes without reacting to the bridge admission time', function (string $change): void {
+    $node = Node::query()->findOrFail($this->nodes['dev']);
+    $runner = $node->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    $dev = $node->roles()->where('role', RoleName::AppDev)->sole();
+    config(['instances.container_nodes' => [$node->id]]);
+    $node->forceFill(['instance_bridge' => '10.253.1.0/24'])->saveQuietly();
+    $recipe = '/resources/machine-software/recipe.json';
+    $gateway = $this->base.'/orbit/apps/gateway';
+    mkdir(dirname($gateway.$recipe), 0700, true);
+    copy(base_path().$recipe, $gateway.$recipe);
+    $host = app(InstanceHostIntent::class);
+    $inputs = app(ReleaseNodeInputs::class);
+    $beforePlan = $host->for($node);
+    $before = $inputs->roles($node);
+
+    $this->travel(1)->minute();
+    expect($host->for($node)['bridge_admitted_at'])->not->toBe($beforePlan['bridge_admitted_at'])
+        ->and($inputs->roles($node))->toBe($before);
+
+    if ($change === 'folders') {
+        // The serving recipe supplies the built folder plan. The checkout's raw Instance stanza is unchanged.
+        $servingRecipe = json_decode(file_get_contents($gateway.$recipe), true, flags: JSON_THROW_ON_ERROR);
+        $servingRecipe['instances']['agent']['t3']['bin']['t3'] = 'bin/t3-fixture';
+        file_put_contents($gateway.$recipe, json_encode($servingRecipe, JSON_THROW_ON_ERROR));
+    } else {
+        $node->forceFill(['settings' => ['nested_fleet' => true]])->saveQuietly();
+    }
+    $afterPlan = $host->for($node);
+    $after = $inputs->roles($node);
+
+    if ($change === 'folders') {
+        expect($afterPlan['folders']['agent']['version'])->not->toBe($beforePlan['folders']['agent']['version']);
+    } else {
+        expect($afterPlan['nested']['image']['alias'])->toStartWith('orbit-instance-nested-')
+            ->and($afterPlan['ids'])->toBeGreaterThan($beforePlan['ids']);
+    }
+    expect($after[$dev->id]['digest'])->not->toBe($before[$dev->id]['digest'])
+        ->and($after[$runner->id])->toBe($before[$runner->id]);
+})->with(['folders', 'nested image and ranges']);
+
+it('fingerprints edits to a shared play or a dependency of that role', function (string $path, bool $shared): void {
+    $root = $this->base.'/playbooks';
+    $repo = dirname(base_path(), 2);
+    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    foreach ([$recipe, $path] as $file) {
+        mkdir(dirname($root.'/'.$file), 0700, true);
+        copy($repo.'/'.$file, $root.'/'.$file);
+    }
+    $node = Node::query()->findOrFail($this->nodes['dev']);
+    $runner = $node->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    $dev = $node->roles()->where('role', RoleName::AppDev)->sole();
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node, true, null, $root);
+    file_put_contents($root.'/'.$path, "\n# Test a different shipped play.\n", FILE_APPEND);
+    $after = $inputs->roles($node, true, null, $root);
+
+    expect($after[$runner->id]['digest'])->not->toBe($before[$runner->id]['digest']);
+    if ($shared) {
+        expect($after[$dev->id]['digest'])->not->toBe($before[$dev->id]['digest']);
+    } else {
+        expect($after[$dev->id])->toBe($before[$dev->id]);
+    }
+})->with([
+    'shared runtime' => ['swamp/ansible/tasks/node-role-runtime.yml', true],
+    'shared runtime check' => ['swamp/ansible/tasks/check-runtime.yml', true],
+    'CI seed certificate' => ['swamp/ansible/tasks/proof-seed-certificate.yml', false],
+]);
