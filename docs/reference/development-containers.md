@@ -1635,15 +1635,21 @@ Names from the workspace never become arguments. Git returns them NUL-separated,
 
 A sleeping Instance's container is frozen. Its processes keep their state and memory, but the memory moves to swap: a frozen Laravel and T3 clone holds about 13 MiB of RAM and about 340 MiB of swap. Nothing boots at the wake, so a resume takes a fraction of a second. Its disk, databases, Route, T3 threads and sessions stay. A container never prunes its dependencies.
 
-Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, so a running container never swaps: a busy one meets its limit instead of filling the swap disk. A sleep opens swap (`max`) for every cgroup of the container's subtree that holds 0, freezes the container, records which pages of its processes were resident, and then asks the kernel to reclaim its memory. A wake reads the recorded pages back while the container is still frozen, resumes it, and writes 0 again to exactly the cgroups the sleep opened. Other pages in swap come back when they are used. No Incus setting changes.
+Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, unless `limits.memory.swap` holds a byte size; `true`, `false` and an empty value all give 0. So a running normal container never swaps: a busy one meets its limit instead of filling the swap disk. A nested-fleet container has a size, [equal to its memory](#the-container). A busy nested-fleet container can therefore use swap while it runs, up to that size, and the host's swap disk takes it.
+
+A sleep opens swap (`max`) for every cgroup of the container's subtree that holds 0, freezes the container, records which pages of its processes were resident, and then asks the kernel to reclaim its memory. A wake reads the recorded pages back while the container is still frozen, resumes it, and gives back the limits of exactly the cgroups the sleep opened. Other pages in swap come back when they are used. No Incus setting changes.
 
 One helper on the Node, `/usr/local/libexec/orbit-instance-power`, does this work for every sleep, wake, deployment, start and destroy. [Prepared restore](/reference/prepared-restore) owns its contract: the plan, the bounds, the wake's state table, the fast wake's files and the result fields.
 
 > **Target design, not built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) a Rust executor on the Node replaces this helper and the fast wake's file flow. It acts on Gateway-signed orders over the observer's WebSocket, and Swamp and the SSH fallback reach it through one relay command. A visit waits a short bound for the wake, and then goes to the app in the same request. Every sleep and wake stays an Operation.
 
-**The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
+**The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers that have no swap size: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
 
-So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. Before it pauses the container, it records what it opened in the [limits record](/reference/prepared-restore#files-on-the-node), `/var/lib/orbit/hibernation/instances/<id>/limits.json`. Its result counts the inner cgroups as `swap_subtree`. Each resume by a wake, a deployment or a start writes 0 to the container's own cgroup and to each recorded path that still exists, then removes the record. A resume reads no other record.
+The other way round, a cgroup can swap only as far as each of its ancestors allows. An Instance of the fleet on `nested-app-dev` is three levels below the host: its sleep opens only its own subtree, so it hibernates only when the outer container and `nested-app-dev` both have a swap size. Without them every such sleep left more than 32 MiB in RAM and stopped.
+
+So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. Before it pauses the container, it records what it opened in the [limits record](/reference/prepared-restore#files-on-the-node), `/var/lib/orbit/hibernation/instances/<id>/limits.json`. Its result counts the inner cgroups as `swap_subtree`. Each resume by a wake, a deployment or a start gives the container's own cgroup back what Incus configures for it: the bytes of its `limits.memory.swap` when that is a size, else 0. It writes 0 to each recorded inner path that still exists, then removes the record. A resume reads no other record.
+
+So a nested-fleet container keeps its swap after its own wake, and its fleet can sleep again.
 
 A cgroup that vanishes during the walk, or that refuses the write, is not opened and fails nothing; its pages stay in RAM, and the check of the memory left in RAM below counts them. A sleep that fails while the container still runs closes what it opened. A sleep of a container that is already frozen keeps the earlier record and reports its count as `swap_subtree`. A destroy removes the record with the container.
 
@@ -1666,7 +1672,7 @@ After the reclaim, the sleep reads the container's memory counters until anonymo
 
 A nested-fleet Instance never takes this stop: a stop loses the Club key in `/run` and the tunnel `wg-nested`, which only a deployment or a start gives back. The sleep resumes it, closes swap, removes the marker and fails with `instance.container_freeze_failed`.
 
-A stopped container keeps each Process unit's enablement, which holds its desired state, so its later boot brings back what ran before. A sleep that fails to freeze writes 0 back and removes the marker, and the container serves as before (`instance.container_freeze_failed`).
+A stopped container keeps each Process unit's enablement, which holds its desired state, so its later boot brings back what ran before. A sleep that fails to freeze closes the swap it opened and removes the marker, and the container serves as before (`instance.container_freeze_failed`).
 
 The runtime's `power_state` is `stopped` for both a frozen and a stopped sleeping container. Each reader treats them alike.
 
@@ -2199,6 +2205,7 @@ An Instance container with a nested fleet lives in its own Incus project on the 
 | `security.idmap.isolated` | `true` | The container has its own ID range, as every Instance container |
 | `security.idmap.size` | The runtime's [recorded size](#the-id-map-size): `101000000`, or `1165536` after a conversion | The inner Incus takes its range from it: the outer size minus 1,000,000 |
 | `limits.memory` | `12GiB` | The inner fleet shares the container's memory |
+| `limits.memory.swap` | `12GiB`, the same value as `limits.memory` | Incus gives a container with `limits.memory` no swap unless this key holds a byte size. The fleet's Instances sleep into swap through this container |
 | `boot.autostart` | `false` | Incus never starts it at host boot, without the guard below |
 | `user.max_user_namespaces` | Not set to zero | The inner Incus needs user namespaces |
 
@@ -2228,7 +2235,9 @@ The clone probe writes only `security.idmap.isolated=true`, so its guard admits 
 
 The root disk's `size` is the one device key that may be larger than the intent's, as [The root disk](#the-root-disk) explains. Any other form than `<n>GiB` is refused. The host converge's clone probe inherits the shared profile's root disk, which names no size. For the probe, the guard admits only a root without a size.
 
-After a host reboot, Incus restores the containers that were running, without the guard. A nested-fleet container has `boot.autostart=false`, so it stays stopped. An Orbit start of the Instance, such as its deployment, starts it again through the guard. A container made before the key existed gets it at its next start, before the guard reads it: it is the one key a start writes, and Incus applies it without a restart.
+After a host reboot, Incus restores the containers that were running, without the guard. A nested-fleet container has `boot.autostart=false`, so it stays stopped. An Orbit start of the Instance, such as its deployment, starts it again through the guard. A container made before the key existed gets it at its next start, before the guard reads it. A start writes two keys this way, `boot.autostart` and `limits.memory.swap`, and Incus applies each without a restart.
+
+Orbit owns both keys: the start writes the intent's value over an absent key or a different value, and does not refuse it. The guard keeps refusing every other key and device that differs.
 
 The outer container is only the operator of its fleet. It runs no fleet service itself. It holds:
 
@@ -3172,7 +3181,7 @@ The Gateway admits the start only for an active development clone whose runtime 
 
 The run reads the Club key once, at its start. Without a key the fleet's Swamp cannot start, and Doctor cannot pass. So the run then fails before any change, with `instance.nested_club_key_missing`.
 
-The step `Start the container` runs the `start` part of `instance-container.yml`, as a deployment's `Prepare the container` does. It keeps `boot.autostart=false` and checks the egress gates of every bridge NIC. Then it starts the container and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
+The step `Start the container` runs the `start` part of `instance-container.yml`, as a deployment's `Prepare the container` does. It keeps `boot.autostart=false` and `limits.memory.swap` equal to the memory, and checks the egress gates of every bridge NIC. Then it starts the container and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
 
 The step `Start the inner fleet` runs the [fleet step](#the-fleet-step)'s check and resume, as the clone's create does. It checks the fleet rules and starts the nested containers and the tunnel. Then it waits for Doctor. It records its time as `fleet_seconds`.
 

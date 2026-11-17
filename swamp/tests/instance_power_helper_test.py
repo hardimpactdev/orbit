@@ -102,12 +102,12 @@ class ProbeHost(power.Host):
 
 class FakeIncus:
     def __init__(self, init_pid):
-        self.status, self.incarnation, self.init_pid, self.actions = "running", "uuid-1", init_pid, []
+        self.status, self.incarnation, self.init_pid, self.actions, self.swap_max = "running", "uuid-1", init_pid, [], "0"
 
     def instance(self, project, name):
         if self.status == "missing":
             return None
-        return {"status": self.status, "incarnation": self.incarnation, "init_pid": self.init_pid}
+        return {"status": self.status, "incarnation": self.incarnation, "init_pid": self.init_pid, "swap_max": self.swap_max}
 
     def change(self, project, name, action, seconds):
         self.actions.append(action)
@@ -348,7 +348,7 @@ class SwapTest(Fixture):
         self.prepare()
         self.boot("boot-2")
         self.incus.status = "running"
-        closed = power.close_swap(self.host, ID, RELATIVE)
+        closed = power.close_swap(self.host, ID, RELATIVE, "0")
         self.assertEqual(closed, [])
         self.assertEqual(power.read_value(os.path.join(self.container, "app/worker/memory.swap.max")), "max")
         self.assertEqual(power.read_value(os.path.join(self.container, "memory.swap.max")), "0")
@@ -362,6 +362,43 @@ class SwapTest(Fixture):
         self.prepare(15)
         self.restore(16)
         self.assertEqual(power.read_value(os.path.join(self.container, "app/worker/memory.swap.max")), "0")
+
+    def test_a_container_with_sized_swap_keeps_its_size_after_the_wake_and_its_subtree_closes_to_0(self):
+        size = str(12 << 30)
+        self.incus.swap_max = size
+        self.write(os.path.join(self.container, "memory.swap.max"), size + "\n")
+        self.assertEqual(self.prepare()["swap_subtree"], [f"{RELATIVE}/app", f"{RELATIVE}/app/worker", f"{RELATIVE}/init.scope"])
+        self.assertEqual(power.read_value(os.path.join(self.container, "memory.swap.max")), size, "a sized container is never opened")
+        self.assertEqual(self.restore()["outcome"], "resumed")
+        for path, value in (("", size), ("init.scope", "0"), ("app", "0"), ("app/worker", "0")):
+            self.assertEqual(power.read_value(os.path.join(self.container, path, "memory.swap.max")), value)
+
+    def test_a_stale_record_restores_the_configured_size_of_the_container_only(self):
+        self.prepare()
+        self.boot("boot-2")
+        self.assertEqual(power.close_swap(self.host, ID, RELATIVE, "5368709120"), [])
+        self.assertEqual(power.read_value(os.path.join(self.container, "memory.swap.max")), "5368709120")
+        self.assertEqual(power.read_value(os.path.join(self.container, "app/worker/memory.swap.max")), "max")
+
+    def test_the_configured_swap_is_the_bytes_of_a_size_and_0_otherwise(self):
+        for value, expected in (("12GiB", str(12 << 30)), ("5GiB", str(5 << 30)), ("2GB", "2000000000"), ("4096", "4096"),
+                                ("512MiB", str(512 << 20)), ("true", "0"), ("false", "0"), ("", "0"), (None, "0"),
+                                ("50%", "0"), ("12XiB", "0"), ("1", "0"), ("12 GiB", "0"), ("4096 bytes", "4096"),
+                                ("4096B", "4096"), ("4096bytes", "0"), ("4096 B", "0"), ("1kB", "1000"), ("3EiB", str(3 << 60)),
+                                ("7EiB", str(7 << 60)), ("8EiB", "0"), ("9EiB", "0"), (str((1 << 63) - 1), str((1 << 63) - 1)),
+                                (str(1 << 63), "0"), ("9" * 4301, "0"), ("0" * 30 + "5GiB", str(5 << 30)), ("0" * 5000 + "5", "5"), ("TRUE", "0"),
+                                ("Off", "0"), ("yes", "0"), ("-1GiB", "0"), ("+1GiB", "0"), ("1gib", "0"), ("１GiB", "0"),
+                                (" 1GiB", "0"), ("1GiB ", "0"), (12, "0")):
+            self.assertEqual(power.configured_swap(value), expected, value)
+
+    def test_the_incus_read_takes_the_swap_from_the_expanded_config(self):
+        incus = power.Incus()
+        for config, expected in (({"limits.memory.swap": "12GiB"}, str(12 << 30)), ({}, "0")):
+            incus._request = lambda *args, config=config, **kwargs: (200, {"metadata": {
+                "status": "Running", "config": {"volatile.uuid": "uuid-1", "limits.memory.swap": "1GiB"}, "expanded_config": config,
+                "state": {"pid": 42}}})
+            self.assertEqual(incus.instance("orbit-instances-nested", "instance-7"),
+                             {"status": "running", "incarnation": "uuid-1", "init_pid": 42, "swap_max": expected})
 
     def test_an_empty_subtree_opens_only_the_container(self):
         for path in ("init.scope", "app/worker", "app"):

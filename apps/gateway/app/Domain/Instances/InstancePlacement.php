@@ -30,6 +30,9 @@ final readonly class InstancePlacement
     /** The Incus project of a nested-fleet Project's containers: it allows nesting (docs/reference/development-containers.md#nested-fleet). */
     public const string NestedProject = 'orbit-instances-nested';
 
+    /** The memory of a nested-fleet container, and its swap: Incus gives a container with `limits.memory` no swap unless the swap is a size. */
+    private const string NestedMemory = '12GiB';
+
     /**
      * The early check of a writer whose result can be a container, before it writes anything: development create and its admission.
      * A CI-only Node (ProofCopyHosts::ciOnly) takes no Instance of this writer but a proof copy, first: a task group's copy of the proof
@@ -119,7 +122,8 @@ final readonly class InstancePlacement
     /**
      * The extra container keys of a recorded Incus project. A nested-fleet container runs an inner Incus whose own range must fit in
      * its isolated map, of the size its runtime records (docs/reference/development-containers.md#the-id-map-size). It never
-     * starts at host boot, so only an Orbit start, behind the start guard, starts it. The start guard admits exactly these keys
+     * starts at host boot, so only an Orbit start, behind the start guard, starts it. Its swap is a byte size equal to its memory, so
+     * its nested fleet sleeps into swap (docs/reference/development-containers.md#sleep-and-wake). The start guard admits exactly these keys
      * with the common limits: it reads them from the intent's `config` (docs/reference/development-containers.md#the-container).
      *
      * @return array<string, string>
@@ -132,7 +136,8 @@ final readonly class InstancePlacement
             'security.syscalls.intercept.setxattr' => 'true',
             'security.idmap.isolated' => 'true',
             'security.idmap.size' => (string) ($idmapSize ?? throw new LogicException('A nested-fleet runtime records its ID map size.')),
-            'limits.memory' => '12GiB',
+            'limits.memory' => self::NestedMemory,
+            'limits.memory.swap' => self::NestedMemory,
             'boot.autostart' => 'false',
         ] : [];
     }
