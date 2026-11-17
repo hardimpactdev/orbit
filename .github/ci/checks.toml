@@ -140,6 +140,8 @@ ceiling = 120
 inputs = [
   "apps/cli/**",
   "packages/php-sdk/**",
+  ".github/workflows/orbit-cli-release.yml",
+  ".github/workflows/orbit-cli-binary.yml",
   "docs/cli/**/*.mdx",
   ".codex/config.toml",
   "docs/reference/cli-command-vocabulary.md",
