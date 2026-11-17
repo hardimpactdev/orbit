@@ -1,16 +1,17 @@
 order = 10
 cases = [
   "retention keeps real Git edge cases intact",
+  "migration fixture commits start no automatic Git maintenance",
   "the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step",
   "directory modes stay in the protected result and restore through the workspace owner",
 ]
 file = "swamp/tests/ansible_instance_migrate_static_test.ts"
 self_hosted = true
-# This part of the move fixture reads the shipped task files only; runs no phase.
+# Fast migration contract and Git fixture checks; no production phase runs.
 # The hosted case costs came from the single move file; startup is added per slice.
 # Self-hosted costs: pool run 43904342622 with 4 workers per shard, an upper bound for 2; each case names its source.
-cost = 10
-slices = 3
+cost = 13
+slices = 4
 inputs = [
   "swamp/tests/_support/instance_migrate.ts",
   "swamp/ansible/tasks/instance-migrate-phase.yml",
@@ -19,5 +20,6 @@ inputs = [
 ]
 [case_costs]
 "retention keeps real Git edge cases intact" = 4 # no pool time (NOT RUN); hosted 3 x the median ratio of all passed pool units 1.04
+"migration fixture commits start no automatic Git maintenance" = 3 # ESTIMATE: native Git setup only
 "the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step" = 3 # no pool time (NOT RUN); hosted 2 x the median ratio of all passed pool units 1.04
 "directory modes stay in the protected result and restore through the workspace owner" = 3 # no pool time (NOT RUN); hosted 2 x the median ratio of all passed pool units 1.04
