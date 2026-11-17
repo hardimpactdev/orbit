@@ -1047,7 +1047,11 @@ A copy that meets a retake does not fail. Its admitted seed may be gone, or a `n
 
 #### The seed hold
 
-The seed of the proof Project's default has one hold, `instance_seed:<default id>`, so its lifecycle is serial. A [seed copy](/cli/instance/seed-copy) takes the hold as its Operation lock when it is admitted and keeps it to its end, so no retake deletes or renames a snapshot that it pushes. A deployment of that default asks the Gateway for the hold before its first `seed` phase, in the step "Hold the seed", and keeps it to its end. While a seed copy is open, the Gateway answers `423 instance.seed_busy` after 5 seconds, and the step asks again for up to 1,800 seconds. One seed copy ends well within that, and the deployment's run budget counts it. A hold that stays busy fails the deployment with `instance.seed_hold_timeout` before it changes the container. While a deployment holds the seed, a seed copy is not admitted (`instance.seed_held`); the deployment's end, passed or failed, admits it again. Every other default takes no hold: no seed copy sends its seed.
+The seed of the proof Project's default has one hold, `instance_seed:<default id>`, so its lifecycle is serial. A [seed copy](#the-seed-on-each-ci-node) takes the hold as its Operation lock when it is admitted and keeps it to its end, so no retake deletes or renames a snapshot that it pushes.
+
+A deployment of that default asks the Gateway for the hold before its first `seed` phase, in the step "Hold the seed", and keeps it to its end. While a seed copy is open, the Gateway answers `423 instance.seed_busy` after 5 seconds, and the step asks again for up to 1,800 seconds. One seed copy ends well within that, and the deployment's run budget counts it. A hold that stays busy fails the deployment with `instance.seed_hold_timeout` before it changes the container.
+
+While a deployment holds the seed, a seed copy is not admitted (`instance.seed_held`); the deployment's end, passed or failed, admits it again. Every other default takes no hold: no seed copy sends its seed.
 
 Incus maps a new snapshot as it maps a new container: it needs a free [isolated ID range](#isolated-id-ranges) for a moment, but a delete or a rename needs none. So the step never uses `incus snapshot create --reuse`, which deletes the old snapshot before it creates the new one. On 2026-11-14 a retake with `--reuse` on a host with no free range left Instance 2454 without a seed for seven minutes.
 
