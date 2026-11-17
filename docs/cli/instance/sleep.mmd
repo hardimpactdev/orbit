@@ -3,6 +3,8 @@ sequenceDiagram
   %% status: draft
   %% command: instance:sleep
   %% kind: instance.sleep
+  %% ADR 0266 slice 4: the proof-only executor.power_proof Operation signs sleep/discard; production instance.sleep stays below until slices 7/8.
+  %% Executor sleep: record and fsync non-max subtree swap limits, open them, freeze through Incus local API, scan every process in parallel (readable mappings, pagemap bits 63 OR 62, excluding bit 58 guard markers), atomically fsync the plan, reclaim until memory.current settles or 2 s, apply the 32 MiB anonymous policy, write the asleep marker. Recovery keeps an existing valid plan. Discard removes plan and limits after stop/destroy/fresh boot.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -12,6 +14,13 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as app-dev Node<br/>Instance container
+  Note over GW,N: Slice 4 proof: Rust sleep<br/>Incus freeze → scan → reclaim
+  %%> Executor proof path:
+  %%> - a durable executor.power_proof Operation signs sleep or discard; the observer only relays bytes
+  %%> - Rust records non-max swap limits and fsyncs; Incus API freeze; parallel whole-subtree capture includes every readable present-or-swapped page (bits 63 and 62), excluding bit 58 guard markers inside readable mappings
+  %%> - Rust atomically fsyncs the plan; reclaim settles within 2 s; the unchanged 32 MiB residual policy applies; the marker comes last
+  %%> - discard drops the Rust plan and limits after stop, destroy or fresh boot; no production flow switches in this slice
+  %%> - sleep and discard first wait up to 10 s for a stalled restore read of an earlier wake of the same target, else `instance.restore_readers_busy`
   CLI->>GW: instance:sleep INSTANCE
   %%> Command:
   %%> - `orbit instance:sleep INSTANCE`

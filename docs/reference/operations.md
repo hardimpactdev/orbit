@@ -505,7 +505,7 @@ An end check that is absent or still running reads again in the next pass, becau
 
 An operation that had already timed out with such a run, within its budget, gets the same end. Whether the work took effect is not known: the kind's records leave their in-progress state as they do at a timeout.
 
-the WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`), `proof.run` and the proof-only [`executor.proof`](/reference/executor#the-proof-operation) are the exception. The Gateway runs or closes them itself, with no Swamp run of their own; `proof.run` closes when its runs have ended, and `executor.proof` when its no-op result reaches its waiter. Each run is an Operation `proof.command` with a Swamp run of its own; its provision, cases and destruction are children of that run.
+the WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`), `proof.run` and the proof-only [`executor.proof`](/reference/executor#the-proof-operation) and `executor.power_proof` are the exception. The Gateway runs or closes them itself, with no Swamp run of their own; `proof.run` closes when its runs have ended, and the executor proofs when their signed-order result reaches their waiter. The power proof targets an Instance and sends sleep or discard; no production command starts it. Each run is an Operation `proof.command` with a Swamp run of its own; its provision, cases and destruction are children of that run.
 
 ### One operation per target
 

@@ -676,7 +676,7 @@ Earlier Gateways published the annotator server in `/opt/orbit/annotator` and ke
 
 ### Executor at a converge
 
-The base phase installs the [executor](/reference/executor) after the agent, only on a Node whose roles enable an action family: today `app-dev`. It pins the binary's SHA-256 from the agent delivery, writes the keys, Node id, allowlist, service and the relay's sudo rule, and restarts the executor only when one of them changed.
+The base phase installs the [executor](/reference/executor) after the agent, only on a Node whose roles enable an action family: today `app-dev`. It pins the binary's SHA-256 from the agent delivery, writes the keys, Node id, allowlist, restore pool size, service and the relay's sudo rule, and restarts the executor only when one of them changed.
 
 ### Kernel policy
 

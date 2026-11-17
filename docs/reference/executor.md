@@ -2,7 +2,7 @@
 title: "Executor"
 description: "How orbit-executor checks callers and signed orders, keeps its journal, serves the relay command, how the Gateway hands its results to a waiting request, and how the role converge installs it."
 covers:
-  - apps/agent/{crates/executor-core/**,crates/executor/**,clippy.toml,contract/fixtures/executor-order.json}
+  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/power/**,clippy.toml,contract/fixtures/executor-order.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
@@ -12,11 +12,11 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Slices 1 to 3 are built.** The executor, its install and its one action, the no-op `proof.noop`, exist. So do the Gateway signer and publisher, the observer's pass-through and the Gateway's [result listener](#the-listener-and-the-hand-off). An order goes out over the WebSocket, and its result comes back to its Operation. Only the proof-only [`executor.proof` Operation](#the-proof-operation) sends an order today; no Gateway command does. Sleep, wake and the create's Node part arrive in later slices.
+> **Slices 4 and 5 have swap-backed clone measurements.** Thirty Rust sleeps, thirty Python sleeps, thirty Rust wakes, a three-clone wake burst and SIGKILL recovery ran on the nested fleet. In run 2, every Rust wake returned `done` with zero failed pages; Python skipped plan capture on this nested host. The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) evidence records the results and limits. Production commands keep their existing paths until the later cutover slices.
 
 ## Where it runs
 
-The role converge installs the executor only on a Node whose roles enable an action family. Today that is `app-dev`, which enables the `proof` family. A Node with several roles enables the union of their families.
+The role converge installs the executor only on a Node whose roles enable an action family. Today that is `app-dev`, which enables the `proof` and `power` families. A Node with several roles enables the union of their families.
 
 The converge writes:
 
@@ -26,6 +26,7 @@ The converge writes:
 | `/etc/orbit/executor/gateway.pub` | One or two Gateway Ed25519 public keys, base64, one per line. The Gateway setting `ORBIT_EXECUTOR_PUBLIC_KEYS` names them |
 | `/etc/orbit/executor/node` | The Node id |
 | `/etc/orbit/executor/enabled` | The enabled families, one per line |
+| `/etc/orbit/executor/restore-threads` | The [restore pool](#rust-wake)'s size, 32; the executor refuses fewer than 16 |
 | `/etc/systemd/system/orbit-executor.service` | A plain service that runs `orbit-executor serve`, with `Restart=always` |
 | `/etc/sudoers.d/orbit-executor-relay` | The Node user may run exactly `orbit-executor relay` as `orbit-executor-relay` |
 
@@ -79,7 +80,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 1. The size and the form (`order_too_large`, `order_malformed`).
 2. The signature, with `verify_strict` against each pinned key (`bad_signature`), then the payload's shape (`bad_payload`).
 3. The action is on the allowlist (`unknown_action`) and its family is enabled on this Node (`action_not_enabled`). A valid signature does not enable a family.
-4. The Node (`wrong_node`) and the target (`unknown_target`). The target of `proof.noop` is the Node itself.
+4. The Node (`wrong_node`) and the target (`unknown_target`). The target of `proof.noop` is the Node itself. Sleep targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 5. The expiry: past (`expired`), or more than 10 s ahead of the Node's clock (`expiry_too_far`).
 6. The nonce has never been seen, across restarts too (`replayed_nonce`). The refusal carries the first order's result once it exists.
 7. The Operation: a done record with the same Operation, action and target returns the first result, marked `"repeat": true`, and does not act.
@@ -92,7 +93,7 @@ Orders for one target run one at a time under that target's lock; different targ
 
 ## The Gateway signer and the event
 
-`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds exactly the six fields above, in that order, as compact JSON. The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. It also refuses an action outside the allowlist (today only `proof.noop`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds exactly the six fields above, in that order, as compact JSON. The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. It also refuses an action outside the allowlist (`proof.noop`, `sleep`, `discard`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 
 `App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
 
@@ -220,6 +221,7 @@ The Swamp proof of `node:converge` (`swamp/proof/node/converge.cases.yaml`) send
 The step `executor_publish` has two options for the order security tests:
 
 - `tamper` makes the order of each order security test: `bad_signature`, `changed_action`, `changed_target`, `expired`, `unknown_action` and `wrong_node`.
+  - The `unknown_action` order names `proof.unknown`. No row of the order table holds it, so the order never runs.
 - `replay` publishes each order twice, the exact same wire for the same Operation, before the step's one wait.
 
 The copy therefore arrives inside the first one's 5 s expiry. The case expects the copy refused with `replayed_nonce` and the action run exactly once for that Operation. The two copies race through the observer, so the refusal may carry the first result (`first=done`) or not yet (`first=none`); both are correct. The executor's unit tests prove that a replay after the original completed carries the stored first result.
@@ -262,5 +264,124 @@ The executor wrote its `done` record 3–4 ms after the publish (median of 50 or
 
 **The lost result.** In each of the six lost-result runs the second waiter timed out. Its bound was 500 ms (`ORBIT_EXECUTOR_WAIT_MS`), and it returned after 504–575 ms. This lateness is the one [the waiting request](#the-listener-and-the-hand-off) describes: Valkey checks a blocked `BLPOP`'s timeout on its server tick, and the nested Gateway's Valkey runs the default `hz 10`. Slice 6 plans `hz 100`. The repeat then brought the first result back in 7–19 ms. The journal held `open`, `done` and `seen` for that Operation: one run.
 
-**Status.** In the proof plan both cases keep `waits: idmap`, like every `app-dev` converge case: the converge builds the Instance host's stock image, which needs the 2,000,000 ID map. Both also keep `fails_today`, because the pinned agent delivery has no `executor-linux-x86_64` and no observer release with the pass-through yet.
+**Status.** The copy has the required 2,000,000 ID map and the Instance host’s stock image, so the proof plan omits `waits: idmap`. Both cases keep `fails_today`, because the pinned agent delivery has no `executor-linux-x86_64` and no observer release with the pass-through yet. The converge and no-op cases have not been rerun.
 
+
+## Rust sleep and discard
+
+Slice 4 adds the `power` family on `app-dev`. Signed `sleep` and `discard` orders target an Instance. `executor.power_proof` exercises them through durable Operations used only by the proof; production `instance.sleep` keeps the Python flow until slices 7/8. The observer still passes bytes only.
+
+The executor records and atomically fsyncs every non-`max` swap limit in the whole container cgroup subtree before opening it. It freezes through the Incus local API, lists every subtree process and scans readable maps and pagemap in parallel. Its plan includes every readable present or swapped page (bits 63 and 62), excluding guard markers (bit 58), process start times, boot id, Incus incarnation and cgroup identity.
+
+[Linux 7.0](https://github.com/torvalds/linux/blob/v7.0/fs/proc/task_mmu.c#L1975) reports lightweight guard markers inside readable mappings with both the swapped bit (62) and the guard bit (58); these markers contain no page to restore. Capture excludes them without excluding their readable neighbors. Mappings without read permission and the kernel special mappings remain excluded. The plan is atomically published with fsync before reclaim. Reclaim waits for `memory.current` to settle, for at most two seconds. The 32 MiB residual anonymous policy remains: ordinary containers stop when memory stays; nested-fleet containers resume and fail instead. The asleep marker comes last.
+
+A repeat Operation returns its journaled result under the per-target lock. Startup repeats an open sleep and keeps a valid plan already published. `discard` removes the plan and limits record after a stop, destroy or fresh boot. The Rust state lives under `/var/lib/orbit/executor/power`; it does not replace the Python state yet. A container Incus calls running while the kernel holds it frozen refuses with `instance.container_frozen_unmanaged`, preserving its recovery state.
+
+The kind chart is [`docs/cli/proof/executor-power-proof.mmd`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/proof/executor-power-proof.mmd). The executor logs the complete action time, including receipt and asleep-marker fsync, with reclaim measured separately. The private receipt timer ends before its own publication.
+
+**Measured on a real clone.** Subtask 5768 run 2 installed the fixed executor (SHA-256 `6c133c9cdf3d719b802791f23b7b46674548736d9cf6e06b2f671aafa985ce50`) on `nested-app-dev`. The existing `executor-sleep-clone` (Instance 4, creation/completion Operations 237/238) ran T3 0.1.7 and Vite 7.2.2, with Vite on port 8080. All 30 signed sleeps had durable `executor.power_proof` Operations, complete plans containing all 15 subtree processes, T3 and Vite included, and a committed asleep marker. Plans held 635,932,672–636,919,808 bytes.
+
+The copy and Node had swap allowances of 12,884,901,888 and 5,368,709,120 bytes. The clone's own `memory.swap.max` was `0` before every sleep, `max` while asleep and `0` after every wake; sleep also recorded its inner 32 MiB polkit limit. No Incus swap setting was applied to the clone. Every sleep used swap. Rust left 14,544,896–16,154,624 bytes in RAM and 378,744,832–379,793,408 in swap. Python left 14,553,088–14,766,080 bytes in RAM and 380,137,472–381,841,408 in swap.
+
+| Node measurement, 30 samples | p50 | p95 | max |
+| --- | --- | --- | --- |
+| Rust sleep, including receipt and marker fsync | 452.304 ms | 543.592 ms | 551.332 ms |
+| Rust reclaim and counter settling, included above | 398.938 ms | 492.065 ms | 494.284 ms |
+| Python marker, prepare and residual calls; capture skipped | 509.563 ms | 5,644.503 ms | 5,822.532 ms |
+| Python reclaim call, included above | 293.000 ms | 500.000 ms | 511.000 ms |
+| Python residual calls and settling, included above | 92.990 ms | 4,206.703 ms | 4,227.580 ms |
+
+Percentiles use nearest rank. Both totals cover the Node's sleep work through final publication and the respective counter policy, excluding Gateway boot, transport and Ansible startup. Python ran the current helper through its production transient-unit path and residual retry rule, with a fixed Rust sleep/wake before each sample.
+
+Python skipped plan capture as `placement_unproven` in all 30 samples. Its timings do not cover the same work as Rust and are not a like-for-like comparison. The nested fleet also cannot use remote `process_madvise`; the wake section explains this limit.
+
+Raw samples, per-sleep RAM and swap, syscall timing, durable Operation records and the journal audit are under `.orbit-artifacts/5753/live-proof-5768/run-2/`. `rust-samples.jsonl`, `python-samples.jsonl`, `samples.csv` and `summary.json` hold the measurements. `durable-operations.json` and `journal-audit.json` were fetched from the nested Gateway and Node for Operations 380–439, 443–445 and 447: 60 single sleep/wakes, three burst wakes and one recovered wake. All 64 Operations succeeded, each with exactly one journal completion whose outcome is `done`, matching the Gateway's action, target and outcome; no mismatches were found. Journal compaction has removed their expired open/seen records.
+
+This was manual live proof through the existing proof helper; the shared fleet-reset runner, converge install and production command paths were not rerun. CI proof remains disabled and its fresh fleet has no real T3/Vite clone fixture. Doctor reported healthy with seven checks and zero drift, but its Instance/Process families checked zero items; direct process, plan, cgroup and HTTP assertions supply that evidence.
+
+| Error or result | Meaning |
+| --- | --- |
+| `instance.power_discard_failed` | The plan or limits record could not be removed. |
+| `instance.container_freeze_failed` | Freeze, reclaim or the swap-full policy failed. Frozen recovery state stays available. |
+| `instance.container_frozen_unmanaged` | Incus calls a container running while its kernel cgroup remains frozen. |
+| `skipped` plan | Capture could not produce a complete plan within its bounds. Sleep continues, and the private receipt records the reason. |
+
+## Rust wake
+
+Slice 5 adds the `wake` action to the `power` family. Like sleep, only the proof-only `executor.power_proof` Operation sends it; the proof Operation succeeds on `done` and `partial`. Production `instance.wake` keeps the Python flow: slice 6 has the Gateway call this action, and slice 7 Swamp and the relay.
+
+The wake reads the Incus state first. A stopped container drops its plan and fails `instance.container_stopped`, because a boot is the run's work. A frozen container gets these steps, in order.
+
+**Plan bounds.** The plan's page size must be the system page size. Its processes, ranges and bytes stay within the capture's bounds, and each range is non-empty, page-aligned and ends below 2^56 without overflow. Otherwise the plan is dropped as `plan_invalid` before any work is built.
+
+**Identity, before any memory syscall.** The plan's boot id, cgroup device and inode, and Incus incarnation must equal the live ones. Its init PID must be the container's. For each recorded process the executor opens a pidfd, compares the process's start time, and sends signal 0 through the pidfd. A PID reused before the open fails the start time; one reused after it fails the signal. Any mismatch drops the plan with no memory syscall. The wake goes on without a restore.
+
+**Restore through the pool.** The plan's pages split into items of at most 1,024 pages. An item reads the process's pagemap and keeps only the pages that are not resident now. It calls `process_madvise(MADV_WILLNEED)` on them through the pidfd, so every swap read starts at once. Then it reads one byte of each page with `process_vm_readv`. A short read skips the failed page and continues through the rest of the item; the wake receipt and journal count unreadable pages as `pages_failed`.
+
+On Linux 7.0, [remote `process_madvise`](https://github.com/torvalds/linux/blob/v7.0/mm/madvise.c#L2154) requires `capable(CAP_SYS_NICE)`, which [checks the initial user namespace](https://github.com/torvalds/linux/blob/v7.0/kernel/capability.c#L414). It returns `EPERM` in the nested fleet. The hint is optional: nested measurements read pages through `process_vm_readv` without the WILLNEED head start. The restore ends after 2 s. Items not started by then are skipped, and the result is `partial`.
+
+An item still running stops at its next deadline check, and the wake waits for it for a grace of 250 ms.
+
+An item still inside `process_madvise` or `process_vm_readv` after the grace is stalled: neither call can be cancelled, and a page fault can wait on a pager or a device for good. The wake then reports `partial` with `instance.restore_stalled` and goes on: it unfreezes, closes the limits, checks readiness and releases the target's lock. This is safe. A late `process_vm_readv` only copies the target's pages into the executor's own buffer, and a late `MADV_WILLNEED` only starts a read into the page cache. Neither changes anything in the target.
+
+The stalled reader still guards its target. A later `sleep` or `discard` of the same target waits up to 10 s for it, so no freeze, scan or plan overlaps it. After that it fails `instance.restore_readers_busy`.
+
+The stalled target leaves the front of the restore queue, so other targets go on. Its worker stays in the syscall until it returns, and the pool starts a replacement, so it keeps its configured number of working threads.
+
+The pool holds at most twice its size in threads. Past that cap a new stall starts no replacement and is logged, and other targets get the working threads that remain. When a stalled syscall returns, its worker exits if the pool is at size again, and rejoins otherwise. A worker that fails to start is logged, and the pool runs with what it has. An item whose pagemap cannot be read, or whose read fails or comes back short, also makes the result `partial`.
+
+**Unfreeze.** The executor unfreezes through the Incus local API, with the short freeze bounds of 5 s. It never unfreezes a replacement container, one with another incarnation. Then it waits up to 5 s for the kernel to thaw the cgroup. It never writes `cgroup.freeze` itself. A cgroup that stays frozen fails `instance.container_frozen_unmanaged`.
+
+**Limits.** It writes back exactly the values of the limits record and removes the record. A record of another incarnation names cgroups that are gone. It is dropped, and nothing is written.
+
+**Readiness.** The executor sends a request from the Node straight to the container's `eth0` address and web port 8080. It retries until an answer below 500, within one absolute bound of 1.5 s. Every connect, write and read gets only the time left, so a reply sent byte by byte cannot pass after the bound. Then the asleep marker goes. An unready app fails `instance.web_unready`, and the marker stays.
+
+A container that already runs gets only the limits and readiness steps, and reports `done`. So crash recovery, which runs an open wake again, and a repeat after the unfreeze are safe. A container that Incus calls running while its kernel cgroup is still frozen fails `instance.container_frozen_unmanaged` with no write; Incus lost that freeze, and an operator thaws it. Nothing on the wake's path syncs to disk: the journal's syncer covers the order.
+
+**The restore pool.** One per Node, with its own threads, separate from the connection threads, so order checks never wait behind a restore. The role writes its size to `/etc/orbit/executor/restore-threads`: 32, the measured size for the current Nodes' swap devices. Swap-in waits on the device, so the size follows the device's queue depth, not the CPU count. The executor refuses to start with fewer than 16 or more than 256. Jobs queue in arrival order. A target leaves the front of the queue only when every one of its items has finished, so no item of the next target starts before then.
+
+| Result | Meaning |
+| --- | --- |
+| `done` | The container runs and answers. Every planned page that was not resident was read back, or the container already ran. |
+| `partial`, `instance.restore_deadline` | The container runs and answers, but the 2 s bound cut the restore. |
+| `partial`, `instance.restore_stalled` | The container runs and answers, but a restore read was still stuck in its syscall 250 ms after the bound. |
+| `failed`, `instance.restore_readers_busy` | A `sleep` or `discard` found a stalled restore read of a wake of the same target still running after 10 s. |
+| `partial`, `instance.restore_read_failed` | The container runs and answers, but a pagemap or a planned page could not be read. |
+| `partial`, `instance.restore_no_plan`, `instance.restore_plan_stale`, `instance.restore_plan_invalid` | The container runs and answers without a restore: there was no plan, an identity check failed, or the plan could not be read or broke a bound. |
+| `failed`, `instance.container_stopped` | The container is stopped; the run boots it. |
+| `failed`, `instance.container_start_failed` | Incus did not report the same container running after the unfreeze, or another error. |
+| `failed`, `instance.container_frozen_unmanaged` | The kernel cgroup stayed frozen. |
+| `failed`, `instance.web_unready` | The app gave no answer below 500 within 1.5 s. The marker stays. |
+
+The Rust tests cover the identity checks, pool order, the cut at the bound, resident pages, exact limits, the marker, readiness and crash recovery after the unfreeze; the restore tests read a real buffer of the test process.
+
+**Measured on the same clone.** All 30 signed wakes returned `done`, answered HTTP 200, restored the clone's swap limit to `0` and removed the marker. Each read back 91,932–92,180 nonresident pages, with zero failed pages. Pages read p50/p95/max were 92,127/92,177/92,180; `samples.csv` records every wake's count.
+
+| Wake measurement, 30 samples | p50 | p95 | max |
+| --- | --- | --- | --- |
+| Node action through the app answering and marker removal | 147.840 ms | 494.080 ms | 517.545 ms |
+| Restore, included above | 122.675 ms | 417.062 ms | 478.530 ms |
+| Incus unfreeze API, included above | 9.471 ms | 18.734 ms | 19.041 ms |
+| Gateway publish through the waiting result | 164.158 ms | 520.478 ms | 535.378 ms |
+
+Measured wakes 1–4 took 432–518 ms. Restore accounted for most of that time. The samples do not separate storage latency from scheduling.
+
+The unfreeze measurement sums the local API's state-change request and operation wait, from socket connect to close. It excludes the surrounding identity/state reads and kernel-thaw polling. Wake samples used `strace` on connect, send and close calls; their totals include its overhead. The app check is the executor's direct Node-to-container request, not a visit through Caddy or the future Gateway fast path.
+
+**Unreadable-page diagnosis.** A frozen-clone diagnostic found 39 unreadable guard markers in 16 readable anonymous mappings: systemd-journald 2, T3 16, rsyslogd 2, Python 1, polkitd 5, T3's resource monitor 1 and Vite's Node process 12. Every failure had pagemap bits 58 and 62 set and returned `EFAULT`. These were lightweight guards inside `rw-p` mappings with `VmFlags: gu`, rather than PROT_NONE reservations or VM_IO/PFNMAP mappings. Capture already excluded mappings without read permission; it now also excludes the guard markers while retaining their readable neighbors. Exact mapping bounds and failed page addresses, without memory contents, are in `diagnostic-mappings.json` and `diagnostic-guard-bits.json` under `run-2`.
+
+A separate syscall diagnostic after the fix returned `done`, read 92,580 pages with zero failures and observed 129 `process_madvise` calls returning `EPERM`. All 129 `process_vm_readv` batches succeeded. This agrees with the Linux 7.0 capability rule above: these nested wake timings have no WILLNEED head start. The memory-read trace used raw syscall arguments, so it captured no target memory contents.
+
+Instances 5 and 6 were also real clones with T3 and Vite. One simultaneous three-clone burst used the same 32-thread pool:
+
+| Instance | Node wake to app answer | Restore, included | Incus unfreeze API, included | Pages read | Failed pages |
+| --- | --- | --- | --- | --- | --- |
+| 6 | 238.297 ms | 193.382 ms | 13.950 ms | 91,399 | 0 |
+| 5 | 402.372 ms | 354.889 ms | 8.632 ms | 90,808 | 0 |
+| 4 | 484.466 ms | 450.542 ms | 11.867 ms | 92,451 | 0 |
+
+All three answered HTTP 200 and returned `done`. Restore time includes waiting behind an earlier target. The last result arrived 1,163.346 ms after launching the three Gateway helper processes; that scope includes their boot time.
+
+**SIGKILL recovery passed.** The first restore syscall was delayed by 1 s for fault injection. The executor was killed while Instance 4 was frozen, with its plan intact and swap open. systemd restarted it, and startup replayed open Operation 447. The recovered wake read 92,311 pages with zero failures. The app answered HTTP 200 after 2,352.641 ms from the kill; its cgroup thawed, swap returned to `0`, and the plan and marker were removed.
+
+The first waiter timed out. A fresh signed order for the same Operation returned `done` with `repeat: true` in 4.774 ms, and the Operation succeeded. The current journal audit retains exactly one completion for Operation 447, with outcome `done`. Raw evidence is in `burst.json`, `crash-node.jsonl`, `crash-gateway.jsonl` and `crash-recovery-journal.txt` beside the sleep samples.

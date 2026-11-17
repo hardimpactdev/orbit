@@ -544,8 +544,9 @@ Deno.test("the base converge installs the executor only from its intent, after t
     assertEquals((replace.vars as Record<string, Record<string, string>>).converge_replacement.sha256, "{{ intent.executor.sha256 }}");
     const sudoers = tasks.find((task) => task.name === "Allow the Node user the one relay command")!["ansible.builtin.copy"] as Record<string, string>;
     assertEquals([sudoers.mode, sudoers.validate], ["0440", "/usr/sbin/visudo -cf %s"]);
-    const files = (tasks.find((task) => task.name === "Reconcile the executor's keys, Node id, allowlist and unit")!.loop as Array<{ path: string }>).map((file) => file.path);
-    assertEquals(files, ["/etc/orbit/executor/gateway.pub", "/etc/orbit/executor/node", "/etc/orbit/executor/enabled", "/etc/systemd/system/orbit-executor.service"]);
+    const files = (tasks.find((task) => task.name === "Reconcile the executor's keys, Node id, allowlist, restore pool and unit")!.loop as Array<{ path: string }>).map((file) => file.path);
+    assertEquals(files, ["/etc/orbit/executor/gateway.pub", "/etc/orbit/executor/node", "/etc/orbit/executor/enabled", "/etc/orbit/executor/restore-threads",
+        "/etc/systemd/system/orbit-executor.service"]);
 });
 
 Deno.test("a converge before the executor's rollout records why it skips the install and changes nothing", async () => {

@@ -20,12 +20,18 @@ final readonly class NodeExecutorInput
     public const string RelayUser = 'orbit-executor-relay';
 
     /**
-     * The families each role enables. Slice 1 has only the no-op `proof` family; `power` and `clone` join with their slices
+     * The restore pool's threads (ADR 0266): one pool per Node, sized by the swap device's queue depth, not the CPU count. 32 is the
+     * measured size for the current Nodes' swap devices; the executor refuses fewer than 16.
+     */
+    public const int RestoreThreads = 32;
+
+    /**
+     * The families each role enables. The no-op `proof` and sleep/wake/discard `power` families ship on app-dev; `clone` joins with its slice
      * (`app-prod` gets `power` when ADR 0265 brings sleep to production).
      *
      * @var array<string, list<string>>
      */
-    public const array RoleFamilies = [RoleName::AppDev->value => ['proof']];
+    public const array RoleFamilies = [RoleName::AppDev->value => ['proof', 'power']];
 
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array
@@ -79,6 +85,7 @@ final readonly class NodeExecutorInput
             'relay_user' => self::RelayUser,
             'node' => $nodeId."\n",
             'enabled' => implode("\n", $families)."\n",
+            'restore_threads' => self::RestoreThreads."\n",
             'gateway_keys' => implode("\n", $keys)."\n",
             'unit' => self::unit(),
             'sudoers' => "{$user} ALL=(".self::RelayUser.') NOPASSWD: '.self::Binary." relay\n",

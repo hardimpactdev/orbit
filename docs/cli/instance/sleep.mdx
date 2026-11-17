@@ -40,6 +40,8 @@ Sleeping an Instance that already sleeps runs again and changes nothing. A freez
 
 The API is `POST /api/v1/instances/{instance}/sleep`; it starts an `instance.sleep` Operation. The MCP tool is `instance-sleep`.
 
+The Rust executor also implements sleep for signed proof orders ([Executor](/reference/executor#rust-sleep-and-discard)). This command keeps the Python path until ADR 0266 slices 7/8.
+
 ## How it works
 
 <div className="flow-at" data-chart="instance/sleep"></div>
