@@ -70,6 +70,8 @@ Orbit does not fall back to the public endpoint. Fix the network, or clear the w
 
 The hub admits the scan with the firewall rule `orbit:vpn-lan-ssh`: TCP port 22 from the /24 of its `lan_ip` to that address. The hub's network phase applies the rule and removes one left by an earlier LAN address. A `node:converge` of any peer runs the hub's network phase first, for whatever reason it was started; a `node:add` does not, so converge the hub before you add a Node on its private network. A failure in the hub's network phase, such as `vpn.endpoint_not_local`, therefore stops every peer converge until it is fixed; fix it over the hub's public SSH.
 
+The same phase adds the routed rule `orbit:vpn-peer-forwarding`, so one member reaches another through the hub. UFW skips the rule when the hub holds it already, by hand included ([VPN peer forwarding](/cli/firewall#vpn-peer-forwarding)).
+
 The converge decides that a Node moves to another hub endpoint from the `Endpoint` line of its previous `orbit.peers`, not from the live tunnel. `wg` shows a hostname endpoint resolved, and a peer that roamed shows the address it roamed to.
 
 Swamp reaches the Node through this tunnel, so the move runs as one detached job on the Node that does not depend on the SSH session. The converge stages the new `orbit.conf` and `orbit.peers` beside the live ones. The job then:

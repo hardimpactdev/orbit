@@ -265,7 +265,7 @@ Native schedule input publishers declare `publishes_inputs: true` on the exact s
 
 ## Real engine checks
 
-Run `bin/swamp-real-engine-checks` for the fast Ansible checks. It uses the shape gate's pinned tools and collections. Module argument validation covers all playbooks and task files under `swamp/ansible`, including blocks and handlers. Controller-only actions have no `AnsibleModule` argument spec. Templated values use valid stand-ins; value-dependent requirements and conditional `omit` presence still need runtime proof.
+Run `bin/swamp-shape-gate` for the Ansible checks with its pinned tools and collections. Module argument validation covers all playbooks and task files under `swamp/ansible`, including blocks and handlers. Controller-only actions have no `AnsibleModule` argument spec. Templated values use valid stand-ins; value-dependent requirements and conditional `omit` presence still need runtime proof.
 
 The command-output table in `swamp/tests/fixtures/command-output/cases.yaml` selects production expressions by file, task and field. Real Ansible/Jinja evaluates them against recorded nft and dpkg output and sanitized format samples. The inventory uses Jinja's syntax tree to find regex filters, native `search`/`match`/`regex` tests, and `select`/`reject` forms. Every regex expression must have cases or an explicit reason why it does not parse command output. Add samples when a parser changes; do not copy a production regex into the test. Counter cases include rising, equal and falling counts. Package cases include installed, held, removed and absent packages.
 

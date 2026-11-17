@@ -34,7 +34,7 @@ final readonly class AiRouterProvidersResponse
         }
 
         $this->providers = $providers;
-        $this->requestId = GatewayRequestId::fromTransport($requestId) ?? $requestId;
+        $this->requestId = GatewayRequestId::fromTransport($requestId) ?? '';
     }
 
     /**

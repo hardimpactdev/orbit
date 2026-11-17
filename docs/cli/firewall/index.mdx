@@ -41,6 +41,18 @@ Task VM ingress rules apply to the Incus guest Nodes. Provider-side cloud firewa
 
 The `ci-runner` role owns the routed allowance on `orbitci0`, with the comment `orbit-ci-runners`. This is the same comment used by the former host setup step, so adding the role adopts that rule through the managed catalog. Role removal closes it with `ufw route delete`; direct host rules use `ufw delete`. The Incus ACL enforces the runner egress boundary.
 
+## VPN peer forwarding
+
+The `vpn` role owns one routed rule on the hub, `orbit:vpn-peer-forwarding`. It lets the hub forward traffic from one WireGuard member to another, both in and out on the interface `orbit`, from the Node's WireGuard subnet to the same subnet:
+
+```sh
+ufw route allow in on orbit out on orbit from 10.44.0.0/24 to 10.44.0.0/24 comment 'orbit:vpn-peer-forwarding'
+```
+
+The subnet is the Gateway's VPN subnet (`VpnSettings::subnet`): `10.44.0.0/24` by default, and `10.45.0.0/24` on the nested Gateway of a fleet. Without the rule, UFW's routed policy denies the traffic, and a member reaches another member through the hub only by ICMP. So the operator of a nested fleet could not open a site on `nested-app-dev`.
+
+The hub's network phase applies the rule, beside `orbit:vpn-lan-ssh` ([Converge the hub](/reference/wireguard-endpoints#converge-the-hub)): a `node:converge` of the hub, or of any peer, which runs the hub's network phase first, and the `node:add` of the hub. A hub that already has the same rule by hand, with the same comment, keeps it: UFW skips the existing rule, so the converge deletes and adds nothing. `firewall:list --managed` lists it under the `vpn` role.
+
 CI role removal refuses a project that still has guests. It retains the drained project, image cache, bridge and ACL unless removal explicitly requests a data purge. Removing the last role restores public SSH recovery. Unrelated operator rules remain in place.
 
 ## Orbit's own rules

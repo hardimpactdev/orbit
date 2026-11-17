@@ -11,8 +11,8 @@
 #   intent.fleet.layout.<role>.memory     Its memory limit, an owned rule (NestedFleetIntent::Memory).
 #   intent.fleet.host                     Whether the refresh builds the Instance host on nested-app-dev: the default's ID map is
 #                                         2,000,000 or more (NestedFleetIntent).
-#   intent.fleet.operator                 {address, hub, network}: the container as operator, the nested Gateway as hub, the
-#                                         fleet's network (TaskVmNestedFleet::operator()).
+#   intent.fleet.operator                 {address, hub, network, domains}: the container as operator, the nested Gateway as hub, the
+#                                         fleet's network and the TLDs its app Nodes serve (TaskVmNestedFleet::operator()).
 #   intent.fleet.checkout.path            Where the three nested Nodes see the workspace (TaskVmNestedFleet::CheckoutPath).
 #   intent.fleet.proxy                    The egress proxy environment, name to value: HTTP_PROXY, HTTPS_PROXY, http_proxy,
 #                                         https_proxy, NO_PROXY and no_proxy. The fleet's own names and networks are in NO_PROXY.

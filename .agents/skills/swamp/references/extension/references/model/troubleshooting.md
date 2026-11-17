@@ -191,8 +191,27 @@ This error occurs when two `writeResource` or `createFileWriter` calls within
 the same method execution use the same instance name, even across different
 specs. Instance names map to storage paths on disk — the path has no spec
 component, so `writeResource("summary", "bixu", ...)` and
-`writeResource("repo", "bixu", ...)` both write to the same `bixu/` directory,
-and the second overwrites the first.
+`writeResource("repo", "bixu", ...)` both target the same `bixu/` directory.
+
+- **Different spec or kind** (a file and a resource, or two resource specs): the
+  second call throws
+  `Duplicate data instance name 'bixu' (already written as resource 'summary' in this run)`
+  and writes nothing. The first write stays committed unless the method sets
+  `rollbackOnFailure: true`.
+- **Same spec twice**: both writes commit as consecutive versions. If the method
+  returns both handles, it then fails with this error:
+
+  ```
+  Data output validation failed: Duplicate data instance name 'bixu'
+  ```
+
+- **Other kind than an earlier run** (a file over a name an earlier run wrote as
+  a resource, or the reverse): the write throws
+  `Duplicate data instance name 'bixu' (version 1 was written as resource 'summary'; delete it with swamp data delete <model> bixu before writing it as a file)`
+  and allocates no version. A spec change that keeps the kind is allowed. To
+  change a name's kind on purpose, run the `swamp data delete` the error names,
+  then write again. `swamp doctor datastores` lists names that already hold both
+  kinds (check `mixed_kind_names`).
 
 **Fix:** Use unique instance names across all specs within a method. Prefix with
 the spec name or another distinguishing value:

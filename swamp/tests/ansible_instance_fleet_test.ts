@@ -153,7 +153,7 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
         "app-prod": { address: "10.232.2.13", wireguard: "10.45.0.3", memory: "2GiB" },
       },
       host: options.host ?? true,
-      operator: { address: "10.45.0.10", hub: "10.45.0.1", network: "10.45.0.0/24" },
+      operator: { address: "10.45.0.10", hub: "10.45.0.1", network: "10.45.0.0/24", domains: ["nested-dev", "nested-prod"] },
       checkout: { path: "/home/orbit/orbit" },
       proxy,
     },
@@ -276,7 +276,13 @@ const startCalls = [
   "ip -j addr show dev wg-nested",
   "ip addr add 10.45.0.10/24 dev wg-nested",
   "ip link set wg-nested up",
+  "resolvectl dns wg-nested",
+  "resolvectl dns wg-nested 10.45.0.1",
+  "resolvectl domain wg-nested",
+  "resolvectl domain wg-nested ~nested-dev ~nested-prod",
 ];
+/** A start reads the fleet's DNS on `wg-nested` and sets only what differs. */
+const tunnelDnsReads = ["resolvectl dns wg-nested", "resolvectl domain wg-nested"];
 /** What a start promises: the containers run and the tunnel reaches the hub; no API call. */
 const reachCalls = ["incus list --format csv --columns ns", "ping -c 1 -W 2 10.45.0.1"];
 /** The operator's API calls never use the container's proxy, and keep curl's error. */
@@ -402,12 +408,13 @@ Deno.test({
       assertKeyUntouched(calls, first.output);
       assert(!calls.some((call) => call.includes("wg-quick")));
       assertEquals(f.state().containers["nested-gateway"].links, { "/home/orbit/.config/swamp/api-key": "club/swamp-club-api-key" });
-      assertEquals(f.state().tunnel, { addresses: ["10.45.0.10/24"], up: true, key: "/etc/wireguard/wg-nested.key", port: "51821", peer: hubKey, endpoint: "10.232.2.11:51820", allowed: "10.45.0.0/24" });
+      assertEquals(f.state().tunnel, { addresses: ["10.45.0.10/24"], up: true, key: "/etc/wireguard/wg-nested.key", port: "51821", peer: hubKey, endpoint: "10.232.2.11:51820", allowed: "10.45.0.0/24",
+        dns: ["10.45.0.1"], domains: ["~nested-dev", "~nested-prod"] });
       const again = f.run("start");
       assert(again.ok, again.output);
       assertEquals(again.changed, 0);
       assertEquals(f.calls(), [...startReads, "incus list --format csv --columns ns", "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key", "test -s /etc/wireguard/wg-nested.key",
-        "incus exec nested-gateway -- wg show orbit public-key", "wg show wg-nested", "ip -j addr show dev wg-nested", ...reachCalls]);
+        "incus exec nested-gateway -- wg show orbit public-key", "wg show wg-nested", "ip -j addr show dev wg-nested", ...tunnelDnsReads, ...reachCalls]);
     } finally {
       f.cleanup();
     }
@@ -604,6 +611,7 @@ Deno.test({
         "incus exec nested-gateway -- wg show orbit public-key",
         "wg show wg-nested",
         "ip -j addr show dev wg-nested",
+        ...tunnelDnsReads,
         ...reachCalls,
         ...readyCalls,
         // The pinned shape tools in the outer container, after base: the seed after this phase holds them.
@@ -756,6 +764,7 @@ Deno.test({
         "incus exec nested-gateway -- wg show orbit public-key",
         "wg show wg-nested",
         "ip -j addr show dev wg-nested",
+        ...tunnelDnsReads,
         ...reachCalls,
         // base may hold an older schema than the checkout: the reset waits for the state mounts (no Club key here, so no Swamp state)
         // and migrates forward; nothing was due here, so no restart.
@@ -861,7 +870,8 @@ Deno.test({
 // The three nested containers of the first inner fleet as they run (read from Instance 2454 on 2026-11-13, without volatile keys and
 // cloud-init data), with the `club-key` device as the key move to /run sets it. step8/runbook.sh built them by hand.
 const live = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-live.json", import.meta.url)));
-const tunnelUp = { addresses: ["10.45.0.10/24"], up: true, key: "/etc/wireguard/wg-nested.key", port: "51821", peer: hubKey, endpoint: "10.232.2.11:51820", allowed: "10.45.0.0/24" };
+const tunnelUp = { addresses: ["10.45.0.10/24"], up: true, key: "/etc/wireguard/wg-nested.key", port: "51821", peer: hubKey, endpoint: "10.232.2.11:51820", allowed: "10.45.0.0/24",
+  dns: ["10.45.0.1"], domains: ["~nested-dev", "~nested-prod"] };
 const writes = (calls: string[]) => calls.filter((call) => / config (set|device) | file push | snapshot | stop /.test(call));
 // deno-lint-ignore no-explicit-any
 const withStatus = (status: string): Record<string, any> =>

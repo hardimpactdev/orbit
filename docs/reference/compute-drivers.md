@@ -417,7 +417,7 @@ Artifact downloads keep their separate policy: a 600-second total cap per attemp
 
 Node convergence uses the same four-attempt backoff for snapshot indexes and package downloads, with 15-second transport timeouts. A simple loop retries only explicit HTTP 5xx or connection-reset fetch failures. APT’s own retries stay disabled because they retry some HTTP 4xx and miss some HTTP 5xx. An unsigned-repository message caused by the same failed release fetch does not suppress the retry. Authentication, digest, package, and mixed failures stop immediately.
 
-Git build watch retries upstream 5xx and connection failures with four attempts, a 15-second request timeout, and waits of 10, 20, and 30 seconds. Its `check` job is an advisory update signal, not a required merge check; persistent failures remain visible. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
+Git build watch retries upstream 5xx and connection failures with four attempts, a 15-second request timeout, and waits of 10, 20, and 30 seconds. The whole `check` job has a 10-minute timeout across all pages and retries; the separate publishing job has a 5-minute timeout and creates issues without an assignee. Its `check` job is an advisory update signal, not a required merge check; persistent failures remain visible. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
 
 | Failure | Required diagnostic |
 | --- | --- |

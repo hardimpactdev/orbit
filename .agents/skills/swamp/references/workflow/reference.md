@@ -95,11 +95,38 @@ modifying, or removing a schedule takes effect without restart.
 - Webhook runs have their own limit, `--max-concurrent-webhook-runs <n>`
   (default 1); unlike schedules, deliveries to the same route may overlap. See
   [execution-semantics.md](references/execution-semantics.md#webhook-delivery)
-- No catch-up: missed schedules while serve was down are not fired on startup
+- Missed fires: serve records each schedule's last missed fire (serve was down,
+  paused, or previous run still going) as `lastMissed` in `/api/v1/health`, the
+  dashboard and `swamp workflow schedule list`. Lost fires in a row for the same
+  reason add to its `count`; the next fire that starts a run, or a cron change,
+  clears it. It does not fire a missed schedule unless the trigger opts in to
+  catch-up (below)
 - Use `--no-schedule` on `swamp serve` to disable scheduled execution
 - The serve dashboard and `/api/v1/health` (needs a token unless auth mode is
   `none`) report scheduled workflows, next fire times and queue state per
   schedule: `queued`, `oldestQueuedAt`, `lastQueueDelayMs`
+
+### Catch-up
+
+Opt in to firing a schedule missed while serve was down:
+
+```yaml
+trigger:
+  schedule: "0 9 1 * *"
+  catchUp:
+    policy: latest # none (default) | latest
+    maxDelay: 6h # required with latest; at most 31d
+```
+
+On startup serve fires the most recent missed slot once, only if it is at most
+`maxDelay` old; it never replays a backlog, and a paused schedule is not caught
+up. The run is tagged `swamp.trigger.catchUp: "true"` and
+`swamp.trigger.scheduledFor: <slot>`; check `run.tags` to decline. A schedule's
+first start after an upgrade only starts tracking, so nothing is caught up then.
+For an extension workflow, set it as an override:
+`swamp workflow trigger set <name> --schedule "<cron>" --catch-up latest --catch-up-max-delay 6h`.
+`trigger set` replaces the whole override, so repeat any `--input` (and
+`--catch-up`) you want to keep.
 
 ### Trigger inputs
 
@@ -272,11 +299,22 @@ inputs match required method/workflow arguments.
    that default. Other dynamic CEL references (`${{ ... }}`) in behavior names
    pass with the note `(target resolved at run time, not checked)`, and those in
    workflow names are skipped.
+9. Expressions in jobs type-check against swamp's CEL — a call to a function
+   swamp does not provide, or with arguments no overload accepts
+   (`${{ range(1, 9) }}`, `${{ 'a' + 1 }}`), fails validation, since every run
+   of it would. Variables check as `dyn`, so a type error that depends on a
+   runtime value is still caught only by the run.
 
 ```bash
 swamp workflow validate my-workflow --json
-swamp workflow validate --json  # Validate all
+swamp workflow validate --json  # Validate the repo's own workflows
 ```
+
+Without a name, validate checks the repo's own workflows: `workflows/`,
+`extensions/workflows/` and local extension sources. Workflows bundled in pulled
+extensions are skipped, since their behavior names are the extension author's
+placeholders, and counted in `pulledWorkflowsSkipped` (log mode prints a
+`Skipped:` line). Name a pulled workflow to validate it.
 
 **Output shape (single):**
 
@@ -360,6 +398,14 @@ stdin item.
 }
 ```
 
+Each data artifact carries its `attributes` until the run's artifacts pass 16
+MiB of stored JSON; later artifacts carry `attributesOmitted: true` instead. A
+nested workflow step counts only its child's merged `outputs` against the
+budget, not the child's artifacts. A step whose merged `outputs` left any
+resource or child step out carries `outputsPartial: true`. The same budget
+applies to `swamp workflow history get --json`; `swamp workflow history outputs`
+reads every resource. Read the omitted content with `swamp data get`.
+
 ## Workflow History
 
 ### Search Run History
@@ -414,11 +460,19 @@ rather than erroring.
       "workflowName": "my-workflow",
       "status": "succeeded",
       "startedAt": "2025-01-15T10:30:00Z",
-      "duration": 5
+      "duration": 5,
+      "inputs": { "commit": "b3ff3a8a" },
+      "inputsOmitted": ["payload"]
     }
   ]
 }
 ```
+
+An input whose JSON value is over 1 KiB (or past 8 KiB for the run) is left out
+of a search row's `inputs` and named in `inputsOmitted` instead; this applies to
+`workflow run search` too. Read the full value with
+`swamp workflow history get <runId> --json`. `--input` and `--filter` still
+match omitted values exactly.
 
 ### Get Latest Run
 
@@ -476,7 +530,10 @@ A run whose process was killed (for example by a second Ctrl-C) stays `running`
 with a dead pid. `swamp run doctor --fix` or
 `swamp workflow recover <workflow> --run <id>` marks it `interrupted`, with the
 in-flight step `unknown`, and marks the step's method run `cancelled` in
-`swamp behavior history`. Then resume it with `swamp workflow resume`.
+`swamp behavior history`. Then resume it with `swamp workflow resume`. A run
+`swamp serve` drove is continued by serve itself when that is safe (see
+Auto-continue); `swamp run history` shows `[CONTINUED]` beside it, and an
+interrupted run's reason beside its status.
 
 The history output shows the `KIND` column as `workflow` or `method`, with the
 workflow name or behavior/method name respectively.
@@ -780,6 +837,9 @@ A step can declare a `guard` — a CEL expression evaluated before execution. Wh
 the guard evaluates truthy, the step is skipped (already done). When falsy or
 absent, the step executes normally.
 
+A truthy guard means **skip**, not run: a guard that finds the data it looks for
+skips the step. A skipped step is not proof the guard matched nothing.
+
 Guard is the workflow-level primitive for idempotent step execution, enabling
 safe workflow resume, re-run, and cron scheduling without re-executing completed
 steps.
@@ -841,7 +901,7 @@ expanded iteration evaluates its own guard independently:
 - name: read-plate
   forEach:
     item: well
-    in: ${{ range(1, 97) }}
+    in: ${{ ["A1", "A2", "A3"] }}
   guard: ${{ data.latest("plate-reader", self.well) }}
   task:
     type: behavior
@@ -854,7 +914,15 @@ fails the step with a `step_failed` event containing the error message.
 
 **Events and rendering:** Guard-skipped steps emit a `step_skipped` event with
 `reason: "guarded"` (vs `"dependency"` for dependency skips). The console
-renderer shows `skipped <step> (guarded)` to distinguish from dependency skips.
+renderer shows `skipped <step> (guarded) · guard: <expr> → <result>`, where
+`<result>` is what the guard returned (always truthy, since only a truthy guard
+skips). A list or map result shows as a count such as `[3 items]`.
+
+A forEach step whose `forEach.in` resolves to no items emits `step_skipped` with
+`reason: "empty_collection"` and `collectionExpression`, and the console shows
+`skipped <step> (empty forEach) · in: <expr>`. The step stays in the run as
+`skipped`, so a dependent with `condition: { type: skipped }` runs and one with
+`succeeded` is skipped as a dependency.
 
 ## Step Task Types
 
@@ -924,6 +992,10 @@ swamp workflow resume  <workflow-name> --run <run-id> --input authKeyName=deploy
 swamp workflow approvals  # list pending approvals and expired gates with run IDs
 ```
 
+For a decision prepared earlier, such as by a script, pass the gate's
+`suspendedAt` from `swamp workflow approvals --json` as `--suspended-at`. It is
+refused with `gate_reopened` if a resume has asked the gate again since.
+
 A resume `--input` adds inputs the run does not have, such as the vault key name
 of a credential minted during the gate. A value the run already has cannot
 change (`--json` code `resume_input_immutable` locally, `workflow_resume_failed`
@@ -946,12 +1018,14 @@ added or moved, or a job added, renamed or removed); the run stays suspended
 until `swamp workflow cancel <wf> --run <id>`, or, for a run `swamp serve`
 started, `swamp workflow cancel --run <id> --server <url>`. The serve cancel
 also clears a serve-started run whose approval gate has timed out, and a run
-left `running` by a serve process that has died. A gate past its `timeout` can
-no longer be approved or rejected: `swamp workflow approvals` lists it in a
-separate expired section with the cancel command for its run (an `expired` array
-in `--json`), and the dashboard's Approvals & Signals view has a Cancel button
-for it. If it answers that the run was not cancelled, the reply says what still
-holds it. See
+left `running` by a serve process that has died. It needs `run` on the run's
+workflow, or admin; a caller refused gets the same "No cancellable" reply as a
+missing run, and `workflow approvals --json` says per run in `canCancel`. A gate
+past its `timeout` can no longer be approved or rejected:
+`swamp workflow approvals` lists it in a separate expired section with the
+cancel command for its run (an `expired` array in `--json`), and the dashboard's
+Approvals & Signals view has a Cancel button for it. If it answers that the run
+was not cancelled, the reply says what still holds it. See
 [execution-semantics.md](references/execution-semantics.md#suspension-and-resume).
 
 **`wait_for_signal`** - Suspend the workflow until a JSON message arrives or a
@@ -1141,6 +1215,16 @@ autoResume: true
 jobs: [...]
 ```
 
+**Auto-continue after a restart (serve only):** when serve crashes, is killed,
+or a shutdown cuts a run off, the next boot (or a new team leader) continues the
+interrupted run by itself under the same run id, if every step that was cut off
+has a `guard`. A run that stopped between steps also qualifies. Guards decide
+whether each cut-off step runs again. A run is left `interrupted` for
+`swamp workflow recover` when a cut-off step has no guard, the definition
+changed, it was continued 3 times in a row with no step finishing, it was not
+started through serve, or the workflow sets `autoContinue: false` (default on;
+separate from `autoResume`). `swamp workflow history get` names the reason.
+
 A fresh `workflow run` automatically supersedes (cancels) prior suspended runs
 of the same workflow whose resolved inputs match. Use `--no-supersede` to keep
 prior runs alive.
@@ -1312,7 +1396,7 @@ Two moments, and which one applies decides what an expression can see.
 | `task.inputs`, assert `task.message` | Step time **when** they read `data.*`                             | Same                                      |
 | `task.behavior`, `task.behaviorName` | Step time when they read `data.*` **or** their step has a `guard` | Same                                      |
 | `trigger.inputs`                     | Trigger fire time                                                 | The webhook payload                       |
-| `forEach.in`                         | Job start                                                         | Data available when the job begins        |
+| `forEach.in`                         | Job start                                                         | Data from earlier jobs, not this job      |
 | `run.*`, `self.*`                    | Step time                                                         | The run record, the forEach variable      |
 
 The null-safe form applies to **same-run** data, not only to data from a prior
@@ -1442,7 +1526,8 @@ swamp workflow run provision-and-verify --junit --out test-results.xml --fail-on
 
 ## Working with Vaults
 
-Access secrets using vault expressions. See **swamp-vault** skill for details.
+Access secrets using vault expressions. See the [vault guide](../vault/guide.md)
+for details.
 
 ```yaml
 apiKey: ${{ vault.get(vault-name, secret-key) }}
@@ -1513,16 +1598,16 @@ End-to-end workflow creation:
 5. **Fix** any errors and re-validate
 6. **Run**: `swamp workflow run my-task`
 
-## When to Use Other Skills
+## Related Guides
 
-| Need                       | Use Skill               |
-| -------------------------- | ----------------------- |
-| Create/run behaviors       | `swamp-model`           |
-| Vault management           | `swamp-vault`           |
-| Repository structure       | `swamp-repo`            |
-| Manage behavior data       | `swamp-data`            |
-| Create custom behaviors    | `swamp-extension`       |
-| Understand swamp internals | `swamp-troubleshooting` |
+| Need                       | Guide                                          |
+| -------------------------- | ---------------------------------------------- |
+| Create/run behaviors       | [behavior](../behavior/guide.md)               |
+| Vault management           | [vault](../vault/guide.md)                     |
+| Repository structure       | [repo](../repo/guide.md)                       |
+| Manage behavior data       | [data](../data/guide.md)                       |
+| Create custom behaviors    | [extension](../extension/guide.md)             |
+| Understand swamp internals | [troubleshooting](../troubleshooting/guide.md) |
 
 ## References
 

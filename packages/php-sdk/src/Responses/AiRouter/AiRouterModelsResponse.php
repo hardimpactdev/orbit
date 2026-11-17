@@ -34,7 +34,7 @@ final readonly class AiRouterModelsResponse
         }
 
         $this->models = $models;
-        $this->requestId = GatewayRequestId::fromTransport($requestId) ?? $requestId;
+        $this->requestId = GatewayRequestId::fromTransport($requestId) ?? '';
     }
 
     /**

@@ -3,7 +3,7 @@ title: "Contributing to Orbit"
 sidebarTitle: "Contributor guide"
 description: "Prepare architecture and documentation, build a feature, and submit a complete pull request."
 covers:
-  - .agents/skills/reviewing-pull-requests/references/test-*.md
+  - "{.agents/skills/{reviewing-pull-requests/references/test-*.md,swamp/**,swamp-getting-started/**,swamp-source.json},tools/test_ci_swamp_skills.py}"
   - "{composer.json,vet.json,.gitattributes,.githooks/pre-push}"
   - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
@@ -311,6 +311,55 @@ The skills in the repository guide an agent through the work.
 For focused work, use [writing-documentation](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md), [verifying-cli-output](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md), [verifying-web-ui](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md), or [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md). CLI work follows the [CLI design standard](/reference/cli-ux) and the [command vocabulary](/reference/cli-command-vocabulary). A web UI change follows [web verification](/reference/web-verification).
 
 An independent reviewer can review the proposed ADRs and documentation before coding, on request.
+
+### Refresh the bundled Swamp skills
+
+The vendored `swamp` and `swamp-getting-started` skills follow `swampVersion` in `swamp/.swamp.yaml`. Their [source manifest](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/swamp-source.json) records the full upstream commit, import method and SHA-256 of each bundled file. Keep Orbit changes outside these two directories, including fixes for links that are also broken upstream.
+
+The original import (`916ef2ac5e93f7caeb0041b6322c09b08ca28b9e`) ran `swamp repo upgrade --tool claude --tool codex`, then committed the installed user skills under `.agents/skills`. Upstream's `SkillAssets.copySkillsTo` copies the files listed in `BUNDLED_SKILLS` byte-for-byte from `.claude/skills`; it excludes eval fixtures. Refresh that same payload without upgrading unrelated repository metadata or user configuration:
+
+1. Clone `https://github.com/swamp-club/swamp.git` into `.amp/in/orb-backup/swamp-upstream` and check out the full commit matching the runtime pin. Verify its full SHA before continuing.
+2. From the Orbit root, run this Python code to replace both vendored directories and record hashes from upstream.
+
+```python
+import hashlib
+import json
+from pathlib import Path
+import re
+import shutil
+import subprocess
+
+upstream = Path('.amp/in/orb-backup/swamp-upstream')
+commit = subprocess.check_output(['git', '-C', str(upstream), 'rev-parse', 'HEAD'], text=True).strip()
+version = re.search(r'^swampVersion: (\S+)$', Path('swamp/.swamp.yaml').read_text(), re.M)[1]
+assert commit.startswith(version.split('-sha.')[1])
+source = upstream / 'src/infrastructure/assets/skill_assets.ts'
+bundled = source.read_text().split('const BUNDLED_SKILLS:', 1)[1].split('\n];', 1)[0]
+paths = sorted(re.findall(r'relativePath:\s*"([^"]+)"', bundled))
+assert {path.split('/')[0] for path in paths} == {'swamp', 'swamp-getting-started'}
+skills = Path('.agents/skills')
+for name in ('swamp', 'swamp-getting-started'):
+    shutil.rmtree(skills / name)
+hashes = {}
+for path in paths:
+    content = (upstream / '.claude/skills' / path).read_bytes()
+    target = skills / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(content)
+    hashes[path] = hashlib.sha256(content).hexdigest()
+manifest = {
+    'repository': 'https://github.com/swamp-club/swamp',
+    'commit': commit,
+    'swampVersion': version,
+    'method': 'SkillAssets.copySkillsTo: BUNDLED_SKILLS from .claude/skills, byte-for-byte; see docs/contributor-guide.md#refresh-the-bundled-swamp-skills',
+    'files': hashes,
+}
+(skills / 'swamp-source.json').write_text(json.dumps(manifest, indent=2) + '\n')
+```
+
+3. Review the upstream diff, including scripts and any MCP configuration, and confirm every imported file matches that commit. Run `python3 -m unittest discover -s tools -p test_ci_swamp_skills.py`.
+
+CI runs this read-only drift check in its existing CI policy suite, without a Swamp account, network access or an upstream checkout. It rejects content changes, missing or extra files, and a runtime pin that differs from the manifest. The manifest is a reviewed snapshot, not an independent upstream lookup. A runtime update requires a fresh import and manifest in the same change.
 
 ## Report a problem
 
