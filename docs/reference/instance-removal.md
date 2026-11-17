@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,InstanceRemovalKind.php,InstanceUnregisterProjection.php,Removal/**,InstanceRemovalReaper.php}
   - apps/gateway/app/Console/Commands/ReapFailedInstanceRemovalsCommand.php
   - apps/gateway/app/{Http/Requests/Instances/RemoveInstanceRequest,Models/InstanceRemoval,Models/InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_03_01_000000_add_kind_to_instance_removals,2027_03_02_000000_allow_ci_only_proof_copy_removals,2027_03_04_000000_add_reaper_retries_to_instance_removals}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_03_01_000000_add_kind_to_instance_removals,2027_03_02_000000_allow_ci_only_proof_copy_removals,2027_03_04_000000_add_reaper_retries_to_instance_removals,2027_03_05_000000_add_start_refusal_to_instance_removals}.php
   - apps/cli/app/Commands/Instances/{DestroyInstanceCommand,UnregisterInstanceCommand}.php
   - swamp/{workflows/workflow-operation-instance-destroy.yaml,workflows/workflow-operation-instance-unregister.yaml,ansible/instance-container-destroy.yml}
 ---
@@ -151,6 +151,10 @@ A failed removal does not wait for a person. Every five minutes, without overlap
 
 The reaper waits after each failure: 5 minutes, 15 minutes, 1 hour, then every 6 hours. It counts from the removal record's last change, which a failed run and a refused start both make. A failed removal that no Operation carries is retried too, counted from the same change. The removal record keeps the count in `retry_count`. A start that admission refuses counts as a failed retry, so a removal that admission refuses for good becomes stuck too.
 
+A refused start is never only in the Gateway log. The removal record keeps the refusal's error code in `start_refusal`. The Gateway records one Activity entry `instance.removal_retry_refused` with that error code, and Doctor reports `instance.removal_retry_refused` on the Instance with the code. A start that fails with another error counts and shows the same way, with the code `instance.removal_retry_failed`. The next admitted start clears the code, and the issue goes.
+
+A removal that holds no saved intent, such as an older one from before the intent was kept on every removal, cannot start again: admission replays the saved intent and refuses with `instance.removal_conflict`. The reaper never starts such a removal. On its first pass it records `instance.removal_intent_missing` and reports the removal stuck at once.
+
 The operator turns the reaper off with `ORBIT_INSTANCE_REMOVAL_REAPER=false` in the Gateway's environment; its scheduled pass then does nothing. It is on by default. A HOLD on Operations is a convention between people, not a Gateway setting: use this switch to stop new reaper starts during one.
 
 The reaper starts nothing when:
@@ -160,7 +164,7 @@ The reaper starts nothing when:
 - the Instance has an open transfer;
 - an Operation of the Instance runs, or one holds the Instance lock, such as a create.
 
-After 3 failed reaper starts, or at once for a removal that failed with `instance.removal_dataset_taken`, Doctor reports `instance.removal_stuck` on the Instance in the `instance` family, with the failed step and the error code. The Gateway also records one Activity entry `instance.removal_stuck`. The reaper keeps trying every 6 hours, except a removal with `instance.removal_dataset_taken`: it never starts that one again, because a person must look at the dataset first. The issue goes when the Instance is gone.
+After 3 failed reaper starts, or at once for a removal that failed with `instance.removal_dataset_taken` or that holds no saved intent, Doctor reports `instance.removal_stuck` on the Instance in the `instance` family, with the failed step and the error code, and the last refused start's code if there is one. The Gateway also records one Activity entry `instance.removal_stuck`. The reaper keeps trying every 6 hours, except a removal with `instance.removal_dataset_taken`: it never starts that one again, because a person must look at the dataset first. The issue goes when the Instance is gone.
 
 ## Available placements
 
