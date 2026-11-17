@@ -183,10 +183,14 @@
       changed_when: true
     # Nothing may publish an image with a sudo path but `agent`'s grant (ADR 0268, amendment): no `ubuntu` user, nothing in sudoers.d
     # but its README and `orbit-agent`, which holds exactly the grant, and no member of the groups `sudo` or `admin`; sudo works for
-    # `agent` and not for `orbit`. Both images have that one path. `incus-admin` holds `agent` alone in the nested-fleet image, and
+    # `agent` and not for `www-data`. Both images have that one path. `incus-admin` holds `agent` alone in the nested-fleet image, and
     # the normal image has no such group.
+    # Nor an image with the wrong accounts (ADR 0268, second amendment): the app account is the stock `www-data`, uid and gid 33, with
+    # `agent` in its group. The normal image has no user `orbit` and no group `work` or gid 1000; the nested-fleet image keeps `orbit`
+    # (uid 1000) and `work` (gid 2760) for its inner fleet (InstanceHostIntent::OrbitUid and WorkGid), and `www-data` is in `work`, the
+    # workspace's group there.
     # visudo is judged by its exit code alone: visudo-rs ignores -q and prints "parsed OK" on stdout for a clean file.
-    - name: Read the sudo paths of the image
+    - name: Read the accounts and the sudo paths of the image
       ansible.builtin.command:
         argv: "{{ in_build + ['sh', '-c', image_audit + (image_nested_audit if instance_variant.image.incus is defined else image_normal_audit)] }}"
       vars:
@@ -197,17 +201,24 @@
           test "$(cat /etc/sudoers.d/orbit-agent)" = 'agent ALL=(ALL:ALL) NOPASSWD: ALL' || echo agent:grant;
           visudo -cqf /etc/sudoers.d/orbit-agent >/dev/null || echo agent:syntax;
           runuser -u agent -- sudo -n true || echo agent:sudo;
-          runuser -u orbit -- sudo -n true 2>/dev/null && echo orbit:sudo;
+          runuser -u www-data -- sudo -n true 2>/dev/null && echo www-data:sudo;
+          [ "$(id -u www-data 2>/dev/null):$(id -g www-data 2>/dev/null)" = 33:33 ] || echo www-data:ids;
+          id -nG agent | tr ' ' '\n' | grep -qx www-data || echo agent:group;
         image_nested_audit: >-
-          getent group incus-admin | grep -qx 'incus-admin:[^:]*:[0-9]*:agent' || echo incus-admin:unexpected; true
+          getent group incus-admin | grep -qx 'incus-admin:[^:]*:[0-9]*:agent' || echo incus-admin:unexpected;
+          [ "$(id -u orbit 2>/dev/null)" = 1000 ] || echo orbit:ids;
+          [ "$(getent group work | cut -d: -f3)" = 2760 ] || echo work:gid;
+          id -nG www-data | tr ' ' '\n' | grep -qx work || echo www-data:work; true
         image_normal_audit: >-
-          getent group incus-admin >/dev/null && echo incus-admin:unexpected; true
+          getent group incus-admin >/dev/null && echo incus-admin:unexpected;
+          getent passwd orbit >/dev/null && echo user:orbit;
+          for group in orbit work 1000; do getent group "$group" >/dev/null && echo "group:$group"; done; true
       register: image_sudo
       changed_when: false
-    - name: Require an image without a sudo path
+    - name: Require the image's accounts and its one sudo path
       ansible.builtin.assert:
         that: image_sudo.stdout | trim == ''
-        fail_msg: "instance.host_unavailable: the image keeps a sudo path: {{ image_sudo.stdout_lines | join(', ') }}"
+        fail_msg: "instance.host_unavailable: the image's accounts or sudo paths are wrong: {{ image_sudo.stdout_lines | join(', ') }}"
         quiet: true
     - name: Stop and publish the build container
       ansible.builtin.command: { argv: "{{ ['incus', '--project', instance_variant.project] + item }}" }

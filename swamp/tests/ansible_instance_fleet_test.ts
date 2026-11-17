@@ -48,7 +48,9 @@ const sizeFiles = {
 };
 /** The fleet's own apt file: Orbit's Node plays own `90orbit-package-cache` and never touch it. */
 const aptPath = "/etc/apt/apt.conf.d/95orbit-nested-egress";
-const egress = { [aptPath]: aptFile, "/etc/environment": environmentFile };
+/** dockerd reads no /etc/environment: a Database server's image pull on a nested Node needs the proxy in its own unit drop-in. */
+const dockerDropIn = "/etc/systemd/system/docker.service.d/50-inner-fleet-proxy.conf";
+const egress = { [aptPath]: aptFile, "/etc/environment": environmentFile, [dockerDropIn]: dropIn };
 /** Git in every nested container trusts the checkout, which `agent` owns (ADR 0268): without it Git as `orbit` stops with "dubious ownership". */
 const gitFiles = { "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n" };
 /** Every file the fleet rules own in each nested container: the egress files, the size files, then the Git file. */

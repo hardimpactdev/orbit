@@ -232,7 +232,7 @@
   when: phase == 'processes'
 - name: Push the private Schedule command
   ansible.builtin.command:
-    argv: '{{ incus_project + [''file'', ''push'', ''--create-dirs'', ''--uid'', ''0'', ''--gid'', ''1000'', ''--mode'', ''0640'', ''-'', container.name
+    argv: '{{ incus_project + [''file'', ''push'', ''--create-dirs'', ''--uid'', ''0'', ''--gid'', ''33'', ''--mode'', ''0640'', ''-'', container.name
       ~ ''/etc/orbit/schedules/'' ~ schedule.id ~ ''.sh''] }}'
     stdin: |
       # X-Orbit-Schedule-ID={{ schedule.id }}

@@ -233,3 +233,30 @@ it('captures differing vpn DNS states for a removal exactly when the vpn Node ho
         expect($outcome['visits'])->toBe($outcome['holds'], $domain);
     }
 });
+
+it('answers the TLD of an app-prod Node outside every Cluster, so a production preview Route under it writes no record', function (): void {
+    $fleet = liveShapedDnsFleet();
+    $prod = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'app-prod', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.3', 'wireguard_ip' => '10.44.0.3', 'user' => 'orbit', 'cluster_id' => null, 'wireguard_public_key' => 'app-prod-key', 'tld' => 'nested-prod']));
+    NodeRole::query()->create(['node_id' => $prod->id, 'role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    Route::query()->create(['kind' => 'app', 'project_id' => $fleet['project']->id, 'node_id' => $prod->id, 'provenance' => 'explicit',
+        'publication' => 'private', 'domain' => 'shop.nested-prod', 'status' => 'pending']);
+    $sites = [...liveShapedDnsSites($fleet), new DevelopmentSite($prod->id, '10.44.0.3', 'shop-nested-prod', '/srv/shop', '/srv/shop/public', null, 'shop.nested-prod')];
+    $records = app(RoutePublicationSites::class)->render(collect($sites), static fn (): string => app(DevelopmentDnsConfigRenderer::class)->render(), complete: true);
+
+    expect($records)->toContain('address=/.nested-prod/10.44.0.3')
+        ->and($records)->toContain('local=/nested-prod/')
+        ->and($records)->not->toContain('host-record=shop.nested-prod');
+});
+
+it('gives an app-prod Node inside a Cluster no TLD rule, as the live production Node keeps its records', function (): void {
+    $fleet = liveShapedDnsFleet();
+    $cluster = Cluster::query()->create(['name' => 'prod', 'tld' => null]);
+    $cluster->forceFill(['state' => ClusterState::Active])->save();
+    $prod = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'app-prod', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.3', 'wireguard_ip' => '10.44.0.3', 'user' => 'orbit', 'cluster_id' => $cluster->id, 'wireguard_public_key' => 'app-prod-key', 'tld' => 'prod']));
+    NodeRole::query()->create(['node_id' => $prod->id, 'role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $records = app(RoutePublicationSites::class)->render(collect(liveShapedDnsSites($fleet)), static fn (): string => app(DevelopmentDnsConfigRenderer::class)->render(), complete: true);
+
+    expect($records)->not->toContain('/prod/');
+});
