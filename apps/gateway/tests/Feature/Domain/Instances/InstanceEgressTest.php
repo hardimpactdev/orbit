@@ -51,6 +51,37 @@ describe('the Instance egress proxy', function (): void {
             ->and($ruleset)->not->toContain('ip6 daddr');
     });
 
+    // docs/reference/development-containers.md#instance-host-in-the-fleet: a fleet Node goes out only through the fleet's proxy.
+    it('forwards everything to the parent on an Instance fleet Node and never goes direct, and renders a real Node as before', function (): void {
+        $parent = ['host' => '10.253.0.1', 'port' => 3128];
+        $real = InstanceEgress::squid('10.253.1.1', '10.253.1.0/24', ['orbit']);
+        $fleet = InstanceEgress::squid('10.253.1.1', '10.253.1.0/24', ['orbit'], $parent);
+        $rules = array_values(array_filter(explode("\n", $fleet), static fn (string $line): bool => str_starts_with($line, 'http_access')));
+
+        expect($fleet)->toEndWith("http_access deny all\n\ncache_peer 10.253.0.1 parent 3128 0 no-query no-digest default\nnever_direct allow all\n")
+            // No rule looks the destination up, and the private names are still refused before Squid forwards anything.
+            ->and($rules)->toBe(['http_access deny !bridge', 'http_access deny manager', 'http_access deny private_name', 'http_access allow bridge',
+                'http_access deny all'])
+            ->and(str_replace("http_access deny to_localhost\n", '', $real))->toBe(substr($fleet, 0, (int) strpos($fleet, "\ncache_peer")))
+            ->and($real)->not->toContain('cache_peer', 'never_direct')->toContain("http_access deny to_localhost\n")
+            ->and(InstanceEgress::squid('10.253.1.1', '10.253.1.0/24', ['orbit'], null))->toBe($real);
+    });
+
+    it('lets the proxy user reach exactly the parent\'s address and port on an Instance fleet Node, before any reject', function (): void {
+        $real = InstanceEgress::ruleset('orbitinst0', '10.253.1.1');
+        $fleet = InstanceEgress::ruleset('orbitinst0', '10.253.1.1', ['host' => '10.253.0.1', 'port' => 3128]);
+        $allow = "\t\tip daddr 10.253.0.1 tcp dport 3128 return\n";
+
+        expect(str_replace($allow, '', $fleet))->toBe($real)
+            ->and(substr_count($fleet, ' return'))->toBe(substr_count($real, ' return') + 1)
+            ->and(strpos($fleet, $allow))->toBeLessThan(strpos($fleet, 'fib daddr type local'))
+            ->and(strpos($fleet, $allow))->toBeGreaterThan(strpos($fleet, 'ct state != new return'))
+            ->and($real)->not->toContain('10.253.0.1')
+            ->and(InstanceEgress::for('orbitinst0', '10.253.1.1', '10.253.1.0/24', ['orbit']))->not->toHaveKey('parent')
+            ->and(InstanceEgress::for('orbitinst0', '10.253.1.1', '10.253.1.0/24', ['orbit'], ['host' => '10.253.0.1', 'port' => 3128])['parent'])
+            ->toBe(['host' => '10.253.0.1', 'port' => 3128]);
+    });
+
     it('names the proxy for units, incus exec and login shells, and keeps loopback and the forwarder off it', function (): void {
         $environment = InstanceEgress::environment('10.253.0.1');
         $intent = InstanceEgress::for('orbitinst0', '10.253.0.1', '10.253.0.0/24', ['orbit']);
