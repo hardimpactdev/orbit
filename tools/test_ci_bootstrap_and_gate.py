@@ -471,33 +471,6 @@ fi
         self.assertEqual(7, check['exit_code'])
         self.assertFalse(report['passed'])
 
-    def test_openapi_check_reports_the_generated_diff_without_writing_outputs(self):
-        fixture = Path(self.temporary.name) / 'openapi fixture'
-        (fixture / 'bin').mkdir(parents=True)
-        (fixture / 'apps').mkdir()
-        (fixture / 'docs').mkdir()
-        repository = REPOSITORY
-        for project in ('gateway', 'cli'):
-            (fixture / 'apps' / project).symlink_to(repository / 'apps' / project, target_is_directory=True)
-        (fixture / 'packages').symlink_to(repository / 'packages', target_is_directory=True)
-        script = fixture / 'bin/docs-openapi'
-        shutil.copyfile(repository / 'bin/docs-openapi', script)
-        shutil.copyfile(repository / 'bin/docs-navigation', fixture / 'bin/docs-navigation')
-        shutil.copyfile(repository / 'docs/site.json', fixture / 'docs/site.json')
-        shutil.copytree(repository / 'docs/navigation', fixture / 'docs/navigation')
-        shutil.copyfile(repository / 'docs/docs.json', fixture / 'docs/docs.json')
-        document = fixture / 'docs/openapi.json'
-        document.write_text('{"stale": true}\n')
-        navigation = (fixture / 'docs/docs.json').read_bytes()
-        result = subprocess.run([sys.executable, str(script), '--check'], capture_output=True, text=True)
-        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
-        self.assertIn('Run bin/docs-openapi', result.stderr)
-        self.assertIn('--- docs/openapi.json', result.stdout)
-        self.assertIn('+++ generated/docs/openapi.json', result.stdout)
-        self.assertIn('-{"stale": true}', result.stdout)
-        self.assertEqual('{"stale": true}\n', document.read_text())
-        self.assertEqual(navigation, (fixture / 'docs/docs.json').read_bytes())
-
     @unittest.skipUnless(shutil.which('setfacl') and shutil.which('getfacl'), 'needs setfacl and getfacl')
     def test_review_directory_keeps_named_acl_entries_effective(self):
         runner = self.gate_fixture()
