@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,task-check,test,ci-build-plan,ci-units,ci-delivery,ci-tree-receipt,ci-proof-eligibility,ci-proof-run,ci-proof-manual,ci-cache-ref,ci-runner-prerequisites,check-processes,php-build,swamp-shape-gate}
+  - bin/{review-check,task-check,test,ci-build-plan,ci-units,ci-delivery,ci-queue,ci-tree-receipt,ci-proof-eligibility,ci-proof-run,ci-proof-manual,ci-cache-ref,ci-runner-prerequisites,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -197,9 +197,21 @@ Each registry entry of a `self_hosted` file names the source of its cost:
 - When the unit ceiling cut such a case, it costs the larger of its cut time and the scaled cost.
 - A file or case that no pool run has reached keeps its hosted cost until a pool run measures it.
 
-Tool-dependent shards retain their limit, `self_hosted_shards` in `[budget]`. Both shard classes also share `runner_shards = 18`, the maximum number of planned fixture jobs in one run. Mandatory cases reserve capacity first; named capacity gaps stay last.
+### Shared fixture capacity
 
-After admission, a plan with more than one shard uses spare planned shards to spread its admitted units into shorter lanes, up to `spread_shards = 16`: two waves of the eight active runners. If admission needs more jobs, it retains them up to the eighteen-job limit. This keeps the small machinery canary in one job and does not admit extra gap cases or change costs. This admission bound does not reserve runners against other workflows: push-to-Required measurements include any queue delay. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
+The capacity model lives in `.github/ci/checks.toml`. `[runner-pool].slots` records the observed shared Sabre and Shark pool size for pressure reports, not an online inventory or a reservation. In `[budget]`, `runner_shards` bounds planned fixture jobs across both classes per run; `pr_shards` and `self_hosted_shards` also bound their respective classes. Mandatory cases reserve plan capacity first; named capacity gaps stay last. Selected work beyond those limits fails `Required checks`, with the named-gap exception below.
+
+After admission, a plan with more than one shard uses spare planned shards to spread admitted units into shorter lanes, up to `spread_shards`. This is a job-count target, not a number of waves or a concurrency guarantee. If admission needs more jobs, it retains them up to `runner_shards`. Spreading keeps the small machinery canary in one job and does not admit extra gap cases or change costs. Concurrent runs and other workflows can occupy the same runners; per-run admission does not provide fair scheduling between pull requests.
+
+The latest 200 main CI runs measured on 17 November 2026 span 14–17 November. The 135 ordinary fixture jobs with valid timestamps across 22 runs used ten distinct shared runners, `ci-sabre-1..5` and `ci-shark-1..5`. Their queue p90 was 329 seconds against 137 seconds running. Percentiles weight every job equally and use nearest rank. Earlier jobs in the window used GitHub-hosted runners and are measured separately.
+
+The main-only sample does not establish that changing spreading or per-PR admission would lower the queue: even runs with no more jobs than observed runners waited. Keep the current admission and spread targets until comparable concurrent-PR evidence supports a change.
+
+`bin/ci-queue --run-id ID` reads the GitHub Actions API and prints a per-attempt pressure report; `--attempt N` selects an earlier attempt. The PR and main Required jobs append it to their Actions summaries, even after a failed gate. Reporting is advisory: an API failure writes an unavailable summary without changing the gate result.
+
+The report separates ordinary shared, tool-dependent shared and GitHub-hosted fixture jobs. Queue time is job creation to start; run time is start to completion, including setup and teardown. Percentiles use nearest rank and only completed, assigned jobs with ordered timestamps; skipped, unassigned, unfinished and invalid records are counted separately, never as zero waits. Reruns can copy earlier execution timestamps into newly created job records, so invalid copied records are excluded.
+
+The report includes distinct runners and this run's peak running and queued fixture jobs against the pool model. It does not measure global runner occupancy, online capacity or other runs' queued jobs. A cancelled workflow that never reaches its reporting step has no automatic report; the script can inspect it later.
 
 `capacity_gap` in the `[budget]` of `checks.toml` lists the self-hosted files that cannot fit the self-hosted shards when selected; [ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) names each one with its reason. The planner admits a gap file after all other work. Its units that fit run. The plan summary names the rest: `Not run: <file>, N units, reason: capacity gap per ADR 0262`. They do not fail `Required checks`.
 
@@ -248,9 +260,9 @@ Such a change selects the fixtures whose own code it touches, plus the machinery
 
 A canary file must be a registered hosted fixture; `bin/ci-units plan` refuses a list that names an unregistered or `self_hosted` file, or that needs more than one shard.
 
-`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill two lanes per shard, each with at most 150 declared seconds, with at most eighteen fixture jobs across both shard classes per run.
+`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill two lanes per shard, each with at most 150 declared seconds, within the [shared fixture capacity](#shared-fixture-capacity).
 
-Ordinary fixture jobs run on the shared Sabre and Shark pool. Each host has six physical cores with twelve CPU threads and at most five active runners. Two runners have three CPU threads each; three runners have two each. The CPU sets are disjoint, each runner spans different physical cores, and its CPU quota matches its assigned thread count. Each runner has two fixture workers, for ten workers per host. Extra runner containers stay stopped with their listener and autostart disabled. Both classes count against the planner's eighteen-job bound; jobs beyond the ten active runners wait for a place.
+Each shared host has six physical cores with twelve CPU threads and at most five active runners. Two runners have three CPU threads each; three runners have two each. The CPU sets are disjoint, each runner spans different physical cores, and its CPU quota matches its assigned thread count. Extra runner containers stay stopped with their listener and autostart disabled. Fixture jobs beyond the available places wait; the [capacity model](#shared-fixture-capacity) is not a promise of free runners.
 
 Four concurrent Ansible units on a shared runner can exceed the unit ceiling even when each case passes alone. The complete fleet fixture names the CI workflow as an input, so workflow changes exercise every fleet case.
 
@@ -294,7 +306,7 @@ A fixture can declare `mandatory_cases`, mapping an input pattern from its `inpu
 
 The Instance host probe has a small required caller-contract fixture. It renders the shipped host profile, creates a probe through a local Incus stand-in, and runs the shipped nested guard before the probe starts. Changes to the guard or its host callers reserve this proof in the existing hosted shards. The guard's own unit tests cover accepted sizes and refusals; the caller proof checks that the profile and the guard agree. The long case that converges the host runs in a self-hosted fixture shard when its inputs change.
 
-A file that cannot fit even an otherwise empty ten-shard plan, or contains a unit above the lane budget, makes Required checks fail. Unmapped paths select the table’s default checks.
+A file that cannot fit even an otherwise empty plan within its class and shared shard limits, or contains a unit above the lane budget, makes Required checks fail unless it is a [named capacity gap](#shared-fixture-capacity). Unmapped paths select the table’s default checks.
 
 Migration runs in self-hosted fixture shards, split by phase into three files over the harness `swamp/tests/_support/instance_migrate.ts`: static checks, the phases short of a full move, and the full move. Every unit fits a lane. The host ACL and host build-list files and the FrankenPHP proxy fixture run there too.
 
