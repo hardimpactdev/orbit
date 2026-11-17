@@ -17,7 +17,7 @@ final readonly class AiRouterSecrets
 
     /**
      * One random anchor key per router origin. It keeps CLIProxyAPI's key list from ever becoming empty, which would open the router,
-     * and it is the real key the task VM guard swaps in upstream. It never leaves the Gateway and the router's Node.
+     * and it is the real key the router guard swaps in upstream. It never leaves the Gateway and the router's Node.
      */
     public function anchor(string $origin): string
     {
@@ -25,8 +25,8 @@ final readonly class AiRouterSecrets
     }
 
     /**
-     * The one placeholder key every task VM holds ([Credentials in task VMs](/reference/tasks#credentials-in-task-vms)). Only the
-     * guard accepts it; the router never has it. It changes only on an incident.
+     * The one placeholder key containers send through the Node model forwarder to the router guard. Only the guard accepts it;
+     * the router never has it. First use creates it even before router setup. It changes only on an incident.
      */
     public function task(): string
     {

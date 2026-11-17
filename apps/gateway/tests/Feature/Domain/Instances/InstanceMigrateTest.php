@@ -137,7 +137,14 @@ beforeEach(function (): void {
     app(ExtensionStore::class)->set('conn', true);
     app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
     {
-        public function assertReady(): void {}
+        public bool $ready = true;
+
+        public function assertReady(): void
+        {
+            if (! $this->ready) {
+                throw new ResourceOperationException('ai_router.disabled', 'The model router has no guard.', 409);
+            }
+        }
 
         public function origin(): string
         {
@@ -675,28 +682,27 @@ describe('migration without a default seed', function (): void {
             ->and($node->refresh()->t3_port_last)->toBe($lastPort);
     });
 
-    it('keeps the model-router prerequisite before the host default moves', function (): void {
+    it('admits without optional services and reports the model route captured at admission', function (bool $conn, bool $ready): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject();
         migrateCheckout($project, $node);
         $feature = migrateCheckout($project, $node, 'feature');
-        app()->forgetInstance(ContainerModelRoute::class);
-        app()->offsetUnset(ContainerModelRoute::class);
+        app(ExtensionStore::class)->set('conn', $conn);
+        app(ContainerModelRoute::class)->ready = $ready;
+        $expected = $ready ? ['ready' => true] : ['ready' => false, 'error_code' => 'ai_router.disabled', 'message' => 'The model router has no guard.'];
 
-        expect(containerRefusal(fn () => migrateStart($feature)))->toBe('operation.kind_unavailable')
-            ->and($feature->runtime()->exists())->toBeFalse();
-    });
+        $operation = migrateStart($feature);
 
-    it('refuses a non-default move while Conn is disabled before reserving its runtime', function (): void {
-        $node = containerDefaultNode();
-        $project = containerDefaultProject();
-        migrateCheckout($project, $node);
-        $feature = migrateCheckout($project, $node, 'feature');
-        app(ExtensionStore::class)->set('conn', false);
+        expect($operation->input['model_route'])->toBe($expected)
+            ->and($feature->runtime()->exists())->toBeTrue();
+        app(ContainerModelRoute::class)->ready = ! $ready;
+        $operation = migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false,
+            'commit' => str_repeat('e', 40), 't3' => migrateServer($feature)]);
 
-        expect(containerRefusal(fn () => migrateStart($feature)))->toBe('operation.kind_unavailable')
-            ->and($feature->runtime()->exists())->toBeFalse();
-    });
+        expect($operation->result['model_route'])->toBe($expected)
+            ->and($operation->status)->toBe(OperationStatus::Succeeded)
+            ->and(ConnEnvironment::query()->where('instance_id', $feature->id)->exists())->toBeTrue();
+    })->with(['ready route' => [true, true], 'Conn off' => [false, true], 'no model router guard' => [true, false], 'neither configured' => [false, false]]);
 
     it('gives a non-default Instance a T3 port and T3\'s files once its default has moved, with no clone source', function (): void {
         $node = containerDefaultNode();

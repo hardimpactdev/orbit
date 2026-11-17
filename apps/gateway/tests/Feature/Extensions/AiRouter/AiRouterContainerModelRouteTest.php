@@ -28,7 +28,7 @@ function routeNode(string $name, string $address): Node
         'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
 }
 
-/** The router on `services` (10.44.0.3) with its shared model guard. */
+/** The router on `services` (10.44.0.3), reached through the Node model forwarder. */
 function routeWorld(): Node
 {
     $services = routeNode('services', '10.44.0.3');
@@ -38,7 +38,7 @@ function routeWorld(): Node
     return $services;
 }
 
-it('gives containers the guard origin and placeholder key, never the router or anchor key', function (): void {
+it('gives the Node model forwarder the guard origin and containers one fixed placeholder key', function (): void {
     routeWorld();
     $route = app(ContainerModelRoute::class);
     $secrets = app(AiRouterSecrets::class);
@@ -63,11 +63,12 @@ it('refuses the route until a run applied the guard', function (): void {
 it('refuses the route while the ai-router is off', function (): void {
     $route = app(ContainerModelRoute::class);
 
-    expect(fn () => $route->assertReady())->toThrow(ResourceOperationException::class, 'ai-router')
+    expect(fn () => $route->assertReady())->toThrow(ResourceOperationException::class, 'Set up the ai-router extension with ai-router:setup first. Instance containers reach models through its guard.')
+        ->and($route->key())->toBe(app(AiRouterSecrets::class)->task())
         ->and(fn () => $route->origin())->toThrow(ResourceOperationException::class);
 });
 
-it('tears the ai-router down without revoking per-container keys', function (): void {
+it('tears the ai-router down while containers retain their placeholder key', function (): void {
     routeWorld();
 
     $status = app(DisableAiRouterAction::class)->execute();
