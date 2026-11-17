@@ -21,6 +21,10 @@ use std::time::{Duration, Instant};
 
 const RESIDUAL_ANON: u64 = 32 << 20;
 const UNMANAGED: &str = "instance.container_frozen_unmanaged";
+/// A sleep or discard waits this long for a stalled restore reader of its target, then refuses.
+const READER_BOUND: Duration = Duration::from_secs(10);
+/// The refusal when a stalled restore reader of the target outlives [`READER_BOUND`].
+pub const READERS_BUSY: &str = "instance.restore_readers_busy";
 
 fn invalid(message: &str) -> io::Error {
     io::Error::other(message)
@@ -145,6 +149,11 @@ pub struct Power {
     pool: pool::Pool,
     restore_bound: Duration,
     web_port: u16,
+    /// Restore items still running per target, stalled ones included.
+    readers: std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<pool::Readers>>>,
+    /// How long a sleep or discard waits for a target's stalled restore readers.
+    reader_bound: Duration,
+    reader: wake::Reader,
 }
 impl Power {
     /// The Node's power family with its one restore pool of `threads` threads, which the role sizes.
@@ -164,6 +173,9 @@ impl Power {
             pool: pool::Pool::new(threads),
             restore_bound: Duration::from_secs(2),
             web_port: 8080,
+            readers: std::sync::Mutex::default(),
+            reader_bound: READER_BOUND,
+            reader: wake::restore,
         })
     }
 
@@ -192,6 +204,7 @@ impl Power {
         if !valid_id(id) {
             return Err(invalid("unknown_target"));
         }
+        self.await_readers(id)?;
         let base = self.state.join(id);
         if !base.exists() {
             return Ok(());
@@ -207,6 +220,25 @@ impl Power {
             remove(&base.join(name))?;
         }
         File::open(base)?.sync_all()
+    }
+
+    fn readers(&self, id: &str) -> std::sync::Arc<pool::Readers> {
+        std::sync::Arc::clone(
+            self.readers
+                .lock()
+                .expect("restore readers map lock poisoned")
+                .entry(id.to_owned())
+                .or_default(),
+        )
+    }
+
+    /// Wait until no restore item of the target runs, so no freeze, scan, plan or discard overlaps a stalled reader of a wake.
+    fn await_readers(&self, id: &str) -> io::Result<()> {
+        if self.readers(id).wait_idle(self.reader_bound) {
+            Ok(())
+        } else {
+            Err(invalid(READERS_BUSY))
+        }
     }
 
     fn identity(&self, instance: &Instance) -> io::Result<Identity> {
@@ -322,6 +354,7 @@ impl Power {
         if !valid_id(id) {
             return Err(invalid("unknown_target"));
         }
+        self.await_readers(id)?;
         let started = Instant::now();
         let instance = api.instance(id)?.ok_or_else(|| invalid("unknown_target"))?;
         let base = self.state.join(id);

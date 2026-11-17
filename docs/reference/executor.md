@@ -298,7 +298,11 @@ The wake reads the Incus state first. A stopped container drops its plan and fai
 
 **Restore through the pool.** The plan's pages split into items of at most 1,024 pages. An item reads the process's pagemap and keeps only the pages that are not resident now. It calls `process_madvise(MADV_WILLNEED)` on them through the pidfd, so every swap read starts at once. Then it reads one byte of each page with `process_vm_readv`. The restore ends after 2 s. Items not started by then are skipped, and the result is `partial`.
 
-An item still running stops at its next deadline check, and the wake waits for it: no restore work outlives the frozen interval or the target's lock. An item whose pagemap cannot be read, or whose read fails or comes back short, also makes the result `partial`.
+An item still running stops at its next deadline check, and the wake waits for it for a grace of 250 ms.
+
+An item still inside `process_madvise` or `process_vm_readv` after the grace is stalled: neither call can be cancelled, and a page fault can wait on a pager or a device for good. The wake then reports `partial` with `instance.restore_stalled` and goes on: it unfreezes, closes the limits, checks readiness and releases the target's lock. This is safe. A late `process_vm_readv` only copies the target's pages into the executor's own buffer, and a late `MADV_WILLNEED` only starts a read into the page cache. Neither changes anything in the target.
+
+The stalled reader still guards its target. A later `sleep` or `discard` of the same target waits up to 10 s for it, so no freeze, scan or plan overlaps it. After that it fails `instance.restore_readers_busy`. The stalled target leaves the front of the restore queue, so other targets go on. Its worker stays in the syscall until it returns, so a stall leaves the pool short by that thread until then. An item whose pagemap cannot be read, or whose read fails or comes back short, also makes the result `partial`.
 
 **Unfreeze.** The executor unfreezes through the Incus local API, with the short freeze bounds of 5 s. It never unfreezes a replacement container, one with another incarnation. Then it waits up to 5 s for the kernel to thaw the cgroup. It never writes `cgroup.freeze` itself. A cgroup that stays frozen fails `instance.container_frozen_unmanaged`.
 
@@ -314,6 +318,8 @@ A container that already runs gets only the limits and readiness steps, and repo
 | --- | --- |
 | `done` | The container runs and answers. Every planned page that was not resident was read back, or the container already ran. |
 | `partial`, `instance.restore_deadline` | The container runs and answers, but the 2 s bound cut the restore. |
+| `partial`, `instance.restore_stalled` | The container runs and answers, but a restore read was still stuck in its syscall 250 ms after the bound. |
+| `failed`, `instance.restore_readers_busy` | A `sleep` or `discard` found a stalled restore read of a wake of the same target still running after 10 s. |
 | `partial`, `instance.restore_read_failed` | The container runs and answers, but a pagemap or a planned page could not be read. |
 | `partial`, `instance.restore_no_plan`, `instance.restore_plan_stale`, `instance.restore_plan_invalid` | The container runs and answers without a restore: there was no plan, an identity check failed, or the plan could not be read or broke a bound. |
 | `failed`, `instance.container_stopped` | The container is stopped; the run boots it. |

@@ -20,6 +20,7 @@ sequenceDiagram
   %%> - Rust records non-max swap limits and fsyncs; Incus API freeze; parallel whole-subtree capture includes pagemap bits 63 and 62
   %%> - Rust atomically fsyncs the plan; reclaim settles within 2 s; the unchanged 32 MiB residual policy applies; the marker comes last
   %%> - discard drops the Rust plan and limits after stop, destroy or fresh boot; no production flow switches in this slice
+  %%> - sleep and discard first wait up to 10 s for a stalled restore read of an earlier wake of the same target, else `instance.restore_readers_busy`
   CLI->>GW: instance:sleep INSTANCE
   %%> Command:
   %%> - `orbit instance:sleep INSTANCE`

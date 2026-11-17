@@ -49,6 +49,9 @@ fn fixture() -> (tempfile::TempDir, Power, Fake) {
             .clone(),
         restore_bound: Duration::from_secs(2),
         web_port: 0,
+        readers: std::sync::Mutex::default(),
+        reader_bound: Duration::from_secs(10),
+        reader: wake::restore,
     };
     let root = power.cgroups.join("lxc.payload.orbit-instances_instance-2");
     fs::create_dir_all(root.join("child")).expect("cgroup");
@@ -990,4 +993,90 @@ fn review_stale_limits_are_dropped_without_writing() {
     power.wake_with(&api, "2").expect("wake");
     assert_eq!(swap_limits(&api), ["max", "max"]);
     assert!(!path.exists());
+}
+
+/// The gate a stalled reader waits on, as a page fault waits on a pager that never answers.
+static STALL: (Mutex<bool>, std::sync::Condvar) = (Mutex::new(false), std::sync::Condvar::new());
+fn stalled_reader(
+    _: &wake::Target,
+    _: &[plan::Range],
+    _: Instant,
+) -> (u64, Option<pool::Shortfall>) {
+    let mut open = STALL.0.lock().expect("stall gate");
+    while !*open {
+        open = STALL.1.wait(open).expect("stall gate");
+    }
+    (1, None)
+}
+
+/// Re-review 5767: a restore item stuck in its syscall ends the wake as partial `stalled` within the deadline and the grace. The
+/// wake unfreezes and returns, so the executor releases its target lock; another target restores; and a later sleep of the same
+/// target waits for the stalled reader, or refuses after its bound.
+#[test]
+fn a_stalled_reader_ends_the_wake_partial_and_holds_back_the_next_sleep() {
+    let (_dir, mut power, api) = fixture();
+    power.web_port = web(200);
+    api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+    let buffer = vec![1_u8; 4096 * 9];
+    plant_self(&power, &api, &buffer, 8);
+    power.sleep_with(&api, "2", "op1").expect("sleep");
+    power.reader = stalled_reader;
+    power.restore_bound = Duration::from_millis(50);
+    let started = Instant::now();
+    let receipt = power.wake_with(&api, "2").expect("the wake goes on");
+    assert!(
+        started.elapsed() < Duration::from_millis(50) + pool::STALL_GRACE + Duration::from_secs(2)
+    );
+    assert_eq!(
+        (receipt.restore.as_str(), receipt.reason.as_deref()),
+        ("partial", Some("stalled"))
+    );
+    assert_eq!(
+        *api.actions.lock().expect("actions"),
+        ["freeze", "unfreeze"]
+    );
+    assert!(!marker(&power).exists());
+    assert_eq!(power.readers("2").active(), 1);
+    // Another target restores while the stalled worker stays with its syscall.
+    let other = power.pool.restore(
+        vec![Box::new(|_| (1, None))],
+        Instant::now() + Duration::from_secs(1),
+        &std::sync::Arc::default(),
+    );
+    assert_eq!((other.pages, other.shortfall), (1, None));
+    // A sleep or discard of the same target refuses once its bound passes with the reader still there.
+    power.reader_bound = Duration::from_millis(20);
+    assert_eq!(
+        power
+            .sleep_with(&api, "2", "op2")
+            .expect_err("busy")
+            .to_string(),
+        READERS_BUSY
+    );
+    assert_eq!(
+        power.discard("2").expect_err("busy").to_string(),
+        READERS_BUSY
+    );
+    // Within its bound, the sleep waits for the reader and then runs.
+    power.reader_bound = Duration::from_secs(10);
+    let (slept_tx, slept_rx) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let slept = power.sleep_with(&api, "2", "op3");
+            slept_tx.send(slept.map(|r| r.sleep)).expect("slept");
+        });
+        assert!(
+            slept_rx.recv_timeout(Duration::from_millis(100)).is_err(),
+            "the sleep must not freeze or scan while a stalled reader remains"
+        );
+        *STALL.0.lock().expect("stall gate") = true;
+        STALL.1.notify_all();
+        assert_eq!(
+            slept_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("sleep after the reader")
+                .expect("sleep"),
+            "frozen"
+        );
+    });
 }

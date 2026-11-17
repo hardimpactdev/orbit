@@ -38,7 +38,7 @@ pub struct WakeReceipt {
 }
 
 /// One planned process, proven the same process before any memory syscall.
-struct Target {
+pub(crate) struct Target {
     pidfd: OwnedFd,
     pid: libc::pid_t,
     pagemap: File,
@@ -115,7 +115,11 @@ fn remote(address: u64) -> *mut libc::c_void {
 /// each page through `process_vm_readv` to wait for them. A restore is a hint, so a refused call only reads fewer pages.
 ///
 /// A pagemap that cannot be read, a failed read or a short one reports `read_failed`: the wake goes on, but as `partial`.
-fn restore(target: &Target, ranges: &[Range], deadline: Instant) -> (u64, Option<Shortfall>) {
+pub(crate) fn restore(
+    target: &Target,
+    ranges: &[Range],
+    deadline: Instant,
+) -> (u64, Option<Shortfall>) {
     let Ok(runs) = missing(target, ranges) else {
         return (0, Some("read_failed"));
     };
@@ -183,7 +187,10 @@ fn restore(target: &Target, ranges: &[Range], deadline: Instant) -> (u64, Option
 }
 
 /// Split the plan into pool items of at most [`ITEM_PAGES`] pages, process by process.
-fn items(targets: Vec<(Arc<Target>, &[Range])>) -> Vec<Item> {
+/// How a pool item reads its pages back: [`restore`], except in tests that need a reader that stalls.
+pub(crate) type Reader = fn(&Target, &[Range], Instant) -> (u64, Option<Shortfall>);
+
+fn items(targets: Vec<(Arc<Target>, &[Range])>, reader: Reader) -> Vec<Item> {
     let mut items: Vec<Item> = Vec::new();
     for (target, ranges) in targets {
         let limit = ITEM_PAGES * target.page;
@@ -193,9 +200,7 @@ fn items(targets: Vec<(Arc<Target>, &[Range])>) -> Vec<Item> {
             if !batch.is_empty() {
                 let target = Arc::clone(&target);
                 let ranges = std::mem::take(batch);
-                items.push(Box::new(move |deadline| {
-                    restore(&target, &ranges, deadline)
-                }));
+                items.push(Box::new(move |deadline| reader(&target, &ranges, deadline)));
             }
             *size = 0;
         };
@@ -313,8 +318,13 @@ impl Power {
                             .zip(&plan.processes)
                             .map(|(t, p)| (t, p.ranges.as_slice()))
                             .collect(),
+                        self.reader,
                     );
-                    let restored = self.pool.restore(work, restoring + self.restore_bound);
+                    // A stalled reader outlives this call, harmlessly (see Pool::restore); the target's readers keep a later
+                    // sleep or discard of it waiting until the reader returns.
+                    let restored =
+                        self.pool
+                            .restore(work, restoring + self.restore_bound, &self.readers(id));
                     receipt.pages_read = restored.pages;
                     match restored.shortfall {
                         None => "complete".clone_into(&mut receipt.restore),

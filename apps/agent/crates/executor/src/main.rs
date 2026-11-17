@@ -70,10 +70,10 @@ impl Run for Families {
                     Err(error) => {
                         log(&format!("power sleep failed: {error}"));
                         Outcome::Failed {
-                            code: if error.to_string() == "instance.container_frozen_unmanaged" {
-                                "instance.container_frozen_unmanaged"
-                            } else {
-                                "instance.container_freeze_failed"
+                            code: match error.to_string().as_str() {
+                                code @ ("instance.container_frozen_unmanaged"
+                                | orbit_executor_power::READERS_BUSY) => code,
+                                _ => "instance.container_freeze_failed",
                             }
                             .to_owned(),
                         }
@@ -115,8 +115,13 @@ impl Run for Families {
             }
             Action::Discard => match self.0.discard(order.target().as_str()) {
                 Ok(()) => Outcome::Done,
-                Err(_) => Outcome::Failed {
-                    code: "instance.power_discard_failed".to_owned(),
+                Err(error) => Outcome::Failed {
+                    code: if error.to_string() == orbit_executor_power::READERS_BUSY {
+                        orbit_executor_power::READERS_BUSY
+                    } else {
+                        "instance.power_discard_failed"
+                    }
+                    .to_owned(),
                 },
             },
         }

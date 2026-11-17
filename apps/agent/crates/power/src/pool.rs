@@ -6,7 +6,7 @@
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Why an item, and so its target's restore, is not complete.
 pub(crate) type Shortfall = &'static str;
@@ -14,6 +14,40 @@ pub(crate) type Shortfall = &'static str;
 /// One unit of restore work. It gets the deadline, and returns the pages it read back and, if it did not read every page it
 /// should have, why.
 pub(crate) type Item = Box<dyn Fn(Instant) -> (u64, Option<Shortfall>) + Send + Sync>;
+
+/// How long the restore waits, after its deadline, for items still inside a memory syscall. One that has not returned by then is
+/// stalled: `process_madvise` and `process_vm_readv` cannot be cancelled, and a page fault can wait on a pager or device for good.
+pub(crate) const STALL_GRACE: Duration = Duration::from_millis(250);
+
+/// The restore items of one target that are still running, including stalled ones after their wake went on. A sleep or discard
+/// of the same target waits for them, so no freeze, scan or plan overlaps a stale reader.
+#[derive(Debug, Default)]
+pub(crate) struct Readers {
+    active: Mutex<usize>,
+    idle: Condvar,
+}
+impl Readers {
+    fn enter(&self) {
+        *self.active.lock().expect("restore readers lock poisoned") += 1;
+    }
+    fn leave(&self) {
+        *self.active.lock().expect("restore readers lock poisoned") -= 1;
+        self.idle.notify_all();
+    }
+    /// Wait until no item of this target runs, at most `bound`. False when one still runs then.
+    pub(crate) fn wait_idle(&self, bound: Duration) -> bool {
+        let active = self.active.lock().expect("restore readers lock poisoned");
+        let (active, _) = self
+            .idle
+            .wait_timeout_while(active, bound, |active| *active > 0)
+            .expect("restore readers lock poisoned");
+        *active == 0
+    }
+    #[cfg(test)]
+    pub(crate) fn active(&self) -> usize {
+        *self.active.lock().expect("restore readers lock poisoned")
+    }
+}
 
 /// The least and most threads the role may ask for. Swap-in waits on the device, so the floor is not the CPU count.
 pub const MIN_THREADS: usize = 16;
@@ -31,6 +65,7 @@ struct Progress {
 
 struct Job {
     items: Vec<Item>,
+    readers: Arc<Readers>,
     deadline: Instant,
     pages: AtomicU64,
     cancelled: AtomicBool,
@@ -93,9 +128,19 @@ impl Pool {
     }
 
     /// Queue one target's items behind earlier targets and wait until all are done. At the deadline the items not yet started
-    /// are skipped, and the call waits for the items still running, which stop at their next deadline check. So no restore work
-    /// of this target outlives the call: the caller may unfreeze and release the target.
-    pub(crate) fn restore(&self, items: Vec<Item>, deadline: Instant) -> Restored {
+    /// are skipped, and the call waits [`STALL_GRACE`] for the items still running, which stop at their next deadline check.
+    ///
+    /// An item still inside its memory syscall after the grace is stalled. The call then reports `stalled`, takes the target off
+    /// the front of the queue so other targets go on, and returns. The caller may unfreeze: a late `process_vm_readv` only copies
+    /// the target's pages into the executor's own buffer, and a late `MADV_WILLNEED` only starts a read into the page cache; neither
+    /// changes the target. `readers` counts the stalled items until their syscall returns, and the worker stays with it until then,
+    /// so the pool serves with fewer threads meanwhile.
+    pub(crate) fn restore(
+        &self,
+        items: Vec<Item>,
+        deadline: Instant,
+        readers: &Arc<Readers>,
+    ) -> Restored {
         if items.is_empty() {
             return Restored {
                 pages: 0,
@@ -104,6 +149,7 @@ impl Pool {
         }
         let job = Arc::new(Job {
             items,
+            readers: Arc::clone(readers),
             deadline,
             pages: AtomicU64::new(0),
             cancelled: AtomicBool::new(false),
@@ -117,13 +163,33 @@ impl Pool {
             .push_back(Arc::clone(&job));
         self.shared.work.notify_all();
         let mut progress = job.progress.lock().expect("restore job lock poisoned");
+        let mut grace = None;
         while !job.done(&progress) {
             let now = Instant::now();
-            if job.cancelled.load(Ordering::Relaxed) {
-                progress = job.all.wait(progress).expect("restore job lock poisoned");
+            if let Some(end) = grace {
+                if now >= end {
+                    drop(progress);
+                    // Stalled: the job leaves the queue unfinished. Its workers finish it when their syscalls return.
+                    let mut queue = self
+                        .shared
+                        .queue
+                        .lock()
+                        .expect("restore queue lock poisoned");
+                    self.shared.retire(&mut queue, &job);
+                    return Restored {
+                        pages: job.pages.load(Ordering::Relaxed),
+                        shortfall: Some("stalled"),
+                    };
+                }
+                progress = job
+                    .all
+                    .wait_timeout(progress, end - now)
+                    .expect("restore job lock poisoned")
+                    .0;
             } else if now >= deadline {
                 drop(progress);
                 self.cancel(&job);
+                grace = Some(now + STALL_GRACE);
                 progress = job.progress.lock().expect("restore job lock poisoned");
             } else {
                 progress = job
@@ -170,6 +236,7 @@ fn work(shared: &Shared) {
                     let mut progress = job.progress.lock().expect("restore job lock poisoned");
                     (progress.next < job.items.len()).then(|| {
                         progress.next += 1;
+                        job.readers.enter();
                         (Arc::clone(job), progress.next - 1)
                     })
                 });
@@ -189,6 +256,7 @@ fn work(shared: &Shared) {
             job.items[index](job.deadline)
         };
         job.pages.fetch_add(pages, Ordering::Relaxed);
+        job.readers.leave();
         let mut queue = shared.queue.lock().expect("restore queue lock poisoned");
         let mut progress = job.progress.lock().expect("restore job lock poisoned");
         progress.finished += 1;
@@ -207,6 +275,10 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     use std::time::Duration;
+
+    fn restore(pool: &Pool, items: Vec<Item>, deadline: Instant) -> Restored {
+        pool.restore(items, deadline, &Arc::default())
+    }
 
     fn recording(log: &Arc<Mutex<Vec<char>>>, name: char, pause: Duration) -> Item {
         let log = Arc::clone(log);
@@ -256,12 +328,12 @@ mod tests {
             .collect();
         let waiting = {
             let pool = Arc::clone(&pool);
-            std::thread::spawn(move || pool.restore(first, far))
+            std::thread::spawn(move || restore(&pool, first, far))
         };
         while log.lock().expect("log").is_empty() {
             std::thread::sleep(Duration::from_millis(1));
         }
-        let b = pool.restore(second, far);
+        let b = restore(&pool, second, far);
         let a = waiting.join().expect("first wake");
         let full = Restored {
             pages: 0,
@@ -293,7 +365,7 @@ mod tests {
             let pool = Arc::clone(&pool);
             let item = gated(&gate, entered_tx, None);
             std::thread::spawn(move || {
-                pool.restore(vec![item], Instant::now() + Duration::from_secs(1))
+                restore(&pool, vec![item], Instant::now() + Duration::from_secs(1))
             })
         };
         entered_rx
@@ -303,7 +375,8 @@ mod tests {
         let b = {
             let pool = Arc::clone(&pool);
             std::thread::spawn(move || {
-                pool.restore(
+                restore(
+                    &pool,
                     vec![Box::new(move |_| {
                         next_tx.send(()).expect("next started");
                         (1, None)
@@ -322,7 +395,7 @@ mod tests {
         );
     }
 
-    /// Review 5767, finding 1: at the deadline the restore waits for the item still running before it returns.
+    /// Review 5767, finding 1: within the stall grace after the deadline, the restore waits for the item still running.
     #[test]
     fn deadline_must_not_leave_restore_item_running_after_return() {
         let pool = Arc::new(Pool::new(2));
@@ -334,8 +407,11 @@ mod tests {
             let pool = Arc::clone(&pool);
             let item = gated(&gate, entered_tx, Some(finished_tx));
             std::thread::spawn(move || {
-                let restored =
-                    pool.restore(vec![item], Instant::now() + Duration::from_millis(100));
+                let restored = restore(
+                    &pool,
+                    vec![item],
+                    Instant::now() + Duration::from_millis(50),
+                );
                 returned_tx.send(()).expect("returned");
                 restored
             })
@@ -343,7 +419,7 @@ mod tests {
         entered_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("item entered");
-        let returned_early = returned_rx.recv_timeout(Duration::from_millis(300)).is_ok();
+        let returned_early = returned_rx.recv_timeout(Duration::from_millis(150)).is_ok();
         open(&gate);
         finished_rx
             .recv_timeout(Duration::from_secs(1))
@@ -354,7 +430,56 @@ mod tests {
             "wake returned before its active restore item finished"
         );
         // The item itself read its page: the restore is complete although the deadline passed while it ran.
-        assert_eq!(result.pages, 1);
+        assert_eq!((result.pages, result.shortfall), (1, None));
+    }
+
+    /// Re-review 5767: an item stuck in its syscall cannot hold the wake. After the deadline and the grace the restore reports
+    /// `stalled` and returns; the target's readers still count the item; another target restores meanwhile.
+    #[test]
+    fn deadline_drain_needs_an_upper_bound_for_a_stalled_item() {
+        let pool = Arc::new(Pool::new(2));
+        let gate = Arc::new((Mutex::new(false), Condvar::new()));
+        let readers = Arc::new(Readers::default());
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (returned_tx, returned_rx) = mpsc::channel();
+        let deadline = Instant::now() + Duration::from_millis(20);
+        let wake = {
+            let pool = Arc::clone(&pool);
+            let readers = Arc::clone(&readers);
+            let item = gated(&gate, entered_tx, None);
+            std::thread::spawn(move || {
+                let restored = pool.restore(vec![item], deadline, &readers);
+                returned_tx.send(Instant::now()).expect("returned");
+                restored
+            })
+        };
+        entered_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("item entered");
+        let returned = returned_rx
+            .recv_timeout(STALL_GRACE + Duration::from_secs(1))
+            .expect("the restore returns while its item is still stalled");
+        let restored = wake.join().expect("wake");
+        assert_eq!(restored.shortfall, Some("stalled"));
+        assert!(returned >= deadline + STALL_GRACE);
+        assert_eq!(
+            readers.active(),
+            1,
+            "the stalled reader still guards the target"
+        );
+        assert!(!readers.wait_idle(Duration::from_millis(20)));
+        // The stalled target left the front: the other worker serves the next target.
+        let other = restore(
+            &pool,
+            vec![Box::new(|_| (1, None))],
+            Instant::now() + Duration::from_secs(1),
+        );
+        assert_eq!((other.pages, other.shortfall), (1, None));
+        open(&gate);
+        assert!(
+            readers.wait_idle(Duration::from_secs(1)),
+            "the reader leaves when its syscall returns"
+        );
     }
 
     #[test]
@@ -364,7 +489,7 @@ mod tests {
         let items: Vec<Item> = (0..64)
             .map(|_| recording(&log, 'a', Duration::from_millis(20)))
             .collect();
-        let restored = pool.restore(items, Instant::now() + Duration::from_millis(30));
+        let restored = restore(&pool, items, Instant::now() + Duration::from_millis(30));
         assert_eq!(restored.shortfall, Some("deadline"));
         assert!(restored.pages < 64);
         // Every item that started also finished before the restore returned.
@@ -384,14 +509,15 @@ mod tests {
             let pool = Arc::clone(&pool);
             let item = gated(&gate, entered_tx, None);
             std::thread::spawn(move || {
-                pool.restore(vec![item], Instant::now() + Duration::from_secs(5))
+                restore(&pool, vec![item], Instant::now() + Duration::from_secs(5))
             })
         };
         entered_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("first entered");
         let log = Arc::new(Mutex::new(Vec::new()));
-        let second = pool.restore(
+        let second = restore(
+            &pool,
             vec![recording(&log, 'b', Duration::ZERO)],
             Instant::now() + Duration::from_millis(20),
         );
@@ -404,7 +530,8 @@ mod tests {
     #[test]
     fn an_item_shortfall_makes_the_restore_incomplete() {
         let pool = Pool::new(MIN_THREADS);
-        let restored = pool.restore(
+        let restored = restore(
+            &pool,
             vec![
                 Box::new(|_| (3, Some("read_failed"))),
                 Box::new(|_| (1, None)),
@@ -420,7 +547,11 @@ mod tests {
     #[test]
     fn an_empty_restore_is_complete() {
         assert_eq!(
-            Pool::new(MIN_THREADS).restore(Vec::new(), Instant::now() + Duration::from_secs(1)),
+            restore(
+                &Pool::new(MIN_THREADS),
+                Vec::new(),
+                Instant::now() + Duration::from_secs(1)
+            ),
             Restored {
                 pages: 0,
                 shortfall: None
