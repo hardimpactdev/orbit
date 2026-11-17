@@ -155,7 +155,7 @@ A snapshot runs `git read-tree HEAD`, `git add --all` and `git write-tree` again
 
 Commands receive no GitHub or Gateway credentials. Their output stays out of native history ([command output](#keep-command-output-out-of-run-history)); the result keeps a redacted tail of at most 16 KiB.
 
-A command marked `fails_on_base` also runs on its start commit, in separate steps: `git archive` of the base commit, `tar -x` into the run's scratch directory, `find … -exec cp -a --parents` of the installed `vendor` and `node_modules` directories, `cp --parents` of only the declared test paths, and `test -d` of its directory. A missing overlay file or directory refuses the check as `tasks.deliverable_invalid`; any other failed step refuses it as `tasks.repository_execution_unknown`.
+A command marked `fails_on_base` also runs on its start commit. The [workspace check phase](/reference/task-instance-workspace#check-phases) extracts the base once per checked candidate, then gives each command a private copy with only its installed dependency closure and declared test-path overlays. A missing overlay file or directory refuses the check as `tasks.deliverable_invalid`; a phase execution failure returns its workspace error code.
 
 A changed checked tree returns `changed`; a failed command, an unmet deliverable or a command deliverable that did not run returns `failed`. A failed setup step or Project check keeps its output and runs no command deliverable; it creates no candidate.
 
@@ -674,7 +674,9 @@ A `command` deliverable with `fails_on_base: true` proves that the command fails
 | Base | The start commit, or its fallback base, plus the files in `paths` from the working tree | The command exits nonzero |
 | Working tree | The implementer's tree | The command exits 0 |
 
-The base run extracts an archive of the start commit into a directory under the workspace's `$(git rev-parse --git-path orbit)/bases/`. It copies installed `vendor` and `node_modules` directories from the workspace, and no other dependency directory, then copies each file in `paths`, including an uncommitted or untracked file. It runs the command there with `bash -lc`. It does not change the workspace and registers no Git worktree. The check removes the directory when the run ends, and the next check removes a directory that a killed run left behind.
+The [workspace check phase](/reference/task-instance-workspace#check-phases) extracts the start tree once into guest scratch and makes a private copy for each base command. It copies only installed `vendor` and `node_modules` directories in that command's dependency closure, then each file in `paths`, including an uncommitted or untracked file. It runs the command there with `bash -lc`. Reflinks, when supported, avoid copying file data while keeping writes private; ordinary copies provide the same isolation elsewhere. No hard links or Git worktrees are used.
+
+Each command starts with the base source and only its own overlays, regardless of earlier commands' writes. The check removes scratch when it ends, and the next check removes scratch that a killed run left behind. The Project check, base replay and deliverables run serially.
 
 A command that needs another installed tree, such as a Python virtualenv or a Rust `target` directory, can fail on that base tree only because the tree is missing. That nonzero exit satisfies `fails_on_base` and is not evidence that the command reproduced a bug. This copy is retained. A follow-up has to widen it or stop counting a missing dependency as reproduction evidence.
 
