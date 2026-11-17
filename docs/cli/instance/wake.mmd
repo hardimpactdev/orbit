@@ -40,9 +40,9 @@ sequenceDiagram
     %% path: executor
     GW->>N: Sign and publish wake<br/>executor-order · WebSocket
     %%> What it does:
-    %%> - record or join instance.wake under the Instance lock before signing; only a new Operation publishes an order
-    %%> - record a pending completion handoff with admission; enqueue after commit under the Operation lock, and keep it pending on a queue error
-    %%> - the minute reconciler retries up to 50 pending completion handoffs, oldest first, after 6 s; no new visit is needed
+    %%> - record or join instance.wake under the Instance lock before signing; requests and recovery share one publication receipt for the same Operation
+    %%> - record a pending handoff with admission; publish outside the database transaction under a non-blocking per-Operation cache lock, then commit a publication receipt and enqueue completion
+    %%> - the minute reconciler retries up to 50 pending handoffs, oldest first, after 6 s; publish a missing order for the same Operation before enqueueing completion, and skip a recorded publication
     %%> - hand Operation notices to operations-prompt after commit; no Reverb delivery remains in the request's termination callbacks
     %%> - the observer passes the order unread to the executor; no SSH, Python or marker/times command runs on this path
     GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
@@ -62,7 +62,7 @@ sequenceDiagram
       GW-->>CL: 401 progress page<br/>activation state pending
       %%> Result:
       %%> - the existing page polls every 250 ms and loads the app when the marker goes
-      %%> - a queued completion reads the durable result at 6 s, without holding a request worker; done or partial succeeds, refused or failed fails, and no result fails executor.wake_timeout
+      %%> - a queued completion reads the durable result 6 s after publication, without holding a request worker; done or partial succeeds, refused or failed fails, and no result fails executor.wake_timeout
       %%> - slice 7 adds the relay and Swamp fallback; until then this path fails without calling either, and the setting stays off by default
     end
   else executor wake disabled

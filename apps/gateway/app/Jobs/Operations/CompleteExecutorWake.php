@@ -30,7 +30,7 @@ final class CompleteExecutorWake implements ShouldQueue
         if ($operation === null || ! ExecutorWake::owns($operation)) {
             return;
         }
-        if (! $operation->status->terminal() && $operation->started_at?->addSeconds(ExecutorWake::CompletionSeconds)->isFuture()) {
+        if (! $operation->status->terminal() && $operation->executor_result === null && ExecutorWake::completionDeadline($operation)?->isFuture()) {
             $this->release(1);
 
             return;

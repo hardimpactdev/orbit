@@ -17,7 +17,9 @@ use App\Jobs\Operations\ProjectExecutorWake;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -32,7 +34,11 @@ final readonly class ExecutorWake
 
     public const string CompletionState = 'wake_executor_completion';
 
+    public const string PublishedAt = 'wake_executor_published_at';
+
     public const int CompletionSeconds = 6;
+
+    private const int PublicationLockSeconds = 30;
 
     private const int FollowUpGraceSeconds = 30;
 
@@ -60,14 +66,6 @@ final readonly class ExecutorWake
             $state = [...($operation->state ?? []), self::State => true, self::CompletionState => 'pending'];
             unset($state['swamp_start']);
             $this->operations->change($operation, ['status' => OperationStatus::Running, 'started_at' => now(), 'attempts' => 1, 'state' => $state]);
-            DB::afterCommit(function () use ($operation): void {
-                try {
-                    $this->enqueueCompletion($operation->id);
-                } catch (Throwable $exception) {
-                    Log::warning('The executor wake completion could not be queued; the minute sweep retries.',
-                        ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
-                }
-            });
         }
 
         return $operation;
@@ -84,9 +82,13 @@ final readonly class ExecutorWake
         $completedBy = now()->addMilliseconds($bound * 1000);
 
         try {
-            if ($operation->wasRecentlyCreated) {
-                $order = ExecutorOrderSigner::fromConfig()->sign($operation, 'wake', (string) $operation->target_id);
-                $this->publisher->publish($operation, $order, max(0, $deadline - hrtime(true) / 1e9));
+            if ($this->publishOnce($operation->id, $deadline)) {
+                try {
+                    $this->enqueueCompletion($operation->id);
+                } catch (Throwable $exception) {
+                    Log::warning('The executor wake completion could not be queued; the minute sweep retries.',
+                        ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                }
             }
             $operation->refresh();
             $line = $operation->executor_result;
@@ -129,13 +131,49 @@ final readonly class ExecutorWake
         }
     }
 
+    /** Publishing holds only the cache lock: a sibling visit can still read and wait without a SQLite writer. */
+    private function publishOnce(int $operationId, float $deadline): bool
+    {
+        return Cache::lock('orbit:executor-wake-publish:'.$operationId, self::PublicationLockSeconds)->get(function () use ($operationId, $deadline): bool {
+            $operation = Operation::query()->find($operationId);
+            if ($operation === null || ! self::owns($operation) || $operation->status->terminal()) {
+                return false;
+            }
+            if (self::completionDeadline($operation) !== null) {
+                return true;
+            }
+            $left = $deadline - hrtime(true) / 1e9;
+            if ($left < 0.001) {
+                return false;
+            }
+            $order = ExecutorOrderSigner::fromConfig()->sign($operation, 'wake', (string) $operation->target_id);
+            $this->publisher->publish($operation, $order, $left);
+            $publishedAt = now()->getTimestampMs();
+            DB::transaction(static function () use ($operationId, $publishedAt): void {
+                $current = Operation::query()->whereKey($operationId)->lockForUpdate()->firstOrFail();
+                if (self::completionDeadline($current) === null) {
+                    $current->forceFill(['state' => [...($current->state ?? []), self::PublishedAt => $publishedAt]])->save();
+                }
+            });
+
+            return true;
+        }) === true;
+    }
+
+    public static function completionDeadline(Operation $operation): ?Carbon
+    {
+        $publishedAt = $operation->state[self::PublishedAt] ?? null;
+
+        return is_int($publishedAt) ? Carbon::createFromTimestampMs($publishedAt)->addSeconds(self::CompletionSeconds) : null;
+    }
+
     public static function owns(Operation $operation): bool
     {
         return $operation->kind === InstanceWake::Kind && ($operation->state[self::State] ?? false) === true;
     }
 
     /**
-     * The request calls this only on success. The queued completion calls it at 6 s with expire=true, closing every other
+     * The request calls this only on success. The queued completion calls it 6 s after publication with expire=true, closing every other
      * result as a failure until slice 7 supplies the relay and Swamp fallback. It never blocks, signs or publishes.
      */
     public function complete(Operation $operation, bool $expire = false): void
@@ -187,7 +225,8 @@ final readonly class ExecutorWake
         $recovered = [];
         foreach ($pending as $operation) {
             try {
-                if ($this->enqueueCompletion($operation->id)) {
+                if ($this->publishOnce($operation->id, hrtime(true) / 1e9 + min(0.5, ExecutorResultWait::boundSeconds()))
+                    && $this->enqueueCompletion($operation->id)) {
                     $recovered[] = $operation->id;
                 }
             } catch (Throwable $exception) {
@@ -211,8 +250,11 @@ final readonly class ExecutorWake
                 || ($operation->state[self::CompletionState] ?? null) !== 'pending') {
                 return false;
             }
-            Bus::dispatch((new CompleteExecutorWake($operation->id))->beforeCommit()
-                ->delay($operation->started_at?->addSeconds(self::CompletionSeconds)));
+            $deadline = self::completionDeadline($operation);
+            if ($deadline === null) {
+                return false;
+            }
+            Bus::dispatch((new CompleteExecutorWake($operation->id))->beforeCommit()->delay($deadline));
             $operation->forceFill(['state' => [...($operation->state ?? []), self::CompletionState => 'queued']])->save();
 
             return true;
