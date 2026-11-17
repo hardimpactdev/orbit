@@ -520,7 +520,7 @@ final readonly class InstanceContainer
                 ['path' => self::T3BootDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
                     'content' => "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"],
                 // The unit starts the runtime's recorded server (docs/reference/development-containers.md#container-server).
-                ['path' => self::ServerDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => $runtime->server()->dropIn()],
+                ['path' => self::ServerDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => $runtime->server()->dropIn($this->folders())],
             ],
             // A checkout that moved into a container links the agents' instructions to the note of the Project's type, which states facts
             // about the container only. A clone links them into its own agent folder, which its create fills from the note and the
