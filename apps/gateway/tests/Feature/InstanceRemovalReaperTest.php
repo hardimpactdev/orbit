@@ -17,6 +17,7 @@ use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\RemotePrograms\ProgramResult;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Schedules\NativeSchedules;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -79,6 +80,9 @@ beforeEach(function (): void {
     $this->stuckIssues = fn (): array => array_values(array_filter(
         app(FactDoctor::class)->report([$this->node->fresh()], [DoctorFamily::Instance])->nodes[0]->families[0]->issues,
         static fn ($issue): bool => $issue->code === 'instance.removal_stuck'));
+    $this->refusals = fn (): array => array_values(array_filter(
+        app(FactDoctor::class)->report([$this->node->fresh()], [DoctorFamily::Instance])->nodes[0]->families[0]->issues,
+        static fn ($issue): bool => $issue->code === 'instance.removal_retry_refused'));
 });
 
 afterEach(function (): void {
@@ -269,6 +273,95 @@ describe('a failed retry', function (): void {
         $issues = ($this->stuckIssues)();
         expect($issues)->toHaveCount(1)->and($issues[0]->observed)->toBe('runtime_cleanup: instance.removal_dataset_taken')
             ->and(Activity::query()->where('description', 'instance.removal_stuck')->count())->toBe(1);
+    });
+});
+
+describe('a refused start is visible at once', function (): void {
+    it('is what admission does with a removal without saved intent: it refuses with instance.removal_conflict', function (): void {
+        $removal = ($this->failed)(true);
+        DB::statement('DROP TRIGGER IF EXISTS instance_removals_native_intent_immutable');
+        DB::table('instance_removals')->where('id', $removal->id)->update(['native_intent' => null]);
+
+        expect(fn () => app(StartInstanceDestroyAction::class)->execute($this->instance->fresh(), true, InstanceRemovalReaper::Trigger))
+            ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe('instance.removal_conflict'));
+    });
+
+    it('flags a removal without saved intent (shaped like 2186 from 12 November) stuck at once, and starts nothing', function (): void {
+        $removal = ($this->failed)(true);
+        // An older removal: failed at the runtime cleanup with force, but its row holds no saved intent, so admission can only
+        // refuse it with instance.removal_conflict. The intent's contract trigger forbids the change; only the reaper's reading is
+        // under test.
+        DB::statement('DROP TRIGGER IF EXISTS instance_removals_native_intent_immutable');
+        DB::table('instance_removals')->where('id', $removal->id)->update(['native_intent' => null]);
+        $this->travel(5)->minutes();
+
+        expect(($this->reap)())->toBe([])->and(($this->reap)())->toBe([]);
+
+        $removal = $removal->fresh();
+        expect($removal->start_refusal)->toBe('instance.removal_intent_missing')
+            ->and($removal->retry_count)->toBe(0)
+            ->and($removal->stuck_at)->not->toBeNull()
+            ->and(Operation::query()->where('triggered_by', InstanceRemovalReaper::Trigger)->exists())->toBeFalse();
+        $issues = ($this->stuckIssues)();
+        expect($issues)->toHaveCount(1)
+            ->and($issues[0]->observed)->toBe('runtime_cleanup: instance.removal_incomplete; start refused: instance.removal_intent_missing');
+        $activities = Activity::query()->where('description', 'instance.removal_stuck')->get();
+        expect($activities)->toHaveCount(1)
+            ->and($activities[0]->properties['start_refusal'])->toBe('instance.removal_intent_missing');
+        // A day later still nothing starts, and the report stays one entry.
+        $this->travel(1)->days();
+        expect(($this->reap)())->toBe([])->and(Activity::query()->where('description', 'instance.removal_stuck')->count())->toBe(1);
+    });
+
+    it('records each refused start in Activity and Doctor with its error code, and clears it once a start is admitted', function (): void {
+        $removal = ($this->failed)();
+        $this->node->roles()->delete();
+        $this->travel(5)->minutes();
+
+        expect(($this->reap)())->toBe([]);
+
+        expect($removal->fresh()->start_refusal)->toBe('operation.kind_unavailable');
+        $entries = Activity::query()->where('description', 'instance.removal_retry_refused')->get();
+        expect($entries)->toHaveCount(1)
+            ->and($entries[0]->error_code)->toBe('operation.kind_unavailable')
+            ->and($entries[0]->status)->toBe('failed')
+            ->and($entries[0]->command)->toBe(InstanceRemovalReaper::Trigger)
+            ->and($entries[0]->subject_id)->toBe($this->instance->id)
+            ->and($entries[0]->properties['removal_id'])->toBe($removal->id)
+            ->and($entries[0]->properties['retry_count'])->toBe(1);
+        $issues = ($this->refusals)();
+        expect($issues)->toHaveCount(1)->and($issues[0]->resourceId)->toBe($this->instance->id)
+            ->and($issues[0]->observed)->toBe('operation.kind_unavailable');
+
+        // The Node has its role again: the next start is admitted, and the refusal goes from the removal and from Doctor.
+        $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        $this->travel(15)->minutes();
+        expect(($this->reap)())->toHaveCount(1)
+            ->and($removal->fresh()->start_refusal)->toBeNull()
+            ->and(($this->refusals)())->toBe([]);
+    });
+
+    it('counts and records a start that fails with an unexpected error, not only in the log', function (): void {
+        $removal = ($this->failed)();
+        // Admission calls the Schedule removal before its transaction; here it fails as a bug in an older intent would.
+        app()->instance(NativeSchedules::class, new class
+        {
+            /** @param list<int> $instanceIds */
+            public function removeForInstances(array $instanceIds): void
+            {
+                throw new RuntimeException('Undefined array key "members"');
+            }
+        });
+        $this->travel(5)->minutes();
+
+        expect(($this->reap)())->toBe([]);
+
+        expect($removal->fresh()->retry_count)->toBe(1)
+            ->and($removal->fresh()->start_refusal)->toBe('instance.removal_retry_failed');
+        $entry = Activity::query()->where('description', 'instance.removal_retry_refused')->sole();
+        expect($entry->error_code)->toBe('instance.removal_retry_failed')
+            ->and($entry->properties['message'])->toContain('Undefined array key');
+        expect(($this->refusals)())->toHaveCount(1);
     });
 });
 
