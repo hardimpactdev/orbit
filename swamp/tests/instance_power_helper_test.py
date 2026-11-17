@@ -19,6 +19,7 @@ import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 
 HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ansible", "files", "instance-container-power.py")
 spec = importlib.util.spec_from_file_location("power", HELPER)
@@ -53,7 +54,7 @@ class CountingKernel(power.Kernel):
 
     def pid_of(self, pidfd):
         with open(f"/proc/self/fdinfo/{pidfd}") as handle:
-            return int(re.search(r"^Pid:\s*(-?\d+)", handle.read(), re.M).group(1))
+            return int(re.search(r"^Pid:\s*(-?\d+)", handle.read(), re.MULTILINE).group(1))
 
     def pids(self):
         return {pid for _, pid in self.calls}
@@ -309,13 +310,13 @@ class ResidualTest(Fixture):
         self.prepare(11)
         self.stat(8192, 0)
         path = os.path.join(self.state, "instances", str(ID), "sleep.json")
-        before = open(path).read()
+        before = Path(path).read_text()
         self.assertEqual(power.residual(self.host, ID, 12)["outcome"], "not_recorded")
         self.incus.status = "running"
         self.assertEqual(power.residual(self.host, ID, 11)["outcome"], "not_recorded")
         self.incus.status, self.incus.incarnation = "frozen", "uuid-2"
         self.assertEqual(power.residual(self.host, ID, 11)["state_after"], "missing")
-        self.assertEqual(open(path).read(), before)
+        self.assertEqual(Path(path).read_text(), before)
         self.assertEqual(self.kernel.calls, [])
 
 
@@ -545,7 +546,7 @@ class RestoreTest(Fixture):
 
     def test_a_process_that_exits_during_the_restore_gets_no_further_call(self):
         self.prepare()
-        victim = sorted(self.children, key=lambda c: c.pid)[0]
+        victim = min(self.children, key=lambda c: c.pid)
         original = self.kernel.process_vm_readv
 
         def exit_after_first(pid, local, remote, count):
@@ -590,7 +591,7 @@ class RestoreTest(Fixture):
     def test_a_fresh_process_restores_from_the_plan_on_disk(self):
         # One process prepares, then replaces itself with a fresh interpreter (same PID, so still the children's parent, which
         # Yama's ptrace scope needs here); the new image knows only the plan on disk.
-        output = subprocess.run([sys.executable, "-I", __file__, "--cold-reload"], capture_output=True, text=True, timeout=60)
+        output = subprocess.run([sys.executable, "-I", __file__, "--cold-reload"], capture_output=True, text=True, timeout=60, check=False)
         self.assertEqual(output.returncode, 0, output.stderr)
         result = json.loads(output.stdout)
         self.assertIn(result["status"], ("complete", "partial"))
@@ -848,13 +849,13 @@ class EntryTest(Fixture):
         code, prepared = self.call(["prepare", "--instance", "7", "--operation", "11"], json.dumps(self.intent(11)).encode())
         self.assertEqual(code, 0)
         manifest, ranges = power.load_plan(self.host, ID)
-        sleep = open(os.path.join(self.state, "instances", str(ID), "sleep.json")).read()
+        sleep = Path(self.state, "instances", str(ID), "sleep.json").read_text()
         code, restored = self.call(["restore", "--instance", "7", "--operation", "12"])
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(restored)["outcome"], "resumed")
         public = [prepared, restored, sleep]
         for name in os.listdir(os.path.join(self.state, "instances", str(ID), "receipts")):
-            public.append(open(os.path.join(self.state, "instances", str(ID), "receipts", name)).read())
+            public.append(Path(self.state, "instances", str(ID), "receipts", name).read_text())
         secrets = {str(p["host_pid"]) for p in manifest["processes"]} | {str(r[2]) for r in ranges} | \
             {format(r[2], "x") for r in ranges}
         for text in public:
