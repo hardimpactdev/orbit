@@ -587,7 +587,7 @@ With no scope flag, the attempt includes Orbit's base and every recorded role. `
 
 The Gateway validates recorded state without a live preflight, reserves the target and its first recorded VPN hub until settlement, and captures an immutable intent. Unreachable machines fail during execution, not admission. The CLI validates inputs, calls the SDK and renders the Operation; the Gateway admits, records and projects; Swamp executes.
 
-Node convergence, role addition or convergence, enrollment and agent rekey share the Node's Operation admission lock. A holder causes `operation.target_busy` for another admission on that Node; distinct Nodes remain independent unless their converges share a VPN hub. Enrollment holds the lock for its whole run, including its frozen role work, without admitting a second role Operation. Existing terminal and timeout settlement rules release the hold. Another converge that owns the hub reservation is also refused.
+Node convergence, role addition, convergence or removal, enrollment and agent rekey share the Node's Operation admission lock. A holder causes `operation.target_busy` for another admission on that Node; distinct Nodes remain independent unless their converges share a VPN hub. Enrollment holds the lock for its whole run, including its frozen role work, without admitting a second role Operation. Existing terminal and timeout settlement rules release the hold. Another converge that owns the hub reservation is also refused.
 
 The native Swamp workflow runs these phases in order. Input preparation writes private inventory, variables and pinned SSH known hosts. Each machine phase invokes one tagged Ansible playbook, within the admitted scope.
 
@@ -980,7 +980,7 @@ Caddy also serves the Gateway API. A convergence that installs a newer Caddy res
 
 ## Role operations on one Node
 
-The Gateway holds one Node Operation for `node:role:add` and explicit role convergence. Admission claims `node:<id>` before changing the assignment. A competing role-add or convergence admission refuses with `operation.target_busy` (HTTP 409), without creating an Operation or changing the assignment. The hold lasts until the native run settles. Tool Manager setup runs inside that workflow. `node:converge` owns the observer and Orbit CLI separately.
+The Gateway holds one Node Operation for `node:role:add`, explicit role convergence and `node:role:remove`. Admission claims `node:<id>` before changing the assignment. A competing role add, convergence or removal admission refuses with `operation.target_busy` (HTTP 409), without creating an Operation or changing the assignment. The hold lasts until the native run settles. Tool Manager setup runs inside that workflow. `node:converge` owns the observer and Orbit CLI separately.
 
 Retained provisioning and removal paths use the role lock before claiming the assignment. A second operation waits up to 2 minutes, then fails and leaves the assignment as it was.
 
@@ -1204,7 +1204,7 @@ Role convergence uses the same Swamp workflow and Ansible phases as role additio
 
 Each assignment records whether its runs ever changed the Node, in `node_roles.node_untouched`. Only a first `node:role:add` sets it true, when it creates the assignment. A `--converge` claim keeps it only from a `failed` assignment that still holds it. A run that fails at `Read the OS release` or `Require supported Ubuntu` keeps it. Any other end clears it for good: success, a failure at a later step, an interruption, a cancellation, or a lost result. Assignments from `node:add`, relocation, Metrics, or from before the column, hold false.
 
-A `failed` assignment that holds the fact is removed from the record alone. The Gateway deletes the assignment and its settings and records a `succeeded` `node.role_remove` Operation. It starts no run and does not contact the Node. Every other removal takes the run above. The Gateway refuses `--offline` on both paths with `operation.kind_unavailable`: the offline removal is not built yet.
+A `failed` assignment that holds the fact is removed from the record alone. The Gateway deletes the assignment and its settings and records a `succeeded` `node.role_remove` Operation. It starts no run and does not contact the Node. It takes the Node's admission lock like the run path, and its success releases the lock at once. Every other removal takes the run above. Both paths refuse a `provisioning` or `removing` assignment whose claim is not stale with `node_role.claim_busy` (HTTP 409); a stale claim is taken over. The Gateway refuses `--offline` on both paths with `operation.kind_unavailable`: the offline removal is not built yet.
 
 ### Native role relocation
 

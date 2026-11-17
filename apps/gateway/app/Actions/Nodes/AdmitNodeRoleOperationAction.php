@@ -165,6 +165,10 @@ final readonly class AdmitNodeRoleOperationAction
             $assignment = $node->roles()->where('role', $role)->lockForUpdate()->firstOrFail();
             if ($role === RoleName::Router) {
                 app(StaleRouterAssignment::class)->assertRemovable($assignment);
+            } elseif (in_array($assignment->status, [LifecycleStatus::Provisioning, LifecycleStatus::Removing], true) && ! $assignment->isStaleClaim()) {
+                throw new ResourceOperationException('node_role.claim_busy',
+                    "Role [{$role->value}] is {$assignment->status->value}; remove it once that work ends or its claim is stale.",
+                    409, details: ['role' => $role->value, 'reason' => 'claim_active', 'status' => $assignment->status->value]);
             }
             if ($role === RoleName::AppDev && $node->instances()->exists()) {
                 throw new NodeRoleValidationException('The app-dev role cannot be removed while its Node owns Instances.', [
@@ -179,7 +183,8 @@ final readonly class AdmitNodeRoleOperationAction
             if ($assignment->neverTouchedNode()) {
                 return $this->recordRemoval($node, $assignment, $input, $requestId);
             }
-            $operation = $this->operations->execute('node.role_remove', 'node', $node->id, $node->id, $input, 'operator', $requestId);
+            $operation = $this->operations->execute('node.role_remove', 'node', $node->id, $node->id, $input, 'operator', $requestId,
+                lockKey: OperationStore::lockKey('node', $node->id));
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }
@@ -201,7 +206,8 @@ final readonly class AdmitNodeRoleOperationAction
 
     /**
      * R1: a role that never touched the Node has nothing to withdraw, so the Gateway deletes the
-     * assignment and its settings and records a succeeded Operation. The caller holds the Node and assignment locks.
+     * assignment and its settings and records a succeeded Operation under the Node lock, which the success releases at once.
+     * The caller holds the Node and assignment row locks.
      *
      * @param  array<string,mixed>  $input
      */
@@ -210,7 +216,8 @@ final readonly class AdmitNodeRoleOperationAction
         $snapshot = app(NodeRoleRuntimeInput::class)->removal($node, $assignment->role);
         $result = ['node_id' => $node->id, 'assignment_id' => $assignment->id, 'role' => $assignment->role->value,
             'role_removed' => true, 'offline' => false];
-        $operation = $this->operations->record('node.role_remove', 'node', $node->id, $node->id, $input, $result, 'operator', $requestId);
+        $operation = $this->operations->record('node.role_remove', 'node', $node->id, $node->id, $input, $result, 'operator', $requestId,
+            lockKey: OperationStore::lockKey('node', $node->id));
         if ($operation->wasRecentlyCreated) {
             NodeRoleRemovalProjection::recordCleanup(['node_id' => $node->id, 'role' => $assignment->role->value, 'runtime' => $snapshot, 'purge_data' => false]);
             $assignment->delete();
