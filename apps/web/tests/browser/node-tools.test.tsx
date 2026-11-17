@@ -256,15 +256,15 @@ it("does not present a failed scan as an empty inventory", async () => {
     expect(page.getByText("No packages in the completed scans.").query()).toBeNull();
 });
 
-it("shows a partial scan without hiding registered tools", async () => {
+it("shows unobserved managers without hiding registered tools", async () => {
     const app = await openApp("/nodes/2/tools");
 
     await expect
         .element(page.getByTestId("node-tools-scan-states"))
-        .toMatchTextContent("brew is incomplete, so its package list is not an inventory.");
+        .toMatchTextContent("brew is not observed yet, so its package list is not an inventory.");
     await expect
         .element(page.getByTestId("node-tools-scan-states"))
-        .toMatchTextContent("vp is conflicting, so its package list is not an inventory.");
+        .toMatchTextContent("vp is not observed yet, so its package list is not an inventory.");
     await expect
         .element(pane("Detected packages"))
         .toMatchTextContent("No packages in the completed scans.");
@@ -299,7 +299,7 @@ it("shows a node with no tools and an empty completed scan", async () => {
         .toMatchTextContent("brew-cask is unsupported, so its package list is not an inventory.");
     await expect
         .element(page.getByTestId("node-tools-scan-states"))
-        .toMatchTextContent("vp is absent, so its package list is not an inventory.");
+        .toMatchTextContent("vp is not observed yet, so its package list is not an inventory.");
     await expect
         .element(pane("Detected packages"))
         .toMatchTextContent("No packages in the completed scans.");

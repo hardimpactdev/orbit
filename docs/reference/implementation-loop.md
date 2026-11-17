@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,task-check,test,ci-build-plan,ci-units,ci-delivery,ci-tree-receipt,ci-proof-eligibility,ci-proof-run,ci-proof-manual,ci-cache-ref,ci-runner-prerequisites,check-processes,php-build,swamp-shape-gate}
+  - bin/{review-check,task-check,test,ci-build-plan,ci-units,ci-delivery,ci-queue,ci-tree-receipt,ci-proof-eligibility,ci-proof-run,ci-proof-manual,ci-cache-ref,ci-runner-prerequisites,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - "{tools/check_budget.py,tools/pest_runtime.py,bin/pest-plain,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -92,7 +92,7 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | CLI static analysis, PHP SDK static analysis | Run PHPStan for `apps/cli` or `packages/php-sdk` |
 | Docs build | Generate contracts and the Docs index; run strict lint, Docs Pest, `bin/check-flows` and the PR docs-impact gate |
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
-| Web build | Build and retain the web app on every PR for tree reuse; require `dist/index.html` and `dist/version.json` |
+| Web build | Run unit and Chromium/WebKit verification tests, then Chromium app tests; build and retain the web app on every PR for tree reuse; require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only and docs-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
@@ -199,9 +199,21 @@ Each registry entry of a `self_hosted` file names the source of its cost:
 - When the unit ceiling cut such a case, it costs the larger of its cut time and the scaled cost.
 - A file or case that no pool run has reached keeps its hosted cost until a pool run measures it.
 
-Tool-dependent shards retain their limit, `self_hosted_shards` in `[budget]`. Both shard classes also share `runner_shards = 18`, the maximum number of planned fixture jobs in one run. Mandatory cases reserve capacity first; named capacity gaps stay last.
+### Shared fixture capacity
 
-After admission, a plan with more than one shard uses spare planned shards to spread its admitted units into shorter lanes, up to `spread_shards = 16`: two waves of the eight active runners. If admission needs more jobs, it retains them up to the eighteen-job limit. This keeps the small machinery canary in one job and does not admit extra gap cases or change costs. This admission bound does not reserve runners against other workflows: push-to-Required measurements include any queue delay. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
+The capacity model lives in `.github/ci/checks.toml`. `[runner-pool].slots` records the observed shared Sabre and Shark pool size for pressure reports, not an online inventory or a reservation. In `[budget]`, `runner_shards` bounds planned fixture jobs across both classes per run; `pr_shards` and `self_hosted_shards` also bound their respective classes. Mandatory cases reserve plan capacity first; named capacity gaps stay last. Selected work beyond those limits fails `Required checks`, with the named-gap exception below.
+
+After admission, a plan with more than one shard uses spare planned shards to spread admitted units into shorter lanes, up to `spread_shards`. This is a job-count target, not a number of waves or a concurrency guarantee. If admission needs more jobs, it retains them up to `runner_shards`. Spreading keeps the small machinery canary in one job and does not admit extra gap cases or change costs. Concurrent runs and other workflows can occupy the same runners; per-run admission does not provide fair scheduling between pull requests.
+
+The latest 200 main CI runs measured on 17 November 2026 span 14–17 November. The 135 ordinary fixture jobs with valid timestamps across 22 runs used ten distinct shared runners, `ci-sabre-1..5` and `ci-shark-1..5`. Their queue p90 was 329 seconds against 137 seconds running. Percentiles weight every job equally and use nearest rank. Earlier jobs in the window used GitHub-hosted runners and are measured separately.
+
+The main-only sample does not establish that changing spreading or per-PR admission would lower the queue: even runs with no more jobs than observed runners waited. Keep the current admission and spread targets until comparable concurrent-PR evidence supports a change.
+
+`bin/ci-queue --run-id ID` reads the GitHub Actions API and prints a per-attempt pressure report; `--attempt N` selects an earlier attempt. The PR and main Required jobs append it to their Actions summaries, even after a failed gate. Reporting is advisory: an API failure writes an unavailable summary without changing the gate result.
+
+The report separates ordinary shared, tool-dependent shared and GitHub-hosted fixture jobs. Queue time is job creation to start; run time is start to completion, including setup and teardown. Percentiles use nearest rank and only completed, assigned jobs with ordered timestamps; skipped, unassigned, unfinished and invalid records are counted separately, never as zero waits. Reruns can copy earlier execution timestamps into newly created job records, so invalid copied records are excluded.
+
+The report includes distinct runners and this run's peak running and queued fixture jobs against the pool model. It does not measure global runner occupancy, online capacity or other runs' queued jobs. A cancelled workflow that never reaches its reporting step has no automatic report; the script can inspect it later.
 
 `capacity_gap` in the `[budget]` of `checks.toml` lists the self-hosted files that cannot fit the self-hosted shards when selected; [ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) names each one with its reason. The planner admits a gap file after all other work. Its units that fit run. The plan summary names the rest: `Not run: <file>, N units, reason: capacity gap per ADR 0262`. They do not fail `Required checks`.
 
@@ -220,6 +232,8 @@ A hosted runner has none of these, so a `self_hosted` file never runs there.
 ### CI budget
 
 Pull request CI takes at most five minutes from push to result, including queues and dependencies. Proof CI is the only exception. Run only checks that apply to the changed files, using `bin/ci-build-plan`. Docs impact is a policy check on every pull request; it shares the existing Docs job and its two-minute ceiling. Switch an over-budget check off until it meets the budget; no merge, deploy or review waits on it. Whoever adds or restores a job measures its complete path first.
+
+The Web job has a three-minute ceiling and an estimated 150-second table cost, including browser setup, both test stages and the build. A hosted Ubuntu 26.04 run spent 62 seconds installing the locked Chromium and WebKit engines and their system libraries, then 44 seconds running all 541 tests. Its former two-minute limit expired before the build. The extra minute of allowance keeps the existing five-minute overall target; the table cost includes cold browser installation rather than relying on a warm cache. Measure the complete hosted path, including build and upload, before treating that cost as verified.
 
 Measure CI wall time from workflow creation to completion of `Required checks`. Include queueing, input selection and the final gate. Independent jobs overlap, so use the longest required path rather than adding every job's duration. The full workflow can continue after Required checks passes.
 
@@ -250,9 +264,9 @@ Such a change selects the fixtures whose own code it touches, plus the machinery
 
 A canary file must be a registered hosted fixture; `bin/ci-units plan` refuses a list that names an unregistered or `self_hosted` file, or that needs more than one shard.
 
-`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill two lanes per shard, each with at most 150 declared seconds, with at most eighteen fixture jobs across both shard classes per run.
+`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill two lanes per shard, each with at most 150 declared seconds, within the [shared fixture capacity](#shared-fixture-capacity).
 
-Ordinary fixture jobs run on the shared Sabre and Shark pool. Each host has six physical cores with twelve CPU threads and at most five active runners. Two runners have three CPU threads each; three runners have two each. The CPU sets are disjoint, each runner spans different physical cores, and its CPU quota matches its assigned thread count. Each runner has two fixture workers, for ten workers per host. Extra runner containers stay stopped with their listener and autostart disabled. Both classes count against the planner's eighteen-job bound; jobs beyond the ten active runners wait for a place.
+Each shared host has six physical cores with twelve CPU threads and at most five active runners. Two runners have three CPU threads each; three runners have two each. The CPU sets are disjoint, each runner spans different physical cores, and its CPU quota matches its assigned thread count. Extra runner containers stay stopped with their listener and autostart disabled. Fixture jobs beyond the available places wait; the [capacity model](#shared-fixture-capacity) is not a promise of free runners.
 
 Four concurrent Ansible units on a shared runner can exceed the unit ceiling even when each case passes alone. The complete fleet fixture names the CI workflow as an input, so workflow changes exercise every fleet case.
 
@@ -296,7 +310,7 @@ A fixture can declare `mandatory_cases`, mapping an input pattern from its `inpu
 
 The Instance host probe has a small required caller-contract fixture. It renders the shipped host profile, creates a probe through a local Incus stand-in, and runs the shipped nested guard before the probe starts. Changes to the guard or its host callers reserve this proof in the existing hosted shards. The guard's own unit tests cover accepted sizes and refusals; the caller proof checks that the profile and the guard agree. The long case that converges the host runs in a self-hosted fixture shard when its inputs change.
 
-A file that cannot fit even an otherwise empty ten-shard plan, or contains a unit above the lane budget, makes Required checks fail. Unmapped paths select the table’s default checks.
+A file that cannot fit even an otherwise empty plan within its class and shared shard limits, or contains a unit above the lane budget, makes Required checks fail unless it is a [named capacity gap](#shared-fixture-capacity). Unmapped paths select the table’s default checks.
 
 Migration runs in self-hosted fixture shards, split by phase into three files over the harness `swamp/tests/_support/instance_migrate.ts`: static checks, the phases short of a full move, and the full move. Every unit fits a lane. The host ACL and host build-list files and the FrankenPHP proxy fixture run there too.
 
@@ -472,11 +486,11 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 ### Gateway shards
 
-Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. Remote-program and web unit test jobs remain local checks; their test files and commands remain available.
+Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. The Web build job installs the locked Playwright WebKit and Chromium headless shell with their system libraries on `ubuntu-26.04`, then runs `bun run test:unit` and `bun run test:browser` in order before building. Both stages gate its artifact and Required checks under the [Web job budget](#ci-budget). Tests for remote programs still run only locally.
 
 ### Runner policy during the Swamp migration
 
-During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
+During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest, web and Rust tests. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
 Each CI Node runs its CI runners in unprivileged Incus containers. Every runner carries the same labels and no host label, so a workflow never names a host; see [CI runner role](/reference/node-provisioning#ci-runner-role).
 
@@ -555,7 +569,7 @@ The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it con
 
 ### The candidate gate
 
-Root `composer check` builds OpenAPI, navigation, flow data and the documentation context index, then runs `bin/review-check`, the candidate gate. This refreshes ignored outputs from the current checkout before the impact and freshness checks read them.
+Root `composer check` runs `bin/build-api` once to build OpenAPI and MCP tools, then builds navigation, flow data and the documentation context index before running `bin/review-check --prepared-api`, the candidate gate. This refreshes ignored outputs from the current checkout before the impact and freshness checks read them.
 
 The Orbit Project uses it as its task check, so it runs in the task VM at every subtask handoff. The gate runs only fast checks and no test suite. CI omits the Project check and runs the selected jobs in [CI](#ci), including Gateway, CLI and SDK Pest when their inputs change. Required checks must pass on the final head before merge.
 
@@ -638,7 +652,7 @@ The gate fails when HEAD moves during the run. It also fails on formatter drift:
 
 #### Generated artifacts
 
-When `bin/ci-build-plan` selects CI's Generated contracts job, the gate runs the same checks: `bin/check-operation-kinds`, then `bin/docs-openapi` and `bin/mcp-tools`, then `bin/api-fixtures --check`. The generators write ignored build outputs and fail when the sources disagree with the API contract. The fixture check validates the SDK and web fixtures against the fresh OpenAPI document.
+When `bin/ci-build-plan` selects CI's Generated contracts job, the gate runs the same checks: `bin/check-operation-kinds`, then `bin/build-api`, then `bin/api-fixtures --check`. With `--prepared-api`, only generation is omitted because root `composer check` already ran it. The generators write ignored build outputs and fail when the sources disagree with the API contract. The fixture check validates the SDK and web fixtures against the fresh OpenAPI document in either mode.
 
 The gate checks the local candidate tree. CI runs the builds and static checks listed above on the PR merge tree. Test suites remain available for focused local verification.
 
@@ -681,17 +695,21 @@ The [start commit](/reference/tasks#start-commit) has one rule, which the tasks 
 | Part | Runs when | What it runs |
 | --- | --- | --- |
 | `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the branch's [waiver file](/reference/tasks#docs-impact-waivers-in-a-copy) as the candidate gate passes it |
-| `check-flows` | The plan selects the Docs job | `node bin/check-flows`, with `BASE` set to the start commit, as CI runs it |
-| `docs-lint` | The plan selects the Docs job | `bin/docs-openapi` when the plan selects the API reference job, as root `composer check` does, then `composer docs-build` and `composer docs-lint`, which is strict |
+| `check-flows` | Tooling, docs or API reference inputs changed | `node bin/check-flows`, with `BASE` set to the start commit, as CI runs it |
+| `docs-lint` | Tooling, docs or API reference inputs changed | `bin/docs-openapi` when the plan selects the API reference job, as root `composer check` does, then `composer docs-build` and `composer docs-lint`, which is strict |
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
 | `phpstan <project>` | The plan selects the project's static job | `vendor/bin/phpstan analyse` with the project's `phpstan.neon`, on the changed PHP files inside the paths that config analyses |
 | `swamp-shape` | The plan selects the Swamp checks | `bin/swamp-shape-gate --only control`, the static controls that CI's shape job runs, in a checkout of the candidate |
-| `ci-policy` | Always | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy and budget tests that CI's "CI policy" job runs on every PR |
+| `ci-policy` | Policy inputs changed | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy tests that CI's "CI policy" job runs on every PR |
 | `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
 | `pest <project>` | The plan selects the project's Pest job | See below |
 | `fixtures` | `bin/ci-units plan` plans units | Directly touched planned units, then other planned units that fit the budget, through `bin/ci-units run`; the rest are deferred to CI (see below) |
 
-The `ci-policy` part runs on every change, whatever it touched, as CI runs it. CI's budget tests catch a fixture unit above CI's lane even when no CI input changed. The part runs before Pest and the fixtures, so the budget never leaves it out for them. On a loaded Beast it takes about 65 seconds.
+Tooling inputs are paths under `bin/`, `tools/` or `.github/`. The CI checks table owns docs and API reference inputs. The local check uses those inputs, not CI's unconditional PR Docs job, to select expensive checks. The `ci-policy` part still runs before Pest and the fixtures when selected. CI runs its full policy suite on every PR.
+
+Policy inputs also include Swamp's fixtures and proof tooling, the agent, runner resources and machine-software recipes. The `CI_POLICY_INPUTS` table in `bin/task-check` names these source inputs and the files whose presence policy tests check. API inputs select flow checks too, since Gateway operation declarations choose which workflows a chart must match.
+
+Fixture budget validation and placement run on every change, even with `--only` or no time left. They refuse invalid budgets and units above the declared lane outside named capacity gaps. The population check reuses the fixture table already validated for this candidate.
 
 The check prints CI's per-unit time caps at its start: the most seconds a fixture unit declares, `shard_seconds`, and the ceiling that stops it, `unit_ceiling_seconds`, both from `.github/ci/checks.toml`, and the Pest per-test limit of each CI job that sets one. Keep each new or changed test unit within them.
 
@@ -728,7 +746,7 @@ The `fixtures` part runs units of CI's plan only: the same planner, changed-file
 
 First come the units the change touches directly: the units of a changed fixture file, of a fixture whose declared input changed, or of a fixture whose metadata file under `.github/ci/fixtures/` changed. `bin/ci-units` owns that input mapping, `path_matches`, and its planner uses the same one. A change to the fixture machinery touches no fixture directly. The other planned units follow. Each group runs cheapest first. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
 
-The units that did not join, or that the check's own time limit stopped, are deferred to CI. The `fixtures` line names them with their count and total declared seconds, such as `deferred to CI: 76 units, 3200s declared: …`. A deferral never fails the check: CI runs those units. A unit that ran and failed fails the check.
+The units that did not join, or that the check's own time limit stopped, are deferred to CI. The `fixtures` line names them with their count and total declared seconds, such as `deferred to CI: 76 units, 3200s declared: …`. A deferral never fails the check: CI runs those units. A unit that ran and failed fails the check. When the budget stops or omits a part, collection or unit, the final result says `PASSED with incomplete coverage (budget exhausted; CI must finish)` rather than an unqualified pass. The exit code remains zero if no part failed.
 
 The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`.
 
@@ -784,7 +802,7 @@ An unexpected refusal usually means that Laravel loaded a stale cached configura
 
 ## Bootstrap
 
-`bin/bootstrap` installs all four Composer projects. Then it runs `composer test`, the project's full suite, and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the installs.
+`bin/bootstrap` prepares all four Composer projects, reusing successful installs and generated outputs when their inputs are unchanged. The [contributor guide](/contributor-guide) owns the fingerprint and rebuild rules. Then it runs `composer test`, the project's full suite, and `composer check` in each project, including on warm runs. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` omits those checks but still prepares the Gateway key.
 
 `bin/bootstrap --dependencies-only` installs dependencies, including any requested Bun and Rust dependencies, and the [pre-push docs gate](/contributor-guide). It prepares no application state and runs no checks.
 

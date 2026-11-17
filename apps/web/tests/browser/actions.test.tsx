@@ -75,23 +75,41 @@ it("profiles an instance and shows what the command printed in a modal", async (
     fetched.mockRestore();
 });
 
-it("deploys an instance and follows its operation step by step until it ends", async () => {
-    const app = await openApp("/instances/1");
+it("deploys an instance and follows its native operation until it ends", async () => {
+    let finish: (() => void) | undefined;
+    const completion = new Promise<void>((resolve) => {
+        finish = resolve;
+    });
+    const app = await openApp("/instances/1", {
+        wrapTransport: (inner) => async (method, path, body, options) => {
+            const answer = await inner(method, path, body, options);
+            if (
+                method === "GET" &&
+                path === "/api/v1/operations/1" &&
+                (answer.payload as { data: { status: string } }).data.status === "succeeded"
+            ) {
+                await completion;
+            }
+            return answer;
+        },
+    });
     await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "deploy", exact: true }).click();
 
     await expect.element(footer()).toMatchTextContent("started as operation 1.");
+    try {
+        await expect.element(pane("Deploy")).toMatchTextContent("Operation 1 · running");
+    } finally {
+        finish?.();
+    }
     await expect.element(pane("Deploy")).toMatchTextContent("Operation 1 · succeeded");
-    await expect.element(pane("Deploy")).toMatchTextContent("source_preparation");
-    await expect.element(pane("Deploy")).toMatchTextContent("cleanup");
+    await expect.element(row("Deploy", "succeeded")).toBeVisible();
     expect(app.gateway.requests).toContainEqual(
         expect.objectContaining({ method: "POST", path: "/api/v1/instances/1/deploy" }),
     );
     expect(
         app.gateway.requests.some(
-            (request) =>
-                request.method === "GET" &&
-                request.path.startsWith("/api/v1/operations/1?after_sequence="),
+            (request) => request.method === "GET" && request.path === "/api/v1/operations/1",
         ),
     ).toBe(true);
 });
@@ -102,37 +120,34 @@ it("follows a rollback that another client started in a pane of its own", async 
     await app.router.navigate({ to: "/$section/$id", params: { section: "instances", id: "1" } });
 
     await expect.element(pane("Rollback")).toMatchTextContent("Operation 1 · succeeded");
-    await expect.element(pane("Rollback")).toMatchTextContent("rollback");
-    await expect.element(pane("Rollback")).toMatchTextContent("process_restart");
+    await expect.element(row("Rollback", "succeeded")).toBeVisible();
+    await expect.element(pane("Deploy")).not.toBeInTheDocument();
 });
 
-it("shows an instance's Horizon queue by job state and opens a job in Horizon", async () => {
-    // A job opens through a real link with a target, so a new tab is the browser's own behaviour.
-    const opened: { href: string; target: string }[] = [];
-    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
-        this: HTMLAnchorElement,
-    ) {
-        opened.push({ href: this.href, target: this.target });
-    });
-
-    await openApp("/instances/1");
-    await expect.element(pane("Jobs")).toMatchTextContent("No pending jobs.");
-    await expect.element(pane("Queue")).toMatchTextContent("Jobs per minute12");
-    await expect
-        .element(pane("Queue"))
-        .toMatchTextContent("Queue default0 jobs · 0s wait · 3 workers");
+it("shows an instance's queue store by job state without Horizon internals", async () => {
+    const app = await openApp("/instances/1");
+    await expect.element(row("Jobs", "SendInvoice")).toMatchTextContent("default");
+    await expect.element(row("Jobs", "SyncStock")).toMatchTextContent("default");
+    await expect.element(pane("Queue")).toMatchTextContent("Pending2Failed1Queue default2 jobs");
+    await expect.element(pane("Queue")).not.toMatchTextContent("Jobs per minute");
+    await expect.element(page.getByRole("tab", { name: /completed/ })).not.toBeInTheDocument();
 
     await page.getByRole("tab", { name: "failed 1" }).click();
     await expect.element(row("Jobs", "SendReceipt")).toMatchTextContent("mail server refused");
+    await expect.element(row("Jobs", "SendInvoice")).not.toBeInTheDocument();
+    await expect.element(pane("Jobs").getByRole("link")).not.toBeInTheDocument();
+    expect(app.gateway.requests).toContainEqual({
+        method: "GET",
+        path: "/api/v1/instances/1/queue?state=failed",
+        body: undefined,
+    });
 
-    await row("Jobs", "SendReceipt").click();
-    expect(opened).toEqual([
-        { href: "https://charlie-shop.test/horizon/failed/f1", target: "_blank" },
-    ]);
-    click.mockRestore();
+    await page.getByRole("tab", { name: "pending 2" }).click();
+    await expect.element(row("Jobs", "SendInvoice")).toBeVisible();
+    await expect.element(row("Jobs", "SendReceipt")).not.toBeInTheDocument();
 });
 
-it("shows no queue panel for an instance without Horizon", async () => {
+it("shows no queue panel for an instance without a queue store", async () => {
     await openApp("/instances/2");
     await expect.element(pane("Application log")).toBeVisible();
 

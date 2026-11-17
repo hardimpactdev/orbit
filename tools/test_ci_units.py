@@ -458,6 +458,18 @@ class TableTest(unittest.TestCase):
             result = units.plan([f['file']], budget, fixtures, defaults)
             self.assertIn(f['file'], {u.split('#')[0] for u in scheduled(result)})
 
+    def test_configuration_rejects_an_over_budget_unit_even_when_it_is_not_selected(self):
+        config, inventory = units.registry.load(ROOT)
+        file = 'swamp/tests/ansible_command_output_test.py'
+        entry = next(f for f in config['fixture'] if f['file'] == file)
+        entry['cost'] = config['budget']['shard_seconds']
+        with patch.object(units.registry, 'load', return_value=(config, inventory)):
+            budget, fixtures, defaults = units.configuration()
+            self.assertNotIn(file, scheduled(units.plan(['docs/mission.md'], budget, fixtures, defaults)))
+            entry['cost'] += 1
+            with self.assertRaisesRegex(ValueError, file + ': 151s exceeds the 150s fixture lane'):
+                units.configuration()
+
     def test_required_planner_rejects_live_python_cost_drift_even_when_unselected(self):
         file = 'swamp/tests/instance_clone_test.py'
         collect = units.collect
