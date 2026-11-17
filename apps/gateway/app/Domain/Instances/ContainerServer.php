@@ -38,13 +38,12 @@ enum ContainerServer: string
         return $this->program().' serve --host=0.0.0.0 --port='.InstanceHostIntent::T3Port.' --no-browser';
     }
 
-    /** The server command and, for Conn, its unpacked preview browser beside its support files. */
+    /** The server command and, for Conn, the agent folder's one headless Chrome, which agent-browser opens too. */
     public function dropIn(InstanceFolders $folders): string
     {
         $browser = '';
         if ($this === self::Conn) {
-            $binary = $folders->agent['chrome-headless-shell']->bin['chrome-headless-shell'];
-            $browser = 'Environment=CONN_SERVER_BROWSER_PATH='.InstanceHostIntent::AgentFolder.'/current/agent/chrome-headless-shell/'.$binary."\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\n";
+            $browser = 'Environment=CONN_SERVER_BROWSER_PATH='.InstanceContainer::headlessChrome($folders)."\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\n";
         }
 
         return "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=".$this->serve()."\n".$browser;
