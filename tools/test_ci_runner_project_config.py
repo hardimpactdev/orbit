@@ -1,7 +1,7 @@
 """The orbit-ci project config: the Swamp spec (role converge) and the agent's ci-runner.host carry one map.
 
 The agent must not load extension source (apps/agent/tests/extension_boundary.rs), so this cross-project check lives
-with the CI policy tests, which the plan job runs on every pull request.
+with the CI policy tests, which the independent CI policy job runs on every pull request.
 """
 from pathlib import Path
 import re
@@ -52,16 +52,19 @@ class ProjectConfigParityTest(unittest.TestCase):
             with self.subTest(side='spec', key=key):
                 self.assertNotEqual(agent_config(agent), spec_config(line.sub('', spec, count=1)))
 
-    def test_the_plan_job_runs_this_test_on_every_pull_request(self):
-        # Whichever side changes, the pull request runs every tools/test_ci_*.py; only a main push may reuse a tree.
+    def test_policy_runs_without_blocking_selection_and_both_gates_require_it(self):
         jobs = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
-        plan = jobs['changes']
-        self.assertNotIn('if', plan)
-        steps = {step.get('id') or step.get('name'): step for step in plan['steps']}
-        self.assertIn("refs/heads/main", steps['reuse']['if'])
-        policy = steps['Check CI scope and import fixtures']
-        self.assertEqual(policy['if'], "steps.reuse.outputs.reuse != 'true'")
-        self.assertIn("python3 -m unittest discover -s tools -p 'test_ci_*.py'", policy['run'])
+        policy = jobs['ci-policy']
+        self.assertNotIn('needs', policy)
+        self.assertNotIn('if', policy)
+        self.assertNotIn('ci-policy', jobs['changes'].get('needs', []))
+        command = next(step for step in policy['steps'] if step.get('name') == 'Check CI scope and import fixtures')
+        self.assertNotIn('if', command)
+        self.assertIn("python3 -m unittest discover -s tools -p 'test_ci_*.py'", command['run'])
+        self.assertFalse(any('test_ci_' in step.get('run', '') for step in jobs['changes']['steps']))
+        for gate in ('required', 'delivery'):
+            self.assertIn('ci-policy', jobs[gate]['needs'])
+
 
 
 if __name__ == '__main__':

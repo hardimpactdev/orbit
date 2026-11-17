@@ -265,6 +265,42 @@ class FixtureRunTest(unittest.TestCase):
         self.assertEqual(check['capacity_errors']({**plan, 'capacity': []}, table), [])
 
 
+class CapacityPreflightTest(unittest.TestCase):
+    def test_real_host_input_plan_refuses_overflow_before_any_optional_check(self):
+        units = check['units']
+        budget, table, defaults = units.configuration()
+        # Reproduce the host_updates selection of #3908 through the real planner, with no free shard.
+        budget = {**budget, 'runner_shards': 0}
+        # Keep the real host_updates registry entry; unrelated mandatory reservations are tested by the pool suite.
+        table = {name: fixture for name, fixture in table.items() if name.endswith('/ansible_instance_host_updates_test.ts')}
+        plan = units.plan(['swamp/ansible/tasks/instance-host.yml'], budget, table, defaults)
+        unplaced = units.unplaced_units(plan)
+        self.assertTrue(any('ansible_instance_host_updates_test.ts' in unit for unit in unplaced))
+        jobs = {**JOBS, 'docs': False, 'api-reference': False, 'swamp': False}
+        for only in ('ci-plan', 'pest', 'fixtures'):
+            with self.subTest(only=only):
+                output = io.StringIO()
+                stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['swamp/ansible/tasks/instance-host.yml']),
+                         'candidate_head': lambda _committed: 'HEAD',
+                         'ci_plan': lambda _base, _head: (jobs, plan, ''),
+                         'pest_plan': lambda *_args: self.fail('Pest started before capacity refusal'),
+                         'fixtures': lambda *_args: self.fail('Fixtures started before capacity refusal')}
+                with patch.dict(check['main'].__globals__, stubs), redirect_stdout(output):
+                    code = check['main'](['--only', only, '--budget', '0'])
+                self.assertEqual(code, 1)
+                self.assertIn('fixture-capacity: FAILED', output.getvalue())
+                self.assertIn('ansible_instance_host_updates_test.ts', output.getvalue())
+
+    def test_named_gap_is_not_an_unplaceable_required_selection(self):
+        plan = {'shards': [], 'self_hosted_shards': [], 'unmapped': [],
+                'not_run': [{'file': 'swamp/gap.py', 'units': ['swamp/gap.py'], 'reason': 'capacity gap per ADR 0262'}]}
+        jobs = {**JOBS, 'docs': False, 'api-reference': False, 'swamp': False}
+        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', []),
+                 'candidate_head': lambda _committed: 'HEAD', 'ci_plan': lambda _base, _head: (jobs, plan, '')}
+        with patch.dict(check['main'].__globals__, stubs), redirect_stdout(io.StringIO()):
+            self.assertEqual(check['main'](['--only', 'ci-plan']), 0)
+
+
 class FixturePopulationTest(unittest.TestCase):
     def test_a_planned_fixture_is_checked_even_when_its_own_file_did_not_change(self):
         fixtures = {'swamp/tests/maintenance_resources_test.ts': {'cases': ['a', 'b']}, 'swamp/tests/frankenphp_proxy_test.ts': {'cases': ['a']},
@@ -450,9 +486,9 @@ class CiPolicyTest(unittest.TestCase):
         with patch.dict(check['ci_policy'].__globals__, {'CI_POLICY': commands}):
             return check['ci_policy'](time.monotonic() + seconds)
 
-    def test_the_part_runs_the_commands_of_cis_select_build_inputs_job(self):
-        step = check['ci_job']('changes')
-        self.assertIn('    name: Select build inputs\n', step)
+    def test_the_part_runs_the_commands_of_cis_policy_job(self):
+        step = check['ci_job']('ci-policy')
+        self.assertIn('    name: CI policy\n', step)
         commands = [shlex.split(line.strip()) for line in step.splitlines() if line.strip().startswith('python3 -m unittest discover')]
         self.assertEqual(check['CI_POLICY'], commands)
         self.assertEqual(len(commands), 2)
@@ -462,7 +498,7 @@ class CiPolicyTest(unittest.TestCase):
         ran = []
         jobs = {**JOBS, 'docs': False, 'api-reference': False, 'swamp': False}
         stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['docs/reference/tasks.md']),
-                 'candidate_head': lambda _committed: 'HEAD', 'ci_plan': lambda _base, _head: (jobs, {}, ''),
+                 'candidate_head': lambda _committed: 'HEAD', 'ci_plan': lambda _base, _head: (jobs, {'shards': [], 'self_hosted_shards': [], 'unmapped': []}, ''),
                  'run': lambda argv, *_args, **_kwargs: ran.append(argv) or (0, '')}
         output = io.StringIO()
         with patch.dict(check['main'].__globals__, stubs), redirect_stdout(output):
@@ -486,7 +522,7 @@ class CiPolicyTest(unittest.TestCase):
         order = []
         jobs = {**JOBS, 'docs': False, 'api-reference': False, 'swamp': False}
         stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['docs/reference/tasks.md']),
-                 'candidate_head': lambda _committed: 'HEAD', 'ci_plan': lambda _base, _head: (jobs, {}, ''),
+                 'candidate_head': lambda _committed: 'HEAD', 'ci_plan': lambda _base, _head: (jobs, {'shards': [], 'self_hosted_shards': [], 'unmapped': []}, ''),
                  'ci_policy': lambda _deadline: order.append('ci-policy') or Part('ci-policy', 'passed'),
                  'fixture_population': lambda _plan, _deadline: order.append('fixture-population') or Part('fixture-population', 'passed'),
                  'pest_plan': lambda _jobs, _paths, _base: order.append('pest') or [],
