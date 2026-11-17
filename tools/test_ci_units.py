@@ -1025,6 +1025,26 @@ class PopulationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(units.run([], BUDGET, {}, Path(scratch) / 'times.json'), 1)
 
+    def test_a_custom_tools_cache_reaches_fixture_execution_without_a_default_install(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            tools = Path(scratch) / 'custom-tools'
+            venv = tools / units.gate.venv_name()
+            (venv / 'bin').mkdir(parents=True)
+            (venv / '.complete').touch()
+            galaxy = venv / 'bin/ansible-galaxy'
+            galaxy.write_text('#!/bin/sh\nexit 0\n')
+            galaxy.chmod(0o755)
+            # The fixture consumes PATH from the prepared cache and checks the collection path it receives.
+            file = 'swamp/custom.py'
+            step = units.gate.Step('shape', file, [sys.executable, '-c',
+                'import os; '
+                f'assert os.environ["PATH"].split(os.pathsep)[0] == {str(venv / "bin")!r}; '
+                f'assert os.environ["ANSIBLE_COLLECTIONS_PATH"] == {str(units.gate.collections_path(tools))!r}'])
+            times = Path(scratch) / 'times.json'
+            with patch.object(units, 'fixture_steps', return_value={file: step}), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(units.run([file], BUDGET, {file: fixture(file)}, times, tools), 0)
+            self.assertEqual(json.loads(times.read_text())[0]['status'], 'passed')
+
     def test_cancelled_supervisor_reaps_detached_descendants_and_returns_a_receipt(self):
         with tempfile.TemporaryDirectory() as scratch:
             pid = Path(scratch) / 'pid'
