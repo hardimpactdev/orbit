@@ -674,61 +674,65 @@ EXECUTOR_CALLERS = {
 
 
 EXECUTOR_JOURNAL = '/var/lib/orbit/executor/journal'
+# A proof.noop finishes in milliseconds once the observer hands it over: after the last publish the step waits this long, once,
+# and then reads the executor's journal and log a single time.
+EXECUTOR_RESULT_SECONDS = 3
+
+
+def executor_refusals(run, node, since, code):
+    """The executor's log since `since`, and how many orders from the observer it refused with `code`."""
+    log = run.fleet.sh(node, shlex.join(['journalctl', '-u', 'orbit-executor.service', '--since', since, '--no-pager', '-o', 'cat'])).stdout
+    return log, len([line for line in log.splitlines() if 'from Observer: ' + code in line])
+
+
+def executor_done(run, node):
+    """The executor journal's `done` records by nonce."""
+    records = (json_line(line) for line in run.fleet.sh(node, shlex.join(['cat', EXECUTOR_JOURNAL])).stdout.splitlines())
+    return {record.get('nonce'): record for record in records if record.get('record') == 'done'}
+
+
+def json_line(line):
+    try:
+        value = json.loads(line)
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def executor_publish(run, args):
     """Publish signed proof.noop orders as `executor-order` on the Node's channel through the nested Gateway's own signer and
     publisher, so they reach the executor only through the observer (ADR 0266 slice 2). `tamper` makes one order security test's
-    order. `expect: {done: true}` waits for a `done` journal record of every nonce and saves the latency from the Gateway's publish
-    to the executor's result as evidence; `expect: {refused: <code>}` waits for the observer's order refused with that code."""
+    order. After one wait of EXECUTOR_RESULT_SECONDS, `expect: {done: true}` needs a `done` journal record of every nonce and saves
+    the latency from the Gateway's publish to the executor's result as evidence; `expect: {refused: <code>}` needs each order
+    refused on the observer path with that code."""
     node = nodes_of(run, 'executor_publish', args['on'])[0]
     # `operation` only names the evidence: the Gateway's proof support gives each order its own numeric Operation id.
     payload = {'mode': 'publish', 'node': run.fleet.nodes[node]['node_id'], 'count': args.get('count', 1)}
-    if 'tamper' in args:
-        payload['tamper'] = args['tamper']
-    if 'nonce' in args:
-        payload['nonce'] = run.names[args['nonce']]
+    payload.update({key: args[key] for key in ('tamper',) if key in args})
+    payload.update({'nonce': run.names[args['nonce']]} if 'nonce' in args else {})
     expect = args['expect']
     since = run.fleet.sh(node, 'date -u +%Y-%m-%dT%H:%M:%S').stdout.strip()
-
-    def refusals():
-        log = run.fleet.sh(node, shlex.join(['journalctl', '-u', 'orbit-executor.service', '--since', since, '--no-pager', '-o', 'cat'])).stdout
-        return log, len([line for line in log.splitlines() if 'from Observer: ' + expect['refused'] in line])
     # `since` has whole seconds, so an earlier step's refusal can fall inside it: count only the refusals after this publish.
-    before = refusals()[1] if 'refused' in expect else 0
+    before = executor_refusals(run, node, since, expect['refused'])[1] if 'refused' in expect else 0
     orders = executor_guest(run, payload)['orders']
-    if 'save' in args:
-        run.names[args['save']] = orders[0]['nonce']
-    deadline = time.monotonic() + 15
-    while True:
-        if 'refused' in expect:
-            log, count = refusals()
-            refused = count - before
-            if refused >= len(orders):
-                run.evidence_text(f'executor-ws-{args["operation"]}.txt', log)
-                return []
-            missing = f'{len(orders) - refused} of {len(orders)} orders not refused by the observer path with {expect["refused"]}'
-        else:
-            done = {}
-            for line in run.fleet.sh(node, shlex.join(['cat', EXECUTOR_JOURNAL])).stdout.splitlines():
-                try:
-                    record = json.loads(line)
-                except ValueError:
-                    continue
-                if record.get('record') == 'done':
-                    done[record.get('nonce')] = record
-            found = [(order, done[order['nonce']]) for order in orders if order['nonce'] in done]
-            if len(found) == len(orders):
-                latencies = sorted(record['at_ms'] - order['published_ms'] for order, record in found)
-                summary = {'orders': len(latencies), 'p50_ms': latencies[len(latencies) // 2],
-                           'p95_ms': latencies[min(len(latencies) - 1, (len(latencies) * 95) // 100)], 'max_ms': latencies[-1],
-                           'latencies_ms': latencies, 'statuses': sorted({record.get('status') for _, record in found})}
-                run.evidence_text(f'executor-ws-{args["operation"]}.json', json.dumps(summary, indent=2) + '\n')
-                return [] if summary['statuses'] == ['done'] else [f'executor {node}: results {summary["statuses"]}']
-            missing = f'{len(orders) - len(found)} of {len(orders)} orders have no done record'
-        if time.monotonic() >= deadline:
-            return [f'executor {node} over the WebSocket: {missing} within 15 s']
-        time.sleep(0.5)
+    run.names.update({args['save']: orders[0]['nonce']} if 'save' in args else {})
+    run.sleep(EXECUTOR_RESULT_SECONDS)
+    if 'refused' in expect:
+        log, count = executor_refusals(run, node, since, expect['refused'])
+        run.evidence_text(f'executor-ws-{args["operation"]}.txt', log)
+        missing = len(orders) - (count - before)
+        return [] if missing <= 0 else [
+            f'executor {node} over the WebSocket: {missing} of {len(orders)} orders not refused with {expect["refused"]} within {EXECUTOR_RESULT_SECONDS} s']
+    done = executor_done(run, node)
+    found = [(order, done[order['nonce']]) for order in orders if order['nonce'] in done]
+    if len(found) < len(orders):
+        return [f'executor {node} over the WebSocket: {len(orders) - len(found)} of {len(orders)} orders have no done record within {EXECUTOR_RESULT_SECONDS} s']
+    latencies = sorted(record['at_ms'] - order['published_ms'] for order, record in found)
+    summary = {'orders': len(latencies), 'p50_ms': latencies[len(latencies) // 2],
+               'p95_ms': latencies[min(len(latencies) - 1, (len(latencies) * 95) // 100)], 'max_ms': latencies[-1],
+               'latencies_ms': latencies, 'statuses': sorted({record.get('status') for _, record in found})}
+    run.evidence_text(f'executor-ws-{args["operation"]}.json', json.dumps(summary, indent=2) + '\n')
+    return [] if summary['statuses'] == ['done'] else [f'executor {node}: results {summary["statuses"]}']
 
 
 def executor_order(run, args):

@@ -5,7 +5,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -80,9 +79,7 @@ class ExecutorStepsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             run = runner.Run(FakeFleet(), spec.Spec('node:converge', 'node/converge', 'app-dev', [], [], []), directory)
             run.fleet.sh = sh
-            with unittest.mock.patch.object(steps.time, 'sleep'), \
-                    unittest.mock.patch.object(steps.time, 'monotonic', side_effect=[0, 1, 20, 21, 40]):
-                failures = steps.executor_publish(run, args)
+            failures = steps.executor_publish(run, args)
             evidence = {path.name: path.read_text() for path in Path(directory).rglob('executor-ws-*')}
             return failures, calls, run, evidence
 
@@ -98,11 +95,15 @@ class ExecutorStepsTest(unittest.TestCase):
         self.assertEqual(payload, {'mode': 'publish', 'node': run.fleet.nodes['app-dev']['node_id'], 'count': 3})
         summary = json.loads(evidence['executor-ws-proof-ws.json'])
         self.assertEqual((summary['orders'], summary['p50_ms'], summary['max_ms']), (3, 5, 6))
+        waits = [call for call in calls if call[1].startswith('sleep ')]
+        self.assertEqual([call[:2] for call in waits], [('app-dev', f'sleep {steps.EXECUTOR_RESULT_SECONDS + 1}')], 'one fixed wait on the Node')
+        reads = [call for call in calls if steps.EXECUTOR_JOURNAL in call[1]]
+        self.assertEqual(len(reads), 1, 'the journal is read once')
 
         missing = '\n'.join(journal.splitlines()[:2])
         failures, _, _, _ = self.publish([signer, ('/var/lib/orbit/executor/journal', done(missing))],
                                          {'on': 'app-dev', 'operation': 'proof-ws', 'count': 3, 'expect': {'done': True}})
-        self.assertEqual(failures, ['executor app-dev over the WebSocket: 1 of 3 orders have no done record within 15 s'])
+        self.assertEqual(failures, ['executor app-dev over the WebSocket: 1 of 3 orders have no done record within 3 s'])
 
     def test_a_tampered_order_needs_its_refusal_from_the_observer_path(self):
         signer = ('executor-order.php', done(json.dumps({'orders': [{'operation': '9000000000000000', 'nonce': 'ab' * 16, 'published_ms': 1}]})))
