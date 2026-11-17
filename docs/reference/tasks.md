@@ -1334,7 +1334,7 @@ Swamp requests a baseline before implementation when its workflow calls for one.
 
 ### Scoped task check
 
-The Orbit Project whose default Instance is a container uses `bin/task-check` as its check. The candidate gate, `bin/review-check`, checks all five Composer projects and does not fit a handoff in a copy. `bin/task-check` checks what the task changed since its start commit, as CI checks it, and stays under five minutes.
+The Orbit Project whose default Instance is a container uses `bin/task-check` as its check. The candidate gate, `bin/review-check`, checks all four Composer projects and does not fit a handoff in a copy. `bin/task-check` checks what the task changed since its start commit, as CI checks it, and stays under five minutes.
 
 A person sets it on the Project once, after the release that ships the command. `orbit project:update` takes the numeric Project id; the Orbit container Project is 78:
 

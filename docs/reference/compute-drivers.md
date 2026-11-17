@@ -29,7 +29,7 @@ The repository's machine software recipe is [`apps/gateway/resources/machine-sof
 
 The recipe pins both the Vite+ runtime (`vp`) and CLI (`vp-cli`) to `1.4.0`. Project lockfiles stay independent: [deployment admission](/reference/tools#project-environments-in-the-vite-store) accepts a manager at least as new as the Project's locked Vite+ release, including Projects on `1.2.x`. A recipe update does not update those lockfiles.
 
-The loader and validator define the recipe contract. The [base snapshot refresh](#refresh-the-base-snapshot) converges the base VM to that document. Claims [copy the base snapshot](#claims-copy-the-base-snapshot), and a topology that a contributor acquires by hand [copies its Nodes from its topology seed](/reference/incus-topologies#one-template-node).
+The loader and validator define the recipe contract. Development uses a [task copy and its nested fleet](/reference/tasks#build-a-feature-in-one-copy), not a manually acquired VM topology or a topology seed disk.
 
 ### Recipe schema
 
@@ -1286,21 +1286,19 @@ These alternatives were also rejected:
 
 ## Orbit Project
 
-A group of the `orbit` Project runs on a task VM. It is the proof Project, and the only Project a task VM serves: the base carries only its checkout. Its workspace is the Instance `task-<group id>` without a Route, and every claim clones from the Gateway mirror and installs the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`.
+A group of the `orbit` Project runs in a [task copy](/reference/tasks#task-copy). Build and prove its feature in that copy and its [nested fleet](/reference/tasks#build-a-feature-in-one-copy). Install the dependencies of the four Composer projects and the web app. Its scoped check is `bin/task-check`; root `composer check` runs the full candidate gate.
 
 Configure the Project like this:
 
 - Add the setup step [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) after the install steps.
 
-Without the `@orbit/ci-caches` step, Pint and PHPStan start cold in every task VM workspace. With it, a fresh workspace gets the Pint and PHPStan caches that main CI published for its baseline.
-
-The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the install steps build fresh dependency trees using private caches.
+Without the `@orbit/ci-caches` step, Pint and PHPStan start cold. With it, a fresh workspace can import the retained caches for its baseline. [Instance setup](/reference/instance-setup) owns dependency seeding and setup and teardown execution.
 
 ### Declare a topology
 
 A subtask declares no topology. The API ignores an empty `topology` list and refuses any other list with `422 tasks.orchestration_unsupported`. A value that is not a list, such as a string or `null`, fails validation with `422 validation.failed`. This holds when a request creates a group, creates a subtask, or updates a subtask. Task responses have no `topology` field, and the CLI has no `--topology` option.
 
-Nothing reads a declaration that a group saved before this rule. The column `tasks.topology` is dropped ([old paths](/reference/old-paths#task-vm-settings)). The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` went with the table `task_vms` ([old paths](/reference/old-paths#the-task-vm-tables)). A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
+Nothing reads a declaration that a group saved before this rule. The column `tasks.topology` is dropped ([old paths](/reference/old-paths#task-vm-settings)). The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` went with the table `task_vms` ([old paths](/reference/old-paths#the-task-vm-tables)). The manual VM topology harness is removed. Build and prove features in the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy), the environment of [stage 2](/reference/command-development-pipeline#2-development-environment).
 
 ## VM power
 

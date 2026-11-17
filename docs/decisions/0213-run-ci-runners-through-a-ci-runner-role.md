@@ -56,7 +56,7 @@ The host is visible as a workload Node with meters and normal fleet participatio
 
 ## Affects
 
-- Components: apps/gateway, apps/cli, apps/web, apps/docs, apps/e2e
+- Components: apps/gateway, apps/cli, apps/web, apps/docs
 - ADRs: 0223
 - Detail: [Node provisioning](/reference/node-provisioning#ci-runner-role); [Implementation loop](/reference/implementation-loop#self-hosted-shard-runners)
 - Verify: focused role, Doctor, recipe, fleet, exporter, remote-program, and browser tests; disposable Incus adoption and removal before live rollout; runner lifecycle verification when built

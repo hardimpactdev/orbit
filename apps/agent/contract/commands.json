@@ -34,34 +34,6 @@
   ],
   "commands": [
     {
-      "name": "task-vm.start-topology",
-      "summary": "Start one bounded topology preparation as the managed account.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.topology_input_invalid",
-        "task_vm.topology_failed"
-      ]
-    },
-    {
-      "name": "task-vm.topology-status",
-      "summary": "Read a topology result, boot identity, or conservative systemd state.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.topology_input_invalid",
-        "task_vm.topology_failed"
-      ]
-    },
-    {
       "name": "agent.status",
       "summary": "Report the running agent binary and its observer.",
       "mutates": false,
@@ -997,20 +969,6 @@
       "errors": [
         "route.http_input_invalid",
         "route.http_unreachable"
-      ]
-    },
-    {
-      "name": "task-vm.read-topology-evidence",
-      "summary": "Read the newest MiB of a task VM checkout's topology evidence.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.evidence_input_invalid",
-        "task_vm.evidence_unreadable"
       ]
     },
     {

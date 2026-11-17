@@ -54,9 +54,7 @@ Reviewer trust is not an Instance environment setting. The Gateway operator sets
 
 The logins requested as reviewers on a published task pull request are also Gateway configuration. The operator sets `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` in the Gateway's `.env`. Unset or empty requests no one. See [Tasks configuration](/reference/tasks#configuration).
 
-The Incus harness also reads its own environment. `ORBIT_E2E_INCUS_MEMORY` overrides the memory limit for every guest it creates, for example `2GiB`. When unset, the harness uses the [per-Node defaults](/reference/incus-topologies#capacity). It does not read this setting from an Instance's `.env`. No setting chooses the guests' pool or root disk size: every guest is a copy of the task VM's `node-template` in the pool `topology-seed`.
-
-`ORBIT_GATEWAY_URL` and `ORBIT_CA_PATH` are web development proxy inputs, not Instance settings. A [topology web session](/reference/web-app#run-against-a-topology) pins the URL and trusted CA to its selected topology. Inherited endpoint overrides, including settings in the caller's environment or web development files, must not redirect Gateway, realtime, or metrics traffic to the live fleet. Missing required topology configuration fails startup instead of reading a live profile or another user's credentials.
+`ORBIT_GATEWAY_URL` and `ORBIT_CA_PATH` are [web development proxy inputs](/reference/browser-access#web-app-development-server), not Instance settings. Point them only at the intended development Gateway. Use the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy) for mutating UI checks, not a live profile.
 
 `ORBIT_DOCS_ROOT` overrides the Docs tooling's documentation directory, normally repository-root `docs/`. `bin/docs-merge-check` sets it to the temporary checkout's `docs/` directory so all lint rules inspect the selected tree. This local tooling setting is not an Instance environment value. See [the contributor checks](/contributor-guide#checks-that-need-no-network).
 

@@ -53,11 +53,9 @@ mod ssh_host_key;
 pub mod storage_root;
 pub mod task_git;
 pub mod task_git_import;
-pub(crate) mod task_topology;
 pub mod tls_check;
 mod tool_output;
 mod tools_apt;
-pub mod topology_evidence;
 pub mod vite;
 mod vp_global;
 mod vp_scope;
@@ -77,8 +75,6 @@ pub fn linux_only(platform: Platform, privilege: Privilege) -> Option<Privilege>
 
 pub fn all() -> Vec<Entry> {
     vec![
-        entry::<task_topology::Start>(),
-        entry::<task_topology::Inspect>(),
         entry::<agent::Status>(),
         entry::<vp_store::Inspect>(),
         entry::<vp_scope::Inspect>(),
@@ -135,7 +131,6 @@ pub fn all() -> Vec<Entry> {
         entry::<firewall::native::route::RouteLan>(),
         entry::<tls_check::VerifyCertificate>(),
         entry::<http_check::VerifyHttp>(),
-        entry::<topology_evidence::ReadTopologyEvidence>(),
         entry::<task_git::ReadRefs>(),
         entry::<task_git_import::ImportPack>(),
         entry::<caddy_certificate::InstallCertificate>(),

@@ -27,7 +27,7 @@ From the repository root, install the project dependencies:
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the five Composer projects and writes the Gateway's application key to `~/.orbit/gateway.app-key`, or to `$ORBIT_HOME/gateway.app-key` when `ORBIT_HOME` is set. It keeps a key that already exists. The web app, the Node agent, and the desktop app use Bun or Cargo; add `--with-bun` or `--with-rust` to install their locked dependencies too. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to install, run, and check them.
+`bin/bootstrap` installs the four Composer projects and writes the Gateway's application key to `~/.orbit/gateway.app-key`, or to `$ORBIT_HOME/gateway.app-key` when `ORBIT_HOME` is set. It keeps a key that already exists. The web app, the Node agent, and the desktop app use Bun or Cargo; add `--with-bun` or `--with-rust` to install their locked dependencies too. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to install, run, and check them.
 
 Bootstrap also installs the repository's Git hooks through local `core.hooksPath`, including with `--dependencies-only`. The pre-push hook runs `bin/docs-impact --gate --base origin/main` and refuses a push when it fails. Fetch `origin/main` before preparing a push. Commit the impacted documentation and resolve the gate's findings before pushing again.
 
@@ -179,7 +179,7 @@ The wrapper stops its remaining child processes and waits for them before removi
 
 The first interrupt is forwarded to the test process group. The launcher gives the group and its adopted children up to 75 seconds to finish cleanup, even when the Pest leader exits before its workers. This exceeds the Linux host cleanup's 60-second SSH timeout. A second interrupt forces termination. After an ordinary exit, remaining children stop immediately. `SIGKILL` of the launcher can leave a run directory for manual inspection. Use `bin/pest-plain vendor/bin/pest ...` for direct Pest runs too.
 
-Gateway bootstrap reuses the run directory. Without the wrapper it creates a process-local `orbit-gateway-tests-<pid>-<random>` directory. E2E tests keep their fixtures in an `orbit-e2e-tests-<random>` child directory. Create fixtures under `sys_get_temp_dir()`, not a fixed `/tmp`, unless the test needs a short Unix socket path or a path that a Node program fixes. On `app-dev` Nodes, the [tmpfiles rule](/reference/node-provisioning#converge-the-orbit-footprint) empties `/tmp/orbit-*` and `/dev/shm/orbit-*` directories a day after their contents last changed.
+Gateway bootstrap reuses the run directory. Without the wrapper it creates a process-local `orbit-gateway-tests-<pid>-<random>` directory. Create fixtures under `sys_get_temp_dir()`, not a fixed `/tmp`, unless the test needs a short Unix socket path or a path that a Node program fixes. On `app-dev` Nodes, the [tmpfiles rule](/reference/node-provisioning#converge-the-orbit-footprint) empties `/tmp/orbit-*` and `/dev/shm/orbit-*` directories a day after their contents last changed.
 
 Every Gateway Feature test gets `Storage::fake('local')`. Its Laravel storage path points to a temporary directory for that test, including direct-file staging. An after-test guard compares the original `storage/app` tree and fails if files changed there. Use the fake disk or a per-test temporary path for archives; never write transcript fixtures to the real archive root. Give global test constants and helpers names unique to their test file: the full suite loads Unit and Feature files together.
 
@@ -237,7 +237,7 @@ The interim, until Swamp's merge step is built: whoever opens a pull request squ
 
 Root `composer check` builds OpenAPI and the documentation outputs before running `bin/review-check`, so a task checkout checks artifacts from its current sources.
 
-The gate runs `composer check` in each of the five Composer projects, several projects at once. It runs no test suite. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also checks generated OpenAPI and MCP artifacts, Rust formatting, and the web app profile. Artifact failures name the regeneration command. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff; CI omits the Project check for now. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
+The gate runs `composer check` in each of the four Composer projects, several projects at once. It runs no test suite. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also checks generated OpenAPI and MCP artifacts, Rust formatting, and the web app profile. Artifact failures name the regeneration command. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff; CI omits the Project check for now. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
 
 Each project's `composer check` runs Rector and Pint in fix mode, then PHPStan. Commit the formatter edits with your change; no CI job checks style. The [feature delivery reference](/reference/implementation-loop#formatters-run-in-fix-mode) explains why. Pest, PHPStan, Rector, and Pint run in parallel. `bin/check-processes` derives their [process count](/reference/implementation-loop#parallel-processes) from available CPU and memory.
 
@@ -247,7 +247,7 @@ Routine test review uses each project's testing guidance and the existing review
 
 ## Static analysis
 
-PHPStan checks each PHP project during `composer check`, at level 9. The projects are `apps/gateway`, `apps/cli`, `packages/php-sdk`, `apps/e2e`, and `apps/docs`. Laravel projects use Larastan. The SDK uses PHPStan directly.
+PHPStan checks each PHP project during `composer check`, at level 9. The projects are `apps/gateway`, `apps/cli`, `packages/php-sdk`, and `apps/docs`. Laravel projects use Larastan. The SDK uses PHPStan directly.
 
 Fix the code that PHPStan reports, so that the declared type and the runtime value agree. Do not clear a finding with any of these:
 
@@ -258,7 +258,7 @@ Fix the code that PHPStan reports, so that the declared type and the runtime val
 
 The finding pack also rejects a call to `strtotime()`, so use Carbon parsing. In a test, chain `preventStrayClassifications()` to every `Classification::fake()` call.
 
-The CLI and E2E projects each keep one counted `ignoreErrors` entry for a Larastan finding on an inherited command helper. Each entry names the commands, the option, the file, and the count. Do not add an entry or raise a count.
+The CLI keeps one counted `ignoreErrors` entry for a Larastan finding on an inherited command helper. The entry names the commands, the option, the file, and the count. Do not add an entry or raise a count.
 
 ## Dependencies
 
@@ -275,7 +275,7 @@ When updating Vite+ in web, keep the `vite` alias on the same Vite+ core version
 
 Dependabot holds routine `vite-plus` version updates in web until it can move the core alias and runner overrides with them. Update that set together manually. Security updates remain enabled and must satisfy the same version alignment.
 
-Dependabot is the automatic updater. It covers Composer in CLI, Gateway, Docs, E2E and the PHP SDK; Bun in web and desktop; and GitHub Actions' full-SHA pins. Every entry in `.github/dependabot.yml` joins the daily multi-ecosystem group and sets `cooldown.default-days: 7`, so one daily pull request proposes releases that are at least seven days old. Security updates through Dependabot are not delayed. Enabling Dependabot security updates and GitHub's SHA-pinning policy is a separate operator step; repository files do not enable those settings.
+Dependabot is the automatic updater. It covers Composer in CLI, Gateway, Docs and the PHP SDK; Bun in web and desktop; and GitHub Actions' full-SHA pins. Every entry in `.github/dependabot.yml` joins the daily multi-ecosystem group and sets `cooldown.default-days: 7`, so one daily pull request proposes releases that are at least seven days old. Security updates through Dependabot are not delayed. Enabling Dependabot security updates and GitHub's SHA-pinning policy is a separate operator step; repository files do not enable those settings.
 
 When a published advisory has a fix, link the CVE or GHSA advisory in the pull request, update the package, run `composer audit:dependencies` and the checks, and get a review. If the fixed release is younger than three days, add its exact package name to `minimum-release-age-exclude` in `vet.json`, or to `install.minimumReleaseAgeExcludes` in `bunfig.toml`. Remove the exclusion when the release is three days old.
 
@@ -291,7 +291,7 @@ Open the pull request and request maintainer review only after the feature is bu
 
 ## Review and merge
 
-Orbit's independent reviewer checks the code, the documentation, and the ADRs, and reproduces the feature on an [Incus topology](/reference/incus-topologies). The reviewer records the commit, the environment, the actions, the results, and the limits. The [feature delivery reference](/reference/implementation-loop) lists that evidence.
+Orbit's independent reviewer checks the code, the documentation, and the ADRs, and reproduces the feature in the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). The reviewer records the commit, the environment, the actions, the results, and the limits. The [feature delivery reference](/reference/implementation-loop) lists that evidence.
 
 Address the review findings. Reviewers check the fixes and repeat the affected checks on the updated pull request. The gate and the merge are [stage 4](/reference/command-development-pipeline#4-pr-and-ci).
 
@@ -308,7 +308,7 @@ The skills in the repository guide an agent through the work.
 | Build and submit the feature or command (stage 4) | [developing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/developing-commands/SKILL.md) |
 | Review a proposal or a completed pull request | [reviewing-pull-requests](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/reviewing-pull-requests/SKILL.md) |
 
-For focused work, use [writing-documentation](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md), [verifying-cli-output](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md), [verifying-web-ui](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md), or [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md). CLI work follows the [CLI design standard](/reference/cli-ux) and the [command vocabulary](/reference/cli-command-vocabulary). A web UI change follows [web verification](/reference/web-verification).
+For focused work, use [writing-documentation](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md), [verifying-cli-output](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md), or [verifying-web-ui](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md). CLI work follows the [CLI design standard](/reference/cli-ux) and the [command vocabulary](/reference/cli-command-vocabulary). A web UI change follows [web verification](/reference/web-verification).
 
 An independent reviewer can review the proposed ADRs and documentation before coding, on request.
 
@@ -375,7 +375,7 @@ A pull request carries the ADR, the implementation, and the documentation togeth
 
 ### Review reproduces on a topology
 
-Orbit's reviewer judges the change from its tests and its diff. A task group cannot declare a [topology](/reference/incus-topologies), so Orbit prepares none. Contributors do not have to run Incus before they submit, because they may not have the environment. External contributors and internal automation meet the same review and merge standard.
+Orbit's reviewer judges the change from its tests, its diff and its pre-PR proof in the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). The manual VM topology harness is removed; task groups do not declare topologies. External contributors and internal automation meet the same review and merge standard.
 
 A separate proof run for each candidate is a rejected alternative. That flow kept a proof plan and fixtures beside each branch, captured immutable evidence on a proof topology, kept those machines through review, compared later commits by recorded inputs, and promoted the proof topology into the snapshot at closeout. It doubled the delivery steps and held machines through review. The ownership and cleanup rules of that flow still apply to every topology.
 
