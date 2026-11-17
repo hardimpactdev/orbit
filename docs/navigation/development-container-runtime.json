@@ -11,6 +11,14 @@
   ],
   "redirects": [
     {
+      "source": "/solutions/agent-runtime-and-manual-mode",
+      "destination": "/solutions/development-container-runtime"
+    },
+    {
+      "source": "/solutions/container-instances-and-releases",
+      "destination": "/solutions/development-container-runtime"
+    },
+    {
       "source": "/solutions/task-container-runtime",
       "destination": "/solutions/development-container-runtime"
     }

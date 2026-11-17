@@ -59,8 +59,7 @@ PEST_JOBS = {'gateway-tests': 'apps/gateway', 'cli-tests': 'apps/cli', 'sdk-test
 # CI's workflow owns each Pest job's per-test time limit and its fixture table owns the per-unit cap: the check reads both.
 CI_WORKFLOW = ROOT / '.github/workflows/ci.yml'
 CI_TABLE = ROOT / '.github/ci/checks.toml'
-STATIC_JOBS = {'gateway-static': 'apps/gateway', 'cli-static': 'apps/cli', 'sdk-static': 'packages/php-sdk',
-               'e2e-static': 'apps/e2e'}
+STATIC_JOBS = {'gateway-static': 'apps/gateway', 'cli-static': 'apps/cli', 'sdk-static': 'packages/php-sdk'}
 # The suites small enough to run whole. Each other suite runs only its changed, contract-mapped and pin test files.
 FULL_SUITES = ('packages/php-sdk',)
 # The test files of a project that pin a whole surface: a whole intent, a digest or the command surface. A change far

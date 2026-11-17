@@ -12,7 +12,7 @@ description: "In progress. ADR 0266's executor becomes Orbit's one pattern for f
 
 In progress.
 
-The owner decided P1–P10 below on 2026-11-16. This record is design only: nothing is built.
+The owner decided P1–P10 below on 2026-11-16. The shared foundation is partly built through ADR 0266 slices 1–3: the executor's no-op `proof` action, installation, Gateway signer, observer WebSocket pass-through and result listener ([Executor](/reference/executor)). No command sends a real action through it yet. Fast-action admission, sleep/wake and the clone action remain pending; the spike timings below are not delivered command timings.
 
 Principle: [One way, one name](/mission#principles), [Deterministic first](/mission#principles) and [Security fits the real threat model](/mission#principles). One executor runs every fast Node action for every caller, and one Rust module holds each action's rule. The signature is the security boundary, as in ADR 0266. Exceptions:
 

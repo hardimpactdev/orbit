@@ -51,7 +51,7 @@ The decision has eight parts. Six are built, and two are open.
 - `bin/review-check` reads the file. CI runs a check's commands with `bin/review-check run CHECK`, and the architecture-test step runs `bin/review-check architecture PROJECT`.
 - Path triggers select only the checks outside the PHP projects' commands. They never drop the commands of a PHP project, and the baseline check uses none.
 - Runner choice, Gateway shards, and process counts stay in `ci.yml`.
-- The E2E configuration test checks that every check job in `ci.yml` runs its commands through `bin/review-check`. It holds no copy of its own.
+- CI policy tests check the selected jobs and Required checks dependencies against the workflow.
 - Delete `ARCHITECTURE_TESTS`, `ARCHITECTURE_TRIGGERS`, `WEB_CHECK_COMMANDS`, `PI_SERVER_COMMANDS`, and the other check and trigger constants in `bin/review-check`, and the copied commands and path conditions in `ci.yml`.
 
 ### 8. Check results and evidence (open)
@@ -87,7 +87,7 @@ Once no converted `base_merge` reviewed commit belongs to an open group, delete 
 
 ## Affects
 
-- Components: apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web
+- Components: apps/cli, apps/docs, apps/gateway, apps/web
 - ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role): CI keeps its process counts per runner type; 0223 needs only `Administration: read`, while runner registration needs its own decision
 - Detail: [Tasks](/reference/tasks), [Projects: Review and merge](/reference/projects#review-and-merge), [GitHub App](/reference/github-app), [Feature delivery](/reference/implementation-loop), [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches), [Environment variables](/reference/environment-variables)
-- Verify: in apps/e2e, the `review-check` and CI configuration tests. On the live Gateway, the check row of each handoff holds its command list, and a time budget overrun leaves the check status unchanged and writes exactly one `_over_budget` Activity row.
+- Verify: the CI policy tests under `tools/test_ci_*.py`. On the live Gateway, the check row of each handoff holds its command list, and a time budget overrun leaves the check status unchanged and writes exactly one `_over_budget` Activity row.

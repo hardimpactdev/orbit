@@ -134,7 +134,6 @@ class TaskCopyPublishTest(unittest.TestCase):
         self.copy = {'commit': 'b' * 40, 'tree': 'c' * 40, 'node_id': 9, 'workspace': {
             'runtime': {'project': 'orbit-instances', 'name': 'instance-9'}, 'branch': 'task-1', 'snapshot_id': str(uuid.uuid4()),
             'start': 'a' * 40, 'environment_path': '.env'}}
-        self.vm = {key: value for key, value in self.copy.items() if key != 'workspace'}
 
     def cel(self, step, field, intent, steps):
         file = self.root / 'context.json'
@@ -144,7 +143,7 @@ class TaskCopyPublishTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         return json.loads(done.stdout)['value']
 
-    def test_the_native_end_check_runs_after_a_success_on_either_path(self):
+    def test_the_native_end_check_runs_after_a_copy_success(self):
         """The Gateway settles tasks.publish only from "Confirm publication" (its native terminal result). On a success, a step that a
         path guards off is `skipped`, and Swamp's `completed` does not accept `skipped`: such a dependency must name it."""
         steps = {step['name']: step for job in yaml.safe_load(PUBLISH.read_text())['jobs'] for step in job['steps']}
@@ -156,7 +155,7 @@ class TaskCopyPublishTest(unittest.TestCase):
             return status in {'completed': {'succeeded', 'failed'}, 'succeeded': {'succeeded'}, 'skipped': {'skipped'},
                               'failed': {'failed'}}[kind]
 
-        for intent in (self.copy, self.vm):
+        for intent in (self.copy,):
             success = {'Mint the push token': {'status': 'succeeded'},
                        'Preflight the copy': {'status': 'succeeded' if 'workspace' in intent else 'skipped'}}
             for dependency in steps['Confirm publication']['dependsOn']:
@@ -164,21 +163,6 @@ class TaskCopyPublishTest(unittest.TestCase):
                 skipped = 'guard' in steps[name] and self.cel(name, 'guard', intent, success)
                 status = 'skipped' if skipped else 'succeeded'
                 self.assertTrue(accepts(dependency['condition'], status), (name, status, 'workspace' in intent))
-
-    def test_a_copy_runs_its_export_and_only_a_succeeded_bundle_step_starts_the_import(self):
-        for step in ['Preflight the copy', 'Export the copy', 'Check the environment file']:
-            self.assertFalse(self.cel(step, 'guard', self.copy, {}), step)
-            self.assertTrue(self.cel(step, 'guard', self.vm, {}), step)
-        self.assertTrue(self.cel('Read the index', 'guard', self.copy, {}))
-        self.assertFalse(self.cel('Read the index', 'guard', self.vm, {}))
-        init = 'Init the bare repo'
-        self.assertFalse(self.cel(init, 'guard', self.copy, {'Copy the bundle': {'status': 'skipped'}, 'Export the copy': {'status': 'succeeded'}}))
-        self.assertTrue(self.cel(init, 'guard', self.copy, {'Copy the bundle': {'status': 'skipped'}, 'Export the copy': {'status': 'skipped'}}))
-        self.assertFalse(self.cel(init, 'guard', self.vm, {'Copy the bundle': {'status': 'succeeded'}, 'Export the copy': {'status': 'skipped'}}))
-        # A failure before the copy step skips it; the guard must not let that skip start the import.
-        self.assertTrue(self.cel(init, 'guard', self.vm, {'Copy the bundle': {'status': 'skipped'}, 'Export the copy': {'status': 'skipped'}}))
-        self.assertTrue(self.cel('Discard the copy scratch', 'guard', self.copy, {'Preflight the copy': {'status': 'failed'}}))
-        self.assertFalse(self.cel('Discard the copy scratch', 'guard', self.copy, {'Preflight the copy': {'status': 'succeeded'}}))
 
     def test_the_export_names_the_task_branch_proposed_body_and_its_worker_path(self):
         intent = {**self.copy, 'branch': 'task-42', 'ssh_execution': {'target': {'name': 'target'}}}
@@ -215,7 +199,6 @@ class TaskCopyPublishTest(unittest.TestCase):
         run = self.cel('Import the bundle', 'run', self.copy, {})
         ref = self.cel('Import the bundle', 'env.ORBIT_REF', self.copy, {})
         self.assertEqual(ref, 'refs/heads/task-1')
-        self.assertEqual(self.cel('Import the bundle', 'env.ORBIT_REF', self.vm, {}), 'HEAD')
         done = subprocess.run(['/bin/sh', '-c', run], capture_output=True, text=True, check=False, timeout=60,
                               env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
                                    'ORBIT_REPOSITORY': str(bare), 'ORBIT_BUNDLE': str(bundle), 'ORBIT_REF': ref})
@@ -254,9 +237,6 @@ class TaskCopyPublishTest(unittest.TestCase):
 
     def test_a_copy_mints_only_after_its_content_check_passed(self):
         step, read = 'Check the .env content', 'Read the .env check'
-        for name in [step, read]:
-            self.assertFalse(self.cel(name, 'guard', self.copy, {}), name)
-            self.assertTrue(self.cel(name, 'guard', self.vm, {}), name)
         mint, scan = 'Mint the push token', 'Read the copy check'
         passed = {scan: {'status': 'succeeded'}}
         # The check step succeeds also on a refusal (it keeps its exit code); only the typed read decides.
@@ -268,7 +248,6 @@ class TaskCopyPublishTest(unittest.TestCase):
             self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}, read: {'status': 'succeeded'}, scan: {'status': status}}), status)
         self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}, read: {'status': 'succeeded'}}))
         self.assertTrue(self.cel(mint, 'guard', self.copy, {}))
-        self.assertFalse(self.cel(mint, 'guard', self.vm, {step: {'status': 'skipped'}, read: {'status': 'skipped'}}))
         steps = {item['name']: item for job in yaml.safe_load(PUBLISH.read_text())['jobs'] for item in job['steps']}
         for name in [step, read, scan]:
             self.assertIn({'step': name, 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}},
@@ -302,10 +281,9 @@ class TaskCopyPublishTest(unittest.TestCase):
                    step: {'status': 'succeeded', 'outputs': {'exitCode': 3}}}
         self.assertEqual(self.cel(read, 'directory', self.copy, outputs), '/tmp/orbit-task-publish-abc')
         self.assertEqual(self.cel(read, 'exit_code', self.copy, outputs), 3)
-        # One whole vault.get; a task VM's run, which has no .env render, names the push header's copy, which its skipped step never reads.
+        # The render comes only from the admitted environment key.
         self.assertEqual(steps[step]['task']['inputs']['env']['ORBIT_ENVIRONMENT'],
-                         '${{ vault.get(inputs.execution_secrets.git_authorization.vault, has(inputs.intent.workspace)'
-                         ' ? inputs.execution_secrets.environment.key : inputs.execution_secrets.git_authorization.key) }}')
+                         '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}')
 
     ENV = 'APP_NAME=Orbit\nAPP_DEBUG=true\nDB_PORT=8080\nexport APP_KEY="base64:c2VjcmV0LWtleS1ub3QtcmVhbA=="\r\nDB_PASSWORD=\'pa55-w0rd-xyz\'\nPEM="line-one-abcdefgh\\nline-two-ijklmnop"\n# old token-in-a-comment-123\n'
 
@@ -499,7 +477,7 @@ class TaskCopyPublishTest(unittest.TestCase):
 
         def arguments(workspace, execution_secrets):
             file = self.root / 'probe.json'
-            intent = self.vm if workspace is None else {**self.copy, 'workspace': workspace}
+            intent = {**self.copy, 'workspace': workspace}
             file.write_text(json.dumps({'inputs': {'intent': intent, 'execution_secrets': execution_secrets}}))
             done = subprocess.run(['deno', 'run', '-A', str(self.root / 'cel.ts'), str(probe), 'probe', 'arguments', str(file)],
                                   capture_output=True, text=True, check=False, timeout=60)
@@ -510,8 +488,6 @@ class TaskCopyPublishTest(unittest.TestCase):
         self.assertEqual(arguments(nested, secrets), ['orbit-control-inputs', 'nested-fleet-club-api-key'])
         normal = {'git_authorization': header, 'environment': secrets['environment']}
         self.assertEqual(arguments(self.copy['workspace'], normal), ['orbit-control-inputs', 'task-publish-environment-7'])
-        # A task VM's run skips the step; Swamp resolves its arguments at the start, so they name a copy that every run has.
-        self.assertEqual(arguments(None, {'git_authorization': header}), ['orbit-control-inputs', header['key']])
         self.assertEqual(self.cel('Check the .env content', 'env.ORBIT_NESTED', {**self.copy, 'workspace': nested}, {}), '1')
         self.assertEqual(self.cel('Check the .env content', 'env.ORBIT_NESTED', self.copy, {}), '')
 

@@ -95,7 +95,6 @@ return [
     'components' => [
         'apps/cli',
         'apps/docs',
-        'apps/e2e',
         'apps/gateway',
         'apps/web',
         'packages/php-sdk',

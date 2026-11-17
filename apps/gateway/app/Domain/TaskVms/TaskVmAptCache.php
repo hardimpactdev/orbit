@@ -19,7 +19,7 @@ final readonly class TaskVmAptCache
 
     /**
      * The cache a Node reads through (its apt runs and the Ubuntu snapshot indexes): the task VM's, at its bridge address, for a Node inside the nested
-     * subnet. Null for any other Node. The e2e harness never hands out that subnet (apps/e2e HostCapacity), so no other Node can be inside it.
+     * subnet. Null for any other Node.
      * The nested fleet of an Instance container has the same subnet and no cache: its Gateway (InstanceFleetGateway) names none, and its Nodes
      * read apt through the egress proxy that their fleet file names.
      */

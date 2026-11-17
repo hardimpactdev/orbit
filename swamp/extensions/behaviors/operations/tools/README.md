@@ -8,4 +8,4 @@ APT installation uses one `apt-get` argv because the official apt resource canno
 
 `tool:adopt` has no workflow: the Gateway checks the Node agent's `packages` fact and records the Tool. Its query and repository scripts are deleted. The shared first-use Tool Manager child reads readiness through one argv and applies OS prerequisites through official apt. Its dispatcher is deleted; the node-bootstrap family still owns its pinned installers. No new script or script gap is added.
 
-Pass 3 keeps native operation boundaries in the charts. The source and key leave together through `apt_repository` when the last Tool is removed; preferences use a separate file resource. Candidate upstream improvements are recorded in the repository's `swamp-evaluation.md`.
+Pass 3 keeps native operation boundaries in the charts. The source and key leave together through `apt_repository` when the last Tool is removed; preferences use a separate file resource. Candidate upstream improvements are recorded in the [Swamp evaluation ledger](../../../../../docs/reference/swamp-evaluation.md).

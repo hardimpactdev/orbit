@@ -4,7 +4,7 @@ description: "How Orbit runs a MySQL, PostgreSQL or Valkey server as a Docker No
 covers:
   - apps/gateway/app/Actions/DatabaseServers/**
   - apps/gateway/app/Actions/DatabaseConnections/{CreateServerDatabaseAction,CreateDatabaseUserAction,DropServerDatabaseAction}.php
-  - apps/gateway/app/{Domain,Infrastructure}/DatabaseServers/**
+  - apps/gateway/app/Domain/DatabaseServers/**
   - apps/gateway/app/Http/{Controllers/Api/DatabaseServersController.php,Requests/DatabaseServers/**}
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php

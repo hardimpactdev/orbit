@@ -1,5 +1,4 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { ciCacheImportProgram } from "../instance-deploy/app_step_runtime.ts";
 import {
     baseFields,
     candidateResult,
@@ -13,7 +12,6 @@ import {
     observed,
     prepare,
     setupResult,
-    withCiTimeLimit,
 } from "./check.ts";
 const commit = "a".repeat(40), start = "2026-10-31T22:00:00Z";
 const input = {
@@ -167,22 +165,17 @@ Deno.test("a committed candidate must keep the checked tree and parent", () => {
     }
     // A container check of a clean, recorded head made no commit: the checked head is the candidate.
     assertEquals(
-        candidateResult(input, local, read([head, tree]), true).commit,
+        candidateResult(input, local, read([head, tree])).commit,
         head,
     );
     assertEquals(
-        candidateResult(input, local, read(["d".repeat(40), tree]), true)
+        candidateResult(input, local, read(["d".repeat(40), tree]))
             .outcome,
         "changed",
     );
     assertEquals(
-        candidateResult(input, local, read([head, "d".repeat(40)]), true)
+        candidateResult(input, local, read([head, "d".repeat(40)]))
             .outcome,
-        "changed",
-    );
-    // A task VM check always commits: a read of the checked head is a moved workspace.
-    assertEquals(
-        candidateResult(input, local, read([head, tree])).outcome,
         "changed",
     );
     assertEquals(
@@ -628,436 +621,6 @@ const intent = {
     ],
     ssh_execution: { target: { user: "orbit" } },
 };
-const environment = [
-    "COMPOSER_NO_INTERACTION=1",
-    "ORBIT_CHECK_PROCESSES=1",
-    "COMPOSER_CACHE_DIR=/home/orbit/.cache/composer",
-    "ORBIT_SEED_PATH=",
-    "ORBIT_SEED_COMMIT=",
-    "INERTIA_SSR_PORT=5173",
-    "INERTIA_SSR_URL=http://127.0.0.1:5173",
-];
-const argv = (name: string, directory: string, command: string) => [
-    "/bin/bash",
-    "-c",
-    'mkdir -p -m 0700 -- "$1" && exec >"$1/$2" 2>&1 && shift 2 && exec "$@"',
-    "orbit-output",
-    "/tmp/run/output",
-    name,
-    "env",
-    "-C",
-    directory,
-    ...environment,
-    "/bin/bash",
-    "-lc",
-    command,
-];
-
-Deno.test("every check command is one SSH exec argv in its directory, its output in a file", () => {
-    const steps = prepare(intent, 3, "/tmp/run");
-    assertEquals(steps.valid, true);
-    // The Gateway-owned setup step expands to the shared provision program.
-    assertEquals(steps.setup, [
-        argv("setup-0", "/srv/check", ciCacheImportProgram),
-    ]);
-    assertEquals(steps.project, argv("project", "/srv/check", "composer test"));
-    assertEquals(steps.deliverables, [
-        argv("deliverable-0", "/srv/check/apps/web", "touch never"),
-        argv("deliverable-1", "/srv/check", "touch never"),
-    ]);
-    assertEquals(steps.bases[1], {
-        archive: [
-            "git",
-            "-C",
-            "/srv/check",
-            "archive",
-            "--format=tar",
-            "--prefix=base-1/",
-            "--output=/tmp/run/base-1.tar",
-            commit,
-        ],
-        extract: ["tar", "-x", "-f", "/tmp/run/base-1.tar", "-C", "/tmp/run"],
-        dependencies: [
-            "env",
-            "-C",
-            "/srv/check",
-            "find",
-            ".",
-            "-name",
-            ".git",
-            "-prune",
-            "-o",
-            "(",
-            "-name",
-            "vendor",
-            "-o",
-            "-name",
-            "node_modules",
-            ")",
-            "-type",
-            "d",
-            "-prune",
-            "-exec",
-            "cp",
-            "-a",
-            "--parents",
-            "-t",
-            "/tmp/run/base-1",
-            "{}",
-            "+",
-        ],
-        overlay: [
-            "env",
-            "-C",
-            "/srv/check",
-            "cp",
-            "-p",
-            "--parents",
-            "-t",
-            "/tmp/run/base-1",
-            "--",
-            "tests/a.php",
-            "tests/b.php",
-        ],
-        directory: ["test", "-d", "/tmp/run/base-1"],
-        run: argv("base-1", "/tmp/run/base-1", "touch never"),
-    });
-    assertEquals(steps.bases[0].overlay, ["true"]);
-});
-
-/**
- * A checkout with a Pest project `apps/gateway`: its `artisan` and
- * `vendor/bin/pest` print their arguments, and `bin/check` answers
- * `--ci-time-limit DIR` with `ci-time-limit: <limit>` for that project, as
- * CI's workflow would, `ci-time-limit: none` for an empty limit, or a `limit`
- * that is no number verbatim.
- */
-const pestCheckout = (limit: string, answer = 0) => {
-    const reply = limit === ""
-        ? "ci-time-limit: none"
-        : /^[0-9]+$/.test(limit)
-        ? `ci-time-limit: ${limit}`
-        : limit;
-    const root = Deno.makeTempDirSync();
-    const file = (path: string, text: string) => {
-        Deno.mkdirSync(`${root}/${path}`.replace(/\/[^/]+$/, ""), {
-            recursive: true,
-        });
-        Deno.writeTextFileSync(`${root}/${path}`, text, { mode: 0o755 });
-    };
-    file("apps/gateway/vendor/bin/pest", '#!/bin/bash\necho "pest $*"\n');
-    file("apps/gateway/artisan", '#!/bin/bash\necho "artisan $*"\n');
-    file(
-        "bin/check",
-        `#!/bin/bash\n[ "$1" = --ci-time-limit ] || exit 9\ncase "$2" in apps/gateway*) printf '%b\\n' ${
-            JSON.stringify(reply)
-        };; *) echo "ci-time-limit: none";; esac\nexit ${answer}\n`,
-    );
-    return root;
-};
-const runIn = (directory: string, source: string) => {
-    const result = new Deno.Command("/bin/bash", {
-        args: ["-c", source],
-        cwd: directory,
-        env: { PATH: `${directory}:/usr/bin:/bin` },
-    }).outputSync();
-    return {
-        code: result.code,
-        output: new TextDecoder().decode(result.stdout) +
-            new TextDecoder().decode(result.stderr),
-    };
-};
-const php = (root: string) => {
-    // `php artisan` runs the fake artisan without PHP.
-    Deno.writeTextFileSync(
-        `${root}/php`,
-        '#!/bin/bash\nscript=$1; shift; exec "./$script" "$@"\n',
-        { mode: 0o755 },
-    );
-};
-
-Deno.test("a deliverable's final Pest call runs with the limit the Project check command reads from CI", () => {
-    const root = pestCheckout("5");
-    php(root);
-    const artisan = withCiTimeLimit(
-        "cd apps/gateway && php artisan test --compact tests/X.php",
-        "bin/check",
-        root,
-        root,
-    );
-    assertEquals(runIn(root, artisan), {
-        code: 0,
-        output:
-            "Pest time limit: --default-time-limit=5, CI's limit for apps/gateway\n" +
-            "artisan test --compact tests/X.php --default-time-limit=5\n",
-    });
-    const pest = withCiTimeLimit(
-        "vendor/bin/pest tests/X.php",
-        "bin/check",
-        root,
-        root,
-    );
-    assertEquals(
-        runIn(`${root}/apps/gateway`, pest).output.split("\n").at(-2),
-        "pest tests/X.php --default-time-limit=5",
-    );
-    // Another limit in CI is the limit the command gets.
-    const seven = pestCheckout("7");
-    assertEquals(
-        runIn(
-            `${seven}/apps/gateway`,
-            withCiTimeLimit(
-                "vendor/bin/pest tests/X.php",
-                "bin/check",
-                seven,
-                seven,
-            ),
-        ).output.split("\n").at(-2),
-        "pest tests/X.php --default-time-limit=7",
-    );
-    // A start-commit tree asks the checked workspace for its own directory.
-    const tree = pestCheckout("");
-    assertEquals(
-        runIn(
-            `${tree}/apps/gateway`,
-            withCiTimeLimit(
-                "vendor/bin/pest tests/X.php",
-                "bin/check",
-                root,
-                tree,
-            ),
-        ).output.split("\n").at(-2),
-        "pest tests/X.php --default-time-limit=5",
-    );
-});
-
-Deno.test("a symlinked checkout finds its directory, and a call outside the tree fails", () => {
-    const root = pestCheckout("5");
-    const link = `${Deno.makeTempDirSync()}/checkout`;
-    Deno.symlinkSync(root, link);
-    const source = withCiTimeLimit(
-        "vendor/bin/pest tests/X.php",
-        "bin/check",
-        link,
-        link,
-    );
-    assertEquals(
-        runIn(`${link}/apps/gateway`, source).output.split("\n").at(-2),
-        "pest tests/X.php --default-time-limit=5",
-    );
-    const outside = runIn(
-        `${pestCheckout("5")}/apps/gateway`,
-        source,
-    );
-    assertEquals(outside, {
-        code: 2,
-        output: "Task check: bin/check --ci-time-limit gave no limit\n",
-    });
-});
-
-Deno.test("Orbit's own check command gives a Gateway deliverable CI's limit from ci.yml", () => {
-    const workspace = new URL("../../../../../", import.meta.url).pathname
-        .replace(/\/$/, "");
-    const tree = pestCheckout("");
-    const expected = Deno.readTextFileSync(
-        `${workspace}/.github/workflows/ci.yml`,
-    ).match(/vendor\/bin\/pest --parallel .*--default-time-limit=(\d+)/)![1];
-    assertEquals(
-        runIn(
-            `${tree}/apps/gateway`,
-            withCiTimeLimit(
-                "vendor/bin/pest tests/X.php",
-                "bin/task-check",
-                workspace,
-                tree,
-            ),
-        ).output.split("\n").at(-2),
-        `pest tests/X.php --default-time-limit=${expected}`,
-    );
-});
-
-Deno.test("a Pest call CI passes no limit to keeps phpunit.xml's, and a failed answer fails it", () => {
-    const root = pestCheckout("");
-    const source = withCiTimeLimit(
-        "vendor/bin/pest tests/X.php",
-        "bin/check",
-        root,
-        root,
-    );
-    assertEquals(runIn(`${root}/apps/gateway`, source), {
-        code: 0,
-        output:
-            "Pest time limit: CI passes none for apps/gateway; its phpunit.xml holds\n" +
-            "pest tests/X.php\n",
-    });
-    const failed = pestCheckout("5", 1);
-    const result = runIn(
-        `${failed}/apps/gateway`,
-        withCiTimeLimit(
-            "vendor/bin/pest tests/X.php",
-            "bin/check",
-            failed,
-            failed,
-        ),
-    );
-    assertEquals(result.code, 2);
-    assertEquals(
-        result.output,
-        "Task check: bin/check --ci-time-limit gave no limit\n",
-    );
-});
-
-Deno.test("a check command that does not declare --ci-time-limit is never run, and the command runs as given", () => {
-    const root = pestCheckout("5");
-    // An ordinary check: it ignores its arguments, prints text and exits 0.
-    Deno.writeTextFileSync(
-        `${root}/bin/check`,
-        '#!/bin/bash\ntouch "$(dirname "$0")/ran"\necho "Running the whole check"\n',
-        { mode: 0o755 },
-    );
-    assertEquals(
-        runIn(
-            `${root}/apps/gateway`,
-            withCiTimeLimit(
-                "vendor/bin/pest tests/X.php",
-                "bin/check",
-                root,
-                root,
-            ),
-        ),
-        { code: 0, output: "pest tests/X.php\n" },
-    );
-    assertThrows(() => Deno.statSync(`${root}/bin/ran`));
-    // A check command path that is no file is not run either.
-    assertEquals(
-        runIn(
-            `${root}/apps/gateway`,
-            withCiTimeLimit(
-                "vendor/bin/pest tests/X.php",
-                "bin/missing",
-                root,
-                root,
-            ),
-        ),
-        { code: 0, output: "pest tests/X.php\n" },
-    );
-});
-
-Deno.test("a declared check command whose answer is not the fixed line fails the command", () => {
-    for (
-        const reply of [
-            "ci-time-limit: 5s",
-            "ci-time-limit:5",
-            "Running the whole check\\nci-time-limit: 5",
-        ]
-    ) {
-        const root = pestCheckout(reply);
-        assertEquals(
-            runIn(
-                `${root}/apps/gateway`,
-                withCiTimeLimit(
-                    "vendor/bin/pest tests/X.php",
-                    "bin/check",
-                    root,
-                    root,
-                ),
-            ),
-            {
-                code: 2,
-                output: "Task check: bin/check --ci-time-limit gave no limit\n",
-            },
-        );
-    }
-});
-
-Deno.test("a Composer test script gets the limit after its argument separator", () => {
-    const source = withCiTimeLimit("composer test", "bin/check", "/w", "/w");
-    assertEquals(
-        source.split("\n").at(-1),
-        " orbit_ci_time_limit composer test",
-    );
-    assertEquals(
-        source.includes(
-            '[[ $1 == composer && " $* " != *" -- "* ]] && extra=(-- "${extra[@]}")',
-        ),
-        true,
-    );
-    assertEquals(
-        withCiTimeLimit(
-            "cd apps/cli && ../../bin/pest-plain vendor/bin/pest tests/A.php",
-            "bin/check",
-            "/w",
-            "/w",
-        ).split("\n").at(-1),
-        "cd apps/cli && orbit_ci_time_limit ../../bin/pest-plain vendor/bin/pest tests/A.php",
-    );
-});
-
-Deno.test("a command that is not a final Pest call, or passes its own limit, runs unchanged", () => {
-    for (
-        const command of [
-            "vendor/bin/pest --default-time-limit=9 tests/X.php",
-            "php artisan migrate",
-            "echo vendor/bin/pest",
-            "vendor/bin/pest tests/X.php | tee log",
-            "vendor/bin/pest tests/X.php; echo done",
-            "vendor/bin/pest tests/X.php && echo done",
-            "vendor/bin/pest $(cat files)",
-            "vendor/bin/pest tests/X.php > log",
-            "FOO=1 vendor/bin/pest tests/X.php",
-        ]
-    ) assertEquals(withCiTimeLimit(command, "bin/check", "/w", "/w"), command);
-    // Only a Project check command that is one relative executable path is asked.
-    for (
-        const check of [
-            null,
-            "composer test",
-            "/usr/bin/check",
-            "../check",
-            "check",
-        ]
-    ) {
-        assertEquals(
-            withCiTimeLimit("vendor/bin/pest", check, "/w", "/w"),
-            "vendor/bin/pest",
-        );
-    }
-    // The prepared deliverable and start-commit runs carry the wrapped command.
-    const steps = prepare(
-        {
-            ...intent,
-            command: "bin/task-check",
-            deliverables: [{
-                ...commandDeliverable,
-                command: "vendor/bin/pest tests/X.php",
-                directory: "apps/gateway",
-                fails_on_base: true,
-                paths: ["apps/gateway/tests/X.php"],
-            }],
-        },
-        3,
-        "/tmp/run",
-    );
-    assertEquals(
-        steps.deliverables[0].at(-1),
-        withCiTimeLimit(
-            "vendor/bin/pest tests/X.php",
-            "bin/task-check",
-            "/srv/check",
-            "/srv/check",
-        ),
-    );
-    assertEquals(
-        steps.bases[0].run.at(-1),
-        withCiTimeLimit(
-            "vendor/bin/pest tests/X.php",
-            "bin/task-check",
-            "/srv/check",
-            "/tmp/run/base-0",
-        ),
-    );
-});
-
 Deno.test("deliverable paths are checked on 209 before any command", () => {
     for (
         const deliverable of [
@@ -1072,7 +635,6 @@ Deno.test("deliverable paths are checked on 209 before any command", () => {
         const steps = prepare(
             { ...intent, deliverables: [deliverable] },
             3,
-            "/tmp/run",
         );
         assertEquals(
             [steps.valid, steps.error_code],
@@ -1088,11 +650,10 @@ Deno.test("deliverable paths are checked on 209 before any command", () => {
                 deliverables: [{ ...commandDeliverable, fails_on_base: true }],
             },
             3,
-            "/tmp/run",
         ).valid,
         false,
     );
-    assertThrows(() => prepare(intent, 4, "/tmp/run"));
+    assertThrows(() => prepare(intent, 4));
 });
 
 Deno.test("terminal CI names the candidate only while the workspace still holds it", () => {

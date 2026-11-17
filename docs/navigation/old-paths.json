@@ -8,5 +8,11 @@
         "reference/old-paths"
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/decisions/0206-build-task-vm-images-as-chains-of-small-jobs",
+      "destination": "/reference/old-paths#task-vm-settings"
+    }
   ]
 }

@@ -34,7 +34,7 @@ Install the tools for the projects that you plan to change.
 | Tool | Needed for |
 | --- | --- |
 | Git | Every change |
-| PHP 8.5 and Composer 2 | The five Composer projects and the documentation checks |
+| PHP 8.5 and Composer 2 | The four Composer projects and the documentation checks |
 | OpenSSL | `bin/bootstrap` |
 | PCOV or Xdebug, optional | Running only the tests that your change affects |
 | [Bun](https://bun.sh) | The web app and the desktop app |
@@ -50,13 +50,13 @@ From the repository root, run:
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the five Composer projects, then runs their tests and quality checks. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
+`bin/bootstrap` installs the four Composer projects, then runs their tests and quality checks. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
 
 Add `--skip-checks` to install without the checks. The default run includes the Gateway tests. On macOS, they need the extra tools that [Implement and verify](/contributor-guide#3-implement-and-verify) lists, so use `--skip-checks` until you install them. Add `--with-bun` or `--with-rust` to also install the locked dependencies of the Bun and Rust projects.
 
 ## 3. Pick a project and read its guidance
 
-Orbit has nine projects, and the [README](https://github.com/hardimpactdev/orbit#repository) lists them. Each project has an `AGENTS.md` file with its coding and testing rules, such as [`apps/cli/AGENTS.md`](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/AGENTS.md). The file is written for agents, and its rules apply to people too. Read it before you change that project.
+Orbit has eight projects, and the [README](https://github.com/hardimpactdev/orbit#repository) lists them. Each project has an `AGENTS.md` file with its coding and testing rules, such as [`apps/cli/AGENTS.md`](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/AGENTS.md). The file is written for agents, and its rules apply to people too. Read it before you change that project.
 
 Before you build a feature, read the [mission](/mission), the [architecture](/architecture), and the [concepts](/concepts). A feature that makes a significant architecture decision also includes an ADR, as [Check the architecture](/contributor-guide#1-check-the-architecture) explains.
 
