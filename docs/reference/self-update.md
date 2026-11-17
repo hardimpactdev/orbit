@@ -174,11 +174,13 @@ The CLI step decides from the running binary, the release status, and the versio
 | The CLI release is `unavailable` | `skipped`, with the Gateway's reason |
 | No release binary exists for this platform | `skipped`, reason `platform_unsupported` |
 | The binary already has the release's SHA-256 | `unchanged` |
-| This `orbit` is a pre-release build that reports its full 40-character commit instead of `0.N.0` | Updated like an older release. The old file is kept as `orbit.orbit-previous` |
-| The release is older than this `orbit`, or this `orbit` is another build that is not a release | Refused with `self_update.downgrade_refused` or `self_update.version_unknown`, unless `--allow-downgrade` is passed, or `--allow-downgrade-to` names the release's exact version |
+| This `orbit` is not a release build | Refused with `self_update.version_unknown`. Reinstall a published CLI release. Downgrade consent does not bypass this check. |
+| The release is older than this `orbit` | Refused with `self_update.downgrade_refused`, unless `--allow-downgrade` is passed, or `--allow-downgrade-to` names the release's exact version |
 | Otherwise | The release is installed: `updated` |
 
 Versions compare by `N`, the commit count. A binary with the release's version but another SHA-256 is replaced, so a damaged binary is repaired.
+
+Older SHA-stamped binaries run the updater they shipped with and may still attempt the update. If your CLI reports a commit SHA, reinstall it using [Install a release](/reference/cli-binaries#install-a-release).
 
 Releases live side by side. `orbit` is a link to a versioned file in the same directory:
 
@@ -188,7 +190,7 @@ Releases live side by side. `orbit` is a link to a versioned file in the same di
 /usr/local/bin/orbit-0.4600.0
 ```
 
-The install runs in this order. Nothing changes the `orbit` link until the last step.
+The install runs in this order.
 
 1. Download the release's `SHA256SUMS` and require its line for this platform's binary to equal the Gateway's `sha256`.
 2. Download the binary with `curl` to a new candidate next to the binary.
@@ -196,12 +198,12 @@ The install runs in this order. Nothing changes the `orbit` link until the last 
 4. Give the candidate the binary's mode. As root, also give it the binary's owner. Flush it to disk.
 5. Run the candidate with `--version`. It must print `Orbit <version>`. Otherwise the candidate is deleted, and the step fails with `self_update.candidate_invalid`.
 6. Rename the candidate to `orbit-<version>`.
-7. Point `orbit` at it: create a new link and rename it over `orbit` in one step. Flush the directory.
+7. If `orbit` does not already select that file, create a new link and rename it over `orbit` in one step. Flush the directory.
 8. Keep the release that ran before, and delete older `orbit-0.N.0` files in that directory.
 
-A failure or an interruption before step 7 leaves `orbit` on the old release. A process that runs while the link changes keeps reading its own versioned file, so it finishes normally. The command needs write access to the directory: run it with `sudo` for `/usr/local/bin/orbit`, or it fails with `self_update.not_writable`.
+When the new release needs a link switch, `orbit` keeps selecting the old binary until the switch succeeds. If `orbit` already links to the file being repaired, the rename in step 6 makes the repaired binary available through the existing link. The command needs write access to the directory. Run it with `sudo` for `/usr/local/bin/orbit`, or it fails with `self_update.not_writable`.
 
-The first update of a plain `orbit` file turns it into the link and keeps the old file as `orbit-<old version>`. That one swap replaces the file that running processes read. The command itself prints its result and exits at once. Another `orbit` command that runs during that swap can fail; run it again. Later updates only switch the link. A process still running from a release older than the one kept loses its file when that release is deleted.
+The first update of a plain `orbit` file turns it into the link and keeps the old file as `orbit-<old version>`. That one swap replaces the file that running processes read. The command itself prints its result and exits at once. Another `orbit` command that runs during that swap can fail; run it again. Later upgrades and downgrades only switch the link. A same-version repair can replace the running versioned file. The command prints its result and exits at once after that replacement too. A process still running from a release older than the one kept loses its file when that release is deleted.
 
 ### Result
 
@@ -225,7 +227,7 @@ Human output ends with `Update failed.`, `Update incomplete.`, `Waiting for the 
 | `steps` | One `cli` step, with `outcome` (`updated`, `unchanged`, `pending`, `skipped`, or `failed`), `reason`, `path`, `before`, `after`, and `error` |
 | `request_id` | The Gateway request ID |
 
-`before` and `after` each hold `version` and `sha256`. The `path` is the `orbit` link. `error` holds `code` and `message`, or null.
+`before` and `after` each hold `version` and `sha256`. The `path` is the plain `orbit` file or its selection link. After a failed CLI step, `after` reports the file that `path` selects, with null for values the command could not determine. `error` holds `code` and `message`, or null.
 
 ## Running it on a Node
 

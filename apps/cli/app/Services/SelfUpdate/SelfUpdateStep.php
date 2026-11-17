@@ -15,6 +15,7 @@ final readonly class SelfUpdateStep
         public ?InstalledVersion $after = null,
         public ?string $reason = null,
         public ?SelfUpdateFailure $failure = null,
+        public bool $replacedRunningBinary = false,
     ) {}
 
     /** @return array<string, mixed> */
