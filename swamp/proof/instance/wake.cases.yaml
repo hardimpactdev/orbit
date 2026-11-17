@@ -5,6 +5,7 @@ sources: [gateway]
 baseline: [operations]
 uncovered:
   main: "The proof fleet lacks Instance containers. Pest covers admission, the projection of power_state and the Caddy rule; real-Ansible fixtures cover the wake's start with the marker, the web wait and the T3 wait; the live proof runs on a fixture clone."
+  "executor:swap-backed-proof": "Subtask 5768 merged the clone and copy-swap fixes but stopped before clone creation: the outer copy has memory.swap.max=0 and enabling it fails with Permission denied. No real-clone Rust/Python sleeps, Rust wakes, three-target burst or executor SIGKILL/recovery ran. The signed executor.power_proof path remains separate from this production Python command; CI lacks the real T3/Vite clone fixture."
   failed: "A wake that fails before the app answers keeps power_state; one whose T3 stays silent records running; Pest covers both projections."
 cases:
   - id: invalid-id

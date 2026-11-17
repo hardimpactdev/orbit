@@ -12,7 +12,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Slices 1 to 3 are proven; slice 4 awaits its clone proof.** The executor, its install and its proof action, the no-op `proof.noop`, exist. So do the Gateway signer and publisher, the observer's pass-through and the Gateway's [result listener](#the-listener-and-the-hand-off). An order goes out over the WebSocket, and its result comes back to its Operation. The proof-only [`executor.proof` Operation](#the-proof-operation) sends no-ops; `executor.power_proof` sends sleep/discard orders. Production commands keep their existing paths until the later cutover slices.
+> **Slices 1 to 3 are proven; slices 4 and 5 await their clone proof.** The executor, its install and its proof action, the no-op `proof.noop`, exist. So do the Gateway signer and publisher, the observer's pass-through and the Gateway's [result listener](#the-listener-and-the-hand-off). An order goes out over the WebSocket, and its result comes back to its Operation. The proof-only [`executor.proof` Operation](#the-proof-operation) sends no-ops; `executor.power_proof` sends sleep, wake and discard orders. Production commands keep their existing paths until the later cutover slices.
 
 ## Where it runs
 
@@ -264,7 +264,7 @@ The executor wrote its `done` record 3–4 ms after the publish (median of 50 or
 
 **The lost result.** In each of the six lost-result runs the second waiter timed out. Its bound was 500 ms (`ORBIT_EXECUTOR_WAIT_MS`), and it returned after 504–575 ms. This lateness is the one [the waiting request](#the-listener-and-the-hand-off) describes: Valkey checks a blocked `BLPOP`'s timeout on its server tick, and the nested Gateway's Valkey runs the default `hz 10`. Slice 6 plans `hz 100`. The repeat then brought the first result back in 7–19 ms. The journal held `open`, `done` and `seen` for that Operation: one run.
 
-**Status.** In the proof plan both cases keep `waits: idmap`, like every `app-dev` converge case: the converge builds the Instance host's stock image, which needs the 2,000,000 ID map. Both also keep `fails_today`, because the pinned agent delivery has no `executor-linux-x86_64` and no observer release with the pass-through yet.
+**Status.** The copy has the required 2,000,000 ID map and the Instance host’s stock image, so the proof plan omits `waits: idmap`. Both cases keep `fails_today`, because the pinned agent delivery has no `executor-linux-x86_64` and no observer release with the pass-through yet. The converge and no-op cases have not been rerun.
 
 
 ## Rust sleep and discard
@@ -277,7 +277,7 @@ A repeat Operation returns its journaled result under the per-target lock. Start
 
 The kind chart is [`docs/cli/proof/executor-power-proof.mmd`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/proof/executor-power-proof.mmd). The executor logs the complete action time, including receipt and asleep-marker fsync, with reclaim measured separately. The private receipt timer ends before its own publication.
 
-The real-clone, swap-backed 30-sleep proof is open and waits for the clone-fix PR and the nested-swap PR.
+The proof of 30 sleeps of a real clone with swap remains open. The clone and copy-swap fixes are merged, but the running proof copy still has an outer `memory.swap.max` of 0; enabling it from inside the copy fails with `Permission denied`. The host must apply the copy’s byte-size swap limit before the proof can run.
 
 | Error or result | Meaning |
 | --- | --- |
@@ -331,4 +331,4 @@ A container that already runs gets only the limits and readiness steps, and repo
 | `failed`, `instance.container_frozen_unmanaged` | The kernel cgroup stayed frozen. |
 | `failed`, `instance.web_unready` | The app gave no answer below 500 within 1.5 s. The marker stays. |
 
-The Rust tests cover the identity checks, pool order, the cut at the bound, resident pages, exact limits, the marker, readiness and crash recovery after the unfreeze; the restore tests read a real buffer of the test process. A SIGKILL in the middle of a real wake has not been run. The real-clone, swap-backed proof of slice 5 (30 wakes and a burst of 3) is open, with slice 4's, and waits for the clone-fix PR and the nested-swap PR.
+The Rust tests cover the identity checks, pool order, the cut at the bound, resident pages, exact limits, the marker, readiness and crash recovery after the unfreeze; the restore tests read a real buffer of the test process. A SIGKILL in the middle of a real wake has not been run. The real-clone, swap-backed proof of slice 5 (30 wakes and a burst of 3) remains open with [slice 4’s proof](#rust-sleep-and-discard), blocked by the running copy’s outer swap limit. No real-clone sleep, Python comparison, wake, burst or SIGKILL measurement ran in subtask 5768; the prerequisite check stopped before clone creation.

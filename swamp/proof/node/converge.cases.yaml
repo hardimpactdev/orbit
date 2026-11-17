@@ -26,13 +26,11 @@ uncovered:
   "admission:recorded-only": "Need request-time contact tracing to prove admission uses recorded state and never contacts the Node before starting the Operation, including with missing or stale agent facts. A missing agent report is not an additional eligibility refusal."
 
 waits:
-  clone_sleep: "The real-clone, swap-backed 30-sleep proof is open and waits for the clone-fix PR and the nested-swap PR."
-  idmap: "A converge with the app-dev role runs nested-app-dev's roles phase, which builds the Instance host's stock image. That needs the default's 2,000,000 ID map; below it the phase fails with too few uid/gid. The owner schedules the ID map window; until then the plan skips these cases."
+  clone_sleep: "Clone and copy-swap fixes are merged at a956b04. Subtask 5768 stopped before clone creation: the running outer copy has memory.swap.max=0, and enabling 12 GiB fails with Permission denied. The host must enable its byte-size swap limit; nested-app-dev also needs a byte-size limit. No sleep/wake samples ran; CI still lacks the real T3/Vite clone fixture."
 
 cases:
   - id: default-scope
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: One default converge is the main path; a full repeat runs every phase and changes nothing within 120 seconds; a keyed retry creates no Operation.
     stages:
@@ -72,7 +70,6 @@ cases:
 
   - id: selected-roles
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, selected-roles, succeeded]
     summary: A recorded role can be selected with the base without adding a role.
     act:
@@ -81,7 +78,6 @@ cases:
 
   - id: executor-installed
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: A converge of an app-dev Node installs the pinned executor and leaves its plain service running (ADR 0266 slice 1).
     fails_today: Until the pinned delivery carries executor-linux-x86_64 and the Gateway pins a key, the converge skips the install with its reason.
@@ -94,7 +90,6 @@ cases:
 
   - id: executor-relay-noop
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: With the proof key pinned, a converge installs the executor, and a signed proof.noop order through the relay runs once; a replay and a repeat return its result.
     fails_today: Until the pinned delivery carries executor-linux-x86_64, the converge skips the install with executor.release_missing.
@@ -110,7 +105,6 @@ cases:
 
   - id: executor-caller-refusals
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: The executor refuses another user at the socket, and root outside the observer's unit and the relay user running another program with no reply and a logged code.
     fails_today: Until the pinned delivery carries executor-linux-x86_64, the converge skips the install with executor.release_missing.
@@ -127,7 +121,6 @@ cases:
 
   - id: executor-order-security
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: Orders published as executor-order reach the executor only through the observer's pass-through; a bad signature, a changed action or target, an expired, replayed, unknown-action or wrong-Node order is refused and logged with its own code (ADR 0266 slice 2).
     fails_today: Until the pinned delivery carries executor-linux-x86_64 and an observer release with the executor-order pass-through, the converge skips the install with executor.release_missing and no order reaches the executor.
@@ -147,7 +140,6 @@ cases:
 
   - id: executor-websocket-burst
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: 50 signed proof.noop orders published one after another over the observer's WebSocket each get a done result; the latency from the Gateway's publish to the executor's result is saved as evidence (ADR 0266 slice 2).
     fails_today: Until the pinned delivery carries executor-linux-x86_64 and an observer release with the executor-order pass-through, the converge skips the install with executor.release_missing and no order reaches the executor.
@@ -161,7 +153,6 @@ cases:
 
   - id: executor-round-trip
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: 50 executor.proof Operations, one after another, each publish a signed proof.noop as executor-order and get a done result in a waiting request through the listener and Valkey; each result is recorded on its Operation, each action runs once, and the latency from publish to the waiting request is saved as p50, p95 and max (ADR 0266 slice 3).
     fails_today: Until the pinned delivery carries executor-linux-x86_64 and an observer release with the executor-order pass-through, the converge skips the install with executor.release_missing and no result reaches the waiting request.
@@ -175,7 +166,6 @@ cases:
 
   - id: executor-lost-result
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: An executor.proof Operation whose first result is recorded but whose hand-off to Valkey is dropped leaves a new waiting request with a timeout; a new signed order with a new nonce for the same Operation is answered as a repeat with the first result, which reaches the waiting request, and the executor's journal shows one run (ADR 0266 slice 3).
     fails_today: Until the pinned delivery carries executor-linux-x86_64 and an observer release with the executor-order pass-through, the converge skips the install with executor.release_missing and no result reaches the waiting request.
@@ -193,7 +183,12 @@ cases:
     exclusive: true
     covers: []
     summary: A signed sleep of the real executor-sleep-clone with T3 and Vite records a durable power proof Operation, a complete whole-container plan, swap limits and the asleep marker.
-    fails_today: The real-clone fixture and host swap are unavailable; this smoke case does not replace ADR row 4's 30-cycle measurements.
+    # Prerequisite evidence: .orbit-artifacts/5753/live-proof-5768/prerequisite.json.
+    # /proc/swaps has only its header (lxcfs view); the physical host’s swap was not established.
+    # sudo write: sh: 1: cannot create /sys/fs/cgroup/memory.swap.max: Permission denied
+    # Unrun: T3/Vite clone checks, 30 Rust sleeps, 30 Python sleeps, 30 Rust wakes,
+    # three-target wake burst and executor SIGKILL/recovery. No timing or RAM/swap samples.
+    fails_today: The running copy’s outer swap limit is 0 and cannot be changed inside it; the real-clone fixture is unverified. This smoke case does not replace ADR rows 4 and 5’s live measurements. CI proof remains disabled.
     setup:
       - executor_key: {}
     act:
@@ -297,7 +292,6 @@ cases:
 
   - id: gateway-authority-without-target-grant
     batch: no-grant
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: A caller granted Gateway access can converge the target without a direct target grant.
     setup:
