@@ -1,87 +1,55 @@
 sequenceDiagram
-  %% Target design: the proof runner inside stage 3 of the command development pipeline (design: reference/verification-cases). One shared runner executes the cases of one command; each batch restores the task's base snapshot once, cases use their own resources and undo nothing, the cases of a batch run in one step, several at a time with readers sharing each Node; a case is a specification built from a fixed set of steps. Orbit's own Swamp runs the runner over SSH in the task VM, as part of the "Run the proof" child of proof:run. The Gateway only admits the request and records the verdicts.
+  %% Current runner flow inside stage 3. Swamp reaches the task copy through its Node and runs as agent in the copy. One shared runner checks the real CLI and effects on the nested fleet. The verification-cases reference owns scheduling and case syntax; proof and proof:run own reset and cleanup policy.
   %% status: draft
   %% command: development pipeline stage 3 · proof runner
   %% kind: pipeline.3-proof-runner
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane VM icon=server pill=target tone=purple
+  %% lane CP icon=server pill=target tone=purple
   %% lane NT icon=server pill=fleet tone=amber
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>verify workflow
-  participant VM as Task VM<br/>runner · over ssh
+  participant CP as Task copy<br/>runner as agent
   participant NT as Nested fleet<br/>Gateway · 2 Nodes
-  GW->>SW: Start the verify run<br/>cases · commit
-  %%> Inputs:
-  %%> - the commit and the one command whose cases run; in CI, `proof:run` proves each affected command separately
-  %%> Why:
-  %%> - the Gateway only authorizes; Swamp owns the run and its state
-  SW->>VM: Select the cases<br/>runner plan
+  GW->>SW: Start the verify run<br/>copy · cases · assignments
+  SW->>CP: Select the cases<br/>runner plan --lines
   %%> What it does:
-  %%> - reads the command's cases file at the tested commit
-  %%> - refuses a case with an unknown step, an unknown chart path or no batch
-  %%> - lists the chart paths, options and codes that no case covers
-  %%> - groups the cases by batch, in the order of `swamp/proof/batches.yaml`; inside a batch, in file order
-  %%> - `runner plan --lines` prints one line a batch, `BATCH SETUP CASE...`, which the workflow reads; the workflow `proof-fleet-verify` is built
-  VM-->>SW: Ordered plan<br/>batches · cases
-  loop each batch, one at a time
-    SW->>NT: Restore base<br/>snapshot and start · about 16 s
-    %%> What it does:
-    %%> - restores the task's plain snapshot `base` of the three nested containers (a reboot); skipped when the fleet is still at `base`, as for the first batch
-    %%> - a restore that fails or is not healthy within 45 s stops the run; the cases that did not run become `unrun` with cause `infrastructure`
-    %%> - built, not yet passed live: the step is the workflow `proof-fleet-restore` (restore, start, cloud-init, systemd boot wait, apply the checkout, readiness), which `proof-fleet-verify-batch` calls; 0 of 2 runs succeeded by 2026-11-06; the old `runner restore` was removed
-    opt the workflow calls setup
-      SW->>VM: Prepare and set up<br/>runner setup BATCH
-      %%> New workflows always call setup. Older released workflows may skip it for a batch without setup steps.
-      VM->>NT: Apply Gateway<br/>prerequisites
-      VM->>NT: Prepare the observers<br/>one Ansible run
-      %%> Installs the candidate pin using Node convergence's checksum-verified atomic replacement task. Stops all observers, discards old host receipts, starts the observers and waits for the Gateway to record each expected version plus a new host fact. No new base snapshot.
-      %%> Preparation has its own 330-second bound. Setup gets a separate 120 seconds within the 480-second transport limit.
-      opt the batch declares a start state
-        VM->>NT: Set up the batch<br/>batch setup steps
-      end
-    end
-    SW->>VM: Run the batch<br/>runner batch BATCH
-    %%> What it does:
-    %%> - one Swamp step runs every case of the batch; the runner reads the fleet once
-    %%> - the cases run several at a time (the `parallel` key of the cases file, 4 by default), on the Nodes of the cases file's `spread`
-    %%> - cases that change nothing are readers: several may read one Node together; a writer, including a fault or a held lock, is the only case on its Node until it ends
-    %%> - resolve every CLI call's write kind and target before granting locks; a cross-Node or unresolved target, or a command without a known write scope, runs alone with an unfiltered Operation audit
-    %%> - `request: none` audits the actual CLI call; `operations` compares every CLI step's scope, with filters before selecting the newest page and newest IDs detecting added Operations
-    %%> - cases that change the shared fleet (`agent_report`, `node_down`, `node_access_remove`, `ipv6_addresses`, `node_fixture`, `recorded_request`), read every Node, work on another Node or set `exclusive: true` run alone, after the others
-    %%> - no restore after a failed case: cases use their own resources, undo nothing, and the next batch restores anyway
-    %%> Result:
-    %%> - one verdict line a case, those that did not pass first; the full receipt of each stays in the evidence directory
-    VM->>NT: Apply Gateway<br/>prerequisites
-    VM->>NT: Prepare the observers<br/>one Ansible run
-    %%> The batch always prepares independently, even if setup succeeded or an older workflow skipped setup. A preparation failure prints infrastructure failures and starts no case. Direct runner case calls require the same preparation.
-    VM->>NT: Prepare CLI callers<br/>once before scheduling
-    %%> Mounts the checkout and prepares the CLI home, CA and profile on each Node required by cli.as. No caller preparation writes occur during cases. Direct runner case calls prepare their caller too. A preparation failure starts no case.
-    loop each case, several at a time
-      VM->>NT: Set up the case<br/>listener · ufw_rule · probe
-      %%> What it does:
-      %%> - builds the starting state, then probes it, for example a blocked port and a working control port
-      %%> - a bound firewall anchor matches the current case's tuple and comment for the same protocol, so a repeated comment from an earlier case or another protocol cannot select its rule
+  %%> - validates definitions and emits batches in declared order; a plan is not a runtime verdict
+  CP-->>SW: Ordered plan<br/>batches · cases
+  loop each assigned batch
+    opt the batch requires a reset
+      SW->>CP: Reset the inner fleet<br/>base · apply · readiness
       %%> When:
-      %%> - a failed setup step ends the case as `unrun`; it is not a pass
-      VM->>NT: Run the real CLI<br/>built from the commit
-      %%> What it does:
-      %%> - the `act` steps call the command through its real interface and check exit status, result code and skip reason
-      VM->>NT: Check the effect<br/>probe · ufw · record · doctor
-      %%> What it does:
-      %%> - the `expect` steps check traffic, rule order, the Gateway record and Doctor
-      %%> - every step runs, so one verdict lists all failures
+      %%> - orbit proof resets every batch; proof:run resets its first batch and each batch after one that can change the fleet
+      %%> On failure:
+      %%> - no cases start; missing cases are unrun with cause infrastructure
     end
-    VM-->>SW: Verdicts<br/>one JSON line a case
-    %%> Returns:
-    %%> - the case id, `passed`, `failed` (cause `assertion` or `infrastructure`) or `unrun` (cause `precondition`), the failed checks and the seconds
-    %%> - keeps every verdict line in the full result artifact, with those that did not pass first; the separate 4 KiB history tail is not the report
+    SW->>CP: Run setup and batch<br/>shared runner
+    CP->>NT: Prepare prerequisites<br/>Gateway · observers · callers
+    %%> What it does:
+    %%> - uses the candidate's pinned Ansible collections and scoped grants; records the tested revision and prepares the proof-only static CLI catalog
+    %%> - prepares observer versions and fresh reports, then caller checkout mounts, home, CA and profile before scheduling cases
+    %%> - batch and direct case calls require preparation even if setup already ran; failure starts no case
+    opt declared batch setup
+      CP->>NT: Set the batch start state<br/>declared setup steps
+    end
+    loop cases under runner locks
+      CP->>NT: Set up the case<br/>declared resources
+      %%> What it does:
+      %%> - readers may share a Node; a writer holds its target through the case; shared-fleet and unresolved write scopes run alone
+      %%> - cases use their own resources and undo nothing; no reset follows a failed case within a batch
+      CP->>NT: Run the real CLI<br/>candidate checkout
+      CP->>NT: Check the effect<br/>typed result · real state
+      %%> Result:
+      %%> - assertions check the case's observable outcome, not just exit zero or an Operation status
+    end
+    CP-->>SW: Verdict per case<br/>full result artifact
+    %%> Result:
+    %%> - passed, failed or unrun, with cause, checks and timing; the 4 KiB history tail is not the report
   end
-  alt every case passed
-    SW-->>GW: Run succeeded<br/>verdicts + receipt
-    Note over GW: Record the result once<br/>PASS
+  alt every selected case passed
+    SW-->>GW: Run succeeded<br/>complete verdicts
   else a case failed or did not run
-    SW--xGW: Run failed<br/>failed cases
-    Note over GW: Record the result once<br/>FAIL
+    SW--xGW: Run failed<br/>failed or unrun cases
   end
