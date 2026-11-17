@@ -90,11 +90,11 @@ it('keeps the stored root reading when the first report after an agent start has
 it('stops trusting a kept root reading after three host intervals and keeps its first times on a retry', function (): void {
     host_root_report($this->node, host_root_seed(), '2026-11-14T05:30:28.101Z');
     $first = ['os' => 'linux', 'arch' => 'x86_64', 'instance_bridge' => null, 'filesystems' => []];
-    host_root_report($this->node, $first, '2026-11-14T06:21:50.758Z');
+    host_root_report($this->node, $first, '2026-11-14T06:18:00.758Z');
 
     // The same report sent again, and a later one still without `/`, do not renew the kept reading.
     host_root_at($this->node, '2026-11-14T06:23:50Z');
-    host_root_report($this->node, $first, '2026-11-14T06:21:50.758Z');
+    host_root_report($this->node, $first, '2026-11-14T06:18:00.758Z');
     host_root_report($this->node, $first, '2026-11-14T06:23:50.300Z');
     expect(host_root_stored($this->node)['filesystems'][0]['kept_since'])->toBe('2026-11-14T06:21:50Z')
         ->and(host_root_doctor($this->node))->toBe([]);
