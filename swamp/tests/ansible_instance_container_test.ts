@@ -95,7 +95,7 @@ function fixture() {
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
     "tasks/instance-container-run-phase.yml",
     "tasks/instance-container-power.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py",
-    "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh", "tasks/instance-proof-checkout.yml", "tasks/instance-app-user.yml"]) {
+    "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh", "tasks/instance-proof-checkout.yml"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
@@ -785,7 +785,7 @@ Deno.test({
   },
 });
 
-// The rename of the app user (tasks/instance-app-user.yml, ADR 0268 second amendment). An older image made `orbit` (uid 1000) in its
+// The rename of the app user (the block "Name the app user web" of tasks/instance-container-phase.yml, ADR 0268 second amendment). An older image made `orbit` (uid 1000) in its
 // group `orbit` (gid 1000) and the group `work` (gid 2760); the start renames both to `web` before any other command in the container.
 const IMAGE_PASSWD = "root:x:0:0:root:/root:/bin/bash\nagent:x:2750:2750::/home/agent:/bin/bash\nweb:x:1000:2760::/home/web:/bin/bash\n";
 const OLDER_PASSWD = IMAGE_PASSWD.replace("web:x:1000:2760::/home/web", "orbit:x:1000:1000::/home/orbit");

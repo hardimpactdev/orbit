@@ -1245,7 +1245,7 @@ contexts:
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
   # `getent passwd orbit web`, `getent group orbit work web 1000` and `grep -rlE ... /etc/systemd/system` in a container of an older
-  # image (tasks/instance-app-user.yml): `orbit` (1000) in its group `orbit` (1000), the group `work` (2760), a FrankenPHP unit and a
+  # image (tasks/instance-container-phase.yml, "Name the app user web"): `orbit` (1000) in its group `orbit` (1000), the group `work` (2760), a FrankenPHP unit and a
   # Process drop-in that name the old account.
   app-user-older:
     app_user_passwd:
@@ -1272,7 +1272,7 @@ contexts:
       - {item: orbit-process-5.service, stdout: "LoadState=loaded\nActiveState=failed\nUnitFileState=enabled"}
       - {item: orbit-schedule-9.timer, stdout: "LoadState=loaded\nActiveState=active\nUnitFileState=enabled"}
 cases:
-- file: tasks/instance-app-user.yml
+- file: tasks/instance-container-phase.yml
   task: Note what the rename has left to do
   field: ansible.builtin.set_fact.app_user
   context: app-user-older
@@ -1283,7 +1283,7 @@ cases:
     gid_1000: orbit
     files: [/etc/systemd/system/orbit-frankenphp.service, /etc/systemd/system/orbit-process-5.service.d/10-env.conf]
     named: [orbit-frankenphp.service, orbit-frankenphp.timer, orbit-process-5.service, orbit-process-5.timer]
-- file: tasks/instance-app-user.yml
+- file: tasks/instance-container-phase.yml
   task: Note what the rename has left to do
   field: ansible.builtin.set_fact.app_user
   context: app-user-renamed
@@ -1294,12 +1294,12 @@ cases:
     gid_1000: ''
     files: []
     named: []
-- file: tasks/instance-app-user.yml
+- file: tasks/instance-container-phase.yml
   task: Note the running and the enabled units
   field: ansible.builtin.set_fact.app_user_running
   context: app-user-units
   expected: [orbit-frankenphp.service, orbit-schedule-9.timer]
-- file: tasks/instance-app-user.yml
+- file: tasks/instance-container-phase.yml
   task: Note the running and the enabled units
   field: ansible.builtin.set_fact.app_user_enabled
   context: app-user-units

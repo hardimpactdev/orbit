@@ -88,7 +88,6 @@ additionalFiles:
   - ansible/instance-container-destroy.yml
   - ansible/instance-container.yml
   - ansible/tasks/instance-container-phase.yml
-  - ansible/tasks/instance-app-user.yml
   - ansible/tasks/instance-nested-club-key.yml
   - ansible/tasks/instance-container-handlers.yml
   - ansible/tasks/instance-container-process.yml

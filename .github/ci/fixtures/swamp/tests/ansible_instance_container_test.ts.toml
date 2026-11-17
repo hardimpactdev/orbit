@@ -134,7 +134,6 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/address-node.yml",
   "swamp/ansible/tasks/instance-bridge-rules.yml",
-  "swamp/ansible/tasks/instance-app-user.yml",
   "swamp/ansible/tasks/instance-container-*.yml",
   "swamp/ansible/tasks/instance-fleet.yml",
   "swamp/ansible/tasks/instance-proof-checkout.yml",

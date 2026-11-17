@@ -97,7 +97,6 @@ inputs = [
   "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
   "swamp/ansible/tasks/address-node.yml",
   "swamp/ansible/tasks/instance-bridge-rules.yml",
-  "swamp/ansible/tasks/instance-app-user.yml",
   "swamp/ansible/tasks/instance-container-*.yml",
   "swamp/ansible/tasks/instance-migrate-*.yml",
   "swamp/ansible/tasks/instance-network-nic-check.yml",

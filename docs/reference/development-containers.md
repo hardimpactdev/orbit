@@ -545,7 +545,7 @@ A copy takes the names of its seed. A clone does not run the `start` phase: the 
 
 **Rollout step.** After the release that renames the app user, start or deploy each default before new copies are made from it. Its start renames it, and its next seed carries the new names to every new copy.
 
-The tasks are `swamp/ansible/tasks/instance-app-user.yml`. They first read three facts in the container: the users `orbit` and `web` (`getent passwd`), the groups `orbit`, `work`, `web` and gid 1000 (`getent group`), and the unit files that name the old account (`grep -rl` in `/etc/systemd/system`). A container that has the user `web`, no group `work` or 1000 and no such unit file changes nothing. Otherwise root runs these steps:
+The tasks are the block "Name the app user web" in `swamp/ansible/tasks/instance-container-phase.yml`. They first read three facts in the container: the users `orbit` and `web` (`getent passwd`), the groups `orbit`, `work`, `web` and gid 1000 (`getent group`), and the unit files that name the old account (`grep -rl` in `/etc/systemd/system`). A container that has the user `web`, no group `work` or 1000 and no such unit file changes nothing. Otherwise root runs these steps:
 
 1. Stop the units that the boot started under the old name: each one whose file or drop-in names the old account, and a Schedule's timer.
 2. `usermod -l web -d /home/web -m orbit`. It refuses a user that still runs a process and names it; the next start renames again.
