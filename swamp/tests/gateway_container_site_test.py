@@ -77,3 +77,7 @@ class GatewaySiteTest(unittest.TestCase):
         self.assertEqual(site.CONFIG.stat().st_mode & 0o777, 0o640)
         self.assertFalse(site.SELECTION.is_symlink())
         self.assertFalse(site.PREPARED.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
