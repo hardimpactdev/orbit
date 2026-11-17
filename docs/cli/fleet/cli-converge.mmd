@@ -27,11 +27,11 @@ sequenceDiagram
   %%> - starts one Swamp run on serve (Node 209) for the selected Nodes
   Note over SW: Freeze the Node list<br/>prepare
   %%> What it does:
-  %%> - reads the admitted intent once and records the Nodes in order
+  %%> - validates the full admitted workflow input and records the Nodes in order; no Gateway read
   loop each Node, one at a time
     Note over SW: Check the Node may publish<br/>fleet-release-node · gate
     %%> What it does:
-    %%> - the `fleet-release-node` child starts on Node 209; its `gate` step checks that every earlier Node succeeded and the task is not cancelled
+    %%> - the `fleet-release-node` child starts on Node 209; its `gate` step checks that every earlier Node succeeded; native cancellation stops the run
     %%> - a skipped Node or a planning error records the outcome without touching the Node
     SW->>N: Install the CLI release<br/>cli · node-cli-install
     %%> How:
@@ -50,6 +50,7 @@ sequenceDiagram
   Note over SW: Report each Node<br/>finish
   %%> What it does:
   %%> - reads each Node's `record` output and returns one bounded result per Node
+  %%> - a native assertion fails the run after a failed Node; the Gateway captures the completed result even in a failed run
   alt every Node converged
     SW-->>GW: Run succeeded<br/>terminal event · per Node
     %%> How the Gateway learns it:

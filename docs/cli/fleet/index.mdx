@@ -13,6 +13,8 @@ After each verified Gateway release, Swamp brings the managed workload Nodes to 
 
 The rollout publishes the Node agent on each Node in turn. Each Node runs the `fleet-release-node` child. Only [CLI-eligible Nodes](/reference/node-provisioning#orbit-cli) first run the shared `node-cli-install` child. Other Nodes publish the pinned Node agent without a CLI release or install gate.
 
+The Gateway supplies each run's full Node intent and records its terminal result through the shared run reader. Steps do not fetch intent or report progress to the Gateway. The rollout commit stays on the Gateway for visit history and alerts; the run accepts only the Node list, not retired rollout-record fields.
+
 <div className="flow-at" data-chart="fleet/rollout"></div>
 
 `POST /api/v1/fleet/cli/converge` publishes only the CLI, through the same children. It names why it leaves a Node out as that Node's skip reason.
