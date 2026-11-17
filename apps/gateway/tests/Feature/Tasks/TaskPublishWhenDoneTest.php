@@ -244,16 +244,28 @@ it('refuses a bare republish while the newest check of a group that has its pull
     expect(whenDonePublishes($world->group))->toBe(0);
 });
 
-it('republishes the done check of a group that has its pull request on a bare publish, as a push to its branch', function (): void {
+it('republishes the done check of a group that has its pull request as a push only when the reviewer\'s newest turn sent no text', function (bool $named): void {
     $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
     $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7']);
+    // A newer reviewer turn on the same check that sent nothing: the text of the older turn no longer counts.
+    TaskCopyDoneFixture::reviewerTurn($world->group, $world->subtask, $world->reviewer, TaskCopyDoneFixture::Commit, now()->subSecond());
 
-    $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
+    $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData($named ? $world->check->id : null), 'person', null);
 
     expect($operation->input['check'])->toBe($world->check->id)
         ->and($operation->input['pull_request'])->toBeNull()
         ->and($operation->input)->not->toHaveKey(TaskPublishProjection::Withheld)
         ->and(whenDoneTick())->toBe([]);
+})->with(['a bare publish' => [false], 'a publish that names the done check' => [true]]);
+
+it('only pushes a named check that is not the done check of a group that has its pull request', function (): void {
+    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7']);
+    $newer = TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), TaskPrMode::ReviewBeforePr);
+
+    $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData($newer->id), 'person', null);
+
+    expect($operation->input['check'])->toBe($newer->id)->and($operation->input['pull_request'])->toBeNull();
 });
 
 it('stores a stopped copy as a refusal the group shows, and does not try that check again', function (): void {
