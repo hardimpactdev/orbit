@@ -196,7 +196,13 @@ def inventory_changes(base, head):
 
 def fixture_inputs(paths, base, head):
     """Ignore comment-only YAML edits when both revisions can be compared safely."""
-    import yaml
+    yaml_paths = {path for path in paths if Path(path).suffix.lower() in ('.yaml', '.yml')}
+    if not yaml_paths:
+        return paths
+    try:
+        import yaml
+    except ImportError:
+        return paths
 
     plain_key = re.compile(r'[A-Za-z_][A-Za-z0-9_.-]*')
     quoted_key = re.compile(r'[ -~]*')
@@ -248,9 +254,7 @@ def fixture_inputs(paths, base, head):
         yaml.load(source, Loader=UniqueLoader)
         return ''.join(parts), scalar_values
 
-    def unchanged(path):
-        if Path(path).suffix.lower() not in ('.yaml', '.yml'):
-            return False
+    def unchanged_yaml(path):
         try:
             before, after = (subprocess.check_output(['git', 'show', f'{ref}:{path}'], stderr=subprocess.DEVNULL,
                                                      timeout=60).decode('utf-8') for ref in (base, head))
@@ -258,7 +262,7 @@ def fixture_inputs(paths, base, head):
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, yaml.YAMLError, ValueError, TypeError, RecursionError):
             return False
 
-    return [path for path in paths if not unchanged(path)]
+    return [path for path in paths if path not in yaml_paths or not unchanged_yaml(path)]
 
 
 def registry_changes(base, head):

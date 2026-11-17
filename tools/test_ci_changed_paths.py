@@ -36,8 +36,8 @@ class ChangedPathsTest(unittest.TestCase):
         self.git('add', path)
         self.git('-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', text)
 
-    def cli(self, script, *args):
-        return json.loads(subprocess.check_output([sys.executable, str(ROOT / 'bin' / script), *args],
+    def cli(self, script, *args, python_args=()):
+        return json.loads(subprocess.check_output([sys.executable, *python_args, str(ROOT / 'bin' / script), *args],
                                                  cwd=self.repo, env=self.env, text=True))
 
     def test_docs_candidate_ignores_main_only_workflow_and_fixture_changes(self):
@@ -66,6 +66,13 @@ class ChangedPathsTest(unittest.TestCase):
         fixtures = self.cli('ci-units', 'plan', '--base', self.fork, '--head', 'main')
         self.assertTrue(fixtures['shards'])
 
+    def test_clean_python_plans_a_non_yaml_fixture_input(self):
+        path = 'swamp/tests/instance_complete_workflow_test.ts'
+        base = self.git('rev-parse', 'HEAD')
+        self.commit(path, '// candidate fixture change')
+        plan = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD', python_args=('-I', '-S'))
+        self.assertIn(path, [unit for shard in plan['shards'] for unit in shard['units']])
+
     def test_yaml_comment_only_changes_skip_fixtures_and_keep_build_checks(self):
         path = 'swamp/ansible/tasks/instance-fleet.yml'
         self.commit(path, '- name: Read fleet\n  command: "incus list"\n')
@@ -74,6 +81,8 @@ class ChangedPathsTest(unittest.TestCase):
         fixtures = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
         self.assertEqual([], fixtures['shards'])
         self.assertEqual([], fixtures['self_hosted_shards'])
+        clean = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD', python_args=('-I', '-S'))
+        self.assertTrue(clean['shards'])
         result = self.cli('ci-build-plan', '--base', base, '--head', 'HEAD')
         self.assertTrue(result['swamp_checks']['tests'])
 
