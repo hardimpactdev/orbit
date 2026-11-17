@@ -42,6 +42,7 @@ inputs = [
   "swamp/ansible/tasks/node-converge-hub.yml",
   "swamp/ansible/tasks/node-converge-hub-prune.yml",
   "swamp/ansible/tasks/node-converge-replace.yml",
+  "swamp/ansible/tasks/node-executor.yml",
   "swamp/ansible/tasks/node-hub-source.yml",
   "swamp/ansible/tasks/node-kernel-policy.yml",
   "swamp/ansible/tasks/node-update-policy.yml",

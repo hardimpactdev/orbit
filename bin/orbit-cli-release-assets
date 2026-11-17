@@ -76,7 +76,9 @@ targets=(
     'orbit-linux-x64/linux-x64:linux-x86_64'
     'orbit-macos-arm64/mac-arm:macos-arm64'
 )
-agent_platforms=(linux-x86_64 macos-aarch64 macos-x86_64)
+# The delivery's manifest keys, sorted as jq lists them: the executor (ADR 0266) ships beside the agent, Linux only.
+agent_platforms=(executor-linux-x86_64 linux-x86_64 macos-aarch64 macos-x86_64)
+delivery_file() { case "$1" in executor-*) printf 'orbit-executor-%s' "${1#executor-}" ;; *) printf 'orbit-agent-%s' "$1" ;; esac; }
 
 for target in "${targets[@]}"; do
     source_path="${artifact_dir}/${target%%:*}"
@@ -90,11 +92,11 @@ if [ -n "$agent_dir" ]; then
     [ "$(jq -r '.artifacts | keys | join(" ")' "${agent_dir}/manifest.json")" = "${agent_platforms[*]}" ] \
         || fail "the agent manifest does not name exactly ${agent_platforms[*]}"
     for platform in "${agent_platforms[@]}"; do
-        source_path="${agent_dir}/orbit-agent-${platform}"
+        source_path="${agent_dir}/$(delivery_file "$platform")"
         [ -f "$source_path" ] || fail "missing binary: ${source_path}"
         [ -s "$source_path" ] || fail "empty binary: ${source_path}"
-        check_platform "$source_path" "$platform"
-        [ "$(jq -r --arg p "$platform" '.artifacts[$p].path' "${agent_dir}/manifest.json")" = "orbit-agent-${platform}" ] \
+        check_platform "$source_path" "${platform#executor-}"
+        [ "$(jq -r --arg p "$platform" '.artifacts[$p].path' "${agent_dir}/manifest.json")" = "$(delivery_file "$platform")" ] \
             || fail "the agent manifest names another file for ${platform}"
         [ "$(jq -r --arg p "$platform" '.artifacts[$p].sha256' "${agent_dir}/manifest.json")" = "$(sha256sum -- "$source_path" | cut -d ' ' -f 1)" ] \
             || fail "${source_path} does not match its manifest digest"
@@ -109,7 +111,7 @@ done
 
 if [ -n "$agent_dir" ]; then
     for platform in "${agent_platforms[@]}"; do
-        install -m 0755 "${agent_dir}/orbit-agent-${platform}" "${out_dir}/orbit-agent-${platform}"
+        install -m 0755 "${agent_dir}/$(delivery_file "$platform")" "${out_dir}/$(delivery_file "$platform")"
     done
     # A Gateway pin is a byte copy of this file, so its URLs name this release.
     jq --arg base "$download_url" '.artifacts |= with_entries(.value.url = ($base + "/" + .value.path))' \

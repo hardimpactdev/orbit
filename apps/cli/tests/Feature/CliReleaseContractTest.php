@@ -126,6 +126,9 @@ function cli_release_artifacts(): string
         cli_release_fake_binary($root.'/agent-delivery/orbit-agent-'.$platform, $platform);
         $manifest['artifacts'][$platform] = ['path' => 'orbit-agent-'.$platform, 'sha256' => hash_file('sha256', $root.'/agent-delivery/orbit-agent-'.$platform)];
     }
+    // The executor ships beside the agent, Linux only (ADR 0266).
+    cli_release_fake_binary($root.'/agent-delivery/orbit-executor-linux-x86_64', 'linux-x86_64');
+    $manifest['artifacts']['executor-linux-x86_64'] = ['path' => 'orbit-executor-linux-x86_64', 'sha256' => hash_file('sha256', $root.'/agent-delivery/orbit-executor-linux-x86_64')];
     File::put($root.'/agent-delivery/manifest.json', json_encode($manifest, JSON_PRETTY_PRINT));
 
     return $root;
@@ -266,7 +269,7 @@ describe('CLI release assets', function (): void {
 
         [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0', agent: true);
 
-        $agents = ['orbit-agent-linux-x86_64', 'orbit-agent-macos-aarch64', 'orbit-agent-macos-x86_64'];
+        $agents = ['orbit-agent-linux-x86_64', 'orbit-agent-macos-aarch64', 'orbit-agent-macos-x86_64', 'orbit-executor-linux-x86_64'];
         $binaries = [...$agents, 'orbit-0.4681.0-linux-x86_64', 'orbit-0.4681.0-macos-arm64'];
         sort($binaries);
         $files = array_map(basename(...), File::files($root.'/release'));
@@ -285,6 +288,8 @@ describe('CLI release assets', function (): void {
                 'sha256' => hash_file('sha256', $root.'/agent-delivery/orbit-agent-macos-aarch64'),
                 'url' => 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-agent-macos-aarch64',
             ])
+            ->and($manifest['artifacts']['executor-linux-x86_64']['url'])
+            ->toBe('https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-executor-linux-x86_64')
             ->and(fileperms($root.'/release/orbit-agent-linux-x86_64') & 0777)->toBe(0755);
     });
 

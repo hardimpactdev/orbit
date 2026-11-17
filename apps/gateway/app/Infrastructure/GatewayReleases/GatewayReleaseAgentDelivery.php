@@ -29,6 +29,18 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
     /** @var list<string> */
     public const array Platforms = ['linux-x86_64', 'macos-aarch64', 'macos-x86_64'];
 
+    /**
+     * The executor (ADR 0266) ships beside the agent from the release that first builds it; a pin from before it has none.
+     * A Node converge installs it only once the pin carries it (docs/reference/executor.md#rollout).
+     */
+    public const string ExecutorArtifact = 'executor-linux-x86_64';
+
+    /** The release file of a manifest key: `orbit-agent-<platform>`, or `orbit-executor-linux-x86_64` for the executor. */
+    public static function file(string $key): string
+    {
+        return $key === self::ExecutorArtifact ? 'orbit-executor-linux-x86_64' : 'orbit-agent-'.$key;
+    }
+
     private const int MetadataMaxBytes = 65536;
 
     /**
@@ -53,7 +65,7 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         $pin = json_decode($frozen, true);
         $url = data_get($pin, 'artifacts.linux-x86_64.url');
         if (! is_string($url) || preg_match('#\A'.preg_quote(rtrim($this->repository, '/'), '#').'/releases/download/(cli-v0\.[1-9][0-9]*\.0)/orbit-agent-linux-x86_64\z#D', $url, $match) !== 1) {
-            throw $this->invalid($sha, 'The pinned agent manifest has no fixed published release.');
+            throw self::invalid($sha, 'The pinned agent manifest has no fixed published release.');
         }
         $tag = $match[1];
         $base = rtrim($this->repository, '/').'/releases/download/'.rawurlencode($tag);
@@ -69,9 +81,9 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
                 : $this->unavailable($sha, $unavailable->getMessage());
         }
         if (! hash_equals(hash('sha256', $frozen), hash('sha256', $manifest))) {
-            throw $this->invalid($sha, 'The published manifest differs from the commit\'s agent pin.');
+            throw self::invalid($sha, 'The published manifest differs from the commit\'s agent pin.');
         }
-        $this->validate($manifest, $this->checksums($sums, $sha), $base, $sha);
+        self::validate($manifest, $this->checksums($sums, $sha), $base, $sha);
 
         // The binary goes into the shared artifact cache, where the install below and every Node install find it.
         $staged = $this->cacheDirectory.'/manifest-'.bin2hex(random_bytes(8)).'.json';
@@ -158,7 +170,7 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         $checksums = [];
         foreach (preg_split('/\R/', trim($body)) ?: [] as $line) {
             if (preg_match('/\A([0-9a-f]{64}) [ *]([A-Za-z0-9._-]+)\z/D', $line, $match) !== 1 || isset($checksums[$match[2]])) {
-                throw $this->invalid($sha, 'The release SHA256SUMS is malformed.');
+                throw self::invalid($sha, 'The release SHA256SUMS is malformed.');
             }
             $checksums[$match[2]] = $match[1];
         }
@@ -166,29 +178,34 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         return $checksums;
     }
 
-    /** @param array<string, string> $checksums */
-    private function validate(string $body, array $checksums, string $base, string $sha): void
+    /**
+     * Checks a published delivery manifest against its release: every agent platform, and the executor when the release has
+     * it, each at its fixed file name, release URL and SHA256SUMS digest. Nothing else may appear.
+     *
+     * @param  array<string, string>  $checksums
+     */
+    public static function validate(string $body, array $checksums, string $base, string $sha): void
     {
         try {
             $manifest = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
-            throw $this->invalid($sha, 'The release agent manifest is not JSON.');
+            throw self::invalid($sha, 'The release agent manifest is not JSON.');
         }
         $artifacts = is_array($manifest) ? ($manifest['artifacts'] ?? null) : null;
         if (! is_array($manifest) || ! is_string($manifest['commit'] ?? null) || ! GatewayReleaseCommit::isSha($manifest['commit'])
             || ! is_string($manifest['version'] ?? null) || $manifest['version'] === '' || ! is_array($artifacts)) {
-            throw $this->invalid($sha, 'The release agent manifest has no commit, version, or artifacts.');
+            throw self::invalid($sha, 'The release agent manifest has no commit, version, or artifacts.');
         }
-        $keys = array_keys($artifacts);
+        $keys = array_values(array_diff(array_map(strval(...), array_keys($artifacts)), [self::ExecutorArtifact]));
         sort($keys);
         if ($keys !== self::Platforms) {
-            throw $this->invalid($sha, 'The release agent manifest does not name exactly the delivered platforms.');
+            throw self::invalid($sha, 'The release agent manifest does not name exactly the delivered platforms.');
         }
         foreach ($artifacts as $platform => $artifact) {
-            $name = 'orbit-agent-'.$platform;
+            $name = self::file((string) $platform);
             if (! is_array($artifact) || ($artifact['path'] ?? null) !== $name || ($artifact['url'] ?? null) !== $base.'/'.$name
                 || ! isset($checksums[$name]) || ($artifact['sha256'] ?? null) !== $checksums[$name]) {
-                throw $this->invalid($sha, "The release agent [{$platform}] does not match the release and its SHA256SUMS.");
+                throw self::invalid($sha, "The release agent [{$platform}] does not match the release and its SHA256SUMS.");
             }
         }
     }
@@ -202,7 +219,7 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         return new GatewayReleaseException('agent-delivery', 'gateway.release_agent_delivery_unavailable', $message.' The frozen published agent must be reachable.', 503, sha: $sha);
     }
 
-    private function invalid(string $sha, string $message): GatewayReleaseException
+    private static function invalid(string $sha, string $message): GatewayReleaseException
     {
         return new GatewayReleaseException('agent-delivery', 'gateway.release_agent_delivery_invalid', $message, 500, sha: $sha);
     }

@@ -43,6 +43,9 @@
     enabled: true
     daemon_reload: "{{ agent_files is changed }}"
     state: "{{ 'restarted' if agent_binary_changed or agent_files is changed else 'started' }}"
+- name: Install the executor on a Node whose roles need it
+  when: intent.executor | default(None) != None
+  ansible.builtin.include_tasks: node-executor.yml
 # The units of the Node's roles (NodeRoleUnits): written and loaded, never started or restarted. A running service takes the new text
 # at its next start: a Swamp worker at its renewal restart, Reverb at a reboot, a new Reverb release or a changed .env. Never the
 # Swamp serve unit.
