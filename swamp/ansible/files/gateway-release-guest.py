@@ -96,7 +96,7 @@ apt-get -qq install -y --no-install-recommends ca-certificates curl git jq opens
 install -d -m 0755 /etc/systemd/network/10-netplan-eth0.network.d /etc/tmpfiles.d
 # Incus gives every clone a new MAC. DHCP must use it even when the disk's machine-id was snapshotted.
 printf '[DHCPv4]\nClientIdentifier=mac\n' >/etc/systemd/network/10-netplan-eth0.network.d/dhcp.conf
-printf 'd /run/orbit 0755 root root -\nd /run/orbit/ssh-mux 0700 orbit orbit -\n' >/etc/tmpfiles.d/orbit-gateway.conf
+printf 'd /run/orbit 0755 orbit orbit -\nd /run/orbit/ssh-mux 0700 orbit orbit -\n' >/etc/tmpfiles.d/orbit-gateway.conf
 systemd-tmpfiles --create /etc/tmpfiles.d/orbit-gateway.conf
 """
 
