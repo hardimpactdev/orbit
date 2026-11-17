@@ -1,0 +1,170 @@
+//! The allowlist: every action the executor knows, its family, and the families a Node enables.
+
+use std::collections::BTreeSet;
+use std::fmt;
+use std::str::FromStr;
+
+use serde::{Deserialize, Serialize};
+
+/// Every action the executor can run. Nothing else is accepted.
+///
+/// Slice 1 of ADR 0266 has one no-op action, `proof.noop`, that proves the order path end to end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+#[expect(
+    clippy::exhaustive_enums,
+    reason = "the binary's dispatcher must fail to build when an action is added"
+)]
+pub enum Action {
+    /// Does nothing and reports `done`. Its target is the Node itself.
+    ProofNoop,
+}
+
+/// How the executor proves that an action's target exists on this Node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TargetKind {
+    /// The target is this Node: its id must equal the Node's id.
+    Node,
+}
+
+impl Action {
+    /// The family whose crate holds this action, and which a role enables.
+    pub fn family(self) -> Family {
+        match self {
+            Self::ProofNoop => Family::Proof,
+        }
+    }
+
+    /// What the action's target names.
+    pub fn target_kind(self) -> TargetKind {
+        match self {
+            Self::ProofNoop => TargetKind::Node,
+        }
+    }
+
+    /// The action's name on the wire.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::ProofNoop => "proof.noop",
+        }
+    }
+}
+
+/// The action name is not on the allowlist.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown action")]
+pub struct UnknownActionError;
+
+impl FromStr for Action {
+    type Err = UnknownActionError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        match raw {
+            "proof.noop" => Ok(Self::ProofNoop),
+            _ => Err(UnknownActionError),
+        }
+    }
+}
+
+impl TryFrom<String> for Action {
+    type Error = UnknownActionError;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        raw.parse()
+    }
+}
+
+impl From<Action> for String {
+    fn from(action: Action) -> Self {
+        action.name().to_owned()
+    }
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// A group of actions that one crate holds and that a role enables as a whole (ADR 0267 P10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum Family {
+    /// The no-op proof action.
+    Proof,
+}
+
+/// The family name is unknown to this executor.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown action family on line {line}")]
+pub struct UnknownFamilyError {
+    /// The 1-based line of the enabled file.
+    pub line: usize,
+}
+
+impl Family {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "proof" => Some(Self::Proof),
+            _ => None,
+        }
+    }
+}
+
+/// The families this Node's roles enable, read from `/etc/orbit/executor/enabled`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Enabled(BTreeSet<Family>);
+
+impl Enabled {
+    /// Parses the enabled file: one family per line. Blank lines and `#` comments are skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnknownFamilyError`] for a line that names no known family, so a role that enables a family
+    /// this binary lacks fails the converge instead of being silently narrowed.
+    pub fn parse(text: &str) -> Result<Self, UnknownFamilyError> {
+        let mut families = BTreeSet::new();
+        for (index, line) in text.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let family = Family::parse(line).ok_or(UnknownFamilyError { line: index + 1 })?;
+            families.insert(family);
+        }
+        Ok(Self(families))
+    }
+
+    /// Whether this Node enables the action's family.
+    pub fn allows(&self, action: Action) -> bool {
+        self.0.contains(&action.family())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_allowlisted_names_parse() {
+        assert_eq!("proof.noop".parse(), Ok(Action::ProofNoop));
+        assert_eq!("sleep".parse::<Action>(), Err(UnknownActionError));
+        assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
+    }
+
+    #[test]
+    fn enabled_file_enables_listed_families_only() {
+        let enabled = Enabled::parse("# app-dev\n\nproof\n").expect("valid file");
+        assert!(enabled.allows(Action::ProofNoop));
+        assert!(!Enabled::default().allows(Action::ProofNoop));
+    }
+
+    #[test]
+    fn enabled_file_refuses_an_unknown_family() {
+        assert_eq!(
+            Enabled::parse("proof\npower\n"),
+            Err(UnknownFamilyError { line: 2 })
+        );
+    }
+}

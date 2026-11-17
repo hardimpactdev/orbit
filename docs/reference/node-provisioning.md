@@ -660,6 +660,10 @@ Metrics exporters, cAdvisor and the FPM exporter stay outside this footprint; Me
 
 Earlier Gateways published the annotator server in `/opt/orbit/annotator` and kept its stores in `/var/lib/orbit/annotator`. Orbit leaves these paths unmanaged; the machine recipe does not remove them. After destroying the removed preset Processes through the old Gateway, an operator may remove unused files by hand. Cleanup of both paths remains pending a dependency check for ordinary Processes 168 and 127. Preserve these Processes and their files. Check every ordinary Process dependency and obtain cleanup authorization before deleting retained files.
 
+### Executor at a converge
+
+The base phase installs the [executor](/reference/executor) after the agent, only on a Node whose roles enable an action family: today `app-dev`. It pins the binary's SHA-256 from the agent delivery, writes the keys, Node id, allowlist, service and the relay's sudo rule, and restarts the executor only when one of them changed.
+
 ### Kernel policy
 
 Every managed Linux Node gets the same kernel policy. The Gateway renders it once, and two paths apply it: the `baseline` phase of [`node:add`](/cli/node/add) and the `agent` phase of `node:converge`. So a new Node and an existing one end in the same state.

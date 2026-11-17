@@ -6,7 +6,13 @@ from pathlib import Path
 import shutil
 import sys
 
-PLATFORMS = {"linux-x86_64", "macos-aarch64", "macos-x86_64"}
+# Each manifest key and its fixed file: the agent per platform, and the executor (ADR 0266) on Linux only.
+ARTIFACTS = {
+    "linux-x86_64": "orbit-agent-linux-x86_64",
+    "macos-aarch64": "orbit-agent-macos-aarch64",
+    "macos-x86_64": "orbit-agent-macos-x86_64",
+    "executor-linux-x86_64": "orbit-executor-linux-x86_64",
+}
 
 
 def combine(destination, sources):
@@ -20,9 +26,9 @@ def combine(destination, sources):
             raise ValueError("The platform artifacts name different source commits or versions.")
         identity = current
         for platform, artifact in manifest["artifacts"].items():
-            if platform not in PLATFORMS or platform in artifacts:
+            if platform not in ARTIFACTS or platform in artifacts:
                 raise ValueError("An unexpected or duplicate platform was supplied.")
-            name = f"orbit-agent-{platform}"
+            name = ARTIFACTS[platform]
             if artifact["path"] != name:
                 raise ValueError("An artifact must use its fixed platform filename.")
             path = directory / name
@@ -30,7 +36,7 @@ def combine(destination, sources):
                 raise ValueError("An artifact does not match its tested digest.")
             artifacts[platform] = {"path": name, "sha256": artifact["sha256"]}
             files[platform] = path
-    if set(artifacts) != PLATFORMS:
+    if set(artifacts) != set(ARTIFACTS):
         raise ValueError("The delivery requires every platform.")
     # Validate every input before publishing any part of the combined delivery.
     destination.mkdir(parents=True, exist_ok=False)

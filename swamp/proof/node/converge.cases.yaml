@@ -78,6 +78,52 @@ cases:
       - cli: {run: [node:converge, "${app-dev.id}", --roles=app-dev], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
     expect: []
 
+  - id: executor-installed
+    batch: fresh-fleet
+    waits: idmap
+    covers: [main, admitted, succeeded]
+    summary: A converge of an app-dev Node installs the pinned executor and leaves its plain service running (ADR 0266 slice 1).
+    fails_today: Until the pinned delivery carries executor-linux-x86_64 and the Gateway pins a key, the converge skips the install with its reason.
+    setup:
+      - executor_key: {}
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
+    expect:
+      - service: {on: app-dev, name: orbit-executor.service, state: active}
+
+  - id: executor-relay-noop
+    batch: fresh-fleet
+    waits: idmap
+    covers: [main, admitted, succeeded]
+    summary: With the proof key pinned, a converge installs the executor, and a signed proof.noop order through the relay runs once; a replay and a repeat return its result.
+    fails_today: Until the pinned delivery carries executor-linux-x86_64, the converge skips the install with executor.release_missing.
+    setup:
+      - executor_key: {}
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
+      - executor_order: {on: app-dev, operation: proof-relay-noop, save: first_nonce, expect: {status: done, repeat: false, operation: proof-relay-noop}}
+      - executor_order: {on: app-dev, operation: proof-relay-noop, nonce: first_nonce, expect: {status: refused, reason: replayed_nonce}}
+      - executor_order: {on: app-dev, operation: proof-relay-noop, expect: {status: done, repeat: true}}
+    expect:
+      - service: {on: app-dev, name: orbit-executor.service, state: active}
+
+  - id: executor-caller-refusals
+    batch: fresh-fleet
+    waits: idmap
+    covers: [main, admitted, succeeded]
+    summary: The executor refuses another user at the socket, and root outside the observer's unit and the relay user running another program with no reply and a logged code.
+    fails_today: Until the pinned delivery carries executor-linux-x86_64, the converge skips the install with executor.release_missing.
+    setup:
+      - executor_key: {}
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
+      - executor_order: {on: app-dev, operation: proof-refusal-user, as: other_user, expect: {connect: denied}}
+      - executor_order: {on: app-dev, operation: proof-refusal-root, as: root_outside_observer, expect: {refused_caller: caller_outside_observer_unit}}
+      - executor_order: {on: app-dev, operation: proof-refusal-program, as: relay_other_program, expect: {refused_caller: caller_relay_other_program}}
+      - executor_order: {on: app-dev, operation: proof-refusal-relay, expect: {status: done, repeat: false}}
+    expect:
+      - service: {on: app-dev, name: orbit-executor.service, state: active}
+
   - id: unknown-node
     batch: fresh-fleet
     read_only: true
