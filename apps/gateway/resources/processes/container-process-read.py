@@ -23,7 +23,7 @@ def read_command(project, container, unit, lines=None):
             r"orbit-process-[1-9][0-9]*-(?:schedule-work|horizon)\.service", unit
         ):
             raise ValueError("invalid serving Gateway Process")
-        return ["/usr/local/libexec/orbit-gateway-unit", container, "logs" if lines else "status", unit] + ([lines] if lines else [])
+        return ["sudo", "-n", "--", "/usr/local/libexec/orbit-gateway-unit", container, "logs" if lines else "status", unit] + ([lines] if lines else [])
     prefix = pair(project, container, unit)
     if lines:
         return prefix + ["/usr/bin/journalctl", "--no-pager", "--quiet", "--unit=" + unit,

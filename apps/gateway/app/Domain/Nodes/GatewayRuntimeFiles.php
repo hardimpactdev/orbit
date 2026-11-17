@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\GatewayReleases\GatewayReleaseHost;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
@@ -55,11 +56,12 @@ final readonly class GatewayRuntimeFiles
         $home = Config::string('orbit.home');
         $file = static fn (string $path, string $content, string $ensure = 'present'): array => ['path' => $path, 'ensure' => $ensure,
             'content' => $content, 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
-        $log = str_replace(['\\', '"'], ['\\\\', '\\"'], $application.'/storage/logs/laravel.log');
+        $inventory = $node === null ? null : GatewayReleaseHost::inventory($node);
+        $storage = $inventory === null ? $application.'/storage' : GatewayReleaseLayout::fromConfig()->storagePath();
+        $log = str_replace(['\\', '"'], ['\\\\', '\\"'], $storage.'/logs/laravel.log');
 
         $directory = static fn (string $path): array => ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
 
-        $inventory = $node === null ? null : GatewayReleaseHost::inventory($node);
         $files = [
             $file(self::RuntimeTmpfiles, self::RuntimeTmpfilesRule),
         ];

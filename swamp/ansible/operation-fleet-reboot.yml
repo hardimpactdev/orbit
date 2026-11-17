@@ -254,7 +254,7 @@
           delay: 5
         - name: Wait for the serving Gateway's services
           when: target.gateway.release is defined
-          ansible.builtin.command: { argv: [/usr/local/libexec/orbit-gateway-unit, "{{ target.gateway.release }}", is-active, "{{ item }}"] }
+          ansible.builtin.command: { argv: [/usr/local/libexec/orbit-gateway-unit, "{{ target.gateway.release }}", fleet-check, "{{ item }}"] }
           loop: "{{ ['orbit-gateway-web.service', target.gateway.scheduler, target.gateway.horizon] | select | list if target.gateway is not none else [] }}"
           register: gateway_services
           changed_when: false

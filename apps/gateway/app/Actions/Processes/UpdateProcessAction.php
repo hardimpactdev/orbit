@@ -7,6 +7,7 @@ namespace App\Actions\Processes;
 use App\Data\Processes\AddProcessData;
 use App\Data\Processes\UpdateProcessData;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Instances\InstanceNodeServiceTargets;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationAdmission;
@@ -61,6 +62,9 @@ final readonly class UpdateProcessAction
         }
         $data = $update->forProcess($fresh);
         $target = $this->targets->forInstallation($fresh);
+        if ($data->runtime !== ProcessRuntime::Systemd && GatewayReleaseHost::hasProcess($fresh) && GatewayReleaseHost::target($target->node) !== null) {
+            throw new ResourceOperationException('process.target_unsupported', 'The serving Gateway runs its scheduler and Horizon as systemd units.', 409);
+        }
         if ($data->user !== null && $data->runtime === ProcessRuntime::Systemd) {
             $home = $this->users->home($target->node, $data->user);
             $data = new AddProcessData(

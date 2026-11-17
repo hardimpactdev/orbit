@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -90,6 +91,10 @@ final readonly class ProcessOperationAdmission
             'vite' => $verb !== 'stop' && $systemd && $hostVite ? ['path' => SystemdProcessRenderer::viteEnvironmentPath($process->owner_id), 'instance_id' => $process->owner_id] : null];
         if (GatewayReleaseHost::hasProcess($process) && ($release = GatewayReleaseHost::target($target->node)) !== null) {
             $input['container'] = $release;
+            if ($verb === 'destroy') {
+                $fallback = $process->name === 'horizon' ? 'orbit-gateway-horizon.service' : 'orbit-gateway-schedule.service';
+                $input['container']['fallback_unit'] = array_column(app(GatewayRuntimeFiles::class)->recorder(), 'unit', 'name')[$fallback] ?? '';
+            }
         }
         if ($target->container !== null) {
             // The unit lives in the Instance container; Swamp acts on it through `incus exec` on the Node.

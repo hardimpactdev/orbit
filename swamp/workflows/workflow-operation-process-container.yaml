@@ -29,6 +29,7 @@ inputs:
             project: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$'}
             name: {type: string, pattern: '^(instance-[1-9][0-9]*|gateway-[0-9a-f]{12})$'}
             release: {type: string, pattern: '^[0-9a-f]{40}$'}
+            fallback_unit: {type: string}
           required: [project, name]
           oneOf:
           - required: [instance_id]
@@ -47,6 +48,7 @@ inputs:
           required: [id]
           additionalProperties: false
         installation: {type: object}
+        gateway_operation: {type: integer, minimum: 1}
         ssh_execution: {type: object}
         # A migrated Schedule log read: its line count and request-bound vault key.
         read:
@@ -60,17 +62,7 @@ inputs:
       oneOf:
       - required: [control, container]
       - required: [schedule, read]
-    execution_secrets:
-      type: object
-      properties:
-        environment:
-          type: object
-          properties:
-            vault: {type: string, const: orbit-control-inputs}
-            key: {type: string, pattern: '^process-(create|update)-operation-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
-      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
@@ -88,21 +80,6 @@ jobs:
       inputs:
         intent: '${{ inputs.intent }}'
         path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-  - name: Write Gateway Process environment
-    labels: {role: swamp}
-    writes: true
-    guard: ${{ !has(inputs.execution_secrets.environment) }}
-    dependsOn: [{step: input, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "gateway-process-environment-" + string(inputs.operation_id) }}
-      methodName: execute
-      inputs:
-        run: 'umask 077; printf %s "$ORBIT_VALUE" > "$ORBIT_FILE"'
-        env:
-          ORBIT_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/gateway-environment" }}'
-          ORBIT_VALUE: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.environment.key) }}'
   # Start, stop, restart or remove the unit and check its state.
   - name: Act on the Process
     guard: '${{ inputs.kind == "schedule.inspect" }}'
@@ -110,7 +87,6 @@ jobs:
     writes: true
     dependsOn:
     - {step: input, condition: {type: succeeded}}
-    - {step: Write Gateway Process environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
       type: behavior
       behaviorType: command/shell

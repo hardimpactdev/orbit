@@ -66,8 +66,10 @@ class GatewayUnitTest(unittest.TestCase):
         self.guest.assert_any_call("prepare-gateway", "systemctl", "disable", "--now", "--", self.name)
         self.change("stop")
         self.assertEqual(json.loads(record.read_text())["desired"], "stopped")
-        self.change("destroy")
-        self.assertEqual(json.loads(record.read_text()), {"removed": True})
+        with patch.object(unit.sys, "stdin", io.StringIO('{"fallback_unit":"[Service]"}')):
+            self.change("destroy")
+        self.assertEqual(json.loads(record.read_text()), {"removed": True, "fallback_unit": "[Service]"})
+        self.guest.assert_any_call("gateway-" + self.sha[:12], "systemctl", "enable", "--now", "--", "orbit-gateway-schedule.service")
         self.guest.reset_mock()
         unit.replay("apply-candidate", ["4", self.sha])
         self.check.assert_called_with("gateway-" + self.sha[:12], role="candidate", commit=self.sha)
@@ -79,6 +81,10 @@ class GatewayUnitTest(unittest.TestCase):
         self.change("status")
         unit.live_command(self.sha, "logs", self.name, "20")
         self.assertFalse(self.state.exists())
+        self.change("stop")
+        self.guest.reset_mock()
+        self.change("resume")
+        self.guest.assert_not_called()
 
     def test_another_unit_or_environment_path_is_refused(self):
         with self.assertRaisesRegex(ValueError, "invalid Gateway unit"):

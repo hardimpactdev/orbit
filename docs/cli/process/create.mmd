@@ -60,9 +60,6 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  opt Gateway scheduler or Horizon runs in a release container
-    SW->>N: Apply the Gateway Process<br/>store and apply the unit
-  end
   opt certificate account home is not recorded
     SW->>N: Check the account<br/>ssh exec · getent
   end
@@ -75,6 +72,9 @@ sequenceDiagram
   opt --preset=vp-dev
     SW->>N: Publish the dev route<br/>native Vite workflow
     %%> Publishes the Vite environment before its unit starts.
+  end
+  opt Gateway scheduler or Horizon runs in a release container
+    SW->>N: Apply the Gateway Process<br/>store and apply the unit
   end
   SW->>N: Apply the unit<br/>cfgmgmt/systemd.apply
   %%> Publishes unitFile, reloads on content change, and applies the admitted boot and active state: stopped by default.
