@@ -202,20 +202,34 @@ def registry_changes(base, head):
     return changed, shared
 
 
+def path_matches(path, fixtures):
+    """The fixtures a changed path selects directly, by the fixture's own file or one of its declared inputs, each with the
+    directness of its best match. A machinery path selects none directly."""
+    result = {}
+    if path in MACHINERY:
+        return result
+    for file, fixture in fixtures.items():
+        matches = [specificity(pattern) for pattern in [file, *fixture['inputs']] if selection_regex(pattern).fullmatch(path)]
+        if matches:
+            result[file] = (2, len(file), 0) if path == file else max(matches)
+    return result
+
+
+def direct_files(paths, fixtures):
+    """The fixture files the changed paths touch directly: the file, a declared input, or its metadata file."""
+    return {file for path in paths for file in path_matches(path, fixtures)} | \
+        {file for file in fixtures if registry.metadata_path(file) in paths}
+
+
 def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_changed=(), shared_registry=False):
     selected, unmapped = {}, []
     machinery = shared_registry or any(path in MACHINERY for path in paths)
     for path in paths:
         if path in MACHINERY:
             continue
-        matched = False
-        for file, fixture in fixtures.items():
-            matches = [specificity(pattern) for pattern in [file, *fixture['inputs']]
-                       if selection_regex(pattern).fullmatch(path)]
-            if matches:
-                matched = True
-                priority = (2, len(file), 0) if path == file else max(matches)
-                selected[file] = max(selected.get(file, (-1, 0, 0)), priority)
+        matched = path_matches(path, fixtures)
+        for file, priority in matched.items():
+            selected[file] = max(selected.get(file, (-1, 0, 0)), priority)
         if path.startswith('swamp/') and not matched:
             unmapped.append(path)
             for file in defaults:
