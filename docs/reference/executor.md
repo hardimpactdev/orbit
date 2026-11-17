@@ -119,7 +119,7 @@ The data of `client-executor-result` is exactly:
 
 A line that does not fit one Pusher client frame (9,900 bytes) is dropped and logged; the session goes on. Lines sent before a bound passes stay sent. A missing socket sends nothing, and the Gateway's fallback covers it. Orders that arrive while the observer reconnects are lost; replies that finish then go out on the next session.
 
-The observer's connection to Reverb sets `TCP_NODELAY`. A reply is two small frames, `accepted` and then the result. Without it, Nagle's algorithm held the result until Reverb's delayed ACK of the first frame arrived. That added about 40 ms to every round trip on the nested fleet: 46 ms median before the change, 6.2 ms after it.
+The observer's connection to Reverb sets `TCP_NODELAY`. A reply is two small frames, `accepted` and then the result. Without it, Nagle's algorithm held the result until Reverb's delayed ACK of the first frame arrived. That added about 40 ms to every round trip on the nested fleet: 46 ms median before the change, 4.0–6.2 ms after it.
 
 Each order runs in its own task outside the observer's supervised tasks, because it holds no shared lock: a panic there loses that one order, and the observer goes on. The executor admits the observer by its cgroup, so the order needs no other proof of where it came from: the signature is the boundary.
 
@@ -243,7 +243,7 @@ The evidence `executor-round-trip-<operation>.json` holds every trip. It gives t
 - the first result kept on the Operation, and the Operation `succeeded`;
 - one `done` record for the Operation in the journal.
 
-**Measured.** On 2026-11-17, task 5739 ran both steps by hand on its copy's nested fleet, without the converge. The executor and an observer with the pass-through were built from the branch and installed on the nested `app-dev` Node. The proof key was pinned through `executor_key`'s script. Three runs of 50 round trips each, from publish to the result in the waiting request:
+**Measured.** On 2026-11-17, task 5739 ran both steps by hand on its copy's nested fleet, without the converge. The executor and an observer with the pass-through were built from the branch and installed on the nested `app-dev` Node. The proof key was pinned through `executor_key`'s script. Four runs of 50 round trips each, from publish to the result in the waiting request:
 
 | Run | p50 | p95 | max | `accepted` line p50 |
 | --- | --- | --- | --- | --- |
@@ -251,8 +251,9 @@ The evidence `executor-round-trip-<operation>.json` holds every trip. It gives t
 | With `TCP_NODELAY`, run 1 | 6.2 ms | 27.7 ms | 35.3 ms | 1.6 ms |
 | With `TCP_NODELAY`, run 2 | 6.2 ms | 11.5 ms | 13.4 ms | 1.3 ms |
 | With `TCP_NODELAY`, run 3 | 6.2 ms | 13.8 ms | 14.5 ms | 1.3 ms |
+| With `TCP_NODELAY`, run 4 | 4.0 ms | 7.0 ms | 38.1 ms | 0.7 ms |
 
-The executor wrote its `done` record 3–4 ms after the publish (median of 50 orders, `executor-websocket-burst`'s step). Every trip was `done`, recorded on its Operation and run once. In each lost-result run the second waiter timed out at its 500 ms bound. The repeat then brought the first result back in 16–19 ms, and the journal held `open`, `done` and `seen` for that Operation: one run. The `accepted` line's own p95 of 6–23 ms shows that the remaining tail comes before the executor answers, on the publish or the Reverb side.
+The executor wrote its `done` record 3–4 ms after the publish (median of 50 orders, `executor-websocket-burst`'s step). Every trip was `done`, recorded on its Operation and run once. In each lost-result run the second waiter timed out at its 500 ms bound. The repeat then brought the first result back in 7–19 ms, and the journal held `open`, `done` and `seen` for that Operation: one run. The `accepted` line's own p95 of 6–23 ms shows that the remaining tail comes before the executor answers, on the publish or the Reverb side.
 
 **Status.** In the proof plan both cases keep `waits: idmap`, like every `app-dev` converge case: the converge builds the Instance host's stock image, which needs the 2,000,000 ID map. Both also keep `fails_today`, because the pinned agent delivery has no `executor-linux-x86_64` and no observer release with the pass-through yet.
 

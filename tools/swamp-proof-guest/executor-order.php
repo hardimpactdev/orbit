@@ -131,21 +131,25 @@ function proofPublish(string $secretPath, array $input): array
     $orders = [];
     for ($index = 0; $index < $count; $index++) {
         $operation = $operations[] = $proof->start(Node::query()->findOrFail($node));
-        if (isset($input['tamper'])) {
-            $made = proofOrder($secretPath, ['node' => (string) $node, 'operation' => (string) $operation->id] + $input);
-            $order = new SignedExecutorOrder($made['order'], (string) $operation->id, $made['nonce'], 0);
-        } else {
-            $order = ExecutorOrderSigner::fromConfig()->sign($operation, 'proof.noop', (string) $node);
-        }
-        $published = (int) floor(microtime(true) * 1000);
-        $publisher->publish($operation, $order);
-        $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $published, 'replay' => false];
-        // A true replay: the exact wire again, same signature and Operation, at once and so well inside its 5 s expiry.
-        if (($input['replay'] ?? false) === true) {
-            $replayed = (int) floor(microtime(true) * 1000);
+        $orders = [...$orders, ...closing($proof, $operation, function () use ($secretPath, $input, $node, $operation, $publisher): array {
+            if (isset($input['tamper'])) {
+                $made = proofOrder($secretPath, ['node' => (string) $node, 'operation' => (string) $operation->id] + $input);
+                $order = new SignedExecutorOrder($made['order'], (string) $operation->id, $made['nonce'], 0);
+            } else {
+                $order = ExecutorOrderSigner::fromConfig()->sign($operation, 'proof.noop', (string) $node);
+            }
+            $published = (int) floor(microtime(true) * 1000);
             $publisher->publish($operation, $order);
-            $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $replayed, 'replay' => true];
-        }
+            $sent = [['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $published, 'replay' => false]];
+            // A true replay: the exact wire again, same signature and Operation, at once and so well inside its 5 s expiry.
+            if (($input['replay'] ?? false) === true) {
+                $replayed = (int) floor(microtime(true) * 1000);
+                $publisher->publish($operation, $order);
+                $sent[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $replayed, 'replay' => true];
+            }
+
+            return $sent;
+        })];
     }
     foreach ($operations as $operation) {
         $proof->finish($operation, $proof->wait($operation));
@@ -195,18 +199,22 @@ function proofLostResult(array $input): array
     $node = Node::query()->findOrFail((int) $input['node']);
     $proof = app(ExecutorProofOperation::class);
     $operation = $proof->start($node);
-    $first = closing($proof, $operation, fn (): SignedExecutorOrder => $proof->send($operation, ExecutorOrderSigner::fromConfig()));
-    $dropped = $proof->wait($operation);
-    app('redis')->connection('gateway')->command('del', [ExecutorResults::resultKey($operation->id), ExecutorResults::acceptedKey($operation->id)]);
-    $lost = $proof->wait($operation);
-    $started = hrtime(true);
-    $repeat = closing($proof, $operation, fn (): SignedExecutorOrder => $proof->send($operation, ExecutorOrderSigner::fromConfig()));
-    $recovered = $proof->wait($operation);
+    [$first, $dropped, $lost, $repeat, $recovered, $latency] = closing($proof, $operation, function () use ($proof, $operation): array {
+        $first = $proof->send($operation, ExecutorOrderSigner::fromConfig());
+        $dropped = $proof->wait($operation);
+        app('redis')->connection('gateway')->command('del', [ExecutorResults::resultKey($operation->id), ExecutorResults::acceptedKey($operation->id)]);
+        $lost = $proof->wait($operation);
+        $started = hrtime(true);
+        $repeat = $proof->send($operation, ExecutorOrderSigner::fromConfig());
+        $recovered = $proof->wait($operation);
+
+        return [$first, $dropped, $lost, $repeat, $recovered, elapsedMs($started)];
+    });
     $proof->finish($operation, $recovered);
 
     return ['operation' => (string) $operation->id, 'first_nonce' => $first->nonce, 'repeat_nonce' => $repeat->nonce,
         'recorded' => $operation->refresh()->executor_result, 'dropped' => waited($dropped), 'lost' => waited($lost),
-        'recovered' => ['latency_ms' => elapsedMs($started)] + waited($recovered), 'status' => $operation->status->value];
+        'recovered' => ['latency_ms' => $latency] + waited($recovered), 'status' => $operation->status->value];
 }
 
 /**

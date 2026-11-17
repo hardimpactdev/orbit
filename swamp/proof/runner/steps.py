@@ -783,7 +783,9 @@ def executor_round_trip(run, args):
     trips = answer['round_trips']
     runs = [record.get('operation') for record in executor_done(run, node)]
     summary = latency_summary([trip['latency_ms'] for trip in trips])
-    summary.update({'wait_bound_ms': answer['wait_ms'], 'accepted_ms': latency_summary([trip['accepted_ms'] or 0 for trip in trips]),
+    # A trip that timed out saw no `accepted` line: it fails below and has no time to the line.
+    accepted = [trip['accepted_ms'] for trip in trips if trip['accepted_ms'] is not None]
+    summary.update({'wait_bound_ms': answer['wait_ms'], 'accepted_ms': latency_summary(accepted) if accepted else None,
                     'statuses': sorted({trip['status'] for trip in trips})})
     run.evidence_text(f'executor-round-trip-{args["operation"]}.json', json.dumps({'summary': summary, 'round_trips': trips}, indent=2) + '\n')
     failures = [] if len(trips) == args.get('count', 1) else [f'executor {node}: {len(trips)} round trips, expected {args.get("count", 1)}']
