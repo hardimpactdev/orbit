@@ -236,7 +236,7 @@ The Gateway validates the request and the access grant, checks that the Instance
 
 A production deploy holds the Instance, freezes the full intent and records a running deployment row, which [pauses automatic deployment](#pause) at once. It refuses an Instance without stored environment configuration with `env.configuration_missing` before it records anything.
 
-One native run on Node 209 then runs the [chart](/cli/instance/deploy)'s steps over official SSH. Its budget is the deploy step timeouts plus 900 seconds.
+One native run on Node 209 then runs the [chart](/cli/instance/deploy)'s steps over official SSH. Its budget is the deploy step timeouts plus 900 seconds. The proof Project's default adds 1,800 seconds, the bound of its wait for [the seed hold](/reference/development-containers#the-seed-hold).
 
 | Step | What it does | Error code |
 | --- | --- | --- |

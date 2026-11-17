@@ -1873,7 +1873,7 @@
               'seed-complete', container | to_json] }}
       changed_when: true
     # A clone made from an older seed does not need it: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them. A
-    # clone admitted for an older seed and not copied yet refuses with instance.default_seed_moved, and its next create takes the new one.
+    # clone admitted for an older seed and not copied yet waits for the retake and copies the new seed (instance_clone.py).
     # Every base but the kept one goes first; then the older seed that a CI Node holds becomes the base, unless the base is kept already.
     - name: Delete the older bases
       ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, item] }}" }
