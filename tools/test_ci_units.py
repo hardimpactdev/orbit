@@ -333,6 +333,10 @@ class RegistrySelectionTest(unittest.TestCase):
             moved = self.commit(self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/new.yml"]'))
             self.assertEqual(units.registry_changes(before, moved), (['swamp/process.ts'], False))
 
+    def test_a_runner_pool_change_is_a_machinery_change(self):
+        # The pool's speed factor sets every shared lane, so it selects the machinery canary like a budget change.
+        self.assertEqual(self.changes(self.initial + '[runner-pool]\nslowest_runner_factor = 1.2\n'), ([], True))
+
     def test_scheduling_metadata_alone_is_a_machinery_change(self):
         fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
         budget = {**BUDGET, 'machinery_canary': ['swamp/egress.py']}
@@ -439,7 +443,7 @@ class TableTest(unittest.TestCase):
     def test_table_files_costs_and_unsliceable_rules(self):
         budget, fixtures, defaults = units.configuration()
         self.assertEqual({**budget, 'machinery_canary': [], 'capacity_gap': []},
-                         {**BUDGET, 'shard_workers': 2, 'pr_shards': 18, 'runner_shards': 18, 'spread_shards': 16})
+                         {**BUDGET, 'shard_workers': 2, 'shard_deadline_seconds': 210, 'lane_seconds': 130, 'pr_shards': 20, 'runner_shards': 20, 'self_hosted_shards': 10, 'spread_shards': 16})
         self.assertTrue(defaults)
         for f in fixtures.values():
             self.assertTrue((ROOT / f['file']).is_file(), f['file'])
@@ -775,6 +779,36 @@ class ExecutionTest(unittest.TestCase):
             self.assertEqual([r['status'] for r in results], ['OVER BUDGET', 'NOT RUN', 'NOT RUN'])
             self.assertIn('shard deadline', output.getvalue())
             self.assertLess(sum(r['seconds'] for r in results), 3)
+
+    def test_shard_deadline_counts_from_the_job_start(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            file = 'swamp/slow.py'
+            steps = {file: units.gate.Step('shape', file, [sys.executable, '-c', 'import time; time.sleep(8)'])}
+            budget = {**BUDGET, 'shard_workers': 1, 'shard_deadline_seconds': 60}
+
+            def result(environment):
+                with patch.object(units, 'prepare', return_value=(os.environ.copy(), Path('/collections'))), \
+                        patch.object(units, 'fixture_steps', return_value=steps), \
+                        patch.dict(os.environ, environment), contextlib.redirect_stdout(io.StringIO()) as output:
+                    units.run([file], budget, {file: fixture(file)}, folder / 'times.json')
+                return json.loads((folder / 'times.json').read_text())[0], output.getvalue()
+
+            # The job's checkout and setup used 58 of the 60 seconds: the unit is stopped by name after two seconds.
+            row, output = result({'ORBIT_JOB_STARTED_AT': str(time.time() - 58)})
+            self.assertEqual('OVER BUDGET', row['status'])
+            self.assertLess(row['seconds'], 6)
+            self.assertIn('stopped at the shard deadline', output)
+            # A job that used its whole time starts no unit.
+            row, _ = result({'ORBIT_JOB_STARTED_AT': str(time.time() - 61)})
+            self.assertEqual(('NOT RUN', 0), (row['status'], row['seconds']))
+        # Outside a job, or with a start that is not a past time, the deadline counts from the run's start.
+        for environment in ({}, {'ORBIT_JOB_STARTED_AT': ''}, {'ORBIT_JOB_STARTED_AT': 'soon'},
+                            {'ORBIT_JOB_STARTED_AT': str(time.time() + 600)}):
+            with patch.dict(os.environ, environment, clear=True):
+                self.assertEqual(0, units.job_elapsed())
+        with patch.dict(os.environ, {'ORBIT_JOB_STARTED_AT': str(time.time() - 40)}):
+            self.assertAlmostEqual(40, units.job_elapsed(), delta=2)
 
     def test_four_units_run_together_with_separate_supervisors(self):
         with tempfile.TemporaryDirectory() as scratch:

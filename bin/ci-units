@@ -84,6 +84,13 @@ def configuration(path=TABLE):
         raise ValueError('shard_deadline_seconds must be below shard_ceiling_seconds')
     if budget['slice_seconds'] > budget['shard_seconds']:
         raise ValueError('slice_seconds exceeds shard_seconds')
+    # A shard can start on any runner of the pool, so a lane that holds several units is packed for the slowest one.
+    factor = config.get('runner-pool', {}).get('slowest_runner_factor', 1)
+    if type(factor) not in (int, float) or not 1 <= factor < 2:
+        raise ValueError('slowest_runner_factor must be a number from 1 up to, but not including, 2')
+    budget['lane_seconds'] = math.floor(budget['shard_seconds'] / factor)
+    if budget['slice_seconds'] > budget['lane_seconds']:
+        raise ValueError('slice_seconds exceeds the lane of the slowest runner')
     fixtures = {}
     for fixture in config.get('fixture', []):
         file = fixture['file']
@@ -196,7 +203,7 @@ def registry_changes(base, head):
     # Order determines admission when a selected set exceeds capacity. Additions
     # and removals alone do not reorder the surviving files.
     reordered = [file for file in old if file in new] != [file for file in new if file in old]
-    shared = reordered or any(before.get(key) != after.get(key) for key in ('budget', 'fixtures'))
+    shared = reordered or any(before.get(key) != after.get(key) for key in ('budget', 'fixtures', 'runner-pool'))
     # Scheduling metadata decides where and when a fixture runs, not what it tests. A change to it alone is a
     # machinery change: it selects the machinery canary. A change to cases, inputs or any other key selects the fixture.
     test = lambda entry: {key: value for key, value in entry.items() if key not in SCHEDULING}
@@ -339,13 +346,20 @@ def shard_workers(units, budget, fixtures):
     return pool_budget(budget, pools == {True})['shard_workers']
 
 
+def lane_seconds(budget):
+    """The declared seconds of a lane that holds more than one unit: the lane of the pool's slowest runner."""
+    return budget.get('lane_seconds', budget['shard_seconds'])
+
+
 def pack(units, budget):
     shards, lanes = [], []
+    shared = lane_seconds(budget)
     for name, cost, _priority in sorted(units, key=lambda u: (-u[1], u[0])):
         if cost > budget['shard_seconds']:
             raise ValueError(f'{name}: unit cost exceeds shard_seconds')
+        # One unit may fill a lane up to shard_seconds. A unit joins another only within the slowest runner's lane.
         candidates = [(total, shard, lane) for shard, loads in enumerate(lanes)
-                      for lane, total in enumerate(loads) if total + cost <= budget['shard_seconds'] + 1e-9]
+                      for lane, total in enumerate(loads) if total + cost <= (shared if total else budget['shard_seconds']) + 1e-9]
         if candidates:
             _, index, lane = min(candidates)
         else:
@@ -632,9 +646,19 @@ def run_unit(step, environment, ceiling, shard_deadline=None):
     return {'unit': step.name, **result}
 
 
+def job_elapsed():
+    """Seconds since the first step of the CI job, which records its start; zero outside a job."""
+    try:
+        started = float(os.environ['ORBIT_JOB_STARTED_AT'])
+    except (KeyError, ValueError):
+        return 0.0
+    return max(0.0, time.time() - started)
+
+
 def run(units, budget, fixtures, times, tools=None):
     os.umask(0o022)
-    shard_deadline = time.monotonic() + budget['shard_deadline_seconds']
+    # The deadline counts from the job's start, so checkout and setup time cannot push a named cut past the job limit.
+    shard_deadline = time.monotonic() + budget['shard_deadline_seconds'] - job_elapsed()
     results = [{'unit': unit, 'status': 'NOT RUN', 'seconds': 0,
                 'revision': os.environ.get('GITHUB_SHA'), 'run_id': os.environ.get('GITHUB_RUN_ID'),
                 'declared_seconds': dict(units_for(fixtures[unit.split('#')[0]], budget)).get(unit),

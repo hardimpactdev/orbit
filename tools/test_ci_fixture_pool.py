@@ -1,7 +1,8 @@
-"""Fixture matrices share eighteen planned shards without admitting fork code or losing units."""
+"""Fixture matrices share twenty planned shards without admitting fork code or losing units."""
 from pathlib import Path
 import heapq
 import sys
+import tempfile
 import tomllib
 import unittest
 
@@ -65,11 +66,63 @@ class FixturePoolTest(unittest.TestCase):
         # Observed shared runners are a reporting denominator, not a per-run job limit.
         table = tomllib.loads((ROOT / '.github/ci/checks.toml').read_text())
         self.assertEqual(10, table['runner-pool']['slots'])
-        self.assertEqual(18, budget['runner_shards'])
+        self.assertEqual((20, 20, 10), (budget['runner_shards'], budget['pr_shards'], budget['self_hosted_shards']))
         self.assertEqual(16, budget['spread_shards'])
-        self.assertEqual((150, 180, 190, 240), tuple(budget[key] for key in
+        self.assertEqual((150, 180, 210, 240), tuple(budget[key] for key in
                          ('shard_seconds', 'unit_ceiling_seconds', 'shard_deadline_seconds', 'shard_ceiling_seconds')))
         self.assertEqual((2, 2), (budget['shard_workers'], budget['self_hosted_workers']))
+        # The deadline counts from the job's first step. Without that step it would count from the units' start
+        # and could pass the job's own limit.
+        for name in ('fixtures', 'self-hosted-fixtures'):
+            self.assertEqual('echo "ORBIT_JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"', workflow['jobs'][name]['steps'][0]['run'])
+            self.assertEqual(4, workflow['jobs'][name]['timeout-minutes'])
+        self.assertEqual(1.15, table['runner-pool']['slowest_runner_factor'])
+        self.assertEqual(130, budget['lane_seconds'])
+
+    def test_a_lane_that_holds_several_units_is_packed_for_the_slowest_runner(self):
+        budget = {**BUDGET, 'shard_workers': 2, 'lane_seconds': 130}
+        # Two 70-second units fit one 150-second lane, but not the 130-second lane of the slowest runner.
+        rows = [(f'unit{i}', 70, 0) for i in range(4)]
+        self.assertEqual(2, len(units.pack(rows, budget)))
+        self.assertEqual(1, len(units.pack(rows, {**budget, 'lane_seconds': 150})))
+        self.assertEqual(1, len(units.pack(rows, BUDGET | {'shard_workers': 2})))
+        # One unit alone still fills shard_seconds, and nothing joins it.
+        shards = units.pack([('heavy-a', 150, 0), ('heavy-b', 140, 0), ('small', 5, 0)], budget)
+        self.assertEqual([['heavy-a', 'heavy-b'], ['small']], [shard['units'] for shard in shards])
+        with self.assertRaisesRegex(ValueError, 'exceeds shard_seconds'):
+            units.pack([('oversize', 151, 0)], budget)
+
+    def test_real_plans_keep_every_shared_lane_within_the_slowest_runner_lane(self):
+        budget, fixtures, defaults = units.configuration()
+        costs = {name: cost for fixture in fixtures.values() for name, cost in units.units_for(fixture, budget)}
+        shared = 0
+        for path in ('.github/workflows/ci.yml', 'swamp/ansible/tasks/instance-host.yml',
+                     'swamp/ansible/tasks/instance-fleet.yml', 'swamp/ansible/tasks/instance-container-phase.yml'):
+            plan = units.plan([path], budget, fixtures, defaults)
+            for shard in plan['shards'] + plan['self_hosted_shards']:
+                # The runner's two workers take the units in the planned order.
+                lanes = [[], []]
+                for name in shard['units']:
+                    min(lanes, key=lambda lane: sum(costs[unit] for unit in lane)).append(name)
+                for lane in lanes:
+                    limit = budget['lane_seconds'] if len(lane) > 1 else budget['shard_seconds']
+                    self.assertLessEqual(sum(costs[unit] for unit in lane), limit, (path, shard['name'], lane))
+                    shared += len(lane) > 1
+        self.assertGreater(shared, 20)
+
+    def test_the_slowest_runner_factor_is_bounded(self):
+        source = (ROOT / '.github/ci/checks.toml').read_text()
+        self.assertEqual(1, source.count('slowest_runner_factor = 1.15'))
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / 'checks.toml'
+            for value in ('0.9', '2', '"1.15"', 'true'):
+                with self.subTest(value=value):
+                    path.write_text(source.replace('slowest_runner_factor = 1.15', f'slowest_runner_factor = {value}'))
+                    with self.assertRaisesRegex(ValueError, 'slowest_runner_factor'):
+                        units.configuration(path)
+            # Without the key a lane is shard_seconds, as before.
+            path.write_text(source.replace('slowest_runner_factor = 1.15', ''))
+            self.assertEqual(150, units.configuration(path)[0]['lane_seconds'])
 
     def test_shared_policy_runs_the_whole_fleet_in_two_lane_shards(self):
         budget, fixtures, defaults = units.configuration()
