@@ -89,7 +89,7 @@ function ruled() {
   for (const name of names) Object.assign(containers[name].config, environment);
   containers["nested-gateway"].files = { ...Object.fromEntries(units.map((unit) => [unit, dropIn])), [pool]: poolFile, [marker]: markerFile };
   Object.assign(containers["nested-app-dev"].config, instanceHostKeys);
-  for (const name of names) containers[name].config["limits.memory"] = memory[name];
+  for (const name of names) Object.assign(containers[name].config, { "limits.memory": memory[name], "limits.memory.swap": memory[name] });
   for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...ownedBy(name) };
   return containers;
 }
@@ -375,7 +375,7 @@ Deno.test({
         "incus config device set nested-app-dev checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         ...["nested-gateway", "nested-app-dev", "nested-app-prod"].flatMap((name) =>
           [`raw.idmap=${idmap}`, ...proxyKeys, ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : []),
-            ...(name === "nested-gateway" ? [] : [`limits.memory=${memory[name]}`])]
+            ...(name === "nested-gateway" ? [] : [`limits.memory=${memory[name]}`]), `limits.memory.swap=${memory[name]}`]
             .map((key) => `incus config set ${name} ${key}`)),
         "incus network set oe-nested raw.dnsmasq=no-resolv",
         ...fileRules.map(([name, path]) => push(name, path)),
@@ -996,11 +996,13 @@ Deno.test({
       const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [units[2], pool, marker] : []), ...Object.keys(ownedBy(name))].map((path) => push(name, path)));
       assertEquals(writes(calls).filter((call) => !/ (stop|snapshot) /.test(call)),
         [...egressWrites, ...names.flatMap((name) => ["boot.autostart=true", ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : []),
-          ...(name === "nested-gateway" ? [] : [`limits.memory=${memory[name]}`])]
+          ...(name === "nested-gateway" ? [] : [`limits.memory=${memory[name]}`]), `limits.memory.swap=${memory[name]}`]
           .map((key) => `incus config set ${name} ${key}`))]);
       assert(calls.indexOf(egressWrites.at(-1)!) < calls.findIndex((call) => call.includes("/converge ")), calls.join("\n"));
       for (const name of names) {
         assertEquals(f.state().containers[name].snapshots.base.config["boot.autostart"], "true");
+        // A copy made from the new seed inherits the nested containers' swap.
+        assertEquals(f.state().containers[name].snapshots.base.config["limits.memory.swap"], memory[name]);
         assertEquals(f.state().containers[name].snapshots.base.files["/etc/environment"], environmentFile);
       }
       // The egress files keep the fleet's names and networks off the proxy: a nested Node's own calls to the nested Gateway.

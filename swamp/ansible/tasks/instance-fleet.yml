@@ -8,7 +8,7 @@
 #   intent.container.workspace            The workspace in the container: the source of the `checkout` device.
 #   intent.fleet.guests                   {gateway, app-dev, app-prod}: the nested containers by role (TaskVmNestedFleet::Guests).
 #   intent.fleet.layout.<role>.address    The address of each nested container on the inner bridge (TaskVmNestedFleet::Layout).
-#   intent.fleet.layout.<role>.memory     Its memory limit, an owned rule (NestedFleetIntent::Memory).
+#   intent.fleet.layout.<role>.memory     Its memory limit and its swap, owned rules (NestedFleetIntent::Memory).
 #   intent.fleet.host                     Whether the refresh builds the Instance host on nested-app-dev: the default's ID map is
 #                                         2,000,000 or more (NestedFleetIntent).
 #   intent.fleet.operator                 {address, hub, network, domains}: the container as operator, the nested Gateway as hub, the
@@ -166,21 +166,30 @@
     fleet_git_files:
       - path: /etc/gitconfig
         content: "# Managed by Orbit.\n[safe]\n\tdirectory = {{ intent.fleet.checkout.path }}\n"
+    # Each role's memory limit (NestedFleetIntent::Memory), and its swap as the same byte size: Incus writes memory.swap.max 0 for a
+    # container with `limits.memory` unless `limits.memory.swap` holds a size, and an Instance on `nested-app-dev` sleeps into swap
+    # through each nested container (docs/reference/development-containers.md#fleet-rules).
+    fleet_memory: >-
+      {%- set out = {} -%}
+      {%- for role in fleet_roles -%}
+      {%-   set _ = out.update({role: {'limits.memory': intent.fleet.layout[role].memory, 'limits.memory.swap': intent.fleet.layout[role].memory}}) -%}
+      {%- endfor -%}
+      {{ out }}
   ansible.builtin.set_fact:
     fleet_rules:
       gateway:
         devices: >-
           {{ fleet_checkout_device | combine({'club-key': {'type': 'disk', 'source': fleet_club_folder,
              'path': fleet_club_mount, 'required': 'false', 'shift': 'false'}}) }}
-        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, {'limits.memory': intent.fleet.layout.gateway.memory}) }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_memory['gateway']) }}"
         files: "{{ fleet_unit_files + fleet_pool_files + fleet_marker_files + fleet_egress_files + fleet_size_files + fleet_git_files }}"
       app-dev:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
-        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_instance_host, {'limits.memory': intent.fleet.layout['app-dev'].memory}) }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_instance_host, fleet_memory['app-dev']) }}"
         files: "{{ fleet_egress_files + fleet_size_files + fleet_git_files }}"
       app-prod:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
-        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, {'limits.memory': intent.fleet.layout['app-prod'].memory}) }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_memory['app-prod']) }}"
         files: "{{ fleet_egress_files + fleet_size_files + fleet_git_files }}"
     fleet_build_rules: [raw.idmap]
     # The inner bridge's own keys, owned. Its dnsmasq answers the fleet's names and forwards every other name to the Instance

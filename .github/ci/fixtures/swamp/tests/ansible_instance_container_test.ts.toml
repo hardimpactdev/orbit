@@ -65,7 +65,7 @@ cases = [
   "nested fleet start gate: changed-host-path",
   "nested fleet start gate: writable-share",
   "nested fleet start gate: clean",
-  "nested fleet start gate: made-before-autostart",
+  "nested fleet start gate: made-before-the-converged-keys",
   "a normal container start never writes boot.autostart; a stopped one gets the presented machine name before its boot, unless its Incus templates are pending",
   "a nested-fleet create refuses by name, before any Incus change, while the Node records a failed nested-fleet image build",
   "without a recorded failed build a nested-fleet create makes its container from the nested-fleet image, and a normal create never reads the record",
@@ -204,7 +204,7 @@ inputs = [
   "nested fleet start gate: changed-host-path" = 27 # hosted run 43787856522: 23.3s x 1.15, rounded up
   "nested fleet start gate: writable-share" = 27 # hosted run 43787856522: 23.3s x 1.15, rounded up
   "nested fleet start gate: clean" = 120 # hosted run 43787856522: 103.7s x 1.15, rounded up
-  "nested fleet start gate: made-before-autostart" = 61 # hosted run 43787856522: 52.2s x 1.15, rounded up
+  "nested fleet start gate: made-before-the-converged-keys" = 61 # hosted run 43787856522: 52.2s x 1.15, rounded up
   "a normal container start never writes boot.autostart; a stopped one gets the presented machine name before its boot, unless its Incus templates are pending" = 49 # hosted run 43787856522: 42.2s x 1.15, rounded up
   "a nested-fleet create refuses by name, before any Incus change, while the Node records a failed nested-fleet image build" = 6 # ESTIMATE (hosted run 43787856522): 5.0s from its container play's 3.1 of 86.5 local play seconds of the former case (139.4s), without the host converge, x 1.15, rounded up
   "without a recorded failed build a nested-fleet create makes its container from the nested-fleet image, and a normal create never reads the record" = 68 # hosted run 43787856522: 58.7s x 1.15, rounded up

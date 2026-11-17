@@ -198,12 +198,13 @@ describe('the one placement rule', function (): void {
             ->and(InstancePlacement::keepsFleet($proof, $switched, InstancePlacement::NestedProject))->toBeTrue();
     });
 
-    it('gives the nested project its six container keys and the normal project none', function (): void {
+    it('gives the nested project its eight container keys and the normal project none', function (): void {
         expect(InstancePlacement::config('orbit-instances', null))->toBe([])
             ->and(InstancePlacement::config('orbit-instances-nested', 1165536)['security.idmap.size'])->toBe('1165536')
             ->and(InstancePlacement::config('orbit-instances-nested', 101000000))->toBe([
                 'security.nesting' => 'true', 'security.syscalls.intercept.mknod' => 'true', 'security.syscalls.intercept.setxattr' => 'true',
-                'security.idmap.isolated' => 'true', 'security.idmap.size' => '101000000', 'limits.memory' => '12GiB', 'boot.autostart' => 'false',
+                'security.idmap.isolated' => 'true', 'security.idmap.size' => '101000000', 'limits.memory' => '12GiB',
+                'limits.memory.swap' => '12GiB', 'boot.autostart' => 'false',
             ]);
     });
 });
