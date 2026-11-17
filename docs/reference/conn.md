@@ -249,10 +249,11 @@ The Gateway's label stays `<project> / <instance>`. The T3 server itself shows t
 - A resumed create can leave the sessions of its failed run valid in T3, until a later renewal cleans them.
 - Orbit renews the Gateway's session on the server: see [Renewal of an Instance server](#renewal-of-an-instance-server).
 - The bumped revision also stops a Node's registration of the same id that read the row before the record: that registration compares the revision again in its lock and fails with `conn.environment_changed`.
-- While Conn is off, a clone is refused with `operation.kind_unavailable`: nothing would record its server.
 - A create admitted before Conn went off still records its server.
 
 Destroy keeps this contribution available while Conn is disabled. Admission captures its environment. The run deletes T3 with the container, retiring all sessions and unused links. Terminal projection deletes its execution copies, environment and pairings before core deletes the Instance. After that commits, Orbit drops the environment's [attached threads](#attached-threads) from the profiles. New pairings refuse an Instance marked removing.
+
+The contribution records Instance servers from create and migrate results even while Conn is off. The container run starts T3 and creates its admin session. Completion verifies the record. Session renewal and held-session pre-minting wait until Conn is enabled. Enabling Conn later picks up the recorded servers.
 
 ### Renewal of an Instance server
 
@@ -425,7 +426,7 @@ The optional `include_unavailable` query accepts only `1`, `true`, `0` or `false
 
 Each entry keeps its Project fields and adds `instance_domain_suffix`, `checks`, `cloneable` and `cloneable_reason`. The default's `node_id` and `node_name` are null when there is no default or the caller cannot reach its Node. A hidden default also has a null suffix.
 
-`cloneable` uses the same read-only admission check as Conn create and the name check. It requires a reachable, active container default with a seed snapshot, valid Project source defaults, supported development placement and PHP, and the clone's runtime contributions and model route.
+`cloneable` uses the same read-only admission check as Conn create and the name check. It requires a reachable, active container default with a seed snapshot, valid Project source defaults, supported development placement and PHP, and the clone's runtime contributions and model route. A Conn device thread needs a model. Conn checks the route even though core `instance:create` and `instance:migrate` admit without a ready route.
 
 Each check returns a stable `key`, a short `label`, and `status`: `pass`, `fail` or `not_checked`. Only a failure includes `code` and `message`. The message says what to fix in Orbit. Checks stop at the first failure; later checks are `not_checked`. `cloneable` is true only when all checks pass. `cloneable_reason` is null or the first failure's code. With `include_unavailable=true`, an unavailable Project stays selectable so Conn can show its checks. Check again re-reads this list. Each read uses the current recorded migration, seed, Node and TLD state; eligibility is not cached.
 

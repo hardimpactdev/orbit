@@ -6,6 +6,7 @@ namespace App\Providers\Domains;
 
 use App\Actions\Nodes\AdmitWorkerKnownHostsAction;
 use App\Console\Commands\RekeyNodeAgentCommand;
+use App\Console\Commands\SyncKnownHostsCommand;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeAgentRuntime;
@@ -65,7 +66,7 @@ final class NodesServiceProvider extends ServiceProvider
             }
         });
         if ($this->app->runningInConsole()) {
-            $this->commands([RekeyNodeAgentCommand::class]);
+            $this->commands([RekeyNodeAgentCommand::class, SyncKnownHostsCommand::class]);
         }
     }
 

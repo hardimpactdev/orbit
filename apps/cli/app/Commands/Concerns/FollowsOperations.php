@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Concerns;
 
 use App\Commands\GatewayCommand;
+use App\Commands\Operations\OperationOutput;
 use App\Data\GatewayProfile;
 use App\Support\Console\Animation;
 use App\Support\Console\ConsoleInterrupted;
@@ -182,6 +183,10 @@ trait FollowsOperations
     private function writeOperationSummary(OperationResponse $operation): void
     {
         $this->writeOperationResult($operation);
+        $modelRoute = OperationOutput::modelRoute($operation);
+        if ($modelRoute !== null) {
+            $this->writeHumanMessage("Model route: {$modelRoute}");
+        }
 
         $warnings = $operation->result['warnings'] ?? null;
         if (is_array($warnings)) {

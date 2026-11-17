@@ -32,7 +32,7 @@ orbit instance:migrate 12
 orbit instance:migrate 12 --force --json > migrate.json
 ```
 
-A linked worktree can move while its owner remains an active host checkout on the same Node. Migration starts from the stock image and copies this Instance's workspace; it needs no migrated default or seed. A non-default keeps its T3 and model-router prerequisites. Migrate the owner after its last dependent leaves.
+A linked worktree can move while its owner remains an active host checkout on the same Node. Migration starts from the stock image and copies this Instance's workspace; it needs no migrated default or seed. A non-default gets T3 even while Conn or ai-router is off. Its result records `model_route` at admission: `{"ready": true}` or `{"ready": false, "error_code": "…", "message": "…"}`. With no ready route, T3 cannot reach a model; human output prints the reason. Migrate the owner after its last dependent leaves.
 
 The command moves one checkout Instance into an [Instance container](/reference/development-containers#migrate-a-checkout-instance) on the same Node. It is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
 
@@ -359,7 +359,7 @@ A clear that fails records `instance.migrate_cache_clear_failed` in `warnings`, 
 | `instance.lifecycle_busy` | A deployment, transfer, removal or another move of the Instance is unfinished. |
 | `instance.migrate_unsupported` | The Instance has a Route beside its own. |
 | `project.source_defaults_incomplete` | A web-serving Project has no recorded PHP version. Run `orbit project:update PROJECT --source-access=github_app` after setting `require.php` in its source. |
-| `operation.kind_unavailable` | A non-default Instance has no Conn layer or no model router. |
+| `operation.kind_unavailable` | No contribution is loaded to record a non-default Instance's T3 server. |
 | `operation.kind_unavailable` | The Project has `nested_fleet` on. Only `instance:create` makes Instances of such a Project, as containers, so Orbit records nothing. See [Nested fleet setting](/reference/projects#nested-fleet-setting). |
 | `process_definition.name_taken` | A same-name definition has incompatible intent or includes production; it is not changed. |
 | `instance.migrate_process_definition_unproven` | The one-time repair cannot prove a named Instance or Process. It changes no selected rows. |

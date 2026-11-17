@@ -163,7 +163,7 @@ class Incus:
             connection.close()
 
     def instance(self, project, name):
-        """{'status': 'running|frozen|stopped', 'incarnation': ..., 'init_pid': int|None}, or None when missing."""
+        """{'status': 'running|frozen|stopped', 'incarnation': ..., 'init_pid': int|None, 'swap_max': str}, or None when missing."""
         status, data = self._request("GET", f"/1.0/instances/{name}?project={project}&recursion=1")
         if status == 404:
             return None
@@ -173,7 +173,8 @@ class Incus:
         state = meta.get("state") or {}
         pid = state.get("pid")
         return {"status": str(meta.get("status", "")).lower(), "incarnation": (meta.get("config") or {}).get("volatile.uuid"),
-                "init_pid": pid if isinstance(pid, int) and pid > 0 else None}
+                "init_pid": pid if isinstance(pid, int) and pid > 0 else None,
+                "swap_max": configured_swap((meta.get("expanded_config") or {}).get("limits.memory.swap"))}
 
     def change(self, project, name, action, seconds):
         """Freeze or unfreeze within a bound; True when the operation succeeded."""
@@ -603,6 +604,29 @@ def thaw(host, relative, seconds):
         os.close(events)
 
 
+# Incus v7.0.2 (internal/server/instance/drivers/driver_lxc.go) writes memory.swap.max 0 for a container with `limits.memory`
+# when `limits.memory.swap` is empty or a boolean (util.IsTrue / util.IsFalse, any case), else the bytes of
+# units.ParseByteSizeString (shared/units/units.go): ASCII digits, then exactly one of these suffixes, as a signed 64-bit integer.
+SWAP_BOOLEANS = ("", "true", "1", "yes", "on", "false", "0", "no", "off")
+BYTE_UNITS = {"": 1, "B": 1, " bytes": 1, "kB": 10**3, "MB": 10**6, "GB": 10**9, "TB": 10**12, "PB": 10**15, "EB": 10**18,
+              "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40, "PiB": 1 << 50, "EiB": 1 << 60}
+INT64_MAX = (1 << 63) - 1
+
+
+def configured_swap(value):
+    """The memory.swap.max that Incus writes for a container's `limits.memory.swap`, as the rule above reads it: the bytes of a
+    size, else `0`. A value that Incus would refuse, or one past a signed 64-bit integer, gives `0` and never raises."""
+    if not isinstance(value, str) or value.lower() in SWAP_BOOLEANS:
+        return "0"
+    match = re.fullmatch(r"([0-9]+)(.*)", value, re.DOTALL)
+    # 19 digits hold every signed 64-bit integer; a longer run is past it, and is never handed to int().
+    digits = match.group(1).lstrip("0") if match else ""
+    if match is None or match.group(2) not in BYTE_UNITS or len(digits) > 19:
+        return "0"
+    size = int(digits or "0") * BYTE_UNITS[match.group(2)]
+    return str(size) if size <= INT64_MAX else "0"
+
+
 def open_swap(host, instance_id, relative, boot_id):
     """Open `max` on each cgroup of the subtree whose memory.swap.max holds 0; record exactly what was opened."""
     zero = []
@@ -629,8 +653,9 @@ def open_swap(host, instance_id, relative, boot_id):
     return [path for path in opened if path != relative]
 
 
-def close_swap(host, instance_id, relative):
-    """Write 0 to the container's own cgroup and to each recorded inner path that still exists; then remove the record.
+def close_swap(host, instance_id, relative, own):
+    """Write `own`, the swap Incus configures for the container (configured_swap), back to its own cgroup and 0 to each recorded
+    inner path that still exists; then remove the record. A nested-fleet container keeps its sized swap, which its nested fleet needs.
     A record of another boot or another cgroup of the same name is stale: its paths name cgroups that sleep never opened, so only
     the container's own cgroup is closed. A vanished cgroup is not a failure. Returns the inner paths it closed."""
     record_path = os.path.join(host.instance_dir(instance_id), "limits.json")
@@ -653,7 +678,7 @@ def close_swap(host, instance_id, relative):
     for path in [relative] + inner:
         try:
             with open(os.path.join(host.cgroups, path, "memory.swap.max"), "w") as handle:
-                handle.write("0")
+                handle.write(own if path == relative else "0")
             if path != relative:
                 closed.append(path)
         except FileNotFoundError:
@@ -1055,7 +1080,7 @@ def prepare(host, instance_id, operation_id, intent):
     # A running container with a record left open (a resume that never closed it) gets it closed first, so no inner path stays
     # at `max` once the new record replaces it.
     if os.path.lexists(os.path.join(base, "limits.json")):
-        close_swap(host, instance_id, relative)
+        close_swap(host, instance_id, relative, live["swap_max"])
     boot = host.boot_id()
     result["swap_subtree"] = open_swap(host, instance_id, relative, boot)
     started = time.monotonic()
@@ -1063,7 +1088,7 @@ def prepare(host, instance_id, operation_id, intent):
         after = host.incus.instance(project, name)
         state = after["status"] if after else "missing"
         if state != "frozen":
-            close_swap(host, instance_id, relative)
+            close_swap(host, instance_id, relative, live["swap_max"])
             result["swap_subtree"] = []
         return dict(result, outcome="failed", error_code="instance.container_freeze_failed", state_after=state)
     paused = time.monotonic()
@@ -1177,9 +1202,9 @@ def restore(host, instance_id, operation_id, intent):
         write_target(host, instance_id, intent, live["incarnation"])
         target = read_target(host, instance_id)
     if live["status"] == "running" and kernel_frozen(host, relative):
-        return thaw_unmanaged(host, instance_id, relative, result)
+        return thaw_unmanaged(host, instance_id, relative, live["swap_max"], result)
     if live["status"] == "running":
-        result["swap_subtree"] = close_swap(host, instance_id, relative)
+        result["swap_subtree"] = close_swap(host, instance_id, relative, live["swap_max"])
         return dict(result, outcome="already_running", state_after="running",
                     prepared_restore={"version": 1, "status": "not_applicable"})
     if live["status"] == "stopped":
@@ -1235,13 +1260,13 @@ def restore(host, instance_id, operation_id, intent):
         return dict(result, outcome="failed", error_code=UNMANAGED, state_after="frozen")
     result["seconds"]["resume"] = round(time.monotonic() - resuming, 3)
     closing = time.monotonic()
-    result["swap_subtree"] = close_swap(host, instance_id, relative)
+    result["swap_subtree"] = close_swap(host, instance_id, relative, after["swap_max"])
     remove(os.path.join(base, "sleep.json"))
     result["seconds"]["close"] = round(time.monotonic() - closing, 3)
     return dict(result, outcome="resumed", state_after="running")
 
 
-def thaw_unmanaged(host, instance_id, relative, result):
+def thaw_unmanaged(host, instance_id, relative, own, result):
     """The resume of a container that the kernel holds frozen while Incus calls it running: no memory call and no Incus call (Incus
     refuses to unfreeze a container it thinks runs). The helper thaws the container's own cgroup within THAW_SECONDS, drops the plan
     as stale and closes the swap the sleep opened, as any resume does. One that stays frozen fails `instance.container_frozen_unmanaged`
@@ -1255,7 +1280,7 @@ def thaw_unmanaged(host, instance_id, relative, result):
     remove(os.path.join(base, "plan"))
     result["prepared_restore"] = skipped("plan_stale")
     closing = time.monotonic()
-    result["swap_subtree"] = close_swap(host, instance_id, relative)
+    result["swap_subtree"] = close_swap(host, instance_id, relative, own)
     remove(os.path.join(base, "sleep.json"))
     result["seconds"]["close"] = round(time.monotonic() - closing, 3)
     return dict(result, outcome="resumed", state_after="running")

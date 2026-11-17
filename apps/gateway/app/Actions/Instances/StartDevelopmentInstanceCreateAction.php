@@ -20,6 +20,7 @@ use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceModelRoute;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
@@ -256,6 +257,9 @@ final readonly class StartDevelopmentInstanceCreateAction
             // Node, so the refusal of a Node without the hold script names it.
             if ($proofPlace && is_array($containerIntent['clone'] ?? null)) {
                 $containerIntent['clone']['ci_hold'] = ['places' => ProofCopyHosts::places($node), 'node' => $node->name];
+            }
+            if ($container && $instance->runtime()->whereNotNull('t3_port')->exists()) {
+                $input['model_route'] = app(InstanceModelRoute::class)->status();
             }
             $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database,
                 'server_database' => $server['input'] ?? null, 'server_valkey' => $valkey['input'] ?? null, 'container' => $containerIntent];

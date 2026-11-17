@@ -2704,8 +2704,10 @@ Deno.test({
 const NESTED_CONFIG: Record<string, string> = {
   "limits.cpu": "4", "limits.memory": "12GiB", "limits.processes": "4096", "security.nesting": "true",
   "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true", "security.idmap.isolated": "true",
-  "security.idmap.size": "101000000", "boot.autostart": "false",
+  "security.idmap.size": "101000000", "limits.memory.swap": "12GiB", "boot.autostart": "false",
 };
+/** The keys a start converges: a container made before them gets them before the guard. */
+const CONVERGED = ["boot.autostart", "limits.memory.swap"];
 const nestedDamage: Record<string, Record<string, string>> = {
   "raw.lxc": {"raw.lxc": "lxc.apparmor.profile=unconfined"},
   "privileged": {"security.privileged": "true"},
@@ -2717,7 +2719,7 @@ const nestedDamage: Record<string, Record<string, string>> = {
   "changed-limit": {"limits.cpu": "64"},
   "user-key": {"user.note": "x"},
 };
-for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-host-path", "writable-share", "clean", "made-before-autostart"]) {
+for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-host-path", "writable-share", "clean", "made-before-the-converged-keys"]) {
   Deno.test({
     name: `nested fleet start gate: ${damage}`,
     ignore: !hasAnsible,
@@ -2739,7 +2741,7 @@ for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-hos
           ...structuredClone(disks),
         }});
         // The config create wrote; Incus's own keys and the profile's environment come on top.
-        row.config = Object.entries(NESTED_CONFIG).filter(([key]) => damage !== "made-before-autostart" || key !== "boot.autostart")
+        row.config = Object.entries(NESTED_CONFIG).filter(([key]) => damage !== "made-before-the-converged-keys" || !CONVERGED.includes(key))
           .map(([key, value]) => `${key}=${value}`);
         row.inherited_config = {"volatile.uuid": "x", "image.os": "ubuntu", "environment.HTTP_PROXY": "http://10.253.0.1:3128", ...(nestedDamage[damage] ?? {})};
         row.added = disks;
@@ -2749,22 +2751,23 @@ for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-hos
         Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
         f.write();
         const result = f.run("start");
-        const autostart = ["--project", "orbit-instances-nested", "config", "set", "instance-7", "boot.autostart=false"];
-        const wrote = incusCalls(f).filter((args) => args.join(" ") === autostart.join(" ")).length;
-        if (damage === "clean" || damage === "made-before-autostart") {
+        const converge = CONVERGED.map((key) => `--project orbit-instances-nested config set instance-7 ${key}=${NESTED_CONFIG[key]}`);
+        const writes = () => converge.map((call) => incusCalls(f).filter((args) => args.join(" ") === call).length);
+        const wrote = writes();
+        if (damage === "clean" || damage === "made-before-the-converged-keys") {
           assert(result.ok, result.output);
           assertEquals(f.state().containers["instance-7"].status, "Running");
-          // Only a container without the key gets it, before the guard; a rerun writes nothing.
-          assertEquals(wrote, damage === "clean" ? 0 : 1);
+          // Only a container without the keys gets them, before the guard; a rerun writes nothing.
+          assertEquals(wrote, damage === "clean" ? [0, 0] : [1, 1]);
           assert(f.run("start").ok);
-          assertEquals(incusCalls(f).filter((args) => args.join(" ") === autostart.join(" ")).length, wrote);
+          assertEquals(writes(), wrote);
           if (damage === "clean") rootSizeShapes(f);
         } else {
           assert(!result.ok, result.output);
           assertEquals(f.result(), {error_code: "instance.container_network_unsafe"});
           assertEquals(f.state().containers["instance-7"].status, "Stopped");
           if (damage in nestedDamage) assert(result.output.includes(`config ${Object.keys(nestedDamage[damage])[0]}`), result.output);
-          assertEquals(wrote, 0);
+          assertEquals(wrote, [0, 0]);
         }
       } finally { f.cleanup(); }
     },

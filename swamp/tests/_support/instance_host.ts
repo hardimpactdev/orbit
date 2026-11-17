@@ -504,7 +504,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
         // The presented machine name of each container the Node's runtimes record (InstanceMachineName::forNode).
         machine_names: [] as Record<string, string>[],
         // The T3 unit drop-ins of each container with a T3 (InstanceContainer::t3DropIns).
-        t3_files: [] as { project: string; container: string; files: { path: string; content: string; mode: string }[] }[],
+        t3_files: [] as { project: string; container: string; program: string; files: { path: string; content: string; mode: string }[] }[],
         ingress: [{
             action: "allow",
             source: "10.253.0.1/32",

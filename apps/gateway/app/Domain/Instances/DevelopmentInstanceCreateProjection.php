@@ -66,6 +66,9 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             $result = ValidatedData::object($data['result'] ?? []);
+            if (is_array($operation->input['model_route'] ?? null)) {
+                $result['model_route'] = $operation->input['model_route'];
+            }
             if (is_array($container) && isset($container['club_key'])) {
                 // What this nested-fleet start did with its Club key, from the run's own word.
                 $result['nested_fleet_club_key'] = NestedFleetClubKey::outcome($result['club_key'] ?? null, $result['error_code'] ?? $data['error_code'] ?? null);

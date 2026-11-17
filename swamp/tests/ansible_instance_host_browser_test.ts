@@ -28,6 +28,9 @@ async function deb(folder: string, name: string, files: Record<string, string>) 
     };
 }
 
+/** The T3 program each t3_files entry names, as the Gateway's ContainerServer::program() does. */
+const program = "/opt/orbit-agent/current/agent/bin/t3";
+
 const shared = [
     { path: "/etc/ld.so.conf.d/zz-orbit-browser.conf", content: "# Managed by Orbit.\n/opt/orbit-runtime/current/lib\n", uid: 0, gid: 0, mode: "0644", existing: true },
     { path: "/etc/fonts/fonts.conf", content: "<fontconfig><dir>/opt/orbit-runtime/current/fonts</dir></fontconfig>\n", uid: 0, gid: 0, mode: "0644", existing: true },
@@ -232,7 +235,7 @@ Deno.test({
                 [`${name}${server}`, { content: name === "app-current" ? old + "Environment=A=1\n" : old, mode: "0644", uid: "0", gid: "0" }]]));
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
             const pass = async (extra: string) => {
-                f.write({ ...f.instances, t3_files: names.map((container) => ({ project: "orbit-instances", container, files: [boot, text(extra)] })) });
+                f.write({ ...f.instances, t3_files: names.map((container) => ({ project: "orbit-instances", container, program, files: [boot, text(extra)] })) });
                 // The first pass with a container makes the fixture's call log.
                 const before = f.has("calls") ? f.calls().length : 0;
                 const run = await f.run();
@@ -300,7 +303,7 @@ Deno.test({
             state.instances.push(...names.map((name) => ({ project: "orbit-instances", name, status: "Running" })));
             state.files = Object.fromEntries(names.map((name) => [name + file.path, { content: "# stale\n", mode: "0644", uid: "0", gid: "0" }]));
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-            f.write({ ...f.instances, t3_files: names.map((container) => ({ project: "orbit-instances", container, files: [file] })) });
+            f.write({ ...f.instances, t3_files: names.map((container) => ({ project: "orbit-instances", container, program, files: [file] })) });
             const entry = (name: string) => ({ project: "orbit-instances", name });
             const pending = () => f.has("t3-restart.json") ? JSON.parse(Deno.readTextFileSync(`${f.folder}/t3-restart.json`)) : [];
             const host = `${f.folder}/tasks/instance-host.yml`;
