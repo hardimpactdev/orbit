@@ -1,6 +1,5 @@
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
-import { directHttp } from "../../../../tests/_support/native_direct.ts";
-import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { fleetRelease, observed, windowOpen } from "./release.ts";
 
@@ -24,6 +23,40 @@ const run = (over: Record<string, unknown>) =>
         running,
         ...over,
     });
+const node = {
+    node_id: 2,
+    user: "node",
+    release: null,
+    profile: "{}",
+    skip_reason: null,
+    plan_error: null,
+    daytime: true,
+    agent: null,
+    ssh: {
+        control_node_id: 209,
+        identity_file: "/identity",
+        target: {
+            host: "node.invalid",
+            user: "orbit",
+            port: 22,
+            host_keys: ["public-key"],
+        },
+    },
+};
+const args = {
+    operation_id: 7,
+    kind: "fleet.rollout" as const,
+    node_id: 1,
+    run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
+};
+function fixture() {
+    const release = fleetRelease(() => new Date("2026-10-31T12:30:00Z"));
+    const test = createModelTestContext();
+    const context = test.context as unknown as Parameters<
+        typeof release.methods.prepare.execute
+    >[1];
+    return { release, context };
+}
 
 Deno.test("a pinned, running observer is unchanged; a fetch or restart makes it converged", () => {
     assertEquals(run({}), {
@@ -38,7 +71,7 @@ Deno.test("a pinned, running observer is unchanged; a fetch or restart makes it 
     assertEquals(run({ restart: "succeeded" }).outcome, "converged");
 });
 
-Deno.test("each failed observer step names its own refusal and stops the fleet", () => {
+Deno.test("each failed observer step names its refusal and stops the fleet", () => {
     assertEquals(run({ fetch: "failed" }), {
         ...record,
         step: "agent",
@@ -59,7 +92,7 @@ Deno.test("each failed observer step names its own refusal and stops the fleet",
     );
 });
 
-Deno.test("every step runs on 209 and only a rollout publishes the observer", async () => {
+Deno.test("every child step runs on 209 and only a rollout publishes the observer", async () => {
     const source = parse(
         await Deno.readTextFile(
             new URL(
@@ -80,11 +113,11 @@ Deno.test("every step runs on 209 and only a rollout publishes the observer", as
     const steps = Object.fromEntries(
         source.jobs.flatMap((j) => j.steps).map((s) => [s.name, s]),
     );
-    for (const name of ["gate", "cli", "record"]) {
-        assertEquals(steps[name].labels, { role: "swamp" }, name);
-    }
     for (
         const name of [
+            "gate",
+            "cli",
+            "record",
             "observer_fetch",
             "observer_read",
             "observer_restart",
@@ -93,12 +126,14 @@ Deno.test("every step runs on 209 and only a rollout publishes the observer", as
         ]
     ) {
         assertEquals(steps[name].labels, { role: "swamp" }, name);
-        assert(
-            steps[name].guard.startsWith(
-                '${{ inputs.kind != "fleet.rollout" ||',
-            ),
-            name,
-        );
+        if (name.startsWith("observer")) {
+            assert(
+                steps[name].guard.startsWith(
+                    '${{ inputs.kind != "fleet.rollout" ||',
+                ),
+                name,
+            );
+        }
     }
     assertEquals(
         steps.observer_fetch.task.behaviorType,
@@ -133,299 +168,227 @@ Deno.test("closed window defers shared nodes; daytime nodes bypass the window", 
     }
 });
 
-Deno.test("closed window prevents installation and the run still succeeds", async () => {
-    const directory = await Deno.makeTempDir();
-    const file = `${directory}/state.json`;
-    const node = {
-        node_id: 2,
-        user: "node",
-        release: null,
-        profile: "{}",
-        skip_reason: null,
-        plan_error: null,
-        daytime: false,
-        agent: null,
-        ssh: null,
-    };
-    await Deno.writeTextFile(
-        file,
-        JSON.stringify({
-            bound: true,
-            calls: [],
-            operation: {
-                id: 7,
-                kind: "fleet.rollout",
-                node_id: 1,
-                status: "running",
-                cancel_requested: false,
-                input: { nodes: [node] },
-            },
-        }),
+Deno.test("full admitted input prepares and a closed window returns a deferred result without Gateway access", async () => {
+    const { release, context } = fixture();
+    const intent = { nodes: [{ ...node, daytime: false, ssh: null }] };
+    const admission = await release.methods.prepare.execute(
+        { ...args, intent },
+        context,
     );
-    try {
-        const release = fleetRelease(
-            () => directHttp(file),
-            () => new Date("2026-10-31T12:30:00Z"),
-        );
-        const test = createModelTestContext({
-            globalArgs: {
-                gatewayUrl: "https://gateway.invalid",
-                caFile: "/unused",
-            },
-        });
-        const context = Object.assign(test.context, {
-            extensionFile: (path: string) =>
-                new URL(path, import.meta.url).pathname,
-        }) as unknown as Parameters<typeof release.methods.prepare.execute>[1];
-        const args = {
-            operation_id: 7,
-            kind: "fleet.rollout" as const,
-            node_id: 1,
-            run_id: crypto.randomUUID(),
-        };
-        const admission = await release.methods.prepare.execute(args, context);
-        const gate = await release.methods.gate.execute({
-            ...args,
-            target_node_id: 2,
-            previous: {},
-        }, context);
-        assertEquals(gate.install, false);
-        assertEquals([gate.result.outcome, gate.result.error_code], [
-            "deferred",
-            "fleet.window_closed",
-        ]);
+    assertEquals(admission, intent);
+    const gate = await release.methods.gate.execute({
+        ...args,
+        intent,
+        target_node_id: 2,
+        previous: {},
+    }, context);
+    assertEquals(gate.install, false);
+    assertEquals([gate.result.outcome, gate.result.error_code], [
+        "deferred",
+        "fleet.window_closed",
+    ]);
+    assertEquals(
         await release.methods.finish.execute({
             ...args,
             admission,
             node_results: { "node-0": { outputs: { record: gate.result } } },
-        }, context);
-        const { operation } = JSON.parse(await Deno.readTextFile(file));
-        assertEquals(operation.status, "succeeded");
-        assertEquals(operation.result.nodes, [gate.result]);
-    } finally {
-        await Deno.remove(directory, { recursive: true });
+        }, context),
+        { nodes: [gate.result], error_code: null },
+    );
+});
+
+Deno.test("retired rollout fields are refused rather than silently accepted", async () => {
+    const { release, context } = fixture();
+    for (
+        const field of [{ remaining: 0 }, { rollout_id: 668 }, {
+            commit: "a".repeat(40),
+        }]
+    ) {
+        await assertRejects(
+            () =>
+                release.methods.prepare.execute({
+                    ...args,
+                    intent: { nodes: [node], ...field },
+                }, context),
+            Error,
+            "Unrecognized key",
+        );
     }
 });
 
 Deno.test("a failed or missing earlier Node keeps later fleet participants pending", async () => {
-    const directory = await Deno.makeTempDir();
-    const file = `${directory}/state.json`;
-    const node = {
-        node_id: 2,
-        user: "node",
-        release: null,
-        profile: "{}",
-        skip_reason: null,
-        plan_error: null,
-        daytime: true,
-        agent: null,
-        ssh: {
-            control_node_id: 209,
-            identity_file: "/identity",
-            target: {
-                host: "node.invalid",
-                user: "orbit",
-                port: 22,
-                host_keys: ["public-key"],
-            },
-        },
+    const { release, context } = fixture();
+    const intent = {
+        nodes: [node, { ...node, node_id: 3 }, { ...node, node_id: 4 }],
     };
-    try {
-        await Deno.writeTextFile(
-            file,
-            JSON.stringify({
-                bound: true,
-                calls: [],
-                operation: {
-                    id: 7,
-                    kind: "fleet.rollout",
-                    node_id: 1,
-                    status: "running",
-                    cancel_requested: false,
-                    input: {
-                        nodes: [node, { ...node, node_id: 3 }, {
-                            ...node,
-                            node_id: 4,
-                        }],
-                    },
-                },
-            }),
-        );
-        const release = fleetRelease(() => directHttp(file));
-        const test = createModelTestContext({
-            globalArgs: {
-                gatewayUrl: "https://gateway.invalid",
-                caFile: "/unused",
-            },
-        });
-        const context = Object.assign(test.context, {
-            extensionFile: (path: string) =>
-                new URL(path, import.meta.url).pathname,
-        }) as unknown as Parameters<typeof release.methods.gate.execute>[1];
-        const args = {
-            operation_id: 7,
-            kind: "fleet.rollout" as const,
-            node_id: 1,
-            run_id: crypto.randomUUID(),
-            target_node_id: 4,
-        };
-        const first = {
-            ...record,
-            node_id: 2,
-            step: "verify",
-            outcome: "converged",
-        };
-        const second = {
-            ...record,
-            node_id: 3,
-            step: "cli",
-            outcome: "failed",
-            error_code: "cli.install_failed",
-            ok: false,
-        };
-        for (
-            const previous of [{}, {
-                "node-0": { outputs: { record: first, observer: first } },
-                "node-1": { outputs: { record: second } },
-            }]
-        ) {
-            const gate = await release.methods.gate.execute({
-                ...args,
-                previous,
-            }, context);
-            assertEquals([gate.install, gate.result.outcome, gate.result.ok], [
-                false,
-                "pending",
-                false,
-            ]);
-        }
-        const completed = {
-            ...second,
-            ok: true,
-            step: "verify",
-            outcome: "converged",
-            error_code: null,
-        };
+    const first = {
+        ...record,
+        node_id: 2,
+        step: "verify" as const,
+        outcome: "converged" as const,
+    };
+    const second = {
+        ...record,
+        node_id: 3,
+        outcome: "failed" as const,
+        error_code: "cli.install_failed",
+        ok: false,
+    };
+    for (
+        const previous of [{}, {
+            "node-0": { outputs: { record: first, observer: first } },
+            "node-1": { outputs: { record: second } },
+        }]
+    ) {
         const gate = await release.methods.gate.execute({
             ...args,
-            previous: {
-                "node-0": { outputs: { record: first, observer: first } },
-                "node-1": {
-                    outputs: { record: completed, observer: completed },
+            intent,
+            target_node_id: 4,
+            previous,
+        }, context);
+        assertEquals([gate.install, gate.result.outcome, gate.result.ok], [
+            false,
+            "pending",
+            false,
+        ]);
+    }
+    const completed = {
+        ...second,
+        ok: true,
+        step: "verify" as const,
+        outcome: "converged" as const,
+        error_code: null,
+    };
+    const gate = await release.methods.gate.execute({
+        ...args,
+        intent,
+        target_node_id: 4,
+        previous: {
+            "node-0": { outputs: { record: first, observer: first } },
+            "node-1": { outputs: { record: completed, observer: completed } },
+        },
+    }, context);
+    assertEquals([gate.install, gate.result.outcome], [true, "unchanged"]);
+    const result = await release.methods.finish.execute({
+        ...args,
+        admission: intent,
+        node_results: {
+            "node-0": { outputs: { record: first, observer: first } },
+            "node-1": { outputs: { record: second } },
+            "node-2": {
+                outputs: {
+                    record: { ...gate.result, outcome: "pending", ok: false },
                 },
             },
-        }, context);
-        assertEquals([gate.install, gate.result.outcome], [true, "unchanged"]);
-    } finally {
-        await Deno.remove(directory, { recursive: true });
-    }
+        },
+    }, context);
+    assertEquals(result.error_code, "cli.install_failed");
+    assertEquals(result.nodes.map((n) => n.outcome), [
+        "converged",
+        "failed",
+        "pending",
+    ]);
 });
 
-Deno.test("a rollout admitted before the record tables were dropped still prepares", async () => {
-    const directory = await Deno.makeTempDir();
-    const file = `${directory}/state.json`;
-    const node = {
-        node_id: 2,
-        row_id: 41,
-        user: "node",
-        release: null,
-        profile: "{}",
-        skip_reason: null,
-        plan_error: null,
-        daytime: false,
-        agent: null,
-        ssh: null,
-    };
-    await Deno.writeTextFile(
-        file,
-        JSON.stringify({
-            bound: true,
-            calls: [],
-            operation: {
-                id: 7,
-                kind: "fleet.rollout",
-                node_id: 1,
-                status: "running",
-                cancel_requested: false,
-                input: {
-                    rollout_id: 668,
-                    remaining: 0,
-                    commit: "a".repeat(40),
-                    nodes: [node],
-                },
-            },
-        }),
+Deno.test("missing child output is uncertain and foreign Node output is refused", async () => {
+    const { release, context } = fixture();
+    const admission = { nodes: [node] };
+    assertEquals(
+        (await release.methods.finish.execute({
+            ...args,
+            admission,
+            node_results: {},
+        }, context)).error_code,
+        "fleet.release_uncertain",
     );
-    try {
-        const release = fleetRelease(
-            () => directHttp(file),
-            () => new Date("2026-10-31T12:30:00Z"),
-        );
-        const test = createModelTestContext({
-            globalArgs: {
-                gatewayUrl: "https://gateway.invalid",
-                caFile: "/unused",
-            },
-        });
-        const context = Object.assign(test.context, {
-            extensionFile: (path: string) =>
-                new URL(path, import.meta.url).pathname,
-        }) as unknown as Parameters<typeof release.methods.prepare.execute>[1];
-        const admission = await release.methods.prepare.execute({
-            operation_id: 7,
-            kind: "fleet.rollout" as const,
-            node_id: 1,
-            run_id: crypto.randomUUID(),
-        }, context);
-        assertEquals([admission.ready, admission.nodes.length], [true, 1]);
-    } finally {
-        await Deno.remove(directory, { recursive: true });
-    }
+    await assertRejects(
+        () =>
+            release.methods.finish.execute({
+                ...args,
+                admission,
+                node_results: {
+                    "node-0": {
+                        outputs: { record: { ...record, step: "verify" } },
+                    },
+                },
+            }, context),
+        Error,
+        "Native Node output differs from admitted order",
+    );
+    assertEquals(
+        await release.methods.finish.execute({
+            ...args,
+            admission: { nodes: [] },
+            node_results: {},
+        }, context),
+        { nodes: [], error_code: null },
+    );
 });
 
 for (const kind of ["fleet.rollout", "fleet.cli_converge"] as const) {
     Deno.test(`${kind} omits CLI publication for a Node with no caller`, async () => {
-        const directory = await Deno.makeTempDir();
-        const file = `${directory}/state.json`;
-        const node = {
-            node_id: 2, user: "orbit", release: null, profile: "", skip_reason: "cli_not_required", plan_error: null,
-            daytime: true, agent: { ...agent, url: "https://artifacts.invalid/agent" },
-            ssh: { control_node_id: 209, identity_file: "/identity", target: { host: "node.invalid", user: "orbit", port: 22, host_keys: ["public-key"] } },
+        const { release, context } = fixture();
+        const noCli = {
+            ...node,
+            skip_reason: "cli_not_required",
+            agent: { ...agent, url: "https://artifacts.invalid/agent" },
         };
-        try {
-            await Deno.writeTextFile(file, JSON.stringify({
-                bound: true, calls: [], operation: {
-                    id: 7, kind, node_id: 1, status: "running", cancel_requested: false,
-                    input: { nodes: [node, { ...node, node_id: 3 }] },
-                },
-            }));
-            const release = fleetRelease(() => directHttp(file));
-            const test = createModelTestContext({ globalArgs: { gatewayUrl: "https://gateway.invalid", caFile: "/unused" } });
-            const context = Object.assign(test.context, { extensionFile: (path: string) => new URL(path, import.meta.url).pathname }) as unknown as Parameters<typeof release.methods.gate.execute>[1];
-            const args = { operation_id: 7, kind, node_id: 1, run_id: crypto.randomUUID() };
-            const gate = await release.methods.gate.execute({ ...args, target_node_id: 2, previous: {} }, context);
-            assertEquals(gate.install, false);
-            const record = await release.methods.record.execute({
-                ...args, target_node_id: 2, gate, native_cli: { status: "skipped", result: null },
+        const intent = { nodes: [noCli, { ...noCli, node_id: 3 }] };
+        const base = { ...args, kind, intent };
+        const gate = await release.methods.gate.execute({
+            ...base,
+            target_node_id: 2,
+            previous: {},
+        }, context);
+        assertEquals(gate.install, false);
+        const result = await release.methods.record.execute({
+            ...args,
+            kind,
+            target_node_id: 2,
+            gate,
+            native_cli: { status: "skipped", result: null },
+        }, context);
+        assertEquals([result.cli_version, result.ok], [null, true]);
+        if (kind === "fleet.rollout") {
+            assertEquals([result.outcome, result.step], ["unchanged", "agent"]);
+            const pending = await release.methods.gate.execute({
+                ...base,
+                target_node_id: 3,
+                previous: { "node-0": { outputs: { record: result } } },
             }, context);
-            assertEquals(record.cli_version, null);
-            assertEquals(record.ok, true);
-            if (kind === "fleet.rollout") {
-                assertEquals([record.outcome, record.step], ["unchanged", "agent"]);
-                // The next Node must wait for the observer, not treat CLI omission as a completed visit.
-                const pending = await release.methods.gate.execute({ ...args, target_node_id: 3, previous: { "node-0": { outputs: { record } } } }, context);
-                assertEquals(pending.result.outcome, "pending");
-                const observer = await release.methods.observer.execute({
-                    ...args, target_node_id: 2, record, agent: node.agent, fetch: "succeeded", changed: true, restart: "succeeded", running,
-                }, context);
-                assertEquals([observer.outcome, observer.step, observer.agent_version], ["converged", "verify", agent.version]);
-                const next = await release.methods.gate.execute({ ...args, target_node_id: 3, previous: { "node-0": { outputs: { record, observer } } } }, context);
-                assertEquals([next.result.outcome, next.result.step], ["unchanged", "agent"]);
-            } else {
-                assertEquals([record.outcome, record.step], ["skipped", "admission"]);
-            }
-        } finally {
-            await Deno.remove(directory, { recursive: true });
+            assertEquals(pending.result.outcome, "pending");
+            const observer = await release.methods.observer.execute({
+                ...args,
+                kind,
+                target_node_id: 2,
+                record: result,
+                agent: noCli.agent,
+                fetch: "succeeded",
+                changed: true,
+                restart: "succeeded",
+                running,
+            }, context);
+            assertEquals([
+                observer.outcome,
+                observer.step,
+                observer.agent_version,
+            ], ["converged", "verify", agent.version]);
+            const next = await release.methods.gate.execute({
+                ...base,
+                target_node_id: 3,
+                previous: {
+                    "node-0": { outputs: { record: result, observer } },
+                },
+            }, context);
+            assertEquals([next.result.outcome, next.result.step], [
+                "unchanged",
+                "agent",
+            ]);
+        } else {
+            assertEquals([result.outcome, result.step], [
+                "skipped",
+                "admission",
+            ]);
         }
     });
 }

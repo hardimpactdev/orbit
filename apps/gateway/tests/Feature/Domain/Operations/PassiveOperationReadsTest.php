@@ -154,22 +154,55 @@ it('returns a succeeded Operation without remote reads or writes', function (): 
         ->and($this->socket->sent)->toBe([])->and($this->socket->connects)->toBe(0);
 });
 
-it('keeps exactly the two Fleet no-selector generic failures in the job', function (string $kind): void {
+it('settles Fleet native results through the shared reader', function (string $kind, string $status): void {
     $node = containerDefaultNode();
     $missing = array_keys(array_filter(app(DirectOperation::class)->definitions(), fn (array $definition): bool => ! isset($definition['terminal_result'])));
-    sort($missing);
-    expect($missing)->toBe(['fleet.cli_converge', 'fleet.rollout']);
+    expect($missing)->toBe([]);
+    $result = ['node_id' => $node->id, 'outcome' => 'unchanged', 'error_code' => null,
+        'cli_version' => '0.100.0', 'agent_version' => null, 'step' => 'cli', 'ok' => true];
+    $output = ['nodes' => [$result], 'error_code' => null];
+    if ($status === 'failed') {
+        $output = ['nodes' => [$result,
+            [...$result, 'node_id' => $node->id + 1, 'outcome' => 'failed', 'error_code' => 'cli.install_failed', 'ok' => false],
+            [...$result, 'node_id' => $node->id + 2, 'outcome' => 'pending', 'cli_version' => null, 'step' => 'admission', 'ok' => false],
+        ], 'error_code' => 'cli.install_failed'];
+    }
     $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'fleet', 'target_id' => 1,
         'node_id' => $node->id, 'status' => 'running', 'attempts' => 1, 'started_at' => now()->subMinute(),
-        'input' => [], 'state' => ['swamp_run_id' => '249be7ac-a6ee-4cd0-a954-4556948eb3bb']]);
-    $this->socket->runs[$operation->state['swamp_run_id']] = passiveRun($operation, 'failed', []);
-    app()->call([new ReconcileSwampOperations, 'handle']);
-    expect($operation->fresh()->status)->toBe(OperationStatus::Failed)
-        ->and($operation->fresh()->error_code)->toBe('operation.native_failed')
-        ->and($operation->fresh()->result)->toBe(['error_code' => 'operation.native_failed']);
-})->with(['fleet.rollout', 'fleet.cli_converge']);
+        'input' => ['nodes' => array_map(static fn (array $node): array => ['node_id' => $node['node_id']], $output['nodes'])],
+        'state' => ['swamp_run_id' => '249be7ac-a6ee-4cd0-a954-4556948eb3bb']]);
+    $run = passiveRun($operation, $status, [], 'finish', 'finish');
+    $run['jobs'][0]['steps'][0]['outputs'] = $output;
+    $this->socket->runs[$operation->state['swamp_run_id']] = $run;
 
-it('measures reconcile pass cost with and without one pending no-selector Operation', function (): void {
+    app()->call([new ReconcileSwampOperations, 'handle']);
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::from($status))
+        ->and($operation->fresh()->result)->toBe($output)
+        ->and($operation->fresh()->error_code)->toBe(match ($status) {
+            'failed' => 'cli.install_failed', 'interrupted' => 'operation.native_failed', default => null,
+        });
+})->with(['fleet.rollout', 'fleet.cli_converge'])->with(['succeeded', 'failed', 'cancelled', 'interrupted']);
+
+it('settles Fleet cancellation or interruption before aggregation without inventing Node outcomes', function (string $kind, string $status): void {
+    $node = containerDefaultNode();
+    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'fleet', 'target_id' => 1,
+        'node_id' => $node->id, 'status' => 'running', 'attempts' => 1, 'started_at' => now()->subMinute(),
+        'input' => ['nodes' => [['node_id' => $node->id]]],
+        'state' => ['swamp_run_id' => '249be7ac-a6ee-4cd0-a954-4556948eb3bb']]);
+    $run = passiveRun($operation, $status, [], 'finish', 'finish');
+    $run['jobs'][0]['steps'][0]['status'] = 'skipped';
+    unset($run['jobs'][0]['steps'][0]['outputs']);
+    $this->socket->runs[$operation->state['swamp_run_id']] = $run;
+
+    app()->call([new ReconcileSwampOperations, 'handle']);
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::from($status))
+        ->and($operation->fresh()->result)->not->toHaveKey('nodes')
+        ->and($operation->fresh()->error_code)->toBe($status === 'interrupted' ? 'operation.native_failed' : null);
+})->with(['fleet.rollout', 'fleet.cli_converge'])->with(['cancelled', 'interrupted']);
+
+it('measures reconcile pass cost with and without one pending Fleet Operation', function (): void {
     $node = containerDefaultNode();
     $samples = ['without' => [], 'with' => []];
     // A controlled 20 ms transport reply makes the extra Fleet request visible without a live Node.
@@ -195,20 +228,17 @@ it('measures reconcile pass cost with and without one pending no-selector Operat
     file_put_contents('/tmp/orbit-passive-reconcile-cost.json', json_encode(['fixture_reply_ms' => 20, 'samples_ms' => $samples], JSON_THROW_ON_ERROR));
 });
 
-it('keeps the legacy input GET passive for exactly the two kinds without full workflow inputs', function (string $kind): void {
+it('passes only admitted Node intent to Fleet runs and keeps rollout bookkeeping in the Gateway', function (string $kind): void {
     $legacy = array_keys(array_filter(app(DirectOperation::class)->definitions(),
         fn (array $definition): bool => ($definition['workflow_inputs'] ?? false) !== true));
-    sort($legacy);
-    expect($legacy)->toBe(['fleet.cli_converge', 'fleet.rollout']);
-    $node = containerDefaultNode();
-    $run = '249be7ac-a6ee-4cd0-a954-4556948eb3bb';
-    $input = ['nodes' => [], 'commit' => str_repeat('a', 40)];
-    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'fleet', 'target_id' => 1,
-        'node_id' => $node->id, 'status' => 'running', 'input' => $input, 'state' => ['swamp_run_id' => $run]]);
-    $before = $operation->refresh()->getAttributes();
-    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
-        ->getJson("/api/v1/direct-operations/{$operation->id}?run_id={$run}")
-        ->assertOk()->assertJsonPath('data.input', $input);
-    expect($operation->refresh()->getAttributes())->toBe($before)
-        ->and($this->socket->sent)->toBe([])->and($this->socket->connects)->toBe(0);
+    expect($legacy)->toBe([]);
+    $nodes = [['node_id' => 12], ['node_id' => 9]];
+    $operation = new Operation(['kind' => $kind, 'node_id' => 209,
+        'input' => ['nodes' => $nodes, 'commit' => str_repeat('a', 40), 'remaining' => 2, 'rollout_id' => 668]]);
+    $operation->id = 17;
+
+    expect(app(DirectOperation::class)->workflowInputs($operation))->toEqual([
+        'intent' => ['nodes' => $nodes], 'execution_secrets' => (object) [], 'operation_id' => 17, 'node_id' => 209, 'kind' => $kind,
+    ]);
+    expect($operation->input['commit'])->toBe(str_repeat('a', 40));
 })->with(['fleet.rollout', 'fleet.cli_converge']);

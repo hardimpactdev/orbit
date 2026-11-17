@@ -138,7 +138,6 @@ apps/gateway/app/Http/Responses/RendersApiError.php        none: shared code; a 
 apps/gateway/app/Infrastructure/Swamp/CancelSwampRun.php   none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Infrastructure/Swamp/Native*.php          none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Infrastructure/Swamp/PendingSshHostKey.php  none: shared code; a proof runs only when a command's own code or cases change
-apps/gateway/app/Infrastructure/Swamp/ReadNativeRunFailure.php  none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Infrastructure/Swamp/StartSwampRun.php    none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Infrastructure/Swamp/SwampCommandStep.php  none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Infrastructure/Swamp/SwampConnection.php  none: shared code; a proof runs only when a command's own code or cases change

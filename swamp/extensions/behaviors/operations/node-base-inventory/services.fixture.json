@@ -1,0 +1,196 @@
+{
+  "node_id": 17,
+  "profile": "services",
+  "captured_at": "2026-01-01T00:00:00Z",
+  "os": {
+    "status": "ok",
+    "id": "ubuntu",
+    "release": "26.04"
+  },
+  "architecture": "x86_64",
+  "kernel": "7.0.0-43-generic",
+  "boot_id": {
+    "status": "ok",
+    "value": "850bf530-94f8-4f4c-a708-bbaac54a5665"
+  },
+  "uptime": {
+    "status": "ok",
+    "seconds": 12
+  },
+  "sysctl": {
+    "effective": {
+      "status": "missing"
+    },
+    "recorded": {
+      "status": "missing"
+    }
+  },
+  "cli": {
+    "link": {
+      "status": "missing"
+    },
+    "versions": {
+      "status": "missing"
+    }
+  },
+  "apt_cache": {
+    "status": "missing"
+  },
+  "orbit_env_group": {
+    "status": "missing"
+  },
+  "agent_running": {
+    "status": "missing"
+  },
+  "executor_running": {
+    "status": "missing"
+  },
+  "executor_relay_user": {
+    "status": "missing"
+  },
+  "executor_relay_group": {
+    "status": "missing"
+  },
+  "active_services": {
+    "status": "missing"
+  },
+  "backing_containers": {},
+  "websocket_ready": {
+    "status": "missing"
+  },
+  "agent_secret_match": {
+    "status": "ok",
+    "match": true
+  },
+  "packages": {
+    "unattended-upgrades": {
+      "status": "missing"
+    },
+    "needrestart": {
+      "status": "missing"
+    }
+  },
+  "files": {
+    "/etc/apt/apt.conf.d/20auto-upgrades": {
+      "status": "missing"
+    },
+    "/etc/apt/apt.conf.d/52orbit-unattended-upgrades": {
+      "status": "missing"
+    },
+    "/etc/apt/apt.conf.d/53orbit-reboot-due": {
+      "status": "missing"
+    },
+    "/etc/modprobe.d/orbit-no-sctp.conf": {
+      "status": "missing"
+    },
+    "/etc/needrestart/conf.d/50-orbit.conf": {
+      "status": "missing"
+    },
+    "/etc/orbit/agent": {
+      "status": "missing"
+    },
+    "/etc/orbit/agent/ca.pem": {
+      "status": "missing"
+    },
+    "/etc/orbit/agent/config.toml": {
+      "status": "missing"
+    },
+    "/etc/orbit/agent/secret": {
+      "status": "missing"
+    },
+    "/etc/orbit/executor": {
+      "status": "missing"
+    },
+    "/etc/orbit/executor/enabled": {
+      "status": "missing"
+    },
+    "/etc/orbit/executor/gateway.pub": {
+      "status": "missing"
+    },
+    "/etc/orbit/executor/node": {
+      "status": "missing"
+    },
+    "/etc/orbit/executor/restore-threads": {
+      "status": "missing"
+    },
+    "/etc/sudoers.d/orbit-executor-relay": {
+      "status": "missing"
+    },
+    "/etc/sysctl.d/60-orbit-nonlocal-bind.conf": {
+      "status": "missing"
+    },
+    "/etc/systemd/system/orbit-agent.service": {
+      "status": "missing"
+    },
+    "/etc/systemd/system/orbit-executor.service": {
+      "status": "missing"
+    },
+    "/etc/systemd/system/orbit-websocket.service": {
+      "status": "missing"
+    },
+    "/root/.orbit/config.json": {
+      "status": "missing"
+    },
+    "/run/orbit-executor.sock": {
+      "status": "missing"
+    },
+    "/usr/local/bin/orbit-agent": {
+      "status": "missing"
+    },
+    "/usr/local/lib/orbit/reboot-due": {
+      "status": "missing"
+    },
+    "/usr/local/libexec": {
+      "status": "missing"
+    },
+    "/usr/local/libexec/orbit-executor": {
+      "status": "missing"
+    },
+    "/var/lib/orbit/executor": {
+      "status": "missing"
+    },
+    "/var/lib/orbit/executor/journal": {
+      "status": "missing"
+    }
+  },
+  "units": {
+    "orbit-agent.service": {
+      "status": "missing"
+    },
+    "orbit-executor.service": {
+      "status": "missing"
+    },
+    "apt-daily.timer": {
+      "status": "missing"
+    },
+    "apt-daily-upgrade.timer": {
+      "status": "missing"
+    },
+    "wg-quick@orbit.service": {
+      "status": "missing"
+    },
+    "docker.service": {
+      "status": "missing"
+    },
+    "containerd.service": {
+      "status": "missing"
+    },
+    "orbit-websocket.service": {
+      "status": "missing"
+    }
+  },
+  "powersync": {
+    "orbit-process-264-powersync-hauzer-dev": {
+      "status": "missing"
+    },
+    "orbit-process-265-powersync-mealou-dev": {
+      "status": "missing"
+    },
+    "orbit-process-267-powersync-mealou": {
+      "status": "missing"
+    },
+    "orbit-process-268-powersync-hauzer": {
+      "status": "missing"
+    }
+  }
+}

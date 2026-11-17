@@ -88,7 +88,7 @@ final class AgentRealtimeController extends Controller
         ]);
     }
 
-    /** One fact the caller's agent observed. An unchanged fact writes nothing; the answer is 204 either way. */
+    /** One fact the caller's agent observed. The answer is 204 even if the report leaves the sample unchanged. */
     public function facts(Request $request, ManagedNodeEligibility $eligibility, RecordNodeFactAction $action): Response
     {
         $node = $this->peer($request);

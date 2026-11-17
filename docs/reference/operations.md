@@ -186,7 +186,7 @@ An unbound admission with attempts `0` has a separate 600-second budget, matchin
 
 The [reconciler](/reference/swamp-command-steps#reconciler) projects an expired budget as `failed` with `error_code: operation.timed_out` and records `cancel_requested`. Operation reads return recorded state without checking or applying deadlines. Expiration keeps the native binding, any captured F1 error detail, the failed or active step, and existing result evidence. An Operation admitted with a generic target hold keeps it until the shared reader verifies the exact bound native root is terminal. That receipt releases the hold and records the native status without reopening the timed-out Operation.
 
-Operation shows return recorded state without remote reads, expiry or projection. The Swamp terminal event and the minute sweep queue the same reconciler. It alone reads and records native terminal results. A stuck operations queue delays terminal state; polling does not settle it. Fleet rollout and CLI converge keep their generic failure result when they declare no terminal selector.
+Operation shows return recorded state without remote reads, expiry or projection. The Swamp terminal event and the minute sweep queue the same reconciler. It alone reads and records native terminal results. A stuck operations queue delays terminal state; polling does not settle it. Fleet rollout and CLI converge capture their per-Node outcomes from the native aggregation step, including completed visits before a later Node fails. Cancellation or interruption before aggregation retains the native terminal status without inventing per-Node outcomes.
 
 Instance migration settles [deferred Schedule fires](/reference/schedules#checkout-migration) in the transaction that first marks its Operation terminal. It locks the Instance, then queues each fire against the recorded runtime or explicitly fails it if admission remains closed.
 
@@ -799,7 +799,7 @@ selectors and root hash. Requests and keys are not kept in command Activity inpu
 Signing adds no Operation, lease, execution step, retry or wait. These two named
 root-of-trust endpoints are the only Gateway HTTP primitives for new Swamp steps.
 
-On Swamp, use the shared `directOperation` template with family-owned read, action and projection functions. The action may be a local Node step or a fixed Gateway primitive while that family migrates. Native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in the template.
+On Swamp, native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in a workflow.
 
 Swamp runs a step that has not written again when its worker is lost, and fails a step that has. A step that changes an external system without writing Swamp data is invisible to the scheduler until it declares `writes: true`. Without the key the second run of a step fails it (`destination path already exists`) or leaves a second token.
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NativeNodeEnrollmentProjection;
 use App\Domain\Nodes\NodeAgentRekeyProjection;
+use App\Domain\Nodes\NodeBaseInventoryProjection;
 use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeRemovalProjection;
 use App\Domain\Nodes\NodeRoleDirectProjection;
@@ -49,6 +50,12 @@ return ['node.add' => [
     'projection' => NodeSettingsProjection::class,
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true],
+], 'node.base_inventory' => [
+    'workflow' => 'operation-node-base-inventory',
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'inventory', 'step' => 'Publish the inventory', 'data' => 'node-base-inventory'],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-base-inventory-[1-9][0-9]*-verifier$']],
+    'projection' => NodeBaseInventoryProjection::class,
 ], 'node.converge' => [
     'workflow' => 'operation-node-converge',
     'projection' => NodeConvergeProjection::class,
