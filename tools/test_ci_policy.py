@@ -113,7 +113,7 @@ class RequiredGateTest(unittest.TestCase):
         import yaml
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
         job = workflow['jobs']['web']
-        self.assertEqual(('ubuntu-26.04', 3), (job['runs-on'], job['timeout-minutes']))
+        self.assertEqual(('ubuntu-26.04', 4), (job['runs-on'], job['timeout-minutes']))
         steps = job['steps']
         commands = [step.get('run', '') for step in steps]
         required = [
@@ -135,7 +135,7 @@ class RequiredGateTest(unittest.TestCase):
         import yaml
         steps = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']['web']['steps']
         cache = next(step for step in steps if step.get('name') == 'Cache browser downloads')
-        self.assertEqual({'~/.cache/ms-playwright', '~/.cache/orbit-playwright-apt/*.deb'},
+        self.assertEqual({'~/.cache/ms-playwright', '/var/cache/orbit-playwright-apt/*.deb'},
                          set(cache['with']['path'].splitlines()))
         key = cache['with']['key']
         for identity in ('runner.os', 'runner.arch', 'ubuntu-26.04',
