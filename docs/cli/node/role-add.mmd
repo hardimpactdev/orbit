@@ -141,6 +141,9 @@ sequenceDiagram
     SW->>N: Apply the role<br/>Ansible phase: node
     %%> When:
     %%> - For Swamp, repair an existing compile cache before service startup and checks.
+    %%> On an Instance fleet Node (`nested-app-dev` under the nested Gateway's fleet marker, with `app-dev`):
+    %%> - the egress proxy takes the fleet's egress proxy, from `HTTPS_PROXY` in the nested Gateway's `/etc/environment`, as its only parent and never goes direct; its table admits exactly that address and port
+    %%> - a nested Gateway that reads no such proxy refuses `instance.fleet_egress_unavailable` (409) when it renders the intent, before any change
     %%> On a CI-only Node (`ci-runner`, CI places, no `app-dev`):
     %%> - the same phase runs the Instance container branch of `app-dev` from the same `instances` intent, with its nested part: the projects `orbit-instances` and `orbit-instances-nested`, the bridge, the ACLs, the egress proxy, the shared folders, both images; it checks the CI Node's subordinate-ID demand first
     %%> - the intent leaves out the own-site rules, the development port redirect and the wake of frozen containers: the Node runs no Caddy

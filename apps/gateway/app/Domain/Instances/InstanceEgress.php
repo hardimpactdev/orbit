@@ -16,11 +16,12 @@ use App\Infrastructure\Firewall\UfwRuleShape;
  *   The list is the one of the last converge; a domain added since is looked up, and the table still refuses its address.
  * - Its own nftables table rejects every new connection of `proxy` to the Node itself, to the WireGuard interface and to a private
  *   or special address, and to every IPv6 address, whatever a name resolved to. It admits only the Node's stub resolver, and only
- *   the bridge reaches the port.
- * On an Instance fleet Node, which has no direct internet and no public DNS, Squid sends everything to the fleet's egress proxy as its
- * only parent and never goes direct, and the table admits exactly that parent (docs/reference/development-containers.md#instance-host-in-the-fleet). This is the only address rule: Squid holds IPv4 as mapped IPv6, so its own address lists cannot
+ *   the bridge reaches the port. This is the only address rule: Squid holds IPv4 as mapped IPv6, so its own address lists cannot
  *   state IPv6 ranges safely. IPv6 is refused whole because a LAN often uses global IPv6 addresses, which no fixed range can tell
  *   from the internet.
+ * On an Instance fleet Node, which has no direct internet and no public DNS, Squid sends everything to the fleet's egress proxy as
+ * its only parent and never goes direct, and the table admits exactly that parent
+ * (docs/reference/development-containers.md#instance-host-in-the-fleet).
  */
 final readonly class InstanceEgress
 {

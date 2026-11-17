@@ -37,7 +37,7 @@ final class InstanceFleetGateway
             return null;
         }
 
-        return preg_match('/^HTTPS_PROXY="https?:\/\/(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})"$/m', (string) file_get_contents($file), $match) === 1
+        return preg_match('/^HTTPS_PROXY="http:\/\/(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})"$/m', (string) file_get_contents($file), $match) === 1
             ? ['host' => $match[1], 'port' => (int) $match[2]] : null;
     }
 }

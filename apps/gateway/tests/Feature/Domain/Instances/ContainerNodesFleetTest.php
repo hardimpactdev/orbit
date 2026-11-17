@@ -50,6 +50,9 @@ it('reads the fleet\'s egress proxy from HTTPS_PROXY on the nested Gateway of an
         expect(InstanceFleetGateway::egressProxy())->toBe(['host' => '10.253.0.1', 'port' => 3129]);
         file_put_contents($environment, "HTTPS_PROXY=\"http://proxy.example:3128\"\n");
         expect(InstanceFleetGateway::egressProxy())->toBeNull();
+        // Squid's parent is a plain HTTP proxy, so a TLS proxy is no parent.
+        file_put_contents($environment, "HTTPS_PROXY=\"https://10.253.0.1:3128\"\n");
+        expect(InstanceFleetGateway::egressProxy())->toBeNull();
     } finally {
         unlink($environment);
     }
