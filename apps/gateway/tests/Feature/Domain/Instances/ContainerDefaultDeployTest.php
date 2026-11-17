@@ -286,6 +286,24 @@ it('records a running container but no seed when a deployment fails after the co
         ->and($operation->refresh()->error_code)->toBe('deployment.checkout_dirty');
 });
 
+it('fails a deployment whose seed hold stayed busy with instance.seed_hold_timeout, before the container started', function (): void {
+    $instance = deployDefault(container: true);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['steps' => [], 'summary' => ['failed_steps' => ['Hold the seed']]]]);
+
+    expect($operation->refresh()->error_code)->toBe('instance.seed_hold_timeout')
+        ->and(InstanceRuntime::query()->where('instance_id', $instance->id)->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
+});
+
+it('asks for no seed hold and adds no wait to the budget for a default whose seed no seed copy sends', function (): void {
+    $instance = deployDefault(container: true);
+
+    expect(app(InstanceDeploymentIntent::class)->snapshot($instance)['container'])->not->toHaveKey('seed_hold');
+});
+
 it('records the admitted commit on a failed automatic container deployment, so policy counts failures per commit', function (): void {
     $instance = deployDefault(container: true);
     $commit = str_repeat('c', 40);

@@ -61,6 +61,12 @@ final readonly class ProofSeeds
     /** The one hold of the default's seed (docs/reference/development-containers.md#the-seed-hold): a seed copy's Operation lock. */
     public const string HoldKind = 'instance_seed';
 
+    /**
+     * The bound of a deployment's wait for the seed hold, the step "Hold the seed": one seed copy, which sends a refresh to each CI Node
+     * one at a time, ends well within it; the deployment's run budget counts it.
+     */
+    public const int HoldWaitSeconds = 1800;
+
     /** A deployment of the default that holds the seed records it in its Operation state until it ends. */
     public const string HeldState = 'seed_held';
 
