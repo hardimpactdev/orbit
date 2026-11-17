@@ -9,6 +9,7 @@ cases = [
   "the deployment's one fleet check waits for no Doctor, and the refresh starts again what it stopped for base before the seed",
   "after a restore the restored fleet is started and waited for, and the first failure stays the run's result",
   "two deployments of different defaults on one Node never share a behavior lock for a long step",
+  "only the proof default holds its seed before any phase, and a busy hold at its bound changes nothing",
 ]
 file = "swamp/tests/workflow_instance_deploy_fleet_test.ts"
 cost = 1
