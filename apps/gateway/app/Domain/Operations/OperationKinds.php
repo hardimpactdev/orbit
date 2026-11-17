@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\Executor\ExecutorProofOperation;
+
 /**
  * The closed registry of operation kinds. A kind's name is `<family>.<verb>`; its target type is one word.
  */
@@ -54,7 +56,7 @@ final readonly class OperationKinds
 
     public const string ProofVerify = 'proof.verify';
 
-    /** The proof-only executor round trip on a Node (docs/reference/executor.md#the-proof-operation). Only {@see \App\Domain\Executor\ExecutorProofOperation} creates it. */
+    /** The proof-only executor round trip on a Node (docs/reference/executor.md#the-proof-operation). Only {@see ExecutorProofOperation} creates it. */
     public const string ExecutorProof = 'executor.proof';
 
     /** The target type of every kind that changes an Instance, so they hold the same target. */
