@@ -204,6 +204,7 @@ return [
     '0202' => ['0202-the-fleet-follows-the-gateway-through-orbit-self-update'],
     '0203' => ['0203-review-and-merge-pull-requests-inside-orbit'],
     '0205' => ['0205-publish-database-credentials-to-vaultwarden'],
+    '0206' => ['0206-build-task-vm-images-as-chains-of-small-jobs'],
     '0207' => ['0207-one-image-recipe-shared-package-cache-no-workspace-templates'],
     '0208' => [
         '0208-scan-monorepo-dependencies-per-sub-project',
@@ -213,6 +214,7 @@ return [
     '0211' => ['0211-ship-node-changes-as-remote-programs'],
     '0216' => ['0216-run-one-exact-php-build-everywhere'],
     '0217' => ['0217-deploy-production-instances-automatically-by-polling'],
+    '0219' => ['0219-answer-cluster-names-from-a-dns-on-the-router'],
     '0220' => ['0220-serialize-task-workspaces-with-one-lease'],
     '0222' => ['0222-give-task-vms-a-cloned-topology-seed'],
     '0224' => ['0224-give-each-task-group-one-holder-and-one-sender'],
