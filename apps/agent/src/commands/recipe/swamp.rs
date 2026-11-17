@@ -31,7 +31,7 @@ pub fn install(host: &mut impl Host, files: &Files, input: &Input) -> Result<(),
     }
     // Command TMPDIR can be memory-backed; keep the large artifact on the target filesystem.
     let destination = files.path(BINARY);
-    let work = WorkDir::within(destination.parent().unwrap())?;
+    let work = WorkDir::within(destination.parent().expect("BINARY lies in a directory"))?;
     let path = work.0.join("swamp");
     artifacts::download(host, "swamp", pin, input, &path)?;
     files.publish_from(&destination, &path, 0o755, files.uid, files.gid, false)

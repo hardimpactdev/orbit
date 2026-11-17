@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{
@@ -134,7 +135,9 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let workspaces = SharedWorkspaces::default();
     let (workspace_tx, mut workspace_rx) = mpsc::unbounded_channel();
     let (watch_facts_tx, watch_facts_rx) = watch::channel(WatchFacts::default());
-    tokio::spawn(watch_workspaces(
+    // The tasks that hold the workspace and log locks: a panic in one ends the run (`supervise`).
+    let mut supervised = tokio::task::JoinSet::new();
+    supervised.spawn(watch_workspaces(
         client.clone(),
         config.gateway_url.clone(),
         workspaces.clone(),
@@ -153,7 +156,7 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         watch_facts_rx,
     ));
     let (log_hub, log_prompts) = LogHub::new();
-    tokio::spawn(run_controller(
+    supervised.spawn(run_controller(
         log_hub.clone(),
         log_prompts,
         GatewayList {
@@ -175,55 +178,57 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut systemd_poll = tokio::time::interval(Duration::from_secs(30));
     // Replies that arrive after a reconnect go out on the next session; orders that arrive while it reconnects are lost.
     let (executor, mut executor_rx) = ExecutorRelay::new(EXECUTOR_SOCKET);
-    reconnect_loop(&mut shutdown_rx, async |shutdown_rx, joined_at| {
-        loop {
-            let discovery = tokio::select! {
-                _ = shutdown_rx.changed() => return Ok(()),
-                result = discover(&client, &config.gateway_url) => result?,
-            };
-            if discovery
-                .member
-                .strip_prefix("agent.")
-                .is_none_or(|id| discovery.channel != format!("presence-node.{id}"))
-            {
-                return Err("Gateway returned an invalid agent channel identity".into());
-            }
-            let log_channel = accepted_log_channel(&discovery);
-            let (Some(url), Some(address), Some(key)) =
-                (discovery.url, discovery.address, discovery.key)
-            else {
-                tokio::select! {_=shutdown_rx.changed()=>return Ok(()),_=tokio::time::sleep(Duration::from_secs(60))=>{}}
-                continue;
-            };
-            return connected_session(
-                &client,
-                &config.gateway_url,
-                &url,
-                &address,
-                &key,
-                &discovery.channel,
-                log_channel.as_deref(),
-                &log_hub,
-                tls.clone(),
-                &manager,
-                &mut sequence,
-                &mut systemd,
-                &mut docker_units,
-                &mut docker_available,
-                &mut docker_rx,
-                &mut systemd_rx,
-                &workspaces,
-                &mut workspace_rx,
-                &mut heartbeat,
-                &mut systemd_poll,
-                &executor,
-                &mut executor_rx,
-                shutdown_rx,
-                joined_at,
-            )
-            .await;
+    let session = reconnect_loop(&mut shutdown_rx, async |shutdown_rx, joined_at| loop {
+        let discovery = tokio::select! {
+            _ = shutdown_rx.changed() => return Ok(()),
+            result = discover(&client, &config.gateway_url) => result?,
+        };
+        if discovery
+            .member
+            .strip_prefix("agent.")
+            .is_none_or(|id| discovery.channel != format!("presence-node.{id}"))
+        {
+            return Err("Gateway returned an invalid agent channel identity".into());
         }
-    }).await
+        let log_channel = accepted_log_channel(&discovery);
+        let (Some(url), Some(address), Some(key)) =
+            (discovery.url, discovery.address, discovery.key)
+        else {
+            tokio::select! {_=shutdown_rx.changed()=>return Ok(()),_=tokio::time::sleep(Duration::from_secs(60))=>{}}
+            continue;
+        };
+        return connected_session(
+            &client,
+            &config.gateway_url,
+            &url,
+            &address,
+            &key,
+            &discovery.channel,
+            log_channel.as_deref(),
+            &log_hub,
+            tls.clone(),
+            &manager,
+            &mut sequence,
+            &mut systemd,
+            &mut docker_units,
+            &mut docker_available,
+            &mut docker_rx,
+            &mut systemd_rx,
+            &workspaces,
+            &mut workspace_rx,
+            &mut heartbeat,
+            &mut systemd_poll,
+            &executor,
+            &mut executor_rx,
+            shutdown_rx,
+            joined_at,
+        )
+        .await;
+    });
+    tokio::select! {
+        result = session => result,
+        error = orbit_agent::supervise(&mut supervised) => Err(error),
+    }
 }
 
 /// Owns every retry, so a reset, close, failed join, or ping timeout takes the same path.

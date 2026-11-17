@@ -8,8 +8,10 @@ mod tests;
 
 use super::recipe::{self, Files, Host as RecipeHost, Invocation, Output};
 use crate::command::CommandError;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::LazyLock;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -209,8 +211,10 @@ impl Input {
     pub fn validate(&self) -> Result<()> {
         use recipe::types::{https, valid_digest, valid_package, valid_version};
         let bad = || Failure::new(Kind::InputInvalid, "Invalid PHP build pins or options");
-        let version = regex::Regex::new(r"\A[0-9]+\.[0-9]+\z").unwrap();
-        let module = regex::Regex::new(r"\A[a-z0-9_ ]+\z").unwrap();
+        static VERSION: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"\A[0-9]+\.[0-9]+\z").expect("literal pattern"));
+        static MODULE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"\A[a-z0-9_ ]+\z").expect("literal pattern"));
         if self.versions.is_empty()
             || (!self.mirror.is_empty() && !https(&self.mirror))
             || self.repack.package != "dpkg-repack"
@@ -219,10 +223,10 @@ impl Input {
             return Err(bad());
         }
         for (name, build) in &self.versions {
-            if !version.is_match(name)
+            if !VERSION.is_match(name)
                 || build.packages.is_empty()
                 || build.extensions.is_empty()
-                || build.extensions.iter().any(|name| !module.is_match(name))
+                || build.extensions.iter().any(|name| !MODULE.is_match(name))
             {
                 return Err(bad());
             }

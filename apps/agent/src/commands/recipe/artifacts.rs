@@ -212,7 +212,10 @@ fn extract_zip(archive: &Path, destination: &Path) -> io::Result<()> {
         if entry.is_dir() {
             fs::create_dir_all(&path)?;
         } else {
-            fs::create_dir_all(path.parent().unwrap())?;
+            fs::create_dir_all(
+                path.parent()
+                    .expect("a ZIP entry lies inside the destination"),
+            )?;
             let mut file = fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -286,7 +289,11 @@ pub fn copy_tree(source: &Path, target: &Path) -> io::Result<()> {
 }
 pub fn contents(path: &Path) -> io::Result<BTreePaths> {
     fn walk(root: &Path, path: &Path, result: &mut BTreePaths) -> io::Result<()> {
-        result.insert(path.strip_prefix(root).unwrap().to_path_buf());
+        result.insert(
+            path.strip_prefix(root)
+                .expect("walk visits only root and its descendants")
+                .to_path_buf(),
+        );
         if fs::symlink_metadata(path)?.is_dir() {
             for entry in fs::read_dir(path)? {
                 walk(root, &entry?.path(), result)?;

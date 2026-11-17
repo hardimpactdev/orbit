@@ -351,6 +351,9 @@ impl ExecutorRelay {
             return Dispatch::Busy;
         };
         let (socket, replies) = (self.socket.clone(), self.replies.clone());
+        // Outside the observer's supervised set on purpose: an order task holds no shared lock, only its permit, which a
+        // panic's unwind releases, and a sender. A panic loses this one order, which the Gateway's fallback covers, instead
+        // of ending the run and every other order in flight.
         tokio::spawn(async move {
             let _permit = permit;
             let operation = order.operation.clone();

@@ -135,9 +135,13 @@ pub fn execute_stream(
             json!({"command": name}),
         );
     };
-    let deadline_ms = match fields.remove("deadline_ms") {
-        Some(Value::Number(number)) if number.as_u64().is_some() => number.as_u64().unwrap(),
-        _ => {
+    let deadline_ms = match fields
+        .remove("deadline_ms")
+        .as_ref()
+        .and_then(Value::as_u64)
+    {
+        Some(deadline_ms) => deadline_ms,
+        None => {
             return Outcome::refused(
                 "agent.envelope_invalid",
                 "The envelope has no deadline_ms.",

@@ -117,7 +117,9 @@ The data of `client-executor-result` is exactly:
 { "operation": "<the event's operation, copied unread>", "line": "<the reply line, unchanged, without the newline>" }
 ```
 
-A line that does not fit one Pusher client frame (9,900 bytes) is dropped and logged; the session goes on. Lines sent before a bound passes stay sent. A missing socket sends nothing, and the Gateway's fallback covers it. Orders that arrive while the observer reconnects are lost; replies that finish then go out on the next session. The executor admits the observer by its cgroup, so the order needs no other proof of where it came from: the signature is the boundary.
+A line that does not fit one Pusher client frame (9,900 bytes) is dropped and logged; the session goes on. Lines sent before a bound passes stay sent. A missing socket sends nothing, and the Gateway's fallback covers it. Orders that arrive while the observer reconnects are lost; replies that finish then go out on the next session.
+
+Each order runs in its own task outside the observer's supervised tasks, because it holds no shared lock: a panic there loses that one order, and the observer goes on. The executor admits the observer by its cgroup, so the order needs no other proof of where it came from: the signature is the boundary.
 
 ## Journal and recovery
 

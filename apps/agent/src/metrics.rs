@@ -3,7 +3,7 @@
 
 use futures_util::{future::select_all, FutureExt};
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Entry, BTreeMap};
 use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
@@ -90,18 +90,17 @@ impl DiskSampler {
                     .is_some_and(|call| !call.is_finished())
         });
         for mount in &self.current {
-            if !self.mounts.contains_key(mount) {
-                if self.mounts.len() == crate::facts::MAX_FILESYSTEMS {
-                    continue;
-                }
-                self.mounts.insert(mount.clone(), MountSample::default());
+            let full = self.mounts.len() == crate::facts::MAX_FILESYSTEMS;
+            let sample = match self.mounts.entry(mount.clone()) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(_) if full => continue,
+                Entry::Vacant(entry) => entry.insert(MountSample::default()),
+            };
+            if let Some(call) = sample.pending.take_if(|call| call.is_finished()) {
+                sample.finish(call.await);
+                continue;
             }
-            let sample = self.mounts.get_mut(mount).unwrap();
-            if let Some(call) = sample.pending.as_ref() {
-                if call.is_finished() {
-                    let result = sample.pending.take().unwrap().await;
-                    sample.finish(result);
-                }
+            if sample.pending.is_some() {
                 continue;
             }
             let read = read.clone();
@@ -134,7 +133,10 @@ impl DiskSampler {
             return;
         }
         let ((mount, result), _, _) = select_all(calls).await;
-        self.mounts.get_mut(&mount).unwrap().finish(result);
+        self.mounts
+            .get_mut(&mount)
+            .expect("the finished call belongs to a stored mount")
+            .finish(result);
     }
 
     fn snapshot(&self) -> Vec<Disk> {

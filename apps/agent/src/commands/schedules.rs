@@ -65,9 +65,24 @@ impl Host {
 
     fn paths(&self, id: &str) -> Result<Paths, ScheduleError> {
         let mut paths = paths(id)?;
-        paths.script = self.path(paths.script.to_str().unwrap());
-        paths.service = self.path(paths.service.to_str().unwrap());
-        paths.timer = self.path(paths.timer.to_str().unwrap());
+        paths.script = self.path(
+            paths
+                .script
+                .to_str()
+                .expect("schedule paths are built from UTF-8 strings"),
+        );
+        paths.service = self.path(
+            paths
+                .service
+                .to_str()
+                .expect("schedule paths are built from UTF-8 strings"),
+        );
+        paths.timer = self.path(
+            paths
+                .timer
+                .to_str()
+                .expect("schedule paths are built from UTF-8 strings"),
+        );
         Ok(paths)
     }
 }
@@ -452,10 +467,9 @@ fn logs_with(program: &Path, input: &LogsInput) -> Result<Logs, ScheduleError> {
     }
     let mut entries: Vec<String> = Vec::new();
     for line in text.split_inclusive('\n') {
-        if line.starts_with(' ') && !entries.is_empty() {
-            entries.last_mut().unwrap().push_str(line);
-        } else {
-            entries.push(line.to_owned());
+        match entries.last_mut() {
+            Some(entry) if line.starts_with(' ') => entry.push_str(line),
+            _ => entries.push(line.to_owned()),
         }
     }
     let mut output = entries.into_iter().rev().collect::<String>();
