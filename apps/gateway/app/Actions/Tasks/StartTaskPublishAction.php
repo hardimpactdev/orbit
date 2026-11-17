@@ -39,19 +39,19 @@ final readonly class StartTaskPublishAction
                 ?? throw new ResourceOperationException('tasks.not_done', 'The task group\'s work is not done: publish needs its done check, or name a check with --check.', 409);
             $input = TaskDonePublication::for($group, $check);
             $doneCheck = $check->id;
-        } elseif ($input->pull_request === null && TaskInstanceWorkspace::forGroup($group->loadMissing('taskable', 'project')) !== null) {
-            if ($group->pr_url === null) {
+        } elseif (TaskInstanceWorkspace::forGroup($group->loadMissing('taskable', 'project')) !== null) {
+            // A named check that is the group's done check is a publish of the done check, whoever wrote the text: the Operation records it.
+            $done = $this->done->check($group, republish: $group->pr_url !== null);
+            $doneCheck = $done !== null && $done->id === $input->check ? $done->id : null;
+            if ($input->pull_request === null && $group->pr_url === null) {
                 // A named check without a text opens the pull request when it is the reviewed done check, as the release does; any other check only pushes, and the Operation says why.
-                $done = $this->done->check($group);
                 $withheld = TaskDonePublication::withheld($group, $input->check, $done);
                 if ($withheld === null && $done !== null) {
                     $input = TaskDonePublication::for($group, $done);
-                    $doneCheck = $done->id;
                 }
-            } elseif (($done = $this->done->check($group, republish: true)) !== null && $done->id === $input->check && TaskGroupDone::prText($group, $done) !== null) {
+            } elseif ($input->pull_request === null && $done !== null && $doneCheck !== null && TaskGroupDone::prText($group, $done) !== null) {
                 // A republish of the done check with the reviewer's text updates the open pull request with it, as the release does; any other check only pushes.
                 $input = TaskDonePublication::for($group, $done);
-                $doneCheck = $done->id;
             }
         }
 

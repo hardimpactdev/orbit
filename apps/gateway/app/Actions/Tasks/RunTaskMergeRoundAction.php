@@ -21,7 +21,9 @@ use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskDonePublication;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskPublishProjection;
 use App\Domain\Tasks\TaskStatus;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
@@ -91,6 +93,10 @@ final readonly class RunTaskMergeRoundAction
         if (Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
             ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
             return self::result($group, $publish, null, 'busy', null);
+        }
+        // A stopped round asked once for P; a person who resolves the request without acting ends the round, and nobody is asked again.
+        if (self::asked($group, $publish)) {
+            return self::result($group, $publish, null, 'stopped', null);
         }
         $c0 = TaskCheck::query()->findOrFail(ValidatedData::integer($publish->input['check']));
         // A conflict of a check that a round made is the round's own second conflict, never a new round.
@@ -235,16 +241,34 @@ final readonly class RunTaskMergeRoundAction
     private function stop(Task $group, Operation $publish, string $step, ?Operation $operation, string $what): array
     {
         $at = $operation === null ? '' : ", Operation {$operation->id},";
-        TaskAssistance::apply($group, AssistanceKind::Failure, reason: "The merge round after publish Operation {$publish->id} stopped: the {$step} step{$at} {$what}. "
+        TaskAssistance::apply($group, AssistanceKind::Failure, reason: self::reason($publish)."the {$step} step{$at} {$what}. "
             .'Conflicting paths: '.self::paths($publish).'.');
 
         return self::result($group, $publish, $step, 'stopped', null, $operation?->id);
     }
 
-    /** P published the done check: its input carries the pull request text, as the automatic publish, a release and a named done check send it. */
+    /**
+     * P published the group's done check: its admission read the check as the done check under the group's lock and recorded it, whoever
+     * sent the text and whether it carried one (TaskPublishProjection::DoneCheck).
+     */
     private static function donePublish(Operation $publish): bool
     {
-        return is_array($publish->input['pull_request'] ?? null);
+        $done = $publish->input[TaskPublishProjection::DoneCheck] ?? null;
+
+        return $done !== null && $done === ($publish->input['check'] ?? null);
+    }
+
+    /** How a stop's assistance reason begins: it names P, so the request's Activity tells that the round already asked for P. */
+    private static function reason(Operation $publish): string
+    {
+        return "The merge round after publish Operation {$publish->id} stopped: ";
+    }
+
+    /** The round asked for P before: TaskAssistance recorded the request in Activity with its reason, whatever became of the request since. */
+    private static function asked(Task $group, Operation $publish): bool
+    {
+        return Activity::query()->where('log_name', 'tasks')->where('subject_type', Task::class)->where('subject_id', $group->id)
+            ->whereIn('description', ['assistance requested', 'assistance changed'])->whereLike('properties->reason', self::reason($publish).'%')->exists();
     }
 
     private static function turnDone(Operation $turn): bool

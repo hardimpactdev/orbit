@@ -405,7 +405,7 @@ The result stays `{ branch, commit, pull_request_number, pull_request_url }`, wi
 
 ###### The merge round
 
-A copy publish that fails with `tasks.publish_conflict` starts a merge round. Orbit syncs the copy, runs one implementer turn on the group's last subtask with a fixed merge prompt, runs a handoff check, runs one narrow reviewer turn on that check, and publishes it the same way as the failed publish. A turn that asks or fails, a failed sync or check, a reviewer that does not approve, or a second conflict in the same round stops the round and asks a person (group assistance, with the reason).
+A copy publish that fails with `tasks.publish_conflict` starts a merge round. Orbit syncs the copy and runs one implementer turn with a fixed merge prompt on the subtask of the failed publish's check. It then runs a handoff check and one narrow reviewer turn on that check, and publishes it the same way as the failed publish. A turn that asks or fails, a failed sync or check, a reviewer that does not approve, or a second conflict in the same round stops the round and asks a person (group assistance, with the reason).
 
 The Gateway scheduler runs `task:merge-round` every minute while the Tasks extension is on, beside `task:pr-when-done`. It reads Orbit's own records and admits each step through the same action as a person's command, with the caller `gateway:merge-round`. Swamp runs every step, as it runs any Operation. The driver does nothing on a `tasks.publish_conflict`.
 
@@ -435,9 +435,11 @@ The turn's prompt names the conflicting paths from P's result and the default he
 
 The reviewer turn reviews only the merge's own change. For each merge commit in `git log --merges <C0 commit>..<C1 commit>`, where C0 is P's check, it reads `git show --remerge-diff <merge>`: the difference between the reviewed head merged with main and the resolved tree. It judges that against the original brief and nothing else of the branch. Its approval is the text it sends, as for every reviewer turn: it keeps the earlier text, or updates it when the merge changes what the text says. A reviewer that does not approve sends nothing and lists the defects.
 
-P was a done-check publish when its input carries a pull request text: the automatic publish, a release, or a named done check. Only such a P reopens its subtask, and then the tick completes it again and publishes C1 as the done check. The normal [done rule](#when-the-work-is-done) holds: the reviewer turn reviewed exactly C1, and the subtask completed after it.
+P was a done-check publish when its check was the group's done check as Orbit admitted it. Every copy publish of the done check records that check as `done_check` in its Operation input, once its admission read it as the done check under the group's row lock. A release, the automatic publish and a named done check record it, with the reviewer's text, a person's own text or none; the run's intent leaves the field out.
 
-Any other P was a push of a named check: the round runs on its subtask as it is, and the tick pushes C1 with `--check` only. When that subtask is completed, the round does not reopen it: it stops and asks. The round adds no state and no column. Each step is keyed `merge-round:<group>:<P>:<step>`, with the steps `sync`, `turn`, `check`, `review` and `publish`, so a repeat tick starts nothing twice.
+Only such a P reopens its subtask, and then the tick completes it again and publishes C1 as the done check. The normal [done rule](#when-the-work-is-done) holds: the reviewer turn reviewed exactly C1, and the subtask completed after it. The tick republishes C1 as the release does: with the reviewer's newest text, or as a push only when a group with its pull request has none.
+
+Any other P named a check that was not the done check, with or without a person's text. The round runs on that check's subtask as it is, and the tick pushes C1 with `--check` only. When that subtask is completed, the round does not reopen it: it stops and asks. The round adds no table and no column. Each step is keyed `merge-round:<group>:<P>:<step>`, with the steps `sync`, `turn`, `check`, `review` and `publish`, so a repeat tick starts nothing twice.
 
 The round stops, and the tick requests assistance on the group once, when any of these happens:
 
@@ -449,7 +451,7 @@ The round stops, and the tick requests assistance on the group once, when any of
 - Orbit refuses to start a step for any reason but a busy group;
 - a publish of a check that the round made fails with `tasks.publish_conflict` again.
 
-The request is a failure. Its reason names the step, the Operation and the conflicting paths.
+The request is a failure. Its reason names P, the step, the Operation and the conflicting paths. The round asks once for P: Activity keeps the request with its reason. A person who resolves the request without starting an Operation ends the round, and the tick does not ask again for that P.
 
 The round yields to a person. When the group's newest Operation is neither P nor a step of this round, a person or a driver acted, and the round starts nothing more.
 
@@ -1486,7 +1488,7 @@ On a group that has its pull request, the same call publishes the done check aga
 
 When the reviewer thread's newest turn sent its [text](#the-reviewers-pull-request-text) for the done check, the same publish updates the open pull request's title and body with it, with `Closes #<issue>` as on the first publish. Without such text, the publish only pushes, so the open pull request keeps its title and body and shows the new commits. `task:publish <group> --check=<id>` naming the done check publishes the same way. The tick never republishes: it publishes only a group without a pull request.
 
-The admission reads done again inside its transaction, after it locks the group's row. A subtask added or a turn started since the first read refuses with `tasks.not_done`. For the automatic publish it also reads the mode again there: a group or done check outside `pr_when_done` refuses the same way.
+The admission of any publish of the done check, released or named, reads done again inside its transaction, after it locks the group's row. A subtask added or a turn started since the first read refuses with `tasks.not_done`. For the automatic publish it also reads the mode again there: a group or done check outside `pr_when_done` refuses the same way.
 
 ### A refused automatic publish
 

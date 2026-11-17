@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupDone;
 use App\Domain\Tasks\TaskPrMode;
+use App\Domain\Tasks\TaskPublishProjection;
 use App\Domain\Tasks\TaskStatus;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Activity;
@@ -42,14 +43,35 @@ beforeEach(function (): void {
 
 /**
  * A done task copy whose publish of its done check conflicted with main: the release of a `review_before_pr` group, or the automatic
- * publish of a `pr_when_done` group. With `$done` false, its subtask is open and the publish was a push of the named check only.
+ * publish of a `pr_when_done` group. With `$done` false, its subtask is open and a person published the named check, with `$text` as
+ * their own title and body or as a push only.
  *
+ * @param  array{title: string, body: string}|null  $text
  * @return array{TaskCopyDoneFixture, Operation}
  */
-function mergeRoundWorld(TaskPrMode $mode = TaskPrMode::ReviewBeforePr, bool $done = true): array
+function mergeRoundWorld(TaskPrMode $mode = TaskPrMode::ReviewBeforePr, bool $done = true, ?array $text = null): array
 {
     $world = TaskCopyDoneFixture::make($mode);
     $world->group->update(['pr_mode' => $mode]);
+    if (! $done) {
+        $world->subtask->update(['status' => TaskStatus::Running]);
+    }
+
+    return mergeRoundWorldFrom($world, fn (): Operation => match (true) {
+        ! $done => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData($world->check->id, $text), 'person', null),
+        $mode === TaskPrMode::PrWhenDone => Artisan::call('task:pr-when-done') === 0 ? mergeRoundSole($world->group, OperationKinds::TasksPublish) : throw new LogicException('No tick.'),
+        default => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null),
+    });
+}
+
+/**
+ * The copy's T3 runtime and the implementer thread of the world's subtask, then the publish that `$admit` starts, ended as a conflict.
+ *
+ * @param  Closure(): Operation  $admit
+ * @return array{TaskCopyDoneFixture, Operation}
+ */
+function mergeRoundWorldFrom(TaskCopyDoneFixture $world, Closure $admit): array
+{
     // A turn runs through the copy's T3, which a runtime records only as it is made.
     $runtime = InstanceRuntime::query()->where('instance_id', $world->instance->id)->sole();
     $runtime->delete();
@@ -57,14 +79,9 @@ function mergeRoundWorld(TaskPrMode $mode = TaskPrMode::ReviewBeforePr, bool $do
         't3_port' => 3800, 'container_server' => 't3']);
     $implementer = AgentThread::query()->create(['task_group_id' => $world->group->id, 'task_id' => $world->subtask->id, 'node_id' => $world->instance->node_id, 'driver' => 't3',
         'runtime_key' => 'instance:'.$world->instance->id, 'external_id' => 'implementer-thread', 'role' => 'implementer', 'model' => 'claude', 'effort' => 'high']);
-    $world->subtask->update(['implementer_agent_thread_id' => $implementer->id, ...($done ? [] : ['status' => TaskStatus::Running])]);
-    $publish = match (true) {
-        ! $done => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData($world->check->id), 'person', null),
-        $mode === TaskPrMode::PrWhenDone => Artisan::call('task:pr-when-done') === 0 ? mergeRoundSole($world->group, OperationKinds::TasksPublish) : throw new LogicException('No tick.'),
-        default => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null),
-    };
+    $world->subtask->update(['implementer_agent_thread_id' => $implementer->id]);
 
-    return [$world, mergeRoundConflict($publish)];
+    return [$world, mergeRoundConflict($admit())];
 }
 
 /** @return list<array<string, mixed>> */
@@ -327,6 +344,64 @@ it('f. stops and asks, without a reopen, when the subtask of a push-only publish
         ->and(mergeRoundOperations($group))->toBe($count)
         ->and(mergeRoundTick())->toBe([]);
 })->with(['before the sync' => [false], 'after the sync' => [true]]);
+
+it('f. treats a person\'s publish of an open subtask\'s check with their own text as no done-check publish', function (): void {
+    [$world, $publish] = mergeRoundWorld(done: false, text: ['title' => 'My title', 'body' => 'My body.']);
+    expect(data_get($publish->input, 'pull_request.title'))->toBe('My title');
+    [, $c1] = mergeRoundDrive($world->group, $publish, 'review');
+    mergeRoundReviewed($world->group, $publish, $c1 ?? throw new LogicException('No C1.'));
+
+    mergeRoundTick();
+
+    $push = mergeRoundStep($world->group, $publish, 'publish');
+    expect($world->subtask->refresh()->status)->toBe(TaskStatus::Running)
+        ->and($push->input['check'])->toBe($c1->id)
+        ->and($push->input['pull_request'] ?? null)->toBeNull()
+        ->and($publish->input)->not->toHaveKey(TaskPublishProjection::DoneCheck)
+        ->and($push->input)->not->toHaveKey(TaskPublishProjection::DoneCheck);
+});
+
+it('d. runs a done-check republish without the reviewer\'s text on a group with its pull request as a done-check round', function (): void {
+    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world->check->update(['pr_title' => null, 'pr_body' => null, 'pr_text_operation_id' => null]);
+    $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7']);
+    [, $publish] = mergeRoundWorldFrom($world, fn (): Operation => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null));
+    expect($publish->input['pull_request'] ?? null)->toBeNull()
+        ->and(mergeRoundTick()[0])->toMatchArray(['step' => 'sync', 'result' => 'admitted'])
+        ->and($publish->input[TaskPublishProjection::DoneCheck])->toBe($world->check->id)
+        ->and(app(TaskPublishProjection::class)->input($publish)['intent'])->not->toHaveKey(TaskPublishProjection::DoneCheck);
+    mergeRoundSynced($world->group, $publish);
+    mergeRoundTick();
+    expect($world->subtask->refresh()->status)->toBe(TaskStatus::Running);
+    mergeRoundTurnEnded(mergeRoundStep($world->group, $publish, 'turn'));
+    mergeRoundTick();
+    $c1 = mergeRoundChecked($world->group, $publish);
+    mergeRoundTick();
+    mergeRoundReviewed($world->group, $publish, $c1);
+    mergeRoundTick();
+
+    $republish = mergeRoundStep($world->group, $publish, 'publish');
+    expect($world->subtask->refresh()->status)->toBe(TaskStatus::Completed)
+        ->and($republish->input[TaskPublishProjection::DoneCheck])->toBe($c1->id)
+        ->and(data_get($republish->input, 'pull_request.title'))->toBe('Export the board as CSV, merged with main');
+});
+
+it('g. asks once for P: a person who resolves the request without acting ends the round', function (): void {
+    [$world, $publish] = mergeRoundWorld();
+    [$sync] = mergeRoundDrive($world->group, $publish, 'sync');
+    mergeRoundEnd($sync, OperationStatus::Failed, ['error_code' => 'tasks.sync_failed']);
+    expect(mergeRoundTick()[0]['result'])->toBe('stopped');
+    TaskAssistance::apply($world->group->refresh());
+    $count = mergeRoundOperations($world->group);
+
+    $results = mergeRoundTick();
+
+    $group = $world->group->refresh();
+    expect($results)->toBe([['group' => $group->id, 'publish' => $publish->id, 'step' => null, 'result' => 'stopped', 'code' => null, 'operation' => null]])
+        ->and($group->assistance_requested)->toBeFalse()
+        ->and(Activity::query()->where('description', 'assistance requested')->where('subject_id', $group->id)->count())->toBe(1)
+        ->and(mergeRoundOperations($group))->toBe($count);
+});
 
 describe('g. a stop', function (): void {
     it('asks a person once, with the step, the Operation and the paths, and starts no next step', function (string $at, Closure $break, string $what): void {

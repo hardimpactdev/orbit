@@ -93,6 +93,7 @@ final readonly class TaskPublishIntent
                 'pull_head' => $repository->owner.':'.$branch, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
                 'execution_secrets' => ['github_token' => $token, 'git_authorization' => $authorization],
                 'workspace' => $workspace, ...($withheld === null ? [] : [TaskPublishProjection::Withheld => $withheld]),
+                ...($doneCheck === null ? [] : [TaskPublishProjection::DoneCheck => $doneCheck]),
             ], $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
             // A publish that is admitted ends a refused automatic publish (docs/reference/tasks.md#a-refused-automatic-publish).
             Task::topLevel()->whereKey($group->id)->whereNotNull('publish_refusal')->update(['publish_refusal' => null]);
