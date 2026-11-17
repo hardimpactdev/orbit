@@ -366,13 +366,14 @@ it('renders a running container site as before plus only the asleep check and th
         ->and($after)->toContain('log_skip @orbit_probe')->and($after)->toContain('log_skip @orbit_asleep')
         ->and($before)->not->toContain('log {');
 
-    // Removing the one inserted block gives back the site as it was rendered before: the proxy, its order and its options stay.
-    $start = strpos($after, '@orbit_probe header');
-    $end = strpos($after, 'reverse_proxy', $start);
-    expect($start)->not->toBeFalse()->and($end)->not->toBeFalse();
-    $lineStart = strrpos(substr($after, 0, $start), PHP_EOL) + 1;
-    $lineEnd = strrpos(substr($after, 0, $end), PHP_EOL) + 1;
-    expect(substr($after, 0, $lineStart).substr($after, $lineEnd))->toBe($before);
+    // The original proxy and its options stay inside the ordered route, after forward_auth.
+    $proxy = substr($before, strpos($before, 'reverse_proxy'));
+    $proxy = substr($proxy, 0, strrpos($proxy, '}'));
+    expect($after)->toContain(trim($proxy))
+        ->toContain('forward_auth @orbit_asleep https://gateway.orbit')
+        ->toContain('route {');
+    expect(strpos($after, 'forward_auth'))->toBeLessThan(strpos($after, 'reverse_proxy'));
+
 });
 
 it('gives a production or checkout site no asleep check', function (): void {

@@ -11,6 +11,7 @@ use App\Domain\WebSocket\WebSocketCredentials;
 use App\Models\Operation;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Testing\Fakes\EventFake;
 
 beforeEach(function (): void {
     Event::fake([ExecutorOrderBroadcast::class]);
@@ -53,3 +54,42 @@ it('publishes nothing for an Operation without a node_id or for the order of ano
     'no node_id' => [null, '42'],
     'another Operation' => [7, '43'],
 ]);
+
+it('caps Pusher and Guzzle by the request budget and restores later broadcast limits', function (): void {
+    $this->mock(WebSocketCredentialManager::class)->shouldReceive('current')->andReturn(new WebSocketCredentials('test-app', 'test-key', 'test-secret'));
+    $original = config('broadcasting.connections.reverb.options.timeout');
+    $fake = new class(app('events'), [ExecutorOrderBroadcast::class]) extends EventFake
+    {
+        /** @var list<float> */
+        public array $limits = [];
+
+        public function dispatch($event, $payload = [], $halt = false)
+        {
+            if ($event instanceof ExecutorOrderBroadcast) {
+                $this->limits = [config('broadcasting.connections.reverb.options.timeout'),
+                    config('broadcasting.connections.reverb.client_options.timeout'),
+                    config('broadcasting.connections.reverb.client_options.connect_timeout')];
+            }
+
+            return parent::dispatch($event, $payload, $halt);
+        }
+    };
+    Event::swap($fake);
+
+    app(ExecutorOrderPublisher::class)->publish($this->operation, $this->order, 0.2);
+
+    expect($fake->limits)->toHaveCount(3);
+    foreach ($fake->limits as $limit) {
+        expect($limit)->toBeGreaterThan(0)->toBeLessThanOrEqual(0.2);
+    }
+    expect(config('broadcasting.connections.reverb.options.timeout'))->toBe($original);
+    Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, 1);
+});
+
+it('sends nothing once the publish budget has ended', function (): void {
+    $this->mock(WebSocketCredentialManager::class)->shouldReceive('current')->andReturn(new WebSocketCredentials('test-app', 'test-key', 'test-secret'));
+
+    expect(fn () => app(ExecutorOrderPublisher::class)->publish($this->operation, $this->order, 0))->toThrow(RuntimeException::class, 'The executor publish budget ended.');
+
+    Event::assertNotDispatched(ExecutorOrderBroadcast::class);
+});

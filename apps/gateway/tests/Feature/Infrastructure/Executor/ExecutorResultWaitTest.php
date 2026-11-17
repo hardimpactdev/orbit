@@ -149,6 +149,26 @@ it('notes the accepted line, prefers a waiting result, and times out at its boun
         ->and($queue->lists[ExecutorResults::acceptedKey(5)])->toHaveCount(1);
 });
 
+it('treats a successful reply released after the bound as a timeout', function (): void {
+    $queue = new class implements ExecutorResultQueue
+    {
+        public float $now = 1000.0;
+
+        public function push(string $key, string $line, int $expirySeconds): void {}
+
+        public function pop(array $keys, float $timeoutSeconds): ?array
+        {
+            $this->now += $timeoutSeconds + 0.075;
+
+            return [$keys[0], '{"status":"done"}'];
+        }
+    };
+
+    $result = executorFakeWait($queue)->wait(5, 0.5);
+
+    expect($result->status)->toBe(ExecutorWaitStatus::Timeout)->and($result->line)->toBeNull()->and($result->elapsedMs)->toBe(575.0);
+});
+
 describe('against a real valkey-server', function (): void {
     beforeEach(function (): void {
         if (! isset($GLOBALS['executorValkeyPort'])) {

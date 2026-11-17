@@ -27,7 +27,8 @@ final readonly class ExecutorResultWait
     public function wait(int $operation, ?float $boundSeconds = null): ExecutorWaitResult
     {
         $started = ($this->clock)();
-        $deadline = $started + ($boundSeconds ?? self::boundSeconds());
+        $boundSeconds ??= self::boundSeconds();
+        $deadline = $started + $boundSeconds;
         $resultKey = ExecutorResults::resultKey($operation);
         $acceptedKey = ExecutorResults::acceptedKey($operation);
         $acceptedMs = null;
@@ -66,6 +67,11 @@ final readonly class ExecutorResultWait
             }
 
             $elapsedMs = $this->elapsedMs($started);
+
+            // A server tick may release BLPOP after its timeout. A late reply cannot authorize the original request.
+            if ($elapsedMs > $boundSeconds * 1000) {
+                return new ExecutorWaitResult(ExecutorWaitStatus::Timeout, $acceptedMs, $elapsedMs);
+            }
 
             // A result means the order was accepted, even when its `accepted` line is still queued behind it.
             /** @var array<string, mixed> $line */

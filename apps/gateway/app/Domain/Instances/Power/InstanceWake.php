@@ -78,6 +78,13 @@ final readonly class InstanceWake extends InstancePower
      */
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
+        if (ExecutorWake::enabled()) {
+            $operation = parent::start($instance, $caller, $requestId);
+            app(ExecutorWake::class)->request($operation);
+
+            return $operation->refresh();
+        }
+
         return $this->resume($this->begin($instance, $caller, $requestId));
     }
 
@@ -172,6 +179,10 @@ final readonly class InstanceWake extends InstancePower
      */
     protected function admit(Instance $instance, InstanceRuntime $runtime, array $input, ?string $caller, ?string $requestId): Operation
     {
+        if (ExecutorWake::enabled()) {
+            return app(ExecutorWake::class)->admit($instance, $input, $caller, $requestId);
+        }
+
         if (! app(ContainerResume::class)->applies($instance, $runtime, $input)) {
             return parent::admit($instance, $runtime, $input, $caller, $requestId);
         }
@@ -273,12 +284,11 @@ final readonly class InstanceWake extends InstancePower
     }
 
     /**
-     * The answer of the runtime activation endpoint for a container Instance behind its asleep marker: null while a wake is open
-     * or was started now, so the visitor gets the waiting page at once, else the message of the failed wake that the failure page
-     * shows until a retry. The visitor never waits for the wake: the Node's resume of a wake admitted now runs after the
-     * response, and the page's poll gets the app once the marker is gone. A visit that joins an open wake does not wait either.
+     * The runtime activation endpoint: true permits the original request after an in-bound executor wake, null shows the progress
+     * page, and a string shows the failed wake until a retry. With the executor setting off, a new Node resume runs after the response.
+     * An enabled executor wake never defers work to the request worker after the response.
      */
-    public function activate(Instance $instance, bool $retry, string $caller): ?string
+    public function activate(Instance $instance, bool $retry, string $caller): string|true|null
     {
         if (! $retry) {
             $last = Operation::query()->whereIn('kind', [self::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
@@ -288,6 +298,12 @@ final readonly class InstanceWake extends InstancePower
             }
         }
         try {
+            if (ExecutorWake::enabled()) {
+                $operation = parent::start($instance, $caller, null);
+
+                return app(ExecutorWake::class)->request($operation) ? true : null;
+            }
+
             // A Route visit takes the same admission as the command: a nested-fleet clone that no sleep froze takes its start.
             $operation = $this->begin($instance, $caller, null);
             if ($operation->wasRecentlyCreated && self::awaitsNode($operation)) {
