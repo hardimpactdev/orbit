@@ -116,9 +116,10 @@ final readonly class TaskCopyTurn
                 'role' => $role->value, 'model' => $agent['model'], 'effort' => $agent['effort'], 'provider_instance' => $provider,
             ]);
         }
-        // A turn starts the subtask: `todo` moves to `running` under the group's lock. Only the caller completes it (docs/reference/tasks.md#subtask-status-in-a-task-copy).
+        // A turn starts the subtask: `todo` moves to `running` under the group's lock, and its first turn stamps its start, which its
+        // duration counts from (docs/reference/tasks.md#metrics). Only the caller completes it (docs/reference/tasks.md#subtask-status-in-a-task-copy).
         if ($task->status === TaskStatus::Todo) {
-            $task->update(['status' => TaskStatus::Running]);
+            $task->update(['status' => TaskStatus::Running, 'started_at' => $task->started_at ?? now()]);
         }
         ($role === TaskThreadRole::Implementer ? $task : $group)->update([$role->value.'_agent_thread_id' => $thread->id]);
         app(TaskBroadcasts::class)->threadChanged($thread->id);

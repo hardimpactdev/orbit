@@ -1708,14 +1708,20 @@ describe('a turn of a group that owns a copy', function (): void {
         $subtask = $group->tasks()->firstOrFail();
         expect($subtask->status)->toBe(TaskStatus::Todo);
 
+        expect($subtask->started_at)->toBeNull();
+
         $implementer = copyTurn($group);
-        expect($subtask->refresh()->status)->toBe(TaskStatus::Running);
+        // The first turn stamps the subtask's start, which its duration counts from (docs/reference/tasks.md#metrics).
+        $started = $subtask->refresh()->started_at?->toIso8601String();
+        expect($subtask->status)->toBe(TaskStatus::Running)->and($started)->not->toBeNull();
         copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));
+        $this->travel(5)->minutes();
         $review = copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]);
         copyTurnEnded($review, 'succeeded', copyTurnDone('mcp:2'));
 
         // A done reviewer turn leaves the subtask running: only the caller completes it (docs/reference/tasks.md#subtask-status-in-a-task-copy).
         expect($subtask->refresh()->status)->toBe(TaskStatus::Running)
+            ->and($subtask->started_at?->toIso8601String())->toBe($started)
             ->and(app(TaskGroupDone::class)->check($group->refresh()))->toBeNull();
     });
 

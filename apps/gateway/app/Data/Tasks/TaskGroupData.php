@@ -34,7 +34,7 @@ final class TaskGroupData extends Data
         'merge_reason', 'merged_sha', 'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'capacity_wait_reason',
         'implementer_agent_provider', 'implementer_agent_model', 'implementer_agent_effort', 'reviewer_agent_provider', 'reviewer_agent_model',
         'reviewer_agent_effort', 'pr_mode', 'issue_number', 'tokens', 'line_diff', 'lines_added', 'lines_deleted', 'duration_ms', 'questions', 'escalations',
-        'started_at', 'settled_at', 'ended_at',
+        'started_at', 'settled_at', 'ended_at', 'created_at', 'updated_at',
     ];
 
     /**
