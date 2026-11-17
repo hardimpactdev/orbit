@@ -1,0 +1,167 @@
+---
+# Invoked only after bin/gateway-container-prepare checks the operator's explicit storage and network selections.
+- name: Prepare the Gateway release host
+  hosts: localhost
+  gather_facts: false
+  vars:
+    container_host: { incus: "{{ release_host.incus }}" }
+    cache: /var/cache/orbit/gateway-runtime
+  tasks:
+    - name: Install the pinned Incus packages
+      ansible.builtin.include_tasks: tasks/incus-install.yml
+
+    - name: Check the installed Incus package versions
+      ansible.builtin.command:
+        argv: [dpkg-query, -W, "-f=${Version}", "{{ item.name }}"]
+      register: installed_incus
+      changed_when: false
+      failed_when: installed_incus.stdout != item.version
+      loop: "{{ release_host.incus.packages }}"
+      loop_control: { label: "{{ item.name }}" }
+
+    - name: Install the release container power helper
+      ansible.builtin.include_tasks: tasks/instance-power-helper.yml
+
+    - name: Create the host directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+        owner: root
+        group: root
+      loop:
+        - "{{ cache }}"
+        - /opt/orbit-gateway-runtime
+        - /etc/caddy/orbit-gateway-modes
+        - /etc/orbit
+
+    - name: Fetch the pinned PHP build and Composer
+      ansible.builtin.include_tasks: tasks/artifact-fetch.yml
+      vars:
+        artifact:
+          urls: ["{{ item.url }}"]
+          path: "{{ cache }}/{{ item.sha256 }}"
+          sha256: "{{ item.sha256 }}"
+      loop: "{{ [release_host.php, release_host.composer] }}"
+      loop_control: { label: "{{ item.sha256 }}" }
+
+    - name: Publish an immutable runtime directory
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          temp=$(mktemp -d /opt/orbit-gateway-runtime/.build.XXXXXXXX)
+          trap 'rm -rf -- "$temp"' EXIT
+          mkdir -p "$temp/php/8.5" "$temp/bin"
+          tar -xzf "{{ cache }}/{{ release_host.php.sha256 }}" --no-same-owner -C "$temp/php/8.5"
+          test -x "$temp/php/8.5/bin/php" && test -x "$temp/php/8.5/bin/frankenphp"
+          install -m 0755 "{{ cache }}/{{ release_host.composer.sha256 }}" "$temp/bin/composer"
+          chmod 0755 "$temp"
+          mv -T "$temp" "{{ release_host.runtime_dir }}"
+        creates: "{{ release_host.runtime_dir }}"
+
+    - name: Install the host release entry points
+      ansible.builtin.copy:
+        src: "{{ release_host.source }}/{{ item.src }}"
+        dest: "/usr/local/libexec/{{ item.dest }}"
+        mode: "0755"
+        owner: root
+        group: root
+      loop:
+        - { src: bin/gateway-container-site, dest: orbit-gateway-site }
+        - { src: bin/gateway-release-phase, dest: orbit-gateway-release-phase }
+        - { src: bin/gateway-container-environment, dest: orbit-gateway-environment }
+        - { src: swamp/ansible/files/gateway-web/orbit-gateway-unit, dest: orbit-gateway-unit }
+
+    - name: Install the container mode site
+      ansible.builtin.copy:
+        src: files/gateway-container-handlers.caddy
+        dest: /etc/caddy/orbit-gateway-modes/container.caddy
+        mode: "0644"
+        owner: root
+        group: root
+
+    - name: Prepare the release project, pool, bridge and stock container
+      ansible.builtin.script:
+        cmd: "files/gateway-release-infrastructure.py {{ release_host | to_json | quote }}"
+        executable: /usr/bin/python3
+
+    - name: Install private WireGuard source NAT and local service hairpin
+      ansible.builtin.copy:
+        dest: /etc/orbit/gateway-release.nft
+        mode: "0644"
+        owner: root
+        group: root
+        content: |
+          destroy table ip orbit_gateway_release
+          table ip orbit_gateway_release {
+            chain wireguard {
+              type nat hook postrouting priority srcnat - 5; policy accept;
+              iifname "orbitgw0" oifname "{{ release_host.wireguard }}" ip saddr {{ release_host.subnet }} snat to {{ release_host.wg_address }}
+            }
+            chain local {
+              type nat hook input priority srcnat; policy accept;
+              iifname "orbitgw0" ip saddr {{ release_host.subnet }} ip daddr {{ release_host.wg_address }} snat to {{ release_host.wg_address }}
+            }
+            chain protect {
+              type filter hook forward priority filter - 10; policy accept;
+              oifname "orbitgw0" ct state new drop
+            }
+          }
+        validate: /usr/sbin/nft -c -f %s
+
+    - name: Install persistent release bridge rules
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/orbit-gateway-release-network.service
+        mode: "0644"
+        owner: root
+        group: root
+        content: |
+          [Unit]
+          Description=Orbit Gateway release network
+          After=nftables.service ufw.service
+          Before=incus.service
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/usr/sbin/nft -f /etc/orbit/gateway-release.nft
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Apply release bridge rules
+      ansible.builtin.systemd_service:
+        name: orbit-gateway-release-network
+        daemon_reload: true
+        enabled: true
+        state: restarted
+
+    - name: Allow DHCP and DNS on the private bridge
+      ansible.builtin.command:
+        argv: [ufw, allow, in, "on", orbitgw0, to, any, port, "{{ item.port }}", proto, "{{ item.proto }}"]
+      loop:
+        - { port: '67', proto: udp }
+        - { port: '53', proto: udp }
+        - { port: '53', proto: tcp }
+      register: release_ufw
+      changed_when: "'Skipping' not in release_ufw.stdout"
+
+    - name: Allow the selected egress paths
+      ansible.builtin.command:
+        argv: [ufw, route, allow, in, "on", orbitgw0, out, "on", "{{ item }}", from, "{{ release_host.subnet }}"]
+      loop: "{{ [release_host.uplink, release_host.wireguard] }}"
+      register: release_forward
+      changed_when: "'Skipping' not in release_forward.stdout"
+
+    - name: Allow private traffic addressed to this Gateway's WireGuard address
+      ansible.builtin.command:
+        argv: [ufw, allow, in, "on", orbitgw0, from, "{{ release_host.subnet }}", to, "{{ release_host.wg_address }}"]
+      register: release_local
+      changed_when: "'Skipping' not in release_local.stdout"
+
+    - name: Provision the unprivileged preparer and its private mounts
+      ansible.builtin.script:
+        cmd: "files/gateway-release-guest.py {{ release_host | to_json | quote }}"
+        executable: /usr/bin/python3
+
+    - name: Stage the current Caddy site as the host recovery target
+      ansible.builtin.command: { argv: [/usr/local/libexec/orbit-gateway-site, prepare] }
+      changed_when: true

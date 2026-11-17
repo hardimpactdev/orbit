@@ -1,0 +1,59 @@
+#!/usr/bin/python3
+"""Publish the current Gateway env inode to the private, read-only guest mount."""
+import json
+import os
+import pwd
+import re
+import secrets
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+SHARED = Path("/home/orbit/shared")
+PROJECTION = SHARED / ".gateway-release-environment"
+INVENTORY = Path("/home/orbit/.orbit/gateway-containers.json")
+INCUS = ["incus", "--force-local", "--project", "orbit-releases"]
+
+
+def publish(directory=PROJECTION, source=SHARED / "gateway.env"):
+    directory.mkdir(mode=0o700, exist_ok=True)
+    folder = directory.lstat()
+    if not stat.S_ISDIR(folder.st_mode) or folder.st_uid != os.geteuid() or folder.st_mode & 0o077:
+        raise ValueError("unexpected Gateway environment projection ownership or permissions")
+    name = directory / (".refresh-" + secrets.token_hex(12))
+    try:
+        os.link(source, name, follow_symlinks=False)
+        info = name.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+            raise ValueError("Gateway environment must be a private file owned by orbit")
+        os.replace(name, directory / "gateway.env")
+    finally:
+        name.unlink(missing_ok=True)
+
+
+def main(action):
+    if action == "publish" and os.geteuid() == pwd.getpwnam("orbit").pw_uid:
+        publish()
+        return
+    if action not in {"refresh", "configure"} or os.geteuid():
+        raise ValueError("usage: sudo orbit-gateway-environment refresh|configure")
+    subprocess.run(["runuser", "-u", "orbit", "--", os.path.realpath(__file__), "publish"], check=True)
+    if action == "configure":
+        sha = json.loads(INVENTORY.read_text())["live"]
+        if not re.fullmatch("[0-9a-f]{40}", sha):
+            raise ValueError("invalid live Gateway release")
+        machine = "gateway-" + sha[:12]
+        for key, expected in {"target": "gateway", "commit": sha}.items():
+            value = subprocess.check_output([*INCUS, "config", "get", machine, "user.orbit.release." + key], text=True)
+            if value.strip() != expected:
+                raise ValueError("live release identity changed")
+        os.execvp("incus", [*INCUS, "exec", machine, "--", "runuser", "-u", "orbit", "--",
+                            "/usr/bin/php8.5", "/home/orbit/orbit/apps/gateway/artisan", "gateway:release:configure"])
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv[1] if len(sys.argv) == 2 else "")
+    except (OSError, KeyError, ValueError, subprocess.CalledProcessError) as error:
+        sys.exit(str(error))

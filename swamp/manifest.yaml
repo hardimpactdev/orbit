@@ -55,6 +55,8 @@ additionalFiles:
   - ansible/tasks/fleet-reboot-rerun.yml
   - ansible/files/fleet-reboot-planned.sh
   - ansible/files/instance-container-wake.sh
+  - ansible/files/gateway-release-guest.py
+  - ansible/files/gateway-release-infrastructure.py
   - ansible/files/instance-container-power.py
   - ansible/files/instance-browser-trust.sh
   - ansible/files/fleet-reboot-ci-drain.sh
@@ -142,6 +144,7 @@ additionalFiles:
   - ansible/tasks/instance-create-setup-step.yml
   - ansible/operation-node-add.yml
   - ansible/gateway-bootstrap.yml
+  - ansible/gateway-container-prepare.yml
   - ansible/tasks/role-prerequisites.yml
   - ansible/tasks/apt-proxy.yml
   - ansible/tasks/gateway-swamp.yml
