@@ -20,6 +20,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\LanAddress;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Models\Node;
@@ -134,7 +135,7 @@ final readonly class NodeFirewallRuleCatalog
                 new UfwRuleShape('orbit-ci-runners', 'allow', 'fwd', 'any', 'any', 'any', 'any', 'orbitci0', null, null),
                 ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbitci0', 'comment', 'orbit-ci-runners'],
             )],
-            RoleName::Vpn => $this->vpnLanSsh($node),
+            RoleName::Vpn => [...$this->vpnLanSsh($node), $this->vpnPeerForwarding()],
             RoleName::Router => $this->routerLanIngress($node),
             RoleName::Ingress => $this->ingressPublicHttp($node),
             RoleName::AppDev => [],
@@ -309,6 +310,22 @@ final readonly class NodeFirewallRuleCatalog
             new UfwRuleShape('orbit:vpn-lan-ssh', 'allow', 'in', $network, $address, '22', 'tcp', null, null, 'v4'),
             ['sudo', 'ufw', 'allow', 'in', 'proto', 'tcp', 'from', $network, 'to', $address, 'port', '22', 'comment', 'orbit:vpn-lan-ssh'],
         )];
+    }
+
+    /**
+     * Routed traffic from one WireGuard member to another through the hub, in and out on `orbit`, within the VPN subnet. UFW's routed
+     * policy denies it otherwise. The arguments are those of the rule an operator added by hand on the production hub, so the converge
+     * finds it in place (docs/cli/firewall/index.mdx#vpn-peer-forwarding).
+     */
+    public function vpnPeerForwarding(): UfwManagedRule
+    {
+        $subnet = Ipv4Subnet::from(app(VpnSettings::class)->subnet())->value();
+        $comment = 'orbit:vpn-peer-forwarding';
+
+        return new UfwManagedRule(
+            new UfwRuleShape($comment, 'allow', 'fwd', $subnet, $subnet, 'any', 'any', 'orbit', 'orbit', 'v4'),
+            ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'from', $subnet, 'to', $subnet, 'comment', $comment],
+        );
     }
 
     public function routerLanIngressRule(
