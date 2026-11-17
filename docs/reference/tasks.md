@@ -1521,7 +1521,7 @@ The board retains recorded lifecycle times, PR identity, token usage and line ch
 
 ### Lifecycle times
 
-`started_at`, `settled_at`, `completed_at` and `merged_at` describe recorded task history. Swamp records lifecycle transitions through the existing APIs. Task insights read those records. A subtask's `started_at` is set when its first turn in a task copy moves it from `todo` to `running`, and a later turn keeps it; its duration counts from then. Conn reads these metrics in its [Tasks panel](/reference/conn#tasks-panel).
+`started_at`, `settled_at`, `completed_at` and `merged_at` describe recorded task history. Swamp records lifecycle transitions through the existing APIs. Task insights read those records. A subtask's `started_at` is set when its first turn in a task copy moves it from `todo` to `running`, and a later turn keeps it; its duration counts from then. Its `settled_at` is set when it first becomes `completed`, `failed` or `cancelled`, by any path, and its duration ends there. A reopen to `running` clears `settled_at`, so its duration runs again until it ends again. Conn reads these metrics in its [Tasks panel](/reference/conn#tasks-panel).
 
 ### Tokens and line diff
 

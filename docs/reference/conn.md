@@ -493,7 +493,7 @@ A null metric is unknown, never zero.
 | `tokens` | For the task: every started thread counted once, reviewers and earlier attempts included. For a subtask: the usage its turns added. Null while unreported. |
 | `lines_added`, `lines_deleted` | For the task: one snapshot of the whole task branch against its base, not a sum. For a subtask: always null. |
 
-A subtask starts at its first turn in the task copy. Orbit records no line change per subtask, so Conn must not derive one from the task's lines.
+A subtask starts at its first turn in the task copy and ends when it is completed, failed or cancelled; a reopen runs its clock again. Orbit records no line change per subtask, so Conn must not derive one from the task's lines.
 
 [Settle metrics](/reference/tasks#settle-metrics) owns how Orbit records them.
 

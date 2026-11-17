@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\UpdateTaskAction;
+use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
@@ -156,12 +158,15 @@ describe('conn:task:list', function (): void {
 describe('conn:task:show', function (): void {
     it('reads a task with its subtasks in order, metrics, and every started thread with its Conn thread', function (): void {
         $group = panelTask('Detail', 'detail', ['tokens' => 0, 'lines_added' => 40, 'lines_deleted' => 7, 'started_at' => now()->subMinutes(10)]);
-        $first = $group->tasks()->create(['title' => 'First', 'brief' => 'First brief', 'deliverables' => [
+        $first = $group->tasks()->create(['position' => 1, 'title' => 'First', 'brief' => 'First brief', 'deliverables' => [
             ['id' => 'tests', 'type' => 'file', 'description' => 'The tests', 'path' => 'tests/A.php', 'change' => 'created'],
         ]]);
-        $second = $group->tasks()->create(['title' => 'Second', 'brief' => 'Second brief']);
-        $first->update(['status' => TaskStatus::Completed]);
-        $first->update(['started_at' => now()->subMinutes(9), 'settled_at' => now()->subMinutes(4), 'tokens' => 300]);
+        $second = $group->tasks()->create(['position' => 2, 'title' => 'Second', 'brief' => 'Second brief']);
+        $first->update(['status' => TaskStatus::Running, 'started_at' => now()->subMinutes(9), 'tokens' => 300]);
+        // The subtask completes the normal way, five minutes after its start: its duration ends there.
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-11-17 11:56:00'));
+        app(UpdateTaskAction::class)->execute($group->refresh(), $first->refresh(), new UpdateTaskData(null, null, null, status: TaskStatus::Completed));
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-11-17 12:00:00'));
         $second->update(['status' => TaskStatus::Running, 'started_at' => now()->subMinutes(3)]);
         panelEnvironment($group, 'env-detail');
         $earlier = panelThread($group, $first, 'implementer', 'orbit:first-1', ['provider_instance' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'effort' => 'medium',

@@ -69,6 +69,7 @@ use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskCopyTurnProjection;
 use App\Domain\Tasks\TaskGroupDone;
+use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
@@ -1723,6 +1724,32 @@ describe('a turn of a group that owns a copy', function (): void {
         expect($subtask->refresh()->status)->toBe(TaskStatus::Running)
             ->and($subtask->started_at?->toIso8601String())->toBe($started)
             ->and(app(TaskGroupDone::class)->check($group->refresh()))->toBeNull();
+    });
+
+    it('keeps a completed subtask\'s duration from its first turn to its completion, and a reopen counts again (docs/reference/tasks.md#lifecycle-times)', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $subtask = $group->tasks()->firstOrFail();
+        copyTurnEnded(copyTurn($group), 'succeeded', copyTurnDone('mcp:1'));
+        copyTurnEnded(copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]), 'succeeded', copyTurnDone('mcp:2'));
+        $move = fn (TaskStatus $to): Task => app(UpdateTaskAction::class)->execute($group->refresh(), $subtask->refresh(), new UpdateTaskData(null, null, null, status: $to));
+        $duration = fn (): ?int => app(TaskGroupMetricsRefresher::class)->refresh(Task::topLevel()->findOrFail($group->id))->tasks->firstOrFail()->duration_ms;
+
+        $this->travel(7)->minutes();
+        $move(TaskStatus::Completed);
+        $settled = $subtask->refresh()->settled_at?->toIso8601String();
+        $done = $duration();
+        $this->travel(30)->minutes();
+
+        expect($settled)->not->toBeNull()
+            ->and($done)->toBeGreaterThanOrEqual(7 * 60 * 1000)
+            ->and($duration())->toBe($done);
+
+        // A reopen clears the settle: the duration runs again until the subtask ends again.
+        $move(TaskStatus::Running);
+        expect($subtask->refresh()->settled_at)->toBeNull()
+            ->and($duration())->toBeGreaterThan($done);
     });
 
     it('admits an implementer turn on the reopened last subtask, which continues its thread (docs/reference/tasks.md#reopen-the-last-subtask)', function (): void {
