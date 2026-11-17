@@ -28,7 +28,7 @@ function routeNode(string $name, string $address): Node
         'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
 }
 
-/** The router on `services` (10.44.0.3), with task VMs in 10.44.0.128/25. */
+/** The router on `services` (10.44.0.3), reached through the Node model forwarder. */
 function routeWorld(): Node
 {
     $services = routeNode('services', '10.44.0.3');
@@ -38,7 +38,7 @@ function routeWorld(): Node
     return $services;
 }
 
-it('gives every task VM the guard origin and the one fixed key, and never the router key or the anchor key', function (): void {
+it('gives the Node model forwarder the guard origin and containers one fixed placeholder key', function (): void {
     routeWorld();
     $route = app(TaskVmModelRoute::class);
     $secrets = app(AiRouterSecrets::class);
@@ -63,11 +63,12 @@ it('refuses the route until a run applied the guard', function (): void {
 it('refuses the route while the ai-router is off', function (): void {
     $route = app(TaskVmModelRoute::class);
 
-    expect(fn () => $route->assertReady())->toThrow(ResourceOperationException::class, 'ai-router')
+    expect(fn () => $route->assertReady())->toThrow(ResourceOperationException::class, 'Set up the ai-router extension with ai-router:setup first. Containers reach models through its guard.')
+        ->and($route->key())->toBe(app(AiRouterSecrets::class)->task())
         ->and(fn () => $route->origin())->toThrow(ResourceOperationException::class);
 });
 
-it('tears the ai-router down: no task holds a per-VM key that only the router could revoke', function (): void {
+it('tears the ai-router down while containers retain their placeholder key', function (): void {
     routeWorld();
 
     $status = app(DisableAiRouterAction::class)->execute();

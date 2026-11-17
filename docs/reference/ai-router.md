@@ -249,6 +249,8 @@ Rotate the task key only on an incident, never on a schedule. Delete the setting
 
 ## Container model forwarder
 
+The model-route guard is required when enabling Tasks, for a Conn device thread's `cloneable` check, and when configuring a forwarder. Core clone create and migration record its readiness in their `model_route` result without refusing an unavailable route. Containers receive the Node bridge forwarder origin and the fixed placeholder key even before ai-router setup; first use creates the key. Their T3 server runs, but model calls need the router and its guard.
+
 A container on an agent Node reaches the router through a forwarder on its Node. The container holds only the task key. [ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder) records the design.
 
 | Piece | Where | Detail |

@@ -65,6 +65,9 @@
                 "to": null
             }
         },
+        "model_route": {
+            "ready": true
+        },
         "direct_provisioning": {
             "instance_id": 2,
             "project_id": 1,
@@ -416,6 +419,9 @@
         "ready": false,
         "failed_step": "clone",
         "error_code": "instance.create_clone_failed",
+        "model_route": {
+            "ready": true
+        },
         "recovery": {
             "state": "retained_for_retry",
             "retry": {
@@ -502,6 +508,9 @@
                 "from": [],
                 "to": null
             }
+        },
+        "model_route": {
+            "ready": true
         },
         "direct_provisioning": {
             "instance_id": 2,

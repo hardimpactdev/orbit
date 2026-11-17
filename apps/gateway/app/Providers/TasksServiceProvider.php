@@ -67,14 +67,14 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         return 'Runs planned work with coding agents and delivers it as a pull request.';
     }
 
-    /** Pi on a task VM reaches models only through the ai-router task VM guard. */
+    /** Agents in task-copy containers reach models through the Node model forwarder and the ai-router guard. */
     #[\Override]
     public function dependencies(): array
     {
         return ['ai-router'];
     }
 
-    /** A task start writes the guard origin and the fixed model key into the VM, so Tasks starts only once the router has its guard. */
+    /** Task-copy containers hold the Node model forwarder origin and a placeholder key, so Tasks enables only with a ready router guard. */
     public function enable(): void
     {
         $this->app->make(TaskVmModelRoute::class)->assertReady();

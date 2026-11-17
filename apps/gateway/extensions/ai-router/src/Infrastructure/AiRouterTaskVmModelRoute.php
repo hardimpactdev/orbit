@@ -11,7 +11,7 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterSecrets;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Domain\AiRouterTaskGuard;
 
-/** The model route of task VMs: the task VM guard of the ai-router extension and its fixed placeholder key. */
+/** The model route of containers: the Node model forwarder reaches the ai-router guard with one fixed placeholder key. */
 final readonly class AiRouterTaskVmModelRoute implements TaskVmModelRoute
 {
     public function __construct(
@@ -30,7 +30,7 @@ final readonly class AiRouterTaskVmModelRoute implements TaskVmModelRoute
         return $this->guard->origin($this->node());
     }
 
-    /** The key needs no ready guard: Pi redaction reads it while VMs that hold it still run, the extension off or not. */
+    /** The key exists before setup: containers keep it while the router is off, and redaction must still recognize it. */
     public function key(): string
     {
         return $this->secrets->task();
@@ -42,11 +42,11 @@ final readonly class AiRouterTaskVmModelRoute implements TaskVmModelRoute
         $node = $this->state->enabled() ? $this->guard->node() : null;
         if ($node === null) {
             throw new ResourceOperationException('ai_router.disabled',
-                'Set up the ai-router extension with ai-router:setup first. Task VMs reach models through its task VM guard.', 409);
+                'Set up the ai-router extension with ai-router:setup first. Containers reach models through its guard.', 409);
         }
         if (! $this->guard->applied($node)) {
             throw new ResourceOperationException('ai_router.guard_missing',
-                'Apply the task VM guard with ai-router:task-guard first. Task VMs reach models only through it.', 409);
+                'Apply the router guard with ai-router:task-guard first. Containers reach models through the Node model forwarder and this guard.', 409);
         }
 
         return $node;

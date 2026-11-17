@@ -194,3 +194,30 @@ it('reports copied untracked files for humans and keeps only the final Operation
         expect($output)->toContain($message)->and(substr_count($output, $message))->toBe(1);
     }
 })->with(['human' => false, 'json' => true])->with(['none' => 0, 'generated files' => 56]);
+
+it('reports an unavailable model route once in human output and preserves its object in JSON', function (string $command, string $request, array $arguments, string $kind, bool $ready): void {
+    $route = $ready ? ['ready' => true] : ['ready' => false, 'error_code' => 'ai_router.disabled', 'message' => 'Set up ai-router first.'];
+    $final = ['id' => 901, 'kind' => $kind, 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'succeeded', 'sequence' => 8, 'result' => ['instance_id' => 501, 'ready' => true, 'model_route' => $route]];
+    MockClient::global([
+        $request => MockResponse::make(['data' => $final], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final]),
+    ]);
+
+    expect(Artisan::call($command, [...$arguments, '--json' => true, '--no-interaction' => true]))->toBe(0);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['result']['model_route'])->toBe($route);
+    expect(Artisan::output())->not->toContain('Model route');
+
+    expect(Artisan::call($command, [...$arguments, '--no-interaction' => true]))->toBe(0);
+    $output = preg_replace('/\s+/', ' ', Artisan::output());
+    expect(substr_count($output, 'Model route'))->toBe($ready ? 0 : 1);
+    if (! $ready) {
+        expect($output)->toContain('unavailable (ai_router.disabled): Set up ai-router first.');
+    }
+})->with([
+    'create' => ['instance:create', CreateInstanceRequest::class, ['project' => 3, 'node' => 4, 'name' => 'feature'], 'instance.create'],
+    'migrate' => ['instance:migrate', MigrateInstanceRequest::class, ['instance' => 501, '--force' => true], 'instance.migrate'],
+    'show create' => ['operation:show', ShowOperationRequest::class, ['operation' => 901], 'instance.create'],
+    'show migrate' => ['operation:show', ShowOperationRequest::class, ['operation' => 901], 'instance.migrate'],
+])->with(['ready' => true, 'unavailable' => false]);

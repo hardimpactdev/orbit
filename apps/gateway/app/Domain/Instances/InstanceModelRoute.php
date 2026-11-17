@@ -13,9 +13,6 @@ final readonly class InstanceModelRoute
     /** @return array{ready: true}|array{ready: false, error_code: string, message: string} */
     public function status(): array
     {
-        if (! app()->bound(TaskVmModelRoute::class)) {
-            return ['ready' => false, 'error_code' => 'operation.kind_unavailable', 'message' => 'The model router is not loaded.'];
-        }
         try {
             app(TaskVmModelRoute::class)->assertReady();
         } catch (ResourceOperationException $error) {
