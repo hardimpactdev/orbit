@@ -6,10 +6,12 @@
 //! keeps its configured number of working threads, up to [`THREAD_CAP`] times that size in all. When its syscall returns, a stalled
 //! worker exits if the pool is at size again, and rejoins otherwise.
 //!
-//! Lock order: the queue, then a job's progress, then the thread counts. Item work runs under none of them.
-use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+//! All accounting lives in one [`State`] under one mutex: the queue, each job's progress, the thread counts and each target's
+//! reader count. Every transition (claiming an item, finishing it, cutting a job at its deadline, marking it stalled with its
+//! workers and their replacements, a stalled worker returning, a spawn failing) is one critical section. Item work and thread
+//! spawns run outside it; a replacement's slot is reserved in `total` before its spawn and given back if the spawn fails.
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 /// Why an item, and so its target's restore, is not complete.
@@ -23,39 +25,14 @@ pub(crate) type Item = Box<dyn Fn(Instant) -> (u64, Option<Shortfall>) + Send + 
 /// stalled: `process_madvise` and `process_vm_readv` cannot be cancelled, and a page fault can wait on a pager or device for good.
 pub(crate) const STALL_GRACE: Duration = Duration::from_millis(250);
 
-/// The restore items of one target that are still running, including stalled ones after their wake went on. A sleep or discard
-/// of the same target waits for them, so no freeze, scan or plan overlaps a stale reader.
-#[derive(Debug, Default)]
-pub(crate) struct Readers {
-    active: Mutex<usize>,
-    idle: Condvar,
-}
-impl Readers {
-    fn enter(&self) {
-        *self.active.lock().expect("restore readers lock poisoned") += 1;
-    }
-    fn leave(&self) {
-        *self.active.lock().expect("restore readers lock poisoned") -= 1;
-        self.idle.notify_all();
-    }
-    /// Wait until no item of this target runs, at most `bound`. False when one still runs then.
-    pub(crate) fn wait_idle(&self, bound: Duration) -> bool {
-        let active = self.active.lock().expect("restore readers lock poisoned");
-        let (active, _) = self
-            .idle
-            .wait_timeout_while(active, bound, |active| *active > 0)
-            .expect("restore readers lock poisoned");
-        *active == 0
-    }
-    #[cfg(test)]
-    pub(crate) fn active(&self) -> usize {
-        *self.active.lock().expect("restore readers lock poisoned")
-    }
-}
-
-/// The pool never holds more than this many times its configured size in threads, stalled ones included. Past it, a new stall
-/// spawns no replacement: other targets get the working threads that remain.
+/// The pool never holds more than this many times its configured size in threads, stalled ones and reserved slots included. Past
+/// it, a new stall spawns no replacement: other targets get the working threads that remain.
 pub(crate) const THREAD_CAP: usize = 2;
+
+/// The least and most threads the role may ask for. Swap-in waits on the device, so the floor is not the CPU count.
+pub const MIN_THREADS: usize = 16;
+/// See [`MIN_THREADS`].
+pub const MAX_THREADS: usize = 256;
 
 #[expect(
     clippy::print_stderr,
@@ -65,117 +42,159 @@ fn log(line: &str) {
     eprintln!("{line}");
 }
 
-/// The least and most threads the role may ask for. Swap-in waits on the device, so the floor is not the CPU count.
-pub const MIN_THREADS: usize = 16;
-/// See [`MIN_THREADS`].
-pub const MAX_THREADS: usize = 256;
-
-#[derive(Default)]
+/// One target's progress, kept in [`State`].
+#[derive(Debug, Default)]
 struct Progress {
-    /// Items claimed by a worker or skipped by the cancel.
+    /// Items claimed by a worker or skipped by the cut.
     next: usize,
     /// Items that ran to their end or were skipped.
     finished: usize,
+    pages: u64,
     shortfall: Option<Shortfall>,
+    /// The deadline passed and the items not started were skipped.
+    cut: bool,
+    /// The restore gave up on the items still running; their workers count as stalled until they return.
+    stalled: bool,
 }
 
+/// What a job's workers need that never changes. Its progress is in [`State`].
 struct Job {
+    id: u64,
+    reader: u64,
+    /// Keeps the target's reader count alive while any item of this job may run.
+    _readers: Arc<Readers>,
     items: Vec<Item>,
-    readers: Arc<Readers>,
     deadline: Instant,
-    pages: AtomicU64,
-    cancelled: AtomicBool,
-    /// Set under the progress lock when the restore gave up on the items still running; their workers are replaced.
-    stalled: AtomicBool,
-    progress: Mutex<Progress>,
-    all: Condvar,
-}
-impl Job {
-    fn done(&self, progress: &Progress) -> bool {
-        progress.finished == self.items.len()
-    }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct Threads {
-    /// Every live worker, stalled ones included.
+/// The pool's whole mutable state.
+#[derive(Default)]
+struct State {
+    queue: VecDeque<Arc<Job>>,
+    jobs: HashMap<u64, Progress>,
+    /// Running items per target, stalled ones included.
+    readers: HashMap<u64, usize>,
+    /// Live workers, stalled ones and slots reserved for a spawn included.
     total: usize,
     /// Workers inside an item of a stalled job.
     stalled: usize,
+    next_id: u64,
+}
+impl State {
+    fn id(&mut self) -> u64 {
+        self.next_id = self
+            .next_id
+            .checked_add(1)
+            .expect("restore ids never run out in u64");
+        self.next_id
+    }
+    fn progress(&mut self, job: u64) -> &mut Progress {
+        self.jobs
+            .get_mut(&job)
+            .expect("a job's progress lives until its restore returned and its last item finished")
+    }
+    fn retire(&mut self, job: u64) {
+        self.queue.retain(|queued| queued.id != job);
+    }
+    /// Reserve replacement slots so the working threads are back at `size`, within the cap. The caller spawns that many.
+    fn reserve(&mut self, size: usize) -> usize {
+        let working = self.working();
+        let room = (size * THREAD_CAP).saturating_sub(self.total);
+        let wanted = size.saturating_sub(working);
+        if wanted > room {
+            log(&format!(
+                "restore pool: {} workers stalled; at its cap of {} threads it serves with {} working",
+                self.stalled,
+                size * THREAD_CAP,
+                working + room
+            ));
+        }
+        let reserved = wanted.min(room);
+        self.total += reserved;
+        reserved
+    }
+    fn working(&self) -> usize {
+        self.total
+            .checked_sub(self.stalled)
+            .expect("stalled workers are always counted in the total")
+    }
 }
 
-#[derive(Default)]
 struct Shared {
-    queue: Mutex<VecDeque<Arc<Job>>>,
+    state: Mutex<State>,
+    /// Workers wait here for an item.
     work: Condvar,
+    /// Restores and reader waits wait here for progress.
+    changed: Condvar,
     /// The configured number of working threads.
     size: usize,
-    threads: Mutex<Threads>,
+    /// Worker threads alive now, to check the accounting against the threads themselves.
+    #[cfg(test)]
+    live: std::sync::atomic::AtomicUsize,
+    /// Runs after a stall's critical section and before its spawns: the point where the reviewed races happened.
+    #[cfg(test)]
+    after_stall: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 impl Shared {
-    /// Start one worker. A failed spawn is logged, and the pool runs with what it has.
-    fn spawn(shared: &Arc<Shared>) {
-        let worker = Arc::clone(shared);
-        shared
-            .threads
-            .lock()
-            .expect("restore threads lock poisoned")
-            .total += 1;
-        if let Err(error) = std::thread::Builder::new()
-            .name("restore".to_owned())
-            .spawn(move || work(&worker))
-        {
-            shared
-                .threads
-                .lock()
-                .expect("restore threads lock poisoned")
-                .total -= 1;
-            log(&format!("restore pool: a worker did not start: {error}"));
-        }
+    fn lock(&self) -> MutexGuard<'_, State> {
+        self.state.lock().expect("restore pool lock poisoned")
     }
 
-    /// `count` workers are now stalled: start replacements until the working threads are back at size, within the cap.
-    fn replace(shared: &Arc<Shared>, count: usize) {
-        let missing = {
-            let mut threads = shared
-                .threads
-                .lock()
-                .expect("restore threads lock poisoned");
-            threads.stalled += count;
-            let working = threads.total - threads.stalled;
-            let room = (shared.size * THREAD_CAP).saturating_sub(threads.total);
-            let wanted = shared.size.saturating_sub(working);
-            if wanted > room {
-                log(&format!(
-                    "restore pool: {} workers stalled; at its cap of {} threads it serves with {} working",
-                    threads.stalled,
-                    shared.size * THREAD_CAP,
-                    working + room
-                ));
+    /// Start `count` workers whose slots are already reserved in `total`. A failed spawn gives its slot back and is logged; the
+    /// pool runs with what it has.
+    fn start(shared: &Arc<Shared>, count: usize) {
+        for _ in 0..count {
+            let worker = Arc::clone(shared);
+            if let Err(error) = std::thread::Builder::new()
+                .name("restore".to_owned())
+                .spawn(move || work(&worker))
+            {
+                let mut state = shared.lock();
+                state.total = state
+                    .total
+                    .checked_sub(1)
+                    .expect("a failed spawn gives back the slot it reserved");
+                drop(state);
+                log(&format!("restore pool: a worker did not start: {error}"));
             }
-            wanted.min(room)
-        };
-        for _ in 0..missing {
-            Self::spawn(shared);
         }
     }
+}
 
-    /// A stalled worker's syscall returned. True when it should exit, because the pool has its working threads without it.
-    fn returned(&self) -> bool {
-        let mut threads = self.threads.lock().expect("restore threads lock poisoned");
-        threads.stalled -= 1;
-        let leave = threads.total - threads.stalled > self.size;
-        if leave {
-            threads.total -= 1;
-        }
-        leave
+/// The restore items of one target that are still running, including stalled ones after their wake went on. A sleep or discard
+/// of the same target waits for them, so no freeze, scan or plan overlaps a stale reader. The count lives in the pool's state.
+pub(crate) struct Readers {
+    id: u64,
+    shared: Arc<Shared>,
+}
+impl std::fmt::Debug for Readers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Readers")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
     }
-
-    /// Take a finished job off the queue and wake everyone waiting on it or on the next job.
-    fn retire(&self, queue: &mut VecDeque<Arc<Job>>, job: &Arc<Job>) {
-        queue.retain(|queued| !Arc::ptr_eq(queued, job));
-        self.work.notify_all();
-        job.all.notify_all();
+}
+impl Readers {
+    /// Wait until no item of this target runs, at most `bound`. False when one still runs then.
+    pub(crate) fn wait_idle(&self, bound: Duration) -> bool {
+        let state = self.shared.lock();
+        let (state, _) = self
+            .shared
+            .changed
+            .wait_timeout_while(state, bound, |state| {
+                state.readers.get(&self.id).is_some_and(|n| *n > 0)
+            })
+            .expect("restore pool lock poisoned");
+        !state.readers.get(&self.id).is_some_and(|n| *n > 0)
+    }
+    #[cfg(test)]
+    pub(crate) fn active(&self) -> usize {
+        self.shared
+            .lock()
+            .readers
+            .get(&self.id)
+            .copied()
+            .unwrap_or(0)
     }
 }
 
@@ -183,12 +202,11 @@ impl Shared {
 #[derive(Clone)]
 pub(crate) struct Pool {
     shared: Arc<Shared>,
-    threads: usize,
 }
 impl std::fmt::Debug for Pool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Pool")
-            .field("threads", &self.threads)
+            .field("threads", &self.shared.size)
             .finish_non_exhaustive()
     }
 }
@@ -203,36 +221,62 @@ pub(crate) struct Restored {
 }
 
 impl Pool {
+    pub(crate) fn new(threads: usize) -> Self {
+        let shared = Arc::new(Shared {
+            state: Mutex::new(State {
+                total: threads,
+                ..State::default()
+            }),
+            work: Condvar::new(),
+            changed: Condvar::new(),
+            size: threads,
+            #[cfg(test)]
+            live: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            after_stall: Mutex::new(None),
+        });
+        Shared::start(&shared, threads);
+        Self { shared }
+    }
+
+    /// A new reader count for one target. Its entry stays for the executor's life: the power family keeps one per target.
+    pub(crate) fn readers(&self) -> Arc<Readers> {
+        let mut state = self.shared.lock();
+        let id = state.id();
+        state.readers.insert(id, 0);
+        Arc::new(Readers {
+            id,
+            shared: Arc::clone(&self.shared),
+        })
+    }
+
+    /// Worker threads alive now.
+    #[cfg(test)]
+    fn live(&self) -> usize {
+        self.shared.live.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    #[cfg(test)]
+    fn after_stall(&self, hook: impl Fn() + Send + Sync + 'static) {
+        *self.shared.after_stall.lock().expect("test hook") = Some(Arc::new(hook));
+    }
+
     /// Live workers and stalled workers.
     #[cfg(test)]
     fn threads(&self) -> (usize, usize) {
-        let threads = self
-            .shared
-            .threads
-            .lock()
-            .expect("restore threads lock poisoned");
-        (threads.total, threads.stalled)
-    }
-
-    pub(crate) fn new(threads: usize) -> Self {
-        let shared = Arc::new(Shared {
-            size: threads,
-            ..Shared::default()
-        });
-        for _ in 0..threads {
-            Shared::spawn(&shared);
-        }
-        Self { shared, threads }
+        let state = self.shared.lock();
+        (state.total, state.stalled)
     }
 
     /// Queue one target's items behind earlier targets and wait until all are done. At the deadline the items not yet started
     /// are skipped, and the call waits [`STALL_GRACE`] for the items still running, which stop at their next deadline check.
     ///
     /// An item still inside its memory syscall after the grace is stalled. The call then reports `stalled`, takes the target off
-    /// the front of the queue so other targets go on, and returns. The caller may unfreeze: a late `process_vm_readv` only copies
-    /// the target's pages into the executor's own buffer, and a late `MADV_WILLNEED` only starts a read into the page cache; neither
-    /// changes the target. `readers` counts the stalled items until their syscall returns, and the worker stays with it until then,
-    /// so the pool serves with fewer threads meanwhile.
+    /// the queue so other targets go on, reserves replacements for the stalled workers within the cap, and returns. The caller may
+    /// unfreeze: a late `process_vm_readv` only copies the target's pages into the executor's own buffer, and a late
+    /// `MADV_WILLNEED` only starts a read into the page cache; neither changes the target. `readers` counts the stalled items until
+    /// their syscall returns. Their workers stay with them until then, and replacements keep the pool's working threads at size,
+    /// except past the cap of [`THREAD_CAP`] times the size, where the pool serves with fewer.
     pub(crate) fn restore(
         &self,
         items: Vec<Item>,
@@ -245,140 +289,175 @@ impl Pool {
                 shortfall: None,
             };
         }
-        let job = Arc::new(Job {
+        let total = items.len();
+        let mut state = self.shared.lock();
+        let id = state.id();
+        state.jobs.insert(id, Progress::default());
+        state.queue.push_back(Arc::new(Job {
+            id,
+            reader: readers.id,
+            _readers: Arc::clone(readers),
             items,
-            readers: Arc::clone(readers),
             deadline,
-            pages: AtomicU64::new(0),
-            cancelled: AtomicBool::new(false),
-            stalled: AtomicBool::new(false),
-            progress: Mutex::new(Progress::default()),
-            all: Condvar::new(),
-        });
-        self.shared
-            .queue
-            .lock()
-            .expect("restore queue lock poisoned")
-            .push_back(Arc::clone(&job));
+        }));
         self.shared.work.notify_all();
-        let mut progress = job.progress.lock().expect("restore job lock poisoned");
         let mut grace = None;
-        while !job.done(&progress) {
+        loop {
             let now = Instant::now();
-            if let Some(end) = grace {
-                if now >= end {
-                    drop(progress);
-                    // Stalled: the job leaves the queue unfinished. Its workers finish it when their syscalls return, and are
-                    // replaced meanwhile, so other targets keep the pool's working threads.
-                    let mut queue = self
-                        .shared
-                        .queue
-                        .lock()
-                        .expect("restore queue lock poisoned");
-                    let progress = job.progress.lock().expect("restore job lock poisoned");
-                    job.stalled.store(true, Ordering::Relaxed);
+            if state.progress(id).finished == total {
+                let progress = state
+                    .jobs
+                    .remove(&id)
+                    .expect("the restore owns its job's progress until it returns");
+                return Restored {
+                    pages: progress.pages,
+                    shortfall: progress.shortfall,
+                };
+            }
+            match grace {
+                Some(end) if now >= end => {
+                    // Stalled: in this one critical section, mark the job, count its running workers as stalled, take the job
+                    // off the queue and reserve their replacements. Its workers finish it when their syscalls return.
+                    let progress = state.progress(id);
+                    progress.stalled = true;
                     let running = progress.next - progress.finished;
-                    drop(progress);
-                    self.shared.retire(&mut queue, &job);
-                    drop(queue);
-                    Shared::replace(&self.shared, running);
+                    let pages = progress.pages;
+                    state.stalled = state
+                        .stalled
+                        .checked_add(running)
+                        .expect("stalled workers fit in usize");
+                    state.retire(id);
+                    let reserved = state.reserve(self.shared.size);
+                    drop(state);
+                    self.shared.work.notify_all();
+                    #[cfg(test)]
+                    {
+                        let hook = self.shared.after_stall.lock().expect("test hook").clone();
+                        if let Some(hook) = hook {
+                            hook();
+                        }
+                    }
+                    Shared::start(&self.shared, reserved);
                     return Restored {
-                        pages: job.pages.load(Ordering::Relaxed),
+                        pages,
                         shortfall: Some("stalled"),
                     };
                 }
-                progress = job
-                    .all
-                    .wait_timeout(progress, end - now)
-                    .expect("restore job lock poisoned")
-                    .0;
-            } else if now >= deadline {
-                drop(progress);
-                self.cancel(&job);
-                grace = Some(now + STALL_GRACE);
-                progress = job.progress.lock().expect("restore job lock poisoned");
-            } else {
-                progress = job
-                    .all
-                    .wait_timeout(progress, deadline - now)
-                    .expect("restore job lock poisoned")
-                    .0;
+                Some(end) => {
+                    state = self
+                        .shared
+                        .changed
+                        .wait_timeout(state, end - now)
+                        .expect("restore pool lock poisoned")
+                        .0;
+                }
+                None if now >= deadline => {
+                    // Skip every item not yet started. A job behind another target leaves the queue at once.
+                    let progress = state.progress(id);
+                    let skipped = total - progress.next;
+                    progress.cut = true;
+                    if skipped > 0 {
+                        progress.next = total;
+                        progress.finished += skipped;
+                        progress.shortfall.get_or_insert("deadline");
+                    }
+                    if progress.finished == total {
+                        state.retire(id);
+                        self.shared.work.notify_all();
+                    }
+                    grace = Some(now + STALL_GRACE);
+                }
+                None => {
+                    state = self
+                        .shared
+                        .changed
+                        .wait_timeout(state, deadline - now)
+                        .expect("restore pool lock poisoned")
+                        .0;
+                }
             }
-        }
-        Restored {
-            pages: job.pages.load(Ordering::Relaxed),
-            shortfall: progress.shortfall,
-        }
-    }
-
-    /// Skip every item not yet started. A job behind another target leaves the queue at once; running items finish on their own.
-    fn cancel(&self, job: &Arc<Job>) {
-        let mut queue = self
-            .shared
-            .queue
-            .lock()
-            .expect("restore queue lock poisoned");
-        let mut progress = job.progress.lock().expect("restore job lock poisoned");
-        job.cancelled.store(true, Ordering::Relaxed);
-        let skipped = job.items.len() - progress.next;
-        if skipped > 0 {
-            progress.next = job.items.len();
-            progress.finished += skipped;
-            progress.shortfall.get_or_insert("deadline");
-        }
-        if job.done(&progress) {
-            drop(progress);
-            self.shared.retire(&mut queue, job);
         }
     }
 }
 
 fn work(shared: &Arc<Shared>) {
+    #[cfg(test)]
+    shared
+        .live
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     loop {
-        let (job, index) = {
-            let mut queue = shared.queue.lock().expect("restore queue lock poisoned");
+        let job = {
+            let mut state = shared.lock();
             loop {
-                let claimed = queue.front().and_then(|job| {
-                    let mut progress = job.progress.lock().expect("restore job lock poisoned");
-                    (progress.next < job.items.len()).then(|| {
+                let front = state.queue.front().map(Arc::clone);
+                if let Some(job) = front {
+                    let progress = state.progress(job.id);
+                    if progress.next < job.items.len() {
+                        let index = progress.next;
                         progress.next += 1;
-                        job.readers.enter();
-                        (Arc::clone(job), progress.next - 1)
-                    })
-                });
-                if let Some(claimed) = claimed {
-                    break claimed;
+                        let count = state
+                            .readers
+                            .get_mut(&job.reader)
+                            .expect("a job's reader count lives as long as the job");
+                        *count = count.checked_add(1).expect("readers fit in usize");
+                        break (job, index);
+                    }
                 }
-                // The front job's items are all claimed but some still run: the next target waits for them.
-                queue = shared
-                    .work
-                    .wait(queue)
-                    .expect("restore queue lock poisoned");
+                // No front job, or its items are all claimed but some still run: the next target waits for them.
+                state = shared.work.wait(state).expect("restore pool lock poisoned");
             }
         };
+        let (job, index) = job;
         let (pages, shortfall) = if Instant::now() >= job.deadline {
             (0, Some("deadline"))
         } else {
             job.items[index](job.deadline)
         };
-        job.pages.fetch_add(pages, Ordering::Relaxed);
-        job.readers.leave();
-        let mut queue = shared.queue.lock().expect("restore queue lock poisoned");
-        let mut progress = job.progress.lock().expect("restore job lock poisoned");
+        let mut state = shared.lock();
+        let count = state
+            .readers
+            .get_mut(&job.reader)
+            .expect("a job's reader count lives as long as the job");
+        *count = count
+            .checked_sub(1)
+            .expect("a finishing item was counted as a reader when it was claimed");
+        let progress = state.progress(job.id);
         progress.finished += 1;
+        progress.pages = progress.pages.saturating_add(pages);
         if let Some(reason) = shortfall {
             progress.shortfall.get_or_insert(reason);
         }
-        // Read under the progress lock: the restore counted this worker as stalled exactly when it marked the job before now.
-        let was_stalled = job.stalled.load(Ordering::Relaxed);
-        if job.done(&progress) {
-            drop(progress);
-            shared.retire(&mut queue, &job);
-        } else {
-            drop(progress);
+        let stalled = progress.stalled;
+        let done = progress.finished == job.items.len();
+        if done {
+            state.retire(job.id);
+            if stalled {
+                // The restore already returned; the last returning worker drops the progress.
+                state.jobs.remove(&job.id);
+            }
         }
-        drop(queue);
-        if was_stalled && shared.returned() {
+        let mut exit = false;
+        if stalled {
+            // This worker was counted as stalled in the same critical section that marked its job stalled.
+            state.stalled = state.stalled.checked_sub(1).expect(
+                "a returning stalled worker was registered when its job was marked stalled",
+            );
+            if state.working() > shared.size {
+                state.total = state
+                    .total
+                    .checked_sub(1)
+                    .expect("an exiting worker is counted in the total");
+                exit = true;
+            }
+        }
+        drop(state);
+        shared.changed.notify_all();
+        shared.work.notify_all();
+        if exit {
+            #[cfg(test)]
+            shared
+                .live
+                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             return;
         }
     }
@@ -391,7 +470,7 @@ mod tests {
     use std::time::Duration;
 
     fn restore(pool: &Pool, items: Vec<Item>, deadline: Instant) -> Restored {
-        pool.restore(items, deadline, &Arc::default())
+        pool.restore(items, deadline, &pool.readers())
     }
 
     fn recording(log: &Arc<Mutex<Vec<char>>>, name: char, pause: Duration) -> Item {
@@ -553,7 +632,7 @@ mod tests {
     fn deadline_drain_needs_an_upper_bound_for_a_stalled_item() {
         let pool = Arc::new(Pool::new(2));
         let gate = Arc::new((Mutex::new(false), Condvar::new()));
-        let readers = Arc::new(Readers::default());
+        let readers = pool.readers();
         let (entered_tx, entered_rx) = mpsc::channel();
         let (returned_tx, returned_rx) = mpsc::channel();
         let deadline = Instant::now() + Duration::from_millis(20);
@@ -687,7 +766,7 @@ mod tests {
     /// Stall `count` items of one new target on `pool` and return once its restore reported `stalled`.
     fn stall(pool: &Arc<Pool>, count: usize) -> (Gate, Arc<Readers>) {
         let (items, gate, entered) = stalling(count);
-        let readers = Arc::new(Readers::default());
+        let readers = pool.readers();
         let restore = {
             let pool = Arc::clone(pool);
             let readers = Arc::clone(&readers);
@@ -711,7 +790,7 @@ mod tests {
     fn settles(pool: &Pool, expected: (usize, usize)) -> bool {
         let end = Instant::now() + Duration::from_secs(2);
         while Instant::now() < end {
-            if pool.threads() == expected {
+            if pool.threads() == expected && pool.live() == expected.0 {
                 return true;
             }
             std::thread::sleep(Duration::from_millis(5));
@@ -794,5 +873,232 @@ mod tests {
         open(&first_gate);
         assert!(first.wait_idle(Duration::from_secs(1)));
         assert!(settles(&pool, (2, 0)), "{:?}", pool.threads());
+    }
+
+    /// Re-review 5767 (4), race 1: a stalled worker returns right after its job was marked stalled, before the caller spawns.
+    /// Its return must find itself counted as stalled: no underflow, and the pool settles at size with no extra thread.
+    #[test]
+    fn worker_return_in_stall_publication_gap_must_not_abort_executor() {
+        let size = MIN_THREADS;
+        let pool = Arc::new(Pool::new(size));
+        let (items, gate, entered) = stalling(1);
+        let hook_gate = Arc::clone(&gate);
+        pool.after_stall(move || {
+            open(&hook_gate);
+            // The kernel may deschedule the caller here; the worker returns meanwhile.
+            std::thread::sleep(Duration::from_millis(100));
+        });
+        let readers = pool.readers();
+        let restored = {
+            let pool = Arc::clone(&pool);
+            let readers = Arc::clone(&readers);
+            std::thread::spawn(move || {
+                pool.restore(items, Instant::now() + Duration::from_millis(50), &readers)
+            })
+        };
+        entered
+            .recv_timeout(Duration::from_secs(1))
+            .expect("entered");
+        assert_eq!(restored.join().expect("restore").shortfall, Some("stalled"));
+        assert!(readers.wait_idle(Duration::from_secs(1)));
+        assert!(
+            settles(&pool, (size, 0)),
+            "{:?} live {}",
+            pool.threads(),
+            pool.live()
+        );
+    }
+
+    /// Re-review 5767 (4), race 2a: stalled workers return while their replacements are being spawned. The pool must settle at
+    /// exactly its size. The first replacement runs the next target's item, which releases the stalled items.
+    #[test]
+    fn returning_stalled_workers_during_spawn_must_settle_at_size() {
+        let size = 32;
+        let pool = Arc::new(Pool::new(size));
+        let (items, gate, entered) = stalling(size);
+        let readers = pool.readers();
+        let first = {
+            let pool = Arc::clone(&pool);
+            let readers = Arc::clone(&readers);
+            std::thread::spawn(move || {
+                pool.restore(items, Instant::now() + Duration::from_millis(50), &readers)
+            })
+        };
+        for _ in 0..size {
+            entered
+                .recv_timeout(Duration::from_secs(1))
+                .expect("all entered");
+        }
+        let next = restore(
+            &pool,
+            vec![Box::new(move |_| {
+                open(&gate);
+                (1, None)
+            })],
+            Instant::now() + Duration::from_secs(2),
+        );
+        assert_eq!((next.pages, next.shortfall), (1, None));
+        assert_eq!(first.join().expect("first").shortfall, Some("stalled"));
+        assert!(readers.wait_idle(Duration::from_secs(1)));
+        assert!(
+            settles(&pool, (size, 0)),
+            "{:?} live {}",
+            pool.threads(),
+            pool.live()
+        );
+    }
+
+    /// Re-review 5767 (4), race 2b: two stall batches overlap; the first pauses between its critical section and its spawns
+    /// while the second stalls every other worker. The reserved slots keep the threads within the cap throughout.
+    #[test]
+    fn concurrent_replacement_batches_must_not_exceed_the_thread_cap() {
+        let size = MIN_THREADS;
+        let cap = size * THREAD_CAP;
+        let pool = Arc::new(Pool::new(size));
+        let pause: Gate = Arc::new((Mutex::new(false), Condvar::new()));
+        let (paused_tx, paused_rx) = mpsc::channel();
+        let paused_tx = Mutex::new(paused_tx);
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let hook_pause = Arc::clone(&pause);
+        pool.after_stall(move || {
+            if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                paused_tx.lock().expect("signal").send(()).expect("paused");
+                let mut release = hook_pause.0.lock().expect("pause");
+                while !*release {
+                    release = hook_pause.1.wait(release).expect("pause");
+                }
+            }
+        });
+        let (a_items, a_gate, a_entered) = stalling(1);
+        let a_readers = pool.readers();
+        let first = {
+            let pool = Arc::clone(&pool);
+            let readers = Arc::clone(&a_readers);
+            std::thread::spawn(move || {
+                pool.restore(
+                    a_items,
+                    Instant::now() + Duration::from_millis(50),
+                    &readers,
+                )
+            })
+        };
+        a_entered
+            .recv_timeout(Duration::from_secs(1))
+            .expect("first entered");
+        paused_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("first batch paused before its spawn");
+        let (b_items, b_gate, b_entered) = stalling(size - 1);
+        let b_readers = pool.readers();
+        let second = {
+            let pool = Arc::clone(&pool);
+            let readers = Arc::clone(&b_readers);
+            std::thread::spawn(move || {
+                pool.restore(
+                    b_items,
+                    Instant::now() + Duration::from_millis(50),
+                    &readers,
+                )
+            })
+        };
+        for _ in 0..size - 1 {
+            b_entered
+                .recv_timeout(Duration::from_secs(2))
+                .expect("second entered");
+        }
+        assert_eq!(second.join().expect("second").shortfall, Some("stalled"));
+        open(&pause);
+        assert_eq!(first.join().expect("first").shortfall, Some("stalled"));
+        let (total, stalled) = pool.threads();
+        let live = pool.live();
+        open(&a_gate);
+        open(&b_gate);
+        assert!(a_readers.wait_idle(Duration::from_secs(1)));
+        assert!(b_readers.wait_idle(Duration::from_secs(1)));
+        assert_eq!((total, stalled), (2 * size, size));
+        assert!(live <= cap, "{live} threads against a cap of {cap}");
+        assert!(
+            settles(&pool, (size, 0)),
+            "{:?} live {}",
+            pool.threads(),
+            pool.live()
+        );
+    }
+
+    /// Many targets with random stalls and returns across threads. After every step: the threads stay within the cap, the
+    /// stalled count never exceeds the total (an underflow would panic a worker and break the final count), the working threads
+    /// never exceed the size, and the pool settles at exactly its size.
+    #[test]
+    fn random_stalls_and_returns_keep_the_accounting_whole() {
+        let size = 4;
+        let cap = size * THREAD_CAP;
+        let pool = Arc::new(Pool::new(size));
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let monitor = {
+            let pool = Arc::clone(&pool);
+            let stop = Arc::clone(&stop);
+            std::thread::spawn(move || {
+                let mut samples = 0_u64;
+                while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+                    let (total, stalled) = pool.threads();
+                    assert!(total <= cap, "total {total} over the cap {cap}");
+                    assert!(stalled <= total, "stalled {stalled} over total {total}");
+                    assert!(
+                        total - stalled <= size,
+                        "working {} over the size",
+                        total - stalled
+                    );
+                    assert!(pool.live() <= cap, "live {} over the cap", pool.live());
+                    samples += 1;
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                samples
+            })
+        };
+        let callers: Vec<_> = (0..6_u64)
+            .map(|caller| {
+                let pool = Arc::clone(&pool);
+                std::thread::spawn(move || {
+                    let mut seed = 0x9e37_79b9_7f4a_7c15_u64 ^ (caller + 1);
+                    let mut next = move || {
+                        seed ^= seed << 13;
+                        seed ^= seed >> 7;
+                        seed ^= seed << 17;
+                        seed
+                    };
+                    let readers = pool.readers();
+                    for _ in 0..4 {
+                        let items: Vec<Item> = (0..=(next() % 3))
+                            .map(|_| {
+                                // Most items return at once; some within the grace; some after it, so they stall.
+                                let pause = Duration::from_millis(match next() % 4 {
+                                    0 | 1 => 0,
+                                    2 => 100,
+                                    _ => 300 + next() % 200,
+                                });
+                                let item: Item = Box::new(move |_| {
+                                    std::thread::sleep(pause);
+                                    (1, None)
+                                });
+                                item
+                            })
+                            .collect();
+                        pool.restore(items, Instant::now() + Duration::from_millis(20), &readers);
+                    }
+                    assert!(readers.wait_idle(Duration::from_secs(2)));
+                })
+            })
+            .collect();
+        for caller in callers {
+            caller.join().expect("caller");
+        }
+        assert!(
+            settles(&pool, (size, 0)),
+            "{:?} live {}",
+            pool.threads(),
+            pool.live()
+        );
+        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(monitor.join().expect("monitor: every sample held") > 0);
     }
 }

@@ -1041,7 +1041,7 @@ fn a_stalled_reader_ends_the_wake_partial_and_holds_back_the_next_sleep() {
     let other = power.pool.restore(
         vec![Box::new(|_| (1, None))],
         Instant::now() + Duration::from_secs(1),
-        &std::sync::Arc::default(),
+        &power.pool.readers(),
     );
     assert_eq!((other.pages, other.shortfall), (1, None));
     // A sleep or discard of the same target refuses once its bound passes with the reader still there.

@@ -228,7 +228,7 @@ impl Power {
                 .lock()
                 .expect("restore readers map lock poisoned")
                 .entry(id.to_owned())
-                .or_default(),
+                .or_insert_with(|| self.pool.readers()),
         )
     }
 
