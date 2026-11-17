@@ -345,26 +345,6 @@ jobs:
         working-directory: packages/php-sdk
         run: composer analyse
 
-  e2e-static:
-    name: E2E static analysis
-    needs: changes
-    if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['e2e-static']) != 'false' }}
-    runs-on: ubuntu-26.04
-    timeout-minutes: 2
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - uses: ./.github/actions/php
-        with:
-          coverage: none
-      - name: Install the dependencies of apps/e2e
-        run: composer install --working-dir=apps/e2e --no-interaction --prefer-dist --no-scripts
-      - name: Analyze apps/e2e
-        working-directory: apps/e2e
-        run: composer analyse
-
   docs:
     name: Docs build
     outputs:
@@ -919,7 +899,7 @@ jobs:
   required:
     name: ${{ github.ref == 'refs/heads/main' && 'PR required checks' || 'Required checks' }}
     if: always() && github.ref != 'refs/heads/main'
-    needs: [ci-policy, php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
+    needs: [ci-policy, php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
     runs-on: ubuntu-26.04
     timeout-minutes: ${{ vars.ORBIT_PROOF_ENABLED == 'true' && github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' && 275 || 2 }}
     permissions:
@@ -971,7 +951,7 @@ jobs:
   delivery:
     name: Main delivery checks
     if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [ci-policy, php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
+    needs: [ci-policy, php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:

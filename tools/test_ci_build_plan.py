@@ -143,7 +143,7 @@ class BuildPlanTest(unittest.TestCase):
         for path in ('docs/api/php-sdk.mdx', 'packages/php-sdk/README.md',
                      'apps/cli/app/Commands/Thing.php', 'apps/cli/composer.lock',
                      'apps/gateway/app/Thing.php', 'apps/docs/composer.lock',
-                     'apps/e2e/tests/ThingTest.php', 'apps/web/src/main.ts',
+                     'apps/web/src/main.ts',
                      'swamp/workflows/workflow-example.yaml'):
             for main in (False, True):
                 with self.subTest(path=path, main=main):
@@ -151,25 +151,29 @@ class BuildPlanTest(unittest.TestCase):
 
     def test_a_composer_manifest_or_lock_selects_the_static_analysis_of_its_project(self):
         # Dependabot bumped laravel/boost in apps/cli/composer.lock and nothing analysed the CLI against it.
-        for project, job in (('apps/cli', 'cli-static'), ('packages/php-sdk', 'sdk-static'), ('apps/e2e', 'e2e-static')):
+        for project, job in (('apps/cli', 'cli-static'), ('packages/php-sdk', 'sdk-static')):
             for name in ('composer.json', 'composer.lock', 'src/Thing.php', 'tests/ThingTest.php'):
                 for main in (False, True):
                     with self.subTest(project=project, name=name, main=main):
                         self.assertIn(job, self.selected([f'{project}/{name}'], main))
 
     def test_the_static_analysis_of_one_project_is_not_selected_by_another(self):
-        self.assertNotIn('cli-static', self.selected(['apps/e2e/composer.lock']))
         self.assertNotIn('cli-static', self.selected(['apps/gateway/composer.lock']))
         self.assertNotIn('sdk-static', self.selected(['apps/cli/composer.lock']))
-        self.assertNotIn('e2e-static', self.selected(['apps/cli/composer.lock']))
-        self.assertEqual(set(), self.selected(['docs/reference/ci.md']) & {'cli-static', 'sdk-static', 'e2e-static'})
+        self.assertEqual(set(), self.selected(['docs/reference/ci.md']) & {'cli-static', 'sdk-static'})
+
+    def test_deleted_topology_harness_keeps_only_shared_php_checks(self):
+        for path in ('apps/e2e/composer.lock', 'apps/e2e/app/E2E/IncusHost.php'):
+            self.assertEqual({'php'}, self.selected([path]))
+        self.assertEqual(set(), self.selected(['apps/e2e/resources/topology-nodes.json']))
+        self.assertNotIn('e2e-static', plan.select(['tools/phpstan/orbit-rules.neon'])['jobs'])
 
     def test_the_sdk_selects_the_cli_analysis_because_the_cli_uses_it(self):
         self.assertIn('cli-static', self.selected(['packages/php-sdk/composer.lock']))
 
     def test_a_dependabot_bump_of_three_projects_selects_all_three_analyses(self):
-        paths = ['apps/cli/composer.lock', 'apps/e2e/composer.lock', 'apps/gateway/composer.lock']
-        self.assertTrue({'cli-static', 'e2e-static', 'gateway-static'} <= self.selected(paths))
+        paths = ['apps/cli/composer.lock', 'packages/php-sdk/composer.lock', 'apps/gateway/composer.lock']
+        self.assertTrue({'cli-static', 'sdk-static', 'gateway-static'} <= self.selected(paths))
 
     def test_flow_charts_run_the_kind_coverage_and_step_name_checks(self):
         self.assertEqual({'docs', 'gateway-tests', 'api-reference'}, self.selected(['docs/cli/firewall/allow.mmd']))

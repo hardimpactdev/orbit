@@ -55,37 +55,6 @@ fn instance_images(host: &mut impl Host, input: &Project) -> Result<InstanceImag
     }
     Ok(InstanceImages { instances })
 }
-fn query(
-    host: &mut impl Host,
-    project: &str,
-    method: &str,
-    path: &str,
-    data: Option<&str>,
-) -> Result<String, Error> {
-    let path = format!("{path}?project={project}");
-    let mut args = vec!["query", "-X", method];
-    if let Some(data) = data {
-        args.extend(["--data", data]);
-    }
-    args.extend(["--", &path]);
-    read(host, "query", &args)
-}
-pub(super) fn prepare_metadata(
-    host: &mut impl Host,
-    project: &str,
-    name: &str,
-) -> Result<(), Error> {
-    let path = format!("/1.0/instances/{name}/metadata");
-    let mut value: Value = serde_json::from_str(&query(host, project, "GET", &path, None)?)
-        .map_err(|_| invalid_output("metadata", "the metadata is not complete JSON"))?;
-    let templates = value
-        .get_mut("templates")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| invalid_output("metadata", "the image metadata has no templates"))?;
-    templates.retain(|path, _| !path.starts_with("/var/lib/cloud/seed/"));
-    query(host, project, "PUT", &path, Some(&value.to_string()))?;
-    Ok(())
-}
 pub struct ReadInstanceImages;
 impl Command for ReadInstanceImages {
     const NAME: &'static str = "incus.instance-images";

@@ -7,7 +7,6 @@ import {
     pullPlan,
     pushed,
     run,
-    verify,
     withWaivers,
 } from "../tasks/publish.ts";
 
@@ -76,20 +75,6 @@ export const behavior = {
         },
     },
     methods: {
-        verify: {
-            description:
-                "Compare the observed workspace with the admitted candidate",
-            arguments: Observed,
-            execute: (args: z.infer<typeof Observed>, ctx: Context) =>
-                save(
-                    ctx,
-                    requireSuccess(
-                        verify(args),
-                        "admitted",
-                        "tasks.repository_execution_unknown",
-                    ),
-                ),
-        },
         imported: {
             description:
                 "Compare the imported bundle with the admitted commit and tree",

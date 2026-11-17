@@ -26,7 +26,7 @@ final readonly class AgentWatchListAction
 {
     public function __construct(private NodeRoleServiceCatalog $services, private ListAgentWorkspacesAction $workspaces, private NodeToolScopes $tools, private RuntimeDoctorIntent $processes, private InstanceEnvironmentFiles $environments) {}
 
-    /** @return array{services: list<string>, awake_markers: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>, tools: list<array{manager: string, paths: list<string>}>, environments: list<string>, egress: null} */
+    /** @return array{services: list<string>, awake_markers: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>, tools: list<array{manager: string, paths: list<string>}>, environments: list<string>} */
     public function execute(Node $node): array
     {
         $services = [];
@@ -58,8 +58,6 @@ final readonly class AgentWatchListAction
             'applications' => $root === null ? [] : $this->applications(),
             'tools' => $this->tools->forNode($node),
             'environments' => $this->environments->forNode($node),
-            // No Node is a task VM host any more, so no agent reads an egress log (docs/reference/node-agent.md#watch-list).
-            'egress' => null,
         ];
     }
 

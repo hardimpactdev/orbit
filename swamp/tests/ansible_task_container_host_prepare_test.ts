@@ -12,10 +12,87 @@ const load = (name: string) =>
     string,
     unknown
   >[];
-const plays = parse(
-  Deno.readTextFileSync(new URL("task-vm-host.yml", root)),
-) as Record<string, unknown>[];
-const play = plays.find((p) => p.name === "Prepare the task VM host")!;
+const play = { gather_facts: false, vars: {
+  "container_sysctls": {
+    "fs.inotify.max_queued_events": 1048576,
+    "fs.inotify.max_user_instances": 1048576,
+    "fs.inotify.max_user_watches": 1048576,
+    "kernel.keys.maxkeys": 2000,
+    "kernel.keys.maxbytes": 2000000,
+    "vm.max_map_count": 262144
+  },
+  "container_host": {
+    "kind": "task-containers",
+    "fail": "instance.host_unavailable",
+    "incus": "{{ host.containers.incus }}",
+    "ids": "{{ (host.containers.places + 1) * 101000000 }}",
+    "modules": [
+      "wireguard",
+      "overlay"
+    ],
+    "project": "{{ host.containers.project }}",
+    "network": "{{ host.containers.network }}",
+    "address": "{{ host.containers.address }}",
+    "alias": "{{ host.containers.alias }}",
+    "pool": "{{ host.pool }}",
+    "probe": true
+  },
+  "container_acl_name": "{{ host.containers.network }}-egress",
+  "container_acl_rules": {
+    "description": "Orbit task container boundary",
+    "egress": [
+      {
+        "action": "drop",
+        "destination": "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,100.64.0.0/10,224.0.0.0/4,240.0.0.0/4",
+        "state": "enabled"
+      },
+      {
+        "action": "allow",
+        "state": "enabled"
+      }
+    ],
+    "ingress": [
+      {
+        "action": "allow",
+        "source": "{{ host.containers.address.split('/')[0] }}/32",
+        "protocol": "tcp",
+        "destination_port": "22",
+        "state": "enabled"
+      }
+    ]
+  },
+  "container_network_config": {
+    "ipv4.nat": "true",
+    "ipv6.address": "none",
+    "security.acls": "{{ container_acl_name }}",
+    "security.acls.default.ingress.action": "reject",
+    "security.acls.default.egress.action": "reject"
+  },
+  "container_network_args": "{{ container_network_config | dict2items | map(attribute='key') | zip(container_network_config.values()) | map('join', '=') | list }}",
+  "container_devices": {
+    "root": {
+      "type": "disk",
+      "path": "/",
+      "pool": "{{ host.pool }}"
+    },
+    "eth0": {
+      "type": "nic",
+      "name": "eth0",
+      "network": "{{ host.containers.network }}",
+      "security.port_isolation": "true"
+    }
+  },
+  "container_restrictions": {
+    "restricted": "true",
+    "restricted.networks.access": "{{ host.containers.network }}",
+    "restricted.containers.nesting": "allow",
+    "restricted.containers.interception": "allow",
+    "restricted.containers.privilege": "isolated",
+    "restricted.containers.lowlevel": "allow",
+    "restricted.snapshots": "allow",
+    "limits.virtual-machines": "0"
+  }
+} };
 const GiB = 1073741824;
 
 type Task = Record<string, unknown>;
@@ -182,15 +259,16 @@ function fixture(
     Deno.writeTextFileSync(`${folder}/bin/${name}`, `#!/bin/sh\n${body}\n`);
     Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
   }
+  const arcTasks = (load("instance-host.yml").find((task) => task.name === "Keep the ZFS ARC within the Node's budget")!.block as Task[]);
   const stockTasks = load("task-container-host-prepare.yml");
   const source = JSON.stringify([{
     ...play,
     hosts: "localhost",
     become: false,
     tasks: stockOnly ? stockTasks.slice(stockTasks.findIndex((t) => t.name === "Read the image daemon identity"),
-      stockTasks.findIndex((t) => t.name === "Prove that a copy is a clone")).flatMap((task) => transform(task, folder)) : local("task-vm-host-prepare.yml", folder),
+      stockTasks.findIndex((t) => t.name === "Prove that a copy is a clone")).flatMap((task) => transform(task, folder)) : [...local("task-container-host-system.yml", folder), ...arcTasks.flatMap((task) => transform(task, folder)), ...local("task-container-host-prepare.yml", folder)],
   }])
-    .replaceAll("/etc/modprobe.d/orbit-task-vm-zfs.conf", `${folder}/arc.conf`)
+    .replaceAll("/etc/modprobe.d/orbit-instances-zfs.conf", `${folder}/arc.conf`)
     .replaceAll("/sys/module/zfs/parameters/zfs_arc_max", `${folder}/arc`)
     .replaceAll("/var/lib/incus/disks/", `${folder}/disks/`)
     .replaceAll(
@@ -230,7 +308,7 @@ function fixture(
     },
   };
   Deno.writeTextFileSync(`${folder}/intent.json`, JSON.stringify(stockOnly ? {
-    container_host: {...host.containers, pool: host.pool, probe: false, fail: "task_vm.setup_failed"},
+    container_host: {...host.containers, pool: host.pool, probe: false, fail: "instance.host_unavailable"},
   } : { host }));
   return {
     folder,
@@ -288,7 +366,7 @@ function fixture(
 
 Deno.test({
   name:
-    "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing",
+    "a container host gets its kernel side, bridge, project and clone check, then changes nothing",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -297,7 +375,7 @@ Deno.test({
       assert(result.ok, result.output);
       assertEquals(
         f.read("modules.conf"),
-        "wireguard\noverlay\nbr_netfilter\n",
+        "wireguard\noverlay\n",
       );
       const sysctl = (key: string) => f.read(`sysctl/${key}`);
       assertEquals(
@@ -315,12 +393,12 @@ Deno.test({
       assertEquals(sysctl("kernel.keys.maxkeys").split(" ")[0], "2000");
       assertEquals(sysctl("kernel.keys.maxbytes").split(" ")[0], "2000000");
       assertEquals(sysctl("vm.max_map_count").split(" ")[0], "1048576");
-      // One eighth of 32 GiB is 4 GiB, but a loop pool keeps at most 2 GiB: the container rule never raises the cap.
-      assertEquals(f.read("arc").trim(), String(2 * GiB));
+      // One eighth of 32 GiB is 4 GiB.
+      assertEquals(f.read("arc").trim(), String(4 * GiB));
       assertEquals(
         f.read("arc.conf"),
-        `# Orbit task container host: reserve RAM for host services.\noptions zfs zfs_arc_max=${
-          2 * GiB
+        `# Orbit Instance container host: reserve RAM for host services.\noptions zfs zfs_arc_max=${
+          4 * GiB
         }\n`,
       );
 
@@ -366,7 +444,7 @@ Deno.test({
       );
       assertEquals(
         acls["orbittaskc0-egress"].egress,
-        acls["orbittask0-egress"].egress,
+        play.vars.container_acl_rules.egress,
       );
       assertEquals(acls["orbittaskc0-egress"].ingress, [{
         action: "allow",
@@ -375,16 +453,6 @@ Deno.test({
         destination_port: "22",
         state: "enabled",
       }]);
-      // The VM side keeps its own project, bridge and profile.
-      assertEquals(
-        state.profiles["orbit-tasks"].devices.eth0.network,
-        "orbittask0",
-      );
-      assertEquals(
-        state.projects.find((p: { name: string }) => p.name === "orbit-tasks")
-          .config["restricted.networks.access"],
-        "orbittask0",
-      );
       const publication = f.calls().find((c) =>
         c.includes("publish") && c.includes("orbit-stock-build")
       )!;
@@ -459,8 +527,6 @@ Deno.test({
           comment: `orbit:task-containers-dns-${proto}`,
         });
       }
-      // The VM bridge keeps its own rules.
-      assertEquals(rule("orbit:task-vms-dhcp").interface_in, "orbittask0");
     } finally {
       f.cleanup();
     }
@@ -549,7 +615,7 @@ Deno.test({
         }
         const result = f.run();
         assertEquals(result.ok, false, `${label}: ${result.output}`);
-        assertStringIncludes(result.output, message ?? "task_vm.setup_failed");
+        assertStringIncludes(result.output, message ?? "instance.host_unavailable");
         assert(
           !f.calls().some((c) =>
             c.includes("orbittaskc0") && c[0] !== "query"
@@ -572,7 +638,7 @@ Deno.test({
     try {
       const result = f.run();
       assertEquals(result.ok, false, result.output);
-      assertStringIncludes(result.output, "task_vm.setup_failed");
+      assertStringIncludes(result.output, "instance.host_unavailable");
       assertEquals(f.state().instances, []);
     } finally {
       f.cleanup();
@@ -600,36 +666,28 @@ Deno.test({
 
 Deno.test({
   name:
-    "a container host on a native pool gets the ARC cap now and after reboot, and keeps it when containers go",
+    "a container host on a native pool gets the ARC cap now and after reboot, and changes nothing on a repeat",
   ignore: !hasAnsible,
   fn() {
     const f = fixture({ native: true });
     try {
       let result = f.run();
       assert(result.ok, result.output);
-      // No cap ran before, so one eighth of 32 GiB applies, on a pool where a VM host changes no ARC.
+      // No cap ran before, so one eighth of 32 GiB applies.
       assertEquals(f.read("arc").trim(), String(4 * GiB));
       const conf =
-        `# Orbit task container host: reserve RAM for host services.\noptions zfs zfs_arc_max=${
+        `# Orbit Instance container host: reserve RAM for host services.\noptions zfs zfs_arc_max=${
           4 * GiB
         }\n`;
       assertEquals(f.read("arc.conf"), conf);
       assertStringIncludes(
         f.calls().map((c) => c.join(" ")).join("\n"),
-        "storage get orbit-tasks zfs.pool_name",
+        "query -- /1.0/projects?project=default&recursion=1",
       );
       result = f.run();
       assert(result.ok, result.output);
       assertStringIncludes(result.output, "changed=0");
 
-      const intent = JSON.parse(f.read("intent.json"));
-      delete intent.host.containers;
-      Deno.writeTextFileSync(`${f.folder}/intent.json`, JSON.stringify(intent));
-      result = f.run();
-      assert(result.ok, result.output);
-      assertStringIncludes(result.output, "changed=0");
-      assertEquals(f.read("arc.conf"), conf);
-      assertEquals(f.read("arc").trim(), String(4 * GiB));
     } finally {
       f.cleanup();
     }

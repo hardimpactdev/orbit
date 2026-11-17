@@ -532,10 +532,21 @@ mod tests {
     #[test]
     fn refuses_an_unknown_command_and_unknown_envelope_fields_after_the_digest_matches() {
         let unknown = json!({"agent_sha256": PIN, "deadline_ms": 1000, "input": {}}).to_string();
-        assert_eq!(
-            code(&execute("no.such", unknown.as_bytes(), &host(1000))),
-            "agent.unknown_command"
-        );
+        for name in [
+            "no.such",
+            "incus.vm",
+            "incus.vm-state",
+            "instance.activate-release",
+            "metrics.publication-firewall",
+            "package-cache.host",
+            "php.refresh-production-cache",
+        ] {
+            assert_eq!(
+                code(&execute(name, unknown.as_bytes(), &host(1000))),
+                "agent.unknown_command",
+                "{name}"
+            );
+        }
         let extra =
             json!({"agent_sha256": PIN, "deadline_ms": 1000, "input": {}, "extra": 1}).to_string();
         assert_eq!(

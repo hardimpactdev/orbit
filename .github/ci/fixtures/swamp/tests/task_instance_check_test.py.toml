@@ -1,12 +1,11 @@
 file = "swamp/tests/task_instance_check_test.py"
 slices = false
-cost = 83
+cost = 81
 cases = [
   "test_check_runs_in_the_guest_and_commits_the_exact_candidate",
   "test_only_a_clean_recorded_candidate_makes_no_commit",
   "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing",
   "test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch",
-  "test_task_vm_intents_keep_the_task_vm_steps",
   "test_check_phases_need_their_check_and_candidate"
 ]
 inputs = [
@@ -29,5 +28,4 @@ inputs = [
 "test_only_a_clean_recorded_candidate_makes_no_commit" = 35
 "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing" = 12
 "test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch" = 5
-"test_task_vm_intents_keep_the_task_vm_steps" = 2
 "test_check_phases_need_their_check_and_candidate" = 4

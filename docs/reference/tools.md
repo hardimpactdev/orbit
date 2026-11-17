@@ -7,13 +7,15 @@ covers:
   - apps/gateway/app/{Providers/ApplicationServiceProvider.php,{Actions,Domain}/Tools/**,Data/Tools/**,Actions/Doctor/Intent/RuntimeDoctorIntent.php}
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/RolePrerequisites.php}
   - apps/gateway/{app/Models/{Tool,ToolManagerRecord,AptRepository}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_09_120017_create_apt_repositories_table}.php}
-  - apps/agent/src/commands/{vp_store,vp_scope,vp_materialize,vp_global,tools_apt,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
+  - apps/agent/src/commands/{vp_store,vp_scope,vp_global,tools_apt,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
   - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}
 ---
 
 # Tools
 
 A Tool is one package that Orbit manages on one Node through one Tool Manager. The Node, the manager, and the package name identify it. Orbit records the Tools it installs or explicitly adopts. Discovery reports other installed packages without creating Tool records. [`tool`](/cli/tool) lists the commands.
+
+Migrations do not scan hosts, adopt packages or create Tool records for private bootstrap prerequisites. Adoption is an explicit operation for one selected package, not inventory import. The Gateway owns manager policy; SDK and CLI code only transport and render its typed contract.
 
 The [machine software recipe](/reference/compute-drivers#machine-software-recipe) defines the versioned Ubuntu snapshot, machine tool pins, and role tool sets. Its read-only loader and validator do not run Tool operations or change today's enrollment and image programs. Project packages and their lockfiles remain separate from machine software.
 
@@ -81,6 +83,8 @@ The Gateway manages Tools only on an active Node that it manages over SSH. That 
 Manager setup captures the ordered recipe artifact candidates at admission. Pinned Debian prerequisites, including Git for Composer, download from the [artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror) at its pinned checksum. The structured curl exit code permits upstream fallback only after a transport failure. Local I/O, size-limit and checksum failures stop setup.
 
 Tool Managers do not belong to roles. A Node with no role can use every manager its platform supports. `apt` and `composer` stay Linux-only. `brew` and `vp` run on Linux and macOS. `brew-cask` runs on macOS only.
+
+Manager state remains after its last Tool is removed. Failed materialization remains retryable. Role removal implicitly removes neither packages nor Tool intent nor manager state; roles may require managers but do not own them. On macOS, verify the existing Homebrew prefix and enrolled account's Vite+ scope in place rather than replacing them.
 
 ## Tool Managers
 

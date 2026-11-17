@@ -44,5 +44,11 @@
         }
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/reference/incus-topologies",
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
+    }
   ]
 }
