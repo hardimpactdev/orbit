@@ -555,7 +555,9 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 
 The app account of a container is the stock Debian `www-data`, uid and gid 33, with its stock home `/var/www`. FrankenPHP, every Process and Schedule run as it, with `HOME=/var/www`. `agent` (2750) is in the group `www-data`. The workspace is `agent:www-data`, group read and write, with setgid folders and the ACL `g:www-data:rwX` and its default. A normal container has no user `orbit`, no group `work` and no group with gid 1000.
 
-A nested-fleet container is different. Its inner guests are Nodes, and the ID map puts their `orbit` on the outer uid 1000 and gid 2760; the inner fleet writes the shared checkout as them. So a nested-fleet container keeps `orbit` (uid 1000), `work` (gid 2760) and all their files and ACLs, and its workspace stays `agent:work`. `agent` is in `www-data` there too, and `www-data` is in `work`, so FrankenPHP, the Processes and the Node store step open the workspace. Its firewall drops the traffic of uid 33 and uid 1000 to the inner fleet's networks. The swap file repairs an older nested guard from the image's rule before the app runs, reloading only Orbit's table and preserving the inner Incus tables.
+A nested-fleet container is different. Its inner guests are Nodes, and the ID map puts their `orbit` on the outer uid 1000 and gid 2760; the inner fleet writes the shared checkout as them. So a nested-fleet container keeps `orbit` (uid 1000), `work` (gid 2760) and all their files and ACLs, and its workspace stays `agent:work`. `agent` is in `www-data` there too, and `www-data` is in `work`, so FrankenPHP, the Processes and the Node store step open the workspace.
+
+Its firewall drops the traffic of uid 33 and uid 1000 to the inner fleet's networks. The swap file repairs an older nested guard from the image's rule before the app runs, reloading only Orbit's table and preserving the inner Incus tables.
 
 The container intent says which ids the workspace uses (`workspace_ids`): its group for `.env` and the checkout bundle, and the uid whose entries root's [workspace pass](#who-runs-what) gives to `agent`. They are 33 and 33 in a normal container, and 2760 and 1000 in a nested-fleet one.
 
@@ -575,14 +577,14 @@ The file recovers inactive Orbit units and timers only when their unit-file stat
 
 The file runs these steps:
 
-1. In a nested-fleet container (the image's AppArmor marker `/etc/orbit/apparmor-off`), repair and load the image's guard for uid 33 and uid 1000 without flushing the inner Incus tables, add `agent` to `www-data` and `www-data` to `work`, and stop.
-2. Read the old accounts, `agent`'s groups and the unit files that name `orbit`. A moved container recovers inactive enabled Orbit units and timers, then stops here with `already www-data`.
+1. Handle the nested-fleet marker `/etc/orbit/apparmor-off`: repair the firewall guard, preserve inner Incus tables, add the group memberships described above and stop.
+2. Read the accounts, groups and old unit files. A moved container recovers its enabled Orbit units and timers before returning `already www-data`.
 3. Stop those units and their timers.
-4. Refuse a process of uid 1000 that still runs, such as a stray shell. The file then resumes enabled Orbit units and timers and exits 3; a static Schedule service stays idle.
+4. Refuse any remaining uid-1000 process. Resume enabled Orbit units and timers before exiting 3. Static Schedule services stay idle.
 5. Give the files of uid 1000 and of gid 1000 and 2760 on the container's own file system to 33, and the workspace ACL of gid 2760 to 33.
 6. Copy the old home's files into `/var/www`, and remove `/home/orbit`.
 7. Add `agent` to `www-data`, and remove `orbit`, `work` and the group 1000.
-8. Write `User=www-data`, `Group=www-data` and `/var/www` in the unit files, reload systemd, and recover inactive Orbit units and timers whose unit-file state is exactly `enabled`.
+8. Rewrite the unit files for `www-data` and `/var/www`. Reload systemd before recovering inactive enabled Orbit units and timers.
 
 It never touches `agent` beyond its group. Each step reads what is left, so a move that stopped half way finishes at the next run.
 
