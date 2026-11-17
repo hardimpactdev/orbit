@@ -19,7 +19,7 @@ abstract class ProofPoolRequest extends GatewayRequest
 
     public function resolveEndpoint(): string
     {
-        return '/api/v1/proof/pool/'.$this->action();
+        return "/api/v1/proof/pool/{$this->action()}";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ProofPoolResponse
