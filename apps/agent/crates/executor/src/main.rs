@@ -42,23 +42,35 @@ impl Run for Families {
     fn run(&self, order: &VerifiedOrder) -> Outcome {
         match order.action() {
             Action::ProofNoop => Outcome::Done,
-            Action::Sleep => match self
-                .0
-                .sleep(order.target().as_str(), order.operation().as_str())
-            {
-                Ok(_) => Outcome::Done,
-                Err(error) => {
-                    log(&format!("power sleep failed: {error}"));
-                    Outcome::Failed {
-                        code: if error.to_string() == "instance.container_frozen_unmanaged" {
-                            "instance.container_frozen_unmanaged"
-                        } else {
-                            "instance.container_freeze_failed"
+            Action::Sleep => {
+                let started = std::time::Instant::now();
+                match self
+                    .0
+                    .sleep(order.target().as_str(), order.operation().as_str())
+                {
+                    Ok(receipt) => {
+                        // This includes receipt and marker fsync, which cannot time their own publication.
+                        log(&format!(
+                            "power sleep {} completed: total_us={} reclaim_us={}",
+                            order.operation(),
+                            started.elapsed().as_micros(),
+                            receipt.reclaim_us
+                        ));
+                        Outcome::Done
+                    }
+                    Err(error) => {
+                        log(&format!("power sleep failed: {error}"));
+                        Outcome::Failed {
+                            code: if error.to_string() == "instance.container_frozen_unmanaged" {
+                                "instance.container_frozen_unmanaged"
+                            } else {
+                                "instance.container_freeze_failed"
+                            }
+                            .to_owned(),
                         }
-                        .to_owned(),
                     }
                 }
-            },
+            }
             Action::Discard => match self.0.discard(order.target().as_str()) {
                 Ok(()) => Outcome::Done,
                 Err(_) => Outcome::Failed {

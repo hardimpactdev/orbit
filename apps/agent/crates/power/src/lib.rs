@@ -120,7 +120,7 @@ pub struct Receipt {
     pub residual_anon_bytes: u64,
     /// File RAM remaining after reclaim.
     pub residual_file_bytes: u64,
-    /// Total in-process sleep time.
+    /// In-process time before receipt and marker publication; the executor logs the complete action time.
     pub total_us: u64,
     /// Time spent reclaiming and waiting for counters to settle.
     pub reclaim_us: u64,

@@ -273,6 +273,8 @@ The executor records and atomically fsyncs every non-`max` swap limit in the who
 
 A repeat Operation returns its journaled result under the per-target lock. Startup repeats an open sleep and keeps a valid plan already published. `discard` removes the plan and limits record after a stop, destroy or fresh boot. The Rust state lives under `/var/lib/orbit/executor/power`; it does not replace the Python state yet. A container Incus calls running while the kernel holds it frozen refuses with `instance.container_frozen_unmanaged`, preserving its recovery state.
 
+The kind chart is [`docs/cli/proof/executor-power-proof.mmd`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/proof/executor-power-proof.mmd). The executor logs the complete action time, including receipt and asleep-marker fsync, with reclaim measured separately. The private receipt timer ends before its own publication.
+
 The proof of record remains 30 sleeps of a real clone with T3 and Vite. Measurements of a default Instance with T3/Vite started by hand are development evidence only.
 
 | Error or result | Meaning |
