@@ -7,7 +7,6 @@ use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewFreshness;
 use App\Domain\AgentView\AgentViewSubscriberHealth;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\NodeBaseInventoryProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseServer;
@@ -15,6 +14,7 @@ use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\Operation;
 use App\Models\Process as ProcessModel;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
@@ -133,27 +133,134 @@ describe('rollout base inventory HTTP admission', function (): void {
         $operation = new Operation(['kind' => 'node.base_inventory']);
         expect(app(NodeBaseInventoryProjection::class)->native($operation))->toBeTrue();
     });
-    it('does not mark retained Doctor facts fresh just because the agent is online', function (): void {
-        $node = inventoryNode(17, '10.44.0.3');
-        $clock = now();
-        $viewTime = (float) $clock->format('U.u');
-        $view = $this->mock(AgentStateView::class);
-        $view->shouldReceive('subscriber')->andReturn(new AgentViewSubscriberHealth($viewTime, true, true, 1));
-        $view->shouldReceive('node')->andReturn(new AgentNodeView($node->id, AgentViewFreshness::Fresh, receivedAt: $viewTime));
-        $view->shouldReceive('lastSeen')->with(17)->andReturn($viewTime);
-        NodeFact::query()->create(['node_id' => 17, 'kind' => NodeFactKind::Host, 'digest' => str_repeat('a', 64),
-            'data' => ['os' => 'linux', 'arch' => 'x86_64', 'filesystems' => [['mount' => '/', 'size' => 100_000_000_000, 'free' => 90_000_000_000]]],
-            'observed_at' => $clock->copy()->subHour(), 'received_at' => $clock]);
-        $run = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
-        $operation = Operation::query()->create(['kind' => 'node.base_inventory', 'node_id' => 17,
-            'target_type' => 'node', 'target_id' => 17, 'status' => 'running',
-            'input' => ['profile' => 'services'], 'state' => ['swamp_run_id' => $run]]);
-        $projection = app(NodeBaseInventoryProjection::class);
-        $receipt = $projection->apply($operation, ['run_id' => $run, 'status' => 'succeeded',
-            'started_at' => $clock->toISOString(), 'finished_at' => $clock->toISOString(),
-            'result' => ['node_id' => 17, 'profile' => 'services', 'captured_at' => $clock->toISOString()]]);
-        expect($receipt->result['doctor']['agent_fresh_for_capture'])->toBeTrue()
-            ->and($receipt->result['doctor']['facts']['host']['fresh_for_capture'])->toBeFalse()
-            ->and($receipt->result['doctor']['doctor_fresh_for_capture'])->toBeFalse();
+});
+
+function inventoryReportFact(Node $node, string $kind, array $data, string $at): void
+{
+    test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->withToken('private-agent-fixture')
+        ->postJson('/api/v1/agent/facts', ['kind' => $kind, 'data' => $data, 'observed_at' => $at])->assertNoContent();
+}
+
+function inventoryRoot(string $sampledAt, bool $stale = false): array
+{
+    return ['mount' => '/', 'size' => 100_000_000_000, 'free' => 90_000_000_000, 'observed_at' => $sampledAt, 'stale' => $stale];
+}
+
+function inventoryDoctorReceipt(Node $node, CarbonImmutable $clock): array
+{
+    $viewTime = (float) $clock->format('U.u');
+    $view = test()->mock(AgentStateView::class);
+    $view->shouldReceive('subscriber')->andReturn(new AgentViewSubscriberHealth($viewTime, true, true, 1));
+    $view->shouldReceive('node')->andReturn(new AgentNodeView($node->id, AgentViewFreshness::Fresh, receivedAt: $viewTime));
+    $view->shouldReceive('lastSeen')->with($node->id)->andReturn($viewTime);
+    $run = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+    $operation = Operation::query()->create(['kind' => 'node.base_inventory', 'node_id' => $node->id,
+        'target_type' => 'node', 'target_id' => $node->id, 'status' => 'running',
+        'input' => ['profile' => 'services'], 'state' => ['swamp_run_id' => $run]]);
+
+    return app(NodeBaseInventoryProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded',
+        'started_at' => $clock->toISOString(), 'finished_at' => $clock->toISOString(),
+        'result' => ['node_id' => $node->id, 'profile' => 'services', 'captured_at' => $clock->toISOString()]])->result['doctor'];
+}
+
+describe('rollout base inventory observer freshness', function (): void {
+    beforeEach(function (): void {
+        $this->node = inventoryNode(17, '10.44.0.3');
+        $this->capture = CarbonImmutable::parse('2026-11-17T11:00:00Z');
+        $this->travelTo($this->capture);
+        $this->host = ['os' => 'linux', 'arch' => 'x86_64', 'filesystems' => [inventoryRoot('2026-11-17T10:29:50Z')]];
+        $this->units = ['docker' => 'available', 'units' => [], 'awake' => []];
+        $this->ufw = ['installed' => true, 'enabled' => true, 'rules' => []];
     });
+
+    it('confirms stable facts without changing their data or original observation and receipt times', function (): void {
+        $this->travelTo($this->capture->subMinutes(30));
+        foreach (['host', 'units', 'ufw'] as $kind) {
+            inventoryReportFact($this->node, $kind, $this->{$kind}, '2026-11-17T10:30:00Z');
+        }
+        $original = NodeFact::query()->get()->keyBy(fn (NodeFact $fact): string => $fact->kind->value);
+        $this->travelTo($this->capture);
+
+        inventoryReportFact($this->node, 'host', array_replace($this->host, ['filesystems' => [inventoryRoot('2026-11-17T10:59:50Z')]]), '2026-11-17T10:59:59Z');
+        inventoryReportFact($this->node, 'units', $this->units, '2026-11-17T10:59:59Z');
+        inventoryReportFact($this->node, 'ufw', $this->ufw, '2026-11-17T10:59:59Z');
+        $doctor = inventoryDoctorReceipt($this->node, $this->capture);
+
+        foreach (NodeFact::query()->get() as $fact) {
+            $before = $original[$fact->kind->value];
+            expect($fact->only(['id', 'digest', 'data']))->toBe($before->only(['id', 'digest', 'data']));
+            expect($fact->observed_at->equalTo($before->observed_at))->toBeTrue();
+            expect($fact->received_at->equalTo($before->received_at))->toBeTrue();
+        }
+        expect($doctor['facts'])->toBe([
+            'host' => ['observed_at' => '2026-11-17T10:30:00.000000Z', 'confirmed_at' => '2026-11-17T10:59:50.000000Z', 'fresh_for_capture' => true],
+            'units' => ['observed_at' => '2026-11-17T10:30:00.000000Z', 'confirmed_at' => '2026-11-17T10:59:59.000000Z', 'fresh_for_capture' => true],
+            'ufw' => ['observed_at' => '2026-11-17T10:30:00.000000Z', 'confirmed_at' => '2026-11-17T10:59:59.000000Z', 'fresh_for_capture' => true],
+        ])->and($doctor['doctor_fresh_for_capture'])->toBeTrue();
+    });
+
+    it('orders reports by their sample time and ignores repeats and late changes', function (): void {
+        inventoryReportFact($this->node, 'units', $this->units, '2026-11-17T10:30:00Z');
+        inventoryReportFact($this->node, 'units', $this->units, '2026-11-17T10:40:00.900Z');
+        $confirmed = NodeFact::query()->sole()->getAttributes();
+        $changed = array_replace($this->units, ['docker' => 'absent']);
+
+        inventoryReportFact($this->node, 'units', $changed, '2026-11-17T10:40:00.100Z');
+        inventoryReportFact($this->node, 'units', $this->units, '2026-11-17T10:40:00.900Z');
+        $doctor = inventoryDoctorReceipt($this->node, $this->capture);
+
+        expect(NodeFact::query()->sole()->getAttributes())->toBe($confirmed);
+        expect($doctor['facts']['units'])->toBe([
+            'observed_at' => '2026-11-17T10:30:00.000000Z',
+            'confirmed_at' => '2026-11-17T10:40:00.900000Z',
+            'fresh_for_capture' => false,
+        ])->and($doctor['agent_fresh_for_capture'])->toBeTrue()
+            ->and($doctor['doctor_fresh_for_capture'])->toBeFalse();
+    });
+
+    it('keeps a changed units sample when the pinned agent reports twice in the same second', function (): void {
+        inventoryReportFact($this->node, 'units', $this->units, '2026-11-17T10:59:59Z');
+
+        inventoryReportFact($this->node, 'units', array_replace($this->units, ['docker' => 'absent']), '2026-11-17T10:59:59Z');
+
+        $fact = NodeFact::query()->sole();
+        expect($fact->data['docker'])->toBe('absent')
+            ->and($fact->confirmed_at->toISOString())->toBe('2026-11-17T10:59:59.000000Z');
+    });
+
+    it('rejects future samples that could suppress later observations after clock correction', function (): void {
+        inventoryReportFact($this->node, 'units', $this->units, '2026-11-17T10:59:50Z');
+
+        $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip])->withToken('private-agent-fixture')
+            ->postJson('/api/v1/agent/facts', ['kind' => 'units', 'data' => $this->units, 'observed_at' => '2026-11-17T12:00:00Z'])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+        inventoryReportFact($this->node, 'units', array_replace($this->units, ['docker' => 'absent']), '2026-11-17T11:00:00Z');
+
+        $fact = NodeFact::query()->sole();
+        expect($fact->data['docker'])->toBe('absent')
+            ->and($fact->confirmed_at->toISOString())->toBe('2026-11-17T11:00:00.000000Z');
+    });
+
+    it('does not refresh the host without a current root sample', function (array $disks, ?string $confirmation): void {
+        inventoryReportFact($this->node, 'host', $this->host, '2026-11-17T10:30:00Z');
+        inventoryReportFact($this->node, 'units', $this->units, '2026-11-17T11:00:00Z');
+        inventoryReportFact($this->node, 'ufw', $this->ufw, '2026-11-17T11:00:00Z');
+
+        inventoryReportFact($this->node, 'host', array_replace($this->host, ['filesystems' => $disks]), '2026-11-17T11:00:00Z');
+        inventoryReportFact($this->node, 'host', array_replace($this->host, ['filesystems' => [inventoryRoot('2026-11-17T10:58:00Z')]]), '2026-11-17T10:59:00Z');
+        $doctor = inventoryDoctorReceipt($this->node, $this->capture);
+
+        expect($doctor['facts']['host'])->toBe([
+            'observed_at' => '2026-11-17T10:30:00.000000Z',
+            'confirmed_at' => $confirmation,
+            'fresh_for_capture' => false,
+        ])->and($doctor['agent_fresh_for_capture'])->toBeTrue()
+            ->and($doctor['doctor_fresh_for_capture'])->toBeFalse();
+    })->with([
+        'missing' => [[], null],
+        'cached' => [[inventoryRoot('2026-11-17T10:29:50Z')], '2026-11-17T10:29:50.000000Z'],
+        'stale' => [[inventoryRoot('2026-11-17T10:59:50Z', stale: true)], null],
+        'after the host report' => [[inventoryRoot('2026-11-17T12:00:00Z')], null],
+        'unattested' => [[['mount' => '/', 'size' => 100_000_000_000, 'free' => 90_000_000_000]], null],
+    ]);
 });

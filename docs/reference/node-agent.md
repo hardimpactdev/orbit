@@ -95,7 +95,7 @@ The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space mov
 
 A `host` report without a `/` entry keeps the stored `/` entry. The agent leaves out a filesystem it has not read yet. So after any agent start, the first host read can run before the disk sampler's first pass, and its report lacks `/`. On a Gateway Node at boot this is the likely case: its first reports fail at once, so the host read comes milliseconds after the start, and the retry later sends that same report.
 
-The kept entry gets two times. `observed_at` is the agent's observation time of the stored row that held the reading; the Gateway writes a row only when it changes, so the reading was confirmed then or later. `kept_since` is when the Gateway received the first report without `/`. A repeated report without `/` keeps both times. The next report with `/` replaces the entry.
+The kept entry gets two times. `observed_at` is the observation time of the stored row that held the reading. `kept_since` is when the Gateway received the first accepted report without `/`. A repeated report without `/` keeps both times. The next accepted report with `/` replaces the entry.
 
 Doctor uses a kept entry for 180 seconds (three host intervals) after `kept_since`, by the Gateway clock; after that the disk check is unverifiable. Doctor does not bound the age of the reading itself: a copy of an Instance starts with the reading from its seed snapshot. A Node that never reported `/` has nothing to keep.
 
@@ -111,7 +111,9 @@ A report the Gateway does not accept, for example while a Node boots before the 
 
 The retry keeps both the data and `observed_at` of the failed read, so delayed delivery cannot make an old snapshot look newly observed. It reads the Node again only at the next regular read. A new [watch list](#watch-list) makes the agent read and send `units` at once.
 
-The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout`, `packages`, `env_keys` and `egress` have a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
+The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout`, `packages`, `env_keys` and `egress` have a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's `received_at` for the stored sample.
+
+For `host`, `units` and `ufw`, a matching report with a later observation time advances confirmation and preserves the original sample and its times. Earlier reports and identical retries leave the row unchanged. The Gateway accepts distinct reports with the same timestamp in arrival order. Reports more than one minute ahead of the Gateway clock fail validation. The [rollout inventory](/reference/rollout-base-inventory) also checks the time of the root reading. Other unchanged reports write nothing. Each update uses one short transaction.
 
 ### Packages
 

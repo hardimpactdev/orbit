@@ -22,4 +22,8 @@ The collector reads the platform, boot and uptime, agent and base policy files, 
 
 Take a capture immediately before admission and another after settlement. Match the observed public file digests and effective kernel policy against the released intent. Compare protected service starts and normalized network and publication digests between the two captures. Use the existing Caddy and PHP-FPM serving probes for the router.
 
-The receipt includes the Gateway’s targeted Doctor and agent liveness with timestamps and freshness relative to the host capture. Doctor uses retained host, unit and firewall facts. Their age is reported separately from the agent heartbeat. Treat missing or unreadable required items as unresolved evidence. The collector performs no rollout, service, package, firewall or file changes.
+## Read the Doctor evidence
+
+The receipt includes the Gateway’s targeted Doctor and agent liveness. For each retained host, unit and firewall fact, it shows the original observation time and the latest confirmed sample time. A fact is fresh within 11 minutes of the host capture. Host freshness uses the root disk sample time. The reading must be present, marked current and sampled by the time of the host report. Agent heartbeat has its own freshness check.
+
+Treat missing or unreadable required items as unresolved evidence. The collector performs no rollout, service, package, firewall or file changes.

@@ -19,6 +19,8 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed> $data
  * @property Carbon $observed_at
  * @property Carbon $received_at
+ * @property Carbon|null $confirmed_at
+ * @property Carbon|null $root_confirmed_at
  */
 final class NodeFact extends Model
 {
@@ -27,6 +29,9 @@ final class NodeFact extends Model
 
     #[\Override]
     protected $guarded = [];
+
+    #[\Override]
+    protected $dateFormat = 'Y-m-d H:i:s.u';
 
     /** @return BelongsTo<Node, $this> */
     public function node(): BelongsTo
@@ -42,6 +47,8 @@ final class NodeFact extends Model
             'data' => 'array',
             'observed_at' => 'datetime',
             'received_at' => 'datetime',
+            'confirmed_at' => 'datetime',
+            'root_confirmed_at' => 'datetime',
         ];
     }
 }

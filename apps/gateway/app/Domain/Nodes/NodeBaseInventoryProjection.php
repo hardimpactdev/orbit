@@ -83,7 +83,7 @@ final readonly class NodeBaseInventoryProjection implements DirectOperationProje
         ];
     }
 
-    /** @return array<string,array{observed_at:?string,fresh_for_capture:bool}> */
+    /** @return array<string,array{observed_at:?string,confirmed_at:?string,fresh_for_capture:bool}> */
     private function factTimes(Node $node, CarbonImmutable $captured): array
     {
         $kinds = [NodeFactKind::Host, NodeFactKind::Units, NodeFactKind::Ufw];
@@ -100,8 +100,12 @@ final readonly class NodeBaseInventoryProjection implements DirectOperationProje
                     $at = CarbonImmutable::parse($root['observed_at']);
                 }
             }
-            $facts[$kind->value] = ['observed_at' => $at?->toISOString(),
-                'fresh_for_capture' => $at !== null && abs($captured->diffInSeconds($at)) <= self::FactSeconds];
+            $confirmed = $kind === NodeFactKind::Host ? $record?->root_confirmed_at : $record?->confirmed_at;
+            $facts[$kind->value] = [
+                'observed_at' => $at?->toISOString(),
+                'confirmed_at' => $confirmed?->toISOString(),
+                'fresh_for_capture' => $confirmed !== null && abs($captured->diffInSeconds($confirmed)) <= self::FactSeconds,
+            ];
         }
 
         return $facts;
