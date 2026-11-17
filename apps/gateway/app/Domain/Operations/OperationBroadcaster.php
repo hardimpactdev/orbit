@@ -12,6 +12,8 @@ use App\Jobs\Operations\BroadcastOperationNotice;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Sends an operation's notices (docs/reference/events.mdx#operation): every change on the operation's own channel,
@@ -46,7 +48,15 @@ final readonly class OperationBroadcaster
         $notice = self::notice($operation);
         if ($operation->kind === InstanceWake::Kind && (ExecutorWake::enabled() || ExecutorWake::owns($operation))) {
             $id = $operation->id;
-            DB::afterCommit(static fn () => Bus::dispatch(new BroadcastOperationNotice($type, $id, $notice, $channel)));
+            DB::afterCommit(static function () use ($type, $id, $notice, $channel): void {
+                try {
+                    Bus::dispatch(new BroadcastOperationNotice($type, $id, $notice, $channel));
+                } catch (Throwable $exception) {
+                    Log::warning('An executor wake notice could not be queued.', [
+                        'operation_id' => $id, 'event_type' => $type->value, 'exception_type' => $exception::class,
+                    ]);
+                }
+            });
 
             return;
         }

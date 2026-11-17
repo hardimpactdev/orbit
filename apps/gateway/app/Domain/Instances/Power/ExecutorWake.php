@@ -28,6 +28,8 @@ final readonly class ExecutorWake
 {
     public const string State = 'wake_executor';
 
+    public const string FollowUpState = 'wake_executor_follow_up';
+
     public const int CompletionSeconds = 6;
 
     public function __construct(private ExecutorOrderPublisher $publisher, private ExecutorResultWait $wait, private OperationStore $operations) {}
@@ -117,7 +119,14 @@ final readonly class ExecutorWake
     {
         DB::transaction(function () use ($operation, $expire): void {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
-            if (! self::owns($operation) || $operation->status->terminal()) {
+            if (! self::owns($operation)) {
+                return;
+            }
+            if ($operation->status->terminal()) {
+                if ($operation->status === OperationStatus::Succeeded && ($operation->state[self::FollowUpState] ?? null) === 'pending') {
+                    DB::afterCommit(fn () => $this->enqueueHooks($operation->id));
+                }
+
                 return;
             }
             $line = $operation->executor_result;
@@ -130,13 +139,32 @@ final readonly class ExecutorWake
                 'failed' => 'executor.wake_failed',
                 default => 'executor.wake_timeout',
             };
+            if ($success) {
+                // Register before change() registers the terminal notices; the pending handoff commits with success.
+                DB::afterCommit(fn () => $this->enqueueHooks($operation->id));
+            }
             $this->operations->change($operation, ['status' => $success ? OperationStatus::Succeeded : OperationStatus::Failed,
                 'finished_at' => now(), 'lock_key' => null, 'error_code' => $success ? null : $code,
+                ...($success ? ['state' => [...($operation->state ?? []), self::FollowUpState => 'pending']] : []),
                 'result' => [...($success ? ['power_state' => InstanceRuntimePowerState::Running->value] : []), 'executor' => $line]]);
             if ($success) {
                 InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => InstanceRuntimePowerState::Running]);
-                DB::afterCommit(static fn () => Bus::dispatch(new ProjectExecutorWake($operation->id)));
             }
+        });
+    }
+
+    /** Success is already committed. A failed enqueue leaves the durable pending handoff for the next completion. */
+    private function enqueueHooks(int $operationId): void
+    {
+        DB::transaction(static function () use ($operationId): void {
+            $operation = Operation::query()->whereKey($operationId)->lockForUpdate()->first();
+            if ($operation === null || ! self::owns($operation) || $operation->status !== OperationStatus::Succeeded
+                || ($operation->state[self::FollowUpState] ?? null) !== 'pending') {
+                return;
+            }
+            // The Gateway queue defaults to after_commit: enqueue now so a failure rolls back the queued marker.
+            Bus::dispatch((new ProjectExecutorWake($operation->id))->beforeCommit());
+            $operation->forceFill(['state' => [...($operation->state ?? []), self::FollowUpState => 'queued']])->save();
         });
     }
 }

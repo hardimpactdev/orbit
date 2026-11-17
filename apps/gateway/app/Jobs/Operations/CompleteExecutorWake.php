@@ -27,10 +27,10 @@ final class CompleteExecutorWake implements ShouldQueue
     public function handle(ExecutorWake $wake): void
     {
         $operation = Operation::query()->find($this->operationId);
-        if ($operation === null || ! ExecutorWake::owns($operation) || $operation->status->terminal()) {
+        if ($operation === null || ! ExecutorWake::owns($operation)) {
             return;
         }
-        if ($operation->started_at?->addSeconds(ExecutorWake::CompletionSeconds)->isFuture()) {
+        if (! $operation->status->terminal() && $operation->started_at?->addSeconds(ExecutorWake::CompletionSeconds)->isFuture()) {
             $this->release(1);
 
             return;

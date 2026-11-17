@@ -41,7 +41,7 @@ final class ProjectExecutorWake implements ShouldQueue
             if (($instance = Instance::query()->find($operation->target_id)) !== null) {
                 $contributions->projectWake($instance);
             }
-            $operation->forceFill(['state' => [...($operation->state ?? []), self::Receipt => true]])->save();
+            $operation->forceFill(['state' => [...($operation->state ?? []), self::Receipt => true, ExecutorWake::FollowUpState => 'delivered']])->save();
         });
     }
 }

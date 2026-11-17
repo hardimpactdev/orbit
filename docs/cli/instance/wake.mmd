@@ -51,7 +51,8 @@ sequenceDiagram
       %%> Result:
       %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
       %%> - the Operation succeeds and records the runtime running
-      %%> - queue the lifecycle follow-up after success; its Operation receipt prevents a repeated job from running the hooks again
+      %%> - record the pending lifecycle follow-up with success, then enqueue it before terminal notices; a notice enqueue failure cannot lose it
+      %%> - a later completion retries a pending handoff even on a succeeded Operation; a queued handoff and the successful hook receipt prevent duplicates
     else no successful result in time
       %% path: executor-pending
       GW-->>CL: 401 progress page<br/>activation state pending

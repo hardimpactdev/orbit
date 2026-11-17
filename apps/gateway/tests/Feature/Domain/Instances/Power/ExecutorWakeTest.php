@@ -34,6 +34,8 @@ use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -488,4 +490,90 @@ it('retries a failed queued wake hook and skips it after successful delivery', f
     app()->call([$job, 'handle']);
     expect($calls)->toBe(2);
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole())->status->toBe(OperationStatus::Succeeded);
+});
+
+it('preserves one hook handoff when enqueueing terminal notices throws', function (): void {
+    $instance = executorWakeInstance();
+    executorWakeVisit($instance)->assertUnauthorized();
+    $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    executorWakeReply($operation, ['status' => 'done']);
+    $bus = Bus::getFacadeRoot();
+    $noticeFailures = 0;
+    Bus::partialMock()->shouldReceive('dispatch')->andReturnUsing(function ($job) use ($bus, &$noticeFailures) {
+        if ($job instanceof BroadcastOperationNotice && $job->notice['status'] === 'succeeded') {
+            $noticeFailures++;
+            throw new RuntimeException('Injected notice enqueue failure.');
+        }
+
+        return $bus->dispatch($job);
+    });
+
+    try {
+        executorWakeVisit($instance)->assertOk();
+    } finally {
+        Bus::swap($bus);
+    }
+
+    expect($operation->refresh())->status->toBe(OperationStatus::Succeeded);
+    expect($noticeFailures)->toBe(2);
+    Queue::assertPushed(ProjectExecutorWake::class, 1);
+    (new CompleteExecutorWake($operation->id))->handle(app(ExecutorWake::class));
+    app(ExecutorWake::class)->complete($operation);
+    Queue::assertPushed(ProjectExecutorWake::class, 1);
+});
+
+it('recovers a recorded but unqueued hook handoff once after the wake succeeded', function (): void {
+    $instance = executorWakeInstance();
+    executorWakeVisit($instance)->assertUnauthorized();
+    $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    executorWakeReply($operation, ['status' => 'done']);
+    $bus = Bus::getFacadeRoot();
+    Bus::partialMock()->shouldReceive('dispatch')->andReturnUsing(function ($job) use ($bus) {
+        if ($job instanceof ProjectExecutorWake) {
+            throw new RuntimeException('Injected hook enqueue failure.');
+        }
+
+        return $bus->dispatch($job);
+    });
+
+    try {
+        expect(fn () => app(ExecutorWake::class)->complete($operation))->toThrow(RuntimeException::class, 'Injected hook enqueue failure.');
+    } finally {
+        Bus::swap($bus);
+    }
+
+    expect($operation->refresh())->status->toBe(OperationStatus::Succeeded);
+    expect($operation->state)->toMatchArray(['wake_executor_follow_up' => 'pending']);
+    Queue::assertNotPushed(ProjectExecutorWake::class);
+    (new CompleteExecutorWake($operation->id))->handle(app(ExecutorWake::class));
+    app(ExecutorWake::class)->complete($operation);
+    expect($operation->refresh()->state)->toMatchArray(['wake_executor_follow_up' => 'queued']);
+    Queue::assertPushed(ProjectExecutorWake::class, 1);
+    $contribution = $this->mock(InstanceLifecycleContribution::class);
+    $contribution->shouldReceive('projectWake')->once();
+    app()->tag([InstanceLifecycleContribution::class], InstanceLifecycleContribution::class);
+    $job = Queue::pushed(ProjectExecutorWake::class)->sole();
+    // Dispatch must finish before the queued marker commits, even on an after_commit queue connection.
+    expect($job->afterCommit)->toBeFalse();
+    app()->call([$job, 'handle']);
+    app()->call([$job, 'handle']);
+    app(ExecutorWake::class)->complete($operation);
+    Queue::assertPushed(ProjectExecutorWake::class, 1);
+});
+
+it('rolls back the pending hook handoff together with wake success', function (): void {
+    $instance = executorWakeInstance();
+    executorWakeVisit($instance)->assertUnauthorized();
+    $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    executorWakeReply($operation, ['status' => 'done']);
+
+    expect(fn () => DB::transaction(function () use ($operation): void {
+        app(ExecutorWake::class)->complete($operation);
+        throw new RuntimeException('Roll back wake success.');
+    }))->toThrow(RuntimeException::class, 'Roll back wake success.');
+
+    expect($operation->refresh())->status->toBe(OperationStatus::Running);
+    expect($operation->state)->not->toHaveKey('wake_executor_follow_up');
+    Queue::assertNotPushed(ProjectExecutorWake::class);
+    expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
 });
