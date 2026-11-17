@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, ADR 0261, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): read a sleeping development container's recorded pages back while it is still frozen, then resume it, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake. Planned (ADR 0265, docs/reference/production-containers.md#sleep-and-wake): a production Instance's live release container wakes by the same rule, and Caddy holds its visitor instead of the progress page.
+  %% Container runtime (ADR 0250 step 8, ADR 0261, ADR 0266 slice 6, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): read a sleeping development container's recorded pages back while it is still frozen, then resume it, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake. Planned (ADR 0265, docs/reference/production-containers.md#sleep-and-wake): a production Instance's live release container wakes by the same rule, and Caddy holds its visitor instead of the progress page.
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
@@ -32,7 +32,7 @@ sequenceDiagram
   %%> - planned: a production Instance's live release container; the wake is admitted beside an open deploy or rollback, which changes live only after its switch; the switch and the wake take the Instance's power lock
   %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd) and a nested-fleet default refuses: only its deployment starts it
   %%> Result:
-  %%> - an open wake of the Instance is joined: a second caller gets the same Operation, Caddy the same progress page
+  %%> - an open wake of the Instance is joined: a second caller gets the same Operation; Caddy waits within the bound when executor wakes are enabled
   %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
   %%> On failure:
   %%> - no container, a non-development Instance, a nested-fleet default whose last sleep did not freeze it, or other lifecycle work starts no run
