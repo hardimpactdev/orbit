@@ -7,6 +7,7 @@ use Orbit\Sdk\Responses\AiRouter\AiRouterAccountResponse;
 use Orbit\Sdk\Responses\AiRouter\AiRouterModelResponse;
 use Orbit\Sdk\Responses\AiRouter\AiRouterModelsResponse;
 use Orbit\Sdk\Responses\AiRouter\AiRouterProviderResponse;
+use Orbit\Sdk\Responses\AiRouter\AiRouterProvidersResponse;
 use Orbit\Sdk\Responses\AiRouter\AiRouterStatusResponse;
 
 it('maps a fleet status without tokens or keys', function (): void {
@@ -77,16 +78,26 @@ it('maps a model list and drops fields the collector does not store', function (
             'provider' => 'codex',
             'display_name' => 'Luna',
             'type' => 'chat',
-        ], 'req'),
-    ], 'req');
+        ], '123e4567-e89b-42d3-a456-426614174000'),
+    ], '123e4567-e89b-42d3-a456-426614174000');
 
     expect($response->toArray())->toBe([
         'models' => [
             ['id' => 'gpt-5.6-luna', 'provider' => 'codex'],
         ],
-        'request_id' => 'req',
+        'request_id' => '123e4567-e89b-42d3-a456-426614174000',
     ]);
 });
+
+it('discards invalid request IDs from list responses', function (string $responseClass): void {
+    $response = new $responseClass([], 'not-a-uuid-sentinel');
+
+    expect($response->requestId)->toBe('')
+        ->and($response->toArray()['request_id'])->toBe('');
+})->with([
+    'models' => AiRouterModelsResponse::class,
+    'providers' => AiRouterProvidersResponse::class,
+]);
 
 it('rejects a model that has no provider', function (): void {
     expect(fn () => AiRouterModelResponse::fromGatewayData([
