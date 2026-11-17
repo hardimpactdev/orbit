@@ -2878,7 +2878,7 @@ Deno.test({
         hosts: "localhost", gather_facts: false,
         tasks: [{"ansible.builtin.include_tasks": "tasks/instance-folder.yml",
           loop: "{{ instances.folders | dict2items }}", loop_control: {loop_var: "shared"},
-          vars: {folder_name: "{{ shared.key }}", folder: "{{ shared.value }}"}}],
+          vars: {folder_name: "{{ shared.key }}", folder: "{{ shared.value }}", instance_t3_reload: []}}],
       }]));
       const result = await f.run();
       assert(result.ok, result.output);

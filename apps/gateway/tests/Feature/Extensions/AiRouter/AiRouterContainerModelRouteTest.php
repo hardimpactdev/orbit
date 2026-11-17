@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -28,7 +28,7 @@ function routeNode(string $name, string $address): Node
         'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
 }
 
-/** The router on `services` (10.44.0.3), with task VMs in 10.44.0.128/25. */
+/** The router on `services` (10.44.0.3) with its shared model guard. */
 function routeWorld(): Node
 {
     $services = routeNode('services', '10.44.0.3');
@@ -38,9 +38,9 @@ function routeWorld(): Node
     return $services;
 }
 
-it('gives every task VM the guard origin and the one fixed key, and never the router key or the anchor key', function (): void {
+it('gives containers the guard origin and placeholder key, never the router or anchor key', function (): void {
     routeWorld();
-    $route = app(TaskVmModelRoute::class);
+    $route = app(ContainerModelRoute::class);
     $secrets = app(AiRouterSecrets::class);
 
     $route->assertReady();
@@ -53,21 +53,21 @@ it('refuses the route until a run applied the guard', function (): void {
     $services = routeNode('services', '10.44.0.3');
     app(AiRouterState::class)->enable($services->id, 'services-valkey', 'http://10.44.0.3:8317', 'management', 'read', 'control');
 
-    expect(fn () => app(TaskVmModelRoute::class)->assertReady())->toThrow(ResourceOperationException::class, 'ai-router:task-guard');
+    expect(fn () => app(ContainerModelRoute::class)->assertReady())->toThrow(ResourceOperationException::class, 'ai-router:task-guard');
     appliedTaskGuard($services);
-    app(TaskVmModelRoute::class)->assertReady();
+    app(ContainerModelRoute::class)->assertReady();
     app(AiRouterState::class)->disable();
-    expect(fn () => app(TaskVmModelRoute::class)->assertReady())->toThrow(ResourceOperationException::class, 'ai-router:setup');
+    expect(fn () => app(ContainerModelRoute::class)->assertReady())->toThrow(ResourceOperationException::class, 'ai-router:setup');
 });
 
 it('refuses the route while the ai-router is off', function (): void {
-    $route = app(TaskVmModelRoute::class);
+    $route = app(ContainerModelRoute::class);
 
     expect(fn () => $route->assertReady())->toThrow(ResourceOperationException::class, 'ai-router')
         ->and(fn () => $route->origin())->toThrow(ResourceOperationException::class);
 });
 
-it('tears the ai-router down: no task holds a per-VM key that only the router could revoke', function (): void {
+it('tears the ai-router down without revoking per-container keys', function (): void {
     routeWorld();
 
     $status = app(DisableAiRouterAction::class)->execute();

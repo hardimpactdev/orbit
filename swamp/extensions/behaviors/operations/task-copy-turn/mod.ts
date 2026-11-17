@@ -11,7 +11,8 @@ const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 
 // What `task-copy-turn.yml` writes, each file as soon as its command ended: `settle.json` with the earlier turns it found settled,
 // those still open and the runs it stopped for them, for a continued turn `continue.json` with the exit code of
-// `t3 thread list` (null when it printed no JSON) and how many T3 threads carry its title, for a reviewer turn `review.json` with whether
+// `t3 thread list` (null when it printed no JSON) and how many T3 threads carry its title, `answered.json` with the resolution helper's
+// exit and reply before an answer is sent, for a reviewer turn `review.json` with whether
 // the candidate is checked out, `detach.json` as soon as the reviewer's candidate is checked out, for a new thread `model.json` with the
 // model, the slugs T3's catalog offers (null when it was not read) and whether it offers the model, `launch.json` before the start,
 // `start.json` with the exit code, stdout and a failed start's stderr tail of `t3 thread start` or `t3 thread send` with `--wait --json`, for a run that waits for an answer `ask.json` with the exit code and stdout of `t3_copy_rpc.mjs
@@ -21,6 +22,8 @@ const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 const Settle = z.object({ list_exit: z.number().int().nullable(), settled: z.array(z.number().int()), open: z.array(z.number().int()),
     stopped: z.array(z.object({ operation_id: z.number().int(), run: z.string() }).strict()) }).strict();
 const Resumed = z.object({ list_exit: z.number().int().nullable(), found: z.number().int() }).strict();
+const Answer = z.object({ answered_exit: z.number().int().nullable(), answered: z.string() }).strict();
+const Answered = z.object({ resolved: z.boolean(), pending: z.array(z.string()), error: z.string().nullable() });
 const Review = z.object({ ready: z.boolean(), error_code: z.enum(["tasks.copy_tree_dirty", "tasks.copy_turn_failed"]).nullable() }).strict();
 const Restore = z.object({ restored: z.boolean() }).strict();
 const Start = z.object({ start_exit: z.number().int(), start: z.string(), error: z.string().optional() }).strict();
@@ -62,6 +65,7 @@ const Active = new Set(["preparing", "queued", "starting", "running", "waiting"]
 export type Evidence = {
     settle?: z.infer<typeof Settle> | null;
     resumed: z.infer<typeof Resumed> | null;
+    answered?: z.infer<typeof Answer> | null;
     review: z.infer<typeof Review> | null;
     model: z.infer<typeof Model> | null;
     detached: boolean;
@@ -210,6 +214,13 @@ function shapeRun(evidence: Evidence): Turn {
     if (evidence.resumed !== null && evidence.resumed.found !== 1) {
         return { ...base, state: "failed", error: `T3 holds ${evidence.resumed.found} threads of this title to continue, not one.`, error_code: "tasks.copy_thread_missing" };
     }
+    if (evidence.answered) {
+        const answer = evidence.answered.answered_exit === 0 ? parse(Answered, evidence.answered.answered) : null;
+        if (answer?.resolved !== true || answer.pending.length > 0) {
+            return { ...base, state: "failed", error: "Orbit could not confirm that the stored answered questions are resolved in T3; nothing was launched.",
+                error_code: "tasks.copy_question_unresolved" };
+        }
+    }
     if (evidence.review !== null && !evidence.review.ready) {
         const dirty = evidence.review.error_code === "tasks.copy_tree_dirty";
         return {
@@ -275,7 +286,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.16.1",
+    version: "2026.11.17.1",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -286,6 +297,7 @@ export const behavior = {
                 const turn = Turn.parse(shapeTurn({
                     settle: await evidence(args.folder + "/settle.json", 65536, Settle),
                     resumed: await evidence(args.folder + "/continue.json", 1024, Resumed),
+                    answered: await evidence(args.folder + "/answered.json", AskBytes, Answer),
                     review: await evidence(args.folder + "/review.json", 1024, Review),
                     model: await evidence(args.folder + "/model.json", 65536, Model),
                     detached: await marked("detach.json"),

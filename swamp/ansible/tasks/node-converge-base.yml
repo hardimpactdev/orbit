@@ -54,7 +54,7 @@
   loop: "{{ intent.role_units }}"
   loop_control: { label: "{{ item.name }}" }
   register: role_units_written
-- name: Load the changed role units
+- name: Load the changed role units # noqa: no-handler -- the agent phase must load its units even when later CLI work fails
   when: role_units_written is changed
   ansible.builtin.systemd: { daemon_reload: true }
 - name: Require a valid recorded CLI release

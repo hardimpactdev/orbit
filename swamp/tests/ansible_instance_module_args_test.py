@@ -10,7 +10,6 @@ from pathlib import Path
 from unittest import mock
 
 import yaml
-from ansible.module_utils import basic
 from ansible.module_utils.common.arg_spec import ModuleArgumentSpecValidator
 from ansible.parsing.dataloader import DataLoader
 from ansible.parsing.mod_args import ModuleArgsParser
@@ -18,6 +17,8 @@ from ansible.playbook.play_context import PlayContext
 from ansible.playbook.task import Task
 from ansible.plugins.loader import action_loader, init_plugin_loader, module_loader
 from ansible.template import Templar
+
+from ansible.module_utils import basic
 
 ANSIBLE = Path(__file__).resolve().parents[1] / 'ansible'
 FILES = sorted({*ANSIBLE.rglob('*.yml'), *ANSIBLE.rglob('*.yaml')})

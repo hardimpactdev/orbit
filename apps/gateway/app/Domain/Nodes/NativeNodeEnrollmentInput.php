@@ -12,7 +12,6 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmAptCache;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -94,8 +93,7 @@ final readonly class NativeNodeEnrollmentInput
             $intent['packages'] = $base['packages'];
             $intent['kernel'] = NodeKernelPolicy::intent();
             $intent['updates'] = NodeUpdatePolicy::for($node);
-            // The package cache of the task VM for a Node of its nested fleet; null for every other Node, which reads the archive directly.
-            $intent['apt_proxy'] = TaskVmAptCache::for($node);
+            $intent['apt_proxy'] = null;
             $intent['sudo'] = ['path' => '/etc/sudoers.d/orbit-'.$node->user,
                 'content' => $node->user." ALL=(ALL) NOPASSWD: ALL\n"];
             $home = $node->user === 'root' ? '/root' : '/home/'.$node->user;

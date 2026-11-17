@@ -13,6 +13,7 @@ use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\CloneStage;
 use App\Domain\Instances\ContainerInstanceDestroy;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
@@ -37,7 +38,6 @@ use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Domain\WebSocket\WebSocketAppEnvProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -79,7 +79,7 @@ beforeEach(function (): void {
     ]));
     $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
     app(ExtensionStore::class)->set('conn', true);
-    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
     {
         public bool $ready = true;
 
@@ -332,7 +332,7 @@ describe('a clone of the container default', function (): void {
         'a failed default' => [fn (Instance $default) => $default->update(['status' => InstanceState::Reserved]) && false ?: null, 'instance.default_missing'],
         'Conn off' => [fn () => app(ExtensionStore::class)->set('conn', false) ?: null, 'operation.kind_unavailable'],
         'no model router guard' => [function (): null {
-            app(TaskVmModelRoute::class)->ready = false;
+            app(ContainerModelRoute::class)->ready = false;
 
             return null;
         }, 'ai_router.disabled'],

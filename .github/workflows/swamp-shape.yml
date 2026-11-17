@@ -35,6 +35,26 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
 
 jobs:
+  lint:
+    name: Swamp Ansible and Python lint
+    if: ${{ !inputs.changed-only || inputs.shape }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: python
+        with:
+          python-version: "3.13"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.cache/orbit-shape-gate
+          key: shape-lint-${{ runner.os }}-${{ runner.arch }}-${{ steps.python.outputs.python-version }}-${{ steps.python.outputs.python-path }}-${{ hashFiles('swamp/ansible/shape-gate-requirements.txt', 'swamp/ansible/requirements.txt', 'swamp/ansible/requirements.yml') }}
+      - name: Run the pinned linters
+        run: bin/swamp-shape-gate --only lint --strict
+
   shape:
     name: Swamp shape gate
     if: ${{ !inputs.changed-only || inputs.shape }}

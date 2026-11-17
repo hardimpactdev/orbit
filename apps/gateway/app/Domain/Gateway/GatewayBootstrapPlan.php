@@ -30,7 +30,7 @@ final readonly class GatewayBootstrapPlan
      * @param  string  $url  The Gateway's own address, `APP_URL`.
      * @param  string  $home  `ORBIT_HOME`, the folder of its state.
      * @param  string  $checkout  `ORBIT_GATEWAY_CHECKOUT`, the `apps/gateway` folder of the release.
-     * @param  ?string  $aptProxy  The package cache of the task VM that runs a nested fleet (`TaskVmAptCache`); null reads the archive directly.
+     * @param  ?string  $aptProxy  An explicit bootstrap package proxy; null uses the machine's own apt settings.
      * @return array<string,mixed>
      */
     public static function make(string $url, string $home, string $checkout, ?string $aptProxy = null): array

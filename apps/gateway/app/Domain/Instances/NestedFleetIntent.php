@@ -6,7 +6,6 @@ namespace App\Domain\Instances;
 
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -17,8 +16,8 @@ use App\Support\ValidatedData;
  * The `fleet` part of a deployment intent of a nested-fleet default (docs/reference/development-containers.md#refresh-after-a-release)
  * and of a create intent of its clone (docs/reference/development-containers.md#a-clone-starts-its-fleet), the input of
  * swamp/ansible/tasks/instance-fleet.yml. Only an Instance whose runtime keeps a fleet (InstancePlacement::keepsFleet) gets one; every
- * other deployment or create gets none and runs as before. The fleet's names and addresses are the task VM fleet's own
- * (TaskVmNestedFleet). A failed refresh restores the seed the run took first, so the intent names none.
+ * other deployment or create gets none and runs as before. NestedFleetLayout owns the fleet's names and addresses.
+ * A failed refresh restores the seed the run took first, so the intent names none.
  */
 final readonly class NestedFleetIntent
 {
@@ -70,8 +69,7 @@ final readonly class NestedFleetIntent
 
     /**
      * The memory limit of each nested container of an Instance fleet, 11 GiB of the Instance container's 12 GiB: nested-app-dev hosts
-     * Instances, app-prod serves no Instance (docs/reference/development-containers.md#instance-host-in-the-fleet). A task VM's fleet keeps
-     * TaskVmNestedFleet::Layout.
+     * Instances, app-prod serves no Instance (docs/reference/development-containers.md#instance-host-in-the-fleet).
      */
     public const array Memory = ['gateway' => '4GiB', 'app-dev' => '5GiB', 'app-prod' => '2GiB'];
 
@@ -80,23 +78,23 @@ final readonly class NestedFleetIntent
     {
         $proxy = InstanceEgress::origin(Ipv4Subnet::from(ValidatedData::string($instance->node->instance_bridge))->usableRange()[0]);
         // The nested Gateway's own address is named as well as its network: PHP's HTTP clients may not match an address to a range.
-        $local = implode(',', ['localhost', '127.0.0.1', '::1', '.orbit', TaskVmNestedFleet::Layout['gateway']['wireguard'],
-            TaskVmNestedFleet::WireGuardSubnet, TaskVmNestedFleet::Subnet]);
+        $local = implode(',', ['localhost', '127.0.0.1', '::1', '.orbit', NestedFleetLayout::Layout['gateway']['wireguard'],
+            NestedFleetLayout::WireGuardSubnet, NestedFleetLayout::Subnet]);
 
         $size = $instance->runtime()->value('idmap_size');
         $layout = [];
-        foreach (TaskVmNestedFleet::Layout as $role => $guest) {
+        foreach (NestedFleetLayout::Layout as $role => $guest) {
             $layout[$role] = ['address' => $guest['address'], 'memory' => self::Memory[$role]];
         }
 
         return [
-            'guests' => TaskVmNestedFleet::Guests,
+            'guests' => NestedFleetLayout::Guests,
             'layout' => $layout,
             // The refresh builds the Instance host on nested-app-dev only when the default's ID map leaves room for isolated Instances
             // there (docs/reference/development-containers.md#instance-host-in-the-fleet).
             'host' => is_int($size) && $size >= InstanceHostIntent::NestedIdMapSize,
-            'operator' => TaskVmNestedFleet::operator(),
-            'checkout' => ['path' => TaskVmNestedFleet::CheckoutPath],
+            'operator' => NestedFleetLayout::operator(),
+            'checkout' => ['path' => NestedFleetLayout::CheckoutPath],
             'proxy' => ['HTTP_PROXY' => $proxy, 'HTTPS_PROXY' => $proxy, 'http_proxy' => $proxy, 'https_proxy' => $proxy,
                 'NO_PROXY' => $local, 'no_proxy' => $local],
         ];

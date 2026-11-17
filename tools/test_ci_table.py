@@ -122,7 +122,7 @@ def budget_errors(workflows, checks, fixture_budget):
                 if job.get('if') == FIXTURES_CONDITION and workflows['ci.yml']['jobs']['swamp'].get('with', {}).get('changed-only') is True:
                     continue
                 reject(label, 'full fixtures must be unreachable from CI on a pull request')
-            key = {'cli/build': 'cli', 'swamp/shape': 'swamp-shape',
+            key = {'cli/build': 'cli', 'swamp/shape': 'swamp-shape', 'swamp/lint': 'swamp-shape',
                    'swamp/validate': 'swamp-validate', 'swamp/tests': 'swamp-tests'}.get(label, name)
             if caller is None and name in NON_CHECKS:
                 expected = 275 if name == 'proof-run' else 1 if name == 'proof-eligibility' else PROOF_GATE_TIMEOUT if name == 'required' else 2
