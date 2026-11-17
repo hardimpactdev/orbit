@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace App\Domain\Fleet;
 
 use App\Domain\Instances\InstanceHostIntent;
-use App\Domain\Nodes\AppDevRuntimeFootprint;
+use App\Domain\Nodes\GatewayPrivateDnsInput;
+use App\Domain\Nodes\NativeNodeRoleAddInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeExecutorInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleUnits;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\ToolPin;
@@ -40,6 +41,10 @@ final readonly class ReleaseNodeInputs
     /** The plays and materializer shared by every role converge. */
     private const array SharedRoleFiles = [
         'swamp/ansible/ansible.cfg',
+        'swamp/workflows/workflow-operation-node-converge-direct.yaml',
+        'swamp/extensions/behaviors/operations/ansible-input/write.ts',
+        'swamp/extensions/behaviors/operations/ansible-input/converge_input.ts',
+        'swamp/extensions/behaviors/operations/ansible-input/converge_result.ts',
         'swamp/ansible/build_vars.py',
         'swamp/ansible/operation-node-converge.yml',
         'swamp/ansible/tasks/node-converge-role.yml',
@@ -49,12 +54,9 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/tasks/check-runtime.yml',
         'swamp/ansible/tasks/node-converge-software*.yml',
         'swamp/ansible/tasks/node-converge-apt*.yml',
-        'swamp/ansible/tasks/node-converge-javascript.yml',
-        'swamp/ansible/tasks/javascript-version.yml',
         'swamp/ansible/tasks/artifact-fetch.yml',
         'swamp/ansible/library/orbit_artifact.py',
         'swamp/ansible/transport-exit-codes.json',
-        'swamp/extensions/behaviors/operations/ansible-input/converge_input.ts',
     ];
 
     /** Shipped assets consumed by the shared Instance-host branch on app-dev and CI-only Nodes. */
@@ -86,31 +88,32 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/files/instance-container-power.py',
     ];
 
-    private const array RoleFiles = [
-        'swamp' => ['swamp/ansible/tasks/swamp-start-cache.yml', 'swamp/ansible/swamp-worker-renewal.yml',
-            'swamp/ansible/tasks/swamp-worker-*.yml', 'swamp/ansible/tasks/node-converge-deno.yml'],
-        'websocket' => ['swamp/ansible/tasks/websocket.yml'],
-        'metrics' => ['swamp/ansible/tasks/metrics.yml'],
-        'ci-runner' => ['swamp/ansible/tasks/ci.yml', 'swamp/ansible/tasks/ci-*.yml', 'swamp/ansible/tasks/proof-seed-*.yml',
-            'swamp/extensions/behaviors/operations/node/ci_host_spec.ts'],
-        'app-prod' => ['swamp/ansible/tasks/node-converge-browser.yml'],
-    ];
-
     public function host(?string $root = null): string
     {
         $root ??= dirname(base_path(), 2);
         $recipe = new RecipeLoader()->source($root.'/'.self::Recipe);
         $raw = ValidatedData::object(json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR));
 
+        $roleTools = [];
+        foreach (RoleName::cases() as $role) {
+            if ($role !== RoleName::Gateway) {
+                array_push($roleTools, ...$this->software($raw, $role));
+            }
+        }
+        // The build profile includes role-owned pins. Common tools and pins outside the automatic role scope still require approval.
+        $hostTools = array_diff($recipe->profile('base'), $roleTools);
+        array_push($hostTools, ...ValidatedData::stringList($raw['common']));
+
         return self::digest([$raw['ubuntu'], $raw['architectures'], $raw['artifact_mirror'], $raw['git'],
-            $this->pins($recipe, $recipe->profile('base')), $this->files($root, self::HostFiles)]);
+            $this->pins($recipe, $hostTools), $this->files($root, self::HostFiles)]);
     }
 
     /**
      * @param  list<string>|null  $selected
+     * @param  array<int,array<string,mixed>>  $renderedRoles  An admission supplies the exact plans it will dispatch.
      * @return array<int, array{role:string,digest:string}> Assignment IDs keep a recreated role from inheriting an apply.
      */
-    public function roles(Node $node, bool $release = true, ?array $selected = null, ?string $root = null): array
+    public function roles(Node $node, bool $release = true, ?array $selected = null, ?string $root = null, array $renderedRoles = []): array
     {
         $root ??= dirname(base_path(), 2);
         $recipe = new RecipeLoader()->source($root.'/'.self::Recipe);
@@ -123,42 +126,110 @@ final readonly class ReleaseNodeInputs
             ->when($release, static fn ($query) => $query->where('role', '!=', RoleName::Gateway))
             ->when($selected !== null, static fn ($query) => $query->whereIn('role', $selected ?? []))->orderBy('id')->get() as $assignment) {
             $role = $assignment->role->value;
-            $profile = array_values(array_diff($recipe->profiles[$role] ?? [], ValidatedData::stringList($raw['common'])));
-            $versions = array_keys($recipe->phpExtensions($profile));
-            $php = array_intersect_key($recipe->php, array_flip($versions));
-            $runtime = app(NodeRoleRuntimeInput::class)->capture($node, $assignment);
-            // Transport, exporter publication, and the pinned binary are separate inputs to their own Operations.
-            unset($runtime['agent_sha256'], $runtime['ssh_execution'], $runtime['fleet']);
-            $instanceHost = $hostRole === $assignment->role;
-            // The first converge allocates a missing bridge before capturing the applied plan.
-            $instances = $instanceHost && $node->instance_bridge !== null ? $host->for($node) : null;
-            $executor = isset(NodeExecutorInput::RoleFamilies[$role]);
+            $render = $renderedRoles[$assignment->id] ?? null;
+            if ($render === null) {
+                $runtimeSpec = app(NodeRoleRuntimeInput::class)->capture($node, $assignment, publicOnly: true);
+                $dns = $assignment->role === RoleName::Gateway ? app(GatewayPrivateDnsInput::class)->capture($node) : null;
+                $render = app(NodeDesiredConvergeInput::class)->roleResources(
+                    app(NativeNodeRoleAddInput::class)->nodeResources($node, $assignment->role), $recipe, $assignment->role);
+                $render['runtime'] = app(NativeNodeRoleRuntimeInput::class)->capture(
+                    $node, $assignment, ['runtime' => $runtimeSpec, 'gateway_dns' => $dns], null, converge: true)['intent'];
+            }
+            $resources = array_intersect_key($render, array_flip(['directories', 'files', 'php', 'services']));
+            $runtime = ValidatedData::object($render['runtime']);
+            if (isset($runtime['instances'])) {
+                $runtime['instances'] = InstanceHostIntent::withoutAdmission(ValidatedData::object($runtime['instances']));
+            }
+            if (is_array($runtime['swamp'])) {
+                unset($runtime['swamp']['agent_sha256'], $runtime['swamp']['ssh_execution']);
+            }
+
+            $software = $this->software($raw, $assignment->role);
+            $executor = isset(NodeExecutorInput::RoleFamilies[$role]) ? NodeExecutorInput::for($node) : null;
             $roleUnits = NodeRoleUnits::for($node, [$role]);
             $files = [
-                ...(self::RoleFiles[$role] ?? []),
-                ...($php !== [] ? ['swamp/ansible/tasks/php.yml'] : []),
-                ...($executor || $roleUnits !== [] ? ['swamp/ansible/tasks/node-converge-base.yml'] : []),
-                ...($executor ? ['swamp/ansible/tasks/node-executor.yml', 'swamp/ansible/tasks/node-converge-replace.yml'] : []),
-                ...($instanceHost ? self::InstanceHostFiles : []),
+                ...$this->roleFiles($assignment->role),
+                ...($resources['php'] !== [] ? ['swamp/ansible/tasks/php.yml'] : []),
+                ...(in_array('vp', $software, true) ? ['swamp/ansible/tasks/node-converge-javascript.yml', 'swamp/ansible/tasks/javascript-version.yml'] : []),
+                ...(in_array('chrome-headless-shell', $software, true) ? ['swamp/ansible/tasks/node-converge-browser.yml'] : []),
+                ...($executor !== null || $roleUnits !== [] ? ['swamp/ansible/tasks/node-converge-base.yml'] : []),
+                ...($executor !== null ? ['swamp/ansible/tasks/node-executor.yml', 'swamp/ansible/tasks/node-converge-replace.yml'] : []),
+                ...($hostRole === $assignment->role ? self::InstanceHostFiles : []),
             ];
-            $renderedFiles = match ($assignment->role) {
-                RoleName::AppDev => [AppDevRuntimeFootprint::directories(), AppDevRuntimeFootprint::files()],
-                RoleName::CiRunner => app(NativeNodeRoleRuntimeInput::class)->ciRunner($node),
-                default => [],
-            };
-            $phpRuntime = $php === [] ? [] : array_values(array_filter(
-                app(PhpRuntimeFootprintArtifact::class)->inputs($node),
-                static fn (array $configuration): bool => in_array($configuration['version'], $versions, true),
-            ));
-            $roles[$assignment->id] = ['role' => $role, 'digest' => self::digest([
-                $this->pins($recipe, $profile), $php, in_array($role, $recipe->phpPolicy->pcovProfiles, true),
-                $instances === null ? null : InstanceHostIntent::withoutAdmission($instances),
-                $runtime, $executor ? NodeExecutorInput::for($node) : null,
-                $renderedFiles, $phpRuntime, $roleUnits, $sharedFiles, $this->files($root, $files),
-            ])];
+            $roles[$assignment->id] = ['role' => $role, 'digest' => self::digest(self::ordered([
+                $software, $this->pins($recipe, $software), in_array($role, $recipe->phpPolicy->pcovProfiles, true),
+                in_array('composer', $software, true) ? $node->user : null,
+                $resources, $runtime, $executor, $roleUnits, $sharedFiles, $this->files($root, $files),
+            ]))];
         }
 
         return $roles;
+    }
+
+    /**
+     * The automatic scope of node-converge-software-plan.yml. Host common tools are covered by the host baseline.
+     *
+     * @param  array<string,mixed>  $recipe
+     * @return list<string>
+     */
+    private function software(array $recipe, RoleName $role): array
+    {
+        $names = ValidatedData::stringList(ValidatedData::object($recipe['roles'])[$role->value] ?? []);
+        $php = ValidatedData::object($recipe['php']);
+        $versions = ValidatedData::object($php['versions']);
+        $packages = [];
+        $tools = [];
+        foreach ($names as $name) {
+            if (str_starts_with($name, 'php:')) {
+                array_push($packages, ...ValidatedData::stringList(ValidatedData::object($versions[substr($name, 4)])['packages']));
+            } else {
+                $tools[] = $name;
+            }
+        }
+        if ($packages !== []) {
+            array_push($packages, ...ValidatedData::stringList($php['shared']));
+        }
+        if ($role === RoleName::Swamp) {
+            array_push($tools, 'deno', 'unzip');
+        }
+
+        return array_values(array_unique([...$tools, ...$packages]));
+    }
+
+    /** @return list<string> Files reached from the per-role branches of the converge play and its end checks. */
+    private function roleFiles(RoleName $role): array
+    {
+        return match ($role) {
+            RoleName::Swamp => ['swamp/ansible/tasks/node-converge-deno.yml', 'swamp/ansible/tasks/swamp-start-cache.yml',
+                'swamp/ansible/swamp-worker-renewal.yml', 'swamp/ansible/tasks/swamp-worker-*.yml'],
+            RoleName::WebSocket => ['swamp/ansible/tasks/websocket.yml'],
+            RoleName::Metrics => ['swamp/ansible/tasks/metrics.yml'],
+            RoleName::CiRunner => ['swamp/ansible/tasks/ci.yml', 'swamp/ansible/tasks/ci-bridge-read.yml',
+                'swamp/ansible/tasks/proof-seed-certificate.yml', 'swamp/ansible/tasks/proof-seed-listener.yml',
+                'swamp/extensions/behaviors/operations/node/ci_host_spec.ts'],
+            RoleName::Gateway => ['swamp/ansible/operation-node-converge-local-dns.yml', 'swamp/ansible/tasks/gateway-retire.yml',
+                'swamp/ansible/tasks/gateway-runtime.yml', 'swamp/ansible/tasks/gateway-dns.yml',
+                'swamp/ansible/tasks/private-dns-listener.yml', 'swamp/ansible/tasks/private-dns-withdraw.yml'],
+            // These roles use the common converge play and the branches selected by their rendered resources and software.
+            RoleName::AppDev, RoleName::AppProd, RoleName::Vpn, RoleName::Router, RoleName::Ingress,
+            RoleName::Database, RoleName::Analytics => [],
+        };
+    }
+
+    /** Sort maps without changing the application order of lists. */
+    private static function ordered(mixed $value): mixed
+    {
+        if (is_object($value)) {
+            $value = get_object_vars($value);
+        }
+        if (! is_array($value)) {
+            return $value;
+        }
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
+        return array_map(self::ordered(...), $value);
     }
 
     /**

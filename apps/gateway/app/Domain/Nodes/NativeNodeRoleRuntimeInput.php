@@ -46,7 +46,7 @@ final readonly class NativeNodeRoleRuntimeInput
     /** @param array<string,mixed> $snapshot
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
      */
-    public function capture(Node $node, NodeRole $assignment, array $snapshot, Operation $operation, bool $converge = false): array
+    public function capture(Node $node, NodeRole $assignment, array $snapshot, ?Operation $operation, bool $converge = false): array
     {
         $runtime = ['directories' => [], 'files' => [], 'secret_files' => [], 'units' => [], 'probes' => [], 'groups' => [], 'users' => [],
             'websocket' => null, 'metrics' => null, 'analytics' => null, 'gateway_dns' => null, 'gateway' => null,
@@ -81,17 +81,23 @@ final readonly class NativeNodeRoleRuntimeInput
         // Only the role that runs the branch on the Node gets the key: `app-dev` on a build-list Node, `ci-runner` on a CI-only
         // Node. So the intent of every other Node and role stays as it was.
         $hosts = app(InstanceHostIntent::class);
-        $instances = $hosts->role($node) === $assignment->role ? $hosts->for($node) : null;
+        // A desired-state read cannot allocate a bridge. Admission prepares it before capturing the applied plan.
+        $instances = $hosts->role($node) === $assignment->role && ($operation !== null || $node->instance_bridge !== null)
+            ? $hosts->for($node) : null;
         if ($instances !== null) {
             $runtime['instances'] = $instances;
         }
         if (! in_array($assignment->role, [RoleName::WebSocket, RoleName::Metrics, RoleName::Analytics], true)) {
             return ['intent' => $runtime, 'execution_secrets' => $copies];
         }
-        $material = ValidatedData::object(app(NodeRoleRuntimeSource::class)->resolveRoleMaterial($snapshot, $node->id)->value);
-        $secret = function (string $name, string $content) use (&$copies, $operation): string {
+        $source = app(NodeRoleRuntimeSource::class);
+        $material = $operation === null ? [] : ValidatedData::object($source->resolveRoleMaterial($snapshot, $node->id)->value);
+        $secret = function (string $name, string $materialKey) use (&$copies, $operation, $material): string {
             $field = str_replace('-', '_', $name);
-            $copies[$field] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'node-role-operation-'.$operation->id.'-'.$name, $content);
+            if ($operation !== null) {
+                $copies[$field] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+                    'node-role-operation-'.$operation->id.'-'.$name, ValidatedData::string($material[$materialKey]));
+            }
 
             return $field;
         };
@@ -102,7 +108,7 @@ final readonly class NativeNodeRoleRuntimeInput
             $runtime['directories'] = [['path' => dirname($path), 'owner' => 'root', 'group' => 'root', 'mode' => '0755'],
                 ['path' => $path.'.releases', 'owner' => $node->user, 'group' => $node->user, 'mode' => '0755']];
             $runtime['secret_files'] = [['path' => $release.'/.env', 'owner' => $node->user, 'group' => $node->user, 'mode' => '0600',
-                'secret' => $secret('websocket-environment', ValidatedData::string($material['websocket_environment']))]];
+                'secret' => $secret('websocket-environment', 'websocket_environment')]];
             $runtime['units'] = [['name' => 'orbit-websocket.service', 'unit' => app(WebSocketServiceUnitRenderer::class)->render($path, $node->user, $node->user, ValidatedData::integer($spec['port']))]];
             $runtime['websocket'] = ['repository' => $spec['repository'], 'ref' => $spec['ref'], 'release' => $release, 'path' => $path,
                 'user' => $node->user, 'port' => $spec['port'], 'health_url' => 'http://127.0.0.1:'.ValidatedData::integer($spec['port']).'/'];
@@ -110,27 +116,26 @@ final readonly class NativeNodeRoleRuntimeInput
         } elseif ($assignment->role === RoleName::Metrics) {
             $runtime['groups'] = [['name' => 'orbit-grafana', 'gid' => 472]];
             $runtime['users'] = [['name' => 'orbit-grafana', 'uid' => 472, 'gid' => 472]];
-            $files = ValidatedData::stringMap($material['configuration']);
+            $passwordPath = NodeRoleRuntimeSource::MetricsPasswordPath;
+            $files = $operation === null ? $source->metricsFiles($node, ValidatedData::object($snapshot['runtime']))
+                : array_diff_key(ValidatedData::stringMap($material['configuration']), [$passwordPath => true]);
             $public = [];
             foreach ($files as $path => $content) {
-                if ($path === '/etc/orbit/metrics/grafana/admin-password') {
-                    $runtime['secret_files'][] = ['path' => $path, 'owner' => 'orbit-grafana', 'group' => 'orbit-grafana', 'mode' => '0600',
-                        'secret' => $secret('metrics-password', $content)];
-                } else {
-                    $public[] = ['path' => $path, 'content' => $content];
-                    $runtime['files'][] = ['path' => $path, 'content' => $content, 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
-                }
+                $public[] = ['path' => $path, 'content' => $content];
+                $runtime['files'][] = ['path' => $path, 'content' => $content, 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
             }
-            $paths = array_values(array_unique(array_map(dirname(...), array_keys($files))));
+            $runtime['secret_files'][] = ['path' => $passwordPath, 'owner' => 'orbit-grafana', 'group' => 'orbit-grafana', 'mode' => '0600',
+                'secret' => $secret('metrics-password', 'password')];
+            $paths = array_values(array_unique(array_map(dirname(...), [...array_keys($files), $passwordPath])));
             usort($paths, static fn (string $a, string $b): int => substr_count($a, '/') <=> substr_count($b, '/'));
             $runtime['directories'] = array_map(static fn (string $path): array => ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'], $paths);
             $runtime['metrics'] = ['assignment_id' => $assignment->id, 'address' => $node->wireguard_ip, 'files' => $public,
-                'plan' => app(MetricsContainerPlan::class)->for($assignment->id, (string) $node->wireguard_ip, ValidatedData::stringMap(array_column($public, 'content', 'path')))];
+                'plan' => app(MetricsContainerPlan::class)->for($assignment->id, (string) $node->wireguard_ip, $files)];
             $runtime['probes'] = [['url' => 'http://127.0.0.1:9090/-/ready', 'require_success' => true],
                 ['url' => 'http://'.$node->wireguard_ip.':3000/api/health', 'require_success' => true]];
         } else {
             $spec = ValidatedData::object($snapshot['runtime']);
-            if ($converge || $operation->kind === 'node.role_converge') {
+            if ($converge || $operation?->kind === 'node.role_converge') {
                 $clickhouse = Node::query()->findOrFail(ValidatedData::integer(ValidatedData::object($spec['clickhouse'])['node_id']));
                 $runtime['analytics'] = ['process_id' => ValidatedData::object($spec['installation'])['process_id'],
                     'intent' => [], 'initialize' => [], 'clickhouse_node_id' => $clickhouse->id,
@@ -138,6 +143,9 @@ final readonly class NativeNodeRoleRuntimeInput
                 $runtime['probes'][] = ['url' => $spec['health_url'], 'require_success' => true];
 
                 return ['intent' => $runtime, 'execution_secrets' => $copies];
+            }
+            if ($operation === null) {
+                throw new \LogicException('A role installation requires an admitted Operation.');
             }
             $process = Process::query()->whereKey(ValidatedData::object($spec['installation'])['process_id'])->where('owner_type', Node::class)
                 ->where('owner_id', $node->id)->where('name', PlausibleProcess::NAME)->firstOrFail();

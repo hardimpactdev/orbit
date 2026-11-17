@@ -18,7 +18,7 @@ final readonly class NodeWorkAdmission
     /** @param array<string,mixed> $input */
     public function check(string $kind, int $nodeId, array $input): void
     {
-        $patterns = [...WaitForGatewayReleaseIdleAction::BlockingKindPatterns, 'tasks.%'];
+        $patterns = [...WaitForGatewayReleaseIdleAction::BlockingKindPatterns, 'instance.transfer', 'tasks.%'];
         $roles = $kind === 'node.converge' && data_get($input, '_converge.intent.release_roles_only') === true;
         if (! $roles && ! Str::is(array_map(static fn (string $pattern): string => str_replace('%', '*', $pattern), $patterns), $kind)) {
             return;

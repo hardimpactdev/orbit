@@ -16,6 +16,7 @@ use App\Domain\Nodes\NodeNetworkReservation;
 use App\Domain\Nodes\NodeRoleUnits;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
@@ -42,7 +43,8 @@ final readonly class StartNodeConvergeAction
 
         return app(NodeNetworkReservation::class)->hold($node, $base, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId, $full, $release): Operation {
             // Read before the admission clears the record; a holder refuses this admission, so nothing writes it in between.
-            $recorded = app(NodeConvergePhaseDigest::class)->recorded($node->fresh() ?? $node, $full);
+            // Release admission already compares its public role digest, including the workflow and materializer.
+            $recorded = app(NodeConvergePhaseDigest::class)->recorded($node->fresh() ?? $node, $full || $release);
             $operation = $this->operations->execute('node.converge', 'node', $node->id, $node->id,
                 ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base], 'intent' => ['release_roles_only' => $release]],
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
@@ -55,11 +57,12 @@ final readonly class StartNodeConvergeAction
                     app(InstanceHostIntent::class)->prepare($node);
                 }
                 $inputs = app(ReleaseNodeInputs::class);
-                $roleInputs = $inputs->roles($node, $release, $selected);
+                $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $release ? null : $hub, $release);
+                $plans = RouteExecutionProof::objects($snapshot['intent']['roles']);
+                $roleInputs = $inputs->roles($node, $release, $selected, renderedRoles: array_column($plans, null, 'assignment_id'));
                 if ($release && count($roleInputs) !== count($selected)) {
                     throw new ResourceOperationException('fleet.role_scope_invalid', 'Automatic convergence requires active assignments.', 422);
                 }
-                $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $release ? null : $hub, $release);
                 if ($release) {
                     $intent = $snapshot['intent'];
                     $intent['release_roles_only'] = true;

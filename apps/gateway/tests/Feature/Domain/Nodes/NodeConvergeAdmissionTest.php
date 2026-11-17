@@ -539,6 +539,7 @@ it('takes full from the role convergence request', function (): void {
 });
 
 it('limits an automatic converge to active selected roles under the Node lock', function (): void {
+    $this->node->forceFill(['converge_digests' => ['roles' => str_repeat('1', 64)]])->save();
     $role = $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
     $this->node->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
 
@@ -547,6 +548,7 @@ it('limits an automatic converge to active selected roles under the Node lock', 
     $capture = $operation->input['_converge'];
     expect($operation->lock_key)->toBe('node:'.$this->node->id)
         ->and($capture['intent']['release_roles_only'])->toBeTrue()
+        ->and($capture['intent']['recorded_digests'])->toBe([])
         ->and($capture['intent']['selected_roles'])->toBe(['app-prod'])
         ->and($capture['intent']['role_units'])->toBe([])
         ->and($capture['intent']['tools'])->toBe([])

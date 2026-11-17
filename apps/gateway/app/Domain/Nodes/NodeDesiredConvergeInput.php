@@ -10,6 +10,7 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolPackageProtection;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
@@ -51,12 +52,7 @@ final readonly class NodeDesiredConvergeInput
             $rolePlan['publications'] = [];
             $rolePlan['exporters'] = [];
             $rolePlan['prometheus'] = null;
-            $versions = array_keys($recipe->phpExtensions($recipe->profile($assignment->role->value)));
-            $phpPlans = array_map(ValidatedData::object(...), is_array($rolePlan['php'] ?? null) ? $rolePlan['php'] : []);
-            $rolePlan['php'] = array_values(array_filter($phpPlans, static fn (array $php): bool => in_array($php['version'], $versions, true)));
-            $services = array_map(ValidatedData::object(...), is_array($rolePlan['services'] ?? null) ? $rolePlan['services'] : []);
-            $rolePlan['services'] = array_values(array_filter($services, static fn (array $service): bool => preg_match('/^php([0-9.]+)-fpm[.]service$/', ValidatedData::string($service['name']), $match) !== 1 || in_array($match[1], $versions, true)));
-            $plans[] = $rolePlan;
+            $plans[] = [...$rolePlan, ...$this->roleResources($rolePlan, $recipe, $assignment->role)];
             if (array_intersect_key($copies, $plan['execution_secrets']) !== []) {
                 throw new \LogicException('Converge role execution-copy names must be distinct.');
             }
@@ -64,6 +60,23 @@ final readonly class NodeDesiredConvergeInput
         }
 
         return ['intent' => $this->intent($node, $agent, $roles, $all, $hub, $plans, $playbook, $release), 'execution_secrets' => $copies];
+    }
+
+    /**
+     * The Node-local resources consumed by node-converge-role.yml and node-converge-role-check.yml.
+     *
+     * @param  array<string,mixed>  $rolePlan
+     * @return array{directories:mixed,files:mixed,php:list<array<string,mixed>>,services:list<array<string,mixed>>}
+     */
+    public function roleResources(array $rolePlan, MachineRecipe $recipe, RoleName $role): array
+    {
+        $versions = array_keys($recipe->phpExtensions($recipe->profile($role->value)));
+        $phpPlans = array_map(ValidatedData::object(...), is_array($rolePlan['php'] ?? null) ? $rolePlan['php'] : []);
+        $services = array_map(ValidatedData::object(...), is_array($rolePlan['services'] ?? null) ? $rolePlan['services'] : []);
+
+        return ['directories' => $rolePlan['directories'], 'files' => $rolePlan['files'],
+            'php' => array_values(array_filter($phpPlans, static fn (array $php): bool => in_array($php['version'], $versions, true))),
+            'services' => array_values(array_filter($services, static fn (array $service): bool => preg_match('/^php([0-9.]+)-fpm[.]service$/', ValidatedData::string($service['name']), $match) !== 1 || in_array($match[1], $versions, true)))];
     }
 
     /**

@@ -14,7 +14,13 @@ use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Metrics\ExporterSelection;
+use App\Domain\Metrics\ExporterSelectionReason;
+use App\Domain\Metrics\MetricsExporterProjection;
+use App\Domain\Metrics\MetricsExporterProjectionItem;
 use App\Domain\Nodes\CiRunnerStateFiles;
+use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Problems\ProblemSource;
@@ -28,10 +34,12 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Jobs\Fleet\AdmitFleetRollout;
+use App\Models\Cluster;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\ProblemFingerprint;
+use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
@@ -478,6 +486,8 @@ it('fingerprints edits to a shared play or a dependency of that role', function 
         expect($after[$dev->id])->toBe($before[$dev->id]);
     }
 })->with([
+    'converge workflow' => ['swamp/workflows/workflow-operation-node-converge-direct.yaml', true],
+    'shipped input behavior' => ['swamp/extensions/behaviors/operations/ansible-input/write.ts', true],
     'shared runtime' => ['swamp/ansible/tasks/node-role-runtime.yml', true],
     'shared runtime check' => ['swamp/ansible/tasks/check-runtime.yml', true],
     'CI seed certificate' => ['swamp/ansible/tasks/proof-seed-certificate.yml', false],
@@ -535,3 +545,79 @@ it('fingerprints a base play change for the roles whose units it applies', funct
     expect($after[$assignment->id])->not->toBe($before[$assignment->id])
         ->and($after[$database->id])->toBe($before[$database->id]);
 })->with([RoleName::Swamp, RoleName::WebSocket]);
+
+it('fingerprints the effective app-dev storage folder for that role only', function (): void {
+    $node = Node::query()->findOrFail($this->nodes['dev']);
+    $runner = $node->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    $dev = $node->roles()->where('role', RoleName::AppDev)->sole();
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node);
+    $node->forceFill(['settings' => ['apps' => ['path' => '/home/orbit/apps']]])->saveQuietly();
+    expect($inputs->roles($node))->toBe($before);
+
+    $node->forceFill(['settings' => ['apps' => ['path' => '/fast/apps']]])->saveQuietly();
+    $after = $inputs->roles($node);
+    expect($after[$dev->id])->not->toBe($before[$dev->id])
+        ->and($after[$runner->id])->toBe($before[$runner->id]);
+});
+
+it('fingerprints the Swamp helper tool pins from the selected software plan', function (string $tool): void {
+    $node = SwampNodeFixture::ensure();
+    $node->roles()->create(['role' => RoleName::Database, 'status' => LifecycleStatus::Active]);
+    $swamp = $node->roles()->where('role', RoleName::Swamp)->sole();
+    $database = $node->roles()->where('role', RoleName::Database)->sole();
+    $root = $this->base.'/recipe-tree';
+    $file = $root.'/apps/gateway/resources/machine-software/recipe.json';
+    mkdir(dirname($file), 0700, true);
+    copy(resource_path('machine-software/recipe.json'), $file);
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node, root: $root);
+    $host = $inputs->host($root);
+
+    $recipe = json_decode(file_get_contents($file), true, flags: JSON_THROW_ON_ERROR);
+    if ($tool === 'deno') {
+        $recipe['tools'][$tool]['artifacts']['amd64']['sha256'] = str_repeat('a', 64);
+    } else {
+        $recipe['tools'][$tool]['version'] .= '+fixture1';
+    }
+    file_put_contents($file, json_encode($recipe, JSON_THROW_ON_ERROR));
+    $after = $inputs->roles($node, root: $root);
+    expect($after[$swamp->id])->not->toBe($before[$swamp->id])
+        ->and($after[$database->id])->toBe($before[$database->id])
+        ->and($inputs->host($root))->toBe($host);
+
+    $recipe['tools']['rsync']['version'] .= '+fixture1';
+    file_put_contents($file, json_encode($recipe, JSON_THROW_ON_ERROR));
+    expect($inputs->host($root))->not->toBe($host);
+})->with(['deno', 'unzip']);
+
+it('fingerprints the rendered Metrics plan without the private password or exporter apply intent', function (): void {
+    $node = Node::query()->findOrFail($this->nodes['db']);
+    $metrics = $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $database = $node->roles()->where('role', RoleName::Database)->sole();
+    $ingress = Node::query()->findOrFail($this->nodes['prod']);
+    $cluster = Cluster::query()->create(['name' => 'metrics-fixture', 'tld' => 'metrics.test', 'state' => 'active']);
+    $ingress->forceFill(['cluster_id' => $cluster->id])->saveQuietly();
+    $ingress->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
+    $item = new MetricsExporterProjectionItem($ingress, new ExporterSelection(true, ExporterSelectionReason::RoleDefault));
+    $this->mock(MetricsExporterProjection::class, fn ($projection) => $projection->shouldReceive('for', 'forNode')
+        ->andReturnUsing(fn (...$arguments) => count($arguments) === 1 ? [$item] : $item));
+    $route = Route::query()->create(['kind' => 'custom_proxy', 'cluster_id' => $cluster->id,
+        'domain' => 'after.metrics.test', 'publication' => 'public', 'provenance' => 'explicit', 'status' => 'pending']);
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node);
+
+    $route->forceFill(['status' => 'active'])->saveQuietly();
+    $after = $inputs->roles($node);
+
+    expect($after[$metrics->id])->not->toBe($before[$metrics->id])
+        ->and($after[$database->id])->toBe($before[$database->id]);
+    $spec = app(NodeRoleRuntimeInput::class)->capture($node, $metrics, publicOnly: true);
+    $runtime = app(NativeNodeRoleRuntimeInput::class)->capture($node, $metrics, ['runtime' => $spec], null, converge: true);
+    $plan = $runtime['intent']['metrics']['plan'];
+    foreach ($plan['services'] as $service) {
+        expect($service['argv'])->toContain($service['image']);
+    }
+    expect($runtime['execution_secrets'])->toBe([])
+        ->and(array_column($runtime['intent']['files'], 'path'))->not->toContain('/etc/orbit/metrics/grafana/admin-password');
+});
