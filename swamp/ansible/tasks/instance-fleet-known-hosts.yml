@@ -1,0 +1,27 @@
+---
+# Start may still see a checkout older than the sync command. Read its command list instead of depending on the controller's code.
+# Refresh imports this again after the shared checkout and schema move, so the first upgrade also writes the pins before readiness.
+- name: Read the nested Gateway commands
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--cwd',
+          intent.fleet.checkout.path ~ '/apps/gateway', '--'] + fleet_as_app_user
+          + ['php', 'artisan', 'list', '--raw', '--no-interaction'] }}
+  register: fleet_gateway_commands
+  changed_when: false
+- name: Record unavailable SSH pin synchronization
+  when: fleet_gateway_commands.stdout is not search('(?m)^gateway:known-hosts:sync\s')
+  ansible.builtin.debug:
+    msg: 'command_unavailable: this nested Gateway checkout has no gateway:known-hosts:sync; refresh retries after checkout.'
+
+# These Nodes bypassed enrollment, which normally publishes their pins to the Gateway's SSH store. Restore only recorded pins
+# for direct Gateway reads; runuser supplies orbit's groups and keeps the file owned by the application account.
+- name: Restore the nested Gateway SSH host pins
+  when: fleet_gateway_commands.stdout is search('(?m)^gateway:known-hosts:sync\s')
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--cwd',
+          intent.fleet.checkout.path ~ '/apps/gateway', '--'] + fleet_as_app_user
+          + ['php', 'artisan', 'gateway:known-hosts:sync', '--no-interaction'] }}
+  register: fleet_known_hosts
+  changed_when: (fleet_known_hosts.stdout | from_json).changed
