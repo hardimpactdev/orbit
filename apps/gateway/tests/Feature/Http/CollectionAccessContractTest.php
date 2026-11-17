@@ -110,6 +110,11 @@ function collection_access_policies(): array
             'extension:list' => ServingNode::Gateway,
             // app/Http/Controllers/Api/GatewayReleasesController.php:28; Gateway release history requires Gateway authority.
             'gateway:release:list' => ServingNode::Gateway,
+            // extensions/conn/src/Http/Controllers/ConnTasksController.php reads task:list's ListTaskGroupsAction; the fleet board is shared
+            // (docs/reference/conn.md#tasks-panel), and each Conn server it names passes ConnServerAccess::visible (Domain/ConnTaskPanel.php).
+            'conn:task:list' => ServingNode::Collection,
+            // extensions/conn/src/Http/Controllers/ConnTasksController.php reads task:show's ShowTaskGroupAction; Conn refs pass ConnServerAccess::visible.
+            'conn:task:show' => ServingNode::Collection,
             // app/Actions/Tasks/ListTaskGroupsAction.php:23; the documented fleet board is shared (docs/reference/tasks.md:493).
             'task:list' => ServingNode::Collection,
             // app/Actions/Tasks/ShowTaskGroupAction.php:21; task detail shares the documented fleet board (docs/reference/tasks.md:493).

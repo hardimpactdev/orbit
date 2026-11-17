@@ -17,6 +17,7 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnProfilesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectBranchesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnSessionsController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnTasksController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnThreadsController;
 
 // Conn reuses node access (/reference/conn#access): a server is reached through its registering Node.
@@ -60,6 +61,11 @@ Route::middleware([
         Route::post('environments/{environment}/renew', [ConnEnvironmentsController::class, 'renew'])->name('conn:environment:renew');
         Route::get('environments/{environment}/session', [ConnSessionsController::class, 'show'])->name('conn:environment:session');
         Route::post('environments/{environment}/sessions/cleanup', [ConnEnvironmentsController::class, 'cleanup'])->name('conn:environment:cleanup');
+        // The read-only Tasks panel (/reference/conn#tasks-panel): the task list and show, read for a device.
+        Route::middleware(RequireEnabledExtension::class.':tasks')->withoutMiddleware(RecordCommandActivity::class)->group(function (): void {
+            Route::get('tasks', [ConnTasksController::class, 'index'])->name('conn:task:list');
+            Route::get('tasks/{task}', [ConnTasksController::class, 'show'])->whereNumber('task')->name('conn:task:show');
+        });
         Route::get('threads', [ConnThreadsController::class, 'index'])->withoutMiddleware(RecordCommandActivity::class)->name('conn:thread:list');
         Route::post('environments/{environment}/threads', [ConnThreadsController::class, 'store'])->name('conn:thread:record');
         Route::get('environments/{environment}/pairings', [ConnPairingsController::class, 'index'])->name('conn:pairing:list');

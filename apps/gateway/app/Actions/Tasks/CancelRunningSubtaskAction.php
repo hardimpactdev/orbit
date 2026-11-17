@@ -53,7 +53,6 @@ final readonly class CancelRunningSubtaskAction
         TaskAssistance::apply($task);
         $task->update([
             'status' => TaskStatus::Cancelled,
-            'settled_at' => now(),
             'completion_summary' => 'Cancelled by operator.',
         ]);
 
