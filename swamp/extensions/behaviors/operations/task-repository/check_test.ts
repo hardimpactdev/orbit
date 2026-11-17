@@ -490,6 +490,22 @@ Deno.test("a long Project output gives way to the deliverables block and the out
     );
     assertEquals(long.split("\n").at(-2), "      last");
     assertEquals(new TextEncoder().encode(long).length < 1200, true);
+    // A block too large to fit drops the output tails and keeps every deliverable's line.
+    const ids = [...Array(20).keys()].map((index) => `t${index}`);
+    const many = checkOutput(
+        "older\n",
+        ids.map((id) => ({ id, outcome: "failed", failures: [] })),
+        Object.fromEntries(
+            ids.map((id) => [id, { exit_code: 1, output: "y".repeat(1000) }]),
+        ),
+        "Task check FAILED",
+    );
+    assertEquals(
+        many,
+        "older\nDeliverables\n" +
+            ids.map((id) => `  ${id}: failed, exit 1\n`).join("") +
+            "Task check FAILED",
+    );
 });
 
 Deno.test("a moved workspace ends CHANGED", async () => {
@@ -804,6 +820,30 @@ Deno.test("a deliverable's final Pest call runs with the limit the Project check
         ).output.split("\n").at(-2),
         "pest tests/X.php --default-time-limit=5",
     );
+});
+
+Deno.test("a symlinked checkout finds its directory, and a call outside the tree fails", () => {
+    const root = pestCheckout("5");
+    const link = `${Deno.makeTempDirSync()}/checkout`;
+    Deno.symlinkSync(root, link);
+    const source = withCiTimeLimit(
+        "vendor/bin/pest tests/X.php",
+        "bin/check",
+        link,
+        link,
+    );
+    assertEquals(
+        runIn(`${link}/apps/gateway`, source).output.split("\n").at(-2),
+        "pest tests/X.php --default-time-limit=5",
+    );
+    const outside = runIn(
+        `${pestCheckout("5")}/apps/gateway`,
+        source,
+    );
+    assertEquals(outside, {
+        code: 2,
+        output: "Task check: bin/check --ci-time-limit gave no limit\n",
+    });
 });
 
 Deno.test("Orbit's own check command gives a Gateway deliverable CI's limit from ci.yml", () => {

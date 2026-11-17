@@ -86,7 +86,8 @@ const PestCall =
  * the Pest project that holds DIR, or with nothing when CI passes none. The
  * check asks it for the directory that the final Pest call runs in, relative
  * to `tree`, the checked workspace or a start-commit tree, and appends the
- * limit to that call. A failed answer fails the command. A command whose last
+ * limit to that call. A failed answer, or a call outside `tree`, fails the
+ * command. A command whose last
  * simple command is not a Pest call, or that passes its own limit, runs
  * unchanged.
  */
@@ -106,9 +107,12 @@ export function withCiTimeLimit(
     ) return source;
     return [
         "orbit_ci_time_limit() {",
-        `    local directory=\${PWD#${quoted(tree)}} limit extra`,
-        "    directory=${directory#/}",
-        `    limit=$(${
+        // Physical paths: `env -C` leaves `PWD` unset, so a symlinked checkout would not match.
+        `    local tree directory limit extra`,
+        `    tree=$(cd ${quoted(tree)} && pwd -P) && directory=$(pwd -P) &&`,
+        '        [[ $directory == "$tree" || $directory == "$tree"/* ]] &&',
+        '        directory=${directory#"$tree"} && directory=${directory#/} &&',
+        `        limit=$(${
             quoted(`${workspace}/${check}`)
         } --ci-time-limit "\${directory:-.}") && [[ $limit =~ ^[0-9]*$ ]] || {`,
         `        echo ${
@@ -321,14 +325,15 @@ export function outcomeLine(outcome: string, cause = "") {
  * deliverable's outcome, its command's exit code, its failures and, for a
  * failed command, the last lines of its redacted output, then the outcome
  * line. The older Project output gives way so the whole stays within
- * OUTPUT_BYTES.
+ * OUTPUT_BYTES; a block too large to fit drops the output tails.
  */
 export function checkOutput(
     project: string,
     deliverables: { id: string; outcome: string; failures: string[] }[],
     commands: Record<string, Command>,
     line: string,
-) {
+    tails = true,
+): string {
     const block = deliverables.length ? ["Deliverables"] : [];
     for (const item of deliverables) {
         const run = commands[item.id];
@@ -339,7 +344,9 @@ export function checkOutput(
         );
         const tail = tailBytes((run?.output ?? "").trimEnd(), 1024)
             .split("\n").filter((row, index) => index > 0 || row !== "");
-        if (item.outcome === "failed" && run?.exit_code && tail.length) {
+        if (
+            tails && item.outcome === "failed" && run?.exit_code && tail.length
+        ) {
             block.push(
                 `    Last lines of ${item.id}:`,
                 ...tail.map((row) => `      ${row}`),
@@ -348,9 +355,13 @@ export function checkOutput(
     }
     const end = [...block, line].join("\n");
     const head = project && !project.endsWith("\n") ? project + "\n" : project;
-    return bytes(end) >= OUTPUT_BYTES
-        ? tailBytes(end, OUTPUT_BYTES)
-        : tailBytes(head, OUTPUT_BYTES - bytes(end)) + end;
+    // Too many failed commands to fit drop their output tails, then the oldest block lines.
+    if (bytes(end) >= OUTPUT_BYTES) {
+        return tails
+            ? checkOutput(project, deliverables, commands, line, false)
+            : tailBytes(end, OUTPUT_BYTES);
+    }
+    return tailBytes(head, OUTPUT_BYTES - bytes(end)) + end;
 }
 
 /** `result` with `outcome`, the last line of its output restated to agree. */

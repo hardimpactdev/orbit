@@ -584,6 +584,13 @@ class CiLimitTest(unittest.TestCase):
             with self.subTest(directory=directory):
                 self.assertEqual(self.deliverable_limit(directory), '')
 
+    def test_a_directory_outside_the_checkout_is_refused_not_answered_with_no_limit(self):
+        for directory in ('/srv/workspace/apps/gateway', '../apps/gateway', 'apps/../../x'):
+            with self.subTest(directory=directory), redirect_stdout(io.StringIO()), patch('sys.stderr', io.StringIO()):
+                with self.assertRaises(SystemExit) as stopped:
+                    check['main'](['--ci-time-limit', directory])
+                self.assertEqual(stopped.exception.code, 2)
+
     def test_the_deliverable_limit_is_read_from_the_workflow(self):
         workflow = Path(tempfile.mkdtemp(prefix='task-check-ci-')) / 'ci.yml'
         self.addCleanup(shutil.rmtree, workflow.parent, ignore_errors=True)

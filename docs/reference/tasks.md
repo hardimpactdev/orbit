@@ -701,7 +701,7 @@ These commands run unchanged:
 - A command whose Pest call is not its last simple command, such as one with a pipe, a `;` or a redirect.
 - Every command of a Project whose check command is not one executable path.
 
-The deliverable fails with exit 2 when the check command fails or prints something other than a number. Its output then says `Task check: <check command> --ci-time-limit gave no limit`.
+The deliverable fails with exit 2 when the check command fails or prints something other than a number. It fails the same way when its Pest call runs outside the checkout. Its output then says `Task check: <check command> --ci-time-limit gave no limit`.
 
 ### Prove a command fails on the start commit
 
@@ -1374,7 +1374,7 @@ After the Project check's output, Orbit appends the deliverables and the check's
 - Then one final line states the outcome: `Task check PASSED`, `Task check FAILED`, or `Task check CHANGED`. `CHANGED` means the workspace moved during the check.
 - Deliverables that fail a check whose Project check passed are named on that line, such as `Task check FAILED: deliverable merge-round-tests did not pass`.
 
-The final line is always the last line of `output` and always agrees with `outcome`. A later step that changes the outcome restates it: a moved candidate gives `Task check CHANGED`, and a failed CI run gives `Task check FAILED: CI failed`. The older Project output gives way, so the whole output stays within 16 KiB; the block and the final line are kept. A check that refuses with an `error_code` has no such line.
+The final line is always the last line of `output` and always agrees with `outcome`. A later step that changes the outcome restates it: a moved candidate gives `Task check CHANGED`, and a failed CI run gives `Task check FAILED: CI failed`. The older Project output gives way, so the whole output stays within 16 KiB; the block and the final line are kept. A block too large to fit drops the output tails first. A check that refuses with an `error_code` has no such line.
 
 ## Review a subtask
 

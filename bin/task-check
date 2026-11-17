@@ -482,6 +482,8 @@ def main(argv=None):
     parser.add_argument('--ci-time-limit', metavar='DIR')
     args = parser.parse_args(argv)
     if args.ci_time_limit is not None:
+        if os.path.isabs(args.ci_time_limit) or os.path.normpath(args.ci_time_limit).split(os.sep)[0] == '..':
+            parser.error(f'--ci-time-limit takes a directory inside the checkout, not {args.ci_time_limit}')
         limit = project_time_limit(args.ci_time_limit)
         if limit is not None:
             print(limit)
