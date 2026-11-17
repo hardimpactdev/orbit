@@ -78,7 +78,7 @@ def configuration(path=TABLE):
     config, inventory = registry.load(ROOT, table=path)
     budget = config['budget']
     if any(type(budget[key]) is not int or budget[key] <= 0 for key in
-           ('shard_seconds', 'shard_workers', 'shard_deadline_seconds', 'shard_ceiling_seconds', 'unit_ceiling_seconds', 'slice_seconds', 'slice_startup_seconds', 'pr_shards', 'runner_shards', 'self_hosted_shards', 'self_hosted_workers', 'default_cost')):
+           ('shard_seconds', 'shard_workers', 'shard_deadline_seconds', 'shard_ceiling_seconds', 'unit_ceiling_seconds', 'slice_seconds', 'slice_startup_seconds', 'pr_shards', 'runner_shards', 'spread_shards', 'self_hosted_shards', 'self_hosted_workers', 'default_cost')):
         raise ValueError('Fixture budgets must be positive integers')
     if budget['shard_deadline_seconds'] >= budget['shard_ceiling_seconds']:
         raise ValueError('shard_deadline_seconds must be below shard_ceiling_seconds')
@@ -370,7 +370,10 @@ def spread(groups, budget):
     if sum(slots.values()) <= 1:
         return packed
     totals = {side: sum(cost for _, cost, _ in groups[side]) for side in budgets}
-    while sum(slots.values()) < budget['runner_shards']:
+    # A partial extra wave can lengthen the run despite shorter lanes. This target only
+    # limits additional spreading: retain every shard needed to admit the selection.
+    target = min(budget['spread_shards'], budget['runner_shards'])
+    while sum(slots.values()) < target:
         candidates = [side for side in budgets if slots[side] < min(
             budgets[side]['pr_shards'], math.ceil(len(groups[side]) / budgets[side]['shard_workers']))]
         if not candidates:
