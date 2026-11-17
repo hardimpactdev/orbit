@@ -161,11 +161,6 @@
         content: |
           [Journal]
           SystemMaxUse=64M
-    # `agent` owns the checkout (ADR 0268), so Git as `orbit` in a guest stops with "dubious ownership". Each guest trusts the checkout
-    # path, and only it, for every user, as the outer container's /etc/gitconfig trusts /srv/workspace (InstanceImage::shared).
-    fleet_git_files:
-      - path: /etc/gitconfig
-        content: "# Managed by Orbit.\n[safe]\n\tdirectory = {{ intent.fleet.checkout.path }}\n"
   ansible.builtin.set_fact:
     fleet_rules:
       gateway:
@@ -173,15 +168,15 @@
           {{ fleet_checkout_device | combine({'club-key': {'type': 'disk', 'source': fleet_club_folder,
              'path': fleet_club_mount, 'required': 'false', 'shift': 'false'}}) }}
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, {'limits.memory': intent.fleet.layout.gateway.memory}) }}"
-        files: "{{ fleet_unit_files + fleet_pool_files + fleet_marker_files + fleet_egress_files + fleet_size_files + fleet_git_files }}"
+        files: "{{ fleet_unit_files + fleet_pool_files + fleet_marker_files + fleet_egress_files + fleet_size_files }}"
       app-dev:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_instance_host, {'limits.memory': intent.fleet.layout['app-dev'].memory}) }}"
-        files: "{{ fleet_egress_files + fleet_size_files + fleet_git_files }}"
+        files: "{{ fleet_egress_files + fleet_size_files }}"
       app-prod:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, {'limits.memory': intent.fleet.layout['app-prod'].memory}) }}"
-        files: "{{ fleet_egress_files + fleet_size_files + fleet_git_files }}"
+        files: "{{ fleet_egress_files + fleet_size_files }}"
     fleet_build_rules: [raw.idmap]
     # The inner bridge's own keys, owned. Its dnsmasq answers the fleet's names and forwards every other name to the Instance
     # container's resolver, which has no DNS server and refuses at once; dnsmasq drops a refusal, so each such lookup waited out its

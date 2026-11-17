@@ -48,10 +48,8 @@ const sizeFiles = {
 /** The fleet's own apt file: Orbit's Node plays own `90orbit-package-cache` and never touch it. */
 const aptPath = "/etc/apt/apt.conf.d/95orbit-nested-egress";
 const egress = { [aptPath]: aptFile, "/etc/environment": environmentFile };
-/** Git in every nested container trusts the checkout, which `agent` owns (ADR 0268): without it Git as `orbit` stops with "dubious ownership". */
-const gitFiles = { "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n" };
-/** Every file the fleet rules own in each nested container: the egress files, the size files, then the Git file. */
-const owned = { ...egress, ...sizeFiles, ...gitFiles };
+/** Every file the fleet rules own in each nested container: the egress files, then the size files. */
+const owned = { ...egress, ...sizeFiles };
 /** The marker of the nested Gateway of an Instance fleet (InstanceFleetGateway::Marker): its Nodes get no task VM package cache. */
 const marker = "/etc/orbit/instance-fleet";
 const markerFile = "# Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).\n";
