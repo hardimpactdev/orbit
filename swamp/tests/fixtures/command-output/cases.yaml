@@ -1244,7 +1244,66 @@ contexts:
     release_volume_names: [base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac]
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
+  # `getent passwd orbit web`, `getent group orbit work web 1000` and `grep -rlE ... /etc/systemd/system` in a container of an older
+  # image (tasks/instance-app-user.yml): `orbit` (1000) in its group `orbit` (1000), the group `work` (2760), a FrankenPHP unit and a
+  # Process drop-in that name the old account.
+  app-user-older:
+    app_user_passwd:
+      stdout_lines: ['orbit:x:1000:1000::/home/orbit:/bin/bash']
+    app_user_groups:
+      stdout_lines: ['orbit:x:1000:', 'work:x:2760:agent,orbit']
+    app_user_files:
+      stdout_lines: [/etc/systemd/system/orbit-frankenphp.service, /etc/systemd/system/orbit-process-5.service.d/10-env.conf]
+  # The same reads in a container of the new image, or one already renamed: `getent` finds only `web`, `grep` finds nothing.
+  app-user-renamed:
+    app_user_passwd:
+      stdout_lines: ['web:x:1000:2760::/home/web:/bin/bash']
+    app_user_groups:
+      stdout_lines: ['web:x:2760:agent']
+    app_user_files:
+      stdout_lines: []
+  # `systemctl show --property=LoadState --property=ActiveState --property=UnitFileState -- <unit>` for each unit that names the old
+  # account and its timer: a running enabled unit, a timer that does not exist, a unit that failed under the old name, a running timer.
+  app-user-units:
+    app_user_units:
+      results:
+      - {item: orbit-frankenphp.service, stdout: "LoadState=loaded\nActiveState=active\nUnitFileState=enabled"}
+      - {item: orbit-frankenphp.timer, stdout: "LoadState=not-found\nActiveState=inactive\nUnitFileState="}
+      - {item: orbit-process-5.service, stdout: "LoadState=loaded\nActiveState=failed\nUnitFileState=enabled"}
+      - {item: orbit-schedule-9.timer, stdout: "LoadState=loaded\nActiveState=active\nUnitFileState=enabled"}
 cases:
+- file: tasks/instance-app-user.yml
+  task: Note what the rename has left to do
+  field: ansible.builtin.set_fact.app_user
+  context: app-user-older
+  expected:
+    old_user: true
+    old_group: true
+    primary: false
+    gid_1000: orbit
+    files: [/etc/systemd/system/orbit-frankenphp.service, /etc/systemd/system/orbit-process-5.service.d/10-env.conf]
+    named: [orbit-frankenphp.service, orbit-frankenphp.timer, orbit-process-5.service, orbit-process-5.timer]
+- file: tasks/instance-app-user.yml
+  task: Note what the rename has left to do
+  field: ansible.builtin.set_fact.app_user
+  context: app-user-renamed
+  expected:
+    old_user: false
+    old_group: false
+    primary: false
+    gid_1000: ''
+    files: []
+    named: []
+- file: tasks/instance-app-user.yml
+  task: Note the running and the enabled units
+  field: ansible.builtin.set_fact.app_user_running
+  context: app-user-units
+  expected: [orbit-frankenphp.service, orbit-schedule-9.timer]
+- file: tasks/instance-app-user.yml
+  task: Note the running and the enabled units
+  field: ansible.builtin.set_fact.app_user_enabled
+  context: app-user-units
+  expected: [orbit-frankenphp.service, orbit-process-5.service, orbit-schedule-9.timer]
 - file: tasks/role-swamp.yml
   task: Check Swamp units
   field: loop
