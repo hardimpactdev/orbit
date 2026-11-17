@@ -335,6 +335,10 @@ final readonly class InstanceContainer
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
             'branch' => $branch !== '' ? $branch : ValidatedData::string($project->default_branch), 'commit' => null,
             'workspace' => $workspace, 'environment_file' => self::environmentFile($instance),
+            // The workspace's group, and the uid whose entries root's workspace pass gives to `agent` (ADR 0268, second amendment): the
+            // stock `www-data` in a normal container; `work` and `orbit` in a nested-fleet one, whose inner fleet writes the checkout as them.
+            'workspace_ids' => $nestedFleet ? ['group' => InstanceHostIntent::WorkGid, 'writer' => InstanceHostIntent::OrbitUid]
+                : ['group' => InstanceHostIntent::AppGid, 'writer' => InstanceHostIntent::AppUid],
             // The deploy commands' whole environment: the home of `agent`, the workspace's owner who runs them (ADR 0268), the runtime
             // folder with the Project's PHP first, the Vite+ home and the egress proxy (docs/reference/development-containers.md#egress-and-dns),
             // and the Playwright browser folder.

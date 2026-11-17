@@ -25,7 +25,7 @@
 - name: Refresh only after the exact line changed
   when: mailer_result.status == 'changed'
   block:
-    # `config:clear` runs as `web`: a running container of an older image names its app user web first (files/instance-app-user.sh).
+    # `config:clear` runs as `www-data`: a running container of an older image names its app user web first (files/instance-app-user.sh).
     - name: Name the app user web
       ansible.builtin.command: { argv: "{{ as_root + ['sh', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/files/instance-app-user.sh'), 'orbit-app-user'] }}" }
       register: app_user_name
@@ -35,7 +35,7 @@
       when: mail_refresh.php is not none
       ansible.builtin.command:
         argv: >-
-          {{ as_web + ['sh', '-c', 'if [ -x "$1" ] && [ -f "$2/artisan" ]; then cd -- "$2" && "$1" artisan config:clear >/dev/null 2>&1; fi',
+          {{ as_app + ['sh', '-c', 'if [ -x "$1" ] && [ -f "$2/artisan" ]; then cd -- "$2" && "$1" artisan config:clear >/dev/null 2>&1; fi',
               'sh', mail_refresh.php, mail_refresh.application] }}
         expand_argument_vars: false
       no_log: true

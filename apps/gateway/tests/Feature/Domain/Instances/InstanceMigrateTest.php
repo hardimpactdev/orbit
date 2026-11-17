@@ -1652,7 +1652,7 @@ describe('Processes moving into the container', function (): void {
         $unit = $run['intent']['container']['processes'][0];
 
         expect($unit)->toMatchArray(['id' => $preset->id, 'name' => "orbit-process-{$preset->id}-vite.service", 'desired' => $desired]);
-        expect($unit['content'])->toContain("User=web\n", "WorkingDirectory=/srv/workspace/frontend\n", '"/opt/orbit-runtime/current/bin/vp" "dev" "--host=0.0.0.0" "--port=5195" "--strictPort" "--base=/__orbit/vite/"')
+        expect($unit['content'])->toContain("User=www-data\n", "WorkingDirectory=/srv/workspace/frontend\n", '"/opt/orbit-runtime/current/bin/vp" "dev" "--host=0.0.0.0" "--port=5195" "--strictPort" "--base=/__orbit/vite/"')
             ->toContain("After=network.target\n")
             ->not->toContain('network-online.target', '/etc/orbit/vite/', '/home/orbit/.vite-plus/', '--host=127.0.0.1');
         expect($unit['content'])->toContain('Environment=ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite',
@@ -2429,7 +2429,7 @@ describe('migrate registered Schedule timers', function (): void {
 
         expect($plan)->toMatchArray(['id' => $schedule->id, 'name' => 'nightly', 'source_directory' => $instance->checkout_path,
             'directory' => '/srv/workspace', 'user' => 'orbit', 'group' => 'orbit', 'home' => '/home/orbit', 'shell' => '/bin/bash',
-            'container_user' => 'web', 'calendar' => '*-*-* 03:00:00', 'timeout_seconds' => 900, 'desired' => $desired,
+            'container_user' => 'www-data', 'calendar' => '*-*-* 03:00:00', 'timeout_seconds' => 900, 'desired' => $desired,
             'mapped_command_hash' => hash('sha256', 'php /srv/workspace/artisan schedule:run')]);
         expect($plan['source_command_paths'])->toBe([$instance->checkout_path.'/artisan']);
         $script = "# X-Orbit-Schedule-ID={$schedule->id}\n# X-Orbit-Execution-Context=".json_encode([
@@ -2875,7 +2875,7 @@ describe('migrate registered Schedule timers', function (): void {
         $operation = migrateStart($instance);
         $plan = $operation->input['migrate']['schedules'][0];
         expect($plan)->toMatchArray(['id' => $schedule->id, 'name' => $schedule->name,
-            'container_user' => 'web', 'container_home' => '/home/web', 'container_shell' => '/bin/bash']);
+            'container_user' => 'www-data', 'container_home' => '/var/www', 'container_shell' => '/bin/bash']);
         $native = app(InstanceMigrateProjection::class)->input($operation);
         expect($native['execution_secrets']['process_environments']['key'])->toBe('instance-migrate-processes-'.$operation->id);
         expect(json_encode($native, JSON_THROW_ON_ERROR))->not->toContain('php artisan schedule:run');
@@ -2973,7 +2973,7 @@ describe('migrate registered Schedule timers', function (): void {
         $operation = migrateStart($instance);
         $plan = $operation->input['migrate']['schedules'][0];
 
-        expect($plan)->toMatchArray(['id' => $schedule->id, 'shell' => $shell, 'container_user' => 'web', 'container_shell' => '/bin/bash',
+        expect($plan)->toMatchArray(['id' => $schedule->id, 'shell' => $shell, 'container_user' => 'www-data', 'container_shell' => '/bin/bash',
             'command_hash' => hash('sha256', $command), 'mapped_command_hash' => hash('sha256', $mapped)])
             ->and($plan['source_command_paths'])->toBe([$instance->checkout_path.'/artisan'])
             ->and(json_decode(app(MigrateSchedules::class)->commands($instance, [$plan]), true, flags: JSON_THROW_ON_ERROR))->toBe([$schedule->id => $mapped]);

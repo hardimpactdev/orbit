@@ -242,10 +242,10 @@ def phase_main(phase, raw):
     private = sys.stdin.read()
 
     def run(argv, check=True, agent=False, web=False, owner=False, timeout=40, private_input=None, isolated=False):
-        # `owner`: as `agent`, the workspace's owner, in the workspace (ADR 0268); `agent`: as `agent` in its home; `web`: the app user.
+        # `owner`: as `agent`, the workspace's owner, in the workspace (ADR 0268); `agent`: as `agent` in its home; `www-data`: the app user.
         command = argv
         if agent or web or owner:
-            argv = ["runuser", "-u", "web" if web else "agent", "--"] + argv
+            argv = ["runuser", "-u", "www-data" if web else "agent", "--"] + argv
         r = subprocess.run(
             argv,
             check=False,
@@ -256,7 +256,7 @@ def phase_main(phase, raw):
             errors="surrogateescape" if isolated else "strict",
             env=dict(
                 os.environ,
-                HOME="/home/agent" if agent or owner else "/home/web" if web else "/root",
+                HOME="/home/agent" if agent or owner else "/var/www" if web else "/root",
                 # The task check's own Git environment: no global or system configuration, so no ignore rule of a user's own.
                 **({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "LC_ALL": "C"} if isolated else {}),
             ),
@@ -406,7 +406,7 @@ def phase_main(phase, raw):
             written = {key for key, _, _ in env_blocks(updated) if key is not None}
             environment_keys["shared"] = sorted(set(merge["shared"]) & written)
         if env != updated:
-            write(c["environment_file"], updated, 2750, 2760, "0640")
+            write(c["environment_file"], updated, 2750, c["workspace_ids"]["group"], "0640")
         exclude_environment()
         return {"environment": environment_keys, "commit": checked_out["commit"], **({"cleaned": cleaned} if cleaned is not None else {})}
 
@@ -472,10 +472,10 @@ def phase_main(phase, raw):
         """The rest of the workspace: PHP settings, file rights, Process files, web config, the Node store and the units."""
         # No Process starts on a branch this Instance did not check out.
         assert json.loads(root(CHECKOUT_MARK).read_text())["instance_id"] == c["instance_id"]
-        # A copy of a seed taken before the rename still has `orbit`: root's swap file from the boot files names it web first.
+        # A copy of a seed taken before the rename still has `orbit`: root's swap file from the boot files moves it to `www-data` first.
         run([APP_USER_SWAP], timeout=120)
         inputs = json.loads(private)
-        # The shipped Node runtime helper, outside the app-owned store; the Node store step below runs it as web.
+        # The shipped Node runtime helper, outside the app-owned store; the Node store step below runs it as `www-data`.
         write(NODE_RUNTIME, c["node_runtime"], 0, 0, "0755")
         php_settings = len(changes)
         if c["php"] is not None:
@@ -501,9 +501,9 @@ def phase_main(phase, raw):
         # A running unit read the old settings at its start.
         php_settings_changed = len(changes) > php_settings
         # Root's workspace pass, the one program a deployment runs too (instance_workspace_owner.py, ADR 0268): the group gets back what
-        # the owner has, and `agent` gets each entry that `web` owns, so a copy of an older seed gets its one owner here.
+        # the owner has, and `agent` gets each entry that `www-data` owns, so a copy of an older seed gets its one owner here.
         # A copy of an older seed gives every entry away, `vendor` and `node_modules` too: it has the processes phase's whole time.
-        if run(["python3", "-I", "-c", c["workspace_owner"], ws, "1000", "2750"], timeout=120).stdout.strip():
+        if run(["python3", "-I", "-c", c["workspace_owner"], ws, str(c["workspace_ids"]["writer"]), "2750"], timeout=120).stdout.strip():
             changes.append("workspace-rights")
         own = {x["name"] for x in c["processes"]}
         own_ids = {str(x["id"]) for x in c["processes"]}

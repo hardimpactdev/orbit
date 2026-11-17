@@ -173,15 +173,15 @@ sys.exit(subprocess.run(args).returncode)
         self.assertEqual(workflow.count('vault.get('), 1)
         self.assertIn('ORBIT_CONNECTION_ENVIRONMENT:', workflow)
 
-    def test_the_config_clear_runs_as_web_with_its_groups(self):
+    def test_the_config_clear_runs_as_app_with_its_groups(self):
         import yaml
-        play = next(play for play in yaml.safe_load((ROOT / 'swamp/ansible/instance-connection-environment.yml').read_text()) if 'as_web' in play.get('vars', {}))
+        play = next(play for play in yaml.safe_load((ROOT / 'swamp/ansible/instance-connection-environment.yml').read_text()) if 'as_app' in play.get('vars', {}))
         # `runuser` gives `web` its groups, among them `web`, which opens the workspace that `agent` owns (ADR 0268); `incus exec
         # --user 1000 --group 1000` gives none, so its `cd` into the workspace failed and `failed_when: false` hid it.
-        self.assertEqual(play['vars']['as_web'],
-                         "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/home/web', container.name, '--', 'runuser', "
-                         "'-u', 'web', '--'] }}")
-        self.assertIn("as_web + ['sh', '-c', 'if [ -x \"$1\" ] && [ -f \"$2/artisan\" ]; then cd -- \"$2\" && \"$1\" artisan config:clear",
+        self.assertEqual(play['vars']['as_app'],
+                         "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/var/www', container.name, '--', 'runuser', "
+                         "'-u', 'www-data', '--'] }}")
+        self.assertIn("as_app + ['sh', '-c', 'if [ -x \"$1\" ] && [ -f \"$2/artisan\" ]; then cd -- \"$2\" && \"$1\" artisan config:clear",
                       (ROOT / 'swamp/ansible/instance-connection-environment.yml').read_text())
 
 if __name__ == '__main__':

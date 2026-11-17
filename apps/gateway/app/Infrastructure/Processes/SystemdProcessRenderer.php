@@ -101,7 +101,7 @@ final readonly class SystemdProcessRenderer
             '[Service]',
             'Type=simple',
             "User={$user}",
-            // In an Instance container, as FrankenPHP: group `web`, files shared with the group, and the runtime folder's programs.
+            // In an Instance container, as FrankenPHP: group `www-data`, files shared with the group, and the runtime folder's programs.
             ...($target->container === null ? [] : ['Group='.InstanceHostIntent::AppUser, 'UMask=0007']),
             'WorkingDirectory='.$this->escapeDirectivePath($process->working_directory ?? throw new InvalidArgumentException('Systemd requires a working directory.')),
             ...($target->container === null || $target->instance === null

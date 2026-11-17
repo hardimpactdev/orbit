@@ -85,6 +85,8 @@ final readonly class InstanceHostIntent
 
     public const int AppUid = 33;
 
+    public const int AppGid = 33;
+
     /**
      * The nested-fleet container's `orbit` and `work`: its inner guests are Nodes whose `orbit` the ID map puts on these numbers, and
      * the inner fleet runs as them over the shared checkout (ADR 0268, second amendment).

@@ -30,9 +30,9 @@
     container: "{{ intent.container }}"
     plan: "{{ intent.connection_environment }}"
     as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
-    # The app user, through `runuser` so it has its groups: `web` opens the workspace, which `agent` owns (ADR 0268). A bare
+    # The app user, through `runuser` so it has its groups: `www-data` opens the workspace, which `agent` owns (ADR 0268). A bare
     # `--user 1000 --group 1000` has no supplementary group and cannot enter it.
-    as_web: "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/home/web', container.name, '--', 'runuser', '-u', 'web', '--'] }}"
+    as_app: "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/var/www', container.name, '--', 'runuser', '-u', 'www-data', '--'] }}"
   tasks:
     - name: Apply and check the connection keys
       block:
@@ -182,7 +182,7 @@
         - name: Refresh what runs only after the file changed
           when: connection_result.status == 'changed'
           block:
-            # `config:clear` runs as `web`: a running container of an older image names its app user web first (files/instance-app-user.sh).
+            # `config:clear` runs as `www-data`: a running container of an older image names its app user web first (files/instance-app-user.sh).
             - name: Name the app user web
               ansible.builtin.command: { argv: "{{ as_root + ['sh', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/files/instance-app-user.sh'), 'orbit-app-user'] }}" }
               register: app_user_name
@@ -192,7 +192,7 @@
               when: plan.refresh.php is not none
               ansible.builtin.command:
                 argv: >-
-                  {{ as_web + ['sh', '-c', 'if [ -x "$1" ] && [ -f "$2/artisan" ]; then cd -- "$2" && "$1" artisan config:clear >/dev/null 2>&1; fi',
+                  {{ as_app + ['sh', '-c', 'if [ -x "$1" ] && [ -f "$2/artisan" ]; then cd -- "$2" && "$1" artisan config:clear >/dev/null 2>&1; fi',
                       'sh', plan.refresh.php, plan.refresh.application] }}
                 expand_argument_vars: false
               no_log: true

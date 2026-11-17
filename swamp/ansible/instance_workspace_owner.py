@@ -1,6 +1,6 @@
 """Root's workspace pass (docs/reference/development-containers.md#who-runs-what, ADR 0268).
 
-`agent` owns the workspace, and `web` and `agent` share it through the group `web`. A tool that asks for 0755 folders, such as Bun
+`agent` owns the workspace, and `www-data` and `agent` share it through the group `www-data`. A tool that asks for 0755 folders, such as Bun
 in `node_modules`, caps their ACL mask, so the other user cannot write there; and a call that only a file's owner may make, such as
 `chmod` or `utime` with times, fails on a file of the other user. So root gives the group back what the owner has, as `chmod g+rwX`
 would (rwx for a folder, rw for a file and x for a file that someone may run), and gives each entry that `from_uid` owns to `to_uid`.
@@ -9,7 +9,7 @@ The workspace is live while the pass runs: Git, an app or an agent may remove an
 that is gone needs nothing; any other error fails the pass and names its path. Each entry is opened without following a link, and
 changed through that descriptor, so a link that replaces an entry never changes what it points at. An entry that is neither a folder
 nor a file, such as a link or a socket, gets only its new owner, with `lchown`, never through its target. A file given away loses its
-setuid and setgid bits, so `web` can never make a program that runs as `agent`. An entry that is not a folder and has another name
+setuid and setgid bits, so `www-data` can never make a program that runs as `agent`. An entry that is not a folder and has another name
 (a hard link, `st_nlink` above 1) keeps its owner: its other name may be outside the workspace. Its mode follows the group rule as
 before.
 

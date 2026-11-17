@@ -187,7 +187,7 @@ final readonly class ProcessTargetResolver
     {
         $this->ensureLinux($instance->node);
 
-        // An Instance in a container runs its Processes as `web` units in the container, with the workspace's .env
+        // An Instance in a container runs its Processes as `www-data` units in the container, with the workspace's .env
         // (docs/reference/development-containers.md#processes).
         $runtime = $instance->runtime()->first();
         if ($runtime instanceof InstanceRuntime) {

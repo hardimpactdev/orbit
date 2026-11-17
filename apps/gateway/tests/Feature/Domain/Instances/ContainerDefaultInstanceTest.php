@@ -190,7 +190,7 @@ it('renders FrankenPHP as a web unit on the bridge address, with the Project\'s 
 
     expect($units)->toHaveCount(1)
         ->and($units[0]['name'])->toBe('orbit-frankenphp.service')
-        ->and($units[0]['content'])->toContain("User=web\nGroup=web\nUMask=0007\nWorkingDirectory=/srv/workspace\n")
+        ->and($units[0]['content'])->toContain("User=www-data\nGroup=www-data\nUMask=0007\nWorkingDirectory=/srv/workspace\n")
         ->toContain('Environment=PATH=/opt/orbit-runtime/current/php/8.5/bin:/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin')
         ->toContain('ExecStart=/opt/orbit-runtime/current/php/8.5/bin/frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile')
         ->and(str_contains($units[0]['content'], '/etc/orbit/instance'))->toBeFalse();
