@@ -28,8 +28,9 @@ Nothing restarts: every later process reads the files by itself.
 (InstanceContainer::t3DropIns) through the file API, uid 0, gid 0, only where the text differs, running, stopped or frozen. A running
 container with a new drop-in runs `systemctl daemon-reload` and joins the Node's restart list, `state`; `reload` names the whole list.
 The agent folder's step then restarts each running T3 there once, with the folder's own restart if one is due, and removes only
-completed entries (`t3_restart` mode, from instance-folder.yml). Right before each restart it asks that T3 for its threads: a T3 with
-an open turn, or whose list fails while its unit is active, does not restart and stays on the list until a converge finds it idle. A frozen or stopped container stays on the list; a vanished container leaves it. A run
+completed entries (`t3_restart` mode, from instance-folder.yml). Right before each restart it reads that server's open runs, of every
+thread, subagents and side chats included: a T3 with an open run, or whose runs cannot be read while its unit is active, does not
+restart and stays on the list until a converge finds it idle. A frozen or stopped container stays on the list; a vanished container leaves it. A run
 that fails between the reload and the restart leaves outstanding entries, so a later converge restarts them.
 A stopped container reads the drop-in at its next boot, and a
 frozen one, which refuses `incus exec`, at the first converge that finds it running and its unit not reloaded (NeedDaemonReload). The agent-owned files of a create (T3's settings, `.claude.json`,
@@ -340,45 +341,38 @@ def t3_files(entries, state):
 
 # The run states of a T3 thread whose turn is open: task-copy-turn.yml settles the same set.
 T3_OPEN = ("preparing", "queued", "starting", "running", "waiting")
-# Every project's threads, as the server itself lists them. Neither server lists more than one project's threads, nor has a project
-# list, so the script reads the projects from the server's own state, read-only, and asks the server for each: T3 0.1.7 keeps their
-# ids in `statev2.sqlite`, the Conn Server their folders in `projects.json`. Runs as agent in the container, on stdin of the runtime
-# folder's Node; prints one JSON list of every thread.
-T3_THREADS = r"""
-const { execFileSync } = require("node:child_process");
-const { existsSync, readFileSync } = require("node:fs");
-const program = process.argv.at(-1);
-const state = process.env.HOME + "/.t3/userdata/";
-const list = (project) => JSON.parse(execFileSync(program, ["thread", "list", "--project", project, "--json"], { encoding: "utf8", timeout: 20000 }));
-let projects;
-if (program.endsWith("/conn-server")) {
-    // A Conn Server that was never given a project has no file, and no threads.
-    projects = existsSync(state + "projects.json")
-        ? JSON.parse(readFileSync(state + "projects.json", "utf8")).map((project) => project.workspaceRoot) : [];
-} else {
-    const { DatabaseSync } = require("node:sqlite");
-    const db = new DatabaseSync(state + "statev2.sqlite", { readOnly: true });
-    projects = db.prepare("SELECT project_id FROM projection_projects WHERE deleted_at IS NULL").all().map((row) => row.project_id);
-    db.close();
-}
-const threads = projects.flatMap(list);
-process.stdout.write(JSON.stringify(threads));
+# Every open run of every thread, read-only from the server's own store. Neither server's `thread list` can serve: it lists one project,
+# and it hides subagent children and side chats even with `includeSubagents` (T3 0.1.7's listProjectThreads), while a parent's
+# status covers only its own runs. Both stores hold every thread's runs: T3 in `statev2.sqlite`, whose recovery index names the same
+# open states, the Conn Server as `runs` entities in `engine.sqlite`. A missing or changed store fails the read, and the container
+# counts as busy. Runs as agent in the container, on stdin of the runtime folder's Node: `node - OPEN PROGRAM`; prints the open runs.
+T3_OPEN_RUNS = r"""
+const { DatabaseSync } = require("node:sqlite");
+const [open, program] = process.argv.slice(-2);
+const conn = program.endsWith("/conn-server");
+const db = new DatabaseSync(process.env.HOME + "/.t3/userdata/" + (conn ? "engine.sqlite" : "statev2.sqlite"), { readOnly: true });
+const runs = db.prepare(conn
+    ? "SELECT thread_id AS threadId, json_extract(body, '$.status') AS status FROM entities WHERE kind = 'runs' AND json_extract(body, '$.status') IN (SELECT value FROM json_each(?))"
+    : "SELECT thread_id AS threadId, status FROM orchestration_v2_projection_runs WHERE status IN (SELECT value FROM json_each(?))").all(open);
+db.close();
+process.stdout.write(JSON.stringify(runs));
 """
 
 
 def t3_busy(project, name, program):
-    """Why T3 in the running container must not restart now, or None: an open turn, or a list that failed while its unit is active."""
+    """Why T3 in the running container must not restart now, or None: an open run of any thread, or a read that failed while its unit is
+    active."""
     try:
         if incus("exec", "--project", project, name, "--", "systemctl", "is-active", "t3.service", ok=(0, 3, 4),
                  timeout=30).stdout.strip() != "active":
             return None
         listed = incus("exec", "--project", project, name, "--cwd", "/home/agent", "--", "/usr/sbin/runuser", "-u", "agent", "--",
                        "/usr/bin/env", "-i", "HOME=/home/agent", "PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin",
-                       "/usr/bin/timeout", "60", "node", "-", program, stdin=T3_THREADS, timeout=90)
-        threads = json.loads(listed.stdout)
+                       "/usr/bin/timeout", "60", "node", "-", json.dumps(T3_OPEN), program, stdin=T3_OPEN_RUNS, timeout=90)
+        runs = json.loads(listed.stdout)
     except (IncusFailure, subprocess.TimeoutExpired, ValueError) as failure:
-        return f"T3 is active and its thread list failed: {str(failure)[:200]}"
-    open_turns = sorted({thread.get("threadId", "?") for thread in threads if thread.get("status") in T3_OPEN})
+        return f"T3 is active and its open runs could not be read: {str(failure)[:200]}"
+    open_turns = sorted({run.get("threadId", "?") for run in runs if run.get("status") in T3_OPEN})
     return f"open turn in {', '.join(open_turns)}" if open_turns else None
 
 

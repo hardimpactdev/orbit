@@ -570,11 +570,19 @@ The restart is `systemctl try-restart t3.service`. When the agent folder changed
 
 Each successful restart removes only its own entry, even if another restart fails. A frozen or stopped container keeps its entry until a converge finds it running and successfully restarts T3; a deleted container leaves the list. A stopped container may already have read the new drop-in at boot, but the entry still requires that explicit restart rather than inferring completion from its power state.
 
-T3 never restarts in the middle of a turn. Right before each T3 restart, whether for a reloaded drop-in or for an agent folder flip, the Node asks that container's server for its threads. It runs `thread list --json` as `agent`, with the program that the Gateway names in the container's `t3_files` entry. Each server's list covers one project, and neither can list its projects. So the Node reads them from the server's own state and asks once for each: T3's project ids in `statev2.sqlite`, the Conn Server's folders in `projects.json`. A thread in `preparing`, `queued`, `starting`, `running` or `waiting` is an open turn. Then:
+T3 never restarts in the middle of a turn. Right before each T3 restart, whether for a reloaded drop-in or for an agent folder flip, the Node reads that container's open runs as `agent`. A run in `preparing`, `queued`, `starting`, `running` or `waiting` is an open turn. The read covers every thread, with subagent children and side chats.
+
+`thread list` cannot serve here. It lists one project, and it hides subagent children and side chats. A parent's status covers only its own runs, so an idle parent can hide a running child. So the Node reads the server's own store, read-only. The program that the Gateway names in the container's `t3_files` entry says which store:
+
+- T3 keeps its runs in `~/.t3/userdata/statev2.sqlite`.
+- The Conn Server keeps them as `runs` entities in `~/.t3/userdata/engine.sqlite`.
+
+Then:
 
 - An open turn defers the restart. The drop-in is written and systemd reloads, but T3 keeps running.
 - A deferred container stays on the Node's list. The converge reports it under `deferred`, with its reason.
-- When `t3.service` is active but the list fails or times out, the container counts as busy too, so T3 never restarts blind.
+- When `t3.service` is active but the read fails or times out, the container counts as busy too. T3 never restarts blind.
+- A missing store, or one whose tables changed, fails the read.
 - When `t3.service` is not active, nothing is asked. `try-restart` does nothing there, and the entry leaves the list.
 - A container without a `t3_files` entry has no T3. A folder flip restarts it without asking.
 

@@ -8,8 +8,8 @@
  * - `systemctl is-active t3.service` prints `inactive` (exit 3) for a container in `t3_inactive`, else `active`.
  * - The agent's thread list (`runuser -u agent ... node - PROGRAM`) prints one `running` thread for a container in `t3_busy`, fails
  *   for one in `t3_list_fail`, and prints no thread otherwise. Both checks go to the state's `t3_checks`, not to `calls`.
- *   A container with a home folder `homes/NAME` runs the real script from stdin instead, with Deno, that home as HOME, and
- *   `homes/NAME/bin/` + PROGRAM's base name as the server, which the case writes.
+ *   A container with a home folder `homes/NAME` runs the real script from stdin instead, with Deno, that home as HOME (and its
+ *   server's store, which the case writes), and `homes/NAME/bin/` + PROGRAM's base name as the program.
  * - `systemctl try-restart t3.service` without the agent folder's `.restart` mark, the restart for a new drop-in alone, is recorded in
  *   `folder_restarts` as the shared fake records the folder's own restarts. A name in `fail_restarts` refuses the call instead.
  */
@@ -54,7 +54,7 @@ if (command[0] === "/usr/sbin/runuser" || command[1] === "is-active") {
     if ((() => { try { return Deno.statSync(home).isDirectory; } catch { return false; } })()) {
         Deno.writeTextFileSync(`${home}/threads.cjs`, await new Response(Deno.stdin.readable).text());
         const listed = new Deno.Command(Deno.execPath(), {
-            args: ["run", "-A", `${home}/threads.cjs`, `${home}/bin/${command.at(-1)!.split("/").at(-1)}`],
+            args: ["run", "-A", `${home}/threads.cjs`, command.at(-2)!, `${home}/bin/${command.at(-1)!.split("/").at(-1)}`],
             env: { HOME: home }, stdout: "inherit", stderr: "inherit",
         }).spawn();
         Deno.exit((await listed.status).code);

@@ -4,6 +4,7 @@ import { hostTasks } from "./_support/host_task_scope.ts";
  * the Orbit root CA (docs/reference/development-containers.md#browser-libraries-and-fonts, #existing-containers, #trust).
  */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import { DatabaseSync } from "node:sqlite";
 import { browserTrust, fixture, hasAnsible } from "./_support/instance_host.ts";
 
 const sha256 = async (path: string) =>
@@ -426,7 +427,7 @@ Deno.test({
             ({ run, execs } = await pass());
             assertEquals(execs, []);
             assertEquals(pending(), [entry("app-busy")]);
-            assertStringIncludes(run.output, "its thread list failed");
+            assertStringIncludes(run.output, "its open runs could not be read");
             // A T3 that does not run needs no list: its try-restart is a no-op, and it leaves the list.
             const stopped = f.state();
             stopped.t3_inactive = ["app-busy"];
@@ -440,7 +441,7 @@ Deno.test({
 });
 
 Deno.test({
-    name: "a Conn Server's open turn in any of its projects defers its restart, read with the real thread script; once its threads settle it restarts once",
+    name: "an idle root with a running subagent child (T3) or side chat (Conn Server) defers the restart, read from the server's own store; once they settle it restarts once",
     ignore: !hasAnsible,
     async fn() {
         const f = await fixture();
@@ -451,46 +452,70 @@ Deno.test({
             const ready = await f.run();
             assert(ready.ok, ready.output);
             const server = "/etc/systemd/system/t3.service.d/20-orbit-server.conf";
+            const names = { "app-t3": "t3", "app-conn": "conn-server" } as Record<string, string>;
             const state = f.state();
-            state.instances.push({ project: "orbit-instances", name: "app-conn", status: "Running" });
-            state.files = { [`app-conn${server}`]: { content: "# old\n", mode: "0644", uid: "0", gid: "0" } };
+            state.instances.push(...Object.keys(names).map((name) => ({ project: "orbit-instances", name, status: "Running" })));
+            state.files = Object.fromEntries(Object.keys(names).map((name) => [name + server, { content: "# old\n", mode: "0644", uid: "0", gid: "0" }]));
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-            // The Conn Server as a live one answers (T3's shape): its projects' folders in projects.json, and `thread list` refuses a
-            // call without a project it knows. The turn is open in the second project, not the workspace.
-            const home = `${f.folder}/homes/app-conn`;
-            Deno.mkdirSync(`${home}/.t3/userdata`, { recursive: true });
-            Deno.mkdirSync(`${home}/threads`);
-            Deno.mkdirSync(`${home}/bin`);
-            Deno.writeTextFileSync(`${home}/.t3/userdata/projects.json`,
-                JSON.stringify([{ title: "workspace", workspaceRoot: "/srv/workspace" }, { title: "other", workspaceRoot: "/home/agent/other" }]));
-            const threads = (status: string) => {
-                Deno.writeTextFileSync(`${home}/threads/_srv_workspace.json`, JSON.stringify([{ threadId: "thread-done", status: "completed" }]));
-                Deno.writeTextFileSync(`${home}/threads/_home_agent_other.json`, JSON.stringify([{ threadId: "thread-conn", status }]));
+            // Each server's store as the live one keeps it: the root thread's run is over and a hidden thread's run is open. Each
+            // program lists only the root, as `thread list` does: it hides subagent children and side chats.
+            const lineage = (relationshipToParent: string | null, sideChat: boolean) =>
+                JSON.stringify({ lineage: { parentThreadId: relationshipToParent ? "root" : null, relationshipToParent, rootThreadId: "root", ...(sideChat ? { sideChat } : {}) } });
+            const store = (name: string, hidden: string) => {
+                const home = `${f.folder}/homes/${name}`;
+                Deno.mkdirSync(`${home}/.t3/userdata`, { recursive: true });
+                Deno.mkdirSync(`${home}/bin`);
+                Deno.writeTextFileSync(`${home}/bin/${names[name]}`, `#!/bin/sh\necho '[{"threadId":"root","status":"completed"}]'\n`);
+                Deno.chmodSync(`${home}/bin/${names[name]}`, 0o755);
+                Deno.writeTextFileSync(`${home}/.t3/userdata/projects.json`, JSON.stringify([{ title: "workspace", workspaceRoot: "/srv/workspace" }]));
+                const db = new DatabaseSync(`${home}/.t3/userdata/${names[name] === "t3" ? "statev2" : "engine"}.sqlite`);
+                if (names[name] === "t3") {
+                    db.exec(`CREATE TABLE projection_projects (project_id TEXT PRIMARY KEY, workspace_root TEXT NOT NULL, deleted_at TEXT);
+                        INSERT INTO projection_projects VALUES ('project-1', '/srv/workspace', NULL);
+                        CREATE TABLE orchestration_v2_projection_threads (thread_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL);
+                        CREATE TABLE orchestration_v2_projection_runs (run_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, status TEXT NOT NULL);`);
+                    db.prepare("INSERT INTO orchestration_v2_projection_threads VALUES (?, ?), (?, ?)").run("root", lineage(null, false), hidden, lineage("subagent", false));
+                    db.prepare("INSERT INTO orchestration_v2_projection_runs VALUES ('run-root', 'root', 'completed'), ('run-hidden', ?, 'running')").run(hidden);
+                } else {
+                    db.exec(`CREATE TABLE threads (id TEXT PRIMARY KEY, thread TEXT NOT NULL);
+                        CREATE TABLE entities (thread_id TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (thread_id, kind, id));`);
+                    db.prepare("INSERT INTO threads VALUES (?, ?), (?, ?)").run("root", lineage(null, false), hidden, lineage("fork", true));
+                    db.prepare("INSERT INTO entities VALUES ('root', 'runs', 'run-root', ?), (?, 'runs', 'run-hidden', ?), (?, 'messages', 'm', ?)")
+                        .run(JSON.stringify({ status: "completed" }), hidden, JSON.stringify({ status: "running" }), hidden, JSON.stringify({ status: "running" }));
+                }
+                db.close();
+                return () => {
+                    const settle = new DatabaseSync(`${home}/.t3/userdata/${names[name] === "t3" ? "statev2" : "engine"}.sqlite`);
+                    settle.exec(names[name] === "t3" ? "UPDATE orchestration_v2_projection_runs SET status = 'completed'"
+                        : "UPDATE entities SET body = '{\"status\":\"completed\"}' WHERE kind = 'runs'");
+                    settle.close();
+                };
             };
-            Deno.writeTextFileSync(`${home}/bin/conn-server`, `#!/bin/sh
-[ "$1 $2 $3" = "thread list --project" ] && [ -f "$HOME/threads/$(printf %s "$4" | tr '/:' '__').json" ] && exec cat "$HOME/threads/$(printf %s "$4" | tr '/:' '__').json"
-echo "No T3 Code project matches '.'. Pass a project id or a path inside a project." >&2
-exit 1
-`);
-            Deno.chmodSync(`${home}/bin/conn-server`, 0o755);
-            f.write({ ...f.instances, t3_files: [{ project: "orbit-instances", container: "app-conn", program: "/opt/orbit-agent/current/agent/bin/conn-server",
-                files: [{ path: server, content: "# new\n", mode: "0644" }] }] });
-            const exec = (...command: string[]) => ["exec", "--project", "orbit-instances", "app-conn", "--", "systemctl", ...command];
+            const settleChild = store("app-t3", "child");
+            const settleSide = store("app-conn", "side");
+            f.write({ ...f.instances, t3_files: Object.entries(names).map(([container, bin]) => ({ project: "orbit-instances", container,
+                program: `/opt/orbit-agent/current/agent/bin/${bin}`, files: [{ path: server, content: "# new\n", mode: "0644" }] })) });
+            const exec = (name: string, ...command: string[]) => ["exec", "--project", "orbit-instances", name, "--", "systemctl", ...command];
             const pass = async () => {
                 const before = f.has("calls") ? f.calls().length : 0;
                 const run = await f.run();
                 assert(run.ok, run.output);
                 return { run, execs: f.calls().slice(before).filter((call) => call[0] === "exec" && !call.includes("NeedDaemonReload")) };
             };
+            const pending = () => f.has("t3-restart.json") ? JSON.parse(Deno.readTextFileSync(`${f.folder}/t3-restart.json`)) : [];
 
-            threads("running");
             const busy = await pass();
-            assertEquals(busy.execs, [exec("daemon-reload")]);
-            assertStringIncludes(busy.run.output, "open turn in thread-conn");
-            assertEquals(JSON.parse(Deno.readTextFileSync(`${f.folder}/t3-restart.json`)), [{ project: "orbit-instances", name: "app-conn" }]);
+            assertEquals(busy.execs, [exec("app-conn", "daemon-reload"), exec("app-t3", "daemon-reload")]);
+            assertStringIncludes(busy.run.output, "open turn in child");
+            assertStringIncludes(busy.run.output, "open turn in side");
+            assertEquals(pending(), [{ project: "orbit-instances", name: "app-conn" }, { project: "orbit-instances", name: "app-t3" }]);
 
-            threads("completed");
-            assertEquals((await pass()).execs, [exec("try-restart", "t3.service")]);
+            // The child settles: only that T3 restarts. Then the side chat settles: the Conn Server restarts and the list empties.
+            settleChild();
+            assertEquals((await pass()).execs, [exec("app-t3", "try-restart", "t3.service")]);
+            assertEquals(pending(), [{ project: "orbit-instances", name: "app-conn" }]);
+            settleSide();
+            assertEquals((await pass()).execs, [exec("app-conn", "try-restart", "t3.service")]);
             assert(!f.has("t3-restart.json"));
         } finally {
             f.cleanup();

@@ -217,8 +217,8 @@
       loop: "{{ folder_targets }}"
       loop_control: { label: "{{ item.project }}/{{ item.name }}" }
       changed_when: true
-    # instance_container_files.py `t3_restart` asks each target's T3 for its threads right before its restart. A T3 with an open turn,
-    # or whose list fails while it runs, does not restart: it stays on the Node's list, with the frozen, stopped and failed targets,
+    # instance_container_files.py `t3_restart` reads each target's open runs, of every thread, right before its restart. A T3 with an
+    # open run, or whose runs cannot be read while it runs, does not restart: it stays on the Node's list, with the frozen, stopped and failed targets,
     # until a converge finds it idle. Restarted targets leave the list; the run fails after every target had its turn if one failed.
     - name: Restart T3 where no turn is open and keep the others on the Node's list
       when: folder_name == 'agent'
