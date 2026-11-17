@@ -8,6 +8,21 @@ export type Boundary = { entries: Record<string, Entry> };
 const roots = ["images", "arc", "arc.conf", "subuid", "subgid", "sysctl", "modules-load", "systemd", "libexec", "hibernation", "bridge-policy",
     "container-libraries", "opt", "cache", "debs", "egress", "etc-orbit", "dev-ports.nft", "state.json", "remote-state.json", "calls", "targets", "nested-image.json", "boundary-facts.json"];
 
+export function readBoundaries() {
+    // Store only changed entries; restore still creates each test's complete independent filesystem.
+    const saved = JSON.parse(Deno.readTextFileSync(new URL("../fixtures/host-image-boundaries.json", import.meta.url)));
+    const boundaries: Record<string, Boundary> = {};
+    for (const [name, row] of Object.entries(saved) as [string, { from: string | null; entries: Record<string, Entry & { append?: string } | null> }][]) {
+        const entries = { ...(row.from ? boundaries[row.from].entries : {}) };
+        for (const [path, entry] of Object.entries(row.entries)) {
+            if (entry === null) delete entries[path];
+            else entries[path] = entry.append !== undefined ? { mode: entry.mode, text: entries[path].text! + entry.append } : entry;
+        }
+        boundaries[name] = { entries };
+    }
+    return boundaries;
+}
+
 function substitutions(f: Fixture): [string, string][] {
     const pairs: [string, string][] = [[`${f.folder}/unix.socket`, "@SOCKET@"], [`/proc/${Deno.readTextFileSync(`${f.folder}/daemon.pid`).trim()}`, "/proc/@DAEMON@"], [f.folder, "@FIXTURE@"], [Deno.readTextFileSync(`${f.folder}/orbit-root-ca.crt`), "@ROOT_CA@"]];
     const visit = (value: unknown, path: string) => {
@@ -32,8 +47,7 @@ function replace(value: string, pairs: [string, string][]) {
 export function capture(f: Fixture): Boundary {
     const pairs = substitutions(f), entries: Record<string, Entry> = {};
     const sources = [...Deno.readDirSync(f.folder)].filter((e) => e.isFile && e.name.endsWith(".py")).map((e) => e.name);
-    // Keep installed helpers tied to the shipped source instead of freezing another copy of their implementation.
-    sources.push("files/instance-container-wake.sh", "files/instance-container-power.py");
+    sources.push("files/instance-container-wake.sh");
     const artifacts = [...Deno.readDirSync(`${f.folder}/artifacts`)].filter((e) => e.isFile)
         .map((e) => [e.name, Deno.readFileSync(`${f.folder}/artifacts/${e.name}`)] as const);
     const walk = (path: string) => {
