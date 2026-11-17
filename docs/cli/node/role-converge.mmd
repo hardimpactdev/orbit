@@ -78,6 +78,8 @@ sequenceDiagram
     SW->>N: Install Swamp<br/>native steps
     %%> What it does:
     %%> - installs the binary beside the running one, links it, then applies the identity, the serve unit and the worker units
+    %%> - retain the selected and previous binary plus process-mapped versions; install hourly native journal, apt and Git maintenance
+    %%> - a worker removes downloaded bundles only at its next start, after its previous process drained; machine identity stays
     SW->>N: Enable renewal<br/>systemd timer
     %%> Order:
     %%> - the Ansible node phase installs the renewal program and rendered units first
