@@ -74,6 +74,7 @@ sequenceDiagram
   %%> In the admission transaction, each shard takes one place on a Node. On each Node the shards take its warm copies first: the warm copy's task group becomes the shard's group, and the run child is recorded on it. Each other shard's task group starts an `instance.create` of a copy there, the same start as a task copy.
   %%> Why:
   %%> - A warm copy's create has ended, so its shard skips the copy create, a large part of the fixed time before the first case.
+  %%> - The shards do not choose which of them take warm copies. So a selection fits 5 minutes from the push only when every shard it plans gets one: proof.warm_copies must be at least the shard count of the selections that must fit.
   %%> Which warm copy:
   %%> - Idle (no run child), active and from the Node's current seed. A warm copy from an older seed is never taken: the pool replaces it.
   %%> Seed:

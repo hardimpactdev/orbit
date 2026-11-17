@@ -161,6 +161,8 @@ Each CI Node can keep a small pool of warm proof copies ([ADR 0260](/decisions/0
 
 A warm copy is a proof copy while it waits. It holds one of its Node's `ci_places`, one slot of the Node's task copy cap and one copy's memory peak. Its create holds its place and stops idle runners, as for any proof copy.
 
+A selection fits 5 minutes from the push only when every shard it plans gets a warm copy. A proof does not choose which shards take the warm copies, and a shard on a new copy pays the create. So set `proof.warm_copies` to at least the shard count of the selections that must fit, such as a `node:role:add` proof alone. With fewer, such a proof can end as late as one with no warm copy.
+
 A proof takes a warm copy only when the copy is idle, `active` and made from its Node's current seed. A taken copy runs its shard like any other copy: it brings in the commit, and its first part resets the inner fleet, so the nested Gateway runs the commit under proof. Its run end destroys it. Orbit never puts a used copy back in the pool.
 
 The pool refills after a warm copy is taken or destroyed, and after each seed refresh on a Node: each reconcile pass of the Gateway, once a minute, keeps it. A refill starts warm copies on Nodes with a free place until the pool holds `proof.warm_copies`. It never waits for a place, and it starts no warm copy while a proof waits for its admission, so that proof takes the free places first. After a seed refresh, each idle warm copy from an older seed is destroyed and replaced.

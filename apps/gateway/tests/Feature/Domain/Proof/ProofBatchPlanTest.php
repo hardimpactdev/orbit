@@ -243,9 +243,10 @@ it('plans the worst node selection at its floor, balances the other copies and n
  * converges it once (another kind, so every phase runs), and failure-after-partial-change converges after a failed add (no record). The
  * repeat that skips is application-repeat, which waits for the ID map window.
  * A warm copy (ADR 0260, Warm proof copies) has ended its create before the push: its proof pays admission and the commit, and keeps
- * its first reset, which migrates the nested Gateway on the commit under proof.
+ * its first reset, which migrates the nested Gateway on the commit under proof. With a pool of p warm copies only p shards start warm,
+ * and a proof does not choose which: so a selection fits only when every shard it plans gets a warm copy.
  */
-it('fits node:converge and node:role:add alone into five minutes from the push in warm copies', function (): void {
+it('fits node:converge alone, and node:role:add alone when each of its 5 shards gets a warm copy, into five minutes from the push', function (): void {
     $create = 75;
     $cold = 57 + $create + 9;
     $warm = $cold - $create;
@@ -270,6 +271,15 @@ it('fits node:converge and node:role:add alone into five minutes from the push i
         $part('node:role:add', 'node-down', ['unreachable-node' => 30.0 /* estimate */]),
         $part('node:role:add', 'no-grant', ['shared-node-authority' => 60.0 /* estimate */]),
     ];
+    // The proof's end with `$pool` warm copies, at worst: the warm copies go to the lightest shards, and the others pay the create.
+    $mixed = static function (array $shards, int $pool) use ($ends, $cold, $warm): float {
+        $coldEnds = $ends($shards, $cold);
+        $warmEnds = $ends($shards, $warm);
+        asort($coldEnds);
+
+        return max(array_map(static fn (int $index, int $rank): float => $rank < $pool ? $warmEnds[$index] : $coldEnds[$index],
+            array_keys($coldEnds), array_keys(array_keys($coldEnds))));
+    };
     $over = static fn (array $batches): array => array_values(array_map(static fn (array $batch): string => $batch['batch'].' '.implode(' ', $batch['cases']),
         array_filter($batches, static fn (array $batch): bool => $ends([[$batch]], $cold)[0] > 300)));
 
@@ -281,7 +291,14 @@ it('fits node:converge and node:role:add alone into five minutes from the push i
         ->and($over($roleAdd))->toBe(['fresh-fleet required-only', 'ufw-fault failure-after-partial-change'])
         // In warm copies 162 s of fixed time leaves 138 s, and the longest part of each command fits.
         ->and(max($ends(ProofBatchPlan::split($roleAdd, 10), $warm)))->toBe(262.0)
-        ->and(max($ends(ProofBatchPlan::split($converge, 10), $warm)))->toBe(205.0);
+        ->and(max($ends(ProofBatchPlan::split($converge, 10), $warm)))->toBe(205.0)
+        // Role-add plans 5 shards, so it fits only with 5 warm copies. With fewer, a shard over five minutes may start on a new copy and
+        // end as it does today; converge fits with any pool size.
+        ->and(ProofBatchPlan::split($roleAdd, 10))->toHaveCount(5)
+        ->and($mixed(ProofBatchPlan::split($roleAdd, 10), 5))->toBe(262.0)
+        ->and($mixed(ProofBatchPlan::split($roleAdd, 10), 4))->toBe(337.0)
+        ->and($mixed(ProofBatchPlan::split($roleAdd, 10), 0))->toBe(337.0)
+        ->and($mixed(ProofBatchPlan::split($converge, 10), 0))->toBe(280.0);
 });
 
 it('never plans a case that waits for a named reason, and refuses a wait without one', function (): void {
