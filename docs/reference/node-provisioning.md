@@ -868,7 +868,7 @@ The same subnet holds the nested fleet of a [nested-fleet Instance container](/r
 
 The fleet rules write the marker `/etc/orbit/instance-fleet` on that fleet's nested Gateway, and a Gateway with the marker gives its Nodes no `apt_proxy`. So a role add, a role converge, an enrollment or an exporter there removes `90orbit-package-cache`, and a tool setup reads the snapshot with the Node's own apt settings.
 
-The Node's apt reaches the internet through the egress proxy, which the fleet's own file `95orbit-nested-egress` names. No Orbit play touches that file. It sorts after `90orbit-package-cache`, so it also wins over a cache file that an older role add left. The daily apt timers stay off on every nested Node.
+The Node's apt reaches the internet through the egress proxy, which the fleet's own file `95orbit-nested-egress` names. No Orbit play touches that file. It sorts after `90orbit-package-cache`, so it also wins over a cache file that an older role add left. The daily apt timers stay off on every nested Node. Docker on a nested Node reads through the same egress proxy: the fleet rules write the drop-in `docker.service.d/50-inner-fleet-proxy.conf`.
 
 The [Gateway bootstrap](#gateway-bootstrap-prerequisites) of a nested fleet takes the value from its input, and `php artisan orbit:bootstrap-plan --apt-proxy=URL` puts it in the plan.
 
