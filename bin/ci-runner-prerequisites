@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Ubuntu 26.04 prerequisites for hosted CI's two-minute Gateway static job.
+# Bounded Ubuntu 26.04 prerequisites for hosted Gateway checks.
 set -euo pipefail
 
 case "${1:-}" in
-    nftables) tools=(nft) ;;
-    *) echo 'Usage: ci-runner-prerequisites {nftables}' >&2; exit 2 ;;
+    nftables) tools=(nft); primary_budget=10 ;;
+    valkey-server) tools=(valkey-server valkey-cli); primary_budget=25 ;;
+    *) echo 'Usage: ci-runner-prerequisites {nftables|valkey-server}' >&2; exit 2 ;;
 esac
 package=$1
 
@@ -25,7 +26,7 @@ trap 'sudo -n rm -rf -- "$scratch"' EXIT
 chmod 755 "$scratch"
 
 for mirror in azure.archive.ubuntu.com mirrors.edge.kernel.org; do
-    budget=10
+    budget=$primary_budget
     if [[ "$mirror" == mirrors.edge.kernel.org ]]; then budget=20; fi
     attempt="$scratch/$mirror"
     mkdir -m 755 "$attempt" "$attempt/lists"
@@ -51,10 +52,16 @@ import subprocess
 import sys
 import time
 
-deadline = time.monotonic() + int(sys.argv[1])
-for operation in (['update'], ['install', '--no-install-recommends', '--yes', sys.argv[2]]):
+# These runners are disposable; unrelated service scans and restarts are not prerequisites.
+os.environ['NEEDRESTART_SUSPEND'] = '1'
+budget = int(sys.argv[1])
+package = sys.argv[2]
+deadline = time.monotonic() + budget
+for operation in (['update'], ['install', '--no-install-recommends', '--yes', package]):
     remaining = deadline - time.monotonic()
+    timeout_message = f'apt-get {operation[0]} exceeded the shared {budget}s deadline for {package}'
     if remaining <= 0:
+        print(timeout_message, file=sys.stderr)
         sys.exit(124)
     child = subprocess.Popen(['apt-get', *sys.argv[3:], *operation], start_new_session=True)
     try:
@@ -62,6 +69,7 @@ for operation in (['update'], ['install', '--no-install-recommends', '--yes', sy
     except subprocess.TimeoutExpired:
         os.killpg(child.pid, signal.SIGKILL)
         child.wait()
+        print(timeout_message, file=sys.stderr)
         sys.exit(124)
     if result != 0:
         sys.exit(1)

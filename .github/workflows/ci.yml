@@ -325,6 +325,55 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  gateway-real-clients:
+    name: Gateway real database clients
+    needs: changes
+    if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['gateway-real-clients']) != 'false' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/php
+        with:
+          coverage: none
+      - name: Cache Gateway real-client test dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/gateway/vendor
+          key: gateway-real-clients-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/gateway/composer.json', 'apps/gateway/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
+      - name: Install Gateway dev dependencies
+        run: composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-scripts
+      - name: Provision real database servers and clients
+        run: |
+          bin/ci-runner-prerequisites valkey-server
+          command -v valkey-server
+          command -v valkey-cli
+          docker info
+          sudo -n docker info
+          docker pull postgres:18
+          docker pull mysql:8.4
+      - name: Run privileged real database contracts
+        id: real-client-tests
+        working-directory: apps/gateway
+        env:
+          ORBIT_REAL_DATABASE_CLIENTS: '1'
+        run: >-
+          vendor/bin/pest --group privileged --fail-on-skipped --fail-on-empty-test-suite --compact --colors=never
+          --log-junit="$RUNNER_TEMP/gateway-real-clients.xml"
+          tests/Unit/Domain/DatabaseServers tests/Feature/Domain/DatabaseServers
+          tests/Feature/Infrastructure/Executor/ExecutorResultWaitTest.php
+      - name: Publish real-client results
+        if: ${{ always() && (steps.real-client-tests.outcome == 'success' || steps.real-client-tests.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gateway-real-clients-junit
+          path: ${{ runner.temp }}/gateway-real-clients.xml
+          if-no-files-found: error
+          retention-days: 7
+
   sdk-static:
     name: PHP SDK static analysis
     needs: changes
@@ -928,7 +977,7 @@ jobs:
   required:
     name: ${{ github.ref == 'refs/heads/main' && 'PR required checks' || 'Required checks' }}
     if: always() && github.ref != 'refs/heads/main'
-    needs: [ci-policy, php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
+    needs: [ci-policy, php, gateway-static, gateway-tests, gateway-real-clients, cli, cli-static, cli-tests, sdk-static, sdk-tests, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
     runs-on: ubuntu-26.04
     timeout-minutes: ${{ vars.ORBIT_PROOF_ENABLED == 'true' && github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' && 275 || 2 }}
     permissions:
@@ -987,7 +1036,7 @@ jobs:
   delivery:
     name: Main delivery checks
     if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [ci-policy, php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
+    needs: [ci-policy, php, gateway-static, gateway-tests, gateway-real-clients, cli, cli-static, cli-tests, sdk-static, sdk-tests, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
