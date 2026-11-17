@@ -1,6 +1,7 @@
 order = 310
 cases = [
   "test_proof_release_setup_repairs_a_restored_gateway_and_is_idempotent",
+  "test_restored_grants_are_replaced_from_the_candidate_and_a_failed_reload_is_retried",
   "test_the_grants_tag_uses_the_candidate_renderer_not_the_saved_plan_grants",
 ]
 file = "swamp/tests/ansible_gateway_swamp_grants_test.py"
