@@ -1,0 +1,22 @@
+sequenceDiagram
+  %% status: draft
+  %% command: proof:pool:drain
+  %% kind: proof.pool.drain
+  autonumber
+  participant CLI as Operator<br/>CLI · MCP
+  participant GW as Gateway
+  participant SW as Swamp
+  participant CP as CI Nodes<br/>warm copies
+  CLI->>GW: Drain the warm pool
+  %%> Why:
+  %%> - A maintenance window that needs every copy of the proof Project's default gone runs this one command.
+  GW->>GW: Record the drain
+  %%> The drain is a Gateway record. It lasts until proof:pool:resume, across Gateway restarts. While it holds, no refill starts a warm copy.
+  GW->>GW: Cancel each idle warm copy
+  %%> Idle: no proof has taken it. Each cancel destroys the copy through its task group, as for any proof copy, with discard. A warm copy whose create still runs is cancelled the same way: the group's cancel waits for the create to end.
+  %%> Running proofs:
+  %%> - A proof's copies, also those taken from the pool, are not touched. Each is destroyed at its run's end, as always.
+  GW-->>CLI: Drained<br/>warm copies being destroyed
+  %%> The answer names the warm copies whose destroy started and the proof copies that still run. The operator waits for both lists to end: proof:pool:drain again shows them.
+  SW->>CP: Destroy each warm copy<br/>release its hold
+  %%> The copy's destroy drops its hold on the Node's places. The destroy of the last copy on a Node starts the runners that the holds stopped.

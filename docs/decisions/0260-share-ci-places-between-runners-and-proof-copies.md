@@ -1,7 +1,7 @@
 ---
 title: "ADR 0260: Share CI places between runners and proof copies"
 sidebarTitle: "0260 Shared CI places"
-description: "In progress: build step 5 in work. Each CI Node offers a fixed number of CI places. A place runs one runner job or one proof copy. A proof spreads its shards over all free places, so another place makes CI faster. Orbit shows what each place is doing."
+description: "In progress: build steps 5 and 8 in work. Each CI Node offers a fixed number of CI places. A place runs one runner job or one proof copy. A proof spreads its shards over all free places, so another place makes CI faster. A small pool of warm proof copies saves the copy create. Orbit shows what each place is doing."
 ---
 
 # ADR 0260: Share CI places between runners and proof copies
@@ -12,9 +12,9 @@ The CI Nodes form one pool. Each offers a fixed number of CI places, its `ci_pla
 
 In progress.
 
-Build step 5 is in work.
+Build steps 5 and 8 are in work.
 
-Decided by the owner on 2026-11-15. The owner answered the open question on 2026-11-16.
+Decided by the owner on 2026-11-15. The owner answered the open question on 2026-11-16. The owner added the warm proof copies on 2026-11-17 ([Warm proof copies](#warm-proof-copies)).
 
 Principle: [Lean](/mission#principles): one pool and one count per Node, instead of host-specific labels, separate proof capacity and a fixed copy limit. It also serves [Agents operate, humans steer](/mission#principles): the runner view lets a human see what CI is doing.
 
@@ -64,6 +64,18 @@ A CI Node takes only CI work. Its `ci-runner` role prepares what a nested proof 
 
 Incus moves the seed from the default's Node to each CI Node over WireGuard, with `incus copy --refresh --mode=push` for the container and `incus storage volume copy --refresh --mode=push` for its inner volume ([The seed on each CI Node](/reference/development-containers#the-seed-on-each-ci-node)). `--refresh` sends only the snapshots that changed. In push mode only the target listens. So each CI Node's Incus API listens on its WireGuard address, port 8444, and nowhere else. It trusts one restricted client certificate: root's Incus client certificate on the default's Node, limited to the project `orbit-instances-nested`. Two firewall rules in front of the WireGuard member trust admit the port from the default's Node and deny it from every other source. The default's Node gets no listener and no change to its Incus daemon: only a client remote for each CI Node. This is the one trust between Nodes that this decision adds.
 
+### Warm proof copies
+
+A proof must end within 5 minutes from the push. The create of its copies is a large part of the fixed time before the first case. So each CI Node keeps a small pool of warm proof copies: copies of the proof Project's default whose create has ended, made from the Node's current seed. A warm copy waits for a proof. It has no commit under proof and runs no case.
+
+- **Size.** The Gateway setting `proof.warm_copies` is the number of warm copies across all CI Nodes. Its default is small. 0 turns the pool off. The pool spreads its copies over the Nodes that take proof copies, in turns, as a proof spreads its shards.
+- **Cost.** A warm copy holds its place while it waits. It is a proof copy on its Node: it takes one of the Node's `ci_places`, one slot of the task copy cap of that Node and one copy's memory peak (`proof.copy_memory`), as a running copy does. The CPU of a Node is its limit, so the pool stays small. Idle runners stop for a warm copy's place, as for any proof copy ([Runners stop while a proof holds places](#runners-stop-while-a-proof-holds-places)).
+- **Take.** At admission a proof takes the warm copies on each Node of its places first, and starts a new copy only for the rest of its shards. A taken copy is the shard's copy from then on, and the shard's run starts as soon as admission records it. The run keeps its first reset of the inner fleet: the reset migrates the nested Gateway on the commit under proof, so the fleet runs the tested code.
+- **After use.** A used copy is destroyed at its run's end, as every proof copy is. Orbit never puts a used copy back in the pool. The pool then makes a new warm copy.
+- **Refill.** After a warm copy is taken or destroyed, and after each refresh of the seed on a Node, the pool makes warm copies until it holds `proof.warm_copies`. A refill takes a free place only. It never waits for one and never holds a proof back: a proof that waits for places comes first.
+- **Stale seed.** A warm copy records the seed it was made from. When the Node's seed is refreshed, each warm copy from an older seed is destroyed and replaced. A proof never takes one.
+- **Drain.** [`orbit proof:pool:drain`](/cli/proof/pool-drain) is the one command for a maintenance window that needs every copy of the default gone. It destroys the idle warm copies and stops every refill. Running proofs finish and destroy their copies as usual. [`orbit proof:pool:resume`](/cli/proof/pool-resume) lets the pool refill again. A drain lasts until the resume, across Gateway restarts.
+
 ### Orbit shows what each place is doing
 
 The web app has a [runner view](/reference/ci-runner-view):
@@ -83,6 +95,7 @@ Orbit reads the runner containers on each CI Node for their state, version and b
 5. Change `proof:run` to place shards on free places across CI Nodes, stop idle runners while a proof holds their places, and check each Node's available memory. Its chart changes first, in that pull request. In work.
 6. Build the runner view in the Gateway and the web app.
 7. Absorb this ADR into [Node provisioning](/reference/node-provisioning#ci-runner-role), [proof:run](/cli/proof/run) and [Implementation loop](/reference/implementation-loop#ci).
+8. Keep a pool of warm proof copies: the setting `proof.warm_copies`, refill after use and after each seed refresh, replacement of a stale warm copy, `proof:pool:drain` and `proof:pool:resume`, and `proof:run` takes warm copies first. Its charts change first, in that pull request. In work.
 
 ## Rejected alternatives
 
@@ -95,6 +108,10 @@ Orbit reads the runner containers on each CI Node for their state, version and b
 - A ZFS stream of the seed through the Swamp worker, with bookmarks of Orbit's own: the worker is on another host and short of CPU, and Incus already sends the change between snapshots.
 - Use GitHub-hosted runners for the proof: the proof needs an enrolled Node that reaches the Gateway.
 - Read the organization runner list from GitHub: it needs a new organization permission, and the CI Nodes already report the same state.
+- Warm copies outside the place count: the Node would run more copies than its CPU carries, and the one count would not hold.
+- Reuse a copy after its proof, with a reset: a run leaves the commit under proof, its checkout and its evidence in the copy. A clean copy for each run is simpler to trust than a cleanup.
+- Skip the first reset in a warm copy: the nested Gateway in the copy would run the seed's code, not the commit under proof.
+- A drain that also stops running proofs: a maintenance window can wait for them, and a stopped proof fails a pull request for no fault of its own.
 
 ## Consequences
 
@@ -102,10 +119,13 @@ Orbit reads the runner containers on each CI Node for their state, version and b
 - Private repositories and the proof compete for the same places.
 - Each CI Node stores a seed of the proof container and refreshes it after each release.
 - While a proof runs on a CI Node, that Node's idle runners are stopped. Runner jobs that arrive then wait for a place on another Node or for the proof to end.
+- Each warm copy holds one place, one task copy slot and one copy's memory peak on its Node while it waits. Runner jobs and task copies have that much less room.
+- A proof that finds warm copies starts its cases without the copy create. A proof that finds none is as fast as before.
+- A maintenance window that needs every copy of the default gone runs one drain, then waits for the running proofs.
 
 ## Affects
 
 - Components: apps/gateway, apps/web, apps/docs
 - ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role), [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers), [0262](/decisions/0262-prove-changed-operations-on-the-pull-request)
-- Detail: [Node provisioning: ci-runner role](/reference/node-provisioning#ci-runner-role); [Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node); [The seed on each CI Node](/reference/development-containers#the-seed-on-each-ci-node); [proof:run](/cli/proof/run); [Implementation loop: CI](/reference/implementation-loop#ci)
-- Verify: a proof with more batches than one Node's places runs copies on several CI Nodes, each from its own Node's seed, and merges one result; idle runners stop while a proof holds places and start again when its copies end, and busy runners are left alone; a Node without memory for a copy's peak takes no copy; the runner view lists each Node's places and each runner's current job
+- Detail: [proof:pool:drain](/cli/proof/pool-drain); [proof:pool:resume](/cli/proof/pool-resume); [Node provisioning: ci-runner role](/reference/node-provisioning#ci-runner-role); [Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node); [The seed on each CI Node](/reference/development-containers#the-seed-on-each-ci-node); [proof:run](/cli/proof/run); [Implementation loop: CI](/reference/implementation-loop#ci)
+- Verify: a proof with more batches than one Node's places runs copies on several CI Nodes, each from its own Node's seed, and merges one result; idle runners stop while a proof holds places and start again when its copies end, and busy runners are left alone; a Node without memory for a copy's peak takes no copy; the runner view lists each Node's places and each runner's current job; with `proof.warm_copies` above 0 the pool holds that many warm copies, a proof takes them first and each used copy is replaced by a new one; a seed refresh replaces each older warm copy; a drain destroys the idle warm copies, starts no new one and lets a running proof finish, and a resume refills the pool

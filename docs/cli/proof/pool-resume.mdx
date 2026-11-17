@@ -1,0 +1,31 @@
+---
+title: "orbit proof:pool:resume"
+sidebarTitle: "proof:pool:resume"
+description: "End a drain of the warm proof copy pool, so the pool makes warm copies again."
+---
+
+```bash
+orbit proof:pool:resume [--json]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the result as JSON. |
+
+```bash
+orbit proof:pool:resume
+```
+
+Use it after a maintenance window that [`orbit proof:pool:drain`](/cli/proof/pool-drain) started. The command clears the drain and refills the pool: it starts [warm copies](/cli/proof/run#warm-copies) on CI Nodes with a free place until the pool holds `proof.warm_copies`. A Node without a free place gets its warm copy at a later refill. With `proof.warm_copies` at 0, or with proof execution switched off, the pool stays empty.
+
+A pool that is not drained stays as it is. The caller needs Gateway access, as for [`orbit proof:run`](/cli/proof/run).
+
+## How it works
+
+The Gateway clears the drain and starts one `instance.create` for each missing warm copy, from the seed of its Node. Each create holds its place and stops idle runners, as for any proof copy.
+
+<div className="flow-at" data-chart="proof/pool-resume"></div>
+
+## Errors
+
+The command has no error of its own. A caller without Gateway access is refused as on every Gateway route.

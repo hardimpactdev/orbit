@@ -55,7 +55,8 @@ sequenceDiagram
   %%> Which Nodes:
   %%> - Every Node that offers proof places, records the hold script of this release (ProofCopyHosts::takesCopies) and holds the default's current seed. The default's own Node holds it.
   %%> Places on a Node:
-  %%> - Its ci_places minus its busy runners minus the proof copies already on it (any proof's; task copies take no place). No more than its MemAvailable holds whole copy peaks (proof.copy_memory). One rule, in ProofCopyHosts.
+  %%> - Its ci_places minus its busy runners minus the proof copies already on it (any proof's, and the warm copies of the pool; task copies take no place). No more than its MemAvailable holds whole copy peaks (proof.copy_memory). One rule, in ProofCopyHosts.
+  %%> - Plus the Node's warm copies that this proof may take: each is idle, active and from the Node's current seed. A warm copy already holds its place and its memory.
   %%> How:
   %%> - Read the runner state and MemAvailable of each Node from Prometheus before the admission transaction. A Node without a fresh read offers no place.
   %%> When:
@@ -69,21 +70,25 @@ sequenceDiagram
   %%> Why:
   %%> - Each reset and setup costs as much as many short cases. A weight of case seconds alone puts many short batches on one copy, and that copy becomes the tail of the proof.
   %%> - One converge or role-add batch alone took longer than the proof's 5 minutes. Its cases change the fleet but each uses its own resources, so they need the same starting state, not the same copy. A part pays 180 s for its reset; a split pays only when it shortens the longest copy.
-  GW->>GW: Start one copy per shard
-  %%> In the admission transaction, each shard takes one free place on a Node. Its task group starts an `instance.create` of a copy there, the same start as a task copy, and records its run child.
+  GW->>GW: Take warm copies<br/>start the rest
+  %%> In the admission transaction, each shard takes one place on a Node. On each Node the shards take its warm copies first: the warm copy's task group becomes the shard's group, and the run child is recorded on it. Each other shard's task group starts an `instance.create` of a copy there, the same start as a task copy.
+  %%> Why:
+  %%> - A warm copy's create has ended, so its shard skips the copy create, a large part of the fixed time before the first case.
+  %%> Which warm copy:
+  %%> - Idle (no run child), active and from the Node's current seed. A warm copy from an older seed is never taken: the pool replaces it.
   %%> Seed:
-  %%> - Each copy starts from its own Node's seed: the default's seed pair on the default's Node, the seed holder on a CI Node (TaskCopyStart::seed).
+  %%> - Each new copy starts from its own Node's seed: the default's seed pair on the default's Node, the seed holder on a CI Node (TaskCopyStart::seed).
   SW->>CP: Stop idle runners<br/>orbit-ci-runner-hold hold
   %%> Why:
   %%> - A place runs one runner job or one proof copy. A Node's idle runners would take new jobs in the places that the proof holds.
   %%> When:
-  %%> - In each copy's create, before the copy starts its inner fleet. Under one lock per Node, the copy records its hold.
+  %%> - In each copy's create, before the copy starts its inner fleet. Under one lock per Node, the copy records its hold. A warm copy took its hold in its own create, so a proof that takes it stops no runner.
   %%> How many:
   %%> - Idle runners stop only down to a limit: the running runners must not exceed ci_places minus the proof holds on the Node. Idle runners stop down to that number, and only those are recorded. With 5 places, no busy runner and 2 holds, 2 idle runners stop and 3 run.
   %%> Busy runners:
   %%> - A runner whose Runner.Worker process runs is busy. It finishes its job and is never stopped.
   GW->>GW: Hold admitted child starts
-  %%> Execution copies must all succeed before the first start is queued. A child is not due until its copy is `active`: Orbit checks again every 20 seconds. A copy whose create ended without success (an expired budget only once its expiry is settled, as Swamp can still reopen it), whose completion failed, or that is gone, fails its child with proof.run_failed; its cases are unrun, and the child's end cancels its group, which destroys the copy and releases its CI place.
+  %%> Execution copies must all succeed before the first start is queued. A child is not due until its copy is `active`: Orbit checks again every 20 seconds. A taken warm copy is already active. A copy whose create ended without success (an expired budget only once its expiry is settled, as Swamp can still reopen it), whose completion failed, or that is gone, fails its child with proof.run_failed; its cases are unrun, and the child's end cancels its group, which destroys the copy and releases its CI place.
   par each admitted child
     GW->>SW: Start one run per copy
     %%> Queue every due start at once. A lost confirmation never permits resubmission: recovery binds the run or the child ends, bounded by the released child's 600-second admission deadline. A refusal or definite start failure of one child does not hold its siblings. Before submission, an ended or cancelled parent cancels the child through normal cancellation and group cleanup.
@@ -120,6 +125,13 @@ sequenceDiagram
   %%> - In each copy's destroy, so after every run end, also a failure or a cancel. Under the Node's lock the copy drops its hold.
   %%> What it does:
   %%> - When no hold is left on the Node, start exactly the runners that the holds stopped, and no other. A runner that is gone is skipped. A second release changes nothing.
+  GW->>GW: Refill the warm pool
+  %%> When:
+  %%> - After a warm copy is taken or destroyed, and after each seed refresh on a Node. Not while the pool is drained (proof:pool:drain).
+  %%> How:
+  %%> - Start warm copies until the pool holds proof.warm_copies, on Nodes with a free place, the Nodes in turns. A used copy is never put back: each new warm copy is an `instance.create` from the Node's current seed, with its own hold. A refill never waits for a place and never holds a proof back.
+  %%> Stale seed:
+  %%> - After a seed refresh, each idle warm copy from an older seed is destroyed first, so its place is free for the new one.
   GW->>GW: Merge all shard verdicts
   %%> Wait for every admitted child, require every expected case and every selected command, and close one proof result. Preserve a native interrupted shard as inconclusive interrupted coverage, even with all passed rows. A completed failed case or a non-interrupted child that did not pass takes precedence and fails the proof. Keep every case verdict, including synthesized unrun rows. Cancellation and admission interruption keep their existing failure semantics.
   GW-->>CLI: One merged report
