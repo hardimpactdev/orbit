@@ -908,7 +908,11 @@
                         "operator": {
                             "address": "10.45.0.10",
                             "hub": "10.45.0.1",
-                            "network": "10.45.0.0/24"
+                            "network": "10.45.0.0/24",
+                            "domains": [
+                                "nested-dev",
+                                "nested-prod"
+                            ]
                         },
                         "checkout": {
                             "path": "/home/orbit/orbit"

@@ -6,7 +6,7 @@
       "files": {
         "/etc/wireguard/wg-nested.key": "operator-private-key",
         "/run/orbit-club/swamp-club-api-key": "club-key-value-that-never-leaves-the-file",
-        "/var/lib/orbit/fleet-refresh.json": "{\"code\":\"0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4\",\"converge_app_dev\":\"3d63f8e23600f4ce9ed73db37754ffc4c226263f3c9af5cbd973fd3cdacb62a7\",\"converge_app_prod\":\"9c1d424199b72560a39939bc8e888c3517f44493ca2a0f06e4407af220a9e339\",\"converge_gateway\":\"307fecddc357afd90ebca6e5b826c2517800dff82f427cd542865f64b60064c8\",\"converged_app_dev\":\"@CONVERGED@\",\"converged_app_prod\":\"@CONVERGED@\",\"converged_gateway\":\"@CONVERGED@\",\"grants\":\"b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa\",\"host\":\"57addbf0d402782e53734b8d8c7c0867e4f4ce449e4593731597d8c0eb195428\",\"rules\":\"de6b698f214a0a07db4bd4be9da574b1d9c020854d95ddd27d56ada6732b9dbe\",\"tokens\":\"@TOKENS@\"}"
+        "/var/lib/orbit/fleet-refresh.json": "{\"code\":\"0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4\",\"converge_app_dev\":\"1b6f51de6255a4b82832e254924e3d0f50737d723484dfc4addb1900f761e452\",\"converge_app_prod\":\"79529a9e131d6bf1c626463a5b4b0dc7f163fc7392f0e34d247d838e482d3deb\",\"converge_gateway\":\"96c2a71e1577c7a60cf9af621651659f54e3064fdf8e10ac6a4377882177a44c\",\"converged_app_dev\":\"@CONVERGED@\",\"converged_app_prod\":\"@CONVERGED@\",\"converged_gateway\":\"@CONVERGED@\",\"grants\":\"b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa\",\"host\":\"57addbf0d402782e53734b8d8c7c0867e4f4ce449e4593731597d8c0eb195428\",\"rules\":\"de6b698f214a0a07db4bd4be9da574b1d9c020854d95ddd27d56ada6732b9dbe\",\"tokens\":\"@TOKENS@\"}"
       },
       "modes": {
         "/var/lib/orbit/fleet-refresh.json": "root:root 0644"
@@ -398,7 +398,14 @@
       "port": "51821",
       "peer": "HUBKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       "endpoint": "10.232.2.11:51820",
-      "allowed": "10.45.0.0/24"
+      "allowed": "10.45.0.0/24",
+      "dns": [
+        "10.45.0.1"
+      ],
+      "domains": [
+        "~nested-dev",
+        "~nested-prod"
+      ]
     },
     "hubKey": "HUBKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     "nodes": [
@@ -455,9 +462,9 @@
     },
     "code": {
       "code": "7d8659a12b3665484999e2bec8e78ab05f8487edb8b5d1b29d49e2aef3776f1a",
-      "converge_app_dev": "3d63f8e23600f4ce9ed73db37754ffc4c226263f3c9af5cbd973fd3cdacb62a7",
-      "converge_app_prod": "9c1d424199b72560a39939bc8e888c3517f44493ca2a0f06e4407af220a9e339",
-      "converge_gateway": "307fecddc357afd90ebca6e5b826c2517800dff82f427cd542865f64b60064c8",
+      "converge_app_dev": "1b6f51de6255a4b82832e254924e3d0f50737d723484dfc4addb1900f761e452",
+      "converge_app_prod": "79529a9e131d6bf1c626463a5b4b0dc7f163fc7392f0e34d247d838e482d3deb",
+      "converge_gateway": "96c2a71e1577c7a60cf9af621651659f54e3064fdf8e10ac6a4377882177a44c",
       "converged_app_dev": "@CONVERGED@",
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
@@ -468,9 +475,9 @@
     },
     "swamp": {
       "code": "0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4",
-      "converge_app_dev": "1de5cb9c18902a6cd616c4e83e102d87cae2d24d8aae2987e476251bd2982fb2",
-      "converge_app_prod": "f2bec293fad296c717f305c0282d8c467aaa38cfbf3ed630a7408b3005164033",
-      "converge_gateway": "8b0b84d257986b93665dacc0074a9a8d3d94b95f5ea596a68611bbe1ee95e815",
+      "converge_app_dev": "ec4e9b0a45b11bd8cfa20dc9e6f2e4be62cd2f5fefdb3a15ab4681d1302e2623",
+      "converge_app_prod": "d97835f24810a9576a1d82ef92f70140c81e1d8506d0179e829a7d72f68c5e14",
+      "converge_gateway": "e4947b56f94d37d9854be0cd91bc7c3359f911fdf9edc7cf91d8f34bb7d88213",
       "converged_app_dev": "@CONVERGED@",
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
@@ -481,9 +488,9 @@
     },
     "agent": {
       "code": "85739e596b3f7e518947df628ef8e05d87f3191ad0f4154b67f5b91c8cea1533",
-      "converge_app_dev": "3d63f8e23600f4ce9ed73db37754ffc4c226263f3c9af5cbd973fd3cdacb62a7",
-      "converge_app_prod": "9c1d424199b72560a39939bc8e888c3517f44493ca2a0f06e4407af220a9e339",
-      "converge_gateway": "307fecddc357afd90ebca6e5b826c2517800dff82f427cd542865f64b60064c8",
+      "converge_app_dev": "1b6f51de6255a4b82832e254924e3d0f50737d723484dfc4addb1900f761e452",
+      "converge_app_prod": "79529a9e131d6bf1c626463a5b4b0dc7f163fc7392f0e34d247d838e482d3deb",
+      "converge_gateway": "96c2a71e1577c7a60cf9af621651659f54e3064fdf8e10ac6a4377882177a44c",
       "converged_app_dev": "@CONVERGED@",
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
