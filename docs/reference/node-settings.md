@@ -110,6 +110,8 @@ Set the count from the CPU pressure of the full Node: all its places busy, toget
 
 A proof takes a place only when the Node's available memory also holds one copy's peak, the Gateway setting `proof.copy_memory`. While a proof holds places on a Node, the Node's idle runners stop, and they start again when the proof's copies there end ([Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node)).
 
+A [warm proof copy](/cli/proof/run#warm-copies) also holds a place while it waits for a proof: one place, one slot of the Node's task copy cap and one copy's memory peak. The Gateway setting `proof.warm_copies` sets how many warm copies the CI Nodes keep together; 0 turns the pool off.
+
 `ci.places` replaced the CI places of the removed task container setting; a database migration removed that member from every stored setting. The [subordinate-ID demand](#nested-fleet-instance-hosting) counts `ci.places` in their place.
 
 ## Derive the effective root
