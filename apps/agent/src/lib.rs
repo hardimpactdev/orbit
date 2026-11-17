@@ -456,7 +456,7 @@ pub async fn supervise(
     }
 }
 
-fn panic_text(payload: &(dyn std::any::Any + Send)) -> &str {
+pub(crate) fn panic_text(payload: &(dyn std::any::Any + Send)) -> &str {
     payload
         .downcast_ref::<&str>()
         .copied()

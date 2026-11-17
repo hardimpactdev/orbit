@@ -125,15 +125,17 @@ locks (`src/logs/limits.rs`, which the review missed) `expect()` with the reason
 `run` now keeps the tasks that hold these locks (`watch_workspaces`, `run_controller`) in a `JoinSet`. It races
 `orbit_agent::supervise` against the session, so a panic in one ends the run with an error, and the process exits 1. The
 log controller re-raises a panic of a stream reader it started. That includes a reader it stopped: a stopped reader
-stays supervised until its end is observed, and only a cancellation by that stop is not fatal. A reader that ends
+stays supervised until its end is observed, and only a cancellation by that stop is not fatal. The controller also
+supervises its readers during each list fetch, so prompts that keep it fetching cannot hide a panic or let finished
+readers pile up. A reader that ends
 normally stays ended, as before. The
 binary keeps `panic = "unwind"`. `abort` would also end the process on a panic in tasks that need not be fatal, such as
 the blocking reads whose panics the observer already reports.
 
 Lock order: the registry, then a queue, then the agent bucket. `would_accept` takes the queue and bucket locks one after
 the other. `push` nests them to check and take both buckets in one step. Tests prove that a panic ends the run: from a
-poisoned workspace lock, from a stream reader, and from a reader that panicked before an unlisting or a fail-closed
-stopped it. They also prove that each of the four locks is fatal when poisoned,
+poisoned workspace lock, from a stream reader, from a reader that panicked before an unlisting or a fail-closed
+stopped it, and from a reader while prompts keep the controller fetching. They also prove that each of the four locks is fatal when poisoned,
 and they cover both new error returns.
 
 **Rule:** lock poisoning is fatal; don't recover with `into_inner` (rust-best-practices §5, §7; ADR 0267 P9
