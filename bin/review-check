@@ -26,7 +26,7 @@ ProcessBudget, lane_count, lane_weight = (_budget[name] for name in ("ProcessBud
 # The same rule as CI decides when a change needs the contract and Swamp checks.
 ci_select = runpy.run_path(str(Path(__file__).resolve().parent / "ci-build-plan"))["select"]
 
-PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
+PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'packages/php-sdk')
 PHP_COMMANDS = (('composer', 'check'),)
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
 WEB_BUILD_OUTPUTS = ('bash', '-c', 'test -s dist/index.html && test -s dist/version.json')

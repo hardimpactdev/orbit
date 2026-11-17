@@ -36,4 +36,4 @@ Incus proves Linux behavior only. [macOS enrollment](/reference/node-provisionin
 
 ## Verification
 
-Lease a topology with `bin/e2e-topology acquire`, run each step with `bin/e2e-topology exec ... --record=LABEL`, and read `<worktree>/.e2e/evidence.log`; the [Incus topology registry](/reference/incus-topologies#commands) lists the commands. The baseline and both restored reports show exit `0` and no findings. The drift report shows exit `1` with exactly one `instance.php_fpm_projection_mismatch`. The unverifiable report shows exit `1` with exactly one `role.inspection_failed`. The scans before and after differ only in the `activity_log` row count.
+Run the proof in the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy) and retain the actions and results as review evidence. The manual VM topology harness is removed. The baseline and both restored reports show exit `0` and no findings. The drift report shows exit `1` with exactly one `instance.php_fpm_projection_mismatch`. The unverifiable report shows exit `1` with exactly one `role.inspection_failed`. The scans before and after differ only in the `activity_log` row count.

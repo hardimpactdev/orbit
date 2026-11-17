@@ -82,13 +82,7 @@ Deno.test("restored fleets require checkout migration before every nested Gatewa
     );
 });
 
-type Task = {
-    name: string;
-    block?: Task[];
-    "ansible.builtin.import_tasks"?: string;
-    "ansible.builtin.command"?: { argv: string[] };
-};
-Deno.test("the first fleet build and image snapshots follow migration", async () => {
+Deno.test("Gateway bootstrap follows migration", async () => {
     const bootstrap = stepsOf(await workflow("gateway-bootstrap"));
     assert(
         requiresSuccess(
@@ -101,41 +95,6 @@ Deno.test("the first fleet build and image snapshots follow migration", async ()
         named(bootstrap, "Migrate the database").task.inputs?.argv?.includes(
             "migrate",
         ),
-    );
-    const build = await read(
-        "../ansible/tasks/task-vm-fleet-build.yml",
-    ) as Task[];
-    const index = (name: string) => {
-        const i = build.findIndex((task) => task.name === name);
-        assert(i >= 0, name);
-        return i;
-    };
-    assert(index("Prepare the Gateway") < index("Admit the Gateway Node"));
-    assert(index("Admit the Gateway Node") < index("Check the nested fleet"));
-    assert(
-        build[index("Prepare the Gateway")]["ansible.builtin.command"]?.argv
-            .includes("gateway-bootstrap"),
-    );
-    const fleet = await read("../ansible/tasks/task-vm-fleet.yml") as Task[];
-    const code = fleet.find((task) => task.name === "Take the new code")!
-        .block!;
-    const migrate = code.findIndex((task) =>
-        task["ansible.builtin.command"]?.argv.includes("migrate")
-    );
-    const restart = code.findIndex((task) =>
-        task.name === "Restart the long-running services"
-    );
-    assert(migrate >= 0 && restart > migrate);
-    const role = await read("../ansible/task-vm-role.yml") as {
-        tasks: Task[];
-    }[];
-    assert(
-        role[0].tasks.some((task) =>
-            task["ansible.builtin.import_tasks"] === "tasks/task-vm-fleet.yml"
-        ),
-    );
-    assert(
-        role[1].tasks.some((task) => task.name === "Take the base snapshots"),
     );
 });
 

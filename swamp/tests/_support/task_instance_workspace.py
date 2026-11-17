@@ -306,12 +306,9 @@ class CheckHarness(unittest.TestCase):
 
     def checked(self):
         """The child workflow's chain, wired by its own CEL: prepare, check phase, typed evidence and the production local rules."""
-        self.assertFalse(self.cel('Check in the Instance', 'guard', PARENT))
-        self.assertTrue(self.cel('Build every argv', 'guard', PARENT))
-        self.assertTrue(self.cel('Push the candidate', 'guard', PARENT))
         self.assertEqual(self.cel('Check in the Instance', 'workflow', PARENT), 'task-instance-check')
         prepared = self.ran('prepare', self.behavior('task-repository/check.ts', 'prepare', {
-            'intent': self.check, 'node_id': self.check['node_id'], 'root': self.cel('prepare', 'root')}))
+            'intent': self.check, 'node_id': self.check['node_id']}))
         self.assertTrue(prepared['valid'], prepared)
         self.assertFalse(self.cel('input', 'guard'))
         intent = self.write_input('input')

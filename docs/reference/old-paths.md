@@ -21,12 +21,9 @@ Each row names what must replace the path and the evidence that permits its remo
 | `GatewayRuntimeFiles::RetiredSettings`: `ORBIT_TASK_VMS_*`, `ORBIT_PI_PORT`, `ORBIT_SWAMP_PROOF_CLUB_API_KEY`, `ORBIT_SWAMP_DIRECT_WRITERS` | Gateway-role convergence removes these keys from `shared/gateway.env` | Key-name inventory shows none on any Gateway; never copy their values into evidence |
 | `swamp/ansible/tasks/node-converge-hub-filter-absent.yml` | Hub convergence removes the task VM filter | No vpn Node holds `orbit-task-vms-hub.service`, `/etc/orbit/task-vms/hub.nft`, nft table `inet orbit_task_vms` or UFW comments beginning `orbit:task-vm-` |
 | Checkout Instances, their PHP-FPM pools, [`instance:migrate`](/cli/instance/migrate), `instance.migrate`, `operation-instance-migrate` and `instance-migrate.yml` | [Container-only Instance admission](/reference/development-containers#the-build-list) and migration of existing checkouts | Stop new checkout admission first; then inventory every app-dev Node and confirm the last checkout has moved |
-| `bin/e2e-topology`, `apps/e2e` and their virtiofs tooling | The [nested fleet](/reference/development-containers#nested-fleet) | Remove the harness and all manual/build/test consumers together; inventory outstanding allocations before operational teardown. No subtask can declare a topology |
-| Uncalled task VM check, publish and sync branches still shipped in Swamp | The [task workspace phases](/reference/task-instance-workspace) | Remove dead branches and their exclusive builders, fixtures and tests; preserve the separate proof replay chain |
 | `TaskVmAptCache`, `TaskVmModelRoute`, `TaskVmNestedFleet` and `RecipeImageBuilds` | Container cache, model route, nested-fleet layout and recipe owners | Move live shared behavior to its owning container namespace and remove VM-only branches without removing container callers |
 | Null VM contract fields and egress archive reads | A coordinated contract cleanup | Update Gateway, SDK, CLI, web and frozen agent contracts together. `vm_power` is always null; `task_vm_id` is null and `task_vm_guest` false. Stored `task_group_egress` rows are not container observations |
 | Reserved `10.44.0.128/25` and its model-guard allowance | Container forwarders on registered Nodes | Confirm no peer needs the range; remove the reservation and obsolete allowance together, not the container model guard |
-| Uncalled VM actions and disabled egress observation in `apps/agent/**` | An observer-only agent | Remove unused commands, exclusive tests and contract entries together; retain live container primitives |
 
 ## The task VM proof run
 
@@ -65,6 +62,10 @@ The migration `2027_03_03_000000_drop_task_vm_tables` drops `task_vms`, `task_vm
 ### The guest agent chain
 
 The guest agent runner and its Incus transport are removed. Node transports remain; container execution goes through the recorded host Node. The retained shared helpers are listed in the ledger.
+
+### The unreachable Swamp VM paths
+
+Task check, publish and sync have no VM branch. The uncalled `operation-task-sync` workflow, the eight `task-check-*` VM children, their argv builders and the task VM base-build graph (`task-vm-host.yml`, `task-vm-role.yml` and their exclusive tasks) are removed. Node convergence keeps the shared package tasks as `node-converge-apt.yml`, `node-converge-apt-config.yml`, `node-converge-javascript.yml` and `node-converge-deno.yml`. The chain that replays the [merge-base proof](#the-task-vm-proof-run) stays. It keeps `task-vm-fleet-wait.yml` and `task-vm-nested-wait.yml`.
 
 ## Off in the live fleet
 

@@ -69,11 +69,11 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | Record | Decision | Now in |
 | --- | --- | --- |
 | 0001 | Adopt the closed Tool Management contract | [Tools: Why it works this way](/reference/tools#why-it-works-this-way) |
-| 0002 | Keep proof resources task-owned and production separate | [Incus topologies: Exact ownership](/reference/incus-topologies#exact-ownership) |
+| 0002 | Keep proof resources task-owned and production separate | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0003 | Adopt the singleton Metrics role contract | [Metrics role](/reference/metrics) |
 | 0004 | Define the verify-only Doctor boundary | [doctor: Why it works this way](/cli/doctor#why-it-works-this-way) |
-| 0005 | Adopt a rolling Incus development topology (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
-| 0006 | Separate disposable discovery from immutable proof (superseded in part) | [Incus topologies: A live mount](/reference/incus-topologies#a-live-mount) |
+| 0005 | Adopt a rolling Incus development topology (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
+| 0006 | Separate disposable discovery from immutable proof (superseded in part) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0008 | Define typed app-dev node storage settings | [Node settings](/reference/node-settings) |
 | 0009 | Adopt clustered Instance routing | [Routes: Set up private traffic](/reference/routes#set-up-private-traffic) |
 | 0010 | Record decisions before implementation issues (superseded) | [Contributor guide: Decisions ship with their feature](/contributor-guide#decisions-ship-with-their-feature) |
@@ -85,7 +85,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0016 | Reconcile App identity and source-default updates | [Projects: Update a Project](/reference/projects#update-a-project) |
 | 0017 | Make Cluster placement optional | [cluster: Placement and TLDs](/cli/cluster#placement-and-tlds) |
 | 0018 | Register caller-local development worktrees as Instances | [Applications: Registration takes ownership (superseded by 0027)](/domains/applications#registration-takes-ownership) |
-| 0019 | Run disposable Incus scenario lanes (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
+| 0019 | Run disposable Incus scenario lanes (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0021 | Pin Sury PHP-FPM with OPcache profiles per role | [PHP runtimes: Why it works this way](/reference/php-runtime#why-it-works-this-way) |
 | 0022 | Track the issue workspace and delete it before merge (superseded) | [Contributor guide: Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) |
 | 0023 | Separate hostname selection from Cluster routing | [Routes: Why it works this way](/reference/routes#routes-own-domains-and-cluster-membership-owns-scope) |
@@ -100,12 +100,12 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0032 | Preserve explicit Instance branch selection | [Applications: An explicit branch stays explicit](/domains/applications#an-explicit-branch-stays-explicit) |
 | 0033 | Trust WireGuard members for private Node traffic | [Routes: Private network trust](/reference/routes#private-network-trust) |
 | 0034 | Select Instance PHP from Composer constraints | [PHP runtimes: Select the PHP version](/reference/php-runtime#select-the-php-version) |
-| 0035 | Close out mutating proofs by refreshing the topology snapshot (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
+| 0035 | Close out mutating proofs by refreshing the topology snapshot (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0036 | Support only Instances | [Applications: One application model](/domains/applications#one-application-model) |
-| 0037 | Promote fresh three-node topology snapshots (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
+| 0037 | Promote fresh three-node topology snapshots (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0038 | Cascade Instance removal through processes and schedules | [Instance removal: Processes and Schedules](/reference/instance-removal#processes-and-schedules) |
 | 0039 | Use round-robin for production Route pools | [Routes: Serve a production pool](/reference/routes#serve-a-production-pool) |
-| 0040 | Extend issue proof with one app-prod Node (superseded) | [Incus topologies: Declared Nodes](/reference/incus-topologies#declared-nodes) |
+| 0040 | Extend issue proof with one app-prod Node (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0041 | Delete an empty Route during Instance removal | [Routes: Remove a Route](/reference/routes#remove-a-route) |
 | 0042 | Provision Tool Managers on demand | [Tools: Managers on demand](/reference/tools#managers-on-demand-independent-of-roles) |
 | 0043 | Manage Homebrew Core formulae | [Tools: Homebrew formulae](/reference/tools#homebrew-formulae) |
@@ -179,7 +179,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0111 | Retain completed transfer history through Instance removal | [Instance removal: Keep unfinished transfer history](/reference/instance-removal#keep-unfinished-transfer-history) |
 | 0112 | Isolate agent threads behind drivers | [Tasks: Agent threads](/reference/tasks#agent-threads) |
 | 0113 | Gate task completion on validation and review | [Tasks: Rubric and reminders](/reference/tasks#execution-ownership) |
-| 0114 | Expand the three-node Incus Cluster (superseded) | [Incus topologies: Declared roles only](/reference/incus-topologies#declared-roles-only) |
+| 0114 | Expand the three-node Incus Cluster (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0114 | Judge task completion as separate checks | [Tasks: Rubric and reminders](/reference/tasks#execution-ownership) |
 | 0115 | Run Project setup commands on development Instances | [Instance setup and teardown](/reference/instance-setup) |
 | 0116 | Run task implementers on Pi | [Tasks: Drivers](/reference/tasks#drivers) |
@@ -201,15 +201,15 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0132 | Pause a task only for its acting thread or a real question | [Tasks: Session routing](/reference/tasks#session-routing) |
 | 0133 | Verify typed subtask deliverables at handoff | [Tasks: Deliverables](/reference/tasks#deliverables) |
 | 0134 | Resume Pi agent streams from a cursor | [Tasks: Agent viewer](/reference/tasks#agent-viewer) |
-| 0135 | Run Incus topologies for task workspace clones through a bridge worktree | Deleted with shared mode: [Incus topologies](/reference/incus-topologies) |
-| 0136 | Run long-lived topology processes as transient units | [Incus topologies: Long-lived processes as systemd units](/reference/incus-topologies#long-lived-processes-as-systemd-units) |
+| 0135 | Run Incus topologies for task workspace clones through a bridge worktree (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
+| 0136 | Run long-lived topology processes as transient units (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0137 | Refuse carried Caddy global options | [Caddy configuration: Why it works this way](/reference/caddy-configuration#orbit-owns-the-global-options) |
 | 0138 | Opt public Ingress sites into Caddy certificate automation | [Caddy configuration: Public Ingress certificates](/reference/caddy-configuration#public-ingress-certificates) |
 | 0139 | Collect Caddy HTTP metrics on every Node | [Caddy configuration: Published layout](/reference/caddy-configuration#published-layout) |
 | 0140 | Watch settling pull requests for conflicts and failed checks | [Tasks: Fix a settling pull request](/reference/tasks#execution-ownership) |
 | 0141 | Build each Node's Caddyfile on the Gateway | [Caddy configuration: Node Caddy build](/reference/caddy-configuration#node-caddy-build) |
 | 0142 | Apply Plausible's ClickHouse configuration from the analytics role | [Analytics role: ClickHouse configuration](/reference/analytics#clickhouse-configuration) |
-| 0143 | Record topology evidence and sync without verification | [Incus topologies: Evidence log](/reference/incus-topologies#evidence-log) |
+| 0143 | Record topology evidence and sync without verification (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0144 | Migrate waiting connections when Caddy reloads | [Node provisioning: Caddy reloads](/reference/node-provisioning#caddy-reloads) |
 | 0145 | Publish the proxycli collector on collector.cli-proxy-api.orbit | [ai-router: A reserved name, not a Route](/reference/ai-router#a-reserved-name-not-a-route) |
 | 0146 | Retire the Herdr integration | [extension (Herdr is removed)](/cli/extension) |
@@ -261,15 +261,15 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0193 | Run task agents as a dedicated user | [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop); [GitHub App: The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) |
 | 0193 | Record development branch renames | [Applications: Development branch reconciliation](/domains/applications#development-branch-reconciliation) |
 | 0194 | Respond to GitHub review feedback | [Tasks: Trusted reviews are input, not merge authority](/reference/tasks#execution-ownership) |
-| 0195 | Request topologies for review with an operator container | [Incus topologies: Nested in the task VM](/reference/incus-topologies#nested-in-the-task-vm); [Incus topologies: An isolated operator for web work](/reference/incus-topologies#an-isolated-operator-for-web-work) |
+| 0195 | Request topologies for review with an operator container (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0197 | Native Project Documents with private UpCloud S3 storage | [Project Documents: Why it works this way](/reference/project-documents#why-it-works-this-way) |
 | 0199 | Post direction requests to OpsBot immediately (reversed) | [Tasks: Assistance is recorded in Activity](/reference/tasks#assistance-is-recorded-in-activity) |
-| 0200 | Run each task group in its own sandbox VM | [Compute drivers: Task VMs](/reference/compute-drivers#task-vms); [Compute drivers: Orbit Project](/reference/compute-drivers#orbit-project); [Compute drivers: Why task VMs work this way](/reference/compute-drivers#why-task-vms-work-this-way); [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop); [Tasks: Every task group runs on its own task VM](/reference/tasks#every-task-group-runs-on-its-own-task-vm); [Incus topologies: Nested in the task VM](/reference/incus-topologies#nested-in-the-task-vm) |
+| 0200 | Run each task group in its own sandbox VM | [Compute drivers: Task VMs](/reference/compute-drivers#task-vms); [Compute drivers: Orbit Project](/reference/compute-drivers#orbit-project); [Compute drivers: Why task VMs work this way](/reference/compute-drivers#why-task-vms-work-this-way); [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop); [Tasks: Every task group runs on its own task VM](/reference/tasks#every-task-group-runs-on-its-own-task-vm); [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0201 | Release the Gateway automatically from green main | [Update and recover a Gateway: Automatic releases](/reference/gateway-recovery#automatic-releases); [Update and recover a Gateway: Why it works this way](/reference/gateway-recovery#why-it-works-this-way) |
 | 0202 | The fleet follows the Gateway through orbit self-update | [Update and recover a Gateway: Fleet rollout](/reference/gateway-recovery#fleet-rollout); [Orbit self-update](/reference/self-update); [Node agent: Typed commands over SSH](/reference/node-agent#typed-commands-over-ssh) |
 | 0203 | Review and merge pull requests inside Orbit | [Tasks: Review and merge](/reference/tasks#review-and-merge); [Tasks: Orbit reviews before it pushes](/reference/tasks#execution-ownership); [GitHub App: How Orbit reviews and merges a pull request](/reference/github-app#how-orbit-reviews-and-merges-a-pull-request) |
 | 0205 | Publish database credentials to Vaultwarden | [Vaultwarden](/reference/vaultwarden); [Vaultwarden: Why it works this way](/reference/vaultwarden#why-it-works-this-way) |
-| 0207 | One image recipe, shared package cache, no workspace templates | [Compute drivers: Machine software recipe](/reference/compute-drivers#machine-software-recipe); [Incus topologies: One template Node](/reference/incus-topologies#one-template-node) |
+| 0207 | One image recipe, shared package cache, no workspace templates | [Compute drivers: Machine software recipe](/reference/compute-drivers#machine-software-recipe); [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0208 | Scan monorepo dependencies per sub-project | [Dependency contracts: Separate monorepo dependency sources](/reference/instance-dependency-contracts#separate-monorepo-dependency-sources) |
 | 0208 | Deploy the Gateway with Laravel migrations and explicit database recovery | [Update and recover a Gateway: Laravel owns migrations](/reference/gateway-recovery#laravel-owns-migrations) |
 | 0209 | Run long operations as durable queued operations | Withdrawn; Swamp runs every operation now. [Operations](/reference/operations#how-an-operation-runs) |
@@ -277,7 +277,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0216 | Run one exact PHP build everywhere | [Compute drivers: PHP build](/reference/compute-drivers#php-build); [Compute drivers: One PHP build](/reference/compute-drivers#one-php-build); [PHP runtimes: PHP build](/reference/php-runtime#php-build); [Feature delivery: One PHP build in CI](/reference/implementation-loop#one-php-build-in-ci) |
 | 0217 | Deploy production Instances automatically by polling | [Instance releases: Automatic deployments](/reference/deployments#automatic-deployments); [Instance releases: Poll, do not wait for a webhook](/reference/deployments#poll-do-not-wait-for-a-webhook) |
 | 0220 | Serialize task workspaces with one durable lease | Withdrawn; the lease is gone. The group's Operation lock serializes the work. [Tasks: Execution ownership](/reference/tasks#execution-ownership) |
-| 0222 | Give task VMs a cloned topology seed | [Compute drivers: The topology seed](/reference/compute-drivers#the-topology-seed); [Incus topologies: One template Node](/reference/incus-topologies#one-template-node); [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template); [Incus topologies: Nested in the task VM](/reference/incus-topologies#nested-in-the-task-vm) |
+| 0222 | Give task VMs a cloned topology seed (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0224 | Give each task group one workspace holder and one sender | Withdrawn; the tick it was built around is gone. [Tasks: Execution ownership](/reference/tasks#execution-ownership) |
 | 0225 | Make Node changes through agent commands | [Node agent: Commands](/reference/node-agent#commands); [Typed commands over SSH](/reference/node-agent#typed-commands-over-ssh) |
 | 0227 | Manage PostgreSQL on trusted private networks with explicit bindings and no port firewall | [Database servers: Why it works this way](/reference/database-servers#why-it-works-this-way) |

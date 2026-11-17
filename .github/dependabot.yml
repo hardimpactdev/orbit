@@ -31,12 +31,6 @@ updates:
     cooldown:
       default-days: 7
   - package-ecosystem: composer
-    directory: /apps/e2e
-    patterns: ["*"]
-    multi-ecosystem-group: daily
-    cooldown:
-      default-days: 7
-  - package-ecosystem: composer
     directory: /packages/php-sdk
     patterns: ["*"]
     multi-ecosystem-group: daily

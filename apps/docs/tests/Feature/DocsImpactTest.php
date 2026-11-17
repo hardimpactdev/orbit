@@ -799,17 +799,20 @@ it('docs impact maps Gateway class command signatures to their owner page', func
         ->and($report['errors'])->toContain("Unowned Gateway console command [orbit:agent-display] in {$path}.");
 });
 
-it('docs impact owns the read-only machine recipe command', function (): void {
+it('docs impact owns the read-only recipe commands', function (string $command, string $page): void {
     $root = docsImpactFixture();
-    file_put_contents($root.'/docs/reference/compute-drivers.md', "---\ntitle: Compute drivers\n---\nCompute drivers\n");
+    file_put_contents($root.'/'.$page, "---\ntitle: Recipes\n---\nRecipes\n");
     $path = 'apps/gateway/app/Console/Commands/MachineRecipeCommand.php';
-    file_put_contents($root.'/'.$path, "<?php class MachineRecipeCommand { protected \$signature = 'orbit:machine-recipe {--validate} {--role=}'; }\n");
+    file_put_contents($root.'/'.$path, "<?php class MachineRecipeCommand { protected \$signature = '{$command} {--validate} {--role=}'; }\n");
 
     $report = new DocsImpact($root)->report(null, [$path]);
 
     expect($report['errors'])->toBe([])
-        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/reference/compute-drivers.md');
-});
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain($page);
+})->with([
+    ['orbit:machine-recipe', 'docs/reference/compute-drivers.md'],
+    ['orbit:node-recipe', 'docs/reference/node-agent.md'],
+]);
 
 it('docs impact recognizes the explicitly internal CLI family', function (): void {
     $root = docsImpactFixture();
@@ -984,10 +987,10 @@ it('docs impact does not fail on the unowned identifiers of a deleted file outsi
         ->and($report['impacted_pages'])->toBe([]);
 });
 
-it('docs impact does not fail on the unowned console commands of a deleted file outside the API', function (): void {
+it('docs impact does not fail on the unowned console commands of a deleted file outside the API', function (string $source): void {
     $root = docsImpactFixture();
     $path = 'apps/gateway/app/Console/Commands/DeletedCommand.php';
-    file_put_contents($root.'/'.$path, "<?php class DeletedCommand { protected \$signature = 'example:deleted'; }\n");
+    file_put_contents($root.'/'.$path, $source);
     exec('git -C '.escapeshellarg($root).' add .');
     exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
     unlink($root.'/'.$path);
@@ -996,7 +999,11 @@ it('docs impact does not fail on the unowned console commands of a deleted file 
 
     expect($report['errors'])->toBe([])
         ->and($report['impacted_pages'])->toBe([]);
-});
+})->with([
+    "<?php class DeletedCommand { protected \$signature = 'example:deleted'; }\n",
+    "<?php Schedule::command('example:deleted')->hourly();\n",
+    "<?php Artisan::command('example:deleted', fn () => null);\n",
+]);
 
 it('docs impact reports Laravel console route schedule changes', function (): void {
     $root = docsImpactFixture();

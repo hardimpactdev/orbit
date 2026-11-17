@@ -549,8 +549,8 @@ class TableTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         canary = budget['machinery_canary']
         for path in units.ANSIBLE_TOOLCHAIN:
-            # Nearly every Ansible fixture lists the toolchain pins; a change to one still selects only the canary set.
-            self.assertGreater(sum(path in f['inputs'] for f in fixtures.values()), 100, path)
+            # Shared pins select only the canary set even though many fixtures depend on them.
+            self.assertTrue(any(path in f['inputs'] for f in fixtures.values()), path)
             with self.subTest(path=path):
                 result = units.plan([path], budget, fixtures, defaults)
                 self.assertEqual(sorted({u.split('#')[0] for u in units.planned_units(result)}), sorted(canary))
