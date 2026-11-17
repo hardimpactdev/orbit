@@ -200,6 +200,21 @@ it('ends a clone\'s create at its thread: one transaction records T3 and the bas
         ->and(array_unique(array_column($this->vault->frames, 'level')))->toBe([$base]);
 });
 
+it('leaves a Conn-owned clone at T3 readiness so only the launch fence can admit completion', function (): void {
+    $node = containerDefaultNode();
+    $operation = handoverCreate(handoverDefault($node));
+    $operation->update(['input' => [...$operation->input, 'conn_launch_operation_id' => 301]]);
+
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, handoverSucceeded($operation));
+
+    $create = $operation->refresh();
+    expect($create->status)->toBe(OperationStatus::Succeeded)
+        ->and($create->result['t3']['environment_id'])->toBe('env-'.$create->target_id)
+        ->and($create->result)->not->toHaveKey('completion_operation_id')
+        ->and(Instance::query()->findOrFail($create->target_id)->status)->toBe(InstanceState::SourceResolved);
+    expect(Operation::query()->where('kind', 'instance.complete')->where('target_id', $create->target_id)->exists())->toBeFalse();
+});
+
 it('admits a plain clone of a nested-fleet default with an inner volume: the copy records its own volume from the default\'s seed', function (): void {
     $node = containerDefaultNode();
     $default = handoverDefault($node, nested: true);
