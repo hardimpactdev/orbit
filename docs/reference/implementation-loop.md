@@ -47,7 +47,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, task handoff pushes and manual runs use the same fast checks. Main can [reuse a green PR tree](#reuse-a-green-pr-tree-on-main).
 
-The separate [Git build watch](/reference/compute-drivers#show-and-validate-the-recipe) is an advisory update signal, not a Required check. Its job-wide timeouts bound upstream retries and pagination; only scheduled or manual main runs can publish an update issue.
+The separate [Git build watch](/reference/compute-drivers#show-and-validate-the-recipe) is an advisory update signal, not a Required check. Each job has a timeout, including time spent on retries and pagination. Only scheduled or manual main runs can publish an update issue.
 
 Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units on the shared Sabre and Shark runner pool. Ordinary and [tool-dependent fixture shards](#self-hosted-fixture-shards) both pack and run two workers. Fork pull requests run ordinary shards on GitHub-hosted runners. Self-hosted fixture jobs use the managed Deno and Python installations and persistent local fixture-tools cache; hosted jobs install and cache their tools in Actions.
 
