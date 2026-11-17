@@ -6,7 +6,7 @@ observer joins `[lints] workspace = true`.
 `orbit-agent` is the observer: the outbound-only service that reports facts, Process states and logs to the Gateway, plus
 the frozen agent commands that SSH or the Gateway start. It is an application with a library target (`src/lib.rs`) that only
 its own binary and tests use, so this review applies the application rules: no API-evolution findings, and `missing_docs`,
-`missing_errors_doc`, `exhaustive_enums` and `print_stderr` are noted only as lint noise. Edition 2021, no `rust-version`.
+`missing_errors_doc`, `exhaustive_enums` and `print_stderr` are noted only as lint noise. Edition 2021, no `rust-version` at review time. A later commit set 1.81, which made clippy report 25 `incompatible_msrv` errors; the B1 fix slice raised it to 1.89, the lowest version that clears them.
 
 The code is in good shape for its size (69k lines with tests). Plain clippy (`-D warnings`, all targets) is clean, every
 test passes, every `unsafe` block has a reason nearby, and almost every `unwrap()` outside tests sits on a value that the
@@ -25,7 +25,7 @@ and `tests/` file is excluded by the compiler, not by a grep. Locations are dedu
 
 | Measure (outside tests) | Count | Notes |
 | --- | ---: | --- |
-| `unwrap()` | **72** | `grep -rn 'unwrap()' src crates` finds 2,744; the other 2,672 are in tests |
+| `unwrap()` | **72** | `grep -rn 'unwrap()' src crates` finds 2,744; the other 2,672 are in tests. 0 after `5bcbe7d35` (Should fix 2) |
 | `expect(..)` | 29 | every one carries a reason |
 | `panic!` | 0 | |
 | `unreachable!` | 2 | one without a message |
@@ -46,8 +46,8 @@ warnings** in 70 lints. The largest: `unreachable_pub` 666, `missing_docs` 327, 
 | Tier | Findings |
 | --- | ---: |
 | Must fix | 1 |
-| Should fix | 9 |
-| Consider | 7 |
+| Should fix | 9 (2 and 3 done) |
+| Consider | 7 (17 done) |
 
 ## Must fix
 
@@ -81,6 +81,13 @@ obviously safe from the line alone are listed under Should fix 2.
 
 ### 2. 72 `unwrap()` calls outside tests (whole crate; full list via `clippy::unwrap_used` on `--lib --bins`)
 
+**Done in `5bcbe7d35`.** No `unwrap()` is left outside tests, and `src/lib.rs`, `src/main.rs` and
+`crates/contract/src/lib.rs` deny `clippy::unwrap_used` outside tests, so a new one fails clippy. Regex literals are
+`LazyLock` statics. The check-then-unwrap sites became pattern matches. The rest `expect()` their invariant. Two
+became error returns because the line cannot prove the value: the Caddy download path under `TMPDIR`, which may not be
+UTF-8 (`src/commands/caddy_package.rs`), and the agent target's file name, next to the existing missing-parent error
+(`src/commands/agent.rs`).
+
 **Rule:** no `unwrap()` outside tests; `expect("why this cannot fail")` instead (rust-best-practices §5; clippy
 `unwrap_used`; ADR 0267 P9 "Errors").
 
@@ -109,6 +116,27 @@ Some(Value::Number(number)) => match number.as_u64() { Some(value) => value, Non
 ```
 
 ### 3. Poisoned locks are recovered with `into_inner` (`src/workspace.rs:540`, `src/logs/controller.rs:63`)
+
+**Done in `5bcbe7d35` and "Observer B1: a panicked lock holder ends the observer".** Decision: lock poisoning is
+fatal, and systemd restarts the observer. The workspace lock, the log registry lock and the stream queue and token bucket
+locks (`src/logs/limits.rs`, which the review missed) `expect()` with the reason the lock is never held across a panic.
+
+`expect()` alone was not fatal: Tokio catches a panic in a spawned task, so the first commit ended only the task.
+`run` now keeps the tasks that hold these locks (`watch_workspaces`, `run_controller`) in a `JoinSet`. It races
+`orbit_agent::supervise` against the session, so a panic in one ends the run with an error, and the process exits 1. The
+log controller re-raises a panic of a stream reader it started. That includes a reader it stopped: a stopped reader
+stays supervised until its end is observed, and only a cancellation by that stop is not fatal. The controller also
+supervises its readers during each list fetch, so prompts that keep it fetching cannot hide a panic or let finished
+readers pile up. A reader that ends
+normally stays ended, as before. The
+binary keeps `panic = "unwind"`. `abort` would also end the process on a panic in tasks that need not be fatal, such as
+the blocking reads whose panics the observer already reports.
+
+Lock order: the registry, then a queue, then the agent bucket. `would_accept` takes the queue and bucket locks one after
+the other. `push` nests them to check and take both buckets in one step. Tests prove that a panic ends the run: from a
+poisoned workspace lock, from a stream reader, from a reader that panicked before an unlisting or a fail-closed
+stopped it, and from a reader while prompts keep the controller fetching. They also prove that each of the four locks is fatal when poisoned,
+and they cover both new error returns.
 
 **Rule:** lock poisoning is fatal; don't recover with `into_inner` (rust-best-practices §5, §7; ADR 0267 P9
 "Concurrency").
@@ -206,6 +234,8 @@ Clippy `string_add`; use `format!` or `push_str`. `src/workspace.rs:777` also ha
 Clippy `redundant_clone`; drop the clone.
 
 ### 17. Regexes compiled per call
+
+**Done in `5bcbe7d35`** with Should fix 2.
 
 See Should fix 2. Moving the regexes into `LazyLock` statics fixes both the `unwrap()` and the repeated compile.
 

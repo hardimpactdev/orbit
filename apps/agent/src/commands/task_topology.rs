@@ -424,7 +424,10 @@ impl Harness for NativeHarness {
             p.args([
                 "acquire",
                 &input.issue,
-                input.checkout.to_str().unwrap(),
+                input
+                    .checkout
+                    .to_str()
+                    .expect("the checkout path came from a JSON string"),
                 &format!("--nodes={}", input.nodes.join(",")),
                 "--replace",
             ]);

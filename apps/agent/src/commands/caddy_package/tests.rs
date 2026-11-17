@@ -325,3 +325,26 @@ fn rejects_caller_selected_paths_and_sources() {
         assert!(serde_json::from_value::<PackageInput>(value).is_err());
     }
 }
+#[test]
+fn a_temporary_directory_that_is_not_utf8_fails_before_the_download_and_leaves_nothing() {
+    use std::os::unix::ffi::OsStrExt;
+    let (work, files, input, mut host) = fixture();
+    let temporary = work.0.join(std::ffi::OsStr::from_bytes(b"tmp-\xff"));
+    fs::create_dir(&temporary).unwrap();
+    let error = install_in(&input, &files, &mut host, &temporary).unwrap_err();
+    assert_eq!(
+        crate::command::CommandError::code(&error),
+        "caddy.package_failed"
+    );
+    assert!(
+        matches!(&error, PackageError::Failed { reason } if reason.contains("not a UTF-8 path")),
+        "{error:?}"
+    );
+    assert!(!programs(&host).contains(&"curl"), "nothing is downloaded");
+    assert!(!files.path(SETTING).exists(), "nothing is published");
+    assert_eq!(
+        fs::read_dir(&temporary).unwrap().count(),
+        0,
+        "the work directory is removed"
+    );
+}

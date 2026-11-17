@@ -13,7 +13,9 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
+    pin::Pin,
     sync::{Arc, Mutex, MutexGuard},
+    task::{Context, Poll},
     time::Duration,
 };
 use tokio::{
@@ -57,10 +59,12 @@ impl LogHub {
         )
     }
 
+    /// Locks the registry. A poisoned lock is fatal: the holder panics, `crate::supervise` ends the observer
+    /// with exit code 1, and systemd restarts it.
     fn registry(&self) -> MutexGuard<'_, Registry> {
         self.registry
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .expect("the log registry lock is never held across a panic: holders only update its maps and queues")
     }
 
     /// Asks the controller to fetch the stream list. Prompts coalesce.
@@ -149,7 +153,12 @@ pub fn spawn_stream(spec: StreamSpec, queue: Arc<StreamQueue>) -> JoinHandle<()>
 
 struct Controller<F> {
     hub: LogHub,
-    running: BTreeMap<String, JoinHandle<()>>,
+    /// The reader of each started stream. A reader that has finished keeps its entry with no handle, so the
+    /// stream is not started again while the Gateway still lists it.
+    running: BTreeMap<String, Option<JoinHandle<()>>>,
+    /// Readers the controller aborted. Each stays supervised until its end is observed, because it may have
+    /// panicked before the abort.
+    retired: Vec<JoinHandle<()>>,
     start: F,
 }
 
@@ -193,15 +202,23 @@ impl<F: FnMut(StreamSpec, Arc<StreamQueue>) -> JoinHandle<()>> Controller<F> {
             drop(registry);
             let id = spec.id.clone();
             let handle = (self.start)(spec, queue);
-            self.running.insert(id, handle);
+            self.running.insert(id, Some(handle));
         }
     }
 
     fn stop(&mut self, id: &str) {
-        if let Some(handle) = self.running.remove(id) {
-            handle.abort();
+        if let Some(handle) = self.running.remove(id).flatten() {
+            self.retire(handle);
         }
         self.hub.registry().streams.remove(id);
+    }
+
+    /// Aborts a reader and keeps supervising it: every path that stops a reader goes through here.
+    fn retire(&mut self, handle: JoinHandle<()>) {
+        handle.abort();
+        self.retired.push(handle);
+        #[cfg(test)]
+        tests::note_retired(&self.retired);
     }
 
     fn stop_all(&mut self) {
@@ -216,18 +233,67 @@ impl<F: FnMut(StreamSpec, Arc<StreamQueue>) -> JoinHandle<()>> Controller<F> {
     /// reading the same stream again later would send its first lines a second time.
     fn fail_closed(&mut self) {
         let running = std::mem::take(&mut self.running);
-        let registry = self.hub.registry();
         for (id, handle) in running {
-            handle.abort();
-            if let Some(queue) = registry.streams.get(&id) {
+            if let Some(handle) = handle {
+                self.retire(handle);
+            }
+            if let Some(queue) = self.hub.registry().streams.get(&id) {
                 queue.end(LIST_UNAVAILABLE);
             }
         }
+    }
+
+    /// Waits for every retired reader to end, and returns the first panic among them.
+    async fn join_retired(&mut self) -> Option<tokio::task::JoinError> {
+        let mut panic = None;
+        for handle in self.retired.drain(..) {
+            if let Err(error) = handle.await {
+                if error.is_panic() && panic.is_none() {
+                    panic = Some(error);
+                }
+            }
+        }
+        panic
+    }
+
+    /// Resolves when a running or retired stream reader panicked, with its panic. A reader that ends normally
+    /// gives up its handle; so does a retired reader whose abort cancelled it.
+    fn poll_panicked(&mut self, context: &mut Context<'_>) -> Poll<tokio::task::JoinError> {
+        let mut index = 0;
+        while index < self.retired.len() {
+            match Pin::new(&mut self.retired[index]).poll(context) {
+                Poll::Ready(result) => {
+                    self.retired.swap_remove(index);
+                    if let Err(error) = result {
+                        if error.is_panic() {
+                            return Poll::Ready(error);
+                        }
+                    }
+                }
+                Poll::Pending => index += 1,
+            }
+        }
+        for slot in self.running.values_mut() {
+            let Some(handle) = slot else { continue };
+            if let Poll::Ready(result) = Pin::new(handle).poll(context) {
+                *slot = None;
+                if let Err(error) = result {
+                    if error.is_panic() {
+                        return Poll::Ready(error);
+                    }
+                }
+            }
+        }
+        Poll::Pending
     }
 }
 
 /// Fetches the list when prompted and every 15 seconds while a stream runs, with at most one fetch in
 /// flight, and starts and stops streams to match it. Without a list for 60 seconds, it stops all.
+///
+/// A stream reader that panics panics the controller with the same panic, so the observer's owner of this
+/// task ends the process (`crate::supervise`). That holds for a reader the controller stopped, too: a stopped
+/// reader stays supervised until its end is observed.
 pub async fn run_controller<L: ListSource>(
     hub: LogHub,
     mut prompts: mpsc::UnboundedReceiver<()>,
@@ -237,6 +303,7 @@ pub async fn run_controller<L: ListSource>(
     let mut controller = Controller {
         hub,
         running: BTreeMap::new(),
+        retired: Vec::new(),
         start,
     };
     let mut refresh = tokio::time::interval_at(Instant::now() + REFRESH, REFRESH);
@@ -249,10 +316,16 @@ pub async fn run_controller<L: ListSource>(
         tokio::select! {
             prompt = prompts.recv() => if prompt.is_none() {
                 controller.stop_all();
+                if let Some(error) = controller.join_retired().await {
+                    std::panic::resume_unwind(error.into_panic());
+                }
                 return;
             },
             _ = refresh.tick() => if controller.running.is_empty() {
                 continue;
+            },
+            error = std::future::poll_fn(|context| controller.poll_panicked(context)) => {
+                std::panic::resume_unwind(error.into_panic());
             },
             _ = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if armed => {
                 eprintln!("orbit-agent: no log stream list for 60 seconds; ending every stream");
@@ -262,10 +335,15 @@ pub async fn run_controller<L: ListSource>(
         }
         loop {
             while prompts.try_recv().is_ok() {}
-            let result = list
-                .fetch()
-                .await
-                .and_then(|body| parse_stream_list(&body).map_err(str::to_owned));
+            // Readers stay supervised during the fetch, so prompts that keep this loop busy cannot hide a
+            // panic or let finished retired readers pile up.
+            let fetched = tokio::select! {
+                fetched = list.fetch() => fetched,
+                error = std::future::poll_fn(|context| controller.poll_panicked(context)) => {
+                    std::panic::resume_unwind(error.into_panic());
+                },
+            };
+            let result = fetched.and_then(|body| parse_stream_list(&body).map_err(str::to_owned));
             match result {
                 Ok(specs) => {
                     last_ok = Some(Instant::now());
@@ -598,5 +676,347 @@ mod tests {
         let frames = hub.flush("presence-node-logs.1", Instant::now()).unwrap();
         assert_eq!(frames[0].data["reason"], "list_unavailable");
         assert_eq!(hub.running(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "the log registry lock is never held across a panic")]
+    fn a_poisoned_registry_lock_is_fatal() {
+        let (hub, _prompts) = LogHub::new();
+        let holder = hub.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = holder.registry();
+            panic!("poison the registry lock");
+        })
+        .join();
+        hub.running();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_panicked_stream_reader_ends_the_observer_run() {
+        let fake = FakeList::default();
+        fake.set(list(&[&id(1)]));
+        let (hub, prompts) = LogHub::new();
+        let mut supervised = tokio::task::JoinSet::new();
+        supervised.spawn(run_controller(hub.clone(), prompts, fake, |_, _| {
+            tokio::spawn(async { panic!("the stream reader failed") })
+        }));
+        hub.prompt();
+        let error = tokio::time::timeout(REFRESH, crate::supervise(&mut supervised))
+            .await
+            .expect("the panic ends the run");
+        assert!(
+            error.to_string().contains("the stream reader failed"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stream_reader_that_ends_is_not_fatal_or_started_again() {
+        let fake = FakeList::default();
+        fake.set(list(&[&id(1)]));
+        let (hub, prompts) = LogHub::new();
+        let started: Started = Arc::default();
+        let record = started.clone();
+        let mut supervised = tokio::task::JoinSet::new();
+        supervised.spawn(run_controller(
+            hub.clone(),
+            prompts,
+            fake,
+            move |spec, _| {
+                record.lock().unwrap().push(spec.id.clone());
+                tokio::spawn(async {})
+            },
+        ));
+        hub.prompt();
+        settle().await;
+        hub.prompt();
+        let supervision = tokio::time::timeout(REFRESH * 2, crate::supervise(&mut supervised));
+        assert!(supervision.await.is_err(), "no panic, so the run goes on");
+        assert_eq!(*started.lock().unwrap(), [id(1)], "never started again");
+    }
+
+    /// A list fetch that hands out one stream, then waits for `release` and returns no stream.
+    struct UnlistDuringFetch {
+        calls: AtomicUsize,
+        fetching: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+    }
+    impl ListSource for UnlistDuringFetch {
+        async fn fetch(&self) -> Result<Value, String> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                return list(&[&id(1)]);
+            }
+            self.fetching.notify_one();
+            self.release.notified().await;
+            list(&[])
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_reader_that_panics_during_a_fetch_that_unlists_it_ends_the_observer_run() {
+        let (hub, prompts) = LogHub::new();
+        let agent = Arc::clone(&hub.agent);
+        assert!(std::thread::spawn(move || {
+            let _guard = agent.lock().unwrap();
+            panic!("poison the agent bucket");
+        })
+        .join()
+        .is_err());
+        let fetching = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let trigger = Arc::new(tokio::sync::Notify::new());
+        let reader: Arc<Mutex<Option<tokio::task::AbortHandle>>> = Arc::default();
+        let record = Arc::clone(&reader);
+        let pull = Arc::clone(&trigger);
+        let mut supervised = tokio::task::JoinSet::new();
+        supervised.spawn(run_controller(
+            hub.clone(),
+            prompts,
+            UnlistDuringFetch {
+                calls: AtomicUsize::new(0),
+                fetching: Arc::clone(&fetching),
+                release: Arc::clone(&release),
+            },
+            move |_, queue| {
+                let pull = Arc::clone(&pull);
+                let handle = tokio::spawn(async move {
+                    pull.notified().await;
+                    queue.push("a log line".into());
+                });
+                *record.lock().unwrap() = Some(handle.abort_handle());
+                handle
+            },
+        ));
+        hub.prompt();
+        settle().await;
+        hub.prompt();
+        fetching.notified().await;
+        trigger.notify_one();
+        let handle = reader.lock().unwrap().clone().unwrap();
+        while !handle.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        release.notify_one();
+        let error = tokio::time::timeout(REFRESH / 2, crate::supervise(&mut supervised))
+            .await
+            .expect("a stopped reader that panicked still ends the run");
+        assert!(
+            error
+                .to_string()
+                .contains("a stream queue or token bucket lock is never held across a panic"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_reader_that_panics_before_the_list_fails_closed_ends_the_observer_run() {
+        let fake = FakeList {
+            delay: FAIL_CLOSED + Duration::from_secs(1),
+            ..FakeList::default()
+        };
+        fake.set(list(&[&id(1)]));
+        let (hub, prompts) = LogHub::new();
+        let failing = fake.clone();
+        let mut supervised = tokio::task::JoinSet::new();
+        supervised.spawn(run_controller(hub.clone(), prompts, fake, move |_, _| {
+            // The next fetch fails after 61 s; the reader panics within it, before the list fails closed.
+            failing.set(Err("down".into()));
+            tokio::spawn(async {
+                tokio::time::sleep(FAIL_CLOSED / 2).await;
+                panic!("the stream reader failed");
+            })
+        }));
+        hub.prompt();
+        settle().await;
+        hub.prompt();
+        let error = tokio::time::timeout(FAIL_CLOSED * 3, crate::supervise(&mut supervised))
+            .await
+            .expect("a reader retired by fail-closed that panicked still ends the run");
+        assert!(
+            error.to_string().contains("the stream reader failed"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_reader_cancelled_by_its_stop_does_not_end_the_observer_run() {
+        let fake = FakeList::default();
+        fake.set(list(&[&id(1)]));
+        let (hub, prompts) = LogHub::new();
+        let mut supervised = tokio::task::JoinSet::new();
+        supervised.spawn(run_controller(
+            hub.clone(),
+            prompts,
+            fake.clone(),
+            |_, _| tokio::spawn(std::future::pending::<()>()),
+        ));
+        hub.prompt();
+        settle().await;
+        assert_eq!(hub.running(), 1);
+        fake.set(list(&[]));
+        hub.prompt();
+        settle().await;
+        assert_eq!(hub.running(), 0);
+        let supervision = tokio::time::timeout(REFRESH * 2, crate::supervise(&mut supervised));
+        assert!(
+            supervision.await.is_err(),
+            "a cancelled reader is not fatal"
+        );
+    }
+
+    thread_local! {
+        /// The most retired readers that had already finished at one retire, on this test's thread.
+        static MAX_FINISHED_RETIRED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+    pub(super) fn note_retired(retired: &[JoinHandle<()>]) {
+        let finished = retired.iter().filter(|handle| handle.is_finished()).count();
+        MAX_FINISHED_RETIRED.with(|max| max.set(max.get().max(finished)));
+    }
+
+    /// Lists one new stream per fetch, and prompts again while each fetch is in flight, so the fetch loop never
+    /// goes back to waiting. The fetch after `stop_at` never ends.
+    struct BusyLists {
+        hub: LogHub,
+        calls: AtomicUsize,
+        stop_at: usize,
+        reached: Arc<tokio::sync::Notify>,
+    }
+    impl ListSource for BusyLists {
+        async fn fetch(&self) -> Result<Value, String> {
+            let n = self.calls.fetch_add(1, Ordering::SeqCst);
+            if n == self.stop_at {
+                self.reached.notify_one();
+                std::future::pending::<()>().await;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            self.hub.prompt();
+            list(&[&format!("{:032x}", n + 1)])
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn finished_readers_do_not_pile_up_while_prompts_keep_the_fetch_loop_busy() {
+        MAX_FINISHED_RETIRED.with(|max| max.set(0));
+        let (hub, prompts) = LogHub::new();
+        let reached = Arc::new(tokio::sync::Notify::new());
+        let controller = tokio::spawn(run_controller(
+            hub.clone(),
+            prompts,
+            BusyLists {
+                hub: hub.clone(),
+                calls: AtomicUsize::new(0),
+                stop_at: 128,
+                reached: Arc::clone(&reached),
+            },
+            |_, _| tokio::spawn(async {}),
+        ));
+        hub.prompt();
+        tokio::time::timeout(Duration::from_secs(140), reached.notified())
+            .await
+            .expect("128 fetches ran");
+        controller.abort();
+        let retained = MAX_FINISHED_RETIRED.with(std::cell::Cell::get);
+        assert!(
+            retained <= crate::logs::MAX_STREAMS,
+            "finished retired readers are reaped during the fetches; {retained} were kept"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_reader_panic_ends_the_observer_run_while_prompts_keep_the_fetch_loop_busy() {
+        let (hub, prompts) = LogHub::new();
+        let started = Arc::new(AtomicUsize::new(0));
+        let record = Arc::clone(&started);
+        let mut supervised = tokio::task::JoinSet::new();
+        supervised.spawn(run_controller(
+            hub.clone(),
+            prompts,
+            BusyLists {
+                hub: hub.clone(),
+                calls: AtomicUsize::new(0),
+                stop_at: usize::MAX,
+                reached: Arc::default(),
+            },
+            move |_, _| {
+                let n = record.fetch_add(1, Ordering::SeqCst);
+                tokio::spawn(async move {
+                    if n == 0 {
+                        panic!("the first reader panicked");
+                    }
+                })
+            },
+        ));
+        hub.prompt();
+        let error =
+            tokio::time::timeout(Duration::from_secs(30), crate::supervise(&mut supervised))
+                .await
+                .expect("a reader panic ends the run while list updates continue");
+        assert!(
+            error.to_string().contains("the first reader panicked"),
+            "{error}"
+        );
+    }
+
+    /// A controller with one reader that has already panicked, as when the fetch result wins the race with
+    /// the reader's completion and the reply stops it before supervision sees the panic.
+    async fn controller_with_a_panicked_reader(
+    ) -> Controller<impl FnMut(StreamSpec, Arc<StreamQueue>) -> JoinHandle<()>> {
+        let (hub, _prompts) = LogHub::new();
+        let reader = tokio::spawn(async { panic!("the stream reader failed") });
+        while !reader.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        let mut controller = Controller {
+            hub,
+            running: BTreeMap::new(),
+            retired: Vec::new(),
+            start: |_: StreamSpec, _: Arc<StreamQueue>| tokio::spawn(async {}),
+        };
+        controller.running.insert(id(1), Some(reader));
+        controller
+    }
+
+    async fn reported_panic<F>(controller: &mut Controller<F>) -> Option<String>
+    where
+        F: FnMut(StreamSpec, Arc<StreamQueue>) -> JoinHandle<()>,
+    {
+        let panicked = std::future::poll_fn(|context| controller.poll_panicked(context));
+        let error = tokio::time::timeout(Duration::from_secs(1), panicked)
+            .await
+            .ok()?;
+        Some(crate::panic_text(&*error.into_panic()).to_owned())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_reader_stopped_after_it_panicked_is_still_reported() {
+        let mut controller = controller_with_a_panicked_reader().await;
+        controller.stop(&id(1));
+        assert!(controller.running.is_empty());
+        assert_eq!(
+            reported_panic(&mut controller).await.as_deref(),
+            Some("the stream reader failed")
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_reader_failed_closed_after_it_panicked_is_still_reported() {
+        let mut controller = controller_with_a_panicked_reader().await;
+        controller.fail_closed();
+        assert!(controller.running.is_empty());
+        assert_eq!(
+            reported_panic(&mut controller).await.as_deref(),
+            Some("the stream reader failed")
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_reader_stopped_after_it_panicked_is_reported_when_the_controller_ends() {
+        let mut controller = controller_with_a_panicked_reader().await;
+        controller.stop_all();
+        let error = controller.join_retired().await.expect("the panic is kept");
+        assert_eq!(
+            crate::panic_text(&*error.into_panic()),
+            "the stream reader failed"
+        );
     }
 }

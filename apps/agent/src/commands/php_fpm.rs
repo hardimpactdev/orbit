@@ -29,7 +29,9 @@ pub fn validate(
     let pools = work.0.join("pool.d");
     fs::create_dir(&pools).map_err(|_| failed("stage"))?;
     let live = files.path(&format!("/etc/php/{version}/fpm/pool.d/{filename}"));
-    for entry in fs::read_dir(live.parent().unwrap()).map_err(|_| failed("read"))? {
+    for entry in fs::read_dir(live.parent().expect("the pool file lies in pool.d"))
+        .map_err(|_| failed("read"))?
+    {
         let entry = entry.map_err(|_| failed("read"))?;
         if entry.file_name() == filename || entry.path().extension().is_none_or(|s| s != "conf") {
             continue;
@@ -40,9 +42,8 @@ pub fn validate(
     fs::write(pools.join(filename), configuration).map_err(|_| failed("stage"))?;
     let main = live
         .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
+        .and_then(Path::parent)
+        .expect("the pool file lies in fpm/pool.d")
         .join("php-fpm.conf");
     metadata(&main, files.uid, false)?.ok_or_else(|| failed("main"))?;
     let text = fs::read_to_string(main).map_err(|_| failed("read"))?;

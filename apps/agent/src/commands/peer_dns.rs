@@ -20,17 +20,23 @@ use std::{
     time::{Duration, Instant},
 };
 
-static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_.:+-]+$").unwrap());
-static SERVER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Fa-f0-9:.]+$").unwrap());
-static DOMAIN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9.-]+$").unwrap());
-static PUBLIC_KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9+/]{43}=$").unwrap());
+static LINK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_.:+-]+$").expect("literal pattern"));
+static SERVER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Fa-f0-9:.]+$").expect("literal pattern"));
+static DOMAIN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9.-]+$").expect("literal pattern"));
+static PUBLIC_KEY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9+/]{43}=$").expect("literal pattern"));
 static HOOK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^PostUp = resolvectl dns %i [^;]+; resolvectl domain %i .+\r?$").unwrap()
+    Regex::new(r"^PostUp = resolvectl dns %i [^;]+; resolvectl domain %i .+\r?$")
+        .expect("literal pattern")
 });
-static HEADER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[Interface\]\r?$").unwrap());
+static HEADER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\[Interface\]\r?$").expect("literal pattern"));
 static OLD_PRE_DOWN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^PreDown = resolvectl revert %i\r?$|^PreDown = resolvectl dns %i ''; resolvectl domain %i ''\r?$")
-        .unwrap()
+        .expect("literal pattern")
 });
 
 /// The resolver settings of an uplink, in the order an uplink snapshot holds them.
@@ -133,10 +139,11 @@ fn usable(server: &str, private: &str, previous: &str) -> bool {
 /// Whether `resolvectl dns`, which also lists the global `resolved.conf` servers, names a usable server on a link
 /// other than `orbit`.
 pub fn usable_uplink(listing: &str, private: &str, previous: &str) -> bool {
-    static SCOPE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^(Global|Link [0-9]+ \([^)]+\)): ?").unwrap());
+    static SCOPE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^(Global|Link [0-9]+ \([^)]+\)): ?").expect("literal pattern")
+    });
     static ORBIT: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^Link [0-9]+ \(orbit\):").unwrap());
+        LazyLock::new(|| Regex::new(r"^Link [0-9]+ \(orbit\):").expect("literal pattern"));
     listing.split('\n').any(|line| {
         if ORBIT.is_match(line) || !SCOPE.is_match(line) {
             return false;

@@ -2,7 +2,9 @@
 use super::recipe::{self, Files, Host, Invocation, Native, WorkDir};
 use crate::command::{lock, Command, Context, Platform, Privilege};
 use crate::command_errors;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use std::{
     fs,
     io::{self, Write},
@@ -71,17 +73,19 @@ fn run(
     recipe::run(host, &invocation(args, seconds), required).map_err(|_| failed(stage))
 }
 fn valid(input: &Input) -> bool {
-    let user = regex::Regex::new(r"\A[a-z_][a-z0-9_-]{0,31}\z").unwrap();
-    let package = regex::Regex::new(r"\A[a-z0-9][a-z0-9+.-]*\z").unwrap();
-    user.is_match(&input.user)
+    static USER: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\A[a-z_][a-z0-9_-]{0,31}\z").expect("literal pattern"));
+    static PACKAGE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\A[a-z0-9][a-z0-9+.-]*\z").expect("literal pattern"));
+    USER.is_match(&input.user)
         && input.user != "root"
         && !input.public_key.is_empty()
         && input.public_key.len() <= 16384
         && !input.public_key.chars().any(char::is_control)
         && !input.releases.is_empty()
-        && input.releases.iter().all(|s| package.is_match(s))
+        && input.releases.iter().all(|s| PACKAGE.is_match(s))
         && !input.packages.is_empty()
-        && input.packages.iter().all(|s| package.is_match(s))
+        && input.packages.iter().all(|s| PACKAGE.is_match(s))
 }
 fn platform(files: &Files, input: &Input) -> Result<(), Error> {
     let release = fs::read_to_string(files.path("/etc/os-release"))
@@ -179,7 +183,8 @@ fn owned_dns(files: &Files, host: &mut impl Host) -> Result<String, Error> {
         return Err(dns("Retained DNS is not Orbit route-all DNS"));
     }
     let server = lines[1];
-    let prefix = regex::Regex::new(r"\ALink [0-9]+ \(orbit\): ").unwrap();
+    static PREFIX: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\ALink [0-9]+ \(orbit\): ").expect("literal pattern"));
     for (property, expected) in [("dns", server), ("domain", "~.")] {
         let live = run(
             host,
@@ -189,7 +194,7 @@ fn owned_dns(files: &Files, host: &mut impl Host) -> Result<String, Error> {
             true,
         )?;
         let live = live.stdout.trim_end_matches('\n');
-        let matched = prefix.find(live).map(|m| &live[m.end()..]);
+        let matched = PREFIX.find(live).map(|m| &live[m.end()..]);
         if matched != Some(expected) {
             return Err(dns("Live resolver differs from Orbit ownership"));
         }
