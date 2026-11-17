@@ -1221,6 +1221,10 @@ When both parts have ended, the step checks the two sessions and the checkout. B
 
 The copy step writes T3's files into the stopped copy before its first start. First the placeholder model environment, then Codex's `config.toml`, Claude Code's `.claude.json` and T3's `settings.json`, the drop-in `/etc/systemd/system/t3.service.d/10-orbit-boot.conf`, and the drop-in that names the [container server](#container-server). The two JSON files merge into the seed's own, as the agent part merges them. Last comes `/etc/orbit/instance`, the file that `t3.service` waits for. The copy's boot then starts T3, and T3's cold start runs beside private names, Node services, mail and branch. No snapshot holds the model environment: the default never has it, and Orbit takes no snapshot of a clone.
 
+Before the first start, Orbit checks the stopped copy's on-disk ID map. A restricted Incus project strips that map during a local copy. On Nodes without idmapped mounts, the files still hold the source's shifted IDs. When the copy records an empty map and the source records a shift, Orbit unshifts the copied rootfs on a `dir` pool. Incus can then shift it to the copy's own map at start.
+
+This preserves owners, setuid and setgid modes, named POSIX ACL entries and file capability root IDs. IDs outside the source map stay unchanged, so a retry can finish a partial pass. Sources with an empty map, including Nodes using idmapped mounts, need no change. Another pool driver in this state refuses before start with `instance.clone_idmap_unshift_unsupported`.
+
 The drop-in turns off T3's default dependencies. T3 then starts after `nftables.service`, the local file systems, the journal socket and `systemd-sysctl.service`, and stops before shutdown. T3 skips the wait for `sysinit.target`, which udev's trigger holds about 0.6 s in a container. `Requires=nftables.service` stays in the unit, so T3 still starts only with its firewall.
 
 The image's `After=network-online.target` stays, because a drop-in cannot remove an ordering. A plain clone's boot does not pull that target in, so it holds nothing there. In a nested-fleet clone the inner Incus wants that target, so T3 there still waits for eth0's route.
@@ -1332,7 +1336,7 @@ An [explicit branch choice](/reference/conn#threads-in-an-orbit-project) runs no
 
 Someone may make the branch on GitHub between the admission and the copy. The copy still starts at the admitted commit. When the GitHub branch has commits the copy lacks, a later push of the branch is refused as `tasks.not_fast_forward`. When it has none, the push fast-forwards it, and no commit is lost. A clone's Node mirror exists only after a fetch: its own create's, or a later deployment's.
 
-The container, checkout and T3 phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, T3's files, firewall, network check, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part, T3's first answer and its sessions check. Two parts are facts, 1 or 0: `t3_files` and `at_boot` ([T3 starts with the copy](#t3-starts-with-the-copy)). The create's result carries them as `timings`: names and seconds only.
+The container, checkout and T3 phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, T3's files, firewall, network check, ID map, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part, T3's first answer and its sessions check. Two parts are facts, 1 or 0: `t3_files` and `at_boot` ([T3 starts with the copy](#t3-starts-with-the-copy)). The create's result carries them as `timings`: names and seconds only.
 
 Clone readiness checks PHP only when the Project has a PHP runtime. A Project without PHP can register T3 and its sessions. The Operation keeps its stable error code and shows the failed phase, command and exit code in `error.detail`; command output stays private.
 
@@ -3357,6 +3361,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
 | `instance.clone_trust_bundle_refused` | 502 | A clone's copy has no regular `/etc/ssl/certs/ca-certificates.crt`, or the file API could not read it. The create stops before the copy starts |
 | `instance.clone_t3_files_refused` | 502 | A folder or JSON file of [T3's files](#t3-starts-with-the-copy) in a clone's copy is a link or of another type. The create stops before the copy starts |
+| `instance.clone_idmap_unshift_unsupported` | 502 | A copied rootfs needs its source's ownership shift removed, but its storage pool does not use the `dir` driver. The copy stays stopped |
+| `instance.clone_idmap_unshift_failed` | 502 | Orbit could not read or normalize a stopped copy's ownership, permissions, ACLs or capabilities before its first start. The copy stays stopped |
 | `instance.clone_private_names_failed` | 502 | A clone's create could not read, render or write `/etc/hosts` right after the copy's first start. The create's failure step stops the copy, and a retry writes it again |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
