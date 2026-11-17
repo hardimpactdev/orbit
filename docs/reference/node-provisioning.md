@@ -562,8 +562,10 @@ This is the layout `orbit self-update` keeps, so either one can update what the 
 | Found | Result |
 | --- | --- |
 | Nothing, or a version that is not a valid Orbit version | Install the admitted release: `cli_installed` |
-| An Orbit CLI that has `self-update` and is the desired release, a newer one, or a pre-release build | Leave it: `cli_present`. `orbit self-update` replaces it |
+| An Orbit CLI that has `self-update` and is the desired release, a newer one, or a pre-release build | Leave it: `cli_present` |
 | An older Orbit CLI release, or one without `self-update` | Install the admitted release |
+
+To replace a commit-stamped CLI on a CI runner, run `orbit node:converge NODE --base --full` from a working CLI. The base phase installs the Gateway's pinned release directly. On an operator machine, follow [Install a release](/reference/cli-binaries#install-a-release).
 
 To install, `@swamp/cfgmgmt/fetch` downloads the binary to `/usr/local/bin/orbit-<version>` with its SHA-256 from the desired state. The child runs that file with `--version` and requires the release version. Only then does `@swamp/cfgmgmt/link` switch `/usr/local/bin/orbit` to it. A failed download, checksum or version check leaves the link as it was. Then `@swamp/cfgmgmt/file` writes root's profile, `root:root` mode `0600`.
 
