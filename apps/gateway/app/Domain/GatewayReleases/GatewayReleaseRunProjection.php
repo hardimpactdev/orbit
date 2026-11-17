@@ -124,8 +124,9 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         $phases = ['run' => ['operation_id' => $operation->id, 'status' => $status]];
         $step = NativeFailedStep::label($data, array_keys(self::Steps));
         // A cancelled, interrupted or expired run, or one that stopped at an unknown step, may have migrated: it pauses.
-        [$phase, $code, $migrated] = $status === 'succeeded' ? ['verify', null, true]
+        [$phase, $code, $mayHaveChangedState] = $status === 'succeeded' ? ['verify', null, true]
             : ($step === null ? ['run', $status === 'timed_out' ? 'gateway.release_run_timed_out' : 'gateway.release_run_failed', true] : self::Steps[$step]);
+        $retained = ($operation->input['retained'] ?? false) === true;
         // The step's own refusal code, such as gateway.release_downgrade, is more exact than the step's.
         $detail = is_array($data['failure'] ?? null) && is_string($data['failure']['detail'] ?? null) ? $data['failure']['detail'] : '';
         if ($code !== null && preg_match('/\b(gateway\.release_[a-z_]+):/', $detail, $refusal) === 1) {
@@ -148,14 +149,14 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         $recorder->write(new DeployedGatewayRelease(
             id: GatewayReleaseCommit::id($sha),
             sha: $sha,
-            outcome: $code === null ? 'verified' : ($back ? 'switched_back' : ($migrated ? 'paused' : 'failed')),
+            outcome: $code === null ? 'verified' : ($back ? 'switched_back' : ($mayHaveChangedState ? 'paused' : 'failed')),
             trigger: $record->trigger,
-            migrationsRan: $migrated,
+            migrationsRan: $mayHaveChangedState && ! $retained,
             previousId: $previous,
             // A pause names the copy from before this attempt's migration, or the clean one an earlier pause named.
-            snapshotPath: $migrated && ! $back ? ($recorder->pausedSnapshot($sha) ?? $snapshot) : $snapshot,
+            snapshotPath: $mayHaveChangedState && ! $retained && ! $back ? ($recorder->pausedSnapshot($sha) ?? $snapshot) : $snapshot,
             cleanupPaused: false,
-            retryable: $code !== null && ! $migrated && app(GatewayReleaseRetry::class)->retryable($code, $sha, $record->id),
+            retryable: $code !== null && ! $mayHaveChangedState && app(GatewayReleaseRetry::class)->retryable($code, $sha, $record->id),
             durationMs: $record->created_at === null ? 0 : (int) $record->created_at->diffInMilliseconds(now()),
             phases: $phases,
             errorCode: $code,

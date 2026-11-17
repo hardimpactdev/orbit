@@ -12,13 +12,13 @@ use Illuminate\Support\Facades\Queue;
 uses(LazilyRefreshDatabase::class);
 
 /** Ends one admitted `gateway.release` run with the given native terminal and returns its record. */
-function endReleaseRun(string $status, array $result = [], ?string $failedStep = null, string $detail = '', array $steps = []): GatewayRelease
+function endReleaseRun(string $status, array $result = [], ?string $failedStep = null, string $detail = '', array $steps = [], bool $retained = false): GatewayRelease
 {
     $sha = str_repeat('ab', 20);
     $record = GatewayRelease::query()->create(['requested' => $sha, 'trigger' => 'auto', 'outcome' => GatewayRelease::Running,
         'force' => false, 'phases' => [], 'duration_ms' => 0]);
     $operation = Operation::query()->create(['kind' => 'gateway.release', 'target_type' => 'gateway_release', 'target_id' => $record->id,
-        'node_id' => null, 'status' => 'running', 'input' => ['sha' => $sha, 'id' => substr($sha, 0, 12), 'previous' => str_repeat('cd', 6)],
+        'node_id' => null, 'status' => 'running', 'input' => ['sha' => $sha, 'id' => substr($sha, 0, 12), 'previous' => str_repeat('cd', 6), 'retained' => $retained],
         'triggered_by' => 'gateway-release', 'state' => ['swamp_run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'native_progress' => ['steps' => $steps]]]);
     $record->update(['phases' => ['run' => ['operation_id' => $operation->id]]]);
     new GatewayReleaseRunProjection()->apply($operation, ['run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'status' => $status,
@@ -35,6 +35,17 @@ it('records a succeeded run as verified with the version the fleet rollout reads
         ->and($record->snapshot_path)->toBe('/home/orbit/.orbit/backups/pre.sqlite')
         ->and($record->phases['verify'])->toBe(['outcome' => 'passed', 'status' => 'ok', 'version' => str_repeat('ab', 20)]);
 });
+
+it('records a retained rollback without a migration even when an uncertain handover pauses releases', function (string $status, ?string $step, string $outcome): void {
+    $record = endReleaseRun($status, failedStep: $step, retained: true);
+
+    expect($record->outcome)->toBe($outcome)
+        ->and($record->migrations_ran)->toBeFalse()
+        ->and($record->snapshot_path)->toBeNull();
+})->with([
+    ['succeeded', null, 'verified'],
+    ['failed', 'Hand over the release', 'paused'],
+]);
 
 it('records a failed check that the run switched back from as switched back', function (): void {
     $record = endReleaseRun('failed', [], 'Hand over the release', "gateway-rollback: reloaded php8.5-fpm\ngateway.release_switched_back: the check failed; release cdcdcdcdcdcd is current again\n");
