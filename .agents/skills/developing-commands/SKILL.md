@@ -152,3 +152,5 @@ A fixture that replaces a subprocess environment must retain the interpreter's l
 When moving fixture jobs to one runner pool, bound the sum of all fixture matrices, not each matrix separately. Preserve each class's worker count and mandatory reservations, keep fork code off the pool, and measure from push through Required, including queue and setup time.
 
 When a subsystem fixture repeats a whole host converge, scope it through the shipped caller tasks while retaining their variables, loops, conditions and order; fail on missing names. Keep the integration fixture and every subsystem assertion. Split independent state transitions before calibrating costs, distinguish copy measurements from runner-pool receipts, and reserve a repaired caller case when its file has a capacity gap.
+
+Bound shared fixture concurrency by physical-core topology as well as logical CPU count. Avoid placing both workers on sibling threads of one core. A retry-budget fixture can assert the shipped task's rendered retry count and exercise pending-to-terminal reads without replaying hundreds of subprocesses; use a shorter-budget negative control.

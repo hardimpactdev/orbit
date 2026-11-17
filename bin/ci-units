@@ -241,7 +241,7 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
         # The machinery's pure-code tests cover it; a small declared set runs it end to end.
         for file in budget['machinery_canary']:
             selected.setdefault(file, (-1, 0, 0))
-    # Two packing classes share one runner pool. Keep their different worker counts.
+    # Two packing classes share one runner pool and use their declared worker counts.
     limits = {False: budget['pr_shards'], True: budget['self_hosted_shards']}
     pool = lambda file: bool(fixtures[file].get('self_hosted'))
     def fits_all(groups):
@@ -307,8 +307,9 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
     # Nothing is deferred: selected work that does not fit fails Required checks, and the plan names it.
     if unplaced:
         capacity.append({'unplaced': sorted(unplaced)})
-    result = {'shards': pack(admitted[False], pool_budget(budget, False)) or [],
-              'self_hosted_shards': pack(admitted[True], pool_budget(budget, True)) or [],
+    packed = spread(admitted, budget)
+    result = {'shards': packed[False],
+              'self_hosted_shards': packed[True],
               'unmapped': sorted(set(unmapped))}
     if mandatory:
         result['mandatory'] = mandatory
@@ -320,8 +321,7 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
 
 
 def pool_budget(budget, self_hosted):
-    """A pool's shard count and lanes per shard. A self-hosted runner shares its Node with proof copies, so it runs
-    fewer units at once: four Ansible units made its cgroup reclaim memory until the heaviest ran past the ceiling."""
+    """A class's shard count and lanes. Both classes use two workers on the shared runner pool."""
     if self_hosted:
         return {**budget, 'pr_shards': budget['self_hosted_shards'], 'shard_workers': budget['self_hosted_workers']}
     return budget
@@ -359,6 +359,63 @@ def summary(text):
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
             output.write(text + '\n')
+
+
+
+def spread(groups, budget):
+    """Use spare places to shorten admitted lanes, without changing selection, costs or ceilings."""
+    budgets = {side: pool_budget(budget, side) for side in (False, True)}
+    packed = {side: pack(groups[side], budgets[side]) or [] for side in budgets}
+    slots = {side: len(packed[side]) for side in budgets}
+    if sum(slots.values()) <= 1:
+        return packed
+    totals = {side: sum(cost for _, cost, _ in groups[side]) for side in budgets}
+    while sum(slots.values()) < budget['runner_shards']:
+        candidates = [side for side in budgets if slots[side] < min(
+            budgets[side]['pr_shards'], math.ceil(len(groups[side]) / budgets[side]['shard_workers']))]
+        if not candidates:
+            break
+        side = max(candidates, key=lambda side: totals[side] / (slots[side] * budgets[side]['shard_workers']))
+        slots[side] += 1
+    result = {}
+    for side, rows in groups.items():
+        workers = budgets[side]['shard_workers']
+        costs = {name: cost for name, cost, _ in rows}
+        lanes = []
+        # Recover the admitted lane schedule. Splitting or balancing its lanes cannot exceed their original ceiling.
+        for shard in packed[side]:
+            local = [[] for _ in range(workers)]
+            loads = [0] * workers
+            for name in shard['units']:
+                lane = min(range(workers), key=lambda index: loads[index])
+                local[lane].append(name)
+                loads[lane] += costs[name]
+            lanes.extend(local)
+        lanes.extend([] for _ in range(slots[side] * workers - len(lanes)))
+        while lanes:
+            loads = [sum(costs[name] for name in lane) for lane in lanes]
+            destination = min(range(len(lanes)), key=lambda index: loads[index])
+            moves = [(loads[source] - max(loads[source] - costs[name], loads[destination] + costs[name]), source, name)
+                     for source, lane in enumerate(lanes) for name in lane if source != destination]
+            if not moves or max(moves)[0] <= 1e-9:
+                break
+            _, source, name = max(moves)
+            lanes[source].remove(name)
+            lanes[destination].append(name)
+        # Pair long lanes with short ones, then emit units in planned start order for the shared worker queue.
+        shards = [[] for _ in range(slots[side])]
+        ordered = sorted(lanes, key=lambda lane: -sum(costs[name] for name in lane))
+        for index, lane in enumerate(ordered):
+            shard = index % slots[side]
+            if (index // slots[side]) % 2:
+                shard = slots[side] - 1 - shard
+            start = 0
+            for name in sorted(lane, key=lambda name: (-costs[name], name)):
+                shards[shard].append((start, name))
+                start += costs[name]
+        result[side] = [{'name': f'{index + 1:02d}', 'units': [name for _, name in sorted(rows)]}
+                        for index, rows in enumerate(shards)]
+    return result
 
 
 def planned_units(result):

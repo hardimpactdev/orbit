@@ -438,7 +438,8 @@ class TableTest(unittest.TestCase):
 
     def test_table_files_costs_and_unsliceable_rules(self):
         budget, fixtures, defaults = units.configuration()
-        self.assertEqual({**budget, 'machinery_canary': [], 'capacity_gap': []}, BUDGET)
+        self.assertEqual({**budget, 'machinery_canary': [], 'capacity_gap': []},
+                         {**BUDGET, 'shard_workers': 2, 'pr_shards': 18, 'runner_shards': 18})
         self.assertTrue(defaults)
         for f in fixtures.values():
             self.assertTrue((ROOT / f['file']).is_file(), f['file'])
@@ -492,7 +493,7 @@ class TableTest(unittest.TestCase):
         import signal
         handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
         self.addCleanup(lambda: [signal.signal(sig, handler) for sig, handler in handlers.items()])
-        for extra, workers in (([], BUDGET['shard_workers']), (['--workers', '1'], 1)):
+        for extra, workers in (([], units.configuration()[0]['shard_workers']), (['--workers', '1'], 1)):
             with self.subTest(workers=workers):
                 with patch.object(sys, 'argv', ['ci-units', 'run', '--units', '[]', *extra]), \
                         patch.object(units, 'run', return_value=0) as run:
@@ -513,7 +514,8 @@ class TableTest(unittest.TestCase):
                         patch.object(units, 'run', return_value=0) as run:
                     self.assertEqual(units.main(), 0)
                 self.assertEqual(run.call_args.args[1]['shard_workers'], workers)
-        self.assertLess(budget['self_hosted_workers'], budget['shard_workers'])
+        self.assertEqual(2, budget['self_hosted_workers'])
+        self.assertEqual(2, budget['shard_workers'])
         with patch.object(sys, 'argv', ['ci-units', 'run', '--units', json.dumps([runner, hosted])]), \
                 patch.object(units, 'run', return_value=0) as run, patch('sys.stderr'), self.assertRaises(SystemExit):
             units.main()
