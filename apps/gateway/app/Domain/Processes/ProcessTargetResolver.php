@@ -195,7 +195,7 @@ final readonly class ProcessTargetResolver
 
             return new ProcessTarget(
                 node: $instance->node,
-                user: InstanceHostIntent::WebUser,
+                user: InstanceHostIntent::AppUser,
                 checkoutPath: $directory,
                 instance: $instance,
                 environmentFile: "{$directory}/.env",

@@ -410,8 +410,8 @@ Deno.test({
             // and when the build container's init took the NIC address filters (the same 57 calls, its init has two `--device` keys more);
             // and when the image named the trust module in agent's NSS store (the library check, the store's folders and its file: three calls more);
             // and when the normal image's sudo audit required agent's grant (ADR 0268, amendment: the same 60 calls, one audit text changed);
-            // and when the app user and its group became `web` (ADR 0268, second amendment: the same 60 calls, the setup script and the audit changed).
-            assertEquals([f.calls().length, digest], [60, "bce17aacb6d0d6db4032bc53efc6688701405f4b9da4163d1144f2bcd9e298f8"]);
+            // and when the app account became the stock `www-data` (ADR 0268, second amendment: the same 60 calls, the setup script and the audit changed).
+            assertEquals([f.calls().length, digest], [60, "84c5b813652ca37f6337f63a18289a93d8f789ce02a3d13a1b1ae54e08a1842f"]);
             assert(f.calls().some((call) => call.includes("exec") && call.at(-1) === "update-ca-certificates"));
             assert(f.calls().some((call) => call.includes("exec") && call.slice(-3).join(" ") === "rm -f /etc/ld.so.cache"));
             assert(f.calls().some((call) => call[0] === "query" && call.at(-1) === "/1.0/instances?all-projects=true&recursion=1"));
@@ -468,14 +468,15 @@ Deno.test({
                 { content: "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", mode: "0440", uid: "0", gid: "0" });
             const audit = exec(["sh"]).find((call) => call.at(-1)!.includes("getent passwd ubuntu"))!.at(-1)!;
             for (const check of ["/etc/sudoers.d/orbit-agent", "incus-admin:[^:]*:[0-9]*:agent", "visudo -cqf", "runuser -u agent -- sudo -n true",
-                "runuser -u web -- sudo -n true 2>/dev/null && echo web:sudo"]) {
+                "runuser -u www-data -- sudo -n true 2>/dev/null && echo www-data:sudo", "echo orbit:ids", "echo work:gid"]) {
                 assertStringIncludes(audit, check);
             }
             // The normal build audits the same grant (ADR 0268, amendment), and that it has no `incus-admin` group.
             const normalAudit = f.calls().filter((call) => call.includes("orbit-instances") && call[0] === "exec" && call.at(-1)!.includes("getent passwd ubuntu"));
             assertEquals(normalAudit.length, 1);
             for (const check of ["/etc/sudoers.d/orbit-agent", "visudo -cqf", "runuser -u agent -- sudo -n true",
-                "runuser -u web -- sudo -n true 2>/dev/null && echo web:sudo", "getent group incus-admin >/dev/null && echo incus-admin:unexpected"]) {
+                "runuser -u www-data -- sudo -n true 2>/dev/null && echo www-data:sudo", "getent group incus-admin >/dev/null && echo incus-admin:unexpected",
+                "getent passwd orbit >/dev/null && echo user:orbit"]) {
                 assertStringIncludes(normalAudit[0].at(-1)!, check);
             }
             assert(!normalAudit[0].at(-1)!.includes("incus-admin:[^:]*:[0-9]*:agent"));
@@ -603,17 +604,22 @@ const auditVars = (() => {
 })();
 const nestedAudit = auditVars.image_audit + auditVars.image_nested_audit;
 const normalAudit = auditVars.image_audit + auditVars.image_normal_audit;
+/** A nested-fleet image's own accounts: `orbit` (1000) and `work` (2760) beside `www-data`. */
+const nested = { users: "agent orbit www-data", groups: "agent orbit work www-data", orbit: "1000", work: "2760" };
 
-// The image's accounts: `web` is `uid:gid` or "" when it is missing; `users` and `groups` are the names that `getent` finds.
+// The image's accounts: `app` is `www-data`'s `uid:gid` or "" when it is missing; `orbit` is `orbit`'s uid; `users` and `groups` are the
+// names that `getent` finds, and `work` is the gid it prints for the group `work`.
 const runAudit = (audit: string, {
     visudo = 'echo "$2: parsed OK"',
     incusAdmin = true,
     grant = "agent ALL=(ALL:ALL) NOPASSWD: ALL\n",
     webSudo = false,
-    web = "1000:2760",
-    agentGroups = "agent web",
-    users = "agent web",
-    groups = "agent web",
+    app = "33:33",
+    agentGroups = "agent www-data",
+    users = "agent www-data",
+    groups = "agent www-data",
+    orbit = "",
+    work = "",
 } = {}) => {
     const folder = Deno.makeTempDirSync();
     try {
@@ -625,9 +631,11 @@ const runAudit = (audit: string, {
             // `sudo` and `admin` exist without members.
             getent: (incusAdmin ? '[ "$1 $2" = "group incus-admin" ] && echo incus-admin:x:994:agent && exit 0; ' : "") +
                 '[ "$1 $2" = "group incus-admin" ] && exit 2; [ "$1 $2 $3" = "group sudo admin" ] && exit 0; ' +
+                `[ "$1 $2" = "group work" ] && [ -n '${work}' ] && echo 'work:x:${work}:' && exit 0; ` +
                 `case " $([ "$1" = passwd ] && echo '${users}' || echo '${groups}') " in *" $2 "*) exit 0;; esac; exit 2`,
-            id: `case "$1 $2" in "-u web") [ -n '${web}' ] && echo '${web.split(":")[0]}';; ` +
-                `"-g web") [ -n '${web}' ] && echo '${web.split(":")[1] ?? ""}';; "-nG agent") echo '${agentGroups}';; *) exit 1;; esac`,
+            id: `case "$1 $2" in "-u www-data") [ -n '${app}' ] && echo '${app.split(":")[0]}';; ` +
+                `"-g www-data") [ -n '${app}' ] && echo '${app.split(":")[1] ?? ""}';; "-u orbit") [ -n '${orbit}' ] && echo '${orbit}';; ` +
+                `"-nG agent") echo '${agentGroups}';; *) exit 1;; esac`,
             runuser: webSudo ? "true" : '[ "$2" = agent ]',
             visudo,
         };
@@ -648,37 +656,35 @@ const runAudit = (audit: string, {
 };
 
 Deno.test({
-    name: "the normal image's audit requires agent's one grant, no sudo for web and no incus-admin group",
+    name: "the normal image's audit requires agent's one grant, no sudo for www-data and no incus-admin group",
     fn() {
         assertEquals(runAudit(normalAudit, { incusAdmin: false }), "");
         assertEquals(runAudit(normalAudit, { incusAdmin: true }), "incus-admin:unexpected\n");
         assertEquals(runAudit(normalAudit, { incusAdmin: false, grant: "" }), "agent:grant\n");
         assertEquals(runAudit(normalAudit, { incusAdmin: false, grant: "agent ALL=(ALL:ALL) ALL\n" }), "agent:grant\n");
-        assertEquals(runAudit(normalAudit, { incusAdmin: false, webSudo: true }), "web:sudo\n");
+        assertEquals(runAudit(normalAudit, { incusAdmin: false, webSudo: true }), "www-data:sudo\n");
         // The nested-fleet image keeps its incus-admin check on top of the same grant.
-        assertEquals(runAudit(nestedAudit), "");
-        assertEquals(runAudit(nestedAudit, { incusAdmin: false }), "incus-admin:unexpected\n");
+        assertEquals(runAudit(nestedAudit, nested), "");
+        assertEquals(runAudit(nestedAudit, { ...nested, incusAdmin: false }), "incus-admin:unexpected\n");
     },
 });
 
 Deno.test({
-    name: "the image's audit requires web as uid 1000 in the group web, agent in web, and no user or group of the old names",
+    name: "the image's audit requires www-data as 33:33 with agent in its group; only the nested-fleet image keeps orbit 1000 and work 2760",
     fn() {
-        // ADR 0268, second amendment: no user or group in a container is named `orbit` or `work`, and no group holds gid 1000.
-        for (const audit of [normalAudit, nestedAudit]) {
-            const incusAdmin = audit === nestedAudit;
-            assertEquals(runAudit(audit, { incusAdmin }), "");
-            // An image of the old setup: `orbit` with the group `orbit` (1000), and the group `work` (2760).
-            assertEquals(runAudit(audit, { incusAdmin, web: "", agentGroups: "agent work", users: "agent orbit", groups: "agent orbit work 1000" }),
-                "web:ids\nagent:group\nuser:orbit\ngroup:orbit\ngroup:work\ngroup:1000\n");
-            assertEquals(runAudit(audit, { incusAdmin, web: "1000:1000" }), "web:ids\n");
-            assertEquals(runAudit(audit, { incusAdmin, agentGroups: "agent" }), "agent:group\n");
-            assertEquals(runAudit(audit, { incusAdmin, groups: "agent web work" }), "group:work\n");
-        }
+        // ADR 0268, second amendment: the app account is the stock `www-data`. A normal image has no `orbit`, `work` or gid 1000.
+        assertEquals(runAudit(normalAudit, { incusAdmin: false }), "");
+        assertEquals(runAudit(normalAudit, { incusAdmin: false, agentGroups: "agent work", users: "agent orbit www-data",
+            groups: "agent orbit work 1000 www-data" }), "agent:group\nuser:orbit\ngroup:orbit\ngroup:work\ngroup:1000\n");
+        assertEquals(runAudit(normalAudit, { incusAdmin: false, app: "1000:2760" }), "www-data:ids\n");
+        // The nested-fleet image keeps `orbit` (1000) and `work` (2760) for its inner fleet, and `agent` is in `www-data` there too.
+        assertEquals(runAudit(nestedAudit, nested), "");
+        assertEquals(runAudit(nestedAudit, { ...nested, orbit: "", work: "" }), "orbit:ids\nwork:gid\n");
+        assertEquals(runAudit(nestedAudit, { ...nested, agentGroups: "agent work incus-admin" }), "agent:group\n");
     },
 });
 
-const runNestedAudit = (visudo: string) => runAudit(nestedAudit, { visudo });
+const runNestedAudit = (visudo: string) => runAudit(nestedAudit, { ...nested, visudo });
 
 Deno.test({
     name: "the nested-fleet audit judges visudo by its exit code, not by what it prints",

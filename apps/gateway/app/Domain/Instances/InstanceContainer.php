@@ -903,8 +903,8 @@ final readonly class InstanceContainer
         $path = self::path($project);
         $php = InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin';
         $config = self::FrankenPhpConfig;
-        $user = InstanceHostIntent::WebUser;
-        $home = InstanceHostIntent::WebHome;
+        $user = InstanceHostIntent::AppUser;
+        $home = InstanceHostIntent::AppHome;
         $hotUrl = $devServerPort !== null && $instance->placementEnvironment() === 'development'
             ? "\nEnvironment=INERTIA_SSR_HOT_URL=http://127.0.0.1:{$devServerPort}" : '';
 

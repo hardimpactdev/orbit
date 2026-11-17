@@ -102,11 +102,11 @@ final readonly class SystemdProcessRenderer
             'Type=simple',
             "User={$user}",
             // In an Instance container, as FrankenPHP: group `web`, files shared with the group, and the runtime folder's programs.
-            ...($target->container === null ? [] : ['Group='.InstanceHostIntent::WebUser, 'UMask=0007']),
+            ...($target->container === null ? [] : ['Group='.InstanceHostIntent::AppUser, 'UMask=0007']),
             'WorkingDirectory='.$this->escapeDirectivePath($process->working_directory ?? throw new InvalidArgumentException('Systemd requires a working directory.')),
             ...($target->container === null || $target->instance === null
                 ? ['Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin']
-                : ['Environment=HOME='.InstanceHostIntent::WebHome, 'Environment=PATH='.InstanceContainer::path($target->instance->project)]),
+                : ['Environment=HOME='.InstanceHostIntent::AppHome, 'Environment=PATH='.InstanceContainer::path($target->instance->project)]),
             'Environment=NODE_USE_SYSTEM_CA=1',
             ...$environmentFileLine,
             ...($this->managedEnvironment($process, $target) === [] ? [] : ['EnvironmentFile='.$this->environmentPath($process, $target)]),

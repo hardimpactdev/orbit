@@ -607,7 +607,7 @@ Deno.test({
             // The build ran the Gateway's real setup script. A started stock container has cloud-init's group `lxd` on gid 1000, and the
             // fixture's `groupadd` and `useradd` refuse a taken id or a missing group, as the real ones do. No group keeps gid 1000.
             assert(
-                f.instances.image.prepare.includes("groupadd --gid 2760 web\nuseradd --uid 1000 --gid web"),
+                f.instances.image.prepare.includes("usermod --append --groups www-data agent\n") && !f.instances.image.prepare.includes("--gid 1000"),
             );
             // Cloud-init's first boot ends before anything runs in the build container, so it cannot add a sudo user after the setup.
             const inBuild = f.calls().filter((c) =>
