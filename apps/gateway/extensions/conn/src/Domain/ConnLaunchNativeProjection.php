@@ -63,7 +63,8 @@ final readonly class ConnLaunchNativeProjection implements DirectOperationProjec
      */
     private static function preparation(Operation $operation, array $receipt): array
     {
-        $expected = $operation->input['intent']['environment_id'] ?? null;
+        $intent = ValidatedData::object($operation->input['intent']);
+        $expected = $intent['environment_id'] ?? null;
         $incarnation = $receipt['incarnation'] ?? null;
         $project = $receipt['project_id'] ?? null;
         $requestedAvailable = $receipt['requested_provider_available'] ?? null;

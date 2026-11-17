@@ -36,6 +36,7 @@ use Orbit\Extensions\Conn\Actions\ControlConnLaunchAction;
 use Orbit\Extensions\Conn\Actions\PublishConnLaunchAction;
 use Orbit\Extensions\Conn\Domain\ConnLaunchChild;
 use Orbit\Extensions\Conn\Domain\ConnLaunchDispatchSource;
+use Orbit\Extensions\Conn\Domain\ConnLaunchSettlement;
 use Orbit\Extensions\Conn\Domain\ConnLaunchStage;
 use Orbit\Extensions\Conn\Domain\ConnLaunchState;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
@@ -703,6 +704,44 @@ describe('launch control and progress', function (): void {
         callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()->assertJsonPath('data.phase', 'ready')
             ->assertJsonPath('data.thread.thread_id', $body['thread_id']);
     })->with(['workspace still present' => false, 'workspace removed' => true]);
+
+    it('finishes a cancel before any work through the recorded reconciliation pass', function (): void {
+        launchFixtureDefault();
+        $body = [...$this->body, 'target' => ['kind' => 'new', 'name' => 'cancel-before-preparation']];
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $body, $this->key)->assertAccepted()->json('data.id');
+        $before = Instance::query()->count();
+        callLaunchApi($this->desktop, 'POST', "conn/launches/{$id}/cancel")->assertAccepted();
+        app(ConnLaunchSettlement::class)->sweep();
+        expect(Instance::query()->count())->toBe($before)->and(ConnLaunchIntent::query()->find($id))->toBeNull();
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()->assertJsonPath('data.phase', 'cancelled')
+            ->assertJsonPath('data.children.create_operation_id', null);
+    });
+
+    it('keeps cancelling until the exact timed-out probe settles and its session cannot survive', function (): void {
+        InstanceRuntime::query()->create(['instance_id' => $this->instance->id, 'node_id' => $this->host->id,
+            'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$this->instance->id, 'bridge_address' => '10.253.0.2',
+            'runtime_version' => 'fixture-runtime', 'agent_version' => 'fixture-agent', 'power_state' => InstanceRuntimePowerState::Running]);
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
+        $settlement = app(ConnLaunchSettlement::class);
+        $settlement->advance(Operation::query()->findOrFail($id));
+        $parent = Operation::query()->findOrFail($id);
+        $probe = Operation::query()->findOrFail($parent->state['launch_inspect_operation_id']);
+        expect($probe->kind)->toBe(OperationKinds::ConnLaunchInspect)->and($probe->triggered_by)->toBe($parent->triggered_by);
+        $probe->update(['status' => OperationStatus::Failed, 'finished_at' => now()->subMinutes(3), 'error_code' => 'operation.timed_out',
+            'state' => ['native_timeout' => ['native_terminal_status' => 'unproven']]]);
+        callLaunchApi($this->desktop, 'POST', "conn/launches/{$id}/cancel")->assertAccepted();
+        $settlement->advance($parent->refresh());
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()->assertJsonPath('data.phase', 'cancelling');
+
+        $probe->update(['state' => ['native_timeout' => ['native_terminal_status' => 'failed']], 'finished_at' => now()]);
+        $settlement->advance($parent->refresh());
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()->assertJsonPath('data.phase', 'cancelling');
+        $this->travel(121)->seconds();
+        $settlement->advance($parent->refresh());
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()->assertJsonPath('data.phase', 'cancelled')
+            ->assertJsonPath('data.children.destroy_operation_id', null);
+        expect(Instance::query()->find($this->instance->id))->not->toBeNull();
+    });
 
     it('stops polling a ready launch whose preparation found no application work', function (): void {
         $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');

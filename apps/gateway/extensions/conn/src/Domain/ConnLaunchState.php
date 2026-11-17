@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Domain;
 
+use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -53,7 +54,7 @@ final readonly class ConnLaunchState
             $recorded = Arr::get($state, 'launch_children.'.$role->value);
             if (is_array($recorded)) {
                 $previous = $role->operation($launch) ?? throw new LogicException('The launch child is missing.');
-                if (($recorded['key'] ?? null) === $key || ! $previous->status->terminal() || $previous->status === OperationStatus::Succeeded) {
+                if (($recorded['key'] ?? null) === $key || ! app(NativeRunCancellation::class)->settled($previous) || $previous->status === OperationStatus::Succeeded) {
                     return $previous;
                 }
                 $retryTarget = $role === ConnLaunchChild::Completion ? 'application' : 'launch';
@@ -81,6 +82,9 @@ final readonly class ConnLaunchState
                 throw new LogicException('The child does not match the admitted Conn launch target and owner.');
             }
 
+            if ($owned) {
+                $this->store->change($child, ['state' => [...($child->state ?? []), 'conn_launch_owner' => $launch->id]]);
+            }
             $state['launch_instance_id'] = $child->target_id;
             if (is_array($recorded)) {
                 $path = 'launch_child_history.'.$role->value;
@@ -173,7 +177,7 @@ final readonly class ConnLaunchState
             $previousId = $state['launch_dispatch_operation_id'] ?? null;
             if ($recovery && is_int($previousId)) {
                 $previous = Operation::query()->findOrFail($previousId);
-                if (! $previous->status->terminal() || ! Arr::has($state, 'launch_retry_requests.launch')) {
+                if (! app(NativeRunCancellation::class)->settled($previous) || ! Arr::has($state, 'launch_retry_requests.launch')) {
                     return $previous;
                 }
             }
@@ -204,6 +208,7 @@ final readonly class ConnLaunchState
                 || ($child->input['launch_operation_id'] ?? null) !== $launch->id || $child->idempotency_key === null || $child->id === $previousId) {
                 throw new LogicException('The handoff must bind its originating launch, Instance, Node and caller.');
             }
+            $this->store->change($child, ['state' => [...($child->state ?? []), 'conn_launch_owner' => $launch->id]]);
             Arr::forget($state, 'launch_retry_requests.launch');
             $state['launch_dispatch_operation_id'] = $child->id;
             $state['launch_phase'] = 'dispatching';
@@ -392,7 +397,15 @@ final readonly class ConnLaunchState
     /** @param list<ConnLaunchChild> $roles */
     private static function hasOpenOwnedWork(Operation $launch, array $roles): bool
     {
-        return array_any($roles, static fn (ConnLaunchChild $role): bool => self::owns($launch->state ?? [], $role)
-            && $role->operation($launch)?->status->terminal() !== true);
+        $cancellation = app(NativeRunCancellation::class);
+
+        return array_any($roles, static function (ConnLaunchChild $role) use ($launch, $cancellation): bool {
+            if (! self::owns($launch->state ?? [], $role)) {
+                return false;
+            }
+            $operation = $role->operation($launch);
+
+            return $operation === null || ! $cancellation->settled($operation);
+        });
     }
 }

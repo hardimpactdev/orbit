@@ -10,6 +10,7 @@ use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationReconcileHealth;
+use App\Domain\Operations\OperationRecordCoordinator;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\RetiredOperationSettlement;
@@ -112,6 +113,14 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             Log::warning('The warm proof copies could not be kept; the next pass tries again.', ['exception_type' => $exception::class]);
         }
         app(RoutePublicationHolds::class)->sweep();
+
+        foreach (app()->tagged(OperationRecordCoordinator::class) as $coordinator) {
+            try {
+                $coordinator->sweep();
+            } catch (Throwable $exception) {
+                Log::warning('A record coordinator could not advance its Operations.', ['exception_type' => $exception::class]);
+            }
+        }
 
         return $operations;
     }

@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationRequestFingerprint;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Requests\Operations\StartsOperation;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -87,6 +88,7 @@ final readonly class AdmitConnLaunchAction
                     ], 'node:'.$caller->id, $requestId);
                 ConnLaunchIntent::query()->create(['operation_id' => $operation->id, 'request' => $input->privateRequest()]);
                 $this->store->change($operation, ['state' => ['launch_phase' => 'preparing']]);
+                ReconcileSwampOperations::dispatch()->afterCommit();
 
                 return $operation;
             });

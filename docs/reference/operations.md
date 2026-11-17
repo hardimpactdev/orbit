@@ -220,6 +220,8 @@ A projection that implements `DirectOperationTimeout` records its documented fai
 
 The hold has a limit. When nothing proves the end of the run within 60 minutes of the expiry, the minute reconcile job frees the target and records `native_terminal_status: unproven`. A run that was asked to cancel an hour ago and never reported is lost, and a lost run must not hold a group or a VM for ever.
 
+A Conn launch keeps its owned child hold while native settlement is unproven. The reconciler still looks up the exact run or verifies that no run started. This protects the next dispatch, retry, or teardown from work that could still act.
+
 For an unbound timed-out admission, the existing exact lookup by Operation identity releases the hold only when Serve proves there is no matching run. A matching run binds without reopening the timeout; ambiguity or an unavailable lookup keeps the hold. A valid native terminal with `completedAt` at or before the deadline wins in the shared history read, even when its projection arrives late, so it causes no timeout or timeout alert.
 
 This is the Gateway's budget result, not proof that the native run or its descendants stopped. At expiry the Gateway records `state.native_cancel_requested_at` once. The reconciler asks Swamp to cancel the bound run, as an operator cancel does, and records `state.native_cancel_confirmed_at` when Swamp confirms. Swamp stops the run; the Gateway only forwards the request, and each pass asks again until Swamp confirms. An Operation with no bound run has nothing to cancel.

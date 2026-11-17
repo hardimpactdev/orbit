@@ -43,6 +43,20 @@
           - not inspect or intent.requested_provider is not defined or intent.requested_provider is match('^[a-zA-Z0-9._:-]{1,128}$')
         fail_msg: conn.launch_invalid_dispatch
 
+    # A resumed phase may inherit the private run file after its first call lost the reply.
+    # A run gets one send claim. Recovery runs use the read-only action.
+    - name: Claim the first send
+      ansible.builtin.command:
+        argv: [/usr/bin/mkdir, -m, '0700', "{{ run }}/first-send"]
+      register: send_claim
+      changed_when: send_claim.rc == 0
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      when: intent.action == 'launch'
+
     - name: Attempt the admitted T3 call
       ansible.builtin.command:
         argv: >-

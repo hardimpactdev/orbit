@@ -108,6 +108,7 @@ jobs:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
       - name: cleanup
         labels: {role: swamp}
+        writes: true
         dependsOn: [{step: result, condition: {type: always}}]
         task:
           type: behavior

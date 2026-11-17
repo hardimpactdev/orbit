@@ -68,7 +68,7 @@ final readonly class PublishConnLaunchAction
             }
             $refs = $workspace['projectRefs'] ?? [];
             if (is_array($refs) && ! in_array($projectRef, $refs, true)) {
-                $workspaces[$key]['projectRefs'] = [...$refs, $projectRef];
+                $workspaces[$key] = [...$workspace, 'projectRefs' => [...$refs, $projectRef]];
                 $writes[ConnProfileSections::Workspaces] = $workspaces;
             }
             break;

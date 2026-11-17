@@ -73,17 +73,19 @@ final readonly class ExpireOperationAction
 
     /**
      * Frees the target of a timed-out Operation after `HoldMinutes` without proof that its run ended: a run that was asked to cancel an
-     * hour ago and still has no terminal is lost, and a lost run must not hold its target for ever. Returns how many it freed.
+     * hour ago and still has no terminal is lost, and a lost run must not hold its target for ever. Conn launch children keep
+     * their hold because the parent must verify a native terminal before dispatch, recovery or owned resource removal.
+     * Returns how many it freed.
      */
     public function releaseStaleHolds(): int
     {
         $freed = 0;
         $stale = Operation::query()->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->whereNotNull('lock_key')
-            ->where('finished_at', '<', now()->subMinutes(self::HoldMinutes))->pluck('id');
+            ->whereNull('state->conn_launch_owner')->where('finished_at', '<', now()->subMinutes(self::HoldMinutes))->pluck('id');
         foreach ($stale as $id) {
             DB::transaction(function () use ($id, &$freed): void {
                 $current = Operation::query()->lockForUpdate()->whereKey($id)->firstOrFail();
-                if (! self::awaitsSettlement($current)) {
+                if (! self::awaitsSettlement($current) || isset($current->state['conn_launch_owner'])) {
                     return;
                 }
                 $timeout = $current->state['native_timeout'] ?? [];

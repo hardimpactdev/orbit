@@ -78,11 +78,11 @@ final readonly class InstanceWake extends InstancePower
      */
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
-        return $this->resume($this->begin($instance, $caller, $requestId));
+        return $this->resume($this->admitDeferred($instance, $caller, $requestId));
     }
 
-    /** The admission of start(): a wake, joined when one is open, or the start of a nested-fleet clone. */
-    private function begin(Instance $instance, ?string $caller, ?string $requestId): Operation
+    /** Record the same wake or join without waiting for Node resume. Its safety net starts the native workflow if needed. */
+    public function admitDeferred(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
         $runtime = $instance->runtime()->first();
         if (! NestedFleetIntent::cloneKeepsFleet($instance, $runtime) || ($runtime !== null && self::frozen($runtime, $instance))) {
@@ -289,7 +289,7 @@ final readonly class InstanceWake extends InstancePower
         }
         try {
             // A Route visit takes the same admission as the command: a nested-fleet clone that no sleep froze takes its start.
-            $operation = $this->begin($instance, $caller, null);
+            $operation = $this->admitDeferred($instance, $caller, null);
             if ($operation->wasRecentlyCreated && self::awaitsNode($operation)) {
                 // A 401 page is no success, so the callback must run always. A worker that dies here leaves the safety net's run.
                 defer(function () use ($operation): void {

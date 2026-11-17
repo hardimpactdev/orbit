@@ -7,6 +7,7 @@ namespace Orbit\Extensions\Conn\Actions;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
 use App\Models\Operation;
 use Closure;
@@ -45,6 +46,7 @@ final readonly class ControlConnLaunchAction
             Arr::set($state, 'launch_stages.'.ConnLaunchStage::Cleanup->value, ConnLaunchStage::Cleanup->fact('running', ConnLaunchStage::at($now)));
             $this->store->change($launch, ['state' => $state, 'cancel_requested_at' => $now, 'status' => OperationStatus::Waiting,
                 'started_at' => $launch->started_at ?? $now, 'error_code' => null]);
+            ReconcileSwampOperations::dispatch()->afterCommit();
         });
     }
 
@@ -76,6 +78,7 @@ final readonly class ControlConnLaunchAction
                 };
             }
             $this->store->change($launch, ['state' => $state, ...($target === 'launch' ? ['status' => OperationStatus::Waiting, 'error_code' => null] : [])]);
+            ReconcileSwampOperations::dispatch()->afterCommit();
         });
     }
 
