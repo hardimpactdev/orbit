@@ -26,6 +26,7 @@ The converge writes:
 | `/etc/orbit/executor/gateway.pub` | One or two Gateway Ed25519 public keys, base64, one per line. The Gateway setting `ORBIT_EXECUTOR_PUBLIC_KEYS` names them |
 | `/etc/orbit/executor/node` | The Node id |
 | `/etc/orbit/executor/enabled` | The enabled families, one per line |
+| `/etc/orbit/executor/restore-threads` | The [restore pool](#rust-wake)'s size, 32; the executor refuses fewer than 16 |
 | `/etc/systemd/system/orbit-executor.service` | A plain service that runs `orbit-executor serve`, with `Restart=always` |
 | `/etc/sudoers.d/orbit-executor-relay` | The Node user may run exactly `orbit-executor relay` as `orbit-executor-relay` |
 
