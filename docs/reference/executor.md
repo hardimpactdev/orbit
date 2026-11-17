@@ -228,8 +228,20 @@ The cases `executor-order-security` and `executor-websocket-burst` (50 orders, w
 
 Two cases prove the slice 3 row of ADR 0266: "50 round trips; result in a waiting request; a lost result recovered by a repeat".
 
-- `executor-round-trip` runs `executor_round_trip` with `count: 50`. The proof support runs 50 `executor.proof` Operations, one after another. Each one publishes its order and waits with `ExecutorResultWait`. Each trip needs a `done` result in the waiter, the same line recorded on its Operation by the listener, and one `done` record for its Operation in the executor's journal. The evidence `executor-round-trip-<operation>.json` holds every trip and the latency from just before the publish to the result in the waiter as p50, p95 and max. It also holds the time to the `accepted` line and the wait's bound.
-- `executor-lost-result` runs `executor_lost_result`. The proof support runs one `executor.proof` order. A first wait takes its result and drops it, and the support deletes the Operation's Valkey keys. A second wait must then time out. The support then sends a new order, with a new nonce, for the same Operation. The step needs these results: `repeat: true`; the same result as the first, apart from `repeat` and the Node's clock; the first result kept on the Operation; the Operation `succeeded`; and one `done` record for it in the journal.
+**`executor-round-trip`** runs `executor_round_trip` with `count: 50`. The proof support runs 50 `executor.proof` Operations, one after another. Each one publishes its order and waits with `ExecutorResultWait`. Each trip needs three things:
+
+- a `done` result in the waiter;
+- the same line recorded on its Operation by the listener;
+- one `done` record for its Operation in the executor's journal.
+
+The evidence `executor-round-trip-<operation>.json` holds every trip. It gives the latency from just before the publish to the result in the waiter as p50, p95 and max, the time to the `accepted` line, and the wait's bound.
+
+**`executor-lost-result`** runs `executor_lost_result`. The proof support runs one `executor.proof` order. A first wait takes its result and drops it. The support then deletes the Operation's Valkey keys, and a second wait must time out. Next it sends a new order, with a new nonce, for the same Operation. The step needs:
+
+- `repeat: true` in the waiter;
+- the same result as the first, apart from `repeat` and the Node's clock;
+- the first result kept on the Operation, and the Operation `succeeded`;
+- one `done` record for the Operation in the journal.
 
 **Measured.** On 2026-11-17, task 5739 ran both steps by hand on its copy's nested fleet, without the converge. The executor and an observer with the pass-through were built from the branch and installed on the nested `app-dev` Node. The proof key was pinned through `executor_key`'s script. Three runs of 50 round trips each, from publish to the result in the waiting request:
 
