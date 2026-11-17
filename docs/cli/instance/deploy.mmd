@@ -95,6 +95,13 @@ sequenceDiagram
   end
   opt Development default in a container
     Note over SW: Write the container intent<br/>ansible-input
+    SW->>GW: Hold the seed<br/>seed-hold call
+    %%> When:
+    %%> - only the proof Project's default, whose seed a seed copy sends; its container intent has `seed_hold`; every other default skips the step
+    %%> What it does:
+    %%> - asks the Gateway for the default's seed hold before any phase and waits while a seed copy holds it, for up to 1,800 s; the deployment then holds the seed to its end (docs/reference/development-containers.md#the-seed-hold, container/deploy-default.mmd)
+    %%> On failure:
+    %%> - the hold stays busy to the bound: `instance.seed_hold_timeout`; nothing changed and no seed is restored
     SW->>N: Prepare the container<br/>Ansible · start · fetch
     %%> What it does:
     %%> - one play runs the phases `start` and `fetch`, in this order; a nested-fleet default runs `start`, `fleet_start`, `seed` and `fetch`
