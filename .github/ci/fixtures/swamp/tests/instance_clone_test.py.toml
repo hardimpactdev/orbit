@@ -119,7 +119,7 @@ cases = [
   "test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 157
+cost = 150
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -156,19 +156,19 @@ inputs = [
   "test_unreachable_frozen_commit_fails_without_using_current_tip" = 2
   "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start" = 2
   "test_clone_launch_applies_mail_without_another_playbook" = 2
-  "test_clone_uses_the_admitted_common_acl_name" = 2
+  "test_clone_uses_the_admitted_common_acl_name" = 1
   "test_clone_refuses_unsafe_effective_nics_before_start" = 2
-  "test_normal_clone_uses_the_exact_original_checker_program_and_argv" = 2
+  "test_normal_clone_uses_the_exact_original_checker_program_and_argv" = 1
   "test_nic_check_refuses_a_nic_without_filters_with_exit_2_and_exempts_a_nic_without_its_own_address" = 2
   "test_clone_refuses_a_copy_without_filters_with_the_filters_code_before_start" = 2
   "test_nested_guard_refuses_a_nic_without_filters_with_the_filters_code" = 2
   "test_the_three_holders_of_the_nic_filters_are_equal" = 1 # 2026-11-15: 0.001 s measured locally
   "test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code" = 2
-  "test_guest_and_node_command_names_stay_in_sync" = 2
-  "test_preserves_only_the_guest_command_and_exit_code" = 2
-  "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code" = 2
-  "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code" = 2
-  "test_a_timeout_names_the_part_that_was_running" = 2
+  "test_guest_and_node_command_names_stay_in_sync" = 1
+  "test_preserves_only_the_guest_command_and_exit_code" = 1
+  "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code" = 1
+  "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code" = 1
+  "test_a_timeout_names_the_part_that_was_running" = 1
   "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful" = 2
 
 "test_schedule_cleanup_listing_error_refuses_before_clone_boot" = 2 # local completed under 2 s; conservative CI estimate
@@ -260,3 +260,5 @@ inputs = [
 "test_running_copy_or_an_empty_source_map_does_no_filesystem_work" = 1
 "test_an_unreadable_rootfs_or_xattr_refuses_by_name" = 1
 "test_unshift_translates_split_ranges_and_xattrs_without_changing_the_owner" = 1
+
+# Seven existing cases remeasured below 0.5 s each on 2026-11-17; 1 s estimates include at least 2x margin.
