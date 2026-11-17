@@ -48,7 +48,7 @@ final readonly class ApiDispatcher
             }
         }
 
-        $sendsBody = ! in_array($definition->method, ['GET', 'DELETE'], true) || $arguments !== [];
+        $sendsBody = $arguments !== [] || (! $definition->bodyless && ! in_array($definition->method, ['GET', 'DELETE'], true));
         $uri = $query === [] ? $path : $path.'?'.http_build_query($query);
 
         $request = Request::create(

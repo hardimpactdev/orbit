@@ -286,6 +286,8 @@ Every operation has the same fields, whatever its kind.
 
 A cancelled operation has an `error_code` only when a rollback superseded it: `operation.superseded`.
 
+Cancelling an open [executor diagnostic](/reference/executor#the-proof-operation) settles its Operation. A reply to an order already sent can still be recorded as evidence.
+
 `operation:show` and cancellation replies include observed native `steps`, in event order:
 
 | Field | Contract |

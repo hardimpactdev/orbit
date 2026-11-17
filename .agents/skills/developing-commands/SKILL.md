@@ -30,3 +30,5 @@ CI proof confirms an already-passing local proof. It is deliberately disabled by
 Watch CI, fix failures caused by the change and repeat affected proofs after fixes. Report unrelated failures separately. Publication is not merge or release approval. [Stage 5](../../../docs/reference/pipeline/5-automatic-release.mmd) and [stage 6](../../../docs/reference/pipeline/6-task-image-seed-refresh.mmd) own release and seed refresh; do not trigger a release to discover whether the feature works.
 
 Report the PR, tested checkout, cases and verdicts, checks, unresolved coverage and actual delivery state.
+
+When proof depends on acceptance before completion, bind both replies to the owning Node before queueing. Use one ordered list and exercise both lines already queued, completion alone, and acceptance from another Node.

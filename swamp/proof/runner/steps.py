@@ -775,15 +775,14 @@ def executor_runs(run, node, operation):
 def executor_round_trip(run, args):
     """`count` round trips on the waiting request's path (ADR 0266 slice 3), one after another, through the nested Gateway's proof
     support: each records an `executor.proof` Operation, publishes its signed order as `executor-order`, and waits for the result
-    with ExecutorResultWait within ORBIT_EXECUTOR_WAIT_MS. Every trip needs a `done` result in the waiter, the same result recorded
-    on its Operation by the listener, and one run in the executor's journal. The latency from publish to the result in the waiter
+    with ExecutorResultWait within ORBIT_EXECUTOR_WAIT_MS. Every trip needs an observed `accepted` before `done`, the same
+    result recorded on its Operation by the listener, and one run in the executor's journal. The latency from publish to the result in the waiter
     goes to the evidence as p50, p95 and max."""
     node = nodes_of(run, 'executor_round_trip', args['on'])[0]
     answer = executor_guest(run, {'mode': 'round_trip', 'node': run.fleet.nodes[node]['node_id'], 'count': args.get('count', 1)})
     trips = answer['round_trips']
     runs = [record.get('operation') for record in executor_done(run, node)]
     summary = latency_summary([trip['latency_ms'] for trip in trips])
-    # A trip that timed out saw no `accepted` line: it fails below and has no time to the line.
     accepted = [trip['accepted_ms'] for trip in trips if trip['accepted_ms'] is not None]
     summary.update({'wait_bound_ms': answer['wait_ms'], 'accepted_ms': latency_summary(accepted) if accepted else None,
                     'statuses': sorted({trip['status'] for trip in trips})})
@@ -794,6 +793,8 @@ def executor_round_trip(run, args):
         line = trip['line'] or {}
         if trip['status'] != 'done' or line.get('repeat') is not False:
             failures.append(f'executor {node}: Operation {operation} waited {trip["status"]}, line {line}')
+        elif trip['accepted_ms'] is None:
+            failures.append(f'executor {node}: Operation {operation} completed without prior acceptance')
         if trip['recorded'] != trip['line']:
             failures.append(f'executor {node}: Operation {operation} recorded {trip["recorded"]}, the waiter got {trip["line"]}')
         if runs.count(operation) != 1:
