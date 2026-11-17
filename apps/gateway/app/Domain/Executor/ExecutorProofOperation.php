@@ -19,10 +19,10 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * The proof-only Operation kind `executor.proof` (docs/reference/executor.md#the-proof-operation, ADR 0266 slice 3). Each one is a
- * durable Operation row on its Node, so the listener records its result like any other (D7). It sends the no-op `proof.noop` as
- * `executor-order` and waits for the result with {@see ExecutorResultWait}, the waiting request's path (D5). It starts no Swamp run
- * and changes nothing on the Node.
+ * The proof-only Operation kinds `executor.proof` and `executor.power_proof` (docs/reference/executor.md, ADR 0266 slices 3/4). Each is a
+ * durable Operation row on its Node, so the listener records its result like any other (D7). It sends `proof.noop`, or sleep/discard on an Instance, as
+ * `executor-order` and waits for the result with {@see ExecutorResultWait}, the waiting request's path (D5). It starts no Swamp run.
+ * The no-op changes nothing; the power proof hibernates the whole target.
  *
  * No route, CLI command, job or schedule names this kind: only the proof support on a nested Gateway
  * (`tools/swamp-proof-guest/executor-order.php`, run as that Gateway's managed user) calls this class.
@@ -73,7 +73,7 @@ final readonly class ExecutorProofOperation
         }
     }
 
-    /** Records a running `executor.proof` Operation on the Node; its target is the Node too, the target of `proof.noop`. Only {@see self::run} calls it. */
+    /** Records a running proof Operation on its Node or Instance target. Only {@see self::run} calls it. */
     private function start(Node $node, ?Instance $instance, string $action): Operation
     {
         $operation = $this->operations->create($instance === null ? OperationKinds::ExecutorProof : OperationKinds::ExecutorPowerProof, $instance === null ? 'node' : 'instance', $instance?->id ?? $node->id, $node->id,
@@ -92,7 +92,7 @@ final readonly class ExecutorProofOperation
     public function send(Operation $operation, ExecutorOrderSigner $signer): SignedExecutorOrder
     {
         if (! in_array($operation->kind, [OperationKinds::ExecutorProof, OperationKinds::ExecutorPowerProof], true) || $operation->status->terminal()) {
-            throw new InvalidArgumentException('Only an open executor.proof Operation sends a proof order.');
+            throw new InvalidArgumentException('Only an open executor proof Operation sends a proof order.');
         }
         $order = $signer->sign($operation, (string) ($operation->input['action'] ?? self::Action), (string) $operation->target_id);
         $this->publisher->publish($operation, $order);

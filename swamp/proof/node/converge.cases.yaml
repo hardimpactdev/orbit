@@ -26,6 +26,7 @@ uncovered:
   "admission:recorded-only": "Need request-time contact tracing to prove admission uses recorded state and never contacts the Node before starting the Operation, including with missing or stale agent facts. A missing agent report is not an additional eligibility refusal."
 
 waits:
+  clone_sleep: "ADR 0266 slice 4: needs a real executor-sleep-clone with T3/Vite, a current executor/observer delivery and host swap. Clone create currently fails instance.clone_private_names_failed (copied UID 131072, clone UID 196608); this copy also cannot enable swap (EPERM). Default-Instance stop-policy measurements are development evidence only. CI proof remains disabled. The required 30 clone sleep/wake cycles and Python comparison remain open."
   idmap: "A converge with the app-dev role runs nested-app-dev's roles phase, which builds the Instance host's stock image. That needs the default's 2,000,000 ID map; below it the phase fails with too few uid/gid. The owner schedules the ID map window; until then the plan skips these cases."
 
 cases:
@@ -183,6 +184,20 @@ cases:
     act:
       - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
       - executor_lost_result: {on: app-dev, operation: proof-lost-result}
+    expect:
+      - service: {on: app-dev, name: orbit-executor.service, state: active}
+
+  - id: executor-whole-container-sleep
+    batch: fresh-fleet
+    waits: clone_sleep
+    exclusive: true
+    covers: []
+    summary: A signed sleep of the real executor-sleep-clone with T3 and Vite records a durable power proof Operation, a complete whole-container plan, swap limits and the asleep marker.
+    fails_today: The real-clone fixture and host swap are unavailable; this smoke case does not replace ADR row 4's 30-cycle measurements.
+    setup:
+      - executor_key: {}
+    act:
+      - executor_power: {on: app-dev, instance: executor-sleep-clone, operation: whole-container-sleep}
     expect:
       - service: {on: app-dev, name: orbit-executor.service, state: active}
 

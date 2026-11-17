@@ -2,7 +2,7 @@
 title: "Executor"
 description: "How orbit-executor checks callers and signed orders, keeps its journal, serves the relay command, how the Gateway hands its results to a waiting request, and how the role converge installs it."
 covers:
-  - apps/agent/{crates/executor-core/**,crates/executor/**,clippy.toml,contract/fixtures/executor-order.json}
+  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/power/**,clippy.toml,contract/fixtures/executor-order.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
@@ -12,11 +12,11 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Slices 1 to 3 are built.** The executor, its install and its one action, the no-op `proof.noop`, exist. So do the Gateway signer and publisher, the observer's pass-through and the Gateway's [result listener](#the-listener-and-the-hand-off). An order goes out over the WebSocket, and its result comes back to its Operation. Only the proof-only [`executor.proof` Operation](#the-proof-operation) sends an order today; no Gateway command does. Sleep, wake and the create's Node part arrive in later slices.
+> **Slices 1 to 3 are proven; slice 4 awaits its clone proof.** The executor, its install and its proof action, the no-op `proof.noop`, exist. So do the Gateway signer and publisher, the observer's pass-through and the Gateway's [result listener](#the-listener-and-the-hand-off). An order goes out over the WebSocket, and its result comes back to its Operation. The proof-only [`executor.proof` Operation](#the-proof-operation) sends no-ops; `executor.power_proof` sends sleep/discard orders. Production commands keep their existing paths until the later cutover slices.
 
 ## Where it runs
 
-The role converge installs the executor only on a Node whose roles enable an action family. Today that is `app-dev`, which enables the `proof` family. A Node with several roles enables the union of their families.
+The role converge installs the executor only on a Node whose roles enable an action family. Today that is `app-dev`, which enables the `proof` and `power` families. A Node with several roles enables the union of their families.
 
 The converge writes:
 
@@ -79,7 +79,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 1. The size and the form (`order_too_large`, `order_malformed`).
 2. The signature, with `verify_strict` against each pinned key (`bad_signature`), then the payload's shape (`bad_payload`).
 3. The action is on the allowlist (`unknown_action`) and its family is enabled on this Node (`action_not_enabled`). A valid signature does not enable a family.
-4. The Node (`wrong_node`) and the target (`unknown_target`). The target of `proof.noop` is the Node itself.
+4. The Node (`wrong_node`) and the target (`unknown_target`). The target of `proof.noop` is the Node itself. Sleep targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 5. The expiry: past (`expired`), or more than 10 s ahead of the Node's clock (`expiry_too_far`).
 6. The nonce has never been seen, across restarts too (`replayed_nonce`). The refusal carries the first order's result once it exists.
 7. The Operation: a done record with the same Operation, action and target returns the first result, marked `"repeat": true`, and does not act.
@@ -92,7 +92,7 @@ Orders for one target run one at a time under that target's lock; different targ
 
 ## The Gateway signer and the event
 
-`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds exactly the six fields above, in that order, as compact JSON. The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. It also refuses an action outside the allowlist (today only `proof.noop`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds exactly the six fields above, in that order, as compact JSON. The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. It also refuses an action outside the allowlist (`proof.noop`, `sleep`, `discard`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 
 `App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
 
@@ -267,10 +267,17 @@ The executor wrote its `done` record 3–4 ms after the publish (median of 50 or
 
 ## Rust sleep and discard
 
-Slice 4 adds the `power` family on `app-dev`. Signed `sleep` and `discard` orders target an Instance. The proof-only durable `executor.power_proof` Operation exercises them; production `instance.sleep` keeps the Python flow until slices 7/8. The observer still passes bytes only.
+Slice 4 adds the `power` family on `app-dev`. Signed `sleep` and `discard` orders target an Instance. `executor.power_proof` exercises them through durable Operations used only by the proof; production `instance.sleep` keeps the Python flow until slices 7/8. The observer still passes bytes only.
 
 The executor records and atomically fsyncs every non-`max` swap limit in the whole container cgroup subtree before opening it. It freezes through the Incus local API, lists every subtree process and scans readable maps and pagemap in parallel. Its plan includes present and swapped pages (bits 63 and 62), process start times, boot id, Incus incarnation and cgroup identity. The plan is atomically published with fsync before reclaim. Reclaim waits for `memory.current` to settle, for at most two seconds. The 32 MiB residual anonymous policy remains: ordinary containers stop when memory stays; nested-fleet containers resume and fail instead. The asleep marker comes last.
 
 A repeat Operation returns its journaled result under the per-target lock. Startup repeats an open sleep and keeps a valid plan already published. `discard` removes the plan and limits record after a stop, destroy or fresh boot. The Rust state lives under `/var/lib/orbit/executor/power`; it does not replace the Python state yet. A container Incus calls running while the kernel holds it frozen refuses with `instance.container_frozen_unmanaged`, preserving its recovery state.
 
 The proof of record remains 30 sleeps of a real clone with T3 and Vite. Measurements of a default Instance with T3/Vite started by hand are development evidence only.
+
+| Error or result | Meaning |
+| --- | --- |
+| `instance.power_discard_failed` | The plan or limits record could not be removed. |
+| `instance.container_freeze_failed` | Freeze, reclaim or the swap-full policy failed. Frozen recovery state stays available. |
+| `instance.container_frozen_unmanaged` | Incus calls a container running while its kernel cgroup remains frozen. |
+| `skipped` plan | Capture could not produce a complete plan within its bounds. Sleep continues, and the private receipt records the reason. |

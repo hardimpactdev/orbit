@@ -14,6 +14,12 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as app-dev Node<br/>Instance container
+  Note over GW,N: Slice 4 proof: Rust sleep<br/>Incus freeze → scan → reclaim
+  %%> Executor proof path:
+  %%> - a durable executor.power_proof Operation signs sleep or discard; the observer only relays bytes
+  %%> - Rust records non-max swap limits and fsyncs; Incus API freeze; parallel whole-subtree capture includes pagemap bits 63 and 62
+  %%> - Rust atomically fsyncs the plan; reclaim settles within 2 s; the unchanged 32 MiB residual policy applies; the marker comes last
+  %%> - discard drops the Rust plan and limits after stop, destroy or fresh boot; no production flow switches in this slice
   CLI->>GW: instance:sleep INSTANCE
   %%> Command:
   %%> - `orbit instance:sleep INSTANCE`

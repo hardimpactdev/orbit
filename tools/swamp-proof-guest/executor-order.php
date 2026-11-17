@@ -252,11 +252,13 @@ function secret(string $secretPath): string
 function proofPower(array $input): array
 {
     $node = Node::query()->findOrFail((int) $input['node']);
-    $instance = Instance::query()->findOrFail((int) $input['instance']);
+    $target = (string) $input['instance'];
+    $instance = ctype_digit($target) ? Instance::query()->findOrFail((int) $target)
+        : Instance::query()->where('node_id', $node->id)->where('name', $target)->sole();
     $action = (string) ($input['action'] ?? 'sleep');
     $proof = app(ExecutorProofOperation::class);
 
-    return $proof->run($node, function (Closure $start) use ($proof): array {
+    return $proof->run($node, function (Closure $start) use ($proof, $instance): array {
         $operation = $start();
         $started = hrtime(true);
         $proof->send($operation, ExecutorOrderSigner::fromConfig());
@@ -264,7 +266,7 @@ function proofPower(array $input): array
         $latency = elapsedMs($started);
         $proof->finish($operation, $result);
 
-        return ['operation' => (string) $operation->id, 'latency_ms' => $latency] + waited($result)
-            + ['recorded' => $operation->refresh()->executor_result, 'status' => $operation->status->value];
+        return ['operation' => (string) $operation->id, 'instance' => $instance->id, 'instance_name' => $instance->name, 'latency_ms' => $latency] + waited($result)
+            + ['recorded' => $operation->refresh()->executor_result, 'operation_status' => $operation->status->value];
     }, $instance, $action);
 }

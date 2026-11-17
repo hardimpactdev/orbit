@@ -373,3 +373,59 @@ fn threaded_subgroups_without_a_memory_controller_do_not_block_sleep() {
     let limits: Limits = load(&power.state.join("2/limits.json")).expect("record");
     assert_eq!(limits.opened.len(), 1);
 }
+
+#[test]
+fn swap_full_resumes_a_nested_fleet_and_never_stops_it() {
+    let (_dir, power, mut api) = fixture();
+    let nested = power
+        .cgroups
+        .join("lxc.payload.orbit-instances-nested_instance-2");
+    fs::rename(&api.root, &nested).expect("nested cgroup");
+    api.root = nested;
+    api.instance.lock().expect("instance").project = "orbit-instances-nested".to_owned();
+    fs::write(
+        api.root.join("memory.stat"),
+        format!("anon {}\nfile 0\n", RESIDUAL_ANON + 1),
+    )
+    .expect("full swap");
+    assert_eq!(
+        power
+            .sleep_with(&api, "2", "op1")
+            .expect_err("nested never stops")
+            .to_string(),
+        "instance.container_freeze_failed"
+    );
+    assert_eq!(
+        *api.actions.lock().expect("actions"),
+        vec!["freeze", "unfreeze"]
+    );
+    assert_eq!(api.instance.lock().expect("instance").status, "running");
+    assert!(!power.state.join("2/plan.json").exists());
+    assert!(!power.state.join("2/limits.json").exists());
+    assert!(!power.markers.join("app-instance-2.asleep").exists());
+}
+
+#[test]
+fn a_refused_incus_freeze_restores_all_original_swap_limits() {
+    struct RefuseFreeze<'a>(&'a Fake);
+    impl Api for RefuseFreeze<'_> {
+        fn instance(&self, id: &str) -> io::Result<Option<Instance>> {
+            self.0.instance(id)
+        }
+        fn change(&self, _: &Instance, _: &str) -> io::Result<()> {
+            Err(invalid("freeze refused"))
+        }
+    }
+    let (_dir, power, api) = fixture();
+    fs::write(api.root.join("child/memory.swap.max"), "1234").expect("finite limit");
+    assert!(power.sleep_with(&RefuseFreeze(&api), "2", "op1").is_err());
+    assert_eq!(
+        read(&api.root.join("memory.swap.max")).expect("root limit"),
+        "0"
+    );
+    assert_eq!(
+        read(&api.root.join("child/memory.swap.max")).expect("child limit"),
+        "1234"
+    );
+    assert!(!power.state.join("2/limits.json").exists());
+}

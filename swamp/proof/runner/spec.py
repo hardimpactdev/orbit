@@ -44,6 +44,7 @@ STEPS = {
     'executor_order': (('act', 'expect'), {'on', 'operation', 'expect'}, {'as', 'nonce', 'save'}),
     'executor_publish': (('act', 'expect'), {'on', 'operation', 'expect'}, {'count', 'tamper', 'replay'}),
     'executor_round_trip': (('act', 'expect'), {'on', 'operation'}, {'count'}),
+    'executor_power': (('act', 'expect'), {'on', 'instance', 'operation'}, {'action'}),
     'executor_lost_result': (('act', 'expect'), {'on', 'operation'}, set()),
 }
 FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'waits', 'cases', 'spread', 'parallel'}

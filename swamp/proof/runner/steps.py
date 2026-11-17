@@ -806,6 +806,45 @@ def first_result(line):
     return {key: value for key, value in (line or {}).items() if key not in ('repeat', 'node_clock_ms')}
 
 
+def executor_power(run, args):
+    """One signed sleep/discard on a durable proof Operation, with an independent read of its on-Node receipt.
+    A real clone fixture with T3/Vite is required by the case; it is not created or reset by this step."""
+    node = nodes_of(run, 'executor_power', args['on'])[0]
+    action = args.get('action', 'sleep')
+    answer = executor_guest(run, {'mode': 'power', 'node': run.fleet.nodes[node]['node_id'],
+                                 'instance': args['instance'], 'action': action})
+    line = answer.get('line') or {}
+    operation = answer['operation']
+    failures = []
+    if answer.get('status') != 'done' or answer.get('operation_status') != 'succeeded' or line.get('status') != 'done' or answer.get('recorded') != line:
+        failures.append(f'executor {node}: power Operation {operation} did not complete and record its result')
+    if line.get('action') != action or line.get('target') != str(answer['instance']):
+        failures.append(f'executor {node}: power result has the wrong action or Instance')
+    if executor_runs(run, node, operation) != 1:
+        failures.append(f'executor {node}: power action must have exactly one done journal record')
+    instance = int(answer['instance'])
+    base = f'/var/lib/orbit/executor/power/{instance}'
+    if action == 'sleep':
+        read = run.fleet.sh(node, f'cat {base}/receipt.json')
+        if read.returncode:
+            raise Infra('executor power: no readable sleep receipt')
+        receipt = json.loads(read.stdout)
+        answer['receipt'] = receipt
+        if receipt.get('sleep') != 'frozen' or receipt.get('plan') != 'ready' or receipt.get('residual_anon_bytes', 1 << 63) > 32 << 20:
+            failures.append(f'executor {node}: clone did not hibernate with a complete plan within the residual policy')
+        if answer.get('instance_name') == 'default':
+            failures.append('executor power: a default Instance does not establish the real-clone proof')
+        check = run.fleet.sh(node, f'test -s {base}/plan.json && test -s {base}/limits.json && test -f /data/caddy/orbit/hibernation/app-instance-{instance}.asleep')
+        if check.returncode:
+            failures.append('executor power: committed plan, limits record or asleep marker missing')
+    else:
+        check = run.fleet.sh(node, f'test ! -e {base}/plan.json && test ! -e {base}/limits.json')
+        if check.returncode:
+            failures.append('executor power: discard left a plan or limits record')
+    run.evidence_text(f'executor-power-{args["operation"]}.json', json.dumps(answer, indent=2) + '\n')
+    return failures
+
+
 def executor_lost_result(run, args):
     """A lost result recovered by a repeat (ADR 0266 slice 3). The proof support runs one `executor.proof` order, drops its hand-off
     from Valkey, and shows that a new waiting request then times out. It then signs a new order, with a new nonce, for the same
@@ -1073,4 +1112,4 @@ FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6
                   'node_access_remove': node_access_remove, 'node_fixture': node_fixture, 'recorded_request': recorded_request,
                   'executor_key': executor_key, 'executor_order': executor_order,
                   'executor_publish': executor_publish, 'executor_round_trip': executor_round_trip,
-                  'executor_lost_result': executor_lost_result})
+                  'executor_lost_result': executor_lost_result, 'executor_power': executor_power})

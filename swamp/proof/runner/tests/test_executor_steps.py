@@ -258,5 +258,25 @@ class ExecutorLostResultTest(unittest.TestCase):
         self.assertEqual(len(self.lost(self.answer(recovered={'status': 'timeout', 'latency_ms': 1, 'line': None}, status='failed'), ran('42'))[0]), 3)
 
 
+class PowerStepTest(unittest.TestCase):
+    def exercise(self, receipt, **changes):
+        line = {'status': 'done', 'operation': '42', 'action': 'sleep', 'target': '23', 'repeat': False}
+        answer = {'operation': '42', 'instance': 23, 'instance_name': 'executor-sleep-clone', 'status': 'done', 'operation_status': 'succeeded',
+                  'line': line, 'recorded': line, **changes}
+        journal = json.dumps({'record': 'done', 'operation': '42', 'outcome': {'status': 'done'}})
+        answers = [('executor-order.php', done(json.dumps(answer))), (steps.EXECUTOR_JOURNAL, done(journal)),
+                   ('receipt.json', done(json.dumps(receipt)))]
+        return guest(steps.executor_power, answers, {'on': 'app-dev', 'instance': 'executor-sleep-clone', 'operation': 'sleep'})
+
+    def test_power_needs_a_frozen_clone_ready_plan_and_residual_bound(self):
+        good = {'sleep': 'frozen', 'plan': 'ready', 'residual_anon_bytes': 32 << 20}
+        self.assertEqual(self.exercise(good)[0], [])
+        self.assertTrue(self.exercise(dict(good, sleep='stopped'))[0])
+        self.assertTrue(self.exercise(dict(good, plan='skipped'))[0])
+        self.assertTrue(self.exercise(dict(good, residual_anon_bytes=(32 << 20) + 1))[0])
+        self.assertTrue(self.exercise(good, instance_name='default')[0])
+        self.assertTrue(self.exercise(good, recorded=None)[0])
+
+
 if __name__ == '__main__':
     unittest.main()
