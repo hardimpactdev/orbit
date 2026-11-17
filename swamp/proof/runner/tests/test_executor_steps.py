@@ -86,7 +86,7 @@ class ExecutorStepsTest(unittest.TestCase):
     def test_published_orders_need_a_done_record_each_and_their_latency_is_saved(self):
         orders = [{'operation': str(9_000_000_000_000_000 + index), 'nonce': f'{index:032x}', 'published_ms': 1000 + index} for index in range(3)]
         signer = ('executor-order.php', done(json.dumps({'orders': orders})))
-        journal = '\n'.join(json.dumps({'record': 'done', 'nonce': order['nonce'], 'status': 'done', 'at_ms': order['published_ms'] + 4 + index})
+        journal = '\n'.join(json.dumps({'record': 'done', 'nonce': order['nonce'], 'outcome': {'status': 'done'}, 'at_ms': order['published_ms'] + 4 + index})
                             for index, order in enumerate(orders)) + '\nnot json\n'
         failures, calls, run, evidence = self.publish([signer, ('/var/lib/orbit/executor/journal', done(journal))],
                                                       {'on': 'app-dev', 'operation': 'proof-ws', 'count': 3, 'expect': {'done': True}})
@@ -94,7 +94,7 @@ class ExecutorStepsTest(unittest.TestCase):
         payload = json.loads(next(call for call in calls if 'executor-order.php' in call[1])[2])
         self.assertEqual(payload, {'mode': 'publish', 'node': run.fleet.nodes['app-dev']['node_id'], 'count': 3})
         summary = json.loads(evidence['executor-ws-proof-ws.json'])
-        self.assertEqual((summary['orders'], summary['p50_ms'], summary['max_ms']), (3, 5, 6))
+        self.assertEqual((summary['count'], summary['p50_ms'], summary['max_ms']), (3, 5, 6))
         waits = [call for call in calls if call[1].startswith('sleep ')]
         self.assertEqual([call[:2] for call in waits], [('app-dev', f'sleep {steps.EXECUTOR_RESULT_SECONDS + 1}')], 'one fixed wait on the Node')
         reads = [call for call in calls if steps.EXECUTOR_JOURNAL in call[1]]
@@ -125,7 +125,7 @@ class ExecutorStepsTest(unittest.TestCase):
         first = {'operation': operation, 'nonce': nonce, 'published_ms': 1000, 'replay': False}
         replay = dict(first, published_ms=1012, replay=True)
         signer = ('executor-order.php', done(json.dumps({'orders': [first, replay]})))
-        ran = json.dumps({'record': 'done', 'nonce': nonce, 'operation': operation, 'status': 'done', 'at_ms': 1003}) + '\n'
+        ran = json.dumps({'record': 'done', 'nonce': nonce, 'operation': operation, 'outcome': {'status': 'done'}, 'at_ms': 1003}) + '\n'
         journal = ('/var/lib/orbit/executor/journal', done(ran))
         args = {'on': 'app-dev', 'operation': 'proof-ws-replay', 'replay': True, 'expect': {'done': True, 'refused': 'replayed_nonce'}}
 
@@ -140,7 +140,7 @@ class ExecutorStepsTest(unittest.TestCase):
         waits = [index for index, command in enumerate(commands) if command.startswith('sleep ')]
         self.assertEqual(len(waits), 1, 'one wait for the pair')
         self.assertLess(published, waits[0], 'the original and its replay are both published before the wait')
-        self.assertEqual(json.loads(evidence['executor-ws-proof-ws-replay.json'])['orders'], 1, 'only the original runs')
+        self.assertEqual(json.loads(evidence['executor-ws-proof-ws-replay.json'])['count'], 1, 'only the original runs')
         self.assertEqual(self.publish([signer, journal, refused('none')], args)[0], [],
                          'a replay that reaches the executor before the first result exists is refused too')
 
@@ -152,6 +152,111 @@ class ExecutorStepsTest(unittest.TestCase):
         twice = ('/var/lib/orbit/executor/journal', done(ran + ran.replace(nonce, 'cd' * 16)))
         self.assertEqual(self.publish([signer, twice, refused('done')], args)[0],
                          ['executor app-dev: Operation 9000000000000000 ran 2 times for an order and its replay, not once'])
+
+    def test_a_done_record_with_its_status_at_the_top_level_is_not_the_executor_journal(self):
+        orders = [{'operation': '42', 'nonce': 'ab' * 16, 'published_ms': 1000}]
+        flat = json.dumps({'record': 'done', 'nonce': 'ab' * 16, 'status': 'done', 'at_ms': 1004}) + '\n'
+        failures, _, _, _ = self.publish([('executor-order.php', done(json.dumps({'orders': orders}))), (steps.EXECUTOR_JOURNAL, done(flat))],
+                                         {'on': 'app-dev', 'operation': 'proof-ws', 'expect': {'done': True}})
+        self.assertEqual(failures, ['executor app-dev: results [None]'], 'the executor nests the status as outcome.status')
+
+def guest(step, answers, args):
+    """Run one executor step against fixed answers by command marker; return its failures, calls, run and JSON evidence."""
+    calls = []
+
+    def sh(node, command, timeout=60, stdin_text=None):
+        calls.append((node, command, stdin_text))
+        for marker, answer in answers:
+            if marker in command:
+                return answer
+        return done()
+    with tempfile.TemporaryDirectory() as directory:
+        run = runner.Run(FakeFleet(), spec.Spec('node:converge', 'node/converge', 'app-dev', [], [], []), directory)
+        run.fleet.sh = sh
+        failures = step(run, args)
+        evidence = {path.name: json.loads(path.read_text()) for path in Path(directory).rglob('executor-*.json')}
+        return failures, calls, run, evidence
+
+
+def line(operation, repeat, clock=1):
+    return {'operation': operation, 'action': 'proof.noop', 'target': '3', 'status': 'done', 'repeat': repeat, 'node_clock_ms': clock}
+
+
+def ran(*operations):
+    return done(''.join(json.dumps({'record': 'done', 'nonce': f'{index:032x}', 'operation': operation, 'outcome': {'status': 'done'}, 'at_ms': 1})
+                        + '\n' for index, operation in enumerate(operations)))
+
+
+class ExecutorRoundTripTest(unittest.TestCase):
+    def trip(self, operation, latency, **changes):
+        trip = {'operation': operation, 'nonce': operation * 4, 'latency_ms': latency, 'status': 'done', 'accepted_ms': latency / 2,
+                'wait_ms': latency - 1, 'line': line(operation, False), 'recorded': line(operation, False)}
+        return {**trip, **changes}
+
+    def round_trip(self, trips, journal, count=None):
+        signer = ('executor-order.php', done(json.dumps({'wait_ms': 500, 'round_trips': trips})))
+        args = {'on': 'app-dev', 'operation': 'proof-rt', 'count': count or len(trips)}
+        return guest(steps.executor_round_trip, [signer, (steps.EXECUTOR_JOURNAL, journal)], args)
+
+    def test_each_round_trip_needs_its_result_in_the_waiter_on_its_operation_and_one_run_and_its_latency_is_saved(self):
+        trips = [self.trip(str(10 + index), 4.0 + index) for index in range(20)]
+        failures, calls, run, evidence = self.round_trip(trips, ran(*(trip['operation'] for trip in trips)))
+        self.assertEqual(failures, [])
+        payload = json.loads(next(call for call in calls if 'executor-order.php' in call[1])[2])
+        self.assertEqual(payload, {'mode': 'round_trip', 'node': run.fleet.nodes['app-dev']['node_id'], 'count': 20})
+        summary = evidence['executor-round-trip-proof-rt.json']['summary']
+        self.assertEqual((summary['count'], summary['p50_ms'], summary['p95_ms'], summary['max_ms'], summary['wait_bound_ms']), (20, 14.0, 23.0, 23.0, 500))
+        self.assertFalse([call for call in calls if call[1].startswith('sleep ')], 'the waiter waits, not the runner')
+
+    def test_a_round_trip_fails_on_a_timeout_a_repeat_another_record_a_second_run_or_a_missing_trip(self):
+        trips = [self.trip('10', 4.0), self.trip('11', 5.0)]
+        cases = [
+            ([self.trip('10', 4.0, status='timeout', line=None, recorded=None), trips[1]], ran('10', '11'), None, 'waited timeout'),
+            ([self.trip('10', 4.0, line=line('10', True), recorded=line('10', True)), trips[1]], ran('10', '11'), None, 'waited done'),
+            ([self.trip('10', 4.0, recorded=None), trips[1]], ran('10', '11'), None, 'recorded None'),
+            (trips, ran('10', '11', '11'), None, 'Operation 11 ran 2 times, not once'),
+            (trips, ran('10', '11'), 3, '2 round trips, expected 3'),
+        ]
+        for answer, journal, count, message in cases:
+            with self.subTest(message):
+                failures = self.round_trip(answer, journal, count)[0]
+                self.assertEqual(len(failures), 1, failures)
+                self.assertIn(message, failures[0])
+
+
+class ExecutorLostResultTest(unittest.TestCase):
+    def answer(self, **changes):
+        answer = {'operation': '42', 'first_nonce': 'ab' * 16, 'repeat_nonce': 'cd' * 16, 'recorded': line('42', False),
+                  'dropped': {'status': 'done', 'line': line('42', False)}, 'lost': {'status': 'timeout', 'line': None},
+                  'recovered': {'status': 'done', 'latency_ms': 6.5, 'line': line('42', True, clock=2)}, 'status': 'succeeded'}
+        return {**answer, **changes}
+
+    def lost(self, answer, journal):
+        signer = ('executor-order.php', done(json.dumps(answer)))
+        return guest(steps.executor_lost_result, [signer, (steps.EXECUTOR_JOURNAL, journal)], {'on': 'app-dev', 'operation': 'proof-lost'})
+
+    def test_a_dropped_hand_off_times_out_and_a_repeat_with_a_new_nonce_returns_the_first_result_of_one_run(self):
+        failures, calls, run, evidence = self.lost(self.answer(), ran('42'))
+        self.assertEqual(failures, [])
+        payload = json.loads(next(call for call in calls if 'executor-order.php' in call[1])[2])
+        self.assertEqual(payload, {'mode': 'lost_result', 'node': run.fleet.nodes['app-dev']['node_id']})
+        self.assertEqual(evidence['executor-lost-result-proof-lost.json']['recovered']['latency_ms'], 6.5)
+
+    def test_a_lost_result_fails_without_the_loss_the_repeat_the_first_result_or_one_run(self):
+        cases = [
+            (self.answer(lost={'status': 'done', 'line': line('42', False)}), ran('42'), 'got done, not timeout'),
+            (self.answer(repeat_nonce='ab' * 16), ran('42'), 'reused the first nonce'),
+            (self.answer(recovered={'status': 'done', 'latency_ms': 1, 'line': line('42', False)}), ran('42'), 'the repeat: waited done'),
+            (self.answer(recovered={'status': 'done', 'latency_ms': 1, 'line': {**line('42', True), 'target': '4'}}), ran('42'), 'is not the first result'),
+            (self.answer(recovered={'status': 'timeout', 'latency_ms': 1, 'line': None}), ran('42'), 'the repeat: waited timeout'),
+            (self.answer(), ran('42', '42'), 'ran 2 times, not once'),
+        ]
+        for answer, journal, message in cases:
+            with self.subTest(message):
+                failures = self.lost(answer, journal)[0]
+                self.assertTrue(any(message in failure for failure in failures), failures)
+        self.assertEqual(len(self.lost(self.answer(recovered={'status': 'timeout', 'latency_ms': 1, 'line': None}, status='failed'), ran('42'))[0]), 3)
+
 
 if __name__ == '__main__':
     unittest.main()

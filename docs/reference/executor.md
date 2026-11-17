@@ -12,7 +12,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Slices 1 to 3 are built.** The executor, its install and its one action, the no-op `proof.noop`, exist. So do the Gateway signer and publisher, the observer's pass-through and the Gateway's [result listener](#the-listener-and-the-hand-off). An order goes out over the WebSocket, and its result comes back to its Operation. No Gateway command sends an order yet. Sleep, wake and the create's Node part arrive in later slices.
+> **Slices 1 to 3 are built.** The executor, its install and its one action, the no-op `proof.noop`, exist. So do the Gateway signer and publisher, the observer's pass-through and the Gateway's [result listener](#the-listener-and-the-hand-off). An order goes out over the WebSocket, and its result comes back to its Operation. Only the proof-only [`executor.proof` Operation](#the-proof-operation) sends an order today; no Gateway command does. Sleep, wake and the create's Node part arrive in later slices.
 
 ## Where it runs
 
@@ -186,11 +186,30 @@ The unit tests cover every order check and refusal, the caller policy, the journ
 
 The Gateway and the executor share one fixture, `apps/agent/contract/fixtures/executor-order.json`. A throwaway key signed it and was discarded, so it holds only the public key and the signed order. `crates/executor-core/tests/gateway_order.rs` verifies it with `order::check`, and the Pest test `tests/Feature/Domain/Executor/ExecutorOrderSignerTest.php` checks that the signer builds the same payload bytes. Pest tests also cover expiry, nonce uniqueness, the size cap and the publisher (`tests/Feature/Domain/Executor`). The observer's tests in `apps/agent/src/realtime.rs` run the pass-through against a fake socket: bytes unchanged, the 4 KB cap, 64 in flight, the 10 s and 64 KB reply bounds and a missing socket.
 
+## The proof Operation
+
+The Operation kind `executor.proof` exists only for the proof. Each one is a real Operation row with `node_id` set to its Node ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) D7). Its target is the Node, as for `proof.noop`, and its input is `{"action": "proof.noop"}`. Its orders go out as `executor-order` on `presence-node.{id}`, and the listener records its result on it.
+
+`ExecutorProofOperation` (`apps/gateway/app/Domain/Executor`) holds the whole kind:
+
+1. `start` records the Operation as `running`, triggered by `executor-proof`.
+2. `send` signs a new order, with a new nonce, and publishes it. It refuses a closed Operation and every other kind.
+3. `wait` waits for the result through `ExecutorResultWait` within `ORBIT_EXECUTOR_WAIT_MS`, as a waiting request does.
+4. `finish` closes the Operation: `succeeded` on a `done` result, which it also stores as the result, and `failed` with `executor.proof_<status>` otherwise.
+
+The Gateway runs and closes the kind itself. It starts no Swamp run, and `proof.noop` changes nothing on the Node.
+
+`tests/Feature/Domain/Executor/ExecutorProofOperationTest.php` covers the kind in CI, with a faked publish and an in-memory Valkey. It checks the row and its `node_id`, a new nonce for each order, a result the listener records reaching the waiter, a lost hand-off recovered by a repeat, a failed result, and that the kind cannot be reached from outside.
+
+**Who can create it.** Only the proof support on a nested Gateway, `tools/swamp-proof-guest/executor-order.php`, run there by the proof runner as the Gateway's managed user. That script is the only caller of `ExecutorProofOperation`. No route, CLI command, job or schedule names the kind. It has no direct Operation declaration, so the Node routes under `direct-operations/` refuse it with `operation.direct_invalid`. `ExecutorProofOperationTest` holds this: no route that starts an Operation names the kind, and only `OperationKinds` and `ExecutorProofOperation` name it in the Gateway's code. To create one you must run PHP as the Gateway's user, which can already sign any order ([Key custody](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#the-order)).
+
+**Recovering a lost result.** A result can reach Valkey and still be lost: the request that took it ended, or the key expired. The Gateway then sends a new order for the same Operation, with a new nonce. The executor finds the done record of that Operation, action and target, and answers `repeat` with the first result without acting. The listener changes no row, because the Operation already holds a result, but it pushes the copy again. The waiting request then gets it.
+
 ## Proof key
 
 The Swamp proof of `node:converge` (`swamp/proof/node/converge.cases.yaml`) sends a signed `proof.noop` through the relay on the nested `app-dev` Node. Its runner step `executor_key` runs `tools/swamp-proof-guest/executor-order.php` on the nested Gateway as its managed user. It makes one Ed25519 key that only the proof uses: the secret half stays in that Gateway's own `storage/app/private/executor-proof.key`, mode `0600`, and becomes that Gateway's `ORBIT_EXECUTOR_SIGNING_KEY`; the public half goes into that Gateway's own `.env` as `ORBIT_EXECUTOR_PUBLIC_KEYS`. The step then clears the Gateway's config and restarts Horizon.
 
-`executor_order` signs each order with the same script and hands it to the relay. `executor_publish` sends orders over the WebSocket through the Gateway's own signer and publisher, so they reach the executor only through the observer. The proof records no Operation: each order gets an in-memory Operation with an unused numeric id in a high range and the Node as its `node_id`. It reads the result from the executor's journal and its refusal from the executor's log. The listener drops these results and logs them, because no Operation holds their ids.
+`executor_order` signs each order with the same script and hands it to the relay; a relay order names no Operation of the Gateway. `executor_publish`, `executor_round_trip` and `executor_lost_result` send orders over the WebSocket through the Gateway's own signer and publisher, so they reach the executor only through the observer. Each of their orders belongs to its own [`executor.proof` Operation](#the-proof-operation) on the Node, so the listener records its result like any other.
 
 ### Orders over the WebSocket
 
@@ -202,3 +221,13 @@ The step `executor_publish` has two options for the order security tests:
 The copy therefore arrives inside the first one's 5 s expiry. The case expects the copy refused with `replayed_nonce` and the action run exactly once for that Operation. The two copies race through the observer, so the refusal may carry the first result (`first=done`) or not yet (`first=none`); both are correct. The executor's unit tests prove that a replay after the original completed carries the stored first result.
 
 The cases `executor-order-security` and `executor-websocket-burst` (50 orders, with the latency from the Gateway's publish to the executor's result saved as evidence) use it. No key is committed, and the secret half never leaves the nested Gateway.
+
+### Round trips and a lost result
+
+Two cases prove the slice 3 row of ADR 0266: "50 round trips; result in a waiting request; a lost result recovered by a repeat".
+
+- `executor-round-trip` runs `executor_round_trip` with `count: 50`. The proof support runs 50 `executor.proof` Operations, one after another. Each one publishes its order and waits with `ExecutorResultWait`. Each trip needs a `done` result in the waiter, the same line recorded on its Operation by the listener, and one `done` record for its Operation in the executor's journal. The evidence `executor-round-trip-<operation>.json` holds every trip and the latency from just before the publish to the result in the waiter as p50, p95 and max. It also holds the time to the `accepted` line and the wait's bound.
+- `executor-lost-result` runs `executor_lost_result`. The proof support runs one `executor.proof` order. A first wait takes its result and drops it, and the support deletes the Operation's Valkey keys. A second wait must then time out. The support then sends a new order, with a new nonce, for the same Operation. The step needs these results: `repeat: true`; the same result as the first, apart from `repeat` and the Node's clock; the first result kept on the Operation; the Operation `succeeded`; and one `done` record for it in the journal.
+
+**Status.** Neither case has run on a nested fleet yet. Both carry `waits: idmap`, like every `app-dev` converge case: the converge builds the Instance host's stock image, which needs the 2,000,000 ID map. Both also carry `fails_today`, because the pinned agent delivery has no `executor-linux-x86_64` and no observer release with the pass-through yet. So no numbers are measured. The Gateway's own share of a round trip was measured for slice 3: about 0.2 ms median for the record and the push ([The listener and the hand-off](#the-listener-and-the-hand-off)).
+

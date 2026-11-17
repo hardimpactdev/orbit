@@ -748,12 +748,84 @@ def executor_latency(run, node, label, orders, records):
     found = [(order, done[order['nonce']]) for order in orders if order['nonce'] in done]
     if len(found) < len(orders):
         return [f'executor {node} over the WebSocket: {len(orders) - len(found)} of {len(orders)} orders have no done record within {EXECUTOR_RESULT_SECONDS} s']
-    latencies = sorted(record['at_ms'] - order['published_ms'] for order, record in found)
-    summary = {'orders': len(latencies), 'p50_ms': latencies[len(latencies) // 2],
-               'p95_ms': latencies[min(len(latencies) - 1, (len(latencies) * 95) // 100)], 'max_ms': latencies[-1],
-               'latencies_ms': latencies, 'statuses': sorted({record.get('status') for _, record in found})}
+    summary = latency_summary([record['at_ms'] - order['published_ms'] for order, record in found])
+    summary['statuses'] = sorted({journal_status(record) for _, record in found})
     run.evidence_text(f'executor-ws-{label}.json', json.dumps(summary, indent=2) + '\n')
     return [] if summary['statuses'] == ['done'] else [f'executor {node}: results {summary["statuses"]}']
+
+
+def journal_status(record):
+    """How a journal `done` record's action ended: the executor nests it as `outcome.status`."""
+    outcome = record.get('outcome')
+    return outcome.get('status') if isinstance(outcome, dict) else None
+
+
+def latency_summary(values):
+    """p50, p95 and max of a list of latencies in milliseconds, with the sorted list."""
+    latencies = sorted(values)
+    return {'count': len(latencies), 'p50_ms': latencies[len(latencies) // 2],
+            'p95_ms': latencies[min(len(latencies) - 1, (len(latencies) * 95) // 100)], 'max_ms': latencies[-1], 'latencies_ms': latencies}
+
+
+def executor_runs(run, node, operation):
+    """How many times the executor ran the action of one Operation: its `done` journal records."""
+    return [record.get('operation') for record in executor_done(run, node)].count(operation)
+
+
+def executor_round_trip(run, args):
+    """`count` round trips on the waiting request's path (ADR 0266 slice 3), one after another, through the nested Gateway's proof
+    support: each records an `executor.proof` Operation, publishes its signed order as `executor-order`, and waits for the result
+    with ExecutorResultWait within ORBIT_EXECUTOR_WAIT_MS. Every trip needs a `done` result in the waiter, the same result recorded
+    on its Operation by the listener, and one run in the executor's journal. The latency from publish to the result in the waiter
+    goes to the evidence as p50, p95 and max."""
+    node = nodes_of(run, 'executor_round_trip', args['on'])[0]
+    answer = executor_guest(run, {'mode': 'round_trip', 'node': run.fleet.nodes[node]['node_id'], 'count': args.get('count', 1)})
+    trips = answer['round_trips']
+    runs = [record.get('operation') for record in executor_done(run, node)]
+    summary = latency_summary([trip['latency_ms'] for trip in trips])
+    summary.update({'wait_bound_ms': answer['wait_ms'], 'accepted_ms': latency_summary([trip['accepted_ms'] or 0 for trip in trips]),
+                    'statuses': sorted({trip['status'] for trip in trips})})
+    run.evidence_text(f'executor-round-trip-{args["operation"]}.json', json.dumps({'summary': summary, 'round_trips': trips}, indent=2) + '\n')
+    failures = [] if len(trips) == args.get('count', 1) else [f'executor {node}: {len(trips)} round trips, expected {args.get("count", 1)}']
+    for trip in trips:
+        operation = trip['operation']
+        line = trip['line'] or {}
+        if trip['status'] != 'done' or line.get('repeat') is not False:
+            failures.append(f'executor {node}: Operation {operation} waited {trip["status"]}, line {line}')
+        if trip['recorded'] != trip['line']:
+            failures.append(f'executor {node}: Operation {operation} recorded {trip["recorded"]}, the waiter got {trip["line"]}')
+        if runs.count(operation) != 1:
+            failures.append(f'executor {node}: Operation {operation} ran {runs.count(operation)} times, not once')
+    return failures
+
+
+def first_result(line):
+    """A result line without what a repeat changes: the `repeat` mark and the Node's clock."""
+    return {key: value for key, value in (line or {}).items() if key not in ('repeat', 'node_clock_ms')}
+
+
+def executor_lost_result(run, args):
+    """A lost result recovered by a repeat (ADR 0266 slice 3). The proof support runs one `executor.proof` order, drops its hand-off
+    from Valkey, and shows that a new waiting request then times out. It then signs a new order, with a new nonce, for the same
+    Operation. The executor must answer `repeat` with the first result, the waiter must get it, the Operation must keep the first
+    result, and the executor's journal must show one run."""
+    node = nodes_of(run, 'executor_lost_result', args['on'])[0]
+    answer = executor_guest(run, {'mode': 'lost_result', 'node': run.fleet.nodes[node]['node_id']})
+    run.evidence_text(f'executor-lost-result-{args["operation"]}.json', json.dumps(answer, indent=2) + '\n')
+    operation, recorded, recovered = answer['operation'], answer['recorded'] or {}, answer['recovered']
+    checks = [
+        (answer['dropped']['status'] == 'done' and recorded.get('status') == 'done' and recorded.get('repeat') is False,
+         f'the first order: waited {answer["dropped"]["status"]}, recorded {recorded}'),
+        (answer['lost']['status'] == 'timeout', f'the waiter after the dropped hand-off got {answer["lost"]["status"]}, not timeout'),
+        (answer['repeat_nonce'] != answer['first_nonce'], 'the repeat reused the first nonce'),
+        (recovered['status'] == 'done' and (recovered['line'] or {}).get('repeat') is True,
+         f'the repeat: waited {recovered["status"]}, line {recovered["line"]}'),
+        (first_result(recovered['line']) == first_result(recorded), f'the repeat {recovered["line"]} is not the first result {recorded}'),
+        (answer['status'] == 'succeeded', f'the Operation ended {answer["status"]}'),
+    ]
+    failures = [f'executor {node}: Operation {operation}: {message}' for passed, message in checks if not passed]
+    runs = executor_runs(run, node, operation)
+    return failures + ([] if runs == 1 else [f'executor {node}: Operation {operation} ran {runs} times, not once'])
 
 
 def executor_order(run, args):
@@ -998,4 +1070,5 @@ FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6
                   'service': service, 'package': package, 'ansible_changes': ansible_changes, 'unchanged': unchanged, 'ufw_delete': ufw_delete, 'agent_report': agent_report, 'node_down': node_down,
                   'node_access_remove': node_access_remove, 'node_fixture': node_fixture, 'recorded_request': recorded_request,
                   'executor_key': executor_key, 'executor_order': executor_order,
-                  'executor_publish': executor_publish})
+                  'executor_publish': executor_publish, 'executor_round_trip': executor_round_trip,
+                  'executor_lost_result': executor_lost_result})
