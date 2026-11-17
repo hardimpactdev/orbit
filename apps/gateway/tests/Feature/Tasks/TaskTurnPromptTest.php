@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskTurnPrompt;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
@@ -46,6 +47,7 @@ it('puts the group, then the subtask, then the copy rules in front of the prompt
     Copy rules:
     - Run every command in the foreground. Leave none running when this turn ends.
     - The Project's long gates and full test sets are the work of the task check and CI (`task:check`). Run single test files by path.
+    - Keep each new or changed test unit within the per-unit time cap of the Project's CI, which the task check prints.
     - Commit your work before this turn ends.
     - Never print an environment file, a token, a key or a session value.
 
@@ -68,6 +70,11 @@ it('leaves the deliverables section out when the subtask has none', function ():
 
 it('names no command of one Project in the copy rules', function (): void {
     expect(TaskTurnPrompt::CopyRules)->not->toContain('bin/')->not->toContain('composer')->not->toContain('pest')->not->toContain('swamp');
+});
+
+it('tells the reviewer that its text opens the pull request, and updates one that is open already on the next publish', function (): void {
+    expect(TaskCopyTurn::PrTextRule)->toContain('Orbit opens the pull request with it once the work is done; when the pull request is open already, '
+        .'the next publish of this check updates its title and body with it.');
 });
 
 it('refuses a composed prompt that the turn workflow would reject', function (): void {

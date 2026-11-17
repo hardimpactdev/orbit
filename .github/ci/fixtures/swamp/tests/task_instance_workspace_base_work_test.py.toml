@@ -1,0 +1,39 @@
+file = "swamp/tests/task_instance_workspace_base_work_test.py"
+slices = false
+cost = 39
+cases = [
+  "test_a_squash_merged_branch_reads_clean",
+  "test_an_empty_handoff_commit_adds_nothing",
+  "test_one_path_that_differs_reads_dirty",
+  "test_a_delete_on_main_of_a_file_the_copy_also_deleted_is_equal",
+  "test_uncommitted_work_stays_dirty",
+  "test_an_untracked_file_and_a_stash_stay_dirty",
+  "test_a_published_commit_counts_and_holds_the_approved_commit",
+  "test_a_copy_that_changed_nothing_is_empty"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/_support/task_instance_workspace_base.py",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/task-copy-base-names.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/workflows/workflow-task-instance-workspace.yaml",
+  "swamp/workflows/workflow-operation-task-sync.yaml",
+  "swamp/workflows/workflow-task-copy-base.yaml",
+  "swamp/workflows/workflow-operation-task-sync-copy.yaml"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_a_squash_merged_branch_reads_clean" = 18
+"test_an_empty_handoff_commit_adds_nothing" = 3
+"test_one_path_that_differs_reads_dirty" = 3
+"test_a_delete_on_main_of_a_file_the_copy_also_deleted_is_equal" = 3
+"test_uncommitted_work_stays_dirty" = 3
+"test_an_untracked_file_and_a_stash_stay_dirty" = 3
+"test_a_published_commit_counts_and_holds_the_approved_commit" = 3
+"test_a_copy_that_changed_nothing_is_empty" = 3

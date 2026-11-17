@@ -5,6 +5,7 @@ cases = [
   "a session issue that prints no JSON fails without quoting it and still revokes the session it names",
   "the stop ends the thread's active run through the same interrupt and waits for its end; a thread with no active run is left alone",
   "a stop that T3 refuses, or a run that does not end within the deadline, answers stopped: false with the run's last state",
+  "the create makes a thread of the workspace's project with the title, instance, model and options, in full access, and sends no message",
 ]
 file = "swamp/tests/t3_copy_rpc_test.ts"
 cost = 45

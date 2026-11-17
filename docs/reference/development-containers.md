@@ -146,16 +146,16 @@ Clone phases stage their release's helpers and intent once in a private folder f
 
 The clone copy supplies a complete root disk device, including its type, path, pool and size. This works when the seed inherits its root disk from a profile or stores it locally.
 
-Every development container has the same layout. The image and the create set it up. Root owns everything below except the homes and the workspace. A container installs as little as possible: the image holds only OS packages, the users and the firewall.
+Every development container has the same layout. The image and the create set it up. Root owns everything below except the homes and the workspace. A container installs as little as possible: the image holds only OS packages, the users, `agent`'s sudo grant and the firewall.
 
 | Part | Setting |
 | --- | --- |
-| Image | Ubuntu 26.04 with the OS packages the runtime needs, the users, `nftables`, `acl` and `hidepid`. No PHP, no Node, no agent software |
+| Image | Ubuntu 26.04 with the OS packages the runtime needs, the users, `nftables`, `acl`, `sudo` and `hidepid`. No PHP, no Node, no agent software |
 | Egress | The [proxy settings](#egress-and-dns) for every unit, login shell and apt, and no DNS server |
 | `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process. Owns no part of the workspace that Orbit keeps ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)) |
-| `agent` | uid 2750, home `/home/agent` mode 0700, password locked. Runs T3, the agents, Orbit's checkout Git calls and the deploy steps. Owns the workspace, the T3 state, the agent settings and the placeholder key |
+| `agent` | uid 2750, home `/home/agent` mode 0700, password locked, [sudo](#sudo-and-secrets). Runs T3, the agents, Orbit's checkout Git calls and deploy steps. Owns the workspace, T3 state, agent settings and placeholder key |
 | `work` | gid 2760, members `agent` and `orbit` |
-| Sudo | None for either user. The image's `sudoers.d` grant is removed. The [nested-fleet image](#the-nested-fleet-image) gives `agent` alone passwordless sudo, so it is root in its own [nested-fleet](#users) container |
+| Sudo | Passwordless for `agent` alone, in every container, from the [shared file](#existing-containers) `/etc/sudoers.d/orbit-agent` (root:root, mode 0440). `orbit` has none. See [Sudo and secrets](#sudo-and-secrets) |
 | Workspace | `/srv/workspace` and every entry in it, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others, and `core.sharedRepository=group`. Root's [pass](#who-runs-what) gives `agent` what `orbit` made |
 | Git | `safe.directory=/srv/workspace` in `/etc/gitconfig`, for every user and only that path; the agent part of the T3 step also writes it to `agent`'s own Git config and preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
@@ -163,11 +163,15 @@ Every development container has the same layout. The image and the create set it
 | `PATH` | The runtime folder's `bin` first, for units, login shells and `incus exec` sessions, so `composer` is on it |
 | `php` | `/usr/local/bin/php` links to the Project's static `php` in the runtime folder. A Project without a PHP version has none. The create and each start set it |
 | Instance file | `/etc/orbit/instance`, root-owned and readable by all: Instance, Project id, slug and quoted one-line name, Node and URL. Absent on the default, keeping T3 stopped |
-| Model route | `nftables` in the container lets only uid 2750 reach the forwarder, and only uid 0 and 2750 reach T3's port |
+| Model route | `nftables` in the container lets only uid 2750 reach the forwarder, and only uid 0 and 2750 reach T3's port. `agent` can change the rule through sudo; the container wall stays the boundary |
 | Processes | `/proc` with `hidepid=invisible`, so each user sees only its own processes |
 | Kernel surface | Unprivileged, no nesting, `user.max_user_namespaces=0`, an isolated ID map |
 
 A container mounts no host checkout and no Incus socket. Root work, such as units, goes through Orbit from the Node.
+
+### Sudo and secrets
+
+`agent` has passwordless sudo in every container, normal and nested. The grant is one line, `agent ALL=(ALL:ALL) NOPASSWD: ALL`. The image removes the stock image's grant and its `ubuntu` user, so this grant is the only sudo path. A container holds only dev-scoped keys, never production-grade secrets. [ADR 0268](/decisions/0268-one-owner-for-the-workspace#amendment-sudo-for-agent-in-every-container) holds the security model.
 
 The Gateway renders the image: its packages, the setup script, its files and the units it enables. The script turns cloud-init off, so a new container never makes the stock `ubuntu` user and its sudo grant again. The image's alias is `orbit-instance-` with the first 12 hex digits of a digest of that definition, so a changed definition is a new image. A build container from the stock Ubuntu image runs the definition and is published under that alias. The stable alias `orbit-instance` then moves to it, and prior images remain for separately authorized operator cleanup; a container keeps what it was made from.
 
@@ -509,9 +513,11 @@ A fresh JavaScript install can drop the folder. With the same Playwright version
 
 ### Existing containers
 
-A container keeps the image it was made from. The image definition marks the files that every container needs as `existing`: the linker and font configuration and `/etc/gitconfig`. The converge of the Node writes them into each existing container too. It writes them into running, stopped and frozen containers, in the Instance project and in the nested-fleet one. Nothing restarts. Each later process reads the files by itself.
+A container keeps the image it was made from. The image definition marks the files that every container needs as `existing`: the linker and font configuration, `/etc/gitconfig` and `agent`'s sudo grant, `/etc/sudoers.d/orbit-agent` (mode 0440). The converge of the Node writes them into each existing container too. It writes them into running, stopped and frozen containers, in the Instance project and in the nested-fleet one. Nothing restarts. Each later process reads the files by itself.
 
 A clone copies its default's seed snapshot, not the default itself, and a seed taken before these files existed lacks them. So every clone gets the same files before its first start, with an empty linker cache that the stock `ldconfig.service` rebuilds at that start.
+
+The sudo grant needs the `sudo` program. The image installs it, and the stock Ubuntu image that every older image came from ships it, so no container needs an install. An existing default and its running copies get the grant at the Node's next converge. A new copy gets it from its clone, also from a seed taken before the grant existed. A deployment, a start or a refresh writes no grant.
 
 The dynamic linker reads its cache, `/etc/ld.so.cache`:
 
@@ -723,7 +729,7 @@ Each Project type has one note in the agent folder, at `notes/<note>.md`. The no
 
 A container that runs T3 without a default to copy, such as a migrated checkout, links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A clone reads the note through its own [agent instructions](#agent-instructions). A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are.
 
-It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow. It says that there is no sudo and no direct internet, how the egress proxy works, and how Git leaves the container. The note does not state the nested-fleet exception yet, where `agent` has sudo.
+It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow. It says that `agent` has passwordless sudo and `orbit` has none, that there is no direct internet, how the egress proxy works, and how Git leaves the container.
 
 A note gives no instructions about the work. The Project's own instructions and skills come from its [agent instructions](#agent-instructions); MCP servers come from the project's own files.
 
@@ -1510,6 +1516,8 @@ Work is what lies beyond the Instance's baseline:
 
 Build output that appears after the create counts too. It stays work until the Project's `.gitignore` covers it.
 
+The read also names the checked-out branch as `head`, its commit as `head_commit`, and how many of the counted commits that branch holds as `commits.head`. A task copy's cancel and complete hold the copy's [content read](/reference/tasks#published-work-of-a-copy) against that commit. Only those commits can count as published by content.
+
 The baseline is what a new Instance held when it was made, so a fresh copy of a default with local branches, stashes or untracked files reads `clean`. It holds the local branch heads, the stash ids and the untracked set, in the Gateway's `instance_runtimes.workspace_baseline`, outside the container.
 
 A clone's create reads it before the transaction that ends the create, and writes it with `workspace_baseline_at` in that transaction. The user can reach T3 only through a pairing, and Conn pairs only after it reads the create `succeeded`, so the baseline holds no work of the user. The completion writes no tracked or unignored file, so the read stays `clean` while it runs.
@@ -1908,8 +1916,8 @@ The phase uses these commands, as `agent` in `/srv/workspace`.
 
 | Purpose | Command | What Orbit sets |
 | --- | --- | --- |
-| Start a thread with its first turn and wait for its run | `t3 thread start --provider P --model M --title T --wait --json /srv/workspace -` | The composed prompt on stdin, the provider instance of the effort and the [turn model](#turn-model-and-effort), the title `Orbit task GROUP thread THREAD`, and a 3,600-second `timeout` |
-| Continue a thread and wait for its run | `t3 thread send --wait --json T3THREAD -` | The composed prompt on stdin and a 3,600-second `timeout`. The thread keeps its provider instance, so its model and effort. |
+| Create a new thread | `node - T3 create TITLE INSTANCE MODEL OPTIONS`, with `t3_copy_rpc.mjs` on stdin | Through T3's own RPC: the title `Orbit task GROUP thread THREAD`, the provider instance of the effort, the [turn model](#turn-model-and-effort) and its model options, in full access, with no message. Bounded at 60 seconds |
+| Run a turn and wait for its run | `t3 thread send --wait --json T3THREAD -` | On the created or the continued thread: the composed prompt on stdin and a 3,600-second `timeout`. The thread keeps its provider instance and options, so its model and effort. |
 | Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title: before a continued turn, and after every turn, also when the bound cut the wait before T3 printed the thread id. Bounded at 60 seconds |
 | Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages. Bounded at 60 seconds |
 | Put a reviewer on the candidate | `git status --porcelain`, `git symbolic-ref --short HEAD`, `git rev-parse HEAD`, `git checkout --detach CANDIDATE` | Before a reviewer turn: a clean checkout on a branch, its tip, the detach mark at it, then the candidate, detached. Each bounded at 20 seconds |
@@ -1923,6 +1931,8 @@ The start returns the run's status. `completed` is `done`, `waiting` is `asking_
 A continued turn whose title T3 lists not exactly once launches nothing and is `failed` with `tasks.copy_thread_missing`; a list that fails or is not JSON is `failed` with `tasks.copy_turn_failed`.
 
 A reviewer turn on a checkout with changes or no branch launches nothing and is `failed` with `tasks.copy_tree_dirty`, and one whose checkout is not clean on its branch at its earlier tip afterwards is `failed` with `tasks.copy_review_unrestored`, whatever its run did. The phase marks the detach as soon as it is done, so a reviewer turn cut before the restore is unrestored too.
+
+A reviewer turn's composed prompt names the checked commit and ends with two fixed rules: the [reviewer rule](/reference/tasks#the-reviewer-rule), which bounds the review by the task's scope, and the [pull request text](/reference/tasks#the-reviewers-pull-request-text) rule. An implementer turn's prompt ends with the rule on how to ask instead.
 
 ### A question ends the turn
 
@@ -1947,14 +1957,24 @@ This was tried on a throwaway T3 0.1.7 server on 2026-11-14. A run that asked tw
 
 ### Turn model and effort
 
-A new thread of each role takes the role's provider, model and effort from the task, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_*` settings, as [copy turn agents](/reference/tasks#copy-turn-agents) describes. The Gateway ships `claude` and `claude-opus-5-5` for both roles, at `medium` effort for the implementer and `high` for the reviewer: a container reaches only the Claude model forwarder.
+A new thread of each role takes the role's provider, model and effort from the task, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_*` settings, as [copy turn agents](/reference/tasks#copy-turn-agents) describes. The Gateway ships `claude` and `claude-opus-5-5` for both roles, at `medium` effort for the implementer and `high` for the reviewer. A Project can set `codex`, for example for its reviewer with `gpt-6.1-sol` at `high`. Codex reaches the model router through the copy's `/home/agent/.codex/config.toml`, with the same model key as Claude Code: no other credential enters the container.
 
-Stock T3's CLI takes no effort, but T3's settings can hold several provider instances of one driver, each with its own environment. The create of a task copy writes `/home/agent/.t3/userdata/settings.json` with one `claudeAgent` instance per effort level: `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh` and `claudeMax`, each with `CLAUDE_CODE_EFFORT_LEVEL` set to its level.
+Stock T3's CLI takes no effort, but T3's settings can hold several provider instances of one driver. The create of a task copy writes `/home/agent/.t3/userdata/settings.json` with one instance per provider and effort:
 
-A new thread starts with `--provider` set to the instance of its provider and effort. Before it starts, Orbit refuses a provider and effort with no instance (`tasks.copy_turn_unoffered`), and the turn checks the model against T3's cached model catalog (`tasks.copy_turn_model_unoffered`). A turn's result names the provider instance, the model and the effort the thread started with.
+| Provider | Instances | How the effort reaches the agent |
+| --- | --- | --- |
+| `claude` | `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh`, `claudeMax`, driver `claudeAgent` | `CLAUDE_CODE_EFFORT_LEVEL` in the instance's environment |
+| `codex` | `codexLow`, `codexMedium`, `codexHigh`, `codexXhigh`, `codexMax`, `codexUltra`, driver `codex` | The thread's `reasoningEffort` model option |
 
-Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7; a newer version may change it. A continued thread stays on its instance, so it keeps its model and effort. A copy made before these instances existed refuses new threads; cancel it and start the task again.
+A new thread is created on the instance of its provider and effort, through T3's own RPC, with its model and model options; its first turn is then a `t3 thread send`, as a continued turn is. Before that, Orbit refuses a provider and effort with no instance (`tasks.copy_turn_unoffered`), and the turn checks the model against T3's cached model catalog (`tasks.copy_turn_model_unoffered`). A turn's result names the provider instance, the model and the effort the thread started with.
 
+Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7. A Claude thread carries no model options.
+
+Codex takes no effort from its instance. T3 0.1.7 sends Codex, on every turn, the effort of the thread's `reasoningEffort` option, and no effort without one. Codex's own `model_reasoning_effort`, through `-c` launch arguments or a per-instance `CODEX_HOME`, is then dropped, and Codex runs at the model's default: `low` for `gpt-6.1-sol`. So a Codex thread carries its effort as that option, and `t3 thread start`, which takes no options, cannot start it.
+
+This was verified with T3 0.1.7 and Codex 0.167.0: `gpt-6.1-sol` ran at `high`, in full access (approval `never`, sandbox `danger-full-access`), and T3's cached catalog lists `gpt-6.1-sol` for the `codex` driver. Codex leaves variables whose name holds `KEY` out of its shell commands, so the reviewer's pull request text rule sources `model.env` first. A newer version may change any of this.
+
+A continued thread stays on its instance and keeps its options, so it keeps its model and effort. A copy made before these instances existed refuses new threads, and a copy made before the Codex instances cannot run a new Codex thread; cancel it and start the task again on a new copy.
 ### Gaps of the CLI path
 
 These hold until a T3 server gives Swamp a full-access MCP session:
@@ -2152,11 +2172,11 @@ It is the normal image with these changes:
 | Part | Change |
 | --- | --- |
 | Inner Incus | `incus-base` and `incus-client` from the recipe's pinned artifacts, checked by SHA-256 |
-| Packages | `wireguard-tools`, `sqlite3`, `sudo`, `zstd` and `btrfs-progs` too. `zstd` reads the `.tar.zst` archives of the inner fleet's containers; the inner Incus's btrfs driver needs `btrfs-progs` for the pool on the [inner volume](#the-inner-volume) |
+| Packages | `wireguard-tools`, `sqlite3`, `zstd` and `btrfs-progs` too. `zstd` reads the `.tar.zst` archives of the inner fleet's containers; the inner Incus's btrfs driver needs `btrfs-progs` for the pool on the [inner volume](#the-inner-volume) |
 | User namespaces | No `/etc/sysctl.d/90-orbit-no-userns.conf` |
 | Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:100000000`. The inner Incus does not read them: see [The ID map size](#the-id-map-size) |
 | AppArmor marker | `/etc/orbit/apparmor-off` holds `N` |
-| `agent` | A member of the inner `incus-admin` group, with passwordless sudo from `/etc/sudoers.d/orbit-agent` (root:root, mode 0440) |
+| `agent` | A member of the inner `incus-admin` group. Its passwordless sudo is the normal image's grant |
 | `orbit` | Neither the group nor sudo. The first rule of the firewall's output chain drops its traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24`. The other rules stay the same |
 | Firewall reset | `destroy table inet orbit_agent_guard` instead of `flush ruleset`, also as the `ExecStop` of `nftables.service` |
 | Network wait | `systemd-networkd-wait-online.service.d/90-orbit-no-dns.conf`: eth0 routable, at most 30 s, no DNS |
@@ -2167,7 +2187,17 @@ The inner Incus wants `network-online.target`. Netplan's own wait asks for a DNS
 
 The Node fetches each Incus package through the artifact cache, checks its SHA-256 and pushes it into the build container. The build container installs both packages with their dependencies through the egress proxy. A `policy-rc.d` file stops the packages from starting the inner Incus during the build; the build removes it before it publishes.
 
-A failed fetch, a wrong digest or a failed install publishes no image. There is no unpinned fallback. Before it publishes, the build checks the sudo paths: no `ubuntu` user, no grant in `sudoers.d` other than `orbit-agent` with its one line, a grant that `visudo` accepts (judged by its exit code, not its output), `agent` alone in `incus-admin`, sudo works for `agent` and fails for `orbit`. An Instance start fetches and installs nothing. A failed build removes only a build container that it made; a build container from an earlier run stays for the operator.
+A failed fetch, a wrong digest or a failed install publishes no image. There is no unpinned fallback.
+
+Before it publishes, the build checks the sudo paths of both images:
+
+- no `ubuntu` user and no member of `sudo` or `admin`;
+- no grant in `sudoers.d` other than `orbit-agent` with its one line;
+- a grant that `visudo` accepts, judged by its exit code, not its output;
+- sudo works for `agent` and fails for `orbit`;
+- in the nested-fleet image `agent` is alone in `incus-admin`, and the normal image has no `incus-admin` group.
+
+An Instance start fetches and installs nothing. A failed build removes only a build container that it made; a build container from an earlier run stays for the operator.
 
 A failed nested-fleet build fails only the nested-fleet image. The converge goes on: the normal image, the project, the bridge, the folders and the end checks complete, and the role succeeds. The Node records the failure in `/var/lib/orbit/instance-nested-image.json`: `nested image build failed`, the image's alias and the failed task. The converge log names the failed task too.
 
@@ -2530,7 +2560,7 @@ The nested Nodes reach the internet through `oe-nested`, the outer container's N
 
 Two users share the outer container, and only one of them reaches the fleet.
 
-`agent` drives the inner Incus as a member of its admin group. It restores `base`, runs commands in the nested containers and reads their journals. It has root in its own container through `sudo` with no password. It is never root on the Node.
+`agent` drives the inner Incus as a member of its admin group. It restores `base`, runs commands in the nested containers and reads their journals. It has root in its own container through `sudo` with no password, as in every container. It is never root on the Node.
 
 `orbit` cannot use the inner Incus. A firewall rule by uid in the outer container drops its traffic to the fleet's bridge and WireGuard subnets, as the image does for the model route. The rule is needed because the nested Gateway trusts the source address. Without it, any user in the container would be the fleet's operator.
 

@@ -27,10 +27,9 @@ final class TaskCopyController extends Controller
 
     public function pullRequest(StoreTaskPullRequestTextRequest $request, RecordTaskPullRequestTextAction $action): JsonResponse
     {
-        $check = $action->execute(self::copy($request), $request->string('title')->toString(), $request->string('body')->toString());
+        ['check' => $check, 'opens' => $opens] = $action->execute(self::copy($request), $request->string('title')->toString(), $request->string('body')->toString());
 
-        return $this->respond($request, ['state' => 'recorded', 'check_id' => $check->id, 'operation_id' => $check->pr_text_operation_id,
-            'opens' => 'when the group is done'], 202);
+        return $this->respond($request, ['state' => 'recorded', 'check_id' => $check->id, 'operation_id' => $check->pr_text_operation_id, 'opens' => $opens], 202);
     }
 
     /** @param array<string, mixed> $data */

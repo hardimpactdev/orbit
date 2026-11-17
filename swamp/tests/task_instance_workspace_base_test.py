@@ -18,7 +18,11 @@ class TaskInstanceWorkspaceBaseTest(HARNESS['BaseHarness']):
         before = self.state()
         result = self.phase('base')
         self.assertEqual(result, {'default_branch': 'main', 'default_commit': self.head, 'branch': 'task-42',
-                                  'branch_commit': self.work, 'behind_by': 2, 'start': self.seed, 'bundled': True, 'changed': True})
+                                  'branch_commit': self.work, 'behind_by': 2, 'start': self.seed, 'bundled': True, 'changed': True,
+                                  # The copy's own commit is not on main, and its uncommitted work never is.
+                                  'work': {'state': 'dirty', 'head': self.work, 'default_commit': self.head, 'empty': False,
+                                           'paths': {'count': 1, 'names': ['work.txt']}, 'uncommitted': 2, 'untracked': 0,
+                                           'stashes': 0, 'approved_held': None}})
         self.assertEqual(self.evidence('base'), result)
         self.assertEqual(self.git('rev-parse', 'refs/remotes/origin/main'), self.head)
         self.assertEqual(self.state(), before)
@@ -90,7 +94,7 @@ class TaskInstanceWorkspaceBaseTest(HARNESS['BaseHarness']):
                 'copy': {'runtime': self.intent['runtime'], 'branch': 'task-42', 'snapshot_id': self.snapshot_id, 'start': self.seed,
                          'mirror': '/var/lib/orbit/instance-repositories/12.git', 'source_mirror': '/var/lib/orbit/instance-repositories/11.git'}}
 
-        def value(step, field, steps=None):
+        def value(step, field, steps=None, copy=copy):
             context = self.root / 'context.json'
             context.write_text(json.dumps({'inputs': {'operation_id': 1, 'node_id': 7, 'kind': 'tasks.sync', 'intent': copy,
                                                       'execution_secrets': {}}, 'steps': steps or {}, 'run': {'id': self.snapshot_id}}))
@@ -107,7 +111,13 @@ class TaskInstanceWorkspaceBaseTest(HARNESS['BaseHarness']):
         self.assertEqual(value('Bring in the base', 'intent'), {
             'runtime': self.intent['runtime'], 'branch': 'task-42', 'snapshot_id': self.snapshot_id, 'instance_id': self.instance_id,
             'default_branch': 'main', 'repository': workspace['repository'], 'mirror': copy['copy']['mirror'],
-            'source_mirror': copy['copy']['source_mirror'], 'start': self.seed, 'ssh_execution': copy['ssh_execution']})
+            'source_mirror': copy['copy']['source_mirror'], 'start': self.seed, 'published': [], 'approved': '',
+            'ssh_execution': copy['ssh_execution']})
+        # An intent recorded before the content read had no published or approved commit: the base gets none, as above. A current
+        # intent passes the group's own.
+        published = {**copy, 'copy': {**copy['copy'], 'published': [self.work], 'approved': self.seed}}
+        self.assertEqual({key: value('Bring in the base', 'intent', copy=published)[key] for key in ('published', 'approved')},
+                         {'published': [self.work], 'approved': self.seed})
         self.assertEqual(value('Discard the base scratch', 'phase'), 'base-cleanup')
         self.assertEqual(value('Discard the base scratch', 'intent'), {
             'runtime': self.intent['runtime'], 'branch': 'task-42', 'snapshot_id': self.snapshot_id, 'instance_id': self.instance_id,

@@ -141,7 +141,7 @@
           {{ image_trust_library.stdout if image_trust_library.rc == 0 else 'not installed' }}; the trust module needs exactly
           {{ browser_trust.version }}
         quiet: true
-    - name: Set up the users, the workspace and no sudo
+    - name: Set up the users and the workspace
       ansible.builtin.command: { argv: "{{ in_build + ['sh', '-c', instance_variant.image.prepare] }}" }
       changed_when: true
     - name: Write the image files
@@ -180,27 +180,27 @@
       ansible.builtin.command: { argv: "{{ in_build + item }}" }
       loop: "{{ instance_variant.image.finish }}"
       changed_when: true
-    # Nothing may publish an image with a sudo path: no `ubuntu` user, nothing in sudoers.d but its README, and no member of the
-    # groups `sudo` or `admin`. The nested-fleet image has one more path, which the audit requires exactly: `agent`'s grant and
-    # `agent` alone in `incus-admin`; `orbit` stays without sudo.
+    # Nothing may publish an image with a sudo path but `agent`'s grant (ADR 0268, amendment): no `ubuntu` user, nothing in sudoers.d
+    # but its README and `orbit-agent`, which holds exactly the grant, and no member of the groups `sudo` or `admin`; sudo works for
+    # `agent` and not for `orbit`. Both images have that one path. `incus-admin` holds `agent` alone in the nested-fleet image, and
+    # the normal image has no such group.
     # visudo is judged by its exit code alone: visudo-rs ignores -q and prints "parsed OK" on stdout for a clean file.
     - name: Read the sudo paths of the image
       ansible.builtin.command:
-        argv: "{{ in_build + ['sh', '-c', image_nested_audit if instance_variant.image.incus is defined else image_audit] }}"
+        argv: "{{ in_build + ['sh', '-c', image_audit + (image_nested_audit if instance_variant.image.incus is defined else image_normal_audit)] }}"
       vars:
-        image_nested_audit: >-
+        image_audit: >-
           getent passwd ubuntu >/dev/null && echo user:ubuntu;
           for f in /etc/sudoers.d/*; do [ "$f" = /etc/sudoers.d/README ] || [ "$f" = /etc/sudoers.d/orbit-agent ] || [ ! -e "$f" ] || echo "sudoers:$f"; done;
           getent group sudo admin | cut -d: -f4 | tr , '\n' | sed '/^$/d; s/^/member:/';
-          getent group incus-admin | grep -qx 'incus-admin:[^:]*:[0-9]*:agent' || echo incus-admin:unexpected;
           test "$(cat /etc/sudoers.d/orbit-agent)" = 'agent ALL=(ALL:ALL) NOPASSWD: ALL' || echo agent:grant;
           visudo -cqf /etc/sudoers.d/orbit-agent >/dev/null || echo agent:syntax;
           runuser -u agent -- sudo -n true || echo agent:sudo;
-          runuser -u orbit -- sudo -n true 2>/dev/null && echo orbit:sudo; true
-        image_audit: >-
-          getent passwd ubuntu >/dev/null && echo user:ubuntu;
-          for f in /etc/sudoers.d/*; do [ "$f" = /etc/sudoers.d/README ] || [ ! -e "$f" ] || echo "sudoers:$f"; done;
-          getent group sudo admin | cut -d: -f4 | tr , '\n' | sed '/^$/d; s/^/member:/'; true
+          runuser -u orbit -- sudo -n true 2>/dev/null && echo orbit:sudo;
+        image_nested_audit: >-
+          getent group incus-admin | grep -qx 'incus-admin:[^:]*:[0-9]*:agent' || echo incus-admin:unexpected; true
+        image_normal_audit: >-
+          getent group incus-admin >/dev/null && echo incus-admin:unexpected; true
       register: image_sudo
       changed_when: false
     - name: Require an image without a sudo path

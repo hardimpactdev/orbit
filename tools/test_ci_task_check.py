@@ -2,15 +2,19 @@
 
 These cases need no vendor folder, so CI runs them. tools/test_task_check.py holds the real failures, which need a
 seeded checkout."""
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
 import runpy
+import shlex
 import shutil
 import signal
 import subprocess
 import tempfile
 import time
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -127,13 +131,6 @@ class BudgetTest(unittest.TestCase):
         part = check['timed']('pint apps/cli', [['true'], ['false']], time.monotonic() + 30)
         self.assertEqual((part.status, part.detail), ('FAILED', 'exit 1: false'))
 
-    def test_a_unit_over_the_budget_is_named_and_does_not_run(self):
-        budget, _fixtures, _defaults = check['units'].configuration()
-        unit = 'swamp/tests/maintenance_resources_test.ts'
-        plan = {'shards': [{'units': [unit]}], 'self_hosted_shards': [], 'units': {unit: {'declared_seconds': 60}}, 'budget': budget}
-        part = check['fixtures'](plan, time.monotonic() + 5, {})
-        self.assertEqual((part.status, part.detail), ('skipped', f'budget skipped: {unit} (budget: declared 60s)'))
-
     def test_a_unit_whose_host_program_is_missing_is_named_and_does_not_run(self):
         budget, table, _defaults = check['units'].configuration()
         runtime, load = 'swamp/tests/ansible_instance_host_runtime_test.ts', 'swamp/tests/gateway_swamp_load_test.ts'
@@ -144,9 +141,10 @@ class BudgetTest(unittest.TestCase):
         present = {'unzip': '/usr/bin/unzip', 'jq': '/usr/bin/jq'}
         with patch.object(check['shutil'], 'which', side_effect=present.get), \
                 patch.dict(check['fixtures'].__globals__, {'run': self.fail}):
-            part = check['fixtures'](plan, time.monotonic() + 5, table)
+            part = check['fixtures'](plan, time.monotonic() + 5, table, [])
         self.assertEqual(part.status, 'skipped')
-        self.assertEqual(part.detail, f'1 not runnable here: zip missing in this copy ({runtime}#0/2); budget skipped: {load} (budget: declared 60s)')
+        self.assertEqual(part.detail, f'1 not runnable here: zip missing in this copy ({runtime}#0/2); '
+                                      f'deferred to CI: 1 units, 60s declared: {load}')
 
     def test_the_schedules_fixture_is_named_not_runnable_in_a_copy_without_jq(self):
         budget, table, _defaults = check['units'].configuration()
@@ -157,62 +155,97 @@ class BudgetTest(unittest.TestCase):
                 'units': {schedules: {'declared_seconds': 7}}}
         with patch.object(check['shutil'], 'which', side_effect={'timeout': '/usr/bin/timeout'}.get), \
                 patch.dict(check['fixtures'].__globals__, {'run': self.fail}):
-            part = check['fixtures'](plan, time.monotonic() + 5, table)
+            part = check['fixtures'](plan, time.monotonic() + 5, table, [])
         self.assertEqual(part.status, 'skipped')
         self.assertEqual(part.detail, f'1 not runnable here: jq missing in this copy ({schedules})')
 
 
+class DirectFixtureTest(unittest.TestCase):
+    """The check finds the directly touched fixtures with the input mapping of bin/ci-units, the planner's own."""
+
+    def test_a_fixture_file_its_input_and_its_metadata_touch_it_directly(self):
+        _budget, table, _defaults = check['units'].configuration()
+        fleet = 'swamp/tests/ansible_instance_fleet_test.ts'
+        units = check['units']
+        self.assertIn(fleet, units.direct_files([fleet], table))
+        self.assertIn(fleet, units.direct_files([f'.github/ci/fixtures/{fleet}.toml'], table))
+        exact = next((file, pattern) for file, fixture in table.items() for pattern in fixture['inputs'] if not any(c in pattern for c in '*?{['))
+        self.assertIn(exact[0], units.direct_files([exact[1]], table))
+        # The machinery selects the canary set, not a fixture directly.
+        self.assertEqual(units.direct_files(['bin/ci-units', 'docs/reference/tasks.md'], table), set())
+
+
 class FixtureRunTest(unittest.TestCase):
     UNITS = ['swamp/tests/a_test.ts', 'swamp/tests/b_test.ts', 'swamp/tests/c_test.ts']
+    # b_test.ts declares a script input, so a change to it touches b directly.
+    TABLE = {'swamp/tests/a_test.ts': {'inputs': []}, 'swamp/tests/b_test.ts': {'inputs': ['swamp/scripts/b.sh']},
+             'swamp/tests/c_test.ts': {'inputs': []}}
 
-    def plan(self, seconds=80):
+    def plan(self, seconds=80, costs=None):
         budget, _table, _defaults = check['units'].configuration()
+        costs = costs or dict.fromkeys(self.UNITS, seconds)
         return {'shards': [{'units': self.UNITS}], 'self_hosted_shards': [], 'budget': budget,
-                'units': {unit: {'declared_seconds': seconds} for unit in self.UNITS}}
+                'units': {unit: {'declared_seconds': costs[unit]} for unit in self.UNITS}}
 
-    def fixtures(self, plan, left, code, status, output='', workers=1):
+    def fixtures(self, plan, left, code, status, output='', workers=1, paths=()):
         calls = []
 
         def run(argv, cwd=None, env=None, timeout=None):
             calls.append(argv)
             units = json.loads(argv[argv.index('--units') + 1])
-            Path(argv[argv.index('--times') + 1]).write_text(json.dumps([{'unit': unit, 'status': status} for unit in units]))
+            statuses = status if isinstance(status, dict) else dict.fromkeys(units, status)
+            Path(argv[argv.index('--times') + 1]).write_text(json.dumps([{'unit': unit, 'status': statuses.get(unit, 'passed')} for unit in units]))
             return code, output
 
         with patch.dict(check['fixtures'].__globals__, {'run': run, 'fixture_workers': lambda: workers}):
-            return check['fixtures'](plan, time.monotonic() + left, {}), calls
+            return check['fixtures'](plan, time.monotonic() + left, self.TABLE, list(paths)), calls
 
-    def test_the_cheapest_units_run_first_so_a_long_unit_cannot_crowd_out_a_quick_check(self):
-        # The plan lists units from the most expensive down: the quick source checks at its end still run within the budget.
-        plan = self.plan()
-        plan['units'].update({'swamp/tests/a_test.ts': {'declared_seconds': 70}, 'swamp/tests/b_test.ts': {'declared_seconds': 60},
-                              'swamp/tests/c_test.ts': {'declared_seconds': 5}})
-        part, calls = self.fixtures(plan, 95, 0, 'passed')
-        self.assertEqual(json.loads(calls[0][calls[0].index('--units') + 1]), ['swamp/tests/c_test.ts', 'swamp/tests/b_test.ts'])
-        self.assertIn('budget skipped: swamp/tests/a_test.ts (budget: declared 70s)', part.detail)
+    def ran(self, calls):
+        return json.loads(calls[0][calls[0].index('--units') + 1])
 
-    def test_a_failed_tool_setup_fails_and_is_no_budget_skip(self):
+    def test_the_units_the_change_touches_directly_run_first(self):
+        costs = {'swamp/tests/a_test.ts': 5, 'swamp/tests/b_test.ts': 60, 'swamp/tests/c_test.ts': 70}
+        _part, calls = self.fixtures(self.plan(costs=costs), 500, 0, 'passed', paths=['swamp/tests/c_test.ts', 'swamp/scripts/b.sh'])
+        self.assertEqual(self.ran(calls), ['swamp/tests/b_test.ts', 'swamp/tests/c_test.ts', 'swamp/tests/a_test.ts'])
+        # Without a direct change, the cheapest units run first.
+        _part, calls = self.fixtures(self.plan(costs=costs), 500, 0, 'passed')
+        self.assertEqual(self.ran(calls), self.UNITS)
+
+    def test_the_other_units_that_fit_run_and_the_rest_is_deferred_to_ci_without_failing(self):
+        costs = {'swamp/tests/a_test.ts': 70, 'swamp/tests/b_test.ts': 60, 'swamp/tests/c_test.ts': 5}
+        part, calls = self.fixtures(self.plan(costs=costs), 95, 0, 'passed', paths=['swamp/tests/a_test.ts'])
+        self.assertEqual(self.ran(calls), ['swamp/tests/a_test.ts', 'swamp/tests/c_test.ts'])
+        self.assertEqual((part.status, part.detail), ('passed', '2 of 3 planned units passed; '
+                                                      'deferred to CI: 1 units, 60s declared: swamp/tests/b_test.ts'))
+        self.assertEqual(check['report']([part], 'a' * 40, 1)[-1], 'Task check PASSED against aaaaaaaaaaaa in 1.0s')
+
+    def test_a_unit_that_ran_and_failed_fails_the_check(self):
+        part, _calls = self.fixtures(self.plan(), 110, 1, {'swamp/tests/a_test.ts': 'FAILED'}, 'a failed')
+        self.assertEqual((part.status, part.output), ('FAILED', 'a failed'))
+        self.assertIn('0 of 3 planned units passed; failed: swamp/tests/a_test.ts; deferred to CI: 2 units, 160s declared', part.detail)
+
+    def test_a_failed_tool_setup_fails_and_is_no_deferral(self):
         part, _calls = self.fixtures(self.plan(10), 200, 1, 'NOT RUN', 'Fixture tool setup FAILED; every selected case is NOT RUN')
         self.assertEqual(part.status, 'FAILED')
         self.assertIn('not run: ' + ', '.join(self.UNITS), part.detail)
-        self.assertNotIn('budget skipped', part.detail)
+        self.assertNotIn('deferred', part.detail)
         self.assertIn('Fixture tool setup FAILED', part.output)
 
-    def test_only_the_checks_own_timeout_stops_units_as_a_budget_skip(self):
+    def test_units_the_checks_own_timeout_stops_are_deferred_to_ci(self):
         part, _calls = self.fixtures(self.plan(10), 200, None, 'NOT RUN')
         self.assertEqual(part.status, 'skipped')
-        self.assertIn('budget skipped: swamp/tests/a_test.ts (stopped at the end of the budget)', part.detail)
+        self.assertIn('deferred to CI: 3 units, 30s declared: ' + ', '.join(self.UNITS), part.detail)
         part, _calls = self.fixtures(self.plan(10), 200, 1, 'CANCELLED')
         self.assertEqual(part.status, 'skipped')
 
     def test_units_pack_into_and_run_with_the_check_process_count(self):
         # 100 s left for three 80 s units: one worker admits one, four workers admit three.
         part, calls = self.fixtures(self.plan(), 110, 0, 'passed', workers=1)
-        self.assertEqual(json.loads(calls[0][calls[0].index('--units') + 1]), ['swamp/tests/a_test.ts'])
+        self.assertEqual(self.ran(calls), ['swamp/tests/a_test.ts'])
         self.assertEqual(calls[0][calls[0].index('--workers') + 1], '1')
-        self.assertIn('swamp/tests/b_test.ts (budget: declared 80s)', part.detail)
+        self.assertIn('deferred to CI: 2 units, 160s declared: swamp/tests/b_test.ts, swamp/tests/c_test.ts', part.detail)
         _part, calls = self.fixtures(self.plan(), 110, 0, 'passed', workers=4)
-        self.assertEqual(len(json.loads(calls[0][calls[0].index('--units') + 1])), 3)
+        self.assertEqual(len(self.ran(calls)), 3)
         self.assertEqual(calls[0][calls[0].index('--workers') + 1], '4')
 
     def test_the_fixture_workers_follow_orbit_check_processes(self):
@@ -411,61 +444,99 @@ class ReportTest(unittest.TestCase):
 
 
 class CiPolicyTest(unittest.TestCase):
-    """The ci-policy part runs CI's policy tests when a change touches what they read: a test file, a fixture toml or CI."""
+    """The ci-policy part runs CI's policy and budget tests on every change, as CI's "Select build inputs" job runs them."""
 
-    def policy(self, command, paths, seconds=30):
-        with patch.dict(check['ci_policy'].__globals__, {'CI_POLICY': command}):
-            return check['ci_policy'](paths, time.monotonic() + seconds)
+    def policy(self, commands, seconds=30):
+        with patch.dict(check['ci_policy'].__globals__, {'CI_POLICY': commands}):
+            return check['ci_policy'](time.monotonic() + seconds)
 
-    def test_what_the_ci_policy_tests_read_selects_it(self):
-        for path in ('tools/test_ci_units.py', 'swamp/tests/task_copy_publish_test.py', 'swamp/tests/ansible_instance_container_test.ts',
-                     '.github/ci/fixtures/swamp/tests/task_copy_publish_test.py.toml', '.github/ci/checks.toml',
-                     'tools/tests/ci-workspace-cost-evidence.json', '.github/workflows/ci.yml', 'tools/ci-runners/README.md',
-                     'bin/ci-units', 'bin/task-check'):
-            self.assertTrue(check['ci_policy_path'](path), path)
+    def test_the_part_runs_the_commands_of_cis_select_build_inputs_job(self):
+        step = check['ci_job']('changes')
+        self.assertIn('    name: Select build inputs\n', step)
+        commands = [shlex.split(line.strip()) for line in step.splitlines() if line.strip().startswith('python3 -m unittest discover')]
+        self.assertEqual(check['CI_POLICY'], commands)
+        self.assertEqual(len(commands), 2)
 
-    def test_other_changes_do_not_select_it(self):
-        # Test files the CI policy tests do not read: Pest files, an extension's own Deno test, a Swamp test helper.
-        for path in (GATEWAY_TEST, 'swamp/extensions/behaviors/operations/tasks/publish_test.ts', 'swamp/tests/_support/task_instance_workspace.py',
-                     'apps/gateway/app/Domain/Tasks/TaskCopyTurn.php', 'docs/reference/tasks.md', 'apps/web/Cargo.toml',
-                     'bin/review-check', 'tools/phpstan/NoInlineVarOverrideRule.php', 'apps/cli/tests/Feature/fixture.toml'):
-            self.assertFalse(check['ci_policy_path'](path), path)
-        self.assertEqual(self.policy(['false'], ['docs/reference/tasks.md']).status, 'not selected')
-        self.assertEqual(self.policy(['false'], []).detail, 'no changed path that the CI policy tests read')
-
-    def test_the_part_runs_ci_policy_tests_as_ci_runs_them(self):
-        self.assertEqual(check['CI_POLICY'], ['python3', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_ci_*.py'])
+    def test_a_change_that_touches_no_ci_input_runs_them(self):
+        # Checks 2498 and 2499: a Python test over CI's 150 s lane changed no CI input; only CI's budget tests caught it.
+        ran = []
+        jobs = {**JOBS, 'docs': False, 'api-reference': False, 'swamp': False}
+        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['docs/reference/tasks.md']),
+                 'candidate_head': lambda _committed: 'HEAD', 'ci_plan': lambda _base, _head: (jobs, {}, ''),
+                 'run': lambda argv, *_args, **_kwargs: ran.append(argv) or (0, '')}
+        output = io.StringIO()
+        with patch.dict(check['main'].__globals__, stubs), redirect_stdout(output):
+            code = check['main'](['--only', 'ci-policy'])
+        self.assertEqual(ran, check['CI_POLICY'])
+        self.assertEqual(code, 0)
+        self.assertIn('  passed       ci-policy (', output.getvalue())
 
     def test_a_selected_part_passes_or_fails_with_its_command(self):
-        self.assertEqual(self.policy(['true'], ['bin/ci-units']).status, 'passed')
-        part = self.policy(['false'], ['bin/ci-units'])
+        self.assertEqual(self.policy([['true'], ['true']]).status, 'passed')
+        part = self.policy([['true'], ['false']])
         self.assertEqual((part.status, part.detail), ('FAILED', 'exit 1: false'))
 
     def test_the_budget_stops_it_and_names_it(self):
         started = time.monotonic()
-        part = self.policy(['sleep', '30'], ['.github/workflows/ci.yml'], seconds=1)
+        part = self.policy([['sleep', '30']], seconds=1)
         self.assertLess(time.monotonic() - started, 10)
         self.assertEqual((part.status, part.detail), ('skipped', 'budget: stopped after 1s'))
-
-    def test_its_summary_line_is_the_line_of_every_part(self):
-        lines = check['report']([Part('ci-policy', 'passed', 38.0), Part('ci-policy', 'not selected', 0, 'no changed path that the CI policy tests read')],
-                                'a' * 40, 40.0)
-        self.assertIn('  passed       ci-policy (38.0s)', lines)
-        self.assertIn('  not selected ci-policy (0.0s; no changed path that the CI policy tests read)', lines)
 
     def test_it_runs_before_pest_and_the_fixtures(self):
         order = []
         jobs = {**JOBS, 'docs': False, 'api-reference': False, 'swamp': False}
-        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['tools/test_ci_units.py']),
+        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['docs/reference/tasks.md']),
                  'candidate_head': lambda _committed: 'HEAD', 'ci_plan': lambda _base, _head: (jobs, {}, ''),
-                 'ci_policy': lambda _paths, _deadline: order.append('ci-policy') or Part('ci-policy', 'passed'),
+                 'ci_policy': lambda _deadline: order.append('ci-policy') or Part('ci-policy', 'passed'),
                  'fixture_population': lambda _plan, _deadline: order.append('fixture-population') or Part('fixture-population', 'passed'),
                  'pest_plan': lambda _jobs, _paths, _base: order.append('pest') or [],
-                 'fixtures': lambda _plan, _deadline, _table: order.append('fixtures') or Part('fixtures', 'passed'),
+                 'fixtures': lambda _plan, _deadline, _table, _paths: order.append('fixtures') or Part('fixtures', 'passed'),
                  'capacity_errors': lambda _plan, _table: []}
-        with patch.dict(check['main'].__globals__, stubs), patch('sys.stdout'):
+        output = io.StringIO()
+        with patch.dict(check['main'].__globals__, stubs), redirect_stdout(output):
             check['main'](['--only', 'fixtures,pest,fixture-population,ci-policy'])
         self.assertEqual(order, ['ci-policy', 'fixture-population', 'pest', 'fixtures'])
+        # The run starts by naming CI's per-unit time caps.
+        self.assertEqual(output.getvalue().splitlines()[1], check['ci_caps']())
+
+
+class CiLimitTest(unittest.TestCase):
+    """Each Pest part uses the per-test limit of its CI job, read from ci.yml, and the check names CI's unit cap."""
+
+    def argv(self, project):
+        calls = []
+        with patch.dict(check['pest'].__globals__, {'timed': lambda name, commands, *_args, **_kwargs: calls.extend(commands) or Part(name, 'passed')}):
+            check['pest'](f'pest {project}', project, [], '', time.monotonic() + 30)
+        return calls[0]
+
+    def test_the_gateway_pest_part_uses_cis_five_second_limit(self):
+        # Checks 2510-2512, 2522, 2523: phpunit.xml's 2 s failed tests on a loaded Beast that CI's 5 s passes.
+        self.assertEqual(check['ci_time_limit']('gateway-tests'), 5)
+        self.assertIn('--default-time-limit=5', self.argv('apps/gateway'))
+
+    def test_every_pest_part_passes_exactly_the_limit_of_its_ci_job(self):
+        for job, project in check['PEST_JOBS'].items():
+            with self.subTest(job=job):
+                block = check['ci_job'](job)
+                ci = [flag for line in block.splitlines() if 'vendor/bin/pest' in line or 'composer test' in line
+                      for flag in line.split() if flag.startswith('--default-time-limit=')]
+                self.assertEqual([flag for flag in self.argv(project) if flag.startswith('--default-time-limit=')], ci)
+
+    def test_the_limit_is_read_from_the_workflow(self):
+        workflow = Path(tempfile.mkdtemp(prefix='task-check-ci-')) / 'ci.yml'
+        self.addCleanup(shutil.rmtree, workflow.parent, ignore_errors=True)
+        workflow.write_text((ROOT / '.github/workflows/ci.yml').read_text().replace(
+            'vendor/bin/pest --parallel --processes=4 --default-time-limit=5 ', 'vendor/bin/pest --parallel --processes=4 --default-time-limit=7 '))
+        with patch.dict(check['ci_time_limit'].__globals__, {'CI_WORKFLOW': workflow}):
+            self.assertIn('--default-time-limit=7', self.argv('apps/gateway'))
+            self.assertNotIn('--default-time-limit=7', self.argv('apps/cli'))
+
+    def test_the_check_names_cis_per_unit_cap(self):
+        budget = tomllib.loads((ROOT / '.github/ci/checks.toml').read_text())['budget']
+        caps = check['ci_caps']()
+        self.assertIn(f"declares at most {budget['shard_seconds']}s and is stopped at {budget['unit_ceiling_seconds']}s", caps)
+        self.assertIn('apps/gateway 5s in CI', caps)
+
 
 if __name__ == '__main__':
     unittest.main()

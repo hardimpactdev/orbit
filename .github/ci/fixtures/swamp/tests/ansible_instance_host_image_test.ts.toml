@@ -32,13 +32,14 @@ cases = [
   "a good nested-fleet image build after a failed digest publishes the image and clears the record",
   "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image",
   "a hosting intent without the nested-fleet image builds only the normal image",
+  "the normal image's audit requires agent's one grant, no sudo for orbit and no incus-admin group",
   "the nested-fleet audit judges visudo by its exit code, not by what it prints",
 ]
 file = "swamp/tests/ansible_instance_host_image_test.ts"
 # ESTIMATE: completed Beast run, four workers, each case ceil(local seconds x 2.1) + 1.
 # Cases use verified boundaries; every case remains in Required. No timeout increase.
-cost = 752
-slices = 33
+cost = 754
+slices = 34
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -106,6 +107,7 @@ inputs = [
   "a good nested-fleet image build after a failed digest publishes the image and clears the record" = 22
   "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image" = 11
   "a hosting intent without the nested-fleet image builds only the normal image" = 18
+  "the normal image's audit requires agent's one grant, no sudo for orbit and no incus-admin group" = 2
   "the nested-fleet audit judges visudo by its exit code, not by what it prints" = 2
 
 # Verify the persistent host state before a host-task change can merge.

@@ -248,6 +248,7 @@ The copy rules are one fixed text, the same for the implementer and the reviewer
 
 - Run every command in the foreground. Leave none running when the turn ends.
 - The Project's long gates and full test sets are the work of the task check and CI (`task:check`). Run single test files by path.
+- Keep each new or changed test unit within the per-unit time cap of the Project's CI, which the task check prints.
 - Commit your work before the turn ends.
 - Never print an environment file, a token, a key or a session value.
 
@@ -259,7 +260,9 @@ For a group with a task copy, `task:publish <group>` without `--check` publishes
 
 For a group with a task copy and no pull request, `--check` without `pull_request` opens the pull request in the same Operation when the check is the group's [done check](#when-the-work-is-done) and the reviewer sent its [text](#the-reviewers-pull-request-text). The Gateway then publishes exactly what the release publishes: the reviewer's title and body, a ready pull request, and the done check read again under the group lock. So one `task:publish <group> --check=<id>` after the approval opens the pull request of a `review_before_pr` group.
 
-Any other check only pushes: one that is not the done check, such as a newer check the reviewer has not approved, and the done check while the reviewer's newest turn sent no text. The Operation's input and its result then name why in `pull_request_withheld`; the run's intent never carries it. A group that has its pull request only pushes, as before.
+Any other check only pushes: one that is not the done check, such as a newer check the reviewer has not approved, and the done check while the reviewer's newest turn sent no text. The Operation's input and its result then name why in `pull_request_withheld`; the run's intent never carries it.
+
+On a group that has its pull request, `--check` without `pull_request` that names the done check with the reviewer's text updates the open pull request's title and body with that text, as a [republish](#release-a-waiting-group) does. Any other check of such a group only pushes, with no `pull_request_withheld`.
 
 The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
 
@@ -320,7 +323,7 @@ A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write ch
 
 The publish of a copy also checks the copy itself, before any token exists. A workspace phase, `scan`, runs `swamp/ansible/task_copy_scan.py` in the container, where the secrets are. Root reads the secret values and never follows a link to a source. Git runs as `agent` and only lists and reads objects. The program searches them itself, so a value reaches no other process. It checks each object's hash, so a changed object file reads as an error.
 
-The program prints one line of evidence. It names paths, line numbers and secret names, never a value. So no value reaches an Operation result, a log line, an error or a vault execution copy. In a nested-fleet copy `agent` has root through `sudo`, so there these rules guard the check, not the secrets: the agent can read them anyway.
+The program prints one line of evidence. It names paths, line numbers and secret names, never a value. So no value reaches an Operation result, a log line, an error or a vault execution copy. In every copy `agent` has root through `sudo` ([ADR 0268](/decisions/0268-one-owner-for-the-workspace#amendment-sudo-for-agent-in-every-container)), so these rules guard the check, not the secrets: the agent can read them anyway. A container holds only dev-scoped secrets, never production-grade ones.
 
 | Part | Rule |
 | --- | --- |
@@ -1120,13 +1123,15 @@ The thread stores the resolved model and effort and the T3 provider instance it 
 
 A role's own values on the task change with `task:update` until the role has a thread; after that, `task:update` refuses them with `tasks.agent_settings_locked` (409). The lock covers only the task's own values. The Project's default and the Gateway's settings can still change, and a later new thread of the role, such as the implementer of the next subtask or a turn with `--thread=new`, resolves again and takes them.
 
-Stock T3 0.1.7 takes no effort on its command line. The copy's T3 settings therefore hold one provider instance per provider and effort, such as `claudeMedium`, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment, and a new thread starts on the instance of its provider and effort. Claude Code takes that variable over the `--effort` T3 passes: verified with Claude Code 2.1.311 and T3 0.1.7. See [Swamp drives T3](/reference/development-containers#swamp-drives-t3).
+Stock T3 0.1.7 takes no effort on its command line. The copy's T3 settings therefore hold one provider instance per provider and effort, such as `claudeMedium` or `codexHigh`, and a new thread starts on the instance of its provider and effort.
+
+A Claude instance sets the effort with `CLAUDE_CODE_EFFORT_LEVEL` in its environment. A Codex thread carries its effort as its `reasoningEffort` model option, because T3 0.1.7 sends Codex no other effort. Orbit therefore creates each new thread through T3's own RPC and runs its first turn with `t3 thread send`. This was verified with Claude Code 2.1.311, Codex 0.167.0 and T3 0.1.7. See [turn model and effort](/reference/development-containers#turn-model-and-effort). A copy made before the Codex instances cannot run a Codex thread: start the task on a new copy.
 
 A new thread's values are checked against what the copy's T3 offers, in two places:
 
 | Value | Where | Against | Refusal |
 | --- | --- | --- | --- |
-| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
+| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max`; `codex` at `low`, `medium`, `high`, `xhigh`, `max` or `ultra` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
 | Model | First in the turn, before any checkout or start | The slugs and aliases that T3's cached `model-manifest.json` lists for the instance's driver | The turn fails with `tasks.copy_turn_model_unoffered` and the offered slugs; nothing is launched |
 
 Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy.
@@ -1224,7 +1229,7 @@ Swamp requests a baseline before implementation when its workflow calls for one.
 
 ### Scoped task check
 
-The Orbit Project whose default Instance is a container uses `bin/task-check` as its check. The candidate gate, `bin/review-check`, checks all five Composer projects and does not fit a handoff in a copy. `bin/task-check` checks only what the task changed since its start commit, and stays under five minutes.
+The Orbit Project whose default Instance is a container uses `bin/task-check` as its check. The candidate gate, `bin/review-check`, checks all five Composer projects and does not fit a handoff in a copy. `bin/task-check` checks what the task changed since its start commit, as CI checks it, and stays under five minutes.
 
 A person sets it on the Project once, after the release that ships the command. `orbit project:update` takes the numeric Project id; the Orbit container Project is 78:
 
@@ -1232,7 +1237,7 @@ A person sets it on the Project once, after the release that ships the command. 
 orbit project:update 78 --task-check=bin/task-check
 ```
 
-Orbit runs every task check with `ORBIT_CHECK_PROCESSES=1`, whatever the copy's CPU count, so the check runs PHPStan and Pest in one process. Its five-minute budget holds at that value.
+Orbit runs every task check with `ORBIT_CHECK_PROCESSES=1`, whatever the copy's CPU count, so the check runs PHPStan, Pest and the fixture units in one process. Its five-minute budget holds at that value; fixture units it does not reach are deferred to CI and named.
 
 Another Project that develops Orbit sets the same setting on its own id. Its copy must hold what the parts run: the vendor folders of the Composer projects, Deno for the Swamp parts and Node for the flow charts. A seeded copy holds them; the command installs nothing. Project 46 keeps `composer check` as its task check, as [its task policy](/reference/instance-setup#configure-orbits-task-policy) states.
 
@@ -1265,7 +1270,7 @@ When a page is neither changed nor waived, the part's output names the file and 
 
 #### Parts
 
-[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. The `ci-policy` part runs the CI policy tests, `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, when the change touches what those tests read: the CI registry and its fixture tomls, the workflows, the CI scripts or a Swamp test file. It runs before Pest and the fixtures and prints the same summary line as every part.
+[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. The `ci-policy` part runs the CI policy and budget tests on every change, as CI's "Select build inputs" job runs them. It runs before Pest and the fixtures and prints the same summary line as every part. The `fixtures` part runs the units of CI's fixture plan that the change touches directly first, then those that fit the budget; it names the rest as deferred to CI.
 
 Within a selected Pest job, the check runs the project's changed test files and its pin test files: the Gateway and CLI tests that pin a whole intent, digest or command surface, such as `GatewayRuntimeFilesTest` and `CommandSurfaceTest`. A change far from such a test can break it, so the check runs them whenever CI selects their project's Pest job, and a handoff check finds what CI's full suite finds on them. The `PIN_TESTS` table in `bin/task-check` lists them.
 
@@ -1286,6 +1291,22 @@ Swamp can request a reviewer turn through `task:turn`. The Gateway records the t
 ### Reviewer outcomes
 
 The workflow that requested a reviewer owns review policy. The Gateway records its receipt as evidence. The operator or Swamp changes board status explicitly.
+
+### The reviewer rule
+
+Every reviewer turn in a task copy gets a fixed rule after the caller's prompt and the line that names the checked commit, whatever the reviewer's provider. The rule bounds the review by the task's scope, not by a number of findings:
+
+The scope is the brief, its deliverables, the diff of the checked commit against the task's base, and what that diff directly affects. The reviewer judges only that scope and reports every finding inside it.
+
+A blocking finding is a defect. It is wrong behaviour, a missed or unproven deliverable, a broken or missing test the brief asks for, or a security hole the diff adds. The reviewer gives its file, its line and the failing case.
+
+A finding inside the scope that is not a defect is non-blocking. A misleading name in the new code is one. The reviewer marks it so.
+
+The reviewer reports nothing outside the scope. It offers no ideas, refactors or redesigns beyond the task. It asks for no change outside the files the task touches, unless a defect forces one. Then it names that defect.
+
+With no blocking finding, the reviewer approves.
+
+The [pull request text](#the-reviewers-pull-request-text) rule follows it: a reviewer that approves sends the text, one that does not sends nothing. An implementer turn gets neither rule.
 
 ## Task group modes
 
@@ -1349,7 +1370,7 @@ The reviewer reads the key from the file, not from its environment: Codex can le
 
 The request also takes JSON, `{"title": "...", "body": "..."}`. It names no group, check or commit: the key names the copy, and the copy names its group. The Gateway accepts it only when all of these hold:
 
-- The copy's group is open and has no pull request. Otherwise `tasks.group_closed` (409).
+- The copy's group is open: it has not ended. Otherwise `tasks.group_closed` (409). A group that has its pull request accepts the text too.
 - A turn of the group's reviewer thread runs now, on a checked commit. Otherwise `tasks.pr_text_not_reviewer_turn` (409).
 - That turn's check is still an eligible candidate of the current subtask. Otherwise `tasks.commit_not_checked` (422).
 - The Project is released for copy publish, as [Task copy](#task-copy) describes. Otherwise `tasks.copy_publish_held` (409).
@@ -1361,9 +1382,13 @@ Orbit records the text on that check, with the reviewer turn's Operation, and an
 {"data": {"state": "recorded", "check_id": 20977, "operation_id": 21890, "opens": "when the group is done"}}
 ```
 
+For a group that has its pull request, `opens` reads `updates the pull request on the next publish of the done check`.
+
 A second call in the same turn replaces the text. Orbit opens nothing at this point. A turn cannot publish its own work: while it runs, the group is busy. The reviewer sends the text only when it approves the commit. Its turn prompt says so.
 
-When the group is [done](#when-the-work-is-done), the publish takes the title and the body from the done check. The text counts only when the reviewer thread's newest turn sent it. A later reviewer turn on the same check that sends nothing leaves the group without text. Every guard of the publish reads this text as it read Orbit's own: the `.env` content check, the [copy check](#the-copy-check) and the waiver lines.
+When the group is [done](#when-the-work-is-done), the publish takes the title and the body from the done check. Every publish of the done check carries that text: the first opens the pull request with it, and a [republish](#release-a-waiting-group) updates the open pull request's title and body with it. So a reviewer turn after the pull request opened, such as one after a CI fix, rewrites the pull request without a hand edit.
+
+The text counts only when the reviewer thread's newest turn sent it. A later reviewer turn on the same check that sends nothing leaves the group without text. Every guard of the publish reads this text as it read Orbit's own: the `.env` content check, the [copy check](#the-copy-check) and the waiver lines.
 
 There is no fallback text. A group whose done check has no text waits in `waiting_for_pr_text` until a reviewer turn sends one. A task copy made before the copy key existed cannot send text: a person publishes its group with `task:publish <group> --check=<id> --title=<text> --body=<text>`.
 
@@ -1399,7 +1424,9 @@ A group can name the GitHub issue it works on: [`task:create --issue=<number>`](
 
 `task:publish <group>` without `--check`, `--title` and `--body` publishes what the automatic publish would: the done check, the reviewer's title and body, and a ready pull request. It refuses with `tasks.not_done` (409) when the group's work is not done, and with `tasks.pr_text_missing` (409) when the group waits for its text. It also releases a group in `refused` after the cause is fixed. The form with `--check` stays as [Publish an external group](#publish-an-external-group) describes. A group without a task copy has no done check: without `--check`, its publish keeps the validation error (422) on `check`.
 
-On a group that has its pull request, the same call publishes the done check again: a republish. The work must be done by every other rule of [When the work is done](#when-the-work-is-done): the newest handoff check is the last subtask's, and the reviewer approved its commit. The publish pushes that check to the pull request's branch with no pull request text, so the open pull request keeps its title and body and shows the new commits. The tick never republishes: it publishes only a group without a pull request.
+On a group that has its pull request, the same call publishes the done check again: a republish. The work must be done by every other rule of [When the work is done](#when-the-work-is-done): the newest handoff check is the last subtask's, and the reviewer approved its commit. The publish pushes that check to the pull request's branch.
+
+When the reviewer thread's newest turn sent its [text](#the-reviewers-pull-request-text) for the done check, the same publish updates the open pull request's title and body with it, with `Closes #<issue>` as on the first publish. Without such text, the publish only pushes, so the open pull request keeps its title and body and shows the new commits. `task:publish <group> --check=<id>` naming the done check publishes the same way. The tick never republishes: it publishes only a group without a pull request.
 
 The admission reads done again inside its transaction, after it locks the group's row. A subtask added or a turn started since the first read refuses with `tasks.not_done`. For the automatic publish it also reads the mode again there: a group or done check outside `pr_when_done` refuses the same way.
 
@@ -1430,6 +1457,7 @@ Both records match by the repository, not by the Project. Two Projects can name 
 | [`task:pr-merge`](/cli/task/pr-merge) | Refused before any GitHub read, also for a watched pull request that a copy of any Project opened. Once read, also for a head on a copy group's branch |
 | [`project:pr-merge`](/cli/project/pr-merge) | Refused for such a pull request of any Project on the repository: by its number before any GitHub read, or by its `task-<id>` branch once read |
 | [`task:pr-gate`](#gate-check) | Skips the group with `tasks.copy_pr_no_merge`: no ready step and no merge |
+| [`task:copy-settle`](#a-copy-group-settles-on-merge) | Reads the pull request's state only, and completes the group after a person merged it |
 | [Review and merge](#review-and-merge) | Acts only through `task:pr-gate` and `project:pr-merge`, so it merges no such pull request |
 | [Dependency merge](#dependency-batch-squash-admission) | Refused for a batch group whose publish came from a task copy |
 | [Automatic deployments](/reference/deployments#automatic-deployments) | Deploy commits already on the default branch, and merge nothing |
@@ -1466,6 +1494,36 @@ Swamp observes the published PR and records the group status. Swamp owns branch 
 ### Settling
 
 Swamp owns PR checks, feedback, retries, fixups and cleanup. Updating a group to `settling` or `waiting_for_review` records board state and starts nothing.
+
+#### A copy group settles on merge
+
+A group whose workspace is a [task copy](#task-copy) settles itself when its watched pull request merges. Orbit only reads the pull request. It never merges, readies or comments on it ([No merge](#no-merge)).
+
+The Gateway scheduler runs `task:copy-settle` every five minutes while the Tasks extension is on. It runs for every Project with a GitHub repository, whatever its [maintenance](/reference/projects#maintenance) setting. It looks at each running or reviewing copy group with a watched pull request, and reads that pull request with a read-only App token, as [`task:pr-gate`](#gate-check) does:
+
+- **Merged.** The tick records `watched_pr_state`, `watched_pr_completion` `merged` and `merged_at`. Then it completes the group as [`task:complete`](#complete-and-cleanup) does, with no sync.
+- **No second pull request read.** The complete reads the copy's workspace instead.
+- **Origin's task branch.** The complete also reads it for a group with an approved commit ([Cancel a stuck task](#cancel-a-stuck-task)).
+- **The result.** The group ends `completed` with `settled_at` and `merged_at` set, so task insights count it as completed. The copy's destroy is admitted.
+- **Closed without a merge.** The tick records the state only. A person completes or cancels the group.
+- **Open, or GitHub cannot be read.** Nothing changes. The next tick reads again.
+
+The tick waits for the group to be free and keeps the copy's work:
+
+- **Busy.** The tick skips a group with an open Operation of its own: a turn, a check or a publish. The next tick tries again.
+- **A held copy.** The tick also skips a copy that an Operation holds, such as a destroy that runs.
+- **Unpublished work.** The copy holds uncommitted, untracked, stashed or other-branch work. The tick records `failure` assistance once and leaves the copy.
+- **A stuck copy.** The copy is stopped or asleep, or holds no repository. The tick records the same request.
+- **The request.** It names the fix: publish or remove the work, or start the copy. Then a person resolves the request.
+- **Until then.** The tick skips the group.
+
+Any other refusal asks nobody, and the next tick tries again. Such a refusal is a copy read that timed out or lost its Node, or a failed GitHub read of origin's task branch.
+
+A copy that the tick could not remove stays with its group until a later tick:
+
+- **A failed destroy.** The group is `completed` and still names the copy. The next tick completes it again, which admits a new destroy.
+- **A refused destroy.** A destroy that could not be admitted is retried the same way.
+- **Repeats.** A crash between the record and the complete leaves `merged` recorded. The next tick completes the group without reading the pull request again.
 
 #### Trusted GitHub feedback
 
@@ -1664,14 +1722,16 @@ A task without a task copy holds nothing to release: the task VMs and their rele
 
 Cancel asks a running group Operation to stop. If it is still running, the call returns HTTP 409 `operation.target_busy` with its id and confirms the stop request. Run `task:cancel` again once that Operation has ended. A timed-out Operation whose run nothing has proven ended still holds the group, for up to an hour; the cancel then returns the same 409 before it admits the destroy of the task's copy.
 
-- **Work only a task copy holds.** A cancel refuses a [task copy](#task-copy) with work origin lacks. It returns HTTP 409 `tasks.copy_unpublished_work` with the counts.
-- **Published commits.** A succeeded `task:publish` put its commit and that commit's history on origin. They do not count.
+- **Work only a task copy holds.** A cancel refuses a [task copy](#task-copy) with work that is not published. It returns HTTP 409 `tasks.copy_unpublished_work` with the counts and the content verdict `work`.
+- **Published work.** [Published work of a copy](#published-work-of-a-copy) defines it. A succeeded `task:publish` put its commit and that commit's history on origin; they do not count either.
+- **Squash-merged or hand-carried work.** Its content is on the default branch, so it does not count, whatever its commit SHAs.
 - **Unread task copy.** A cancel refuses a copy it cannot read: HTTP 409 `tasks.copy_workspace_unknown`, with the reason.
+- **No content read of the head.** The verdict is `work_unread`. Run `task:sync`, then cancel again.
 - **Discard.** `discard: true` (CLI `--discard`) lets the cancel destroy that work; `--yes` never does. Complete needs no discard, because origin has the approved work.
 - **Approved work not on origin.** Cancel and complete refuse with HTTP 409 `tasks.approved_work_unpublished` and change nothing. Run `task:publish` first.
 - **Refused admission.** `tasks.not_cancellable` and `tasks.workspace_ownership_refused` change nothing.
 
-Cancel and complete keep approved work by a precondition, never by a push of their own. The precondition applies while the task holds a workspace or has an approval. Origin's task branch must reach the latest approved commit. That commit is the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval.
+Cancel and complete keep approved work by a precondition, never by a push of their own. The precondition applies while the task holds a workspace or has an approval. Origin's task branch must reach the latest approved commit. For a task copy, the copy's latest read may stand in: it is of the copy's current head, that head holds the approved commit, and the read found every committed path on the default branch. That commit is the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval.
 
 Only when GitHub answers that the branch does not exist and the task's pull request merged does that pull request's head stand in for the branch. Commits and refs are read with a `contents: read` token. An earlier approved commit that merged does not cover a later one. The refusal names the commit and the branch. Every other outcome refuses the same way, such as a failed GitHub read or a branch that is gone without a merged pull request.
 
@@ -1683,15 +1743,33 @@ When cancel marks the task `cancelled`, it follows the [ending rule](#assistance
 
 Swamp requests group completion or cancellation through the API. The Gateway stops admitted work and performs the requested workspace removal. A failed remote stop or removal preserves the owned workspace and error evidence for retry. Swamp schedules retries.
 
-`task:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. Repeating completion on a completed group retries its attached workspace removal. An explicit cancellation or completion remains available even though automatic orchestration is removed.
+`task:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. A running or reviewing group with a task copy also completes when its work is already on the default branch and is not empty, such as work carried there by hand; [Published work of a copy](#published-work-of-a-copy) decides. An empty copy group needs a cancel. A refused complete answers `tasks.not_settling` with a `reason`: `status`, `pull_request_not_ended`, `work_unread`, `work_not_on_default` or `work_empty`.
+
+Completion never destroys a copy that holds uncommitted, untracked, stashed or other-branch work. It reads the copy first, as a cancel does, and refuses with `tasks.copy_unpublished_work` and the read's counts, or `tasks.copy_workspace_unknown` when the copy cannot be read. Publish or remove that work, then complete again. Repeating completion on a completed group retries its attached workspace removal without a new read. A copy group whose watched PR merged completes by itself ([A copy group settles on merge](#a-copy-group-settles-on-merge)). An explicit cancellation or completion remains available even though automatic orchestration is removed.
 
 Origin must already have the approved work, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
 
 ### Task copy cleanup
 
-A task whose workspace is a [task copy](#task-copy) has no task VM. `task:complete` admits the copy's normal `instance.destroy` with force, as `task:cancel` does, marks the task `completed` and answers HTTP 200 with the task. An open destroy of the copy is reused. When the destroy succeeds, the task lets go of the copy and stays `completed`. When it fails, the task keeps the copy, and completing again admits a new destroy.
+A task whose workspace is a [task copy](#task-copy) has no task VM. `task:complete` reads the copy as `task:cancel` does and refuses one that holds work that is not published ([Complete and cleanup](#complete-and-cleanup)). It then admits the copy's normal `instance.destroy` with force, as `task:cancel` does, marks the task `completed` and answers HTTP 200 with the task. An open destroy of the copy is reused. When the destroy succeeds, the task lets go of the copy and stays `completed`. When it fails, the task keeps the copy, and completing again admits a new destroy.
 
 A cancel of a copy records the `tasks.cancel` Operation under the group's lock key and admits the destroy in one transaction, record first. An Operation that holds or takes the group lock refuses the record with `operation.target_busy`, and the transaction admits no destroy.
+
+### Published work of a copy
+
+One rule decides whether a task copy holds work that would be lost with it. It lives in one place: the content read at the end of the copy's `base` phase, in `swamp/ansible/tasks/task-instance-workspace-phase.yml`. [`task:sync`](/cli/task/sync) runs that phase with its minted read token, so the copy holds the current default head as `origin/<default>` when it reads. The sync records the read as `work` in its result.
+
+- **Changed paths.** The read takes every path that HEAD changed since its merge base with the default head.
+- **Kinds of change.** Adds, edits, deletes and mode changes count.
+- **Renames.** A rename is a delete and an add.
+- **Committed work.** The default head must hold the same content at each changed path. A commit that a succeeded `task:publish` of the group pushed counts too.
+- **Commit SHAs do not matter.** Content is compared, so a squash-merged or hand-carried branch is published.
+- **Empty commits.** A check's empty handoff commit adds nothing. So does a commit whose tree repeats published content.
+- **Never published.** Uncommitted and untracked files, stashes, and commits that only another local branch holds always count.
+- **Empty.** A copy whose HEAD changed no path since the merge base is `empty`: complete refuses it, and cancel ends it.
+
+The read returns `work`: `state` (`clean` or `dirty`), `head`, `empty`, the count of differing `paths` with up to five names, the `uncommitted`, `untracked` and `stashes` counts, and `approved_held`. Cancel and complete use the latest sync's read only while it is of the copy's current head, which their own bounded read sees. A commit made after the sync needs a new sync. The copy never holds a GitHub credential: the base phase fetches on the Node, and the copy receives only a bundle.
+
 
 A copy turn runs on the `t3` driver, which the driver registry does not hold. Its turn is its `tasks.copy_turn` Operation, which complete stops as it stops every running group Operation, so the subtask stop interrupts no `t3` thread.
 

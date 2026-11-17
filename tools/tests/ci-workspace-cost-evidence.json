@@ -43,7 +43,7 @@
         "test_nothing_new_makes_no_bundle_and_a_merged_branch_is_not_behind": 15.906,
         "test_a_copy_whose_mirror_exists_syncs_without_the_default": 12.76,
         "test_only_the_base_child_reads_the_credential_and_the_shared_child_has_no_base": 0.553,
-        "test_the_copy_sync_workflow_calls_the_base_and_the_task_vm_workflow_has_no_copy_step": 0.566
+        "test_the_copy_sync_workflow_calls_the_base_and_the_task_vm_workflow_has_no_copy_step": 1.143
       }
     },
     "swamp/tests/task_instance_workspace_base_cleanup_test.py": {
@@ -105,6 +105,18 @@
       "case_seconds": {
         "test_after_a_merge_of_main_the_deliverable_diff_is_the_subtasks_own": 6.377,
         "test_a_recheck_whose_head_already_holds_main_compares_with_the_start_plus_that_head": 11.866
+      }
+    },
+    "swamp/tests/task_instance_workspace_base_work_test.py": {
+      "case_seconds": {
+        "test_a_squash_merged_branch_reads_clean": 7.806,
+        "test_an_empty_handoff_commit_adds_nothing": 0.578,
+        "test_one_path_that_differs_reads_dirty": 0.567,
+        "test_a_delete_on_main_of_a_file_the_copy_also_deleted_is_equal": 0.644,
+        "test_uncommitted_work_stays_dirty": 0.561,
+        "test_an_untracked_file_and_a_stash_stay_dirty": 0.566,
+        "test_a_published_commit_counts_and_holds_the_approved_commit": 0.574,
+        "test_a_copy_that_changed_nothing_is_empty": 0.799
       }
     }
   }

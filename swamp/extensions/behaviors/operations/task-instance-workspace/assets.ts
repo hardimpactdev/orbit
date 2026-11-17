@@ -127,6 +127,21 @@ const Evidence = z.union([
         start: Hash.nullable(),
         bundled: z.boolean(),
         changed: z.boolean(),
+        // The one content read (docs/reference/tasks.md#published-work-of-a-copy): what of the copy is not on the default head.
+        work: z.object({
+            state: z.enum(["clean", "dirty"]),
+            head: Hash,
+            default_commit: Hash,
+            empty: z.boolean(),
+            paths: z.object({
+                count: z.number().int().min(0),
+                names: z.array(z.string()).max(5),
+            }).strict(),
+            uncommitted: z.number().int().min(0),
+            untracked: z.number().int().min(0),
+            stashes: z.number().int().min(0),
+            approved_held: z.boolean().nullable(),
+        }).strict(),
     }).strict(),
     z.object({ cleaned: z.literal(true), changed: z.literal(false) })
         .strict(),
