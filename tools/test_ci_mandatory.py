@@ -114,6 +114,23 @@ class MandatoryRegistryTest(unittest.TestCase):
                     self.assertRaisesRegex(ValueError, 'mandatory_cases'):
                 units.configuration()
 
+    def test_parsed_yaml_opt_in_requires_exact_declared_nonmandatory_paths(self):
+        original, inventory = units.registry.load(ROOT)
+        valid = 'swamp/ansible/tasks/instance-fleet.yml'
+        fleet = 'swamp/tests/ansible_instance_fleet_test.ts'
+        settings = [(fleet, value) for value in
+                    (valid, [42], [valid, valid], ['swamp/ansible/tasks/instance-fleet*.yml'],
+                     ['swamp/ansible/instance-container.yml'], ['swamp/ansible/fleet-converge-inputs.json'])]
+        settings.append((IMAGE, [HOST]))
+        for file, value in settings:
+            config = copy.deepcopy(original)
+            entry = next(f for f in config['fixture'] if f['file'] == file)
+            entry['parsed_yaml_inputs'] = value
+            with self.subTest(file=file, value=value), \
+                    patch.object(units.registry, 'load', return_value=(config, inventory)), \
+                    self.assertRaisesRegex(ValueError, 'parsed_yaml_inputs'):
+                units.configuration()
+
     def test_host_change_and_full_pressure_always_run_the_five_boundary_proofs(self):
         budget, fixtures, defaults = units.configuration()
         self.assertEqual(fixtures[IMAGE]['mandatory_cases'], {HOST: BOUNDARIES})

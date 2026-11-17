@@ -21,3 +21,5 @@ inputs = [
   "swamp/tests/_support/swamp_expression.ts",
   "swamp/tests/_support/swamp_workflow.ts",
 ]
+# This fixture and the workflow test helper parse the workflow before inspecting or executing it.
+parsed_yaml_inputs = ["swamp/workflows/workflow-operation-instance-complete.yaml"]

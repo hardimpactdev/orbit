@@ -211,11 +211,11 @@ def skip_reason(step, environment):
     return None
 
 
-def fixture_commands(steps, reports, tools, base):
+def fixture_commands(steps, reports, tools, base, planner_python):
     """Select, pack and run fixtures through CI's planner and bounded runner."""
     units = runpy.run_path(str(ROOT / 'bin/ci-units'))
     budget, fixtures, _defaults = units['configuration']()
-    planned = subprocess.run([sys.executable, str(ROOT / 'bin/ci-units'), 'plan', '--base', base,
+    planned = subprocess.run([str(planner_python), str(ROOT / 'bin/ci-units'), 'plan', '--base', base,
                               '--head', 'HEAD', '--plan-json', str(reports / 'fixture-plan.json')],
                              cwd=ROOT, capture_output=True, text=True)
     if planned.returncode:
@@ -322,7 +322,8 @@ def main(argv=None):
     base = resolve_base(args.base) if args.only not in ('validate', 'lint') else ''
     if args.only != 'validate':
         try:
-            environment['PATH'] = f'{tool_path(args.tools)}{os.pathsep}{environment["PATH"]}'
+            tools_bin = tool_path(args.tools)
+            environment['PATH'] = f'{tools_bin}{os.pathsep}{environment["PATH"]}'
         except (OSError, subprocess.CalledProcessError) as error:
             print(f'Cannot prepare pinned gate tools: {error}. Install Python 3.13+ with venv/pip '
                   'support (python3-venv on Debian/Ubuntu) and allow downloads from PyPI.', file=sys.stderr)
@@ -334,7 +335,7 @@ def main(argv=None):
              or args.only == 'lint' and step.name in ('ansible collections', 'ansible-lint', 'ruff')]
     if args.only in (None, 'shape'):
         try:
-            steps = fixture_commands(steps, args.reports, args.tools, base)
+            steps = fixture_commands(steps, args.reports, args.tools, base, tools_bin / 'python3')
         except ValueError as error:
             print(str(error), file=sys.stderr)
             return 1
