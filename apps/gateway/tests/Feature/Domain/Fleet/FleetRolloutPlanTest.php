@@ -335,7 +335,14 @@ it('preserves every prior host approval before an early halt and across a supers
     // The next release's immediate predecessor carries the unapproved change.
     $matching = str_repeat('c', 12);
     symlink(dirname(base_path(), 2), $this->base.'/releases/'.$matching);
-    $next = GatewayRelease::query()->create(['sha' => str_repeat('d', 40), 'trigger' => 'auto', 'outcome' => 'verified',
+    $nextCommit = str_repeat('d', 40);
+    $nextPath = 'releases/'.substr($nextCommit, 0, 12);
+    mkdir($this->base.'/'.$nextPath.'/apps/gateway', 0700, true);
+    file_put_contents($this->base.'/'.$nextPath.'/REVISION', $nextCommit."\n");
+    symlink($nextPath, $this->base.'/orbit-next');
+    rename($this->base.'/orbit-next', $this->base.'/orbit');
+    app()->instance(FleetServingRelease::class, new FleetServingRelease($this->base.'/'.$nextPath.'/apps/gateway'));
+    $next = GatewayRelease::query()->create(['sha' => $nextCommit, 'trigger' => 'auto', 'outcome' => 'verified',
         'previous_release_id' => $matching, 'phases' => ['fleet' => ['status' => 'pending', 'nodes' => []]], 'duration_ms' => 0]);
     Node::query()->findOrFail($this->nodes['dev'])->update(['status' => LifecycleStatus::Failed]);
     $action->execute($next);
@@ -475,3 +482,56 @@ it('fingerprints edits to a shared play or a dependency of that role', function 
     'shared runtime check' => ['swamp/ansible/tasks/check-runtime.yml', true],
     'CI seed certificate' => ['swamp/ansible/tasks/proof-seed-certificate.yml', false],
 ]);
+
+it('fingerprints a shared Instance host helper only for the role that runs it', function (string $path): void {
+    $root = $this->base.'/instance-helper';
+    $repo = dirname(base_path(), 2);
+    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    foreach ([$recipe, $path] as $file) {
+        mkdir(dirname($root.'/'.$file), 0700, true);
+        copy($repo.'/'.$file, $root.'/'.$file);
+    }
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    config(['instances.container_nodes' => [$dev->id]]);
+    $ci = Node::query()->findOrFail($this->nodes['db']);
+    $ci->forceFill(['settings' => ['ci' => ['places' => 1]]])->saveQuietly();
+    $runner = $ci->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    $database = $ci->roles()->where('role', RoleName::Database)->sole();
+    $inputs = app(ReleaseNodeInputs::class);
+    $beforeDev = $inputs->roles($dev, root: $root);
+    $beforeCi = $inputs->roles($ci, root: $root);
+    file_put_contents($root.'/'.$path, "\n# Changed Instance host helper.\n", FILE_APPEND);
+    $afterCi = $inputs->roles($ci, root: $root);
+
+    expect($inputs->roles($dev, root: $root))->not->toBe($beforeDev)
+        ->and($afterCi[$runner->id])->not->toBe($beforeCi[$runner->id])
+        ->and($afterCi[$database->id])->toBe($beforeCi[$database->id]);
+})->with([
+    'NIC check' => 'swamp/ansible/instance_network.py',
+    'nested clone probe' => 'swamp/ansible/instance_nested.py',
+]);
+
+it('fingerprints a base play change for the roles whose units it applies', function (RoleName $role): void {
+    $root = $this->base.'/base-play';
+    $repo = dirname(base_path(), 2);
+    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    $play = 'swamp/ansible/tasks/node-converge-base.yml';
+    foreach ([$recipe, $play] as $file) {
+        mkdir(dirname($root.'/'.$file), 0700, true);
+        copy($repo.'/'.$file, $root.'/'.$file);
+    }
+    $node = SwampNodeFixture::ensure();
+    $node->roles()->create(['role' => RoleName::Database, 'status' => LifecycleStatus::Active]);
+    if ($role !== RoleName::Swamp) {
+        $node->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active]);
+    }
+    $assignment = $node->roles()->where('role', $role)->sole();
+    $database = $node->roles()->where('role', RoleName::Database)->sole();
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node, root: $root);
+    file_put_contents($root.'/'.$play, "\n# Changed unit application.\n", FILE_APPEND);
+    $after = $inputs->roles($node, root: $root);
+
+    expect($after[$assignment->id])->not->toBe($before[$assignment->id])
+        ->and($after[$database->id])->toBe($before[$database->id]);
+})->with([RoleName::Swamp, RoleName::WebSocket]);

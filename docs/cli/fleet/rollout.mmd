@@ -19,6 +19,7 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the verified release admits the rollout, as `gateway:release:deploy` says; the deleted `fleet-maintenance` schedule did it each minute until 2026-11-06
   %%> - most releases land outside the window, so a daily pass at window open visits the Nodes they deferred
+  %%> - the release pass confirms the serving release under the writer lock before admitting a visit, including for Nodes with no CLI caller
   %%> - the admission waits while another rollout runs; Nodes without CLI intent need no CLI release
   %%> - a Node with CLI intent waits for its CLI release; the admission keeps its one-minute retry after admitting other Nodes
   %%> Picks:

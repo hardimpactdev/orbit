@@ -585,7 +585,9 @@ it('keeps the release pending on a deferred T3 receipt and schedules a new role 
     $operation = app(StartNodeConvergeAction::class)->execute($this->node, roles: ['app-prod'], release: true);
     $operation->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now(),
         'result' => ['t3_restart_deferred' => ['orbit-instances/instance-7']]]);
-    $release = GatewayRelease::query()->create(['sha' => str_repeat('a', 40), 'trigger' => 'auto', 'outcome' => 'verified', 'duration_ms' => 0,
+    $commit = str_repeat('a', 40);
+    config(['app.version' => $commit, 'orbit.gateway_checkout' => base_path()]);
+    $release = GatewayRelease::query()->create(['sha' => $commit, 'trigger' => 'auto', 'outcome' => 'verified', 'duration_ms' => 0,
         'phases' => ['fleet' => ['status' => 'pending', 'nodes' => [$this->node->id => ['node_id' => $this->node->id,
             'name' => $this->node->name, 'status' => 'running', 'role_operation_id' => $operation->id]]]]]);
     $fleet = app(ContinueReleaseFleetAction::class);

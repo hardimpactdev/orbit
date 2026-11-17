@@ -6,7 +6,7 @@ namespace App\Domain\Fleet;
 
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\AppDevRuntimeFootprint;
-use App\Domain\Nodes\CiRunnerStateFiles;
+use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeExecutorInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleUnits;
@@ -79,6 +79,8 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/instance_machine_name.py',
         'swamp/ansible/instance_folder_*.py',
         'swamp/ansible/instance_bridge.py',
+        'swamp/ansible/instance_network.py',
+        'swamp/ansible/instance_nested.py',
         'swamp/ansible/files/instance-browser-trust.sh',
         'swamp/ansible/files/instance-container-wake.sh',
         'swamp/ansible/files/instance-container-power.py',
@@ -131,16 +133,17 @@ final readonly class ReleaseNodeInputs
             // The first converge allocates a missing bridge before capturing the applied plan.
             $instances = $instanceHost && $node->instance_bridge !== null ? $host->for($node) : null;
             $executor = isset(NodeExecutorInput::RoleFamilies[$role]);
+            $roleUnits = NodeRoleUnits::for($node, [$role]);
             $files = [
                 ...(self::RoleFiles[$role] ?? []),
                 ...($php !== [] ? ['swamp/ansible/tasks/php.yml'] : []),
-                ...($executor ? ['swamp/ansible/tasks/node-converge-base.yml', 'swamp/ansible/tasks/node-executor.yml',
-                    'swamp/ansible/tasks/node-converge-replace.yml'] : []),
+                ...($executor || $roleUnits !== [] ? ['swamp/ansible/tasks/node-converge-base.yml'] : []),
+                ...($executor ? ['swamp/ansible/tasks/node-executor.yml', 'swamp/ansible/tasks/node-converge-replace.yml'] : []),
                 ...($instanceHost ? self::InstanceHostFiles : []),
             ];
             $renderedFiles = match ($assignment->role) {
                 RoleName::AppDev => [AppDevRuntimeFootprint::directories(), AppDevRuntimeFootprint::files()],
-                RoleName::CiRunner => app(CiRunnerStateFiles::class)->runtime(),
+                RoleName::CiRunner => app(NativeNodeRoleRuntimeInput::class)->ciRunner($node),
                 default => [],
             };
             $phpRuntime = $php === [] ? [] : array_values(array_filter(
@@ -151,7 +154,7 @@ final readonly class ReleaseNodeInputs
                 $this->pins($recipe, $profile), $php, in_array($role, $recipe->phpPolicy->pcovProfiles, true),
                 $instances === null ? null : InstanceHostIntent::withoutAdmission($instances),
                 $runtime, $executor ? NodeExecutorInput::for($node) : null,
-                $renderedFiles, $phpRuntime, NodeRoleUnits::for($node, [$role]), $sharedFiles, $this->files($root, $files),
+                $renderedFiles, $phpRuntime, $roleUnits, $sharedFiles, $this->files($root, $files),
             ])];
         }
 

@@ -28,19 +28,19 @@ use App\Support\ValidatedData;
 final readonly class NativeNodeRoleRuntimeInput
 {
     /**
-     * The seed listener of a CI Node (docs/reference/node-provisioning.md#the-seed-listener): the Incus listener on the WireGuard
-     * address and one restricted trust of root's Incus client certificate on the default's Node, whose Node the run reads it from. With no
-     * sender the converge removes both; `listen` still names the address it removes.
+     * The CI runner's rendered runtime inputs, with no per-Operation data. The seed listener trusts the Incus client certificate
+     * from the default's Node. With no sender, the converge removes the trust and its listener at the recorded address.
      *
      * @return array<string, mixed>
      */
-    private static function proofSeed(Node $node): array
+    public function ciRunner(Node $node): array
     {
         $sender = app(ProofSeeds::class)->sender($node);
-
-        return ['present' => $sender !== null, 'listen' => ValidatedData::string($node->wireguard_ip).':'.ProofSeeds::ListenerPort,
+        $seed = ['present' => $sender !== null, 'listen' => ValidatedData::string($node->wireguard_ip).':'.ProofSeeds::ListenerPort,
             'trust' => ProofSeeds::TrustName, 'project' => InstancePlacement::NestedProject,
             'sender' => $sender === null ? null : ['node_id' => $sender->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($sender)]];
+
+        return ['proof_seed' => $seed, ...app(CiRunnerStateFiles::class)->runtime()];
     }
 
     /** @param array<string,mixed> $snapshot
@@ -52,13 +52,9 @@ final readonly class NativeNodeRoleRuntimeInput
             'websocket' => null, 'metrics' => null, 'analytics' => null, 'gateway_dns' => null, 'gateway' => null,
             'swamp' => $assignment->role === RoleName::Swamp ? $snapshot['runtime'] : null,
             'ci_host' => $assignment->role === RoleName::CiRunner];
-        // Only a ci-runner intent has the key, so the intent of every other role stays as it was.
-        if ($assignment->role === RoleName::CiRunner) {
-            $runtime['proof_seed'] = self::proofSeed($node);
-        }
         $copies = [];
         if ($assignment->role === RoleName::CiRunner) {
-            $runtime = array_replace($runtime, app(CiRunnerStateFiles::class)->runtime());
+            $runtime = array_replace($runtime, $this->ciRunner($node));
         }
         if ($assignment->role === RoleName::Gateway) {
             $gateway = app(GatewayRuntimeFiles::class)->render($node);

@@ -31,12 +31,12 @@ afterEach(function (): void {
     RefreshDatabaseState::$migrated = false;
 });
 
-it('lets a second SQLite connection commit an unrelated write during cold catalog resolution and admits the pinned CLI', function (): void {
+beforeEach(function (): void {
     Queue::fake();
     $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
     $root = sys_get_temp_dir().'/orbit-fleet-catalog-'.bin2hex(random_bytes(8));
-    $commit = 'ca7a109'.str_repeat('0', 33);
-    $releasePath = $root.'/releases/'.substr($commit, 0, 12);
+    $this->commit = 'ca7a109'.str_repeat('0', 33);
+    $releasePath = $root.'/releases/'.substr($this->commit, 0, 12);
     mkdir($releasePath.'/apps/gateway', 0700, true);
     $database = $root.'/gateway.sqlite3';
     $default = DB::getDefaultConnection();
@@ -54,21 +54,28 @@ it('lets a second SQLite connection commit an unrelated write during cold catalo
         config(["database.connections.{$name}" => [...config("database.connections.{$default}"), 'database' => $database, 'busy_timeout' => 0]]);
     }
     DB::setDefaultConnection('fleet-catalog');
-    $fleet = DB::connection('fleet-catalog');
-    $writer = DB::connection('unrelated-writer');
-    expect($fleet->getPdo())->not->toBe($writer->getPdo())
-        ->and($fleet->getConfig('transaction_mode'))->toBe('IMMEDIATE');
+    $this->fleet = DB::connection('fleet-catalog');
+    $this->writer = DB::connection('unrelated-writer');
+    expect($this->fleet->getPdo())->not->toBe($this->writer->getPdo())
+        ->and($this->fleet->getConfig('transaction_mode'))->toBe('IMMEDIATE');
 
-    file_put_contents($releasePath.'/REVISION', $commit."\n");
-    symlink('releases/'.substr($commit, 0, 12), $root.'/orbit');
+    file_put_contents($releasePath.'/REVISION', $this->commit."\n");
+    symlink('releases/'.substr($this->commit, 0, 12), $root.'/orbit');
+    config(['cache.default' => 'array', 'fleet.rollout' => true, 'app.version' => $this->commit,
+        'orbit.gateway_checkout' => $root.'/orbit/apps/gateway', 'swamp.run_token' => 'test-token']);
+    app()->instance(FleetServingRelease::class, new FleetServingRelease($releasePath.'/apps/gateway'));
+    $this->root = $root;
+});
+
+it('lets a second SQLite connection commit an unrelated write during cold catalog resolution and admits the pinned CLI', function (): void {
+    $root = $this->root;
+    $commit = $this->commit;
+    $writer = $this->writer;
     $catalogPath = $root.'/cli.json';
     file_put_contents($catalogPath, json_encode(['number' => 9001, 'checksums_url' => 'https://example.test/SHA256SUMS',
         'assets' => [['platform' => 'linux-x86_64', 'url' => 'https://example.test/orbit', 'sha256' => str_repeat('a', 64)]]], JSON_THROW_ON_ERROR));
-    config(['cache.default' => 'array', 'fleet.rollout' => true, 'app.version' => $commit,
-        'orbit.gateway_checkout' => $root.'/orbit/apps/gateway', 'swamp.run_token' => 'test-token']);
     $catalog = new StaticCliRelease($catalogPath);
     app()->instance(ReleaseHistory::class, $catalog);
-    app()->instance(FleetServingRelease::class, new FleetServingRelease($releasePath.'/apps/gateway'));
     $lookup = $this->mock(CliReleaseCatalog::class);
     $writeError = null;
     $lookup->shouldReceive('find')->once()->andReturnUsing(static function (string $sha, CliReleaseName $name) use ($writer, $catalog, &$writeError): DesiredCliReleaseData {
@@ -114,4 +121,43 @@ it('lets a second SQLite connection commit an unrelated write during cold catalo
         ->and($operation->input['nodes'][0]['release'])->toBe([
             'version' => '0.9001.0', 'url' => 'https://example.test/orbit', 'sha256' => str_repeat('a', 64),
         ]);
+});
+
+it('does not admit work for a release superseded before a pass without a CLI pin takes the writer', function (): void {
+    $this->mock(CliReleaseCatalog::class)->shouldNotReceive('find');
+    $gateway = SwampNodeFixture::ensure();
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    app(GatewayServingHost::class)->remember($gateway);
+    $gateway->forceFill(['release_inputs' => ['host' => app(ReleaseNodeInputs::class)->host()]])->saveQuietly();
+
+    $phase = ['fleet' => ['status' => 'pending', 'nodes' => []]];
+    $release = GatewayRelease::query()->create(['sha' => $this->commit, 'trigger' => 'auto', 'outcome' => 'verified',
+        'duration_ms' => 0, 'phases' => $phase]);
+    $action = app(ContinueReleaseFleetAction::class);
+    expect($action->current()?->id)->toBe($release->id);
+
+    $root = $this->root;
+    $nextCommit = str_repeat('b', 40);
+    $nextPath = 'releases/'.substr($nextCommit, 0, 12);
+    mkdir($root.'/'.$nextPath.'/apps/gateway', 0700, true);
+    file_put_contents($root.'/'.$nextPath.'/REVISION', $nextCommit."\n");
+    $writer = $this->writer;
+    $switched = false;
+    $this->fleet->beforeStartingTransaction(static function () use ($writer, $root, $nextPath, $nextCommit, $phase, &$switched): void {
+        if ($switched) {
+            return;
+        }
+        $writer->transaction(static function () use ($writer, $root, $nextPath, $nextCommit, $phase): void {
+            symlink($nextPath, $root.'/orbit-next');
+            rename($root.'/orbit-next', $root.'/orbit');
+            GatewayRelease::on($writer->getName())->create(['sha' => $nextCommit, 'trigger' => 'auto', 'outcome' => 'verified',
+                'duration_ms' => 0, 'phases' => $phase]);
+        });
+        $switched = true;
+    });
+
+    expect($action->execute($release))->toBeNull()
+        ->and($switched)->toBeTrue()
+        ->and($release->refresh()->phases)->toBe($phase)
+        ->and(Operation::query()->count())->toBe(0);
 });

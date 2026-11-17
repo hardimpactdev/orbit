@@ -55,7 +55,7 @@ final readonly class ContinueReleaseFleetAction
 
         return DB::transaction(function () use ($release, $cli): ?int {
             $release = GatewayRelease::query()->lockForUpdate()->findOrFail($release->id);
-            if ($cli !== null && $this->current()?->id !== $release->id) {
+            if ($this->current()?->id !== $release->id) {
                 return null;
             }
             $phase = ValidatedData::object($release->phases['fleet']);
