@@ -57,8 +57,8 @@ final class CreateConnLaunchRequest extends FormRequest
             'target.branch.mode' => ['required_with:target.branch', 'in:new,existing'],
             'prompt' => ['present', 'string'],
             'model_selection' => ['sometimes', 'array'],
-            'runtime_mode' => ['sometimes', 'in:approval-required,auto-accept-edits,auto,full-access'],
-            'interaction_mode' => ['sometimes', 'in:default,plan'],
+            'runtime_mode' => ['sometimes', 'required', 'in:approval-required,auto-accept-edits,auto,full-access'],
+            'interaction_mode' => ['sometimes', 'required', 'in:default,plan'],
             'source' => ['required', 'in:web,mobile'],
             'command_id' => ['required', 'uuid'],
             'thread_id' => ['required', 'uuid'],
@@ -105,10 +105,23 @@ final class CreateConnLaunchRequest extends FormRequest
                     }
                 }
             }
-            if (property_exists($this->body, 'model_selection') && ! $this->body->model_selection instanceof stdClass) {
-                $validator->errors()->add('model_selection', 'The model selection must be an object.');
+            if (property_exists($this->body, 'model_selection')) {
+                if (! $this->body->model_selection instanceof stdClass) {
+                    $validator->errors()->add('model_selection', 'The model selection must be an object.');
+                } elseif (! self::supportsModelNumbers($this->body->model_selection)) {
+                    $validator->errors()->add('model_selection', 'Model option numbers must be finite and within the JavaScript safe integer range.');
+                }
             }
         }];
+    }
+
+    private static function supportsModelNumbers(mixed $value): bool
+    {
+        if ($value instanceof stdClass || is_array($value)) {
+            return array_all((array) $value, self::supportsModelNumbers(...));
+        }
+
+        return (! is_int($value) && ! is_float($value)) || abs($value) <= 9_007_199_254_740_991;
     }
 
     public function payload(): ConnLaunchRequestData

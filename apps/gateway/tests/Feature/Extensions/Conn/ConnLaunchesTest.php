@@ -29,6 +29,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Actions\BindConnNodeProfileAction;
+use Orbit\Extensions\Conn\Actions\ControlConnLaunchAction;
 use Orbit\Extensions\Conn\Domain\ConnLaunchChild;
 use Orbit\Extensions\Conn\Domain\ConnLaunchDispatchSource;
 use Orbit\Extensions\Conn\Domain\ConnLaunchStage;
@@ -273,6 +274,46 @@ describe('launch admission', function (): void {
         'fractional Node' => ['expected_node_id', 1.5],
     ]);
 
+    it('requires collection access after checking scope and before looking up the target', function (): void {
+        $baseline = launchRecords();
+        $this->phone->accessibleNodes()->detach();
+        $unknown = [...$this->body, 'project_id' => $this->project->id + 1000, 'workspace_id' => 'missing'];
+
+        callLaunchApi($this->phone, 'POST', 'conn/launches', [...$unknown, 'expected_profile_id' => $this->otherProfile->id], $this->key)
+            ->assertConflict()->assertJsonPath('error.code', 'conn.launch_scope_changed');
+        callLaunchApi($this->phone, 'POST', 'conn/launches', $unknown, $this->key)
+            ->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+        expect(launchRecords())->toBe($baseline);
+    });
+
+    it('refuses blank modes instead of freezing them', function (string $field, string $mode): void {
+        $baseline = launchRecords();
+        callLaunchApi($this->phone, 'POST', 'conn/launches', [...$this->body, $field => $mode], $this->key)
+            ->assertUnprocessable()->assertJsonStructure(['error' => ['details' => [$field]]]);
+        expect(launchRecords())->toBe($baseline);
+    })->with([
+        ['runtime_mode', ''], ['runtime_mode', '  '], ['interaction_mode', ''], ['interaction_mode', '  '],
+    ]);
+
+    it('refuses unrepresentable model option numbers before admission or replay', function (): void {
+        $body = [...$this->body, 'model_selection' => ['instanceId' => 'fixture', 'model' => 'fixture', 'options' => ['value' => 'fixture-number']]];
+        $json = json_encode($body, JSON_THROW_ON_ERROR);
+        $baseline = launchRecords();
+        $post = fn (string $number): TestResponse => test()->call('POST', '/api/v1/conn/launches', [], [], [], [
+            'REMOTE_ADDR' => $this->phone->wireguard_ip, 'HTTP_IDEMPOTENCY_KEY' => $this->key,
+            'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
+        ], str_replace('"fixture-number"', $number, $json));
+
+        $post('9223372036854775808')->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection']]]);
+        expect(launchRecords())->toBe($baseline);
+        $post('9007199254740991')->assertAccepted();
+        $admitted = launchRecords();
+        foreach (['9223372036854775808', '9223372036854775809', '1e400'] as $number) {
+            $post($number)->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection']]]);
+        }
+        expect(launchRecords())->toBe($admitted);
+    });
+
     it('requires active peer authentication and current target access even on replay', function (): void {
         callLaunchApi(null, 'POST', 'conn/launches', $this->body, $this->key)->assertForbidden();
         callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted();
@@ -341,6 +382,17 @@ describe('launch control and progress', function (): void {
         callLaunchApi($this->desktop, 'POST', "conn/launches/{$id}/retry", ['target' => 'unsupported'])->assertNotFound();
         expect(Operation::query()->findOrFail($id)->cancel_requested_at)->toBeNull();
         expect(Activity::query()->where('command', 'like', 'conn:launch:%')->exists())->toBeFalse();
+    });
+
+    it('refuses control when the authenticated peer was deactivated before taking the lock', function (): void {
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
+        Node::query()->whereKey($this->desktop->id)->update(['status' => 'failed']);
+        $control = app(ControlConnLaunchAction::class);
+
+        expect(fn () => $control->cancel($this->desktop, $id, 'fixture-request'))->toThrow(ResourceOperationException::class, 'Active WireGuard peer identity required.')
+            ->and(fn () => $control->retry($this->desktop, $id, 'launch', 'fixture-request'))->toThrow(ResourceOperationException::class, 'Active WireGuard peer identity required.');
+        $launch = Operation::query()->findOrFail($id);
+        expect($launch->cancel_requested_at)->toBeNull()->and($launch->state['launch_retry_requests'] ?? null)->toBeNull();
     });
 
     it('lets Cancel win the fence and keeps a joined wake and pre-existing Instance', function (): void {

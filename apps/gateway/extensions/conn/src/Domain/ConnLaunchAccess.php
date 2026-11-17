@@ -6,6 +6,8 @@ namespace Orbit\Extensions\Conn\Domain;
 
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Database\Eloquent\Builder;
@@ -23,6 +25,20 @@ final readonly class ConnLaunchAccess
         abort_unless(is_int($id), 404);
 
         return $id;
+    }
+
+    public function lockActivePeer(Node $caller): Node
+    {
+        return Node::query()->whereKey($caller->id)->where('wireguard_ip', $caller->wireguard_ip)
+            ->where('status', LifecycleStatus::Active->value)->lockForUpdate()->first()
+            ?? throw new ResourceOperationException('peer.identity_unknown', 'Active WireGuard peer identity required.', 403);
+    }
+
+    public function assertCollectionAccess(Node $caller): void
+    {
+        if (! $this->nodes->hasAnyAccess($caller)) {
+            throw new ResourceOperationException('node_access.required', 'Node access is required.', 403);
+        }
     }
 
     public function profileId(Node $caller, bool $lock = false): ?int

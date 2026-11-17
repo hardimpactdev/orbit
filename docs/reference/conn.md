@@ -679,7 +679,7 @@ A cancelled completion keeps the clone `source_resolved`, its container running 
 | `target` | New clone: `{ "kind": "new", "name": "fix-login-k3j9", "branch": … }`. Existing Instance: `{ "kind": "existing", "instance_id": 42 }` in this Project. An existing target keeps its checkout; omit `branch`. |
 | `target.branch` | On a new target, use Conn's existing branch selection: `{ "mode": "new", "from": "main" }` or `{ "mode": "existing", "name": "fix-login" }`. Omit it or send `null` for the current default Conn clone branch behavior. |
 | `prompt` | First user message as text, without attachments. Preserve its exact text, including whitespace and Unicode. |
-| `model_selection`, `runtime_mode`, `interaction_mode` | Optional Conn/T3 selection and modes. Resolve them against the target's live T3 project before committing dispatch. |
+| `model_selection`, `runtime_mode`, `interaction_mode` | Optional Conn/T3 selection and modes. Model option numbers must be finite and within the JavaScript safe integer range. |
 | `source` | `web` for desktop or web; `mobile` for iOS. |
 | `command_id`, `thread_id`, `message_id` | Stable client UUIDs for the T3 command, thread, and first message. |
 

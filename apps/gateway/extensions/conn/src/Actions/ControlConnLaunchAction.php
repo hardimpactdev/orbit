@@ -85,6 +85,7 @@ final readonly class ControlConnLaunchAction
     private function control(Node $caller, int $id, Closure $mutate): array
     {
         return DB::transaction(function () use ($caller, $id, $mutate): array {
+            $caller = $this->access->lockActivePeer($caller);
             $profileId = $this->access->profileId($caller, lock: true);
             $launch = $this->state->locked($id);
             $this->access->assertVisible($caller, $profileId, $launch);

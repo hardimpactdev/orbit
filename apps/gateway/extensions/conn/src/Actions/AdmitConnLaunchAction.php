@@ -44,10 +44,13 @@ final readonly class AdmitConnLaunchAction
     public function execute(Node $caller, ConnLaunchRequestData $input, string $requestId): array
     {
         return DB::transaction(function () use ($caller, $input, $requestId): array {
+            $caller = $this->access->lockActivePeer($caller);
             $profileId = $this->access->profileId($caller, lock: true);
             if ($caller->id !== $input->expectedNodeId || $profileId !== $input->expectedProfileId) {
                 self::scopeChanged();
             }
+
+            $this->access->assertCollectionAccess($caller);
 
             $kind = OperationKinds::ConnLaunch;
             $key = 'node:'.$caller->id.':'.$input->launchId;
