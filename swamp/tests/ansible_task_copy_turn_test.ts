@@ -112,7 +112,8 @@ if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
         if os.environ.get('T3_SETTINGS') == 'unreadable':
             sys.exit(1)
         print(json.dumps({'providerInstances': {'claudeMedium': {'driver': 'claudeAgent', 'displayName': 'Claude, medium effort'},
-                                                'codexHigh': {'driver': 'codex', 'displayName': 'Codex, high effort'}}}))
+                                                'codexHigh': {'driver': os.environ.get('T3_CODEX_DRIVER', 'codex'),
+                                                              'displayName': 'Codex, high effort'}}}))
         sys.exit(0)
     assert rest[3:] == ['/home/agent/.t3/userdata/model-manifest.json'], rest
     if catalog == 'missing':
@@ -456,11 +457,12 @@ Deno.test({ name: "an uncatalogued Codex model needs provider confirmation befor
         if (probe === "rejected") assertEquals(done.result.error, `The copy's Codex provider rejected the model ${model}.`);
     }
     const model = "gpt-6.2-sol-typo";
-    const unreadable = await phase("completed", { provider: "codexHigh", model, candidate }, "clean", "questions", "",
-        { T3_SETTINGS: "unreadable" });
-    assertEquals(unreadable.model, { model, offered: null, accepted: false, driver_unresolved: true }, unreadable.output);
-    assertEquals([unreadable.launched, unreadable.result.error_code, git(unreadable.calls)], [false, "tasks.copy_turn_model_unverified", []]);
-    assert(!unreadable.calls.some((call) => call.args.includes("/usr/bin/python3")), unreadable.output);
+    for (const settings of [{ T3_SETTINGS: "unreadable", T3_CODEX_DRIVER: "codex" }, { T3_SETTINGS: "readable", T3_CODEX_DRIVER: "   " }]) {
+        const unresolved = await phase("completed", { provider: "codexHigh", model, candidate }, "clean", "questions", "", settings);
+        assertEquals(unresolved.model, { model, offered: null, accepted: false, driver_unresolved: true }, unresolved.output);
+        assertEquals([unresolved.launched, unresolved.result.error_code, git(unresolved.calls)], [false, "tasks.copy_turn_model_unverified", []]);
+        assert(!unresolved.calls.some((call) => call.args.includes("/usr/bin/python3")), unresolved.output);
+    }
 } });
 
 Deno.test("the Codex model probe requires a usable response for the exact requested model", async () => {
