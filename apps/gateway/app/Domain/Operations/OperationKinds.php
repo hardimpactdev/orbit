@@ -22,6 +22,7 @@ final readonly class OperationKinds
         'websocket.app_rotate' => ['executor' => 'gateway'],
         'proof.run' => ['executor' => 'gateway'],
         'executor.proof' => ['executor' => 'gateway'],
+        'executor.power_proof' => ['executor' => 'gateway'],
     ];
 
     /** The form of every kind name, `<family>.<verb>` in lower case, such as `instance.deploy`. */
@@ -58,6 +59,9 @@ final readonly class OperationKinds
 
     /** The proof-only executor round trip on a Node (docs/reference/executor.md#the-proof-operation). Only {@see ExecutorProofOperation} creates it. */
     public const string ExecutorProof = 'executor.proof';
+
+    /** The proof-only sleep/discard Operation on an Instance; production power flows do not call it. */
+    public const string ExecutorPowerProof = 'executor.power_proof';
 
     /** The target type of every kind that changes an Instance, so they hold the same target. */
     public const string InstanceTarget = 'instance';

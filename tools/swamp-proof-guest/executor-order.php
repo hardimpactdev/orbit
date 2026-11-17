@@ -8,6 +8,7 @@ use App\Domain\Executor\SignedExecutorOrder;
 use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Infrastructure\Executor\ExecutorWaitResult;
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Contracts\Console\Kernel;
 
@@ -34,6 +35,7 @@ $result = match ($input['mode'] ?? null) {
     'order' => proofOrder($secretPath, $input),
     'publish' => proofPublish($secretPath, $input),
     'round_trip' => proofRoundTrip($input),
+    'power' => proofPower($input),
     'lost_result' => proofLostResult($input),
     default => throw new InvalidArgumentException('Unknown executor proof mode.'),
 };
@@ -238,4 +240,31 @@ function secret(string $secretPath): string
     }
 
     return $secret;
+}
+
+/**
+ * One durable power proof Operation. The caller resets the same nested Instance between samples.
+ * No production route or schedule calls this mode.
+ *
+ * @param  array<string, mixed>  $input
+ * @return array<string, mixed>
+ */
+function proofPower(array $input): array
+{
+    $node = Node::query()->findOrFail((int) $input['node']);
+    $instance = Instance::query()->findOrFail((int) $input['instance']);
+    $action = (string) ($input['action'] ?? 'sleep');
+    $proof = app(ExecutorProofOperation::class);
+
+    return $proof->run($node, function (Closure $start) use ($proof): array {
+        $operation = $start();
+        $started = hrtime(true);
+        $proof->send($operation, ExecutorOrderSigner::fromConfig());
+        $result = $proof->wait($operation, 9.0);
+        $latency = elapsedMs($started);
+        $proof->finish($operation, $result);
+
+        return ['operation' => (string) $operation->id, 'latency_ms' => $latency] + waited($result)
+            + ['recorded' => $operation->refresh()->executor_result, 'status' => $operation->status->value];
+    }, $instance, $action);
 }

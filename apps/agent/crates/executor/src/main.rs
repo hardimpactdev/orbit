@@ -26,12 +26,45 @@ const RELAY_USER: &str = "orbit-executor-relay";
 /// Joins the action families to the core. Every action is matched here, so a new one fails the build until
 /// its family runs it.
 #[derive(Debug)]
-struct Families;
+struct Families(orbit_executor_power::Power);
 
 impl Run for Families {
+    fn target_exists(&self, action: Action, target: &orbit_executor_core::ids::TargetId) -> bool {
+        // A discard after destroy must still be possible when Incus no longer has the container.
+        if action == Action::Discard {
+            return target
+                .as_str()
+                .parse::<u64>()
+                .is_ok_and(|n| n > 0 && n.to_string() == target.as_str());
+        }
+        self.0.target_exists(target.as_str())
+    }
     fn run(&self, order: &VerifiedOrder) -> Outcome {
         match order.action() {
             Action::ProofNoop => Outcome::Done,
+            Action::Sleep => match self
+                .0
+                .sleep(order.target().as_str(), order.operation().as_str())
+            {
+                Ok(_) => Outcome::Done,
+                Err(error) => {
+                    log(&format!("power sleep failed: {error}"));
+                    Outcome::Failed {
+                        code: if error.to_string() == "instance.container_frozen_unmanaged" {
+                            "instance.container_frozen_unmanaged"
+                        } else {
+                            "instance.container_freeze_failed"
+                        }
+                        .to_owned(),
+                    }
+                }
+            },
+            Action::Discard => match self.0.discard(order.target().as_str()) {
+                Ok(()) => Outcome::Done,
+                Err(_) => Outcome::Failed {
+                    code: "instance.power_discard_failed".to_owned(),
+                },
+            },
         }
     }
 }
@@ -108,8 +141,13 @@ fn serve() -> Result<(), String> {
     });
 
     let journal = Path::new(JOURNAL_PATH);
-    let (executor, recovered) = Executor::start(journal, Families, server::now_ms, log)
-        .map_err(|error| error.to_string())?;
+    let (executor, recovered) = Executor::start(
+        journal,
+        Families(orbit_executor_power::Power::default()),
+        server::now_ms,
+        log,
+    )
+    .map_err(|error| error.to_string())?;
     for done in &recovered {
         log(&format!(
             "recovered {} {} {}: {:?}",

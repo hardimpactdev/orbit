@@ -18,6 +18,10 @@ use crate::order::VerifiedOrder;
 
 /// Runs an allowlisted action. The binary implements it over the action family crates.
 pub trait Run: Send + Sync {
+    /// Whether an Instance action names a local target. No family accepts one by default.
+    fn target_exists(&self, _action: Action, _target: &TargetId) -> bool {
+        false
+    }
     /// Runs the action of a verified order and reports how it ended. It must be safe to run again for the
     /// same Operation, action and target, because crash recovery repeats an action that has no result.
     fn run(&self, order: &VerifiedOrder) -> Outcome;
@@ -103,6 +107,10 @@ pub struct Recovered {
 }
 
 impl<R: Run> Executor<R> {
+    /// Reads the action family's target truth before accepting an order.
+    pub fn target_exists(&self, action: Action, target: &TargetId) -> bool {
+        self.runner.target_exists(action, target)
+    }
     /// Loads the journal at `path`, keeps its [`Live`] records (nonces that have not expired, open orders and
     /// the done records of the last 24 hours), rewrites the journal with them, starts its writer, and
     /// finishes every open order that has no result.

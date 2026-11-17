@@ -20,12 +20,12 @@ final readonly class NodeExecutorInput
     public const string RelayUser = 'orbit-executor-relay';
 
     /**
-     * The families each role enables. Slice 1 has only the no-op `proof` family; `power` and `clone` join with their slices
+     * The families each role enables. The no-op `proof` and sleep/discard `power` families ship on app-dev; `clone` joins with its slice
      * (`app-prod` gets `power` when ADR 0265 brings sleep to production).
      *
      * @var array<string, list<string>>
      */
-    public const array RoleFamilies = [RoleName::AppDev->value => ['proof']];
+    public const array RoleFamilies = [RoleName::AppDev->value => ['proof', 'power']];
 
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array

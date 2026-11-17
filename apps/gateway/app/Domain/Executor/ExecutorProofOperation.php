@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Infrastructure\Executor\ExecutorWaitResult;
 use App\Infrastructure\Executor\ExecutorWaitStatus;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use Closure;
@@ -50,13 +51,16 @@ final readonly class ExecutorProofOperation
      * @param  Closure(Closure(): Operation): T  $body
      * @return T
      */
-    public function run(Node $node, Closure $body): mixed
+    public function run(Node $node, Closure $body, ?Instance $instance = null, string $action = self::Action): mixed
     {
+        if ($instance !== null && (! in_array($action, ['sleep', 'discard'], true) || $instance->node_id !== $node->id)) {
+            throw new InvalidArgumentException('Power proof needs a sleep/discard target on its Node.');
+        }
         $started = [];
 
         try {
-            return $body(function () use ($node, &$started): Operation {
-                return $started[] = $this->start($node);
+            return $body(function () use ($node, $instance, $action, &$started): Operation {
+                return $started[] = $this->start($node, $instance, $action);
             });
         } catch (Throwable $exception) {
             foreach ($started as $operation) {
@@ -70,10 +74,10 @@ final readonly class ExecutorProofOperation
     }
 
     /** Records a running `executor.proof` Operation on the Node; its target is the Node too, the target of `proof.noop`. Only {@see self::run} calls it. */
-    private function start(Node $node): Operation
+    private function start(Node $node, ?Instance $instance, string $action): Operation
     {
-        $operation = $this->operations->create(OperationKinds::ExecutorProof, 'node', $node->id, $node->id,
-            ['action' => self::Action], self::TriggeredBy, (string) Str::uuid());
+        $operation = $this->operations->create($instance === null ? OperationKinds::ExecutorProof : OperationKinds::ExecutorPowerProof, $instance === null ? 'node' : 'instance', $instance?->id ?? $node->id, $node->id,
+            ['action' => $instance === null ? self::Action : $action], self::TriggeredBy, (string) Str::uuid());
         $this->operations->change($operation, ['status' => OperationStatus::Running, 'started_at' => now()]);
 
         return $operation;
@@ -87,10 +91,10 @@ final readonly class ExecutorProofOperation
      */
     public function send(Operation $operation, ExecutorOrderSigner $signer): SignedExecutorOrder
     {
-        if ($operation->kind !== OperationKinds::ExecutorProof || $operation->status->terminal()) {
+        if (! in_array($operation->kind, [OperationKinds::ExecutorProof, OperationKinds::ExecutorPowerProof], true) || $operation->status->terminal()) {
             throw new InvalidArgumentException('Only an open executor.proof Operation sends a proof order.');
         }
-        $order = $signer->sign($operation, self::Action, (string) ExecutorOrderSigner::nodeOf($operation));
+        $order = $signer->sign($operation, (string) ($operation->input['action'] ?? self::Action), (string) $operation->target_id);
         $this->publisher->publish($operation, $order);
 
         return $order;
