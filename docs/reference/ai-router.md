@@ -365,7 +365,7 @@ Teardown removes the collector Process and the previous Python source files, wit
 
 Teardown refuses with HTTP 409 `extension.required` and changes nothing while the `tasks` extension is enabled. Tasks depends on `ai-router`, because its containers reach models through this router's guard. `error.details.required_by` is `tasks`. Containers share a placeholder key that only the guard accepts; teardown needs no per-container key revocation.
 
-`extension:enable tasks` refuses with `ai_router.disabled` (409) while the ai-router is not set up: before the first setup or after a teardown. Tasks enablement and Conn device-thread cloneable checks require a ready model guard. Core clone creation and migration of an Instance with T3 instead record `model_route` readiness in their result; an unavailable route does not refuse either operation.
+`extension:enable tasks` refuses with `ai_router.disabled` (409) while the ai-router is not set up: before the first setup or after a teardown. Tasks requires a ready model guard before it is enabled. Conn requires the same route for its device threads. Core clone creation and migration of an Instance with T3 instead record `model_route` readiness in their result; an unavailable route does not refuse either operation.
 
 Container code uses the core interface `App\Domain\Instances\ContainerModelRoute`. This extension binds it to `AiRouterContainerModelRoute`, which returns the guard origin and the fixed placeholder key, never the management or anchor key. Containers reach the guard through their Node's [model forwarder](/reference/development-containers#model-access).
 
