@@ -19,7 +19,9 @@ use Psr\Log\NullLogger;
 /*
  * ADR 0266 slice 3: the real Valkey push and BLPOP, against a `valkey-server` that the test starts on a free port
  * with `hz 100`, as the bound needs (docs/reference/executor.md#the-listener-and-the-hand-off). These measure
- * timing and expiry, which no fake can, so only they skip where no `valkey-server` binary is installed, as in CI.
+ * timing and expiry, which no fake can, so they are in the `privileged` group, which the Gateway suite excludes:
+ * `vendor/bin/pest --group privileged tests/Feature/Infrastructure/Executor/ExecutorResultWaitTest.php` on a host with
+ * `valkey-server`. They skip there when the binary is missing. CI does not run them.
  * The waiter's status and reason mapping runs against an in-memory queue on a fake clock, in CI too.
  */
 
@@ -206,4 +208,4 @@ describe('against a real valkey-server', function (): void {
             ->and($result->acceptedMs)->not->toBeNull()
             ->and($result->elapsedMs)->toBeGreaterThanOrEqual(195.0)->toBeLessThan(240.0);
     });
-});
+})->group('privileged');

@@ -133,7 +133,7 @@ Two Pest files in `apps/gateway/tests/Feature/Infrastructure/Executor` test this
 - a refusal that is still reported when the push fails
 - the record before the push, and a repeat
 
-`ExecutorResultWaitTest.php` tests the waiter. Its status and reason mapping, the `accepted` line and the bound run in CI, against an in-memory queue on a fake clock. Three of its tests start a real `valkey-server` with `hz 100` on a free port, and skip where no `valkey-server` binary is installed, as in CI. They measure what a fake cannot:
+`ExecutorResultWaitTest.php` tests the waiter. Its status and reason mapping, the `accepted` line and the bound run in CI, against an in-memory queue on a fake clock. Three of its tests start a real `valkey-server` with `hz 100` on a free port. They are in the `privileged` group, which the Gateway suite and CI exclude; run them with `vendor/bin/pest --group privileged` on a host with `valkey-server`. They measure what a fake cannot:
 
 - the 60 s expiry
 - a result 100 ms into the wait
