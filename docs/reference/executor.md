@@ -1,11 +1,12 @@
 ---
 title: "Executor"
-description: "How orbit-executor checks callers and signed orders, keeps its journal, serves the relay command, and how the role converge installs it."
+description: "How orbit-executor checks callers and signed orders, keeps its journal, serves the relay command, how the Gateway hands its results to a waiting request, and how the role converge installs it."
 covers:
   - apps/agent/crates/executor-core/**
   - apps/agent/crates/executor/**
   - apps/agent/clippy.toml
   - apps/gateway/app/Domain/Nodes/NodeExecutorInput.php
+  - apps/gateway/app/Infrastructure/Executor/**
   - swamp/ansible/tasks/node-executor.yml
 ---
 
@@ -13,7 +14,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Slice 1 is built.** The executor, its install and its one action, the no-op `proof.noop`, exist. The Gateway signer and the observer's pass-through arrive in slice 2, so today only the relay command reaches the executor. Sleep, wake and the create's Node part arrive in later slices.
+> **Slices 1 and 3 are built.** The executor, its install and its one action, the no-op `proof.noop`, exist, and so does the Gateway's [result listener](#the-listener-and-the-hand-off). The Gateway signer and the observer's pass-through arrive in slice 2, so today only the relay command reaches the executor, and no result reaches the listener yet. Sleep, wake and the create's Node part arrive in later slices.
 
 ## Where it runs
 
@@ -93,6 +94,37 @@ At start-up the executor reads the journal, keeps the same live records and rewr
 ## The relay command
 
 `sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay` reads one signed order from stdin, at most 4 KB, hands it to the socket, and copies the reply to stdout, at most 64 KB within 10 s. The Gateway's SSH fallback and Swamp steps use it.
+
+## The listener and the hand-off
+
+The observer sends each reply line back as the client event `client-executor-result` on `presence-node.{id}` ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), "The path", steps 4 and 5). The event's data is:
+
+```json
+{"operation": "42", "line": "{\"status\":\"accepted\"}"}
+```
+
+`line` is the reply line, unchanged, at most 64 KB. `operation` is the Operation id that the Gateway put beside the order in the `executor-order` event. The observer copies it without reading the order. It is needed because the `accepted` line and the refusals of the first five order checks do not name the Operation.
+
+The [agent view subscriber](/reference/node-agent#gateway-view) is the listener. No other service and no second connection per Node takes part. For each event it:
+
+1. It checks the sender. Reverb must stamp the event with the member `agent.{id}` of that Node's channel, as for `client-log`. It drops and logs an event from any other sender.
+2. It checks the form. `operation` must be an Operation id, and `line` one JSON object with a known `status`. A line that names another Operation fails too. It drops and logs a malformed event.
+3. It pushes an `accepted` line to the Valkey key `executor:op:<operation>:accepted`, and writes nothing to the database. Slice 7 reads this key for "accepted within 150 ms".
+4. It records a result line on the Operation's `executor_result`, so the result is durable. A result line has the status `done`, `partial`, `failed` or `refused`.
+5. It then pushes the result line to `executor:op:<operation>`.
+6. It logs a `refused` result with its reason and the Node's clock, and leaves an Activity problem `executor.order_refused` on the Node. It logs a `failed` result with its code.
+
+The record is one conditional `UPDATE`. It changes only an Operation of that Node that holds no result yet. A repeat changes no row, and neither does a second listener during a release ([ADR 0269](/decisions/0269-run-the-gateway-in-release-containers-with-frankenphp-worker-mode)). The listener still pushes that copy, because it may recover a lost push. It drops and logs a result for an Operation of another Node, or for no Operation.
+
+Both keys live in the Gateway queue's Valkey, under its `orbit-gateway:` prefix. Each push is one Lua call that runs `RPUSH` and `EXPIRE` of 60 s together, so a key never exists without its expiry. If the database or Valkey fails, the subscriber logs it and goes on. The waiting request then falls back as for a lost result.
+
+**Cost in the socket loop.** We measured 300 results on a file SQLite database in WAL mode with 20,000 Operations and a local Valkey. The record write takes 0.12 ms median (0.15 ms p95), the push 0.05 ms median (0.07 ms p95), and the whole hand-off 0.19 ms median (0.27 ms p95, 2.1 ms at most). No queue job, HTTP call or Laravel boot sits between the listener and the waiting request. An Activity problem for a refusal adds one insert.
+
+**The waiting request.** `ExecutorResultWait::wait(operation, bound)` runs `BLPOP` on the result key and the `accepted` key until a result arrives or the bound passes. It returns `done`, `partial`, `failed`, `refused` or `timeout`, with the time to the `accepted` line, the elapsed time and the result line. The result key comes first, so a result that is already there wins. The bound is the Gateway setting `ORBIT_EXECUTOR_WAIT_MS`, 500 ms to start. Slice 6 wires it into the activation endpoint.
+
+Valkey checks a blocked command's timeout on its server tick. With the default `hz 10`, a 200 ms bound ended after 297 ms. With `hz 100` it ended after 212 ms. A result that arrives is handed over at once, so only a timeout runs late. The Gateway's Valkey needs `hz 100` before slice 6 holds visits on this bound.
+
+The Pest test `tests/Feature/Infrastructure/Executor/ExecutorResultListenerTest.php` feeds the subscriber a fake Reverb stream and starts a real `valkey-server` with `hz 100` on a free port. It skips when the binary is missing.
 
 ## Checks
 

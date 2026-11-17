@@ -11,6 +11,8 @@ use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\ProcessAgentViewPublisher;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
+use App\Infrastructure\Executor\ExecutorResults;
+use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -63,7 +65,16 @@ final class AgentViewServiceProvider extends ServiceProvider
                     workingDirectory: base_path(),
                 ),
                 swamp: $app->make(SwampRunSubscriber::class),
+                executor: $app->make(ExecutorResults::class),
             ),
         );
+        $this->app->bind(ExecutorResults::class, static fn ($app): ExecutorResults => new ExecutorResults(
+            redis: static fn () => $app->make('redis')->connection('gateway'),
+            log: $app->make(LoggerInterface::class),
+        ));
+        $this->app->bind(ExecutorResultWait::class, static fn ($app): ExecutorResultWait => new ExecutorResultWait(
+            redis: static fn () => $app->make('redis')->connection('gateway'),
+            clock: static fn (): float => microtime(true),
+        ));
     }
 }
