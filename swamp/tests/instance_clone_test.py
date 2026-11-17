@@ -384,6 +384,7 @@ class CloneTest(unittest.TestCase):
             self.slept = []
             clock = [0.0]
             real_monotonic = time.monotonic
+            real_sleep = time.sleep
             with (
                 patch(
                     "sys.argv",
@@ -402,8 +403,10 @@ class CloneTest(unittest.TestCase):
                 patch("sys.stdin", io.StringIO(stdin)),
                 patch("subprocess.run", command),
                 patch("os.chown"),
-                # A pause of the seed wait moves a fake clock on, so no test sleeps.
-                patch("time.sleep", lambda seconds: (self.slept.append(seconds), clock.__setitem__(0, clock[0] + seconds))),
+                # A pause of the seed wait (2 s) moves a fake clock on, so no test sleeps; any other sleep, such as a thread's own
+                # back-off, sleeps as it would.
+                patch("time.sleep", lambda seconds: (self.slept.append(seconds), clock.__setitem__(0, clock[0] + seconds))
+                      if seconds == 2 else real_sleep(seconds)),
                 patch("time.monotonic", lambda: real_monotonic() + clock[0]),
                 contextlib.redirect_stdout(output),
                 contextlib.redirect_stderr(error),
