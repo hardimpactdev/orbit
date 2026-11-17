@@ -317,7 +317,7 @@ class CheckoutFailureDetailTest(unittest.TestCase):
     def detail(self, phase, task, result):
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(subprocess.run, ['rm', '-rf', str(folder)])
-        names = ['failure_phase', 'failure_code', 'failure_message', 'failure_checkout_head', 'failure_checkout_stderr',
+        names = ['failure_phase', 'failure_code', 'failure_message', 'failure_inactive_units', 'failure_checkout_head', 'failure_checkout_stderr',
                  'failure_checkout_budget', 'failure_checkout_detail']
         play = [{'hosts': 'localhost', 'gather_facts': False, 'connection': 'local',
                  'vars': {'container_phase_running': phase, 'process_action': 'none', 'ansible_failed_task': {'name': task},

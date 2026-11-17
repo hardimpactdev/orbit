@@ -138,14 +138,16 @@
             failure_fleet_detail: >-
               {{ {} if failure_phase not in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume', 'fleet_reset'] or failure_code == failure_message
                  else {'detail': failure_reason} }}
-            # A checkout that fails other than by a refusal names its task and the end of the command's stderr, at most 4096
-            # characters in all: on 2026-11-14 a refresh failed in the group mode pass, and the Operation said only "Command exited
-            # with code 2".
+            # A start or checkout that fails other than by a refusal names its task and the end of its stderr, at most 4096
+            # characters in all. Private tasks retain only the public phase code, never their command output.
             failure_checkout_head: "{{ ansible_failed_task.name | default('A checkout task') }}: {{ failure_message }}"
             failure_checkout_stderr: "{{ ansible_failed_result.stderr | default('') | string | trim }}"
             failure_checkout_budget: "{{ 4094 - failure_checkout_head | length }}"
             failure_checkout_detail: >-
-              {{ {} if failure_phase not in ['checkout', 'proof_checkout'] or failure_code == failure_message
+              {{ {} if failure_phase not in ['start', 'checkout', 'proof_checkout'] or failure_code == failure_message
+                       or failure_inactive_units | length > 0
+                       or ansible_failed_result._ansible_no_log | default(false) | bool
+                       or ansible_failed_task.no_log | default(false) | bool
                  else {'detail': (failure_checkout_head ~ ': ' ~ failure_checkout_stderr[-(failure_checkout_budget | int):])
                                  if failure_checkout_stderr != '' and failure_checkout_budget | int > 0 else failure_checkout_head} }}
         - name: Fail the phase

@@ -414,6 +414,105 @@ Before a sleep is admitted, from the idle sleep or from [`instance:sleep`](/cli/
 
 The sleep switch does not matter: the index's switch does. A failed read keeps the rows and does not stop the sleep. An asleep or stopped Instance keeps its last rows with their `seen_at` until it wakes and the next read runs. Destroying the Instance removes its server record, and the rows go with it.
 
+## Tasks panel
+
+Conn shows the tasks of a Project or of one workspace, and opens one task with its brief, its subtasks in order, its agents and its metrics. From an agent, a device opens that agent's thread on the workspace's T3 server. The panel only reads: it controls no task, adds no realtime event, and shows no view across every Project beyond the one `task:list` already shows. Both routes need the `tasks` extension as well as `conn`, and node access to some Node, like the [task list](/reference/tasks#list-tasks). Neither records command activity.
+
+### The task list
+
+`GET /tasks` lists top-level tasks, newest first, with the scope and paging of [`task:list`](/reference/tasks#list-tasks). It reads the same action.
+
+| Query | Meaning |
+| --- | --- |
+| `project` | Only this Project's tasks. |
+| `instance` | Only the task whose workspace is this Instance. |
+| `status` | Only tasks with this raw task status, such as `running` or `waiting_for_review`. |
+| `limit` | 1 to 100 rows; 20 by default. |
+| `cursor` | Start below this task id: `meta.next_cursor` of the page before. |
+
+`meta.next_cursor` is null on the last page. Each row:
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `title` | The task. |
+| `status` | The raw task status. |
+| `attention` | What the task asks, or null. See below. |
+| `project` | `{id, slug, name, code}`. |
+| `workspace` | The task copy, or null when the task has none or its Instance row is gone: `{instance_id, name, status, power_state, node: {id, name}, branch, conn_environment_id}`. `status` is the Instance status, `power_state` the container's power state or null, `branch` the Instance's branch. |
+| `workspace.conn_environment_id` | The T3 server of the workspace, only when the caller reaches it by the rule of the [thread index](#a-row): node access to the server's Node. Otherwise null. |
+| `pull_request` | `{number, url, state}`, or null. The watched pull request first; else the published `pr_url`, with its number read from the URL and `state` null. |
+| `subtask_counts` | `{total, todo, running, completed, failed, cancelled}`. `reserved` and `reviewing` count as `running`. |
+| `created_at`, `updated_at` | The task row's times. |
+| `last_activity_at` | When the task last did something: [Last activity](/reference/tasks#last-activity). |
+
+`attention` is `{kind, question, reason}`. Its `kind` is one of these, in this order:
+
+- `question`: a current agent thread of the task holds questions. A current thread is a subtask's implementer or the task's reviewer. `question` is the first question's text, and `reason` is null.
+- The task's assistance kind: `direction`, `failure`, `removal_failure` or `observation`. `question` and `reason` are the task's own.
+
+`attention` is null when neither applies.
+
+### One task
+
+`GET /tasks/{id}` returns a top-level task: its list row and these fields. A subtask id, or an id that does not exist, answers 404 `http.404`.
+
+| Field | Meaning |
+| --- | --- |
+| `brief` | The task's brief. |
+| `execution` | `{implementer_mode: "per_subtask"}`: each subtask has its own implementer thread. |
+| `metrics` | `{duration_ms, tokens, lines_added, lines_deleted}` of the task. |
+| `subtasks` | In position order: `{id, position, title, brief, deliverables, status, attention, current_implementer_agent_id, metrics}`. |
+| `agents` | Every started agent thread of the task, oldest first. |
+
+A subtask's `deliverables` are `{id, type, description}`. Its `status` is the raw subtask status. Its `attention` has the same rule as the task's, for the subtask's own implementer thread and its own call for help. `current_implementer_agent_id` is the id of its current implementer in `agents`, or null. Its `metrics` are `{duration_ms, tokens, lines_added, lines_deleted}`.
+
+Each agent:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Orbit's id of the agent thread. It is never a T3 thread id. |
+| `role` | `implementer` or `reviewer`. |
+| `subtask_ids` | The subtask it worked on, `[id]`, or `[]` when it has none. |
+| `current` | True when it is its subtask's implementer or the task's reviewer now. |
+| `attempt` | 1 for the first started thread of its role on its subtask, 2 for the one that replaced it, and so on. |
+| `provider` | `claude` or `codex`: from the T3 provider instance it started on, else from its model's name (`claude-`, `gpt-`). Null when neither says. |
+| `model`, `effort` | As the thread started. |
+| `state` | `idle`, `working`, `asking_for_input`, `done`, `failed`, or null before its first observation. |
+| `needs_input` | True when it holds questions and its state is `asking_for_input`. |
+| `created_at`, `observed_at` | When it was created and last observed. |
+| `conn` | `{environment_id, thread_id}` to open the thread in Conn, or null. |
+
+`conn.environment_id` is the workspace's `conn_environment_id` and `conn.thread_id` is T3's thread id, the agent thread's external id, such as `orbit:7c1e…`. `conn` is null when the task has no workspace, the workspace has no T3 server, or the caller does not reach it. A thread that Orbit reserved but has not started, whose external id starts with `pending:`, is not listed.
+
+### Metrics
+
+A null metric is unknown, never zero.
+
+| Metric | Meaning |
+| --- | --- |
+| `duration_ms` | Wall-clock time from the first start to the end, across every attempt. It grows while the work runs, and is null before it starts. |
+| `tokens` | For the task: every started thread counted once, reviewers and earlier attempts included. For a subtask: the usage its turns added. Null while unreported. |
+| `lines_added`, `lines_deleted` | For the task: one snapshot of the whole task branch against its base, not a sum. For a subtask: always null. |
+
+A subtask starts at its first turn in the task copy and ends when it is completed, failed or cancelled; a reopen runs its clock again. Orbit records no line change per subtask, so Conn must not derive one from the task's lines.
+
+[Settle metrics](/reference/tasks#settle-metrics) owns how Orbit records them.
+
+### Realtime
+
+The panel adds no event. It follows the [task events](/reference/events#tasks) on `private-orbit`: `task_group.created`, `task_group.updated`, `agent_thread.updated`, and `tasks.updated` when the extension is switched. An event is a notice: on one, Conn reads the list or the open task again. On load and on every reconnect, Conn reads both again, and that read is the truth. A change only to tokens, line counts or duration sends no event; the next read shows it.
+
+### Errors
+
+The panel's routes answer these errors in the [API](#api) error shape.
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `node_access.required` | 403 | The caller has node access to no Node. |
+| `extension.disabled` | 409 | The `conn` or `tasks` extension is off. |
+| `http.404` | 404 | `GET /tasks/{id}` named a subtask or no task. |
+| `validation.failed` | 422 | A query value breaks a rule, such as `limit` above 100. |
+
 ## Threads in an Orbit Project
 
 Conn starts a thread in an Orbit Project in a new clone of the Project's default Instance ([Threads](/reference/development-containers#threads)). The [thread chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) has the steps.
@@ -837,6 +936,8 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /environments/{environment_id}/renew` | — | Operation (202) |
 | `GET /threads` | `project`, `instance` query, both optional | list of thread, and `meta.environments` |
 | `POST /environments/{environment_id}/threads` | `{"thread_id": "a1b2", "title": "Fix the login"}` | thread (201, or 200 when recorded already) |
+| `GET /tasks` | `project`, `instance`, `status`, `limit`, `cursor` query, all optional | list of task row, and `meta.next_cursor` ([Tasks panel](#tasks-panel)) |
+| `GET /tasks/{id}` | — | task ([Tasks panel](#tasks-panel)) |
 
 The objects:
 
@@ -879,7 +980,7 @@ The objects:
 | `conn.request_refused` | 502 | The T3 server refused the call with another status; `details` has its status and reason. |
 | `conn.response_invalid` | 502 | The T3 server's answer did not have T3's shape. |
 
-Every call is recorded as command activity with the calling Node. A registration records its environment id, label, and URL, never the admin session. A settings write records only section names and versions, because the document can hold workspace pictures, themes, and device values. A replace records the document version it replaced and the names of the sections it sent. A patch records each section name with the version the client sent. A thread record records the thread id, never the title. The thread list is a read and records no activity.
+Every call is recorded as command activity with the calling Node. A registration records its environment id, label, and URL, never the admin session. A settings write records only section names and versions, because the document can hold workspace pictures, themes, and device values. A replace records the document version it replaced and the names of the sections it sent. A patch records each section name with the version the client sent. A thread record records the thread id, never the title. The thread list and the Tasks panel are reads and record no activity.
 
 ## Why it works this way
 
