@@ -541,7 +541,7 @@ A nested-fleet container is different. Its inner guests are Nodes, and the ID ma
 
 The container intent says which ids the workspace uses (`workspace_ids`): its group for `.env` and the checkout bundle, and the uid whose entries root's [workspace pass](#who-runs-what) gives to `agent`. They are 33 and 33 in a normal container, and 2760 and 1000 in a nested-fleet one.
 
-A container made from an older image has the user `orbit` (uid 1000) with the group `orbit` (gid 1000), and the group `work` (gid 2760). One root shell file moves it: `/usr/local/libexec/orbit-app-user` (`InstanceImage::AppUserSwap`, root-owned, mode 0755). Its source is `swamp/ansible/files/instance-app-user.sh`. It is one of the shared files of the image (`InstanceImage::shared`), so the image, a Node converge and the boot files of every copy carry it.
+A container made from an older image has the user `orbit` (uid 1000) with the group `orbit` (gid 1000), and the group `work` (gid 2760). One root shell file moves it: `/usr/local/libexec/orbit-app-user` (`InstanceImage::AppUserSwap`, root-owned, mode 0755). Its source is `swamp/ansible/files/instance-app-user.sh`. It is one of the shared files of the image (`InstanceImage::shared`), so the image, a Node converge and the boot files of every copy carry it. Each container intent carries the same file (`InstanceImage::appAccount`): every Ansible path writes it, root-owned with mode 0755, when the container lacks it or holds another version, and then runs it. No path waits for a converge.
 
 Root runs it before the first command as `www-data` on every path:
 
@@ -551,7 +551,7 @@ Root runs it before the first command as `www-data` on every path:
 - the `config:clear` of a mail update and of `env:sync` on a container;
 - a copy's clone guest, at the start of its services part, before its Node store step runs as `www-data`.
 
-So an existing default moves at its next deployment, start or wake that boots, or at the first Orbit command that writes or changes one of its units. A copy of a seed taken before the move moves in its own completion: no release step is needed. A move to a container (`instance:migrate`) makes a new container of the new image. A container whose Node has not converged since the release lacks the file; its call fails by name until the converge writes it.
+So an existing default moves at its next deployment, start or wake that boots, or at the first Orbit command that writes or changes one of its units. A copy of a seed taken before the move moves in its own completion: no release step is needed. A move to a container (`instance:migrate`) makes a new container of the new image.
 
 The file runs these steps:
 
