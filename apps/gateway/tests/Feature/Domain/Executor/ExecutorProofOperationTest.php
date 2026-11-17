@@ -13,6 +13,8 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
+use App\Http\Mcp\ApiDispatcher;
+use App\Http\Mcp\ToolManifest;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Executor\ExecutorReply;
@@ -24,6 +26,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
@@ -172,7 +175,7 @@ describe('the Node executor diagnostic', function (): void {
         onProofPublish($reply);
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => $this->operator->wireguard_ip])
-            ->postJson($this->path)
+            ->post($this->path, headers: ['Accept' => 'application/json'])
             ->assertOk()
             ->assertJsonPath('data.kind', 'executor.proof')
             ->assertJsonPath('data.target_type', 'node')
@@ -206,7 +209,7 @@ describe('the Node executor diagnostic', function (): void {
         };
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => $this->operator->wireguard_ip])
-            ->postJson($this->path)
+            ->post($this->path, headers: ['Accept' => 'application/json'])
             ->assertOk()
             ->assertJsonPath('data.status', 'failed')
             ->assertJsonPath('data.error_code', ExecutorProofOperation::Aborted);
@@ -226,7 +229,7 @@ describe('the Node executor diagnostic', function (): void {
             $this->operator->accessibleNodes()->attach($this->node);
         }
         $this->withServerVariables(['REMOTE_ADDR' => $caller === 'unknown' ? '10.44.0.99' : $this->operator->wireguard_ip])
-            ->postJson($this->path)
+            ->post($this->path, headers: ['Accept' => 'application/json'])
             ->assertForbidden()
             ->assertJsonPath('error.code', $error);
 
@@ -239,15 +242,43 @@ describe('the Node executor diagnostic', function (): void {
         'target grant alone' => ['target grant only', 'node_access.required'],
     ]);
 
-    it('rejects a power action in the request', function (): void {
+    it('rejects a request body or query before starting a diagnostic', function (string $contentType, string $body, string $query, ?int $contentLength = null): void {
         $this->operator->accessibleNodes()->attach($this->gateway);
 
-        $this->withServerVariables(['REMOTE_ADDR' => $this->operator->wireguard_ip])
-            ->postJson($this->path, ['action' => 'sleep', 'target' => '7'])
-            ->assertUnprocessable();
+        $this->call('POST', $this->path.$query, [], [], [], [
+            'REMOTE_ADDR' => $this->operator->wireguard_ip,
+            'HTTP_ACCEPT' => 'application/json',
+            'CONTENT_TYPE' => $contentType,
+            'CONTENT_LENGTH' => (string) ($contentLength ?? strlen($body)),
+        ], $body)->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
 
         Event::assertNotDispatched(ExecutorOrderBroadcast::class);
         expect(Operation::query()->count())->toBe(0);
+    })->with([
+        'power action' => ['application/json', '{"action":"sleep","target":"7"}', ''],
+        'malformed JSON' => ['application/json', '{"action":', ''],
+        'plain text' => ['text/plain', 'action=sleep', ''],
+        'empty JSON object' => ['application/json', '{}', ''],
+        'multipart consumed by PHP' => ['multipart/form-data; boundary=orbit', '', '', 11],
+        'query parameter' => ['application/json', '', '?action=sleep'],
+    ]);
+
+    it('runs the bodyless diagnostic through its generated MCP tool', function (): void {
+        $this->operator->accessibleNodes()->attach($this->gateway);
+        onProofPublish(function (ExecutorOrderBroadcast $event): void {
+            $operation = Operation::query()->findOrFail($event->broadcastWith()['operation']);
+            $this->listener->receive($this->node->id, proofReply($operation, ['status' => 'accepted']));
+            $this->listener->receive($this->node->id, proofReply($operation, proofDone($operation, repeat: false, clock: 1)));
+        });
+        $tool = collect(ToolManifest::default()->definitions())->firstWhere('name', 'node-executor-proof');
+        $caller = Request::create('/mcp', server: ['REMOTE_ADDR' => $this->operator->wireguard_ip]);
+
+        $response = app(ApiDispatcher::class)->dispatch($tool, ['node' => $this->node->id], $caller);
+
+        expect($response->status)->toBe(200)
+            ->and(json_decode($response->body, true, flags: JSON_THROW_ON_ERROR)['data']['status'])->toBe('succeeded');
+        Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, 1);
+        expect(Operation::query()->sole()->node_id)->toBe($this->node->id);
     });
 });
 

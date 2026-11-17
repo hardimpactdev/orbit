@@ -17,7 +17,7 @@ sequenceDiagram
   %%> - the runner step `executor_round_trip`, `executor_lost_result` or `executor_publish` runs `tools/swamp-proof-guest/executor-order.php` on the nested Gateway as its managed user
   %%> Who can start it:
   %%> - the diagnostic POST checks the active WireGuard peer, target Node access and Gateway authority
-  %%> - the diagnostic takes no inputs and sends one order
+  %%> - the diagnostic requires an empty request body and no query parameters before it records an Operation and sends one order
   Note over GW: Record executor.proof<br/>node_id set · running
   %%> What it does:
   %%> - records a durable Operation on the app-dev Node; its target is the Node (D7)
