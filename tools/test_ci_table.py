@@ -31,7 +31,7 @@ class CheckTableTest(unittest.TestCase):
                 self.assertGreater(check['cost'], 0)
                 self.assertLessEqual(check['cost'], check['ceiling'])
                 self.assertLessEqual(check['ceiling'], 240)
-                self.assertEqual(240 if name in ('gateway-tests', 'cli-tests', 'agent') else 180 if name == 'web' else 120, check['ceiling'])
+                self.assertEqual(240 if name in ('gateway-tests', 'gateway-real-clients', 'cli-tests', 'agent') else 180 if name == 'web' else 120, check['ceiling'])
         for root in self.table['roots'].values():
             self.assertLessEqual(set(root['default']), set(checks))
             self.assertLess(len(root['default']), len(plan.JOBS))

@@ -51,7 +51,7 @@ if mode == 'partial' and operation == 'update':
 if mode == 'fail' or (mode == 'install-fail' and operation == 'install'):
     sys.exit(100)
 if operation == 'install' and mode != 'no-tools':
-    for name in ['nft']:
+    for name in (['valkey-server', 'valkey-cli'] if args[-1] == 'valkey-server' else ['nft']):
         path = pathlib.Path(os.environ['FIXTURE_BIN']) / name
         path.write_text('#!/bin/bash\\necho fixture-version\\n')
         path.chmod(0o755)
@@ -81,7 +81,7 @@ if operation == 'install' and mode != 'no-tools':
         print(f'nftables present: {self.elapsed:.3f}s')
 
     def test_missing_tools_are_installed_and_verified(self):
-        for package, names in (('nftables', ('nft',)),):
+        for package, names in (('nftables', ('nft',)), ('valkey-server', ('valkey-server', 'valkey-cli'))):
             with self.subTest(package=package):
                 self.log.unlink(missing_ok=True)
                 result = self.run_helper(package)
@@ -152,10 +152,20 @@ if operation == 'install' and mode != 'no-tools':
             self.assertIn(f"vendor/bin/pest --group privileged {path} --filter 'on a real kernel'", gateway)
         self.assertEqual(gateway.count("ORBIT_REAL_KERNEL_TESTS: '1'"), 2)
 
+    def test_valkey_requires_both_server_and_client(self):
+        self.command('valkey-server', "print('fixture-version')\n")
+        result = self.run_helper('valkey-server')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.apt, 'A server alone must not bypass installing the missing client')
+        self.log.unlink()
+        result = self.run_helper('valkey-server')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls, [])
+
     def test_an_unknown_prerequisite_is_refused_without_running_commands(self):
         result = self.run_helper('unknown')
         self.assertEqual(result.returncode, 2)
-        self.assertIn('Usage: ci-runner-prerequisites {nftables}', result.stderr)
+        self.assertIn('Usage: ci-runner-prerequisites {nftables|valkey-server}', result.stderr)
         self.assertEqual(self.calls, [])
 
 

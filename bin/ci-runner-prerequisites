@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Ubuntu 26.04 prerequisites for hosted CI's two-minute Gateway static job.
+# Bounded Ubuntu 26.04 prerequisites for hosted Gateway checks.
 set -euo pipefail
 
 case "${1:-}" in
     nftables) tools=(nft) ;;
-    *) echo 'Usage: ci-runner-prerequisites {nftables}' >&2; exit 2 ;;
+    valkey-server) tools=(valkey-server valkey-cli) ;;
+    *) echo 'Usage: ci-runner-prerequisites {nftables|valkey-server}' >&2; exit 2 ;;
 esac
 package=$1
 

@@ -21,7 +21,7 @@ use Psr\Log\NullLogger;
  * with `hz 100`, as the bound needs (docs/reference/executor.md#the-listener-and-the-hand-off). These measure
  * timing and expiry, which no fake can, so they are in the `privileged` group, which the Gateway suite excludes:
  * `vendor/bin/pest --group privileged tests/Feature/Infrastructure/Executor/ExecutorResultWaitTest.php` on a host with
- * `valkey-server`. They skip there when the binary is missing. CI does not run them.
+ * `valkey-server`. They skip there when the binary is missing. The Gateway real database clients CI lane installs it and fails on skips.
  * The waiter's status and reason mapping runs against an in-memory queue on a fake clock, in CI too.
  */
 
