@@ -10,6 +10,7 @@ use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceContainer;
@@ -21,7 +22,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Certificates\GatewayLeafCertificateSigner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -61,7 +61,7 @@ beforeEach(function (): void {
     ]));
     $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
     app(ExtensionStore::class)->set('conn', true);
-    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
     {
         public function assertReady(): void {}
 
@@ -557,7 +557,7 @@ describe('the reachable Project directory', function (): void {
 
     it('shares model router refusals across the three handles', function (): void {
         $default = threadDefault($this->beast, 'tool');
-        app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+        app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
         {
             public function assertReady(): void
             {

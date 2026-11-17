@@ -10,9 +10,9 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -76,6 +76,22 @@ final readonly class InstanceHostIntent
 
     public const int AgentUid = 2750;
 
+    /**
+     * The app account of a container (development-containers.md#the-app-users-name): the stock Debian `www-data`, uid and gid 33, with its
+     * stock home. FrankenPHP, every Process and Schedule run as it; `agent` is in its group.
+     */
+    public const string AppUser = 'www-data';
+
+    public const string AppHome = '/var/www';
+
+    public const int AppUid = 33;
+
+    public const int AppGid = 33;
+
+    /**
+     * The nested-fleet container's `orbit` and `work`: its inner guests are Nodes whose `orbit` the ID map puts on these numbers, and
+     * the inner fleet runs as them over the shared checkout (ADR 0268, second amendment).
+     */
     public const int OrbitUid = 1000;
 
     public const int WorkGid = 2760;
@@ -113,7 +129,7 @@ final readonly class InstanceHostIntent
     public function __construct(
         private ContainerNodes $nodes,
         private AllocateInstanceBridgeAction $bridges,
-        private RecipeImageBuilds $recipes,
+        private CurrentRecipe $recipes,
         private PeerDnsPolicy $privateDns,
     ) {}
 

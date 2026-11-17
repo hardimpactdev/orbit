@@ -149,7 +149,7 @@ if operation == 'install' and mode != 'no-tools':
         self.assertNotIn('ci-runner-prerequisites acl', source)
         for path in ('tests/Feature/Extensions/AiRouter/AiRouterModelForwarderTest.php',
                      'tests/Feature/Domain/Instances/InstanceEgressTest.php'):
-            self.assertIn(f"vendor/bin/pest --default-time-limit=5 --group privileged {path} --filter 'on a real kernel'", gateway)
+            self.assertIn(f"vendor/bin/pest --group privileged {path} --filter 'on a real kernel'", gateway)
         self.assertEqual(gateway.count("ORBIT_REAL_KERNEL_TESTS: '1'"), 2)
 
     def test_an_unknown_prerequisite_is_refused_without_running_commands(self):

@@ -51,16 +51,24 @@ final readonly class DevelopmentDnsConfigRenderer
                     $q->orWhere('id', $pendingNode->id);
                 }
             })
-            ->whereHas('roles', static fn (Builder $q): Builder => $q->where(
+            // An app-dev Node answers its TLD. So does an app-prod Node outside every Cluster: no Router answers its TLD, and a
+            // production clone's preview Route under it must need no record (docs/reference/instance-cloning.md).
+            ->whereHas('roles', static fn (Builder $q): Builder => $q->whereIn(
                 'role',
-                RoleName::AppDev->value,
+                [RoleName::AppDev->value, RoleName::AppProd->value],
             )->whereIn('status', [LifecycleStatus::Provisioning->value, LifecycleStatus::Active->value]))
-
+            ->with('roles')
             ->get();
         $clusterTlds = $this->selection->clusterTlds($nodeOverrides, $clusterOverrides);
         $nodes = $nodes
-            ->flatMap(static function (Node $n) use ($clusterTlds): array {
+            ->flatMap(static function (Node $n) use ($clusterTlds, $nodeOverrides): array {
                 $identity = app(RouteRenderContext::class);
+                $appDev = $n->roles->contains(static fn ($role): bool => $role->role === RoleName::AppDev
+                    && in_array($role->status, [LifecycleStatus::Provisioning, LifecycleStatus::Active], true));
+                $clusterId = array_key_exists('cluster_id', $nodeOverrides[$n->id] ?? []) ? $nodeOverrides[$n->id]['cluster_id'] : $identity->clusterId($n);
+                if (! $appDev && $clusterId !== null) {
+                    return [];
+                }
                 $tld = $identity->tld($n);
                 $address = $identity->wireguardIp($n);
                 if ($tld === null || $address === null) {

@@ -13,7 +13,7 @@ use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Schedule;
@@ -25,7 +25,7 @@ final readonly class MigrateSchedules
     /** Bare names the container runtime puts on the Schedule's PATH. */
     private const RuntimeNames = ['php', 'node', 'bun', 'vp', 'composer', 'git', 'true', 'false', 'echo', 'printf'];
 
-    public function __construct(private ScheduleTargetResolver $targets, private RecipeImageBuilds $recipes) {}
+    public function __construct(private ScheduleTargetResolver $targets, private CurrentRecipe $recipes) {}
 
     /** @return list<array<string,mixed>> */
     public function plans(Instance $instance): array
@@ -63,7 +63,7 @@ final readonly class MigrateSchedules
                 'service' => 'orbit-schedule-'.$schedule->id.'.service', 'timer' => 'orbit-schedule-'.$schedule->id.'.timer',
                 'user' => $target->user, 'group' => $target->group, 'home' => $target->home, 'shell' => $target->shell, 'login_shell' => $target->loginShell,
                 'source_directory' => $directory, 'directory' => InstanceHostIntent::Workspace.substr($directory, strlen(rtrim($instance->checkout_path, '/'))),
-                'container_user' => 'orbit', 'container_home' => '/home/orbit', 'container_shell' => '/bin/bash',
+                'container_user' => InstanceHostIntent::AppUser, 'container_home' => InstanceHostIntent::AppHome, 'container_shell' => '/bin/bash',
                 'command_hash' => hash('sha256', $schedule->command), 'mapped_command_hash' => hash('sha256', $compiled['command']),
                 'source_script_hash' => hash('sha256', $script), 'source_command_paths' => $compiled['paths'],
                 'environment_file' => InstanceHostIntent::Workspace.substr($directory, strlen(rtrim($instance->checkout_path, '/'))).'/.env',

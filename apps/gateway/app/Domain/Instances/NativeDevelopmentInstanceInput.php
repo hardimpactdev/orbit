@@ -11,7 +11,6 @@ use App\Domain\Instances\Deployment\DevelopmentDeploySteps;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Processes\ProcessLifecycleInput;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
@@ -72,7 +71,7 @@ final readonly class NativeDevelopmentInstanceInput
         // Minting writes the read token's credential line into the vault; the fetch reads it as a 0600 file. A clone's copy also carries
         // its placeholder model key and model origin after the line, so the container phase writes T3's files before the copy's first
         // start and T3 starts with the copy (docs/reference/development-containers.md#t3-starts-with-the-copy).
-        $model = $clone ? app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(TaskVmModelRoute::class)->key()) : null;
+        $model = $clone ? app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(ContainerModelRoute::class)->key()) : null;
         $club = NestedFleetClubKey::forRun($container === null ? null : ValidatedData::object($container));
         // A clone's one-line launch copy: the release scripts and this run's container intent beside the private text of its clone copy.
         $stage = $clone ? new CloneStage : null;

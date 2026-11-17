@@ -1,11 +1,13 @@
 """CI and local runs share one Swamp shape gate script, so they cannot drift."""
 import io
+import json
 import re
 import runpy
 import subprocess
+import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -68,6 +70,17 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
             self.assertNotIn(pin, (ROOT / 'bin/swamp-shape-gate').read_text())
         self.assertIn("-r requirements.txt", pins)
 
+    def test_ci_runs_the_local_lint_group_with_an_interpreter_bound_cache(self):
+        import yaml
+        lint = yaml.safe_load(WORKFLOW)['jobs']['lint']
+        self.assertEqual(lint['if'], '${{ !inputs.changed-only || inputs.shape }}')
+        steps = lint['steps']
+        self.assertIn('bin/swamp-shape-gate --only lint --strict', [step.get('run') for step in steps])
+        python = next(step for step in steps if step.get('uses', '').startswith('actions/setup-python@'))
+        cache = next(step for step in steps if step.get('uses', '').startswith('actions/cache@'))
+        for output in ('python-version', 'python-path'):
+            self.assertIn(f"${{{{ steps.{python['id']}.outputs.{output} }}}}", cache['with']['key'])
+
 
 class PlanTest(unittest.TestCase):
     def test_the_shape_group_runs_ci_s_checks_in_ci_s_order(self):
@@ -105,11 +118,54 @@ class PlanTest(unittest.TestCase):
         audit = [argv for argv in calls if 'tests/writes_declared_test.ts' in argv]
         self.assertEqual(audit, [['deno', 'test', '--allow-read', 'tests/writes_declared_test.ts']])
 
+    def test_full_shape_uses_exactly_cis_selected_shards_and_runner(self):
+        selected = [['swamp/tests/ansible_inputs_test.py', 'swamp/tests/instance_machine_name_test.py'],
+                    ['swamp/tests/ansible_instance_host_runtime_test.ts#0/5', 'swamp/tests/ansible_instance_host_runtime_test.ts#4/5']]
+        planned = {'shards': [{'units': selected[0]}], 'self_hosted_shards': [{'units': selected[1]}], 'unmapped': []}
+        scope = gate['main'].__globals__
+        # A two-lane CI plan must retain two lanes even on a one-CPU host or with --workers 1.
+        for arguments, cpus in (([], 8), (['--workers', '1'], 8), ([], 1)):
+            with self.subTest(arguments=arguments, cpus=cpus), tempfile.TemporaryDirectory() as scratch:
+                with patch.dict(scope, {'tool_path': lambda _: Path('/tools')}), \
+                        patch.object(scope['os'], 'cpu_count', return_value=cpus), \
+                        patch.object(scope['shutil'], 'which', return_value='/tool'), \
+                        patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(planned))) as runner, \
+                        redirect_stdout(io.StringIO()):
+                    code = gate['main'](['--only', 'shape', '--reports', scratch, '--tools', '/custom-tools', '--base', BASE, *arguments])
+                self.assertEqual(code, 0)
+                calls = [call.args[0] for call in runner.call_args_list]
+                self.assertEqual(calls[0], [sys.executable, str(ROOT / 'bin/ci-units'), 'plan',
+                                 '--base', BASE, '--head', 'HEAD', '--plan-json', str(Path(scratch) / 'fixture-plan.json')])
+                commands = [argv for argv in calls if argv[:3] == [sys.executable, str(ROOT / 'bin/ci-units'), 'run']]
+                self.assertEqual([json.loads(argv[argv.index('--units') + 1]) for argv in commands], selected)
+                for argv in commands:
+                    self.assertEqual(argv[argv.index('--workers') + 1], '2')
+                    self.assertEqual(argv[argv.index('--tools') + 1], '/custom-tools')
+                    self.assertTrue(Path(argv[argv.index('--times') + 1]).is_absolute())
+
+    def test_ci_capacity_failure_fails_the_gate_before_execution(self):
+        scope = gate['main'].__globals__
+        planned = {'shards': [], 'self_hosted_shards': [], 'unmapped': [], 'capacity': [{'unplaced': ['a-unit']}]}
+        with patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(planned))), \
+                patch.dict(scope, {'tool_path': lambda _: Path('/tools')}), \
+                patch.object(scope['shutil'], 'which', return_value='/tool'), \
+                patch.dict(scope, {'execute': Mock(side_effect=AssertionError('must not run a rejected plan'))}), \
+                tempfile.TemporaryDirectory() as scratch, redirect_stderr(io.StringIO()) as errors:
+            code = gate['main'](['--reports', scratch, '--base', BASE])
+        self.assertEqual(code, 1)
+        self.assertIn('fails CI admission', errors.getvalue())
+
+    def test_lint_runs_only_the_pinned_linters_and_collections_without_a_base(self):
+        code, calls, output = ExitCodeTest().run_gate(['--only', 'lint'], [])
+        self.assertEqual(code, 0, output)
+        self.assertEqual([argv[0] for argv in calls], ['ansible-galaxy', 'ansible-lint', 'ruff'])
+
     def test_control_installs_the_pinned_tools_its_analyzers_call(self):
         scope = gate['main'].__globals__
         with tempfile.TemporaryDirectory() as scratch:
             install = Mock(return_value=Path(scratch))
-            with patch.dict(scope, {'tool_path': install, 'execute': lambda *_args: []}), redirect_stdout(io.StringIO()):
+            with patch.dict(scope, {'tool_path': install, 'execute': lambda *_args: []}), \
+                    patch.object(scope['shutil'], 'which', return_value='/tool'), redirect_stdout(io.StringIO()):
                 code = gate['main'](['--only', 'control', '--base', BASE, '--reports', scratch])
         self.assertEqual(code, 0)
         install.assert_called_once()
@@ -127,6 +183,23 @@ class PlanTest(unittest.TestCase):
         validate = next(step for step in steps('validate') if step.name == 'validate-swamp-workflows')
         self.assertIn('no Swamp credential', gate['skip_reason'](validate, {'PATH': ''}))
         self.assertIsNone(gate['skip_reason'](validate, {'PATH': '', 'SWAMP_API_KEY': 'x', 'SWAMP_SIGNIN_TOKEN': 'y'}))
+
+    def test_missing_fixture_programs_name_the_tools_and_fail_without_strict(self):
+        planned = {'shards': [], 'self_hosted_shards': [{'units': ['swamp/tests/ansible_instance_host_runtime_test.ts#4/5']}], 'unmapped': []}
+        with patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(planned))):
+            expanded = gate['fixture_commands'](steps('shape'), Path('/reports'), Path('/tools'), BASE)
+        runtime = next(step for step in expanded if step.name == 'CI fixture shard 1')
+        code, calls, output = ExitCodeTest().run_gate(['--only', 'shape', '--base', BASE], [],
+                                                    selected_steps=[runtime], available=lambda *_args, **_kwargs: '/tool')
+        self.assertEqual(code, 0, output)
+        for strict in ([], ['--strict']):
+            code, calls, output = ExitCodeTest().run_gate(['--only', 'shape', '--base', BASE, *strict], [],
+                selected_steps=[runtime], available=lambda tool, **_: None if tool in ('zip', 'unzip') else '/tool')
+            self.assertEqual(code, 1, output)
+            self.assertEqual(calls, [])
+            self.assertIn('required tools not found on PATH:', output)
+            self.assertIn('zip', output)
+            self.assertIn('unzip', output)
 
 
 class ParallelTest(unittest.TestCase):
@@ -197,7 +270,7 @@ class BaseTest(unittest.TestCase):
 
 
 class ExitCodeTest(unittest.TestCase):
-    def run_gate(self, argv, results, environment=None):
+    def run_gate(self, argv, results, environment=None, selected_steps=None, available=None):
         """Run main with every step replaced by a result: 0 passes, anything else fails."""
         outcomes = iter(results)
         scope = gate['main'].__globals__
@@ -208,7 +281,9 @@ class ExitCodeTest(unittest.TestCase):
             return subprocess.CompletedProcess(argv_, next(outcomes, 0))
 
         with tempfile.TemporaryDirectory() as scratch, patch.dict(scope['os'].environ, environment or {}, clear=True), \
-                patch.dict(scope, {'tool_path': lambda tools: Path(scratch)}), \
+                patch.dict(scope, {'tool_path': lambda tools: Path(scratch),
+                                   'fixture_commands': lambda steps, reports, tools, base: selected_steps if selected_steps is not None else steps}), \
+                patch.object(scope['shutil'], 'which', side_effect=available or (lambda *_args, **_kwargs: '/tool')), \
                 patch.object(scope['subprocess'], 'run', run), redirect_stdout(io.StringIO()) as output:
             scope['os'].environ['PATH'] = '/usr/bin'
             code = gate['main'](['--reports', scratch, '--tools', scratch, '--workers', '1', *argv])
@@ -227,9 +302,39 @@ class ExitCodeTest(unittest.TestCase):
         code, _calls, _output = self.run_gate(['--only', 'shape', '--base', BASE], [])
         self.assertEqual(code, 0)
 
-    def test_strict_runs_the_steps_that_need_credentials(self):
-        _code, calls, _output = self.run_gate(['--only', 'validate', '--strict'], [])
-        self.assertEqual(len(calls), len(steps('validate')))
+    def test_missing_credentials_do_not_hide_a_missing_php_tool(self):
+        code, calls, output = self.run_gate(['--only', 'validate'], [],
+            available=lambda tool, **_: None if tool == 'php' else '/tool')
+        self.assertEqual(code, 1, output)
+        self.assertEqual(calls, [])
+        self.assertIn('required tools not found on PATH: php', output)
+
+    def test_strict_fails_clearly_without_running_credential_dependent_steps(self):
+        code, calls, output = self.run_gate(['--only', 'validate', '--strict'], [])
+        self.assertEqual(code, 1)
+        self.assertEqual(calls, [])
+        self.assertIn('set SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN', output)
+
+    def test_a_missing_deno_fails_before_git_or_fixtures_with_an_install_hint(self):
+        scope = gate['main'].__globals__
+        with tempfile.TemporaryDirectory() as scratch, \
+                patch.object(scope['shutil'], 'which', side_effect=lambda tool, **_: None if tool == 'deno' else '/git'), \
+                patch.dict(scope, {'resolve_base': Mock(side_effect=AssertionError('must not invoke Git'))}), \
+                redirect_stderr(io.StringIO()) as error:
+            code = gate['main'](['--reports', scratch])
+        self.assertEqual(code, 2)
+        self.assertIn('Missing gate prerequisites: deno', error.getvalue())
+        self.assertIn('Deno 2.9.8 on PATH', error.getvalue())
+
+    def test_tool_setup_failure_explains_python_and_network_prerequisites(self):
+        scope = gate['main'].__globals__
+        with tempfile.TemporaryDirectory() as scratch, \
+                patch.dict(scope, {'tool_path': Mock(side_effect=subprocess.CalledProcessError(1, 'venv'))}), \
+                redirect_stderr(io.StringIO()) as error:
+            code = gate['main'](['--only', 'lint', '--tools', scratch, '--reports', scratch])
+        self.assertEqual(code, 2)
+        self.assertIn('Python 3.13+ with venv/pip', error.getvalue())
+        self.assertIn('PyPI', error.getvalue())
 
 
 class ReviewCheckTest(unittest.TestCase):

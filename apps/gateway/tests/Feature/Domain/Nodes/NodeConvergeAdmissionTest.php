@@ -10,6 +10,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\ReleaseHistory;
+use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\GatewayPrivateDnsState;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
@@ -22,7 +23,6 @@ use App\Domain\Nodes\NodeUpdatePolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Fleet\StaticCliRelease;
@@ -459,7 +459,7 @@ it('bounds the roles phase of an Instance fleet Node\'s app-dev converge at 1800
     // docs/reference/development-containers.md#instance-host-in-the-fleet: the first Instance host build includes the stock and Instance images.
     $marker = sys_get_temp_dir().'/orbit-instance-fleet-converge-'.getmypid();
     config(['instances.fleet_marker' => $marker]);
-    Node::query()->whereKey($this->node->id)->update(['public_ssh_host' => TaskVmNestedFleet::Layout['app-dev']['address']]);
+    Node::query()->whereKey($this->node->id)->update(['public_ssh_host' => NestedFleetLayout::Layout['app-dev']['address']]);
     $intent = fn (array $roles): array => new ReflectionMethod(NodeDesiredConvergeInput::class, 'intent')
         ->invoke(app(NodeDesiredConvergeInput::class), $this->node->refresh(), [], $roles, false, null, [], null);
     expect($intent(['app-dev']))->not->toHaveKey('roles_seconds');

@@ -26,6 +26,7 @@ use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestState;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
@@ -75,7 +76,6 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnPrompt;
 use App\Domain\Tasks\TaskVmRemoved;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -117,7 +117,7 @@ beforeEach(function (): void {
     $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
     app(ExtensionStore::class)->set('conn', true);
     app(ExtensionStore::class)->set('tasks', true);
-    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
     {
         public function assertReady(): void {}
 

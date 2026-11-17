@@ -4,13 +4,30 @@
  */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1";
-import { root, Task } from "./_support/instance_migrate.ts";
+import { git, root, Task } from "./_support/instance_migrate.ts";
 
 Deno.test("retention keeps real Git edge cases intact", () => {
   const done = new Deno.Command("python3", {
     args: ["-I", new URL("fixtures/instance-migrate-retention.py", import.meta.url).pathname],
   }).outputSync();
   assert(done.success, new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr));
+});
+Deno.test("migration fixture commits start no automatic Git maintenance", () => {
+  const folder = Deno.makeTempDirSync();
+  try {
+    git(folder, "init", "--quiet", "--initial-branch", "main");
+    // Force real maintenance past its threshold and into the foreground: an
+    // unintended run must finish before the assertion, not race a short wait.
+    for (const [key, value] of [
+      ["maintenance.auto", "true"],
+      ["maintenance.autoDetach", "false"],
+      ["maintenance.gc.enabled", "false"],
+      ["maintenance.loose-objects.enabled", "true"],
+      ["maintenance.loose-objects.auto", "1"],
+    ]) git(folder, "config", key, value);
+    git(folder, "commit", "--quiet", "--allow-empty", "-m", "fixture commit");
+    assertEquals([...Deno.readDirSync(folder + "/.git/objects/pack")], []);
+  } finally { Deno.removeSync(folder, { recursive: true }); }
 });
 Deno.test("the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step", () => {
   const tasks = parse(Deno.readTextFileSync(new URL("tasks/instance-migrate-phase.yml", root))) as Task[];
@@ -39,7 +56,7 @@ Deno.test("directory modes stay in the protected result and restore through the 
   assertEquals(archive.no_log, true);
   const restore = tasks.find(task => task.name === "Restore the added directories' exact modes including special bits")!;
   const command = restore["ansible.builtin.command"] as Task;
-  assert((command.argv as string).startsWith("{{ as_orbit +"));
+  assert((command.argv as string).startsWith("{{ as_app +"));
   assert((command.argv as string).includes("--restore-directories"));
   assertEquals(command.stdin, "{{ (migrate_archive.stdout | from_json).directory_modes }}");
   assertEquals(restore.no_log, true);
