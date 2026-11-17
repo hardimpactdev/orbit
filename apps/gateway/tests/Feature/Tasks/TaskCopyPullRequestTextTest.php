@@ -3,8 +3,11 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\CreateTaskGroupAction;
+use App\Actions\Tasks\RecordTaskPullRequestTextAction;
 use App\Actions\Tasks\RunTaskPublishWhenDoneAction;
+use App\Actions\Tasks\StartTaskPublishAction;
 use App\Data\Tasks\CreateTaskGroupData;
+use App\Data\Tasks\StartTaskPublishData;
 use App\Data\Tasks\TaskGroupData;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Operations\OperationKinds;
@@ -112,6 +115,25 @@ it('records the reviewer\'s text on the check of its running turn, and the publi
         ->and(Operation::query()->where('kind', OperationKinds::TasksPublish)->sole()->input['pull_request'])
         ->toBe(['title' => 'Keep every field', 'body' => "Type and website were lost.\n\nCloses #9", 'draft' => false]);
 });
+
+it('records the reviewer\'s text after the pull request opened, and the republish of the done check updates the pull request with it', function (bool $named): void {
+    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr, text: false);
+    $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7', 'issue_number' => 9]);
+    $key = copyKeyOf($world);
+    // A CI-fix round: a new reviewer turn on the done check, after the first publish opened the pull request.
+    $turn = copyReviewerTurnRuns($world);
+
+    copySends($key, ['title' => 'Keep every field', 'body' => 'Round two fixed CI.'])
+        ->assertStatus(202)->assertJsonPath('data', ['state' => 'recorded', 'check_id' => $world->check->id, 'operation_id' => $turn->id,
+            'opens' => RecordTaskPullRequestTextAction::UpdatesOnRepublish]);
+    $turn->update(['status' => OperationStatus::Succeeded, 'result' => ['state' => 'done', 'ended' => true], 'finished_at' => now()]);
+
+    $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData($named ? $world->check->id : null), 'person', null);
+
+    expect($world->check->refresh()->pr_text_operation_id)->toBe($turn->id)
+        ->and($operation->input['check'])->toBe($world->check->id)
+        ->and($operation->input['pull_request'])->toBe(['title' => 'Keep every field', 'body' => "Round two fixed CI.\n\nCloses #9", 'draft' => false]);
+})->with(['a bare publish' => [false], 'a publish that names the done check' => [true]]);
 
 it('refuses the text outside a running reviewer turn on the checked commit, for a held Project, an ended group and a bad title', function (Closure $arrange, array $text, int $status, string $code): void {
     $world = TaskCopyDoneFixture::make(text: false);
