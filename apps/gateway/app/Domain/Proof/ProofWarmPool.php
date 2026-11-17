@@ -7,6 +7,7 @@ namespace App\Domain\Proof;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
+use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
@@ -51,7 +52,11 @@ final readonly class ProofWarmPool
      */
     public function drain(): array
     {
-        $this->store->put(self::scope(), self::DrainKey, now()->toIso8601String());
+        // Under the pool lock: a refill whose reads run now sees the drain in its create transaction, or its copies are dropped below.
+        DB::transaction(function (): void {
+            $this->lock();
+            $this->store->put(self::scope(), self::DrainKey, now()->toIso8601String());
+        });
 
         return $this->drop(ValidatedData::integerList(ProofWarmCopy::query()->whereNull('dropped_at')->pluck('id')->all()));
     }
@@ -121,8 +126,9 @@ final readonly class ProofWarmPool
 
     /**
      * Keeps the pool: forgets each dropped warm copy whose copy is gone and asks again for the destroy of the others; drops each warm
-     * copy of an older seed, whose copy failed, or beyond the pool size, and every one while the pool is drained; then starts new warm copies on Nodes with a free place until the pool holds `proof.warm_copies`. A Node whose task
-     * copies reach `orbit.tasks.copies_max` takes none: a warm copy counts against that cap. It never waits for a place.
+     * copy of an older seed, whose copy failed, or beyond the pool size, and every one while the pool is drained; then starts new warm
+     * copies on Nodes with a free place until the pool holds `proof.warm_copies`. A Node whose task copies reach `orbit.tasks.copies_max`
+     * takes none: a warm copy counts against that cap. It never waits for a place, and starts none while a proof waits for its admission.
      *
      * @return list<int> the task groups of the new warm copies
      */
@@ -139,7 +145,7 @@ final readonly class ProofWarmPool
         $this->drop(ValidatedData::integerList([...$drop->pluck('id')->all(), ...$kept->slice($size)->pluck('id')->all()]));
         $need = $size - min($size, $kept->count());
         $project = Project::query()->find($this->settings->projectId());
-        if ($need === 0 || $source === null || $project === null || ! ProofCopies::runs($project)) {
+        if ($need === 0 || $source === null || $project === null || ! ProofCopies::runs($project) || ProofRunIntent::waitsForAdmission()) {
             return [];
         }
         $copies = app(ProofCopies::class);
@@ -152,6 +158,12 @@ final readonly class ProofWarmPool
         $places = array_intersect_key($places, $read['hosts']);
 
         return DB::transaction(function () use ($places, $need, $read, $source): array {
+            // The reads above are slow. Under the pool lock, a drain or a proof that came meanwhile still stops the refill, and the
+            // copy cap is counted as admitRead counts it.
+            $this->lock();
+            if ($this->drained() || ProofRunIntent::waitsForAdmission()) {
+                return [];
+            }
             $nodes = Node::query()->findMany(array_keys($places))->keyBy('id');
             $groups = [];
             foreach (ProofCopies::spread($places, $need) as $nodeId) {
@@ -221,6 +233,15 @@ final readonly class ProofWarmPool
         $group = Task::topLevel()->with('taskable')->find($warm->task_id);
 
         return $group !== null && ProofCopies::copyState($group) === 'ready';
+    }
+
+    /**
+     * The pool lock: the row of the proof default, which admitRead locks for each copy it starts. drain() and the create transaction of
+     * keep() take it, so a drain never lands between the refill's check and its new copies.
+     */
+    private function lock(): void
+    {
+        Instance::query()->where('project_id', $this->settings->projectId())->where('name', DefaultInstanceName::Name)->lockForUpdate()->first();
     }
 
     private function group(): Task

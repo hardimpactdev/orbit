@@ -1007,6 +1007,44 @@ describe('proof:run in copies: the warm pool', function (): void {
         expect(ProofWarmCopy::query()->whereIn('task_id', $old)->count())->toBe(0)->and(ProofWarmCopy::query()->count())->toBe(2);
     });
 
+    it('makes no warm copy when a drain lands during the reads of its refill', function (): void {
+        // The refill reads the default's Node (its ID map) before its create transaction; the drain lands during that read.
+        app()->instance(SshExecutor::class, new class($this->ssh) implements SshExecutor
+        {
+            private bool $drained = false;
+
+            public function __construct(private SshExecutor $inner) {}
+
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                if (! $this->drained && str_contains((string) $command->input, 'ID map facts')) {
+                    $this->drained = true;
+                    app(ProofWarmPool::class)->drain();
+                }
+
+                return $this->inner->execute($connection, $command);
+            }
+        });
+
+        expect(app(ProofWarmPool::class)->keep())->toBe([])->and(ProofWarmCopy::query()->count())->toBe(0)
+            ->and(app(ProofWarmPool::class)->drained())->toBeTrue();
+    });
+
+    it('makes no warm copy while a proof waits for its admission, so the proof takes the free places first', function (): void {
+        $node = Node::query()->where('name', 'beast')->firstOrFail();
+        copyProofCiNode($node, 3, busy: 3);
+        $proof = copyProofAdmitted();
+        // The places come free; the proof's retry has not run yet.
+        copyProofCiNode($node, 3);
+
+        expect($proof->status)->toBe(OperationStatus::Waiting)
+            ->and(app(ProofWarmPool::class)->keep())->toBe([])->and(ProofWarmCopy::query()->count())->toBe(0);
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Running)->and(app(ProofWarmPool::class)->keep())->not->toBe([]);
+    });
+
     it('drains in one call: destroys the idle warm copies, starts none until the resume, and leaves a running proof alone', function (): void {
         app(ProofWarmPool::class)->keep();
         $warm = ProofWarmCopy::query()->orderBy('id')->get();

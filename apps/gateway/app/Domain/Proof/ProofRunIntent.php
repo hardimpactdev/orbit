@@ -177,14 +177,23 @@ final readonly class ProofRunIntent
             $waitStep = "Waiting for proof Operation {$working->id} to finish.";
             throw new TaskCapacityException(TaskWait::Capacity, $waitStep);
         }
-        // Expired parents cannot keep the queue closed if their next retry was lost.
-        if (Operation::query()->where('kind', OperationKinds::ProofRun)->whereNotIn('status', OperationStatus::terminalValues())
-            ->whereNull('cancel_requested_at')->whereJsonLength('input->runs', 0)->where('id', '<', $proof->id)
-            ->where('created_at', '>=', now()->subSeconds(self::WaitSeconds))->exists()) {
+        if (self::waitsForAdmission($proof->id)) {
             throw new TaskCapacityException(TaskWait::Capacity, 'Waiting behind an earlier proof.');
         }
 
         return $current;
+    }
+
+    /**
+     * Whether a proof waits for its admission: it is open, names no runs yet and is within its admission budget. With `$before`, only
+     * a proof admitted earlier than that one counts. The warm pool makes no new warm copy while one waits (ProofWarmPool::keep).
+     */
+    public static function waitsForAdmission(?int $before = null): bool
+    {
+        // Expired parents cannot keep the queue closed if their next retry was lost.
+        return Operation::query()->where('kind', OperationKinds::ProofRun)->whereNotIn('status', OperationStatus::terminalValues())
+            ->whereNull('cancel_requested_at')->whereJsonLength('input->runs', 0)->when($before !== null, static fn ($query) => $query->where('id', '<', $before))
+            ->where('created_at', '>=', now()->subSeconds(self::WaitSeconds))->exists();
     }
 
     /**

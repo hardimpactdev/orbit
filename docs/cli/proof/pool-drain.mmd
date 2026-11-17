@@ -11,7 +11,7 @@ sequenceDiagram
   %%> Why:
   %%> - A maintenance window that needs every copy of the proof Project's default gone runs this one command.
   GW->>GW: Record the drain
-  %%> The drain is a Gateway record. It lasts until proof:pool:resume, across Gateway restarts. While it holds, no refill starts a warm copy.
+  %%> The drain is a Gateway record. It lasts until proof:pool:resume, across Gateway restarts. While it holds, no refill starts a warm copy. The drain is recorded under the lock of the proof default, which a refill takes again before it starts a copy: a refill whose reads ran during the drain starts none, and copies that a refill started before the drain are cancelled next.
   GW->>GW: Cancel each idle warm copy
   %%> Idle: no proof has taken it. Each cancel destroys the copy through its task group, as for any proof copy, with discard. A warm copy whose create still runs is cancelled the same way: the group's cancel waits for the create to end.
   %%> Running proofs:

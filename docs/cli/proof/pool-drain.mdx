@@ -26,7 +26,7 @@ The command does three things:
 
 - It records the drain. The drain lasts until [`orbit proof:pool:resume`](/cli/proof/pool-resume), also across Gateway restarts.
 - It destroys each idle [warm copy](/cli/proof/run#warm-copies). A warm copy whose create still runs is destroyed when the create ends.
-- It stops every refill. No new warm copy is made while the pool is drained.
+- It stops every refill. No new warm copy is made while the pool is drained, also by a refill that was already reading the Nodes when the drain came.
 
 Running proofs are not touched. Their copies, also those taken from the pool, are destroyed at the end of each run, as always. A proof that starts while the pool is drained finds no warm copy and creates its copies.
 
@@ -36,7 +36,7 @@ The caller needs Gateway access, as for [`orbit proof:run`](/cli/proof/run).
 
 ## How it works
 
-The Gateway records the drain and cancels the task group of each idle warm copy with discard. Each cancel destroys its copy and drops the copy's hold on its Node's places. The destroy of the last copy on a Node starts that Node's stopped runners again.
+The Gateway records the drain under the lock of the proof default and cancels the task group of each idle warm copy with discard. A refill takes the same lock and checks the drain again before it starts a copy, so its slow reads of the Nodes cannot start a copy after the drain. Each cancel destroys its copy and drops the copy's hold on its Node's places. The destroy of the last copy on a Node starts that Node's stopped runners again.
 
 <div className="flow-at" data-chart="proof/pool-drain"></div>
 

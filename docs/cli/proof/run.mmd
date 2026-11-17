@@ -127,9 +127,9 @@ sequenceDiagram
   %%> - When no hold is left on the Node, start exactly the runners that the holds stopped, and no other. A runner that is gone is skipped. A second release changes nothing.
   GW->>GW: Refill the warm pool
   %%> When:
-  %%> - After a warm copy is taken or destroyed, and after each seed refresh on a Node. Not while the pool is drained (proof:pool:drain).
+  %%> - After a warm copy is taken or destroyed, and after each seed refresh on a Node. Not while the pool is drained (proof:pool:drain), and not while a proof waits for its admission: that proof takes the free places first.
   %%> How:
-  %%> - Start warm copies until the pool holds proof.warm_copies, on Nodes with a free place, the Nodes in turns. A used copy is never put back: each new warm copy is an `instance.create` from the Node's current seed, with its own hold. A refill never waits for a place and never holds a proof back.
+  %%> - Start warm copies until the pool holds proof.warm_copies, on Nodes with a free place, the Nodes in turns. A used copy is never put back: each new warm copy is an `instance.create` from the Node's current seed, with its own hold. A refill never waits for a place. Its reads of the Nodes are slow, so it checks the drain and the waiting proofs again under the lock of the proof default before it starts a copy; proof:pool:drain records the drain under the same lock.
   %%> Stale seed:
   %%> - After a seed refresh, each idle warm copy from an older seed is destroyed first, so its place is free for the new one.
   GW->>GW: Merge all shard verdicts
