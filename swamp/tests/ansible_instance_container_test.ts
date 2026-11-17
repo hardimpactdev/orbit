@@ -1070,52 +1070,63 @@ Deno.test({
   },
 });
 
+/** A seeded default, instance-7, and the intent of its clone, instance-8, on the origin's feature branch at the seed. */
+function cloneFixture() {
+  const f = fixture();
+  try {
+    for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
+    // The live Project 66 seed inherited root from its profile: no local root device.
+    const sourceState = f.state();
+    sourceState.containers["instance-7"].devices = sourceState.containers["instance-7"].devices.filter(
+      (device: string) => !device.startsWith("root,"),
+    );
+    Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(sourceState));
+    const seed = git(f.source, "rev-parse", "HEAD");
+    // The origin's feature branch is at the seed; main moves on after it, and the clone takes its own branch, not main.
+    git(f.source, "branch", "feature");
+    Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
+    git(f.source, "commit", "--quiet", "-am", "after the seed");
+    const route = { route: "yes", interface_in: "orbit", interface_out: "orbitinst0", to_ip: "10.253.0.3", to_port: "3773", proto: "tcp" };
+    Object.assign(f.container, {
+      instance_id: 8, name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`,
+      branch: "feature", units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=www-data\nExecStart=frankenphp --listen 10.253.0.3:8080\n" }],
+      acl_rules: { description: "Orbit Instance 8", egress: [], ingress: [{ action: "allow", protocol: "tcp", destination_port: "3773", state: "enabled" }] },
+      firewall: [
+        { ...route, rule: "deny", from_ip: "10.44.0.128/25", comment: "orbit:instance-8-t3-task-vms" },
+        { ...route, rule: "allow", from_ip: "any", comment: "orbit:instance-8-t3" },
+      ],
+      clone: {
+        source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed,
+        t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 20,
+          url: "http://10.44.0.7:3800", label: "tool / feature", t3: "/opt/orbit-agent/current/agent/bin/t3",
+          project_mark: "/home/agent/.config/orbit/t3-project" },
+        model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" },
+        files: [
+          { path: "/etc/orbit/instance", uid: 0, gid: 0, mode: "0644", content: "ORBIT_INSTANCE_ID=8\n" },
+          { path: "/home/agent/.codex/config.toml", uid: 2750, gid: 2750, mode: "0600", content: "model_provider = \"orbit\"\n" },
+          { path: "/home/agent/.t3/userdata/settings.json", uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true } },
+          // A folder the image lacks: the push makes it (a migrate builds the container from the image).
+          { path: "/etc/systemd/system/t3.service.d/10-orbit-boot.conf", uid: 0, gid: 0, mode: "0644", content: "[Unit]\nDefaultDependencies=no\n" },
+          // The runtime's container server (docs/reference/development-containers.md#container-server).
+          { path: "/etc/systemd/system/t3.service.d/20-orbit-server.conf", uid: 0, gid: 0, mode: "0644", content: "[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve\n" },
+        ],
+        links: [{ path: "/home/agent/.claude/CLAUDE.md", target: "/opt/orbit-agent/current/notes/web-app.md" }],
+      },
+    });
+    f.write();
+    return { f, seed };
+  } catch (error) {
+    f.cleanup();
+    throw error;
+  }
+}
+
 Deno.test({
-  name: "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
+  name: "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture();
+    const { f, seed } = cloneFixture();
     try {
-      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
-      // The live Project 66 seed inherited root from its profile: no local root device.
-      const sourceState = f.state();
-      sourceState.containers["instance-7"].devices = sourceState.containers["instance-7"].devices.filter(
-        (device: string) => !device.startsWith("root,"),
-      );
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(sourceState));
-      const seed = git(f.source, "rev-parse", "HEAD");
-      // The origin's feature branch is at the seed; main moves on after it, and the clone takes its own branch, not main.
-      git(f.source, "branch", "feature");
-      Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
-      git(f.source, "commit", "--quiet", "-am", "after the seed");
-      const route = { route: "yes", interface_in: "orbit", interface_out: "orbitinst0", to_ip: "10.253.0.3", to_port: "3773", proto: "tcp" };
-      Object.assign(f.container, {
-        instance_id: 8, name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`,
-        branch: "feature", units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=www-data\nExecStart=frankenphp --listen 10.253.0.3:8080\n" }],
-        acl_rules: { description: "Orbit Instance 8", egress: [], ingress: [{ action: "allow", protocol: "tcp", destination_port: "3773", state: "enabled" }] },
-        firewall: [
-          { ...route, rule: "deny", from_ip: "10.44.0.128/25", comment: "orbit:instance-8-t3-task-vms" },
-          { ...route, rule: "allow", from_ip: "any", comment: "orbit:instance-8-t3" },
-        ],
-        clone: {
-          source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed,
-          t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 20,
-            url: "http://10.44.0.7:3800", label: "tool / feature", t3: "/opt/orbit-agent/current/agent/bin/t3",
-            project_mark: "/home/agent/.config/orbit/t3-project" },
-          model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" },
-          files: [
-            { path: "/etc/orbit/instance", uid: 0, gid: 0, mode: "0644", content: "ORBIT_INSTANCE_ID=8\n" },
-            { path: "/home/agent/.codex/config.toml", uid: 2750, gid: 2750, mode: "0600", content: "model_provider = \"orbit\"\n" },
-            { path: "/home/agent/.t3/userdata/settings.json", uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true } },
-            // A folder the image lacks: the push makes it (a migrate builds the container from the image).
-            { path: "/etc/systemd/system/t3.service.d/10-orbit-boot.conf", uid: 0, gid: 0, mode: "0644", content: "[Unit]\nDefaultDependencies=no\n" },
-            // The runtime's container server (docs/reference/development-containers.md#container-server).
-            { path: "/etc/systemd/system/t3.service.d/20-orbit-server.conf", uid: 0, gid: 0, mode: "0644", content: "[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve\n" },
-          ],
-          links: [{ path: "/home/agent/.claude/CLAUDE.md", target: "/opt/orbit-agent/current/notes/web-app.md" }],
-        },
-      });
-      f.write();
       const clone = `${f.folder}/containers/instance-8`;
       for (const phase of ["clone", "workspace", "agent", "processes", "t3", "register"]) {
         const result = f.run(phase);
@@ -1162,22 +1173,48 @@ Deno.test({
       assertEquals([reply.gateway.token, reply.gateway.status, JSON.parse(reply.gateway.body).scopes], ["token-1", 200, ["access:read", "access:write"]]);
       assertEquals([reply.swamp.token, reply.swamp.status], ["token-2", 200]);
       assertEquals(state.sessions.map((session: { label: string }) => session.label), ["Orbit Gateway", "Orbit Swamp"]);
-
-      for (const phase of ["clone", "workspace", "agent", "processes", "t3"]) {
-        const again = f.run(phase);
-        assert(again.ok, again.output);
-        assertEquals(again.changed, 0, `${phase}: ${again.output}`);
-        // Tag selection must not dispatch the other lifecycle phases as skipped tasks.
-        if (phase === "t3") {
-          const skipped = Number(/^node\s*:.*skipped=(\d+)/m.exec(again.output)?.[1] ?? 999);
-          assert(skipped < 10, again.output);
-        }
-      }
-      assertEquals(f.state().projects, ["/srv/workspace"]);
     } finally {
       f.cleanup();
     }
   },
+});
+
+/** Reruns `phases` of a clone that the clone's own phases made, one play each: no phase changes anything. */
+function rerunClone(phases: string[]) {
+  const { f } = cloneFixture();
+  try {
+    // The clone's own case checks each phase's first run; here the clone is setup.
+    for (const phase of ["clone", "workspace", "agent", "processes", "t3", "register"]) {
+      const result = f.run(phase);
+      assert(result.ok, `${phase}: ${result.output}`);
+    }
+    for (const phase of phases) {
+      const again = f.run(phase);
+      assert(again.ok, again.output);
+      assertEquals(again.changed, 0, `${phase}: ${again.output}`);
+      // Tag selection must not dispatch the other lifecycle phases as skipped tasks.
+      if (phase === "t3") {
+        const skipped = Number(/^node\s*:.*skipped=(\d+)/m.exec(again.output)?.[1] ?? 999);
+        assert(skipped < 10, again.output);
+      }
+    }
+    assertEquals(f.state().projects, ["/srv/workspace"]);
+  } finally {
+    f.cleanup();
+  }
+}
+
+// The rerun is split from the clone's case so that each case fits the unit ceiling on the slowest runner pool.
+Deno.test({
+  name: "a rerun of a clone's clone and workspace phases changes nothing",
+  ignore: !hasAnsible,
+  fn: () => rerunClone(["clone", "workspace"]),
+});
+
+Deno.test({
+  name: "a rerun of a clone's agent, processes and T3 phases changes nothing, and its T3 phase dispatches no other phase",
+  ignore: !hasAnsible,
+  fn: () => rerunClone(["agent", "processes", "t3"]),
 });
 
 Deno.test({

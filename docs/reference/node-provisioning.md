@@ -844,7 +844,7 @@ The Gateway gives Node enrollment (`node.add`), role add and converge, and metri
 
 The [nested-fleet Instance container](/reference/development-containers#fleet-rules) runs no `apt-cacher-ng`. Its fleet rules write the marker `/etc/orbit/instance-fleet` on the nested Gateway so it can identify the container fleet and read its parent egress proxy.
 
-The Node's apt reaches the internet through the egress proxy, which the fleet's own file `95orbit-nested-egress` names. No Orbit play touches that file. It sorts after `90orbit-package-cache`, so it also wins over a cache file that an older role add left. The daily apt timers stay off on every nested Node.
+The Node's apt reaches the internet through the egress proxy, which the fleet's own file `95orbit-nested-egress` names. No Orbit play touches that file. It sorts after `90orbit-package-cache`, so it also wins over a cache file that an older role add left. The daily apt timers stay off on every nested Node. Docker on a nested Node reads through the same egress proxy: the fleet rules write the drop-in `docker.service.d/50-inner-fleet-proxy.conf`.
 
 The [Gateway bootstrap](#gateway-bootstrap-prerequisites) of a nested fleet takes the value from its input, and `php artisan orbit:bootstrap-plan --apt-proxy=URL` puts it in the plan.
 
