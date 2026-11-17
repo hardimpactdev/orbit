@@ -62,7 +62,20 @@ final readonly class ProofGroup
             return;
         }
         $group = Task::topLevel()->find($owner->target_id);
-        if ($group === null || $group->status === TaskGroupStatus::Cancelled) {
+        if ($group !== null) {
+            $this->discard($group, $trigger);
+        }
+    }
+
+    /**
+     * Cancels a proof copy's task group with discard, which destroys the copy: the group of a run, or of a warm copy that the pool drops
+     * (ProofWarmPool). A cancelled group asks nothing.
+     *
+     * @throws ResourceOperationException when the group is busy for a moment, such as while a step still holds it; the job tries again
+     */
+    public function discard(Task $group, string $trigger): void
+    {
+        if ($group->status === TaskGroupStatus::Cancelled) {
             return;
         }
         try {

@@ -60,7 +60,25 @@ final readonly class ProofCopies
     }
 
     /**
-     * The free CI places a proof may take now on each Node, by Node id, Nodes without one left out. A Node counts when it holds the
+     * The CI places a proof may take now on each Node, by Node id, Nodes without one left out: its free places for new copies
+     * (freePlaces) and its warm copies that a proof may take (ProofWarmPool::takeable), which already hold their places.
+     *
+     * @param  ProofPlaceReads  $read
+     * @return array<int, int>
+     */
+    public function places(Project $project, array $read): array
+    {
+        $places = $this->freePlaces($project, $read);
+        foreach (app(ProofWarmPool::class)->takeable() as $nodeId => $warm) {
+            $places[$nodeId] = ($places[$nodeId] ?? 0) + $warm;
+        }
+        ksort($places);
+
+        return $places;
+    }
+
+    /**
+     * The free CI places for a new copy on each Node, by Node id, Nodes without one left out. A Node counts when it holds the
      * default's current seed: the default's own Node holds it. Its places are its free CI places
      * (ProofCopyHosts::freePlaces), and no more than its available memory holds copy peaks. A Node without a fresh runner state or a
      * memory read offers none.
@@ -68,9 +86,31 @@ final readonly class ProofCopies
      * @param  ProofPlaceReads  $read
      * @return array<int, int>
      */
-    public function places(Project $project, array $read): array
+    public function freePlaces(Project $project, array $read): array
     {
         return $this->count($project, $read, false);
+    }
+
+    /**
+     * The Node of each new copy, one copy per place: the Nodes take turns, so fewer copies than places spread over the Nodes.
+     *
+     * @param  array<int, int>  $places
+     * @return list<int>
+     */
+    public static function spread(array $places, int $copies): array
+    {
+        $nodes = [];
+        $copies = min($copies, array_sum($places));
+        while (count($nodes) < $copies) {
+            foreach ($places as $nodeId => $free) {
+                if ($free > 0 && count($nodes) < $copies) {
+                    $nodes[] = $nodeId;
+                    $places[$nodeId] = $free - 1;
+                }
+            }
+        }
+
+        return $nodes;
     }
 
     /**
@@ -140,7 +180,14 @@ final readonly class ProofCopies
             return 'failed';
         }
         $group = Task::topLevel()->with('taskable')->find(ValidatedData::integer($run->input['group_id']));
-        if ($group === null || in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
+
+        return $group === null ? 'failed' : self::copyState($group);
+    }
+
+    /** Whether the copy of the group is `ready`, `pending` or `failed`, by the rule of state(): a warm copy follows it too. */
+    public static function copyState(Task $group): string
+    {
+        if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             return 'failed';
         }
         $copy = TaskInstanceWorkspace::forGroup($group);

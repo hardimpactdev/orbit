@@ -17,7 +17,7 @@ final readonly class DocsImpact
 
     private const array CLI_FAMILIES = [
         'activity', 'analytics', 'app', 'cluster', 'conn', 'database', 'dns', 'doctor', 'env', 'extension', 'firewall', 'fleet',
-        'gateway', 'github', 'instance', 'internal', 'metrics', 'node', 'operation', 'process', 'profile', 'project', 'ai-router',
+        'gateway', 'github', 'instance', 'internal', 'metrics', 'node', 'operation', 'process', 'profile', 'project', 'proof', 'ai-router',
         'realtime', 'route', 'schedule', 'self-update', 'task', 'tool', 'vault', 'websocket', 'workspace',
     ];
 

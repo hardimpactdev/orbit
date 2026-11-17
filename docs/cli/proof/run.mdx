@@ -1,7 +1,7 @@
 ---
 title: "orbit proof:run"
 sidebarTitle: "proof:run"
-description: "Prove the commands that a commit changes. Orbit picks the cases from the commit, runs them in the inner fleet of disposable copies of the Orbit container, and reports a verdict for each case."
+description: "Prove the commands that a commit changes. Orbit picks the cases from the commit, runs them in the inner fleet of disposable copies of the Orbit container, warm copies first, and reports a verdict for each case."
 covers:
   - apps/gateway/app/Domain/Proof/ProofRunIntent.php
   - apps/gateway/app/Domain/Proof/ProofChildStarts.php
@@ -12,6 +12,9 @@ covers:
   - apps/gateway/app/Domain/Proof/ProofRunWatch.php
   - apps/gateway/app/Domain/Proof/ProofCopies.php
   - apps/gateway/app/Domain/Proof/ProofCopyHosts.php
+  - apps/gateway/app/Domain/Proof/ProofWarmPool.php
+  - apps/gateway/app/Models/ProofWarmCopy.php
+  - apps/gateway/database/migrations/*create_proof_warm_copies.php
   - apps/gateway/app/Infrastructure/Metrics/PrometheusMemAvailable.php
   - apps/gateway/config/proof.php
   - swamp/workflows/workflow-operation-proof-run-copy.yaml
@@ -92,8 +95,10 @@ A Node offers places to a proof when it [offers proof places](/reference/node-pr
 
 The free places of a Node are the smaller of two counts:
 
-- its `ci_places` minus its busy runners and minus the proof copies already on it, of any proof (task copies take no place);
+- its `ci_places` minus its busy runners and minus the proof copies already on it, of any proof, and the warm copies of the pool (task copies take no place);
 - the number of whole copy peaks that its available memory holds. One copy's peak is the Gateway setting `proof.copy_memory`.
+
+The proof may also take the Node's [warm copies](#warm-copies): each already holds its place and its memory.
 
 Before the admission transaction, the Gateway reads each Node's runner state and its available memory (Linux `MemAvailable`) from Prometheus: the series of the [runner state](/reference/node-provisioning#runner-state-for-the-runner-view) and of the node exporter. A Node without a fresh read offers no place now. `ProofCopyHosts` holds this rule.
 
@@ -109,13 +114,13 @@ A batch that changes the fleet can split by case. While a place is free, Orbit t
 
 Each copy's share gets a run budget from its parts, at most two hours. When a share of more than one part needs more and a place on a Node is still taken by a busy runner, the proof waits for another place. With every place free, it runs anyway. Orbit records the verdicts of each batch as the batch ends, so a share that reaches its budget keeps them; only the cases of its unfinished batches are `unrun`.
 
-Admission starts every copy in its transaction, after the trust check passed: a copy holds the inner fleet's Club key, so code that Orbit does not trust never reaches one. Each copy is an `instance.create` on the Node of its place, owned by the run's task group. It starts from that Node's seed: the default's seed pair on the default's Node, the [seed holder](/reference/development-containers#the-seed-on-each-ci-node) on a CI Node. The group has one subtask row and no agent thread.
+Admission takes the warm copies and starts every other copy in its transaction, after the trust check passed: a copy holds the inner fleet's Club key, so code that Orbit does not trust never reaches one. On each Node the shards take its warm copies first. Each other copy is an `instance.create` on the Node of its place, owned by the run's task group. It starts from that Node's seed: the default's seed pair on the default's Node, the [seed holder](/reference/development-containers#the-seed-on-each-ci-node) on a CI Node. The group has one subtask row and no agent thread.
 
 Orbit starts the children of one proof together. It queues every start after all execution copies succeed. A refusal or definite start failure of one child does not hold its siblings.
 
 A start with no confirmed answer is never submitted again. Recovery finds its run, or the released child's 600-second admission deadline ends it.
 
-The [admission clock](/reference/operations#direct-swamp-starts) begins when a child is released. A child is released only when its copy is `active`; Orbit checks again every 20 seconds. A copy whose create ended without success, whose completion failed, or that is gone, fails its child with `proof.run_failed`, and its cases are `unrun`. A create that ended by its expired budget counts only once the expiry is settled, because Swamp can still reopen it: until then the child waits. The child's end cancels its group, which destroys the copy and releases its [CI place](/reference/node-provisioning#proof-places-on-a-ci-node). A held child that has no copy, which only a Gateway before the copy-only proof admitted, fails the same way.
+The [admission clock](/reference/operations#direct-swamp-starts) begins when a child is released. A child is released only when its copy is `active`; Orbit checks again every 20 seconds. A taken warm copy is already active. A copy whose create ended without success, whose completion failed, or that is gone, fails its child with `proof.run_failed`, and its cases are `unrun`. A create that ended by its expired budget counts only once the expiry is settled, because Swamp can still reopen it: until then the child waits. The child's end cancels its group, which destroys the copy and releases its [CI place](/reference/node-provisioning#proof-places-on-a-ci-node). A held child that has no copy, which only a Gateway before the copy-only proof admitted, fails the same way.
 
 In each copy, the run first brings in the commit: one Ansible phase on the copy's Node fetches the commit by its SHA from the public Orbit repository through the copy's own network route, as `agent`, the workspace's owner ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)), and checks it out detached. A fetch that fails or takes more than 60 seconds fails the run by name; nothing retries. This fetch is the only way the commit comes in. So a proof copy needs no Git mirror of the Project on its Node: its clone brings no branch into a Node mirror, and a CI Node keeps none. The phase then runs each of the Project's development deploy steps whose inputs changed since the seed, as a deployment does, so `vendor/` and the generated files belong to the commit. Orbit checks that the workspace is at the commit, then runs the copy's assigned batches, read-only batches first. Before the first part, and after each part that can change the fleet, the copy's inner fleet goes back to `base`, which restarts the nested Gateway on the checkout and migrates it forward, and the runner applies the checkout's Swamp grants and Ansible collections. So the fleet runs the code of the commit, not of the seed. `base` holds Nodes that the seed's [refresh](/reference/development-containers#what-a-refresh-skips) converged with the default scope at the seed's commit. So a converge or role-add case finds nothing to change unless the commit under proof or the case's own setup changed an input. Each batch runs its declared setup. A setup failure leaves missing cases unrun. Execution retries nothing.
 
@@ -150,6 +155,20 @@ The result names the commit, each case with its command, selection reason, verdi
 
 A child whose turn has not come is cancelled without submission if its proof was cancelled or ended. Ctrl-C, or `operation:cancel` on the proof, closes the parent at once and requests cancellation of its runs and groups. Children can continue until cancellation and the copy's destroy finish. Each group ends when its run ends.
 
+### Warm copies
+
+Each CI Node can keep a small pool of warm proof copies ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies#warm-proof-copies)): copies of the proof Project's default whose create has ended, made from the Node's current seed. A proof that takes one skips the copy create. The Gateway setting `proof.warm_copies` is the number of warm copies across all CI Nodes. 0 turns the pool off, and 0 is the default: the pool makes no warm copy until an owner sets a small number. The pool places its copies on the Nodes in turns.
+
+A warm copy is a proof copy while it waits. It holds one of its Node's `ci_places`, one slot of the Node's task copy cap and one copy's memory peak. Its create holds its place and stops idle runners, as for any proof copy.
+
+A selection fits 5 minutes from the push only when every shard it plans gets a warm copy. A proof does not choose which shards take the warm copies, and a shard on a new copy pays the create. So set `proof.warm_copies` to at least the shard count of the selections that must fit, such as a `node:role:add` proof alone. With fewer, such a proof can end as late as one with no warm copy.
+
+A proof takes a warm copy only when the copy is idle, `active` and made from its Node's current seed. A taken copy runs its shard like any other copy: it brings in the commit, and its first part resets the inner fleet, so the nested Gateway runs the commit under proof. Its run end destroys it. Orbit never puts a used copy back in the pool.
+
+The pool refills after a warm copy is taken or destroyed, and after each seed refresh on a Node: each reconcile pass of the Gateway, once a minute, keeps it. A refill starts warm copies on Nodes with a free place until the pool holds `proof.warm_copies`. It never waits for a place, and it starts no warm copy while a proof waits for its admission, so that proof takes the free places first. After a seed refresh, each idle warm copy from an older seed is destroyed and replaced.
+
+[`orbit proof:pool:drain`](/cli/proof/pool-drain) destroys the idle warm copies and stops the refills; running proofs finish. [`orbit proof:pool:resume`](/cli/proof/pool-resume) lets the pool refill again.
+
 ## After the run
 
 Orbit cancels the run's group when the run ends, however it ends, which destroys the copy. The verdicts stay as they are. If that cancel fails, the group stays for another `task:cancel --discard`.
@@ -158,7 +177,7 @@ A repeat starts a new run, because a proof checks the commit as it is now. The s
 
 ## How it works
 
-The Gateway counts the free CI places on every CI Node, balances batches over them, splits a long batch that changes the fleet by case, and starts one copy per place from that Node's seed. Each copy's create stops the Node's idle runners; the destroy of the last copy there starts them again. The copies bring in the commit, run their batches, and the Gateway merges one result.
+The Gateway counts the free CI places on every CI Node, balances batches over them, splits a long batch that changes the fleet by case, and takes one copy per place: a warm copy of that Node first, else a new copy from the Node's seed. The pool then refills. Each copy's create stops the Node's idle runners; the destroy of the last copy there starts them again. The copies bring in the commit, run their batches, and the Gateway merges one result.
 
 <div className="flow-at" data-chart="proof/run"></div>
 
