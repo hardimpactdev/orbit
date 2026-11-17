@@ -2,14 +2,9 @@
 title: "Executor"
 description: "How orbit-executor checks callers and signed orders, keeps its journal, serves the relay command, how the Gateway hands its results to a waiting request, and how the role converge installs it."
 covers:
-  - apps/agent/crates/executor-core/**
-  - apps/agent/crates/executor/**
-  - apps/agent/clippy.toml
-  - apps/gateway/app/Domain/Nodes/NodeExecutorInput.php
-  - apps/gateway/app/Domain/Executor/**
-  - apps/agent/contract/fixtures/executor-order.json
+  - apps/agent/{crates/executor-core/**,crates/executor/**,clippy.toml,contract/fixtures/executor-order.json}
+  - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**}
   - tools/swamp-proof-guest/executor-order.php
-  - apps/gateway/app/Infrastructure/Executor/**
   - swamp/ansible/tasks/node-executor.yml
 ---
 
@@ -17,7 +12,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Slices 1 to 3 are built.** The executor, its install, its one action (the no-op `proof.noop`), the Gateway signer and publisher, the observer's pass-through and the Gateway's [result listener](#the-listener-and-the-hand-off) exist, so an order goes out over the WebSocket and its result comes back to its Operation. No Gateway command sends an order yet. Sleep, wake and the create's Node part arrive in later slices.
+> **Slices 1 to 3 are built.** The executor, its install and its one action, the no-op `proof.noop`, exist. So do the Gateway signer and publisher, the observer's pass-through and the Gateway's [result listener](#the-listener-and-the-hand-off). An order goes out over the WebSocket, and its result comes back to its Operation. No Gateway command sends an order yet. Sleep, wake and the create's Node part arrive in later slices.
 
 ## Where it runs
 
