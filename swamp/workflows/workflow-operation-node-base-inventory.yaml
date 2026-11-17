@@ -1,0 +1,98 @@
+id: fcf26f76-98d5-4a41-b38c-68fe3484e19f
+name: operation-node-base-inventory
+description: Collect fixed read-only release metadata from an admitted Node over its pinned route.
+autoContinue: false
+queueTimeout: 30
+vaults: [orbit-control-inputs]
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [node.base_inventory]}
+    execution_secrets:
+      type: object
+      properties:
+        verifier:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^node-base-inventory-[1-9][0-9]*-verifier$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [verifier]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: inventory
+  labels: {role: swamp}
+  steps:
+  - name: Read the private admission
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-base-inventory-admission-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/python3 -B -c 'import json, os; print(json.dumps(json.loads(os.environ["ORBIT_ADMISSION"])["admission"]))' 2>/dev/null
+        env:
+          ORBIT_ADMISSION: ${{ vault.get(inputs.execution_secrets.verifier.vault, inputs.execution_secrets.verifier.key) }}
+  - name: Load the fixed collector
+    dependsOn: [{step: Read the private admission, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: baseInventorySource
+      inputs:
+        admission: ${{ steps["Read the private admission"].outputs.stdout }}
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        reference: ${{ inputs.execution_secrets.verifier.key }}
+  - name: Read the Node
+    dependsOn: [{step: Load the fixed collector, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-base-inventory-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "node-base-inventory-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ steps["Load the fixed collector"].outputs.target.user }}
+          port: ${{ steps["Load the fixed collector"].outputs.target.port }}
+          hostKeys: ${{ steps["Load the fixed collector"].outputs.target.host_keys }}
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
+          identitiesOnly: true
+        hosts:
+        - name: target
+          address: ${{ steps["Load the fixed collector"].outputs.target.host }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 90
+        argv:
+        - /usr/bin/python3
+        - -B
+        - -c
+        - ${{ steps["Load the fixed collector"].outputs.source }}
+        - ${{ string(inputs.node_id) }}
+        - ${{ string(inputs.operation_id) }}
+        stdin: ${{ vault.get(inputs.execution_secrets.verifier.vault, inputs.execution_secrets.verifier.key) }}
+  - name: Publish the inventory
+    writes: true
+    dependsOn: [{step: Read the Node, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: node-base-inventory
+      methodName: baseInventoryReceipt
+      inputs:
+        stdout: ${{ steps["Read the Node"].outputs.stdout }}
+        node_id: ${{ inputs.node_id }}
+        profile: ${{ steps["Load the fixed collector"].outputs.profile }}

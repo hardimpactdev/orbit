@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\NodeAccessController;
+use App\Http\Controllers\Api\NodeBaseInventoryController;
 use App\Http\Controllers\Api\NodeExecutorProofController;
 use App\Http\Controllers\Api\NodeFootprintsController;
 use App\Http\Controllers\Api\NodeMetricsController;
@@ -45,6 +46,9 @@ Route::middleware([
     Route::delete('nodes/{node}/roles/{role}', [NodeRolesController::class, 'destroy'])
         ->whereNumber('node')
         ->name('node:role:remove');
+    Route::post('nodes/{node}/base-inventory', [NodeBaseInventoryController::class, 'store'])
+        ->whereNumber('node')
+        ->name('node:base-inventory');
     Route::get('nodes/{node}/metrics', [NodeMetricsController::class, 'show'])
         ->name('node:metrics');
     Route::post('nodes', [NodesController::class, 'store'])
