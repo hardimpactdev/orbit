@@ -10,7 +10,8 @@ use Illuminate\Container\Attributes\Tag;
 
 /**
  * The tagged contributions to a container Instance's create and destroy flows. A clone runs T3, and only the Conn layer records a T3 server, so a
- * clone needs at least one contribution: without one it refuses with `operation.kind_unavailable`.
+ * clone needs at least one contribution for completion to verify its recorded server. Conn records it even while off; without any
+ * contribution admission refuses with `operation.kind_unavailable`.
  */
 final readonly class InstanceLifecycleContributions
 {

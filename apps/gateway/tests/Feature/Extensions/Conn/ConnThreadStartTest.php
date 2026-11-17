@@ -555,7 +555,7 @@ describe('the reachable Project directory', function (): void {
         ['php', 'project.source_defaults_incomplete'], ['unsupported-php', 'instance.host_unavailable'],
     ]);
 
-    it('shares model router refusals across the three handles', function (): void {
+    it('requires a model route for device threads even though core clone create admits without one', function (): void {
         $default = threadDefault($this->beast, 'tool');
         app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
         {
@@ -1292,7 +1292,7 @@ function threadLegacySnapshot(mixed $value, ?string $key = null): mixed
 // `machine_name`, and its boot files the `/etc/machine-info` that T3's first start reads; a clone links its agents to its own agent folder,
 // which its create fills from the type note (InstanceAgentInstructions); the container intent carries `php_cli_ini` after `php`, null for a Project
 // without PHP (InstanceContainer::phpCliIni); it carries `web_port` after `web_config`, null without a web app. Conn maps only its four stable stage names
-// (docs/reference/conn.md), so no delta reaches its card.
+// (docs/reference/conn.md). Admission and the result also carry `model_route`; the card's stages stay unchanged.
 it('matches the installed-client no-branch intent steps result and resume snapshot byte for byte', function (): void {
     $this->freezeTime();
     $default = threadDefault($this->beast, 'tool');
@@ -1351,7 +1351,7 @@ it('adds explicit branch fields to a successful clone receipt without replacing 
     $additions = $branch === null ? [] : ['branch' => $branch['mode'] === 'new' ? 'fix-login' : 'feature/login',
         'base_branch' => $branch['mode'] === 'new' ? 'release' : null];
     $completion = Operation::query()->where('kind', 'instance.complete')->where('target_id', $operation->target_id)->sole();
-    expect($operation->refresh()->result)->toBe([...$native, ...$additions, 'mail_keys_set' => [], 'processes_stopped' => [], 'completion_operation_id' => $completion->id]);
+    expect($operation->refresh()->result)->toBe([...$native, 'model_route' => ['ready' => true], ...$additions, 'mail_keys_set' => [], 'processes_stopped' => [], 'completion_operation_id' => $completion->id]);
     threadCall($this->phone, 'GET', "operations/{$operation->id}")->assertOk()->assertJsonPath('data.status', 'succeeded');
 })->with([
     'legacy' => [null], 'legacy mail warning' => [null, true], 'new' => [['mode' => 'new', 'from' => 'release']], 'existing' => [['mode' => 'existing', 'name' => 'feature/login']],

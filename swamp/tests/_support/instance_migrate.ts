@@ -78,7 +78,7 @@ export function scheduleHostPaths(value: unknown): unknown {
 }
 export const git = (cwd: string, ...args: string[]) => {
   const done = new Deno.Command("git", {
-    args: ["-c", "user.name=Orbit", "-c", "user.email=orbit@example.test", ...args],
+    args: ["-c", "user.name=Orbit", "-c", "user.email=orbit@example.test", "-c", "maintenance.auto=false", ...args],
     cwd,
   }).outputSync();
   if (!done.success) throw new Error(new TextDecoder().decode(done.stderr));

@@ -2,12 +2,11 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
+  - apps/gateway/app/{Console/Commands/SyncKnownHostsCommand,Infrastructure/Ssh/KnownHostsStore,Infrastructure/Ssh/KnownHostsRepository,Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts,InstanceModelRoute}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,25_000000_create_proof_seeds,26_000000_add_ci_bridge_to_nodes,26_000001_release_an_unused_instance_bridge,27_000000_add_seed_sender_id_to_nodes,28_000000_allow_a_proof_copy_clone_on_its_seed_node}.php
-  - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml}
-  - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
+  - swamp/{ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
@@ -570,6 +569,24 @@ The restart is `systemctl try-restart t3.service`. When the agent folder changed
 
 Each successful restart removes only its own entry, even if another restart fails. A frozen or stopped container keeps its entry until a converge finds it running and successfully restarts T3; a deleted container leaves the list. A stopped container may already have read the new drop-in at boot, but the entry still requires that explicit restart rather than inferring completion from its power state.
 
+T3 never restarts in the middle of a turn. Right before each T3 restart, whether for a reloaded drop-in or for an agent folder flip, the Node reads that container's open runs as `agent`. A run in `preparing`, `queued`, `starting`, `running` or `waiting` is an open turn. The read covers every thread, with subagent children and side chats.
+
+`thread list` cannot serve here. It lists one project, and it hides subagent children and side chats. A parent's status covers only its own runs, so an idle parent can hide a running child. So the Node reads the server's own store, read-only. The program that the Gateway names in the container's `t3_files` entry says which store:
+
+- T3 keeps its runs in `~/.t3/userdata/statev2.sqlite`.
+- The Conn Server keeps them as `runs` entities in `~/.t3/userdata/engine.sqlite`.
+
+Then:
+
+- An open turn defers the restart. The drop-in is written and systemd reloads, but T3 keeps running.
+- A deferred container stays on the Node's list. The converge reports it under `deferred`, with its reason.
+- When `t3.service` is active but the read fails or times out, the container counts as busy too. T3 never restarts blind.
+- A missing store, or one whose tables changed, fails the read.
+- When `t3.service` is not active, nothing is asked. `try-restart` does nothing there, and the entry leaves the list.
+- A container without a `t3_files` entry has no T3. A folder flip restarts it without asking.
+
+The first later converge that finds the container idle restarts T3 once and removes its entry. Every Node converge also runs the drop-in step, so a deferred restart waits only for the next converge after the turn ends. A folder flip clears its restart mark once every container has been restarted or listed.
+
 The converge writes only these root-owned drop-ins. T3's settings, `.claude.json` and Codex's `config.toml` belong to `agent`: T3 and the agents change them, and root never writes through `agent`'s paths. `/etc/orbit/instance` keeps the text of its create.
 
 ### The app user's name
@@ -914,6 +931,10 @@ An unattached selected loopback or private endpoint is checked from the Node bef
 Both environment checks read the source checkout before the copy. A `log` mailer is not selected there. No selector check runs after the mailer changes. Migration applies the same path and exact-line rule after copying `.env` and before starting application Processes. A mail failure records `instance.mail_update_failed` in `warnings` and does not fail or roll back an otherwise successful move. Run [`instance:mail:update`](/cli/instance/mail-update) to repair it. A listener or unit conflict succeeds with its named skip and never changes the mailer.
 
 ## Model access
+
+A clone needs neither Conn enabled nor ai-router configured. Its container run starts T3 and creates its admin session; the Conn contribution records the server even while Conn is off. The contribution must be loaded so completion can verify that record.
+
+Clone create and migration of a non-default Instance record the model route at admission. The Operation result includes `model_route: {"ready": true}` when ready, or `model_route: {"ready": false, "error_code": "ai_router.disabled", "message": "…"}` when unavailable; a missing guard reports `ai_router.guard_missing`. T3 runs without a ready route but cannot reach a model. Human output from `instance:create`, `instance:migrate` and `operation:show` prints one line with the reason. The result is the admission snapshot, not a live routing check.
 
 A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder at port 8319 of the bridge's gateway address. The [forwarder](/reference/ai-router#container-model-forwarder) passes them to the model router guard, which admits the agent Node and swaps in the real key. The real key stays off the Node. While the forwarder's table is loaded, only containers on the bridge reach the guard, through the forwarder. The guard accepts the `?beta=true` query that Claude Code sends. On a prepared Node, `ai-router:model-forwarder NODE --bridge=orbitinst0 --address=<bridge address>` places the forwarder.
 
@@ -1276,6 +1297,10 @@ When both parts have ended, the step checks the two sessions and the checkout. B
 
 The copy step writes T3's files into the stopped copy before its first start. First the placeholder model environment, then Codex's `config.toml`, Claude Code's `.claude.json` and T3's `settings.json`, the drop-in `/etc/systemd/system/t3.service.d/10-orbit-boot.conf`, and the drop-in that names the [container server](#container-server). The two JSON files merge into the seed's own, as the agent part merges them. Last comes `/etc/orbit/instance`, the file that `t3.service` waits for. The copy's boot then starts T3, and T3's cold start runs beside private names, Node services, mail and branch. No snapshot holds the model environment: the default never has it, and Orbit takes no snapshot of a clone.
 
+Before the first start, Orbit checks the stopped copy's on-disk ID map. A restricted Incus project strips that map during a local copy. On Nodes without idmapped mounts, the files still hold the source's shifted IDs. When the copy records an empty map and the source records a shift, Orbit unshifts the copied rootfs on a `dir` pool. Incus can then shift it to the copy's own map at start.
+
+This preserves owners, setuid and setgid modes, named POSIX ACL entries and file capability root IDs. IDs outside the source map stay unchanged. If normalization fails, Orbit deletes the incomplete copy and fails the create with its error code. A retry copies the seed again; it never resumes partially restored metadata. Sources with an empty map, including Nodes using idmapped mounts, need no change. Another pool driver in this state refuses before start with `instance.clone_idmap_unshift_unsupported`.
+
 The drop-in turns off T3's default dependencies. T3 then starts after `nftables.service`, the local file systems, the journal socket and `systemd-sysctl.service`, and stops before shutdown. T3 skips the wait for `sysinit.target`, which udev's trigger holds about 0.6 s in a container. `Requires=nftables.service` stays in the unit, so T3 still starts only with its firewall.
 
 The image's `After=network-online.target` stays, because a drop-in cannot remove an ordering. A plain clone's boot does not pull that target in, so it holds nothing there. In a nested-fleet clone the inner Incus wants that target, so T3 there still waits for eth0's route.
@@ -1387,7 +1412,7 @@ An [explicit branch choice](/reference/conn#threads-in-an-orbit-project) runs no
 
 Someone may make the branch on GitHub between the admission and the copy. The copy still starts at the admitted commit. When the GitHub branch has commits the copy lacks, a later push of the branch is refused as `tasks.not_fast_forward`. When it has none, the push fast-forwards it, and no commit is lost. A clone's Node mirror exists only after a fetch: its own create's, or a later deployment's.
 
-The container, checkout and T3 phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, T3's files, firewall, network check, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part, T3's first answer and its sessions check. Two parts are facts, 1 or 0: `t3_files` and `at_boot` ([T3 starts with the copy](#t3-starts-with-the-copy)). The create's result carries them as `timings`: names and seconds only.
+The container, checkout and T3 phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, T3's files, firewall, network check, ID map, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part, T3's first answer and its sessions check. Two parts are facts, 1 or 0: `t3_files` and `at_boot` ([T3 starts with the copy](#t3-starts-with-the-copy)). The create's result carries them as `timings`: names and seconds only.
 
 Clone readiness checks PHP only when the Project has a PHP runtime. A Project without PHP can register T3 and its sessions. The Operation keeps its stable error code and shows the failed phase, command and exit code in `error.detail`; command output stays private.
 
@@ -1429,7 +1454,8 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 | Part | What Orbit does |
 | --- | --- |
 | Default | The Project's `default` runs in a container on the same Node, is active and has a seed snapshot. Otherwise `instance.default_missing` |
-| Conn and models | Conn is on, else `operation.kind_unavailable`. The model router has its guard, else the router's own code |
+| T3 registration | A contribution is loaded to record T3, even while Conn is off, else `operation.kind_unavailable` |
+| Models | A ready route is optional. The create result reports `model_route`; see [Model access](#model-access) |
 | Runtime row | The next free bridge address, the next free T3 port after the Node's last one ([rule](#prepare-a-node)), and the default as clone source |
 | Copy | `incus copy` of `seed-<commit>` with the clone's own address and ACL. A stopped default needs no start |
 | First start | Before it, the copy loses its `orbit-*` boot links and the default's Process units and folders. It gets its own machine-id and the [shared files](#existing-containers) |
@@ -1635,15 +1661,21 @@ Names from the workspace never become arguments. Git returns them NUL-separated,
 
 A sleeping Instance's container is frozen. Its processes keep their state and memory, but the memory moves to swap: a frozen Laravel and T3 clone holds about 13 MiB of RAM and about 340 MiB of swap. Nothing boots at the wake, so a resume takes a fraction of a second. Its disk, databases, Route, T3 threads and sessions stay. A container never prunes its dependencies.
 
-Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, so a running container never swaps: a busy one meets its limit instead of filling the swap disk. A sleep opens swap (`max`) for every cgroup of the container's subtree that holds 0, freezes the container, records which pages of its processes were resident, and then asks the kernel to reclaim its memory. A wake reads the recorded pages back while the container is still frozen, resumes it, and writes 0 again to exactly the cgroups the sleep opened. Other pages in swap come back when they are used. No Incus setting changes.
+Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, unless `limits.memory.swap` holds a byte size; `true`, `false` and an empty value all give 0. So a running normal container never swaps: a busy one meets its limit instead of filling the swap disk. A nested-fleet container has a size, [equal to its memory](#the-container). A busy nested-fleet container can therefore use swap while it runs, up to that size, and the host's swap disk takes it.
+
+A sleep opens swap (`max`) for every cgroup of the container's subtree that holds 0, freezes the container, records which pages of its processes were resident, and then asks the kernel to reclaim its memory. A wake reads the recorded pages back while the container is still frozen, resumes it, and gives back the limits of exactly the cgroups the sleep opened. Other pages in swap come back when they are used. No Incus setting changes.
 
 One helper on the Node, `/usr/local/libexec/orbit-instance-power`, does this work for every sleep, wake, deployment, start and destroy. [Prepared restore](/reference/prepared-restore) owns its contract: the plan, the bounds, the wake's state table, the fast wake's files and the result fields.
 
 > **Target design, not built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) a Rust executor on the Node replaces this helper and the fast wake's file flow. It acts on Gateway-signed orders over the observer's WebSocket, and Swamp and the SSH fallback reach it through one relay command. A visit waits a short bound for the wake, and then goes to the app in the same request. Every sleep and wake stays an Operation.
 
-**The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
+**The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers that have no swap size: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
 
-So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. Before it pauses the container, it records what it opened in the [limits record](/reference/prepared-restore#files-on-the-node), `/var/lib/orbit/hibernation/instances/<id>/limits.json`. Its result counts the inner cgroups as `swap_subtree`. Each resume by a wake, a deployment or a start writes 0 to the container's own cgroup and to each recorded path that still exists, then removes the record. A resume reads no other record.
+The other way round, a cgroup can swap only as far as each of its ancestors allows. An Instance of the fleet on `nested-app-dev` is three levels below the host: its sleep opens only its own subtree, so it hibernates only when the outer container and `nested-app-dev` both have a swap size. Without them every such sleep left more than 32 MiB in RAM and stopped.
+
+So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. Before it pauses the container, it records what it opened in the [limits record](/reference/prepared-restore#files-on-the-node), `/var/lib/orbit/hibernation/instances/<id>/limits.json`. Its result counts the inner cgroups as `swap_subtree`. Each resume by a wake, a deployment or a start gives the container's own cgroup back what Incus configures for it: the bytes of its `limits.memory.swap` when that is a size, else 0. It writes 0 to each recorded inner path that still exists, then removes the record. A resume reads no other record.
+
+So a nested-fleet container keeps its swap after its own wake, and its fleet can sleep again.
 
 A cgroup that vanishes during the walk, or that refuses the write, is not opened and fails nothing; its pages stay in RAM, and the check of the memory left in RAM below counts them. A sleep that fails while the container still runs closes what it opened. A sleep of a container that is already frozen keeps the earlier record and reports its count as `swap_subtree`. A destroy removes the record with the container.
 
@@ -1666,7 +1698,7 @@ After the reclaim, the sleep reads the container's memory counters until anonymo
 
 A nested-fleet Instance never takes this stop: a stop loses the Club key in `/run` and the tunnel `wg-nested`, which only a deployment or a start gives back. The sleep resumes it, closes swap, removes the marker and fails with `instance.container_freeze_failed`.
 
-A stopped container keeps each Process unit's enablement, which holds its desired state, so its later boot brings back what ran before. A sleep that fails to freeze writes 0 back and removes the marker, and the container serves as before (`instance.container_freeze_failed`).
+A stopped container keeps each Process unit's enablement, which holds its desired state, so its later boot brings back what ran before. A sleep that fails to freeze closes the swap it opened and removes the marker, and the container serves as before (`instance.container_freeze_failed`).
 
 The runtime's `power_state` is `stopped` for both a frozen and a stopped sleeping container. Each reader treats them alike.
 
@@ -1860,7 +1892,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | Part | What Orbit does |
 | --- | --- |
 | Admission | An active checkout Instance on a Node of the build list, with no Route beside its own. Otherwise `instance.migrate_unsupported` |
-| Non-default | The Project default is on the same Node; source identity, T3 and model-router prerequisites still apply. No migrated default or seed is needed |
+| Non-default | The Project default is on the same Node; source identity and T3 registration are required. Conn and model routing are optional. No migrated default or seed is needed |
 | Deployment | An unfinished deployment refuses the move with `instance.lifecycle_busy` |
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the next free T3 port after the Node's last one. It names no clone source |
@@ -2199,6 +2231,7 @@ An Instance container with a nested fleet lives in its own Incus project on the 
 | `security.idmap.isolated` | `true` | The container has its own ID range, as every Instance container |
 | `security.idmap.size` | The runtime's [recorded size](#the-id-map-size): `101000000`, or `1165536` after a conversion | The inner Incus takes its range from it: the outer size minus 1,000,000 |
 | `limits.memory` | `12GiB` | The inner fleet shares the container's memory |
+| `limits.memory.swap` | `12GiB`, the same value as `limits.memory` | Incus gives a container with `limits.memory` no swap unless this key holds a byte size. The fleet's Instances sleep into swap through this container |
 | `boot.autostart` | `false` | Incus never starts it at host boot, without the guard below |
 | `user.max_user_namespaces` | Not set to zero | The inner Incus needs user namespaces |
 
@@ -2228,7 +2261,9 @@ The clone probe writes only `security.idmap.isolated=true`, so its guard admits 
 
 The root disk's `size` is the one device key that may be larger than the intent's, as [The root disk](#the-root-disk) explains. Any other form than `<n>GiB` is refused. The host converge's clone probe inherits the shared profile's root disk, which names no size. For the probe, the guard admits only a root without a size.
 
-After a host reboot, Incus restores the containers that were running, without the guard. A nested-fleet container has `boot.autostart=false`, so it stays stopped. An Orbit start of the Instance, such as its deployment, starts it again through the guard. A container made before the key existed gets it at its next start, before the guard reads it: it is the one key a start writes, and Incus applies it without a restart.
+After a host reboot, Incus restores the containers that were running, without the guard. A nested-fleet container has `boot.autostart=false`, so it stays stopped. An Orbit start of the Instance, such as its deployment, starts it again through the guard. A container made before the key existed gets it at its next start, before the guard reads it. A start writes two keys this way, `boot.autostart` and `limits.memory.swap`, and Incus applies each without a restart.
+
+Orbit owns both keys: the start writes the intent's value over an absent key or a different value, and does not refuse it. The guard keeps refusing every other key and device that differs.
 
 The outer container is only the operator of its fleet. It runs no fleet service itself. It holds:
 
@@ -2502,6 +2537,8 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 3. It creates the directory pool `orbit-instances`.
 4. It writes the marker `/etc/orbit/instance-fleet-node`.
 5. It runs the rest of the branch as on any `app-dev` Node: project, bridge, folders, egress proxy and the Instance image.
+
+Fleet start appends the managed user `orbit` to `incus-admin` on every nested Node marked as an Instance host by `/etc/orbit/instance-fleet-node`. The Gateway's direct workspace and runtime reads call Incus as that user, without sudo. The account already has passwordless sudo, so this adds no authority. The fleet builds its own Nodes; their account setup belongs to fleet start. Every copy start repairs missing membership, including a copy of an existing seed, with no converge or seed refresh. Other groups remain unchanged, and a current membership reports no change.
 
 Its egress proxy goes out through the fleet's proxy (see below).
 
@@ -3172,7 +3209,7 @@ The Gateway admits the start only for an active development clone whose runtime 
 
 The run reads the Club key once, at its start. Without a key the fleet's Swamp cannot start, and Doctor cannot pass. So the run then fails before any change, with `instance.nested_club_key_missing`.
 
-The step `Start the container` runs the `start` part of `instance-container.yml`, as a deployment's `Prepare the container` does. It keeps `boot.autostart=false` and checks the egress gates of every bridge NIC. Then it starts the container and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
+The step `Start the container` runs the `start` part of `instance-container.yml`, as a deployment's `Prepare the container` does. It keeps `boot.autostart=false` and `limits.memory.swap` equal to the memory, and checks the egress gates of every bridge NIC. Then it starts the container and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
 
 The step `Start the inner fleet` runs the [fleet step](#the-fleet-step)'s check and resume, as the clone's create does. It checks the fleet rules and starts the nested containers and the tunnel. Then it waits for Doctor. It records its time as `fleet_seconds`.
 
@@ -3241,6 +3278,8 @@ Each phase runs on the Node and reaches the inner Incus with `incus exec` into t
 | Refresh | `instance-fleet-refresh.yml` | Migrates and restarts the nested Gateway, converges the three nested Nodes, waits for readiness (`instance-fleet-ready.yml`), stops the fleet and takes `base` again |
 | Resume | `instance-fleet-resume.yml` | Runs the start, then waits for readiness: the fleet after a passed refresh, or the fleet of a restored seed |
 | Reset | `instance-fleet-reset.yml` | Stops the three nested containers at once and restores `base` on each. Then it runs the start, migrates the nested Gateway forward and waits for readiness |
+
+Fleet start first ensures the managed user's Incus socket access on its Instance hosts ([Instance host in the fleet](#instance-host-in-the-fleet)). It then runs `php artisan gateway:known-hosts:sync` as `orbit` in the nested Gateway. The internal command restores the Gateway's SSH `known_hosts` from Node records that pin a WireGuard address, host-key type, key and fingerprint. It scans no host, retains unrelated entries and reports `{"changed": true}` only when it repairs the file. A file is current only when its pins match, its mode is `0600` and its directory mode is `0700`. Permission repairs also report a change. This supplies direct Gateway reads in fleets whose Nodes bypassed enrollment.
 
 The fleet rules:
 
@@ -3416,6 +3455,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
 | `instance.clone_trust_bundle_refused` | 502 | A clone's copy has no regular `/etc/ssl/certs/ca-certificates.crt`, or the file API could not read it. The create stops before the copy starts |
 | `instance.clone_t3_files_refused` | 502 | A folder or JSON file of [T3's files](#t3-starts-with-the-copy) in a clone's copy is a link or of another type. The create stops before the copy starts |
+| `instance.clone_idmap_unshift_unsupported` | 502 | A copied rootfs needs its source's ownership shift removed, but its storage pool does not use the `dir` driver. The incomplete copy is deleted |
+| `instance.clone_idmap_unshift_failed` | 502 | Orbit could not read or normalize a stopped copy's ownership, permissions, ACLs or capabilities before its first start. The incomplete copy is deleted so a retry copies the seed again |
 | `instance.clone_private_names_failed` | 502 | A clone's create could not read, render or write `/etc/hosts` right after the copy's first start. The create's failure step stops the copy, and a retry writes it again |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |

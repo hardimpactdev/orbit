@@ -13,7 +13,7 @@ use App\Models\Instance;
  */
 interface InstanceLifecycleContribution
 {
-    /** Refuses a clone before anything changes while the contribution cannot record its result, such as while its extension is off. */
+    /** Refuses a clone before anything changes while the contribution cannot record its result. An extension being off need not prevent recording. */
     public function assertCreateAvailable(): void;
 
     /**

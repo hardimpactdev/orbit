@@ -66,6 +66,7 @@ sequenceDiagram
   %%> - the marker comes before the freeze: a request during the freeze gets the wake page, not a hang
   %%> - the plan is taken frozen, so it is exact; the reclaim follows it, so nothing stays in RAM by design
   %%> - with only the outer cgroup open, 1,531 MiB of a nested default stayed in RAM: a cgroup with 0 keeps its pages
+  %%> - a cgroup swaps only as far as its ancestors allow, and Incus writes 0 unless `limits.memory.swap` is a byte size: a nested-fleet container has it equal to its memory, so its own cgroup never caps the swap of its fleet's Instances
   %%> Not included:
   %%> - no HTTP request, no command in the container, no app file read, no route or process-name choice
   %%> On failure:

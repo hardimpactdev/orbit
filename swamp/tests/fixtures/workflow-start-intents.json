@@ -20,6 +20,7 @@
                         "security.syscalls.intercept.setxattr": "true",
                         "security.idmap.isolated": "true",
                         "security.idmap.size": "101000000",
+                        "limits.memory.swap": "12GiB",
                         "boot.autostart": "false",
                         "environment.NO_PROXY": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
                         "environment.no_proxy": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24"
@@ -507,6 +508,7 @@
                             "security.syscalls.intercept.setxattr": "true",
                             "security.idmap.isolated": "true",
                             "security.idmap.size": "101000000",
+                            "limits.memory.swap": "12GiB",
                             "boot.autostart": "false",
                             "environment.NO_PROXY": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
                             "environment.no_proxy": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24"

@@ -320,7 +320,7 @@ describe('a clone of the container default', function (): void {
             ->and(ValidatedData::object($container['clone']))->not->toHaveKey('inner_volume');
     });
 
-    it('is refused while its default runs elsewhere, has no seed yet, or Conn or the model router is off', function (Closure $arrange, string $code): void {
+    it('is refused while its default runs elsewhere or has no ready seed', function (Closure $arrange, string $code): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
         $target = $arrange($default) ?? $node;
@@ -330,12 +330,6 @@ describe('a clone of the container default', function (): void {
         'the default on another Node' => [fn (Instance $default): Node => containerDefaultNode('shark', '10.44.0.8'), 'instance.default_missing'],
         'no seed snapshot yet' => [fn (Instance $default) => InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => null]) && false ?: null, 'instance.default_missing'],
         'a failed default' => [fn (Instance $default) => $default->update(['status' => InstanceState::Reserved]) && false ?: null, 'instance.default_missing'],
-        'Conn off' => [fn () => app(ExtensionStore::class)->set('conn', false) ?: null, 'operation.kind_unavailable'],
-        'no model router guard' => [function (): null {
-            app(ContainerModelRoute::class)->ready = false;
-
-            return null;
-        }, 'ai_router.disabled'],
     ]);
 
     it('lets the default and its clones reach their Database server; a clone clones on the default\'s server only', function (): void {
@@ -767,6 +761,28 @@ describe('the template copy of a clone\'s PostgreSQL database', function (): voi
 });
 
 describe('the clone\'s create result', function (): void {
+    it('admits without optional services and reports the model route captured at admission', function (bool $conn, bool $ready): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        app(ExtensionStore::class)->set('conn', $conn);
+        app(ContainerModelRoute::class)->ready = $ready;
+        $expected = $ready ? ['ready' => true] : ['ready' => false, 'error_code' => 'ai_router.disabled', 'message' => 'The model router has no guard.'];
+
+        $operation = containerCreate($default->project, $node, 'feature');
+
+        expect($operation->input['model_route'])->toBe($expected);
+        $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
+        vaultReadingSocket(['nckrtl-instance-t3-model-register-session-gateway-1-token' => 'gateway-session-value']);
+        // The receipt reports admission, even if the router changes while the run is in flight.
+        app(ContainerModelRoute::class)->ready = ! $ready;
+        app(DevelopmentInstanceCreateProjection::class)->apply($operation, cloneSucceeded($operation));
+
+        expect($operation->refresh()->result['model_route'])->toBe($expected)
+            ->and($operation->status)->toBe(OperationStatus::Succeeded)
+            ->and(app(ConnInstanceLifecycle::class)->registered(Instance::query()->findOrFail($operation->target_id)))->toBeTrue()
+            ->and($operation->result['completion_operation_id'])->toBeInt();
+    })->with(['ready route' => [true, true], 'Conn off' => [false, true], 'no model router guard' => [true, false], 'neither configured' => [false, false]]);
+
     it('shows the failed clone command in the Operation error and keeps its stable code', function (): void {
         $node = containerDefaultNode();
         $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
@@ -1401,7 +1417,7 @@ it('omits terminal recovery when the create no longer owns a retained Instance',
     ]);
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
-        ->and($operation->result)->toBe($result)
+        ->and($operation->result)->toBe([...$result, 'model_route' => ['ready' => true]])
         ->and(Instance::query()->find($instance->id)?->status)->toBe($state);
 })->with($recoveryInvalidTargets);
 
