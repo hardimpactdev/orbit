@@ -162,8 +162,7 @@ final readonly class ProofSeeds
     /** Whether the Instance is the proof Project's default in the nested project with a seed: read from the loaded models, with no query. */
     private function seededDefault(Instance $instance, ?InstanceRuntime $runtime): bool
     {
-        return $instance->project_id === $this->settings->projectId() && $instance->name === DefaultInstanceName::Name
-            && $runtime?->incus_project === InstancePlacement::NestedProject && $runtime->seed_commit !== null && $runtime->seed_taken_at !== null;
+        return $runtime !== null && $this->sends($instance, $runtime) && $runtime->seed_commit !== null && $runtime->seed_taken_at !== null;
     }
 
     /**
@@ -316,6 +315,17 @@ final readonly class ProofSeeds
 
             return $claim === self::Holding;
         });
+    }
+
+    /**
+     * Whether this change frees a deployment's claim on the seed: a deployment that asked for the hold leaves its Instance lock with a
+     * terminal status. Every end passes here once (a run's report, a cancel, an unreadable result, the settlement of a timed-out run),
+     * so the caller admits a seed copy again (docs/reference/development-containers.md#the-seed-hold).
+     */
+    public static function claimFreed(Operation $before, Operation $after): bool
+    {
+        return $after->kind === 'instance.deploy' && isset($after->state[self::HoldState]) && $after->status->terminal()
+            && $after->lock_key === null && (! $before->status->terminal() || $before->lock_key !== null);
     }
 
     /** Whether an open deployment of the default holds its seed or waits for it. */

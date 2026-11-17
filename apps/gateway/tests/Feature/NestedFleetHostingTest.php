@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Actions\Operations\ExpireOperationAction;
+use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Schedules\RunScheduleAction;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\FactDoctor;
@@ -829,8 +831,9 @@ describe('the seed of the proof default on each Node that offers proof places', 
         seedListening($node);
         $commit = str_repeat('b', 40);
         $deploy = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id,
-            'node_id' => $default->node_id, 'status' => 'running', 'triggered_by' => 'release',
-            'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($default)], 'state' => ['swamp_run_id' => 'run-1']]);
+            'node_id' => $default->node_id, 'status' => 'running', 'triggered_by' => 'release', 'lock_key' => 'instance:'.$default->id,
+            'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($default)],
+            'state' => ['swamp_run_id' => 'run-1', ProofSeeds::HoldState => ProofSeeds::Holding]]);
 
         app(InstanceDeployProjection::class)->apply($deploy, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
             'finished_at' => now()->toIso8601String(), 'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)]],
@@ -915,7 +918,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and($next->triggered_by)->toBe('seed');
     });
 
-    it('refuses a seed copy while a deployment holds the default\'s seed, and admits it when the deployment ends (deployment first)', function (string $status): void {
+    it('refuses a seed copy while a deployment holds the default\'s seed, and admits it when the deployment ends (deployment first)', function (string $end): void {
         $default = proofSeedDefault();
         seedSwampNode();
         $node = ciNode();
@@ -931,17 +934,37 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and(Operation::query()->where('kind', ProofSeeds::Kind)->count())->toBe(0);
 
         $commit = str_repeat('b', 40);
-        app(InstanceDeployProjection::class)->apply($deploy, ['status' => $status, 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
-            'finished_at' => now()->toIso8601String(), 'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode(
-                $status === 'succeeded' ? ['commit' => $commit] : ['error_code' => 'instance.container_seed_failed'], JSON_THROW_ON_ERROR)]],
-                'summary' => ['failed_steps' => $status === 'succeeded' ? [] : ['Finish the container']]]]);
+        if (in_array($end, ['succeeded', 'failed'], true)) {
+            app(InstanceDeployProjection::class)->apply($deploy, ['status' => $end, 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+                'finished_at' => now()->toIso8601String(), 'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode(
+                    $end === 'succeeded' ? ['commit' => $commit] : ['error_code' => 'instance.container_seed_failed'], JSON_THROW_ON_ERROR)]],
+                    'summary' => ['failed_steps' => $end === 'succeeded' ? [] : ['Finish the container']]]]);
+        } elseif ($end === 'unreadable') {
+            app(FailUnreadableResultAction::class)->execute($deploy, 'run-1', ['status' => 'succeeded', 'completedAt' => now()->toIso8601ZuluString()],
+                'Finish the container', 'skipped');
+        } else {
+            // A timed-out deployment keeps its Instance lock, and so its claim on the seed, until its run's end is settled or the hold goes stale.
+            $deploy->update(['started_at' => now()->subDays(1)]);
+            app(ExpireOperationAction::class)->execute($deploy->refresh());
+            expect($deploy->refresh()->error_code)->toBe('operation.timed_out')
+                ->and(app(ProofSeeds::class)->admit('node_role', node: $node->id))->toBeNull()
+                ->and(Operation::query()->where('kind', ProofSeeds::Kind)->count())->toBe(0);
+            if ($end === 'settled') {
+                app(ExpireOperationAction::class)->settle($deploy, 'run-1', 'cancelled');
+            } else {
+                $deploy->update(['finished_at' => now()->subMinutes(ExpireOperationAction::HoldMinutes + 1)]);
+                expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(1);
+            }
+        }
 
-        // The end gives the seed back and admits the copy, for the new seed or for the old one that the Node still lacks.
+        // Every end gives the seed back and admits the copy, for the new seed or for the old one that the Node still lacks.
         $copy = Operation::query()->where('kind', ProofSeeds::Kind)->sole();
-        expect($copy->input['targets'])->toBe([$node->id])
-            ->and($copy->input['commit'])->toBe($status === 'succeeded' ? $commit : str_repeat('a', 40))
+        expect($deploy->refresh()->lock_key)->toBeNull()
+            ->and($copy->input['targets'])->toBe([$node->id])
+            ->and($copy->input['commit'])->toBe($end === 'succeeded' ? $commit : str_repeat('a', 40))
             ->and($copy->lock_key)->toBe('instance_seed:'.$default->id);
-    })->with(['passed' => 'succeeded', 'failed' => 'failed']);
+    })->with(['passed' => 'succeeded', 'failed' => 'failed', 'timed out, then settled' => 'settled', 'timed out, then released stale' => 'stale',
+        'unreadable result' => 'unreadable']);
 
     it('admits the seed copy when a ci-runner add of a Node that offers proof places passes', function (): void {
         proofSeedDefault();
