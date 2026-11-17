@@ -164,7 +164,7 @@ The reaper starts nothing when:
 - the Instance has an open transfer;
 - an Operation of the Instance runs, or one holds the Instance lock, such as a create.
 
-After 3 failed reaper starts, or at once for a removal that failed with `instance.removal_dataset_taken` or that holds no saved intent, Doctor reports `instance.removal_stuck` on the Instance in the `instance` family, with the failed step and the error code, and the last refused start's code if there is one. The Gateway also records one Activity entry `instance.removal_stuck`. The reaper keeps trying every 6 hours, except a removal with `instance.removal_dataset_taken`: it never starts that one again, because a person must look at the dataset first. The issue goes when the Instance is gone.
+After 3 failed reaper starts, Doctor reports `instance.removal_stuck` on the Instance in the `instance` family. It reports it at once for a removal that failed with `instance.removal_dataset_taken` or that holds no saved intent. The issue names the failed step and the error code, and the last refused start's code if there is one. The Gateway also records one Activity entry `instance.removal_stuck`. The reaper keeps trying every 6 hours, except a removal with `instance.removal_dataset_taken`: it never starts that one again, because a person must look at the dataset first. The issue goes when the Instance is gone.
 
 ## Available placements
 
