@@ -14,7 +14,7 @@ In progress.
 
 Nick approved the direction on 2026-11-07 and chose option A the same day. The build follows the sections below.
 
-Principle: [Deterministic first](/mission#principles) and [Lean](/mission#principles). This ADR replaces [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) as a whole: no Cluster DNS, no member step, no fallback.
+Principle: [Deterministic first](/mission#principles) and [Lean](/mission#principles). This ADR replaces retired ADR 0219 as a whole: no Cluster DNS, no member step, no fallback. This is the target design, not the delivered listener described in [Private DNS](/reference/private-dns).
 
 Decisions of 2026-11-07:
 
@@ -63,9 +63,20 @@ Nick chose option A on 2026-11-07: all Routes in one dnsmasq file on the vpn Nod
 
 ### One render
 
-The Gateway renders the complete state from the database as data, not as text: the listen addresses, the TLDs with their addresses, and every record with its address and whether it needs the NODATA pair. `DevelopmentDnsConfigRenderer` becomes this data builder. It loses its override and pending-Node parameters, `catalog()` and `registeredRequesters()`. It checks every name and address against a strict grammar (lowercase DNS labels, IPv4) before it emits them, as [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router#record-boundary) requires. `dnsmasq --test` checks only `orbit.conf`, not the hosts and servers files.
+The Gateway renders the complete state from the database as data, not as text: the listen addresses, the TLDs with their addresses, and every record with its address and whether it needs the NODATA pair. `DevelopmentDnsConfigRenderer` becomes this data builder. It loses its override and pending-Node parameters, `catalog()` and `registeredRequesters()`. It validates names and addresses at the [record boundary](#record-boundary). `dnsmasq --test` checks only `orbit.conf`, not the hosts and servers files.
 
 The render is a function of rows. A change stores the row state that decides inclusion, such as a Route `retiring`, a Cluster TLD, a Router, a LAN address or a pending Node, before the owning kind is admitted. The render is taken at admission and carried in the intent.
+
+### Record boundary
+
+Preserve `ContributedPrivateHostnames`: contributions are trusted code in the repository. They reserve names and optionally publish stored addresses. Never accept raw dnsmasq fragments. Validate operator input and stored rows before the first remote write:
+
+- Names use canonical lowercase DNS labels, 1–63 characters each and at most 253 per name. Reject whitespace, control characters, separators, slashes and wildcards.
+- Addresses are IPv4. VPN records and Node TLD targets must be usable addresses in the configured VPN subnet, excluding network and broadcast addresses. Cluster targets use the registered Router's WireGuard address, not its LAN address.
+- Contribution tests cover grammar, uniqueness and stored-address selection. Duplicate exact contribution names are invalid even with equal addresses. An exact Route overriding a wildcard and a more specific Node TLD are intentional precedence.
+- Reserve core and extension names before accepting Routes. Extension names stay under `.orbit`; new Node or Cluster TLDs cannot cover that namespace or the private VPN namespace. Refuse new conflicts at input and migration boundaries. Existing stored conflicts keep the current renderer precedence and Doctor findings, including `route.domain_reserved`; they must not block every DNS publication.
+
+Contributions follow placement/setup, not the extension's enabled switch. Keep names reserved while disabled. [Extension lifecycle](/decisions/0210-give-each-extension-its-own-code-boundary#enable-and-disable) owns withdrawal; the AI router's withdrawal still awaits [its disable hook](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order). Actual withdrawal republishes the complete state. Check malformed stored rows, duplicate owners, retained placement and withdrawal in tests; syntax checks do not replace these boundary checks.
 
 ### One revision
 
@@ -103,7 +114,7 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 ### Proof
 
 1. Molecule tests the phase and its templates on a scratch Node: every row of the table above, the reload and restart choice, the superseded skip, and the restore of the last good files.
-2. A rehearsal on a task VM fleet runs the whole flow, from a Route change to the answers.
+2. A rehearsal on a task copy's nested fleet runs the whole flow, from a Route change to the answers.
 3. On the live vpn Node, a comparison script queries every private name, for A and AAAA, against the listener and a second dnsmasq with the rendered files on a spare port. It prints each difference name by name. The only differences allowed are the AAAA fix and nested TLDs.
 4. The cutover moves dnsmasq to the VPN DNS address, stops the listener, and asserts the answers, while someone watches. The listener code is already gone, so the rollback is the last good set the phase saved before its first install.
 5. The restart gap of a TLD change is measured with a query loop, and the number goes into this ADR.
@@ -126,6 +137,6 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: replaces [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) as a whole, and the Cluster DNS member step of [0226](/decisions/0226-split-private-dns-on-managed-peers)
+- ADRs: replaces retired 0219 as a whole, and the Cluster DNS member step of [0226](/decisions/0226-split-private-dns-on-managed-peers)
 - Detail: [Private DNS](/reference/private-dns), [Routes](/reference/routes), [Node provisioning](/reference/node-provisioning), and the chart `docs/cli/dns/publish.mmd`. The change also touches `swamp/`: the `dns-publish` workflow, its Ansible phase and the parent workflows that call it.
-- Verify: Molecule on the phase, a rehearsal on a task VM fleet, and a name-by-name comparison of old and new answers on the live vpn Node
+- Verify: Molecule on the phase, a rehearsal on a task copy's nested fleet, and a name-by-name comparison of old and new answers on the live vpn Node

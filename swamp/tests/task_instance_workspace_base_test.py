@@ -8,7 +8,6 @@ from pathlib import Path
 
 HARNESS = runpy.run_path(str(Path(__file__).parent / '_support/task_instance_workspace_base.py'))
 SUPPORT, CHILD, SECRET = HARNESS['SUPPORT'], HARNESS['CHILD'], HARNESS['SECRET']
-SYNC = HARNESS['ROOT'] / 'workflows/workflow-operation-task-sync.yaml'
 SYNC_COPY = HARNESS['ROOT'] / 'workflows/workflow-operation-task-sync-copy.yaml'
 SHARED = HARNESS['ROOT'] / 'workflows/workflow-task-instance-workspace.yaml'
 
@@ -84,7 +83,7 @@ class TaskInstanceWorkspaceBaseTest(HARNESS['BaseHarness']):
         for word in ('vault.get(', 'git_authorization', 'git_credential', 'base-cleanup', 'Bring in the base', 'instance_id'):
             self.assertNotIn(word, shared)
 
-    def test_the_copy_sync_workflow_calls_the_base_and_the_task_vm_workflow_has_no_copy_step(self):
+    def test_the_copy_sync_workflow_calls_the_base(self):
         cel = self.root / 'cel.ts'
         cel.write_text(SUPPORT['CEL'])
         authorization = {'vault': 'orbit-control-inputs', 'key': 'task-sync-token-' + self.snapshot_id}
@@ -125,10 +124,5 @@ class TaskInstanceWorkspaceBaseTest(HARNESS['BaseHarness']):
         ok = {'status': 'succeeded'}
         self.assertTrue(value('Confirm the sync', 'expr', {'Bring in the base': ok, 'Discard the base scratch': ok}))
         self.assertFalse(value('Confirm the sync', 'expr', {'Bring in the base': ok, 'Discard the base scratch': {'status': 'failed'}}))
-        # The task VM's workflow is its own, as before the copy existed: no step of a copy.
-        vm_text = SYNC.read_text()
-        for word in ('task-copy-base', 'Bring in the base', 'inputs.intent.copy'):
-            self.assertNotIn(word, vm_text)
-
 if __name__ == '__main__':
     unittest.main()

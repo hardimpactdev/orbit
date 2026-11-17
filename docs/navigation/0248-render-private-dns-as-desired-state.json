@@ -8,5 +8,11 @@
         "decisions/0248-render-private-dns-as-desired-state"
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/decisions/0219-answer-cluster-names-from-a-dns-on-the-router",
+      "destination": "/decisions/0248-render-private-dns-as-desired-state"
+    }
   ]
 }

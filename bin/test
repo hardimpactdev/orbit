@@ -10,7 +10,7 @@ import tempfile
 import threading
 
 ROOT = Path(__file__).resolve().parent.parent
-PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
+PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'packages/php-sdk')
 _budget = runpy.run_path(str(ROOT / 'tools/check_budget.py'))
 ProcessBudget, lane_count, lane_weight = (_budget[name] for name in ('ProcessBudget', 'lane_count', 'lane_weight'))
 

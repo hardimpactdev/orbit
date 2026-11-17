@@ -6,10 +6,10 @@ Saloon 4 client for the Orbit gateway API.
 
 Read [the repository rule index](.ai/rules/index.md) before you change or
 review package files. Treat a missing index, a missing indexed rule, or missing
-material-path coverage as a repository-bootstrap failure. Restore the committed
-guidance with
-`git restore --source=HEAD -- AGENTS.md .ai/rules composer.json`; do not
-silently skip it.
+material-path coverage as a repository-bootstrap failure. Restore only the
+affected tracked guidance path from the current branch. If the branch does not
+contain it, replace the incomplete checkout. Do not restore whole trees or
+Composer manifests, and do not silently skip missing guidance.
 
 The `.ai/rules/` tree contains repository instructions only. It does not imply
 Laravel or Boost support.

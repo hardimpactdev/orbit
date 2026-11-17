@@ -13,7 +13,7 @@ Replace the repository and IDs with your own values. The [Quickstart](https://or
 
 ## Alpha status
 
-Orbit runs a live fleet. Adding fresh machines as Nodes is proven in regular use: the maintainer adds Nodes to the fleet, and each task group runs on a fresh Ubuntu VM that Orbit enrolls as a Node.
+Orbit runs a live fleet. Adding fresh machines as Nodes is proven in regular use. Tasks run in isolated copies of a Project's default container Instance; command proofs use the copy's nested fleet. The switch to containers for every new Instance is still unfinished.
 
 A source alpha tag has not been published. Use disposable machines and test data. The [alpha guide](docs/reference/alpha.md) defines the trial path, limits, and release criteria. Its checks for a fresh Gateway installation, the first application, and recovery are still open. Production readiness is not claimed.
 
@@ -29,11 +29,11 @@ Start with these guides:
 - [Make your first contribution](docs/first-contribution.md)
 - [Contribute](CONTRIBUTING.md)
 
-Maintained documentation lives in `docs/`, with Mintlify navigation in `docs/docs.json`.
+Maintained documentation lives in `docs/`. `bin/docs-navigation` generates Mintlify's `docs/docs.json` from `docs/site.json` and the page-owned fragments in `docs/navigation/`.
 
 ## Repository
 
-Orbit has nine projects. Each owns its dependencies and checks. The five PHP projects are separate Composer projects.
+Orbit has seven projects. Each owns its dependencies and checks. The four PHP projects are separate Composer projects.
 
 | Path | Purpose | Tooling |
 | --- | --- | --- |
@@ -41,7 +41,6 @@ Orbit has nine projects. Each owns its dependencies and checks. The five PHP pro
 | `apps/gateway` | Laravel control plane | Composer |
 | `packages/php-sdk` | Framework-neutral HTTP client | Composer |
 | `apps/docs` | Documentation checks and context generator | Composer |
-| `apps/e2e` | Incus verification harness | Composer |
 | `apps/web` | Fleet web app that calls the Gateway API | Bun |
 | `apps/desktop` | Tauri desktop shell for the web app | Bun, Cargo |
 | `apps/agent` | Outbound-only Linux agent on Nodes | Cargo |

@@ -1,6 +1,6 @@
 sequenceDiagram
-  %% Target design: docs/reference/tasks.md#check-an-external-group, the shape guide (official `@swamp/ssh exec`), the publish chart for the handoff push.
-  %% Tightened: flow-tighten 2026-11-02, rule 22 (no shipped scripts: every task VM step is one `@swamp/ssh exec` argv, 209 shapes the outputs in TypeScript; no step copies a script to the VM), rule 16 (no snapshot after the push: the import checks the bundled commit and tree).
+  %% Target design: docs/reference/tasks.md#check-an-external-group and the Instance workspace phases in docs/reference/task-instance-workspace.md.
+  %% Execution: task-instance-check owns the copy phases and the typed check result.
   %% status: migrated
   %% command: task:check
   %% kind: tasks.check
@@ -8,14 +8,10 @@ sequenceDiagram
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane N icon=server pill=target tone=amber
-  %% lane GH icon=server pill=target tone=purple
   %% lane I icon=server pill=target tone=amber
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as Task VM<br/>reached over ssh
-  participant GH as GitHub<br/>repo · Checks
   participant I as Instance<br/>via its Node
   CLI->>GW: task:check 7<br/> --phase=handoff
   %%> Command:
@@ -32,17 +28,15 @@ sequenceDiagram
   %%> - that workspace refuses a handoff that needs hosted CI (`tasks.instance_hosted_check_unavailable`), before a check row exists
   %%> - its baseline has an empty setup list: the copied seed already ran the Project's setup steps
   %%> Result:
-  %%> - check 17 recorded as running; the full intent holds the Project check, setup (baseline), deliverables (handoff), base commit and the VM's SSH target
-  %%> - a container workspace adds `workspace`: the recorded Incus project and container, the Instance branch and a new scratch ID; the SSH target is its Node
+  %%> - check 17 recorded as running; the full intent holds the Project check, setup (baseline), deliverables (handoff), base commit and the Instance Node's SSH target
+  %%> - `workspace` holds the recorded Incus project and container, the Instance branch and a new scratch ID; the SSH target is its Node
   GW->>SW: Start run, full intent<br/>operation-task-check
   %%> Inputs:
-  %%> - the intent, and vault key names for the CI tokens when the Project requires handoff CI
+  %%> - the copy intent; hosted CI is refused at admission
   GW-->>CLI: 202 Accepted<br/>task #5170
-  opt recorded container Instance workspace
     SW->>I: Check in the Instance
     %%> What it does:
     %%> - one child workflow runs the whole check through Ansible phases on the Instance Node; every repository command runs in the container as `agent` in `/srv/workspace`, with the agent's HOME and login shell
-    %%> - the task VM steps below are skipped; the same TypeScript rules judge the evidence, so outcomes match
     %%> - a scoped Project check such as `bin/task-check` prints one summary line per part; its `ci-policy` part runs the CI policy tests (`python3 -m unittest discover -s tools -p 'test_ci_*.py'`) when the change touches what those tests read: the CI registry and its fixture tomls, the workflows, the CI scripts or a Swamp test file, before Pest and the fixtures, within the check's budget
     %%> - see [task Instance workspace](/reference/task-instance-workspace#check-phases)
     %%> Base first (handoff only):
@@ -58,67 +52,15 @@ sequenceDiagram
     %%> - the base-merge, check, commit and commit-ref phases run as the behavior `task-instance-check-NODE-GROUP`, for up to 900 s, 10,800 s, 600 s and 600 s, so the check of another group's copy on this Node never waits for its lock; its short steps keep their Node names
     %%> Refuses:
     %%> - a changed checkout identity or branch: `tasks.workspace_identity_changed`
-  end
-  Note over SW: Build every argv
-  %%> What it does:
-  %%> - TypeScript on 209 builds each step's `@swamp/ssh exec` argv from the intent
-  %%> Refuses:
-  %%> - an absolute or `..` deliverable directory, a non-canonical overlay path, or a `fails_on_base` command without a base commit: `tasks.deliverable_invalid`, before any command
-  opt baseline with setup steps
-    SW->>N: Run setup in order
-    %%> How:
-    %%> - each is `env -C <checkout> … /bin/bash -lc <command>` with its own timeout; `@orbit/ci-caches` expands to the shared program
-    %%> - every command writes its output to `<run>/output/<step>` on the VM, never to the SSH session, so native history keeps only its exit code
-    %%> - a failed step skips the rest and the Project check
-  end
-  SW->>N: Run the Project check
-  %%> How:
-  %%> - one argv in the checkout; its output goes to its file on the VM, not to native history
-  %%> - its formatters run in fix mode, so their edits belong to the checked tree
-  SW->>N: Snapshot the workspace
-  %%> How:
-  %%> - `git read-tree HEAD`, `git add --all`, `git write-tree` on the run's index file, and `git rev-parse HEAD`; the real index is untouched
-  opt handoff with deliverables
-    SW->>N: Run each deliverable
-    %%> Rules:
-    %%> - a failed setup step or Project check skips every command deliverable
-    %%> How:
-    %%> - `diff`: `git diff-tree -r --no-renames --name-status -z <base> <tree>` for file deliverables
-    %%> - a `fails_on_base` command first runs on its start commit: `git archive`, `tar -x`, a copy of installed `vendor` and `node_modules`, the declared test paths, then the command
-    %%> - a command whose last simple command calls Pest gets CI's `--default-time-limit`, which the Project's check command prints as `ci-time-limit: N` or `ci-time-limit: none` for `--ci-time-limit <directory>`, asked only when it is one executable path whose file contains the text `--ci-time-limit` (any other check command is never run for it and the command runs as given); its start-commit run gets the same limit (docs/reference/tasks.md#a-pest-command-gets-cis-time-limit)
-    %%> Refuses:
-    %%> - a missing overlay file or directory: `tasks.deliverable_invalid`
-  end
-  SW->>N: Snapshot the checked tree
-  %%> What it does:
-  %%> - a moved tree makes the check `changed`; a failed command or unmet deliverable makes it `failed`
-  %%> - a command deliverable with no run, because setup or the Project check failed first or no evidence was recorded, reads `not_run` with that reason; it also makes the check `failed`
-  %%> How:
-  %%> - official SSH copy downloads the private command files; the local reader redacts them, keeps a 16 KiB tail and deletes them before history
-  %%> - the output ends with a `Deliverables` block and one line that states the outcome; a later `changed` or CI failure restates that line (docs/reference/tasks.md#stored-result)
-  opt passed handoff
-    SW->>N: Commit the candidate
-    %%> How:
-    %%> - `git add --all`, one `git commit` as Orbit with hooks off, `git rev-parse HEAD HEAD^{tree} HEAD^`
-    %%> - in a container workspace, a clean `HEAD` that `refs/orbit/check-operations/` already names makes no commit: the candidate is that recorded `HEAD`, so a cancel finds no empty commit; it reads `git rev-parse HEAD HEAD^{tree}`. Any other tree gets a fresh commit with the cleaned message, `--allow-empty`
-    %%> - 209 checks the tree and parent equal the checked snapshot, or, for a container workspace only, that the candidate is the checked `HEAD` with its tree, else `changed`; then `git update-ref refs/orbit/check-operations/<operation>`
-  end
-  opt Project requires handoff CI
-    SW->>GH: Push the candidate
-    %%> How:
-    %%> - export, import, mint, push and revoke as in `task:publish`; the run then ends with CI pending
-    %%> - a native schedule reads the Checks once a minute, snapshots the workspace again and settles the check
-  end
   Note over SW: Read the result
   %%> What it does:
-  %%> - reads the receipt of `Push the candidate`, or of `Check in the Instance` for a container workspace
-  %%> - a direct data step exposes the push producer's result JSON to a calling workflow; Swamp propagates only one level of child behavior outputs
+  %%> - reads the receipt of `Check in the Instance`
+  %%> - a direct data step exposes the Instance check's result JSON to a calling workflow
   %%> - it keeps the complete check receipt on passed, failed and changed outcomes
   Note over SW: Check the result
   %%> What it does:
-  %%> - native assert checks the push producer receipt for an execution error
+  %%> - native assert checks the Instance receipt for an execution error
   %%> - the Gateway captures that receipt in the same history read; no shell prints it again
-  %%> - a container workspace's receipt comes from `Check in the Instance` in the same shape
   opt hosted CI is pending
     Note over GW: Record scheduled CI
     %%> What it does:
@@ -137,7 +79,7 @@ sequenceDiagram
     %%> - a check preserves its admitted subtask base as the start commit; the candidate HEAD is never a new base for a retry
     %%> - a passed handoff check records the group's pull request mode in effect at that moment (`pr_mode`); only a check that recorded `pr_when_done` lets the `task:pr-when-done` tick publish by itself. Recording it starts nothing (docs/reference/tasks.md#where-the-mode-comes-from)
   else a step fails
-    N--xSW: exit ≠ 0 or no reply
+    I--xSW: exit ≠ 0 or no reply
     SW--xGW: Run failed<br/>error_code, failed step
     Note over GW: Record the failed check<br/>group lifecycle stays external
   end

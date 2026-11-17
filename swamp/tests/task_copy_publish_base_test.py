@@ -44,7 +44,6 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
                      'remote': 'https://github.com/example/trial.git', 'pull_request': {'title': 'Export orders', 'body': 'Adds the export.'},
                      'workspace': {'runtime': {'project': 'orbit-instances', 'name': 'instance-9'}, 'branch': 'task-1',
                                    'snapshot_id': str(uuid.uuid4()), 'start': 'a' * 40, 'environment_path': '.env'}}
-        self.vm = {key: value for key, value in self.copy.items() if key != 'workspace'}
         # origin: the seed on main. The copy's branch starts there.
         self.origin = self.root / 'origin.git'
         self.git('init', '--quiet', '--bare', '--initial-branch=main', str(self.origin), cwd=self.root)
@@ -122,7 +121,7 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
             (self.scratch / name).unlink(missing_ok=True)
         steps = {CHECK: {'status': 'succeeded', 'outputs': {'stdout': statement}}}
         self.assertEqual(self.cel(PLAN, 'base', self.copy, steps), statement)
-        intent = {**self.vm, 'pull_request': {'title': 'Export orders', 'body': body}}
+        intent = {**self.copy, 'pull_request': {'title': 'Export orders', 'body': body}}
         if proposed is not None:
             (self.scratch / 'proposed-body').write_text(proposed)
             done = self.behavior('waivers', {'input': intent, 'directory': str(self.scratch)})
@@ -422,14 +421,11 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         self.assertTrue(self.cel(PUSH, 'guard', self.copy, {CHECK: {'status': 'skipped'}}))
 
     def test_only_a_copy_reads_its_base_with_the_push_authorization_and_known_intent_keys(self):
-        for step in (READ, CHECK):
-            self.assertFalse(self.cel(step, 'guard', self.copy), step)
-            self.assertTrue(self.cel(step, 'guard', self.vm), step)
-        self.assertFalse(self.cel(PUSH, 'guard', self.vm))
         self.assertEqual(self.cel(PLAN, 'base', self.copy, {CHECK: {'status': 'skipped'}}), '')
-        self.assertEqual(self.cel(PLAN, 'base', self.vm), '')
         steps = {item['name']: item for job in yaml.safe_load(PUBLISH.read_text())['jobs'] for item in job['steps']}
         read, check, push = steps[READ], steps[CHECK], steps[PUSH]
+        self.assertNotIn('guard', read)
+        self.assertNotIn('guard', check)
         self.assertEqual(read['dependsOn'], [{'step': 'Mint the push token', 'condition': {'type': 'succeeded'}}])
         self.assertIs(read['task']['inputs']['ignoreExitCode'], True)
         self.assertEqual(read['task']['inputs']['env']['GIT_CONFIG_VALUE_3'], push['task']['inputs']['env']['GIT_CONFIG_VALUE_3'])

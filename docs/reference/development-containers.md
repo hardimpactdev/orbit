@@ -14,7 +14,7 @@ covers:
 
 # Instance containers
 
-**Partly built, limited to the [build list](#the-build-list).** This page describes the delivered parts and the remaining target of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). The [Container runtime plan](/solutions/development-container-runtime) tracks the remaining work. Existing checkout Instances stay until migrated. Task groups still run on [task VMs](/reference/compute-drivers#task-vms).
+**Partly built; development host preparation and first-default creation still use the [build list](#the-build-list).** Task groups run only in [task copies](/reference/tasks#task-copy), and proofs run in copies with a nested fleet. Every new Instance should be a container, but universal Instance admission is not delivered: Nodes outside the build list can still create checkout defaults, and registration and production cloning still admit host checkouts. Existing checkout Instances need migration. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance) owns the remaining transition and acceptance.
 
 | Part | Delivered state |
 | --- | --- |
@@ -22,18 +22,19 @@ covers:
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
 | [Nested fleet](#nested-fleet) | Built on switched-on build-list Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image), the [refresh](#refresh-after-a-release), and the [clone's](#a-clone-starts-its-fleet) and [stopped clone's](#a-stopped-nested-fleet-clone-starts) fleet start, and a copy's [reset](#reset). Planned: rebuild |
 | [Sleep and wake](#sleep-and-wake) | Built: the commands, the wake on a Route visit, and the idle sleep, which is off until the operator turns it on. Planned: the wake from Conn and tasks |
-| Task containers, nested-fleet parity and production containers | Planned |
+| Task copies and command proofs on their nested fleet | Built; merge-base proof replay is [not ported](/reference/old-paths#the-task-vm-proof-run). No VM runtime remains for a parity comparison |
+| Production containers | [Planned](/reference/production-containers) |
 | Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
 
-Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
+An Instance on the container path runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
 
-Every new Instance is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch, and it deploys each new commit of the default branch [by itself](/reference/deployments#automatic-development-defaults), so clones start at the current default branch with its dependencies installed. A nested-fleet default deploys after each release instead. The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
+Every non-default Instance on this path is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch, and it deploys each new commit of the default branch [by itself](/reference/deployments#automatic-development-defaults), so clones start at the current default branch with its dependencies installed. A nested-fleet default deploys after each release instead. The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
 
 A task runs in such a container too. There is no separate task container: the same container has two [drivers](#drivers), a user in Conn and Swamp for a task. A Project may turn on a [nested fleet](#nested-fleet), which Orbit needs for its command proofs.
 
 ## Charts
 
-The container flows keep the kinds of today's Instance flows. Their charts sit one folder below the command charts, because each kind keeps its checkout or task VM chart until its switch.
+The container flows keep the existing Instance kinds. Their charts sit one folder below the command charts. Checkout admission still exists outside the container path; task VM admission does not.
 
 | Flow | Chart |
 | --- | --- |
@@ -50,7 +51,7 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 
 ## Nodes
 
-Every `app-dev` Node runs its Instances in containers. There is no setting to opt in. A task VM keeps its checkout workspace until step 9 of ADR 0250 removes task VMs.
+Container host preparation is enabled for `app-dev` Nodes on the [build list](#the-build-list). The container-only switch for every Node remains unfinished. Task VMs are removed, not waiting for that switch.
 
 The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
 
@@ -120,7 +121,7 @@ Refresh errors stay in the journal. A writer that acquired the lock also records
 
 The converge creates no Instance. Each existing `app-dev` Node needs one converge of its Instance host role. It reconciles the attached-target union and moves existing NICs to the proxy ACL. Running containers keep working, with no restart.
 
-A task VM host on the build list, such as Beast, gets the container branch beside its task side. The two sides share nothing they change: the Instance side has its own project `orbit-instances`, bridge `orbitinst0`, pool `orbit-instances` and `orbit:instances-*` input rules, and touches no task VM, task container or CI place. The task side keeps the ZFS ARC: on a task VM host the Instance side writes no cap. Only a task VM's own Node gets no branch.
+A Node on the build list gets the Instance project `orbit-instances`, bridge `orbitinst0`, pool `orbit-instances` and `orbit:instances-*` input rules. Its CI project and places stay separate. The Instance host setup applies the Node's ZFS ARC budget.
 
 Before it changes anything, the converge refuses a bridge range that another interface of the Node holds, with `instance.host_unavailable`. The Gateway only knows the bridges it records, not one an operator made, such as a CI bridge.
 
@@ -134,7 +135,7 @@ T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address. 
 
 ### The build list
 
-Until every `app-dev` Node switches, only the Nodes on the build list run container Instances. The list is the Gateway setting `instances.container_nodes`, a JSON list of Node ids in `ORBIT_INSTANCES_CONTAINER_NODES`, such as `[12]`. It is empty by default. A malformed list fails with `instance.container_nodes_invalid` (500), so a typo puts no Node on it. The list exists for the build only; the switch removes it ([plan](/solutions/development-container-runtime#rules-for-every-pr)). On the nested Gateway of an Instance fleet, which has the fleet marker, the fleet's own `app-dev` Node is on the list too: the [Instance host in the fleet](#instance-host-in-the-fleet).
+The Gateway setting `instances.container_nodes` controls container host preparation and first-default creation: `ORBIT_INSTANCES_CONTAINER_NODES` is a JSON list of Node ids, such as `[12]`, empty by default. A malformed list fails with `instance.container_nodes_invalid` (500). A clone of an existing container default follows that default's runtime and placement rather than this first-default gate. Removing the build list belongs to the [universal container switch](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance), not a delivered behavior. On the nested Gateway of an Instance fleet, which has the fleet marker, the fleet's own `app-dev` Node is included too: the [Instance host in the fleet](#instance-host-in-the-fleet).
 
 The Node must meet the host requirements of ADR 0250: current kernel, SCTP off and no secrets. A Node that still has checkout Instances keeps them until [migration](#migrate-a-checkout-instance) moves them into containers. The `app-prod` role follows the same model in step 10 ([Production Instances](#production-instances)).
 
@@ -944,7 +945,7 @@ A clone holds no app of its default, so its names are its [own site](#the-own-si
 
 ## Egress and DNS
 
-This part is built. A container has full outbound access to the public internet, and all of it goes through one forward proxy on its Node. The proxy is the one place where a rule can narrow that access later, with no change to the containers. Step 2c of the [ADR 0250 rollout](/solutions/agent-runtime-and-manual-mode) decided it. The `app-dev` converge of a [prepared Node](#prepare-a-node) installs it, in `tasks/instance-egress.yml`.
+This part is built. A container has full outbound access to the public internet, and all of it goes through one forward proxy on its Node. The proxy is the one place where a rule can narrow that access later, with no change to the containers. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#nested-fleet) records the decision. The `app-dev` converge of a [prepared Node](#prepare-a-node) installs it, in `tasks/instance-egress.yml`.
 
 ### The proxy
 
@@ -1914,7 +1915,7 @@ What is built:
 - Conn creates the clone through the Conn layer, on the default's Node.
 - Conn keeps each thread start on the device until its first message is sent. A reload resumes it.
 - Conn pairs once: it follows the pairing's Operation to the end.
-- Conn shows a server whose container is stopped as asleep. It does not wake it yet: the wake is PR 13 of the [build plan](/solutions/development-container-runtime).
+- Conn shows a server whose container is stopped as asleep. It does not wake it yet; this remains in [ADR 0250's acceptance](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance).
 - The desktop app starts these threads. The phone does not yet.
 
 The agents use their own subagents only. MCP servers come from the project's own files: `.mcp.json` for Claude Code and the project's Codex configuration.
@@ -1941,7 +1942,7 @@ A task keeps its Instance awake: [Sleep and wake](#sleep-and-wake) never stops a
 
 ## Swamp drives T3
 
-Swamp drives a container's T3 server through T3's own CLI, run in the container. Nothing of Orbit runs in the container for it, and Orbit forks neither T3 nor Conn. This section is the contract of the `t3` task driver, which replaces the [`pi` driver](/reference/tasks#drivers) for tasks in Instance containers. The `pi` driver stays for task VMs until they go.
+Swamp drives a container's T3 server through T3's own CLI, run in the container. Nothing of Orbit runs in the container for it, and Orbit forks neither T3 nor Conn. This section is the contract of the `t3` task driver. The [`pi` driver](/reference/tasks#drivers) and task VMs are removed.
 
 ### Reach and authentication
 
@@ -2117,7 +2118,7 @@ When the turn ends, Swamp reads the thread's activity since the turn began with 
 
 Swamp keeps its own Git evidence before and after a turn, with a temporary index in the workspace. It does not use T3's diff calls; Conn shows them to a user.
 
-The plan's [decisions](/solutions/development-container-runtime#decided) record the choices behind this contract.
+[ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) records the choices behind this contract; [remaining acceptance](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance) distinguishes unfinished work from delivered behavior.
 
 Migration checks executable availability before downtime and requires moved running Processes to settle before cutover. The [`instance:migrate` contract](/cli/instance/migrate) defines the runtime command mapping, readiness window and recovery.
 
@@ -2486,7 +2487,7 @@ A refresh with no change keeps the host and adds no time. The host is built only
 
 The converge workflow accepts only 900 to 1,800 for `roles_seconds` and refuses any other value before the playbook. The refresh waits up to 1,800 s for that converge while the record holds no `host` yet. That converge runs last, after the other Nodes' converges have ended: the hub's reservation refuses a converge with roles beside any other converge. Every other converge keeps 900 s for each phase and for the refresh's wait.
 
-**Memory.** In an Instance fleet the nested containers get 4 GiB (`nested-gateway`), 5 GiB (`nested-app-dev`) and 2 GiB (`nested-app-prod`), 11 GiB of the Instance container's 12 GiB. Each gets the same size as swap. These are owned fleet rules (`limits.memory` and `limits.memory.swap`), so the next refresh writes them with the fleet stopped, before it takes `base`; copies made from the new seed have them. On 2454, `nested-app-prod` used 124 MiB and `nested-gateway` 1.64 GiB. `nested-app-dev` with its Incus and no Instance used 178 MiB. A task VM's fleet keeps 4, 3 and 3 GiB.
+**Memory.** In an Instance fleet the nested containers get 4 GiB (`nested-gateway`), 5 GiB (`nested-app-dev`) and 2 GiB (`nested-app-prod`), 11 GiB of the Instance container's 12 GiB. Each gets the same size as swap. These are owned fleet rules (`limits.memory` and `limits.memory.swap`), so the next refresh writes them with the fleet stopped, before it takes `base`; copies made from the new seed have them. On 2454, `nested-app-prod` used 124 MiB and `nested-gateway` 1.64 GiB. `nested-app-dev` with its Incus and no Instance used 178 MiB.
 
 **The fast wake stays off.** The [power helper](/reference/prepared-restore#the-power-helper) reads `/etc/orbit/instance-fleet-node` and records no plan, with `placement_unproven`, for every Instance on that Node, as for a nested-fleet Instance ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)). Sleep and wake use the normal path.
 
@@ -2952,7 +2953,7 @@ After a restore, the run starts the restored fleet and waits for readiness. If t
 | An update, not a rebuild | The image variant's tools change only with a new image |
 | The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
 
-It replaces the release trigger and the daily run of the task VM refresh for the nested-fleet path; that refresh and its kind `task_vm.image_refresh` are removed; [Old paths](/reference/old-paths) says when those go. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
+It replaces the removed task VM refresh and its kind `task_vm.image_refresh`. [Old paths](/reference/old-paths) tracks the remaining fleet residue, not another refresh runtime. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
 
 What stops during a refresh:
 
@@ -3227,7 +3228,7 @@ The fleet step never reads, prints or copies the Club key file. Without the file
 
 ## Git in and out
 
-A container holds no GitHub credentials. It can read public repositories through the [egress proxy](#egress-and-dns), but it cannot push. Orbit moves the Instance's branches from the Node, as it does for [task VMs](/reference/compute-drivers#git-on-a-task-vm): it fetches with a minted read token and pushes the branch into the container's repository as a Git bundle.
+A container holds no GitHub credentials. It can read public repositories through the [egress proxy](#egress-and-dns), but it cannot push. Orbit moves the Instance's branches from the Node: it fetches with a minted read token and pushes the branch into the container's repository as a Git bundle.
 
 The bundle holds only what the workspace lacks: its prerequisite is the newest commit the branch shares with the workspace's HEAD, or the tip's parent when the workspace already holds the tip. A workspace whose HEAD the mirror does not hold, or that has none, gets the whole branch. On the Orbit Project the whole branch was 89 MB and took 4 s to bundle; a release's bundle is a few kilobytes. Publishing a branch is an Orbit operation: Swamp reads the branch out of the container and pushes it with a minted write token. The tokens never enter the container.
 
@@ -3238,7 +3239,7 @@ Step 10 of ADR 0250 moves production Instances into containers on `app-prod` Nod
 - The `app-prod` role installs the container setup and the runtime folder, not PHP-FPM. It installs no agent folder.
 - A production container has only the user `orbit`: no T3, no agent and no model route.
 - A production container gets no `php-cli.ini`, so its PHP never loads PCOV ([ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov)).
-- FrankenPHP serves it once it has proved itself in development, by the criteria of the plan's [production gate](/solutions/development-container-runtime#production-gate).
+- FrankenPHP serves it once it has proved itself in development, by [ADR 0263's production gate](/decisions/0263-run-production-releases-in-hot-live-and-old-containers#production-gate).
 - Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
 - Planned ([ADR 0265](/decisions/0265-sleep-idle-production-containers)): an idle live sleeps and wakes fully ready by the rule of [Sleep and wake](#sleep-and-wake). [Production containers](/reference/production-containers#sleep-and-wake) has the details.
 - Existing production checkouts are migrated, as development checkouts are.

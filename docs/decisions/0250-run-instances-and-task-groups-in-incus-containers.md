@@ -6,7 +6,7 @@ description: "In progress. Every Instance runs in an unprivileged Incus containe
 
 # ADR 0250: Run instances and task groups in Incus containers
 
-Every Instance runs in an unprivileged Incus container directly on its Node. A development Instance's container holds a T3 server, its agent engine. A task group runs in such an Instance container: a clone of the Project's default Instance, or an existing Instance that the task attaches to. There is one container kind. Only the driver differs: a user drives the T3 threads in development, and Swamp drives the same T3 for a task. Work that needs its own fleet, such as Orbit's command proofs, turns on a nested fleet: Incus containers nested inside an Instance container. There is no task VM, no separate task container, no Project VM and no VM per Node. All containers on a Node share that Node's kernel.
+The target is one unprivileged Incus container runtime for every new Instance. Development and task copies use a server inside their container; proofs use Incus containers nested inside a task copy. All containers on a Node share that Node's kernel. Task VMs and Pi are removed. Universal Instance admission and production containers are not yet delivered: the [build list](/reference/development-containers#the-build-list) still gates first-default creation and host preparation. The decision below states the target; the reference owns delivered behavior. ADRs 0258 and 0268 amend server selection and workspace ownership.
 
 ## Status
 
@@ -39,7 +39,7 @@ A task needs what a development Instance has: the Project's code with its depend
 
 Spikes on 2026-11-09 proved the parts:
 
-- nested Incus with Docker inside an unprivileged container, on Beast and on UpCloud ([report](/solutions/development-container-runtime#upcloud-report));
+- nested Incus with Docker inside an unprivileged container, on Beast and on UpCloud ([lessons](/solutions/development-container-runtime#nest-only-the-fleet-that-the-work-needs));
 - a stock T3 server inside an unprivileged container, with Claude Code and Codex turns through the AI router and only a placeholder key inside;
 - the same container split into two users: the agent and its shell commands as `agent`, the app as `orbit`.
 
@@ -110,7 +110,7 @@ The default Instance holds the fleet's ready copies, with each nested container 
 
 ### Agent engine in containers
 
-A T3 server runs inside each Instance container except a default Instance and production ones, and is its agent engine. It replaces Pi Durable there. Swamp drives it through T3's own `/mcp` endpoint and WebSocket API, so no adapter runs in the container and Orbit forks neither T3 nor Conn. The Pi server stays only on today's task VMs, until step 9 removes them.
+A T3 server runs inside each Instance container except a default Instance and production ones, and is its agent engine. Swamp drives it through T3's own `/mcp` endpoint and WebSocket API, so no adapter runs in the container and Orbit forks neither T3 nor Conn. The Pi server and task VMs are removed. [ADR 0258](/decisions/0258-choose-the-container-server-per-project) adds per-Project server selection.
 
 - **Previews.** A preview URL reaches only an Orbit Process, which runs as `orbit`. An agent may start its own development servers as `agent` and view them in T3's browser. Orbit does not publish them, and does not restrict them.
 - **Model access.** A container holds only a placeholder key. The [forwarder](/reference/ai-router#container-model-forwarder) on its Node passes model calls to the model router guard, which swaps in the real key. The real key stays off the Node.
@@ -129,7 +129,7 @@ An update installs a new version and flips the link. Orbit then restarts T3, or 
 
 ### PHP
 
-FrankenPHP serves every container Instance, in classic mode, as an Orbit Process: in development now, and in production once it has proved itself in development, by the criteria of the plan's production gate. The command line runs a static PHP CLI from the same static build, with the same version and extensions. `frankenphp php-cli` behind a `php` shim does not fit yet: it refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run without a script. [ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov) adds PCOV to the PHP CLI only, from the same build.
+FrankenPHP serves every container Instance, in classic mode, as an Orbit Process: in development now, and in production once it has proved itself in development, by the [production gate](/decisions/0263-run-production-releases-in-hot-live-and-old-containers#production-gate). The command line runs a static PHP CLI from the same static build, with the same version and extensions. `frankenphp php-cli` behind a `php` shim does not fit yet: it refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run without a script. [ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov) adds PCOV to the PHP CLI only, from the same build.
 
 Each Project type has one environment note: a web app with previews, a monorepo, or a package. In the agent's home, `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` link to the note of the Instance's Project type. This is a narrow exception to "the runtime injects no prompts": a note states facts about the environment only, never instructions about the work.
 
@@ -161,18 +161,19 @@ The Node's agent reads per-container metrics from Incus (`/1.0/metrics`) and per
 
 ### Build order
 
-Task work is the critical path. The Swamp migration waits until step 6 passes, and the CI proof becomes a required check again then.
+Development defaults, clones, task copies and nested-fleet proofs are built. Task VM start, image refresh and Pi are removed, not a parallel runtime awaiting a parity switch. [Instance containers](/reference/development-containers) and [Tasks](/reference/tasks) own current admission and limitations. Historical step 10 is the production work now owned by [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers).
 
-1. **This ADR.**
-2. **Host hardening** on Beast and Shark: current kernels, SCTP off, an explicit container egress model with names resolved at the proxy, and secrets moved off.
-3. **Instance containers** on the Nodes of a build list: Node preparation with the shared folders, the default Instance, clones with T3, and destroy. [Instance containers](/reference/development-containers) specifies them, and [Container runtime](/solutions/development-container-runtime) orders the PRs.
-4. **Tasks in Instance containers.** A task starts in a clone or attaches to an Instance, and Swamp drives the container's T3.
-5. **Nested fleet** as an optional feature, and command proofs in an Orbit Instance container.
-6. **Parity gate.** Orbit's command proof cases pass in an Orbit Instance container with the nested fleet on, with the same verdicts as on task VMs, and a real task group runs there end to end. [The plan](/solutions/development-container-runtime#parity-gate) defines it.
-7. **Switch task work** on Beast, then Shark, in a window with no proofs or merges in flight. Running task VMs finish first.
-8. **Switch development:** sleep and wake, threads from Conn, the migration of checkout Instances, and every `app-dev` Node.
-9. **Remove** the task VM runtime, its Pi server, and the task container host settings that the first plan of this ADR added.
-10. **Production Instances** in containers on every `app-prod` Node, with release containers, after development containers work. [Container runtime](/solutions/development-container-runtime#production-instances) orders its PRs.
+### Remaining acceptance
+
+These are open delivery gates, not evidence that this cleanup performed a rollout:
+
+- **End-to-end container work.** Prove create, independent database/file changes, a real provider turn, check, publication and disposal through supported commands. Include a local PostgreSQL copy, failed restore, interrupted operation and preservation of unrelated resources. Proof cases run on the nested fleet; do not revive task VMs to compare runtimes. Replaying proofs on the merge base remains [unfinished](/reference/old-paths#the-task-vm-proof-run).
+- **Host policy.** Inventory every agent host for current kernels, SCTP blocking, egress policy and absence of unrelated secrets. Verify nested Incus, Docker, WireGuard, seed restore and cleanup on each supported host/provider path; a small UpCloud spike alone is not provider support.
+- **Universal container admission.** Move every existing checkout through the supported migration before deleting its runtime. End the first-default build list, prepare every Instance host, and remove checkout-only setup/register/seed paths with their consumers. Verify create and production candidate handling without checkout admission; do not claim production cloning is container-aware before ADR 0263 delivers it.
+- **Client and activity lifecycle.** Verify paired Instance identity, files, terminals, toolbar, real turns and backend restart. Conn wake remains pending even though the sleep/wake commands exist. Check URL wake, active-turn/build protection, session renewal and idle policy on the delivered implementation. Attaching a task to an arbitrary Instance remains a design goal: current tasks own copies only.
+- **Production.** Pass [ADR 0263's production gate](/decisions/0263-run-production-releases-in-hot-live-and-old-containers#production-gate), then its build subtasks and operational acceptance, including data, assets, workers, schedules and recovery. No production VM fallback is part of this decision.
+
+Keep deployment-dependent cleanup in [Old paths](/reference/old-paths) until its fleet evidence exists. The [container lessons](/solutions/development-container-runtime) retain spike findings, not another build plan.
 
 ## Rejected alternatives
 
@@ -211,5 +212,5 @@ Task work is the critical path. The Swamp migration waits until step 6 passes, a
 
 - Components: apps/gateway, apps/cli, apps/docs
 - ADRs: replaces the outer task VM boundary of task groups, the separate task container runtime, and the Project VM of the development container plan
-- Detail: [Instance containers](/reference/development-containers) and its plan [Container runtime](/solutions/development-container-runtime), [Conn layer](/reference/conn), [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation), [Compute drivers](/reference/compute-drivers), [Tasks](/reference/tasks), [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop), [Node provisioning](/reference/node-provisioning), [Metrics](/reference/metrics), and the plan in [Container instances and releases](/solutions/container-instances-and-releases). The change also touches `swamp/` (the task provision, turn, check, publish and release workflows, the proof fleet setup and the Instance container workflows) and the Node agent (container and Process metrics).
-- Verify: Orbit's command proof cases in an Orbit Instance container with the nested fleet match their task VM results on Beast, and on an UpCloud host before it switches; a real task group in a clone starts, turns through T3 with Codex and Claude, checks, publishes and releases; a clone of the default Instance with its database boots in a container on the Node, its T3 server answers a Claude and a Codex turn, and `orbit` reaches neither the agent binaries nor the model route; a checkout Instance migrates with its code and database; kernel, SCTP and secret checks pass on every agent Node
+- Detail: [Instance containers](/reference/development-containers), [container lessons](/solutions/development-container-runtime), [Conn layer](/reference/conn), [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation), [Compute drivers](/reference/compute-drivers), [Tasks](/reference/tasks), [Old paths](/reference/old-paths), [Node provisioning](/reference/node-provisioning) and [Metrics](/reference/metrics). The change also touches the task, proof and Instance container workflows in `swamp/` and the Node agent's container and Process metrics.
+- Verify: the [remaining acceptance](#remaining-acceptance) through supported container commands and nested-fleet proofs
