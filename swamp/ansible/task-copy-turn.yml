@@ -71,12 +71,18 @@
       ansible.builtin.command:
         argv: "{{ copy_exec + ['/usr/bin/true'] }}"
       changed_when: false
-    # A new thread's model must be one the copy's T3 lists for the instance's driver: stock T3 checks no model at `thread start`, so
-    # a wrong one would fail only inside the run. `settings.json` names the driver; T3's cached `model-manifest.json` lists its model
-    # slugs and aliases. Without the cache file (T3 then uses the catalog it ships) or the driver in it, nothing is checked. Before
-    # any checkout and launch, so a refusal leaves the copy as it was.
-    - name: Check the model against T3's catalog
+    # Stock T3 leaves model validation to the run. Check its cached catalog first, then ask the Codex provider when its catalog
+    # does not confirm the slug. Do this before any checkout or launch.
+    - name: Check the new thread's model
       when: intent.turn.thread == 'new'
+      vars:
+        catalog_match: >-
+          {{ model_entries is not none
+             and intent.turn.model in (model_entries | map(attribute='slug') | list
+                 + (model_entries | map(attribute='aliases', default=[]) | flatten)) }}
+        codex_model: "{{ model_driver | default(intent.turn.provider) == 'codex' }}"
+        probe_exit: "{{ model_probe.rc | default(none) }}"
+        model_accepted: "{{ catalog_match or (probe_exit == 0 if codex_model else model_entries is none) }}"
       block:
         - name: Read T3's provider instances
           ansible.builtin.command:
@@ -104,7 +110,7 @@
               {{ (model_catalog.stdout | from_json).get('manifest', {}).get('providers', {}).get(model_driver, {}).get('models')
                  if model_catalog.rc == 0 else none }}
           no_log: true
-        # A list with at least one entry that has a slug is a catalog; anything else is not one T3 wrote, and the check is skipped.
+        # A list with at least one entry that has a slug is a catalog.
         - name: Keep the entries with a slug
           ansible.builtin.set_fact:
             model_valid: >-
@@ -120,14 +126,23 @@
           ansible.builtin.set_fact:
             model_entries: null
       always:
+        - name: Confirm the uncatalogued Codex model with its provider
+          when: codex_model and not catalog_match
+          ansible.builtin.command:
+            argv: "{{ copy_exec + ['/usr/bin/timeout', '25', '/usr/bin/python3', '-', intent.turn.model] }}"
+            stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/task_copy_codex_model.py') }}"
+          register: model_probe
+          failed_when: false
+          changed_when: false
+          no_log: true
         - name: Write the model evidence
           ansible.builtin.copy:
             content: >-
               {{ {'model': intent.turn.model,
-                  'offered': none if model_entries | default(none) is none else model_entries | map(attribute='slug') | list,
-                  'accepted': model_entries | default(none) is none
-                    or intent.turn.model in (model_entries | map(attribute='slug') | list)
-                    + (model_entries | map(attribute='aliases', default=[]) | flatten)} | to_json }}
+                  'offered': none if model_entries is none else model_entries | map(attribute='slug') | list,
+                  'accepted': model_accepted}
+                  | combine({} if probe_exit is none else {'probe': {0: 'confirmed', 2: 'rejected'}.get(probe_exit, 'unavailable')})
+                  | to_json }}
             dest: "{{ run }}/model.json"
             mode: "0600"
           delegate_to: localhost
@@ -136,12 +151,10 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
-        - name: Require a model T3 offers
+        - name: Require an offered or provider-verified model
           ansible.builtin.assert:
-            that: >-
-              model_entries | default(none) is none
-              or intent.turn.model in (model_entries | map(attribute='slug') | list) + (model_entries | map(attribute='aliases', default=[]) | flatten)
-            fail_msg: tasks.copy_turn_model_unoffered
+            that: model_accepted
+            fail_msg: "{{ 'tasks.copy_turn_model_unverified' if codex_model and probe_exit != 2 else 'tasks.copy_turn_model_unoffered' }}"
     # An earlier turn that may still run is settled before any launch, by one rule: T3 lists its thread in no active state, or none of its title, and
     # a reviewer's detach is undone. Every such turn is over in Orbit (cut by its bound, cancelled or lost), so a thread T3 still shows
     # active has its run stopped first, by the helper's `stop`, once per thread; a run the stop ended, or a thread it found with no active
