@@ -22,7 +22,7 @@ Every `main` commit whose `Main delivery checks` passed gets a GitHub release on
 
 On a push or manual CI run on `main`, CI's `Start the CLI release` job dispatches `Orbit CLI Release`, `.github/workflows/orbit-cli-release.yml`, as soon as `Main delivery checks` passes. A test job that the change did not select, so CI skipped it, does not stop it. The release workflow confirms that the commit is on the first-parent history of `main` and that its latest trusted `ci.yml` main run has a successful `Main delivery checks` job on that exact SHA, then builds and publishes. A pull-request run never starts a release.
 
-The release workflow also starts when a `CI` run on `main` completes, from a push or a manual dispatch. It verifies delivery before publication: failed selected fixtures fail delivery and block the release. A failed fixture report does not invalidate successful delivery. Runs for the same commit run in sequence. A later run checks the existing release and changes nothing when its commit and assets match. The release appears a few minutes after `Main delivery checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
+CI's dispatch is the only automatic release trigger; CI completion starts no second release run. Manual `workflow_dispatch` remains available for [backfill](#publish-a-missed-commit). Failed selected fixtures fail delivery and block the release. A failed fixture report does not invalidate successful delivery. Runs for the same commit run in sequence. A repeated dispatch checks the existing release and changes nothing when its commit and assets match. The release appears a few minutes after `Main delivery checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -68,7 +68,7 @@ The Linux and macOS agent jobs cache Cargo downloads and `apps/agent/target`. Ca
 
 The publish job signs the release with the workflow's own identity. `actions/attest-build-provenance` takes the job's OIDC token, gets a short-lived certificate from Sigstore's public Fulcio CA, and records the signature in Sigstore's public Rekor log. The job needs `id-token: write` and `attestations: write`, and no secret. It signs one in-toto statement with SLSA provenance v1. Its subjects are the files above, each with its SHA-256 digest. The job adds the Sigstore bundle as `provenance.sigstore.json` to the same `gh release create` call, so the release appears with it.
 
-The certificate names the workflow file and its ref, `orbit-cli-release.yml@refs/heads/main`. A `workflow_run` after CI and a `workflow_dispatch` backfill both run the workflow on `refs/heads/main`, so both sign with that identity. No other workflow or branch can produce it.
+The certificate names the workflow file and its ref, `orbit-cli-release.yml@refs/heads/main`. CI's automatic dispatch and a manual backfill both use `workflow_dispatch` on `refs/heads/main`, so both sign with that identity. No other workflow or branch can produce it.
 
 The Gateway verifies the bundle offline before it installs an agent or names a CLI digest ([Release provenance](/reference/gateway-recovery#release-provenance)). To check a download by hand with the GitHub CLI, verify `SHA256SUMS` and then check each binary against it:
 

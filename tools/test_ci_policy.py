@@ -63,6 +63,8 @@ class RequiredGateTest(unittest.TestCase):
         self.assertTrue(skippable, 'the test assumes job-level skips in Required needs; update it if they are gone')
         self.assertIn('      actions: write\n', block)
         self.assertIn('gh workflow run orbit-cli-release.yml --repo "$GITHUB_REPOSITORY" --ref main -f commit="$GITHUB_SHA"', block)
+        self.assertEqual(caller.count('gh workflow run orbit-cli-release.yml'), 1,
+                         'main delivery must dispatch the CLI release only once')
 
     def test_agent_lock_changes_reuse_cache_only_with_the_same_toolchain_and_platform(self):
         import re
