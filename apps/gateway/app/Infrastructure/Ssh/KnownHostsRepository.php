@@ -26,9 +26,9 @@ final readonly class KnownHostsRepository implements KnownHostsStore
         return $this->path;
     }
 
-    public function put(string $host, int $port, HostKey $key): void
+    public function put(string $host, int $port, HostKey $key): bool
     {
-        $this->update($host, $port, $key);
+        return $this->update($host, $port, $key);
     }
 
     public function remove(string $host, int $port): void
@@ -36,7 +36,7 @@ final readonly class KnownHostsRepository implements KnownHostsStore
         $this->update($host, $port, null);
     }
 
-    private function update(string $host, int $port, ?HostKey $key): void
+    private function update(string $host, int $port, ?HostKey $key): bool
     {
         if ($host === '' || preg_match('/\s/', $host) === 1) {
             throw new InvalidArgumentException('SSH host names cannot contain whitespace.');
@@ -57,7 +57,7 @@ final readonly class KnownHostsRepository implements KnownHostsStore
         $lock = $this->acquireLock();
 
         try {
-            $this->replace($host, $port, $key);
+            return $this->replace($host, $port, $key);
         } finally {
             $this->releaseLock($lock);
         }
@@ -120,11 +120,19 @@ final readonly class KnownHostsRepository implements KnownHostsStore
         }
     }
 
-    private function replace(string $host, int $port, ?HostKey $key): void
+    private function replace(string $host, int $port, ?HostKey $key): bool
     {
         $directory = dirname($this->path);
         $hostLabel = $port === 22 ? $host : "[{$host}]:{$port}";
         $lines = $this->lines();
+        $existing = array_values(array_filter(
+            $lines,
+            static fn (string $line): bool => str_starts_with($line, $hostLabel.' '),
+        ));
+        $wanted = $key === null ? [] : ["{$hostLabel} {$key->type} {$key->value}"];
+        if ($existing === $wanted) {
+            return false;
+        }
         $lines = array_values(array_filter(
             $lines,
             static fn (string $line): bool => ! str_starts_with($line, $hostLabel.' '),
@@ -167,6 +175,8 @@ final readonly class KnownHostsRepository implements KnownHostsStore
                 unlink($candidatePath);
             }
         }
+
+        return true;
     }
 
     private function monotonicNanoseconds(): int

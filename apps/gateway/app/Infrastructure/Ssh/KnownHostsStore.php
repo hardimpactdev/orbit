@@ -8,5 +8,6 @@ interface KnownHostsStore
 {
     public function path(): string;
 
-    public function put(string $host, int $port, HostKey $key): void;
+    /** Return whether the pinned entry changed. */
+    public function put(string $host, int $port, HostKey $key): bool;
 }
