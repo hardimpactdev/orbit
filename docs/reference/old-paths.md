@@ -67,7 +67,7 @@ The guest agent runner and its Incus transport are removed. Node transports rema
 
 ### The unreachable Swamp VM paths
 
-Task check, publish and sync have no VM branch. The uncalled `operation-task-sync` workflow, the eight `task-check-*` VM children, their argv builders and the task VM base-build graph (`task-vm-host.yml`, `task-vm-role.yml` and their exclusive tasks) are removed. Node convergence keeps the shared package tasks as `node-converge-apt.yml`, `node-converge-apt-config.yml`, `node-converge-javascript.yml` and `node-converge-deno.yml`. The [merge-base proof replay](#the-task-vm-proof-run) chain stays, with `task-vm-fleet-wait.yml` and `task-vm-nested-wait.yml`.
+Task check, publish and sync have no VM branch. The uncalled `operation-task-sync` workflow, the eight `task-check-*` VM children, their argv builders and the task VM base-build graph (`task-vm-host.yml`, `task-vm-role.yml` and their exclusive tasks) are removed. Node convergence keeps the shared package tasks as `node-converge-apt.yml`, `node-converge-apt-config.yml`, `node-converge-javascript.yml` and `node-converge-deno.yml`. The chain that replays the [merge-base proof](#the-task-vm-proof-run) stays. It keeps `task-vm-fleet-wait.yml` and `task-vm-nested-wait.yml`.
 
 ## Off in the live fleet
 
