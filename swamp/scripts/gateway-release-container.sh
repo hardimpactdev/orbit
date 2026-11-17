@@ -160,10 +160,12 @@ case "$action" in
       git -c safe.directory="$mirror" -C "$mirror" merge-base --is-ancestor "$current" "$sha" || fail "$sha does not descend from live"
     fi
     ctl wake gateway "$operation" >&2
-    # Unpack a clean tree each time. Composer's download cache stays outside the checkout.
+    # The candidate owns its sealed checkout as root. Trust only that path for fleet history reads as orbit.
+    enter "$prep" git config --system --fixed-value --replace-all safe.directory "$checkout" "$checkout"
+    # Build in a fresh checkout. Composer's download cache stays outside it.
     user "$prep" sh -eu -c 'cd /home/orbit; rm -rf .gateway-next; mkdir -m 0700 .gateway-next'
-    git -c safe.directory="$mirror" -C "$mirror" archive --format=tar "$sha" |
-      user "$prep" tar --no-same-owner -xf - -C /home/orbit/.gateway-next
+    bash <(src swamp/scripts/gateway-release-checkout.sh) "$mirror" "$sha" "$root/.gateway-next" \
+      "${incus_cli[@]}" exec "$prep" -- runuser -u orbit --
     user "$prep" sh -eu -c '
       cd /home/orbit
       test ! -L orbit

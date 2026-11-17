@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from importlib.machinery import SourceFileLoader
@@ -90,6 +91,46 @@ class BootstrapTest(unittest.TestCase):
                 guest.main({"uid": 1000, "gid": 1000})
             attach.assert_not_called()
             incus.assert_not_called()
+
+    def test_release_checkout_keeps_only_admitted_history_for_cold_fleet_cli_resolution(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mirror, release = root / "source", root / "release"
+            mirror.mkdir()
+            release.mkdir()
+
+            def git(directory, *args):
+                return subprocess.check_output(["git", "-C", directory, *args], text=True).strip()
+
+            git(mirror, "init", "-q")
+            git(mirror, "config", "user.name", "Fixture")
+            git(mirror, "config", "user.email", "fixture@example.invalid")
+            git(mirror, "remote", "add", "origin", "https://fixture.invalid/private-origin")
+            git(mirror, "commit", "-qm", "parent", "--allow-empty")
+            parent = git(mirror, "rev-parse", "HEAD")
+            (mirror / "README").write_text("release")
+            git(mirror, "add", "README")
+            git(mirror, "commit", "-qm", "release")
+            commit = git(mirror, "rev-parse", "HEAD")
+            git(mirror, "checkout", "-qb", "unrelated", parent)
+            (mirror / "private-ref").write_text("outside the admitted commit")
+            git(mirror, "add", "private-ref")
+            git(mirror, "commit", "-qm", "unrelated")
+            other = git(mirror, "rev-parse", "HEAD")
+            excluded_blob = git(mirror, "rev-parse", "HEAD:private-ref")
+            git(mirror, "gc", "--quiet")
+
+            script = ROOT / "swamp/scripts/gateway-release-checkout.sh"
+            subprocess.run(["bash", script, mirror, commit, release], check=True)
+            self.assertEqual((release / "README").read_text(), "release")
+            self.assertEqual(git(release, "rev-parse", "HEAD"), commit)
+            self.assertEqual(git(release, "rev-list", "--count", commit), "2")
+            self.assertEqual(git(release, "rev-list", "--first-parent", commit).splitlines(), [commit, parent])
+            git(release, "diff", "--quiet", parent, commit, "--", "apps/cli")
+            self.assertEqual(git(release, "remote"), "")
+            self.assertEqual(git(release, "for-each-ref"), "")
+            for obj in [other, excluded_blob]:
+                self.assertNotEqual(subprocess.run(["git", "-C", release, "cat-file", "-e", obj]).returncode, 0)
 
     def test_env_projection_tracks_atomic_edits_without_exposing_the_bare_repo(self):
         with tempfile.TemporaryDirectory() as root:
