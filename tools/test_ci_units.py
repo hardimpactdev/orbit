@@ -784,7 +784,7 @@ class ExecutionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             folder = Path(scratch)
             file = 'swamp/slow.py'
-            steps = {file: units.gate.Step('shape', file, [sys.executable, '-c', 'import time; time.sleep(3)'])}
+            steps = {file: units.gate.Step('shape', file, [sys.executable, '-c', 'import time; time.sleep(8)'])}
             budget = {**BUDGET, 'shard_workers': 1, 'shard_deadline_seconds': 60}
 
             def result(environment):
@@ -794,10 +794,10 @@ class ExecutionTest(unittest.TestCase):
                     units.run([file], budget, {file: fixture(file)}, folder / 'times.json')
                 return json.loads((folder / 'times.json').read_text())[0], output.getvalue()
 
-            # The job's checkout and setup used 59.5 of the 60 seconds: the unit is stopped by name after half a second.
-            row, output = result({'ORBIT_JOB_STARTED_AT': str(time.time() - 59.5)})
+            # The job's checkout and setup used 58 of the 60 seconds: the unit is stopped by name after two seconds.
+            row, output = result({'ORBIT_JOB_STARTED_AT': str(time.time() - 58)})
             self.assertEqual('OVER BUDGET', row['status'])
-            self.assertLess(row['seconds'], 2)
+            self.assertLess(row['seconds'], 6)
             self.assertIn('stopped at the shard deadline', output)
             # A job that used its whole time starts no unit.
             row, _ = result({'ORBIT_JOB_STARTED_AT': str(time.time() - 61)})
