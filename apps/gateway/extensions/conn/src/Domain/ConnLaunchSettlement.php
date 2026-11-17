@@ -12,6 +12,7 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationRecordCoordinator;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -59,7 +60,7 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
                         isset($launch->state['dispatch_committed_at']) => ConnLaunchStage::FirstMessage,
                         default => ConnLaunchStage::Workspace,
                     };
-                    $this->blocked($launch, $stage);
+                    $this->blocked($launch, $stage, $error instanceof ResourceOperationException ? $error->errorCode : null);
                 }
             }
         }
@@ -206,6 +207,10 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
         $probe = ConnLaunchNativeWork::attempt($launch, 'launch_inspect_operation_id');
         if ($probe !== null && (! $this->nativeCancellation->settled($probe) || $probe->finished_at === null
             || $probe->finished_at->isAfter(now()->subSeconds(120)))) {
+            if ($probe->status->terminal() && ! $this->nativeCancellation->settled($probe)) {
+                $this->blocked($launch, ConnLaunchStage::Cleanup, $probe->error_code);
+            }
+
             // A cut remote process can use its 60-second OS bound, then its one-minute T3 session must have expired.
             return;
         }
@@ -224,6 +229,7 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
             if (! $this->nativeCancellation->settled($operation)) {
                 if ($operation->status->terminal()) {
                     $this->nativeCancellation->request($operation);
+                    $this->blocked($launch, ConnLaunchStage::Cleanup, $operation->error_code);
                 } elseif ($operation->status === OperationStatus::Queued && $operation->attempts === 0
                     && $operation->cancel_requested_at === null) {
                     $this->cancel->execute($operation);

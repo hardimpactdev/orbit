@@ -324,6 +324,10 @@ final readonly class ConnLaunchState
             $workspace = $stage === ConnLaunchStage::Workspace ? $this->snapshot->workspaceStage($launch) : null;
             $state = self::stage($launch->state ?? [], $stage, 'failed', now(), $code);
             $errorCode = Arr::get($state, 'launch_stages.'.$stage->value.'.error.code');
+            if ($pending === null && $stage !== ConnLaunchStage::Workspace && $launch->error_code === $errorCode
+                && Arr::get($launch->state ?? [], 'launch_stages.'.$stage->value.'.status') === 'failed') {
+                return;
+            }
             if ($workspace !== null && $workspace['status'] === 'succeeded') {
                 Arr::set($state, 'launch_stages.'.$stage->value, $workspace);
             }

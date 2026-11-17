@@ -57,6 +57,18 @@ enum ConnLaunchStage: string
             return ['code' => $code, 'detail' => 'An application process did not become active.'];
         }
 
+        if ($this === self::Cleanup) {
+            $detail = match ($code) {
+                'operation.target_busy', 'instance.lifecycle_busy' => 'The Instance still has lifecycle work to settle.',
+                'instance.unsaved_work' => 'The Instance has work that teardown must preserve.',
+                'swamp.start_uncertain' => 'Swamp has not confirmed whether the owned work ended.',
+                default => null,
+            };
+            if ($detail !== null) {
+                return ['code' => $code, 'detail' => $detail];
+            }
+        }
+
         return match ($this) {
             self::Workspace => ['code' => 'conn.launch_workspace_failed', 'detail' => 'Workspace server preparation did not complete.'],
             self::FirstMessage => ['code' => 'conn.launch_first_message_unconfirmed', 'detail' => 'The original T3 server has not confirmed acceptance of the first message.'],
