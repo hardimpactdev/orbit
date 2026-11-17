@@ -493,7 +493,7 @@ Live on Beast, the refresh and the clone:
 Live on Beast, the fleet rules:
 
 5. In a clone, `docker run` works in both nested Nodes, no unit has `LoadCredential`, and the nested Swamp units are active.
-6. As `agent`, a reset restores `base` and Doctor is healthy; as `www-data`, the inner Incus and the fleet's subnets are refused.
+6. As `agent`, a reset restores `base` and Doctor is healthy; as `www-data` or `orbit`, the inner Incus and the fleet's subnets are refused.
 7. A nested Node fetches a public package through the proxy, and the proxy logs it with the Instance's bridge address.
 8. A container of another Project has no nesting and `user.max_user_namespaces=0`.
 9. The PR records each value that the reference marks "not measured".

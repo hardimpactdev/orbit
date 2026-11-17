@@ -554,7 +554,7 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 
 The app account of a container is the stock Debian `www-data`, uid and gid 33, with its stock home `/var/www`. FrankenPHP, every Process and Schedule run as it, with `HOME=/var/www`. `agent` (2750) is in the group `www-data`. The workspace is `agent:www-data`, group read and write, with setgid folders and the ACL `g:www-data:rwX` and its default. A normal container has no user `orbit`, no group `work` and no group with gid 1000.
 
-A nested-fleet container is different. Its inner guests are Nodes, and the ID map puts their `orbit` on the outer uid 1000 and gid 2760; the inner fleet writes the shared checkout as them. So a nested-fleet container keeps `orbit` (uid 1000), `work` (gid 2760) and all their files and ACLs, and its workspace stays `agent:work`. `agent` is in `www-data` there too. Its firewall drops the traffic of uid 33 and uid 1000 to the inner fleet's networks.
+A nested-fleet container is different. Its inner guests are Nodes, and the ID map puts their `orbit` on the outer uid 1000 and gid 2760; the inner fleet writes the shared checkout as them. So a nested-fleet container keeps `orbit` (uid 1000), `work` (gid 2760) and all their files and ACLs, and its workspace stays `agent:work`. `agent` is in `www-data` there too, and `www-data` is in `work`, so FrankenPHP, the Processes and the Node store step open the workspace. Its firewall drops the traffic of uid 33 and uid 1000 to the inner fleet's networks.
 
 The container intent says which ids the workspace uses (`workspace_ids`): its group for `.env` and the checkout bundle, and the uid whose entries root's [workspace pass](#who-runs-what) gives to `agent`. They are 33 and 33 in a normal container, and 2760 and 1000 in a nested-fleet one.
 
@@ -572,7 +572,7 @@ So an existing default moves at its next deployment, start or wake that boots, o
 
 The file runs these steps:
 
-1. In a nested-fleet container (the image's AppArmor marker `/etc/orbit/apparmor-off`), add `agent` to `www-data` and stop.
+1. In a nested-fleet container (the image's AppArmor marker `/etc/orbit/apparmor-off`), add `agent` to `www-data` and `www-data` to `work`, and stop.
 2. Read the old accounts, `agent`'s groups and the unit files that name `orbit`. A moved container stops here with `already www-data`.
 3. Stop those units and their timers.
 4. Refuse a process of uid 1000 that still runs, such as a stray shell. The file then starts the stopped units again and exits 3.
@@ -2244,7 +2244,7 @@ It is the normal image with these changes:
 | Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:100000000`. The inner Incus does not read them: see [The ID map size](#the-id-map-size) |
 | AppArmor marker | `/etc/orbit/apparmor-off` holds `N` |
 | `agent` | A member of the inner `incus-admin` group. Its passwordless sudo is the normal image's grant |
-| `www-data` | Neither the group nor sudo. The first rule of the firewall's output chain drops its traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24`. The other rules stay the same |
+| `orbit` (1000) and `www-data` (33) | Neither the group nor sudo; `www-data` is in `work`. The first output rule drops their traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24` |
 | Firewall reset | `destroy table inet orbit_agent_guard` instead of `flush ruleset`, also as the `ExecStop` of `nftables.service` |
 | Network wait | `systemd-networkd-wait-online.service.d/90-orbit-no-dns.conf`: eth0 routable, at most 30 s, no DNS |
 
@@ -2567,7 +2567,7 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 | Rule | Where | Why |
 | --- | --- | --- |
 | The workspace `/srv/workspace` is the disk device `checkout`, with `shift=false` | `nested-gateway`, `nested-app-dev` | An edit reaches them at once. A shifted mount fails two levels below the host, as the [shared folders](#instance-host-in-the-fleet) of `nested-app-dev`'s Instances do |
-| `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` in the inner Incus | All three nested containers | The workspace is `agent:www-data` (2750:2760) with files of `www-data` (1000), the guests' `orbit`. With only the 1000 line, nested root cannot resolve the state mounts. The outer container still has no `raw.*` key |
+| `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` in the inner Incus | All three nested containers | The workspace is `agent:work` (2750:2760) with files of `orbit` (1000). With only the `orbit` line, nested root cannot resolve the state mounts. The outer container still has no `raw.*` key |
 | The Club key folder device `club-key`: `/run/orbit-club` at `/home/orbit/.config/swamp/club`, `shift=false`, and the link `/home/orbit/.config/swamp/api-key` to `club/swamp-club-api-key` | `nested-gateway` | The nested Swamp reads the [Club key](#the-club-key-of-the-nested-gateway) that Orbit delivers to the outer container's `/run` |
 | A read-only disk device that shows `N` at `/sys/module/apparmor/parameters/enabled`, from `/etc/orbit/apparmor-off` | `nested-app-dev`, `nested-app-prod` | `docker run` fails without it: Docker's own profile cannot load two levels below the host |
 | `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` in the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service`, `orbit-swamp-worker@.service` and `orbit-gateway-horizon.service`, one `Environment=` line | `nested-gateway` | Swamp verifies a new Club key at Swamp Club, Horizon's jobs read Git, and the fleet reaches the internet only through the Node's [egress proxy](#egress-and-dns) |
@@ -2655,7 +2655,7 @@ Two users share the outer container, and only one of them reaches the fleet.
 
 `agent` drives the inner Incus as a member of its admin group. It restores `base`, runs commands in the nested containers and reads their journals. It has root in its own container through `sudo` with no password, as in every container. It is never root on the Node.
 
-`www-data` cannot use the inner Incus. A firewall rule by uid in the outer container drops its traffic to the fleet's bridge and WireGuard subnets, as the image does for the model route. The rule is needed because the nested Gateway trusts the source address. Without it, any user in the container would be the fleet's operator.
+`www-data` and `orbit` cannot use the inner Incus. A firewall rule by uid in the outer container drops the traffic of uid 33 and uid 1000 to the fleet's bridge and WireGuard subnets, as the image does for the model route. The rule is needed because the nested Gateway trusts the source address. Without it, any user in the container would be the fleet's operator.
 
 ### Club key and snapshots
 
@@ -3204,7 +3204,7 @@ The fleet rules:
 - The disk device `checkout` gives the workspace to all three nested containers with `shift=false`. An ID shift fails two levels below the host.
 - The disk device `club-key` gives the folder `/run/orbit-club` of the container to the nested Gateway at `/home/orbit/.config/swamp/club`, with `shift=false` and `required=false`.
 - In the nested Gateway, `/home/orbit/.config/swamp/api-key` links to `club/swamp-club-api-key`. `base` keeps the link.
-- `raw.idmap` of the inner Incus maps uid 1000, 2750 and gid 2760 by number into all three nested containers. The container's `www-data` is the nested `orbit`.
+- `raw.idmap` of the inner Incus maps `orbit` (1000), `agent` (2750) and the group `work` (2760) into all three nested containers. The nested `orbit` and the container's `orbit` own the workspace together.
 - The AppArmor-off device is on the nested `app-dev` and `app-prod`.
 - `boot.autostart=true` is on the three nested containers.
 - The egress proxy settings are `environment.*` keys on the three nested containers. The nested Gateway's Swamp, Horizon and PHP-FPM get them from their [fleet rule files](#fleet-rules).
@@ -3232,7 +3232,7 @@ The refresh waits in the same way until the state mounts of the nested Gateway a
 
 Every API call of the fleet step passes `--noproxy '*'`. The Instance container's environment sends every address but the egress proxy's own through that proxy, which cannot reach the tunnel; it answers `CONNECT tunnel failed, response 503`.
 
-A command that the fleet step runs as the app user in a nested container, the agent delivery and the migrate, runs with `runuser -u orbit`. That gives the guest's `orbit` its groups, among them `work` (gid 2760), which opens the checkout. The container names the same gid `www-data`. The guests are Nodes, so their app user keeps the name `orbit`. `incus exec --user 1000` gives only the user ID, with group 0.
+The container's app account `www-data` is in `work` too, so it opens the checkout beside them. A command that the fleet step runs as the app user in a nested container, the agent delivery and the migrate, runs with `runuser -u orbit`. That gives `orbit` its groups, among them `work`, which opens the checkout. The guests are Nodes, so their app user keeps the name `orbit`, and the container keeps `orbit` and `work` too. `incus exec --user 1000` gives only the user ID, with group 0.
 
 The fleet step never reads, prints or copies the Club key file. Without the file, the fleet starts and is ready; only Swamp in the nested Gateway stays down.
 
