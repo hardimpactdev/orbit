@@ -10,10 +10,11 @@ cases = [
   "pinned create: a merge a Node refused leaves the create ready and the address deferred to the completion, with no Route warning",
   "pinned create: a cancel while clone-route runs withdraws the half Route and stops the container",
   "pinned create: a later clone step that fails after the Route published fails the run, keeps the published address and stops the container",
+  "a clone waits for its admitted seed by curl's own retry, at most 120 s, and the copy runs after the wait in every case",
 ]
 file = "swamp/tests/instance_create_native_test.ts"
 self_hosted = true
-cost = 45 # 9 cases in 63-74 s locally on a loaded Beast; each case puts the real-size launch copy into a local vault
+cost = 47 # 9 cases in 63-74 s locally on a loaded Beast; each case puts the real-size launch copy into a local vault; the seed wait case adds 2 s
 inputs = [
   "swamp/ansible/instance_workspace_owner.py",
   "swamp/scripts/instance_clone_launch.py",

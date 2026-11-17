@@ -405,6 +405,8 @@ class CloneTest(unittest.TestCase):
             if transcript is not None:
                 transcript.append(output.getvalue())
             self.hosts = files.get("/etc/hosts")
+            moved = Path(folder + "/private/seed-commit")
+            self.seed_commit = moved.read_text() if moved.exists() else None
             self.hostname = (files.get("/etc/hostname"), files.get("kernel"))
             return calls, read, error.getvalue()
 
@@ -412,16 +414,38 @@ class CloneTest(unittest.TestCase):
         calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "other"}]})
         self.assertIn("instance.default_seed_missing", error)
         self.assertFalse(any("copy" in call for call in calls))
-        # A retake between its delete and its rename: the seed moved, and the same command takes the new one.
-        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "next-abc"}]})
-        self.assertIn("instance.default_seed_moved", error)
-        self.assertFalse(any("copy" in call for call in calls))
 
-    def test_a_replaced_seed_still_refuses_as_moved(self):
-        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "seed-def"}]})
-        self.assertIn("instance.default_seed_moved", error)
-        self.assertNotIn("instance.default_seed_missing", error)
-        self.assertFalse(any("copy" in call for call in calls))
+    def test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved(self):
+        # The wait step's bound passed between the retake's delete and its rename: the admitted seed's `next-` is still there.
+        for snapshots in ([{"name": "next-abc"}], [{"name": "next-abc"}, {"name": "seed-old", "created_at": "2026-11-16T03:00:00Z"}]):
+            calls, _, error = self.clone(overrides={"fixture_snapshots": snapshots})
+            self.assertIn("instance.default_seed_moved", error)
+            self.assertFalse(any("copy" in call for call in calls))
+            self.assertIsNone(self.seed_commit)
+
+    def test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit(self):
+        # The retake took a seed at another commit and deleted the admitted one: the copy takes the new seed and records its commit.
+        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "seed-def", "created_at": "2026-11-17T03:10:00Z"}]})
+        self.assertNotIn("instance.default_seed_moved", error)
+        self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-def")
+        self.assertEqual(self.seed_commit, "def\n")
+        # The admitted seed whole beside a retake that runs: it is copied, and nothing is recorded.
+        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "seed-abc"}, {"name": "next-abc"}]})
+        self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-abc")
+        self.assertIsNone(self.seed_commit)
+
+    def test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing(self):
+        calls, _, error = self.clone()
+        self.assertEqual(len([call for call in calls if call[:2] == ["incus", "query"] and "/instances/instance-1/snapshots?" in call[2]]), 1)
+        self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-abc")
+        self.assertIsNone(self.seed_commit)
+
+    def test_a_replaced_seed_copies_the_newest_seed(self):
+        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "seed-old", "created_at": "2026-11-16T03:00:00Z"},
+                                                                      {"name": "seed-def", "created_at": "2026-11-17T03:00:00Z"}]})
+        self.assertNotIn("instance.default_seed_moved", error)
+        self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-def")
+        self.assertEqual(self.seed_commit, "def\n")
 
     def test_schedule_cleanup_listing_error_refuses_before_clone_boot(self):
         calls, _, error = self.clone(overrides={"fixture_schedule_listing_error": True})
@@ -1929,7 +1953,7 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
              "merge": {"own": ["DB_DATABASE"], "drop": [], "guard": []}}
     EVIDENCE = {"error_code": "instance.container_process_inactive", "process_failure": {"unit": "orbit-process-1.service"}}
 
-    def phase(self, phase, fail=False, mirror=True, rev_parse=0, stdin=None):
+    def phase(self, phase, fail=False, mirror=True, rev_parse=0, stdin=None, moved_seed=None):
         account = pwd.getpwuid(os.getuid())
         calls = []
 
@@ -1967,11 +1991,14 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
         ), patch("sys.stdin", io.StringIO(stdin if stdin is not None else json.dumps(self.VALUE) if phase != "check" else "")), \
                 patch("subprocess.run", command), \
                 patch("os.chown"), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            # The container phase copied a newer seed after a retake and recorded its commit here.
+            if moved_seed is not None:
+                (Path(folder) / "seed-commit").write_text(moved_seed + "\n")
             try:
                 runpy.run_path(str(SCRIPT), run_name="__main__")
             except SystemExit as result:
                 code = result.code
-            left = list(Path(folder).iterdir())
+            left = [entry for entry in Path(folder).iterdir() if entry.name != "seed-commit"]
         guest = [(argv[argv.index("python3") + 3], json.loads(content) if content else content) for argv, content in calls if "python3" in argv]
         pushed = [argv[-1] for argv, _ in calls if "file" in argv and "push" in argv]
         self.assertNotIn("private", error.getvalue())
@@ -2010,6 +2037,13 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
                 self.assertEqual((code, guest), (1, []))
                 self.assertRegex(error, r"\Ainstance\.container_" + phase + r"_failed: command git exited 128 \(git /\S+ rev-parse "
                                  r"refs/heads/proof\^\{commit\}\):\nPRIVATE-STDERR\n\Z")
+
+    def test_a_branch_the_mirror_lacks_starts_at_the_commit_of_the_seed_that_the_copy_took(self):
+        # The copy waited for a retake and copied the new seed: the branch starts at that seed's commit, which its repository holds.
+        code, _, pushed, _, _ = self.phase("checkout", mirror=False, moved_seed="d" * 40)
+        self.assertEqual((code, pushed), (0, []))
+        intent = json.loads(next(argv for argv, _ in self.calls if "python3" in argv)[-1])
+        self.assertEqual(intent["expected_commit"], "d" * 40)
 
     def test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout(self):
         _, _, _, output, _ = self.phase("checkout")

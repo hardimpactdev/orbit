@@ -525,6 +525,8 @@ Operation show returns the same recorded `steps` as core Operation show, in reco
 
 Conn maps these stable container-clone step names to stage detail, in this order: `clone-container`, `clone-t3`, `clone-session-copy`, `clone-register`. Other steps can occur between them.
 
+Two other steps of the clone job can come before `clone-container`: `clone-ci-hold`, which only a proof copy runs, and `clone-seed-wait`, which every clone runs. `clone-seed-wait` waits for the default's seed during a retake, for at most 120 seconds; a normal copy passes it in about one second ([A retake keeps the seed](/reference/development-containers#a-retake-keeps-the-seed)). The Gateway reports both under their own names. A Conn build that does not know a step name shows no row for it, so the `Copy the container` row starts with `clone-container`, as before.
+
 `clone-container` stages the release scripts itself, so a create reports no `input` and no `clone-input` step. `clone-t3` runs the checkout (the branch, the checkout mark and `.env`) beside T3, then checks the sessions; `clone-session-copy` and `clone-register` always come after it. `clone-register` also builds the create's result, so a ready create's `finish` is skipped. Renaming or removing any of these four names is a breaking change for Conn.
 
 A clone's completion reports `clone-services` as its one Node step: it stages the release scripts, starts the services and checks the clone. It reports no `clone-input` and no `clone-check` step. A plain clone reports `input` and `cleanup` skipped; a completion that publishes the Route, or starts a nested fleet, runs them. Then `finish` and `clone-private-cleanup` side by side, and `accepted`.

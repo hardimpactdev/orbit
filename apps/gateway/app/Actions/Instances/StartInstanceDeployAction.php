@@ -21,6 +21,7 @@ use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
 use App\Domain\SourceControl\GitRepositoryIdentity;
@@ -121,7 +122,9 @@ final readonly class StartInstanceDeployAction
             $input = ['instance_id' => $instance->id, 'deployment' => $deployment,
                 'node_id' => $instance->node_id, 'platform' => $instance->node->platform, 'architecture' => $instance->node->architecture,
                 'run_budget_seconds' => 900 + array_sum(array_map(static fn (mixed $step): int => ValidatedData::integer(ValidatedData::object($step)['timeout_seconds']), $steps))
-                    + (isset($deployment['fleet']) ? NestedFleetIntent::RunSeconds : 0),
+                    + (isset($deployment['fleet']) ? NestedFleetIntent::RunSeconds : 0)
+                    // The proof default first waits for its seed hold (docs/reference/development-containers.md#the-seed-hold).
+                    + (is_array($deployment['container'] ?? null) && ($deployment['container']['seed_hold'] ?? false) === true ? ProofSeeds::HoldWaitSeconds : 0),
                 ...($commit === null ? [] : ['commit' => $commit])];
             if ($development) {
                 $input['development_runtime'] = app(DevelopmentDeployInput::class)->capture($instance, $deployment['needs_vp'] === true);

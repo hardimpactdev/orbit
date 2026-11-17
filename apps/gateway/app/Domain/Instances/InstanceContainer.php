@@ -305,6 +305,8 @@ final readonly class InstanceContainer
             ...(NestedFleetInnerVolume::intent($runtime) === null ? [] : ['inner_volume' => NestedFleetInnerVolume::intent($runtime)]),
             // The proof default's seed that a CI Node holds: its retake keeps it as the base of the next seed copy.
             ...(($base = app(ProofSeeds::class)->base($instance, $runtime)) === null ? [] : ['seed_base' => $base]),
+            // The proof default's deployment holds its seed before it retakes it, so no seed copy pushes it meanwhile.
+            ...(app(ProofSeeds::class)->sends($instance, $runtime) ? ['seed_hold' => true] : []),
             'acl' => $runtime->container_name, 'nic_acl' => InstanceHostIntent::NicAcl,
             'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
             'bridge_admitted_at' => $admittedAt,

@@ -238,7 +238,9 @@ def main():
                 return held.stdout.strip(), False
             if held.returncode != 1:
                 raise failure("instance.container_" + phase + "_failed: command git exited " + str(held.returncode), argv, held)
-        seed = container.get("clone", {}).get("seed_commit")
+        # The container phase records the commit of a newer seed that it copied after a retake; the copy holds that seed's files.
+        moved = folder / "seed-commit"
+        seed = moved.read_text().strip() if moved.is_file() else container.get("clone", {}).get("seed_commit")
         if not seed:
             raise RuntimeError("instance.clone_source_unavailable")
         return seed, True
@@ -635,12 +637,21 @@ def main():
                     ).stdout
                 )
                 names = [row["name"] for row in snapshots]
-                # A default with no seed at all refuses by its own code; a replaced seed means a deployment moved it, and a `next-`
-                # snapshot is a retake between its delete and its rename.
+                # The step before this one waited, by curl's own retry, up to 120 s for the admitted seed: a retake at its commit has a
+                # moment between the delete and the rename (docs/reference/development-containers.md#a-retake-keeps-the-seed). This
+                # reads the snapshots once. A default with no seed at all refuses by its own code; the admitted seed's `next-` still
+                # there is a retake that did not end within the wait; a seed that a deployment replaced by a newer one is copied.
+                snapshot = clone["snapshot"]
                 if not any(name.startswith(("seed-", "next-")) for name in names):
                     raise RuntimeError("instance.default_seed_missing")
-                if clone["snapshot"] not in names:
-                    raise RuntimeError("instance.default_seed_moved")
+                if snapshot not in names:
+                    seeds = [row for row in snapshots if row["name"].startswith("seed-")]
+                    if "next-" + snapshot[len("seed-"):] in names or not seeds:
+                        raise RuntimeError("instance.default_seed_moved")
+                    snapshot = max(seeds, key=lambda row: row.get("created_at") or "")["name"]
+                if snapshot != clone["snapshot"]:
+                    # The later phases start the branch at this seed's commit, which its own repository holds.
+                    (folder / "seed-commit").write_text(snapshot[len("seed-"):] + "\n")
                 # A copy of a default with an inner volume copies the volume's snapshot of the same seed name first, then the container
                 # with its disk on the new volume (docs/reference/development-containers.md#the-inner-volume). Every other copy has no
                 # `inner_volume` and runs the container copy alone, as before.
@@ -651,19 +662,19 @@ def main():
                                 check=False)
                     # Incus may name a volume snapshot `<volume>/<snapshot>`; the seed name is the last part. A container seed without its
                     # volume half is a seed taken before the pair existed: the default's next passed deployment takes the pair.
-                    if seeds.returncode or clone["snapshot"] not in [row["name"].split("/")[-1] for row in json.loads(seeds.stdout)]:
+                    if seeds.returncode or snapshot not in [row["name"].split("/")[-1] for row in json.loads(seeds.stdout)]:
                         raise RuntimeError("instance.default_seed_incomplete")
                     # No container yet: a volume of this name is left from a failed copy, so it is copied again from this seed.
                     if run(["incus", "query", volumes + inner["name"] + f"?project={container['project']}"], check=False).returncode == 0:
                         change(project + ["storage", "volume", "delete", inner["pool"], inner["name"]])
-                    change(project + ["storage", "volume", "copy", inner["pool"] + "/" + clone["inner_volume"] + "/" + clone["snapshot"],
+                    change(project + ["storage", "volume", "copy", inner["pool"] + "/" + clone["inner_volume"] + "/" + snapshot,
                                       inner["pool"] + "/" + inner["name"]])
                     # The copy takes the snapshot's config, and a seed that a seed copy moved to a CI Node records `size: 0`; the
                     # zvol keeps its size, so this writes only the record that the start guard requires.
                     change(project + ["storage", "volume", "set", inner["pool"], inner["name"], "size=" + inner["size"]])
                 argv = project + [
                     "copy",
-                    clone["source"] + "/" + clone["snapshot"],
+                    clone["source"] + "/" + snapshot,
                     name,
                 ]
                 for key, value in container["config"].items():

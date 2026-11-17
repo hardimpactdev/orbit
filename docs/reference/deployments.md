@@ -236,7 +236,7 @@ The Gateway validates the request and the access grant, checks that the Instance
 
 A production deploy holds the Instance, freezes the full intent and records a running deployment row, which [pauses automatic deployment](#pause) at once. It refuses an Instance without stored environment configuration with `env.configuration_missing` before it records anything.
 
-One native run on Node 209 then runs the [chart](/cli/instance/deploy)'s steps over official SSH. Its budget is the deploy step timeouts plus 900 seconds.
+One native run on Node 209 then runs the [chart](/cli/instance/deploy)'s steps over official SSH. Its budget is the deploy step timeouts plus 900 seconds. The proof Project's default adds 1,800 seconds, the bound of its wait for [the seed hold](/reference/development-containers#the-seed-hold).
 
 | Step | What it does | Error code |
 | --- | --- | --- |
@@ -394,7 +394,7 @@ Every minute, a Gateway scheduler job reads each eligible Project's default bran
 - A manual [`instance:deploy`](/cli/instance/deploy) resets the count.
 - A passed deploy records `up_to_date` and the new `seed_commit`. The run that settles it goes on to the newest head in the same run.
 
-A commit is seen within one minute and deploys when its Operation starts. A clone or task copy that starts during the deploy copies the old seed. If the deploy replaces that seed before the copy, the copy refuses with [`instance.default_seed_moved`](/reference/development-containers#what-a-clone-has-at-its-first-start); the same command then takes the new seed.
+A commit is seen within one minute and deploys when its Operation starts. A clone or task copy that starts during the deploy copies the old seed. If the deploy replaces that seed before the copy, the copy [waits for the retake](/reference/development-containers#a-retake-keeps-the-seed) and copies the new seed.
 
 A deploy wakes a sleeping default and lets it sleep again: an automatic deploy does not count as activity for the [idle sleep](/reference/development-containers#sleep-and-wake). A manual deploy and a release refresh still count.
 

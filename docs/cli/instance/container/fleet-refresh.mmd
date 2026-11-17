@@ -64,6 +64,7 @@ sequenceDiagram
   %%> - no key within 60 s: the step says the nested Gateway's WireGuard key was not ready, and sets no peer
   %%> Phase seed:
   %%> - retakes `seed-COMMIT` of the default as it is, fleet included, before the run changes anything
+  %%> - the proof Project's default holds its seed first, in the step "Hold the seed" before this step, so no seed copy pushes the seed while it is retaken (instance/seed-copy.mmd, container/deploy-default.mmd)
   %%> - takes the new snapshot first, as `next-COMMIT` beside the old `seed-COMMIT`; only then does the old one go and the new one take its name (docs/reference/development-containers.md#a-retake-keeps-the-seed)
   %%> - refuses `instance.fleet_key_on_disk` first when the Club key path is a file on the container's disk; the key is never read
   %%> seed · on failure:

@@ -8,6 +8,7 @@ use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Deployment\InstanceDeployExecutionCopies;
 use App\Domain\Nodes\NodeConvergePhaseDigest;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Models\Operation;
@@ -139,6 +140,10 @@ final readonly class OperationStore
                         Log::warning('Deploy execution copies could not be deleted', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
                     }
                 });
+            }
+            // The same ends free a deployment's claim on the default's seed; a seed copy that the claim refused is admitted now.
+            if (ProofSeeds::claimFreed($current, $operation)) {
+                DB::afterCommit(static fn (): ?Operation => app(ProofSeeds::class)->admit('seed'));
             }
         });
         $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);

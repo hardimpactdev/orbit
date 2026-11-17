@@ -68,7 +68,8 @@ Deno.test("a container deployment runs its phases in two steps, each one play of
     assert(names.indexOf("Write the container intent") < names.indexOf("Prepare the container"));
     assert(names.indexOf("Prepare the container") < names.indexOf("Check out in the container"));
     assert(names.indexOf("Run dev deploy steps") < names.indexOf("Finish the container"));
-    assertEquals(step("Prepare the container").dependsOn, [{ step: "Write the container intent", condition: { type: "succeeded" } }]);
+    assertEquals(step("Prepare the container").dependsOn, [{ step: "Write the container intent", condition: { type: "succeeded" } },
+        { step: "Hold the seed", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } }]);
     assertEquals(step("Check out in the container").dependsOn, [{ step: "Prepare the container", condition: { type: "succeeded" } }]);
     // With no dev deploy step the forEach is dropped from the graph; the last edge keeps the finish after the skip list then too.
     assertEquals(step("Finish the container").dependsOn, [
@@ -193,4 +194,26 @@ Deno.test("two deployments of different defaults on one Node never share a behav
     assertEquals(render(ssh.task.globalArgs!.name!, 2454), render(ssh.task.behaviorName!, 2454));
     // The short steps (a cat, an rm, the intent file) keep one name per Node or one fixed name.
     assertEquals(render(step("Read the container result").task.behaviorName!, 2454), "instance-deploy-container-result-9");
+});
+
+Deno.test("only the proof default holds its seed before any phase, and a busy hold at its bound changes nothing", () => {
+    // docs/reference/development-containers.md#the-seed-hold: the intent's `seed_hold` names the default whose seed a seed copy sends.
+    const proof = { ...nested, container: { seed_hold: true } };
+    const written = { "Write the container intent": "succeeded" };
+    assertEquals(skips("Hold the seed", proof, written), false);
+    for (const intent of [{ ...container, container: {} }, { ...nested, container: {} }, { deployment: { variant: "development" } }]) {
+        assertEquals(skips("Hold the seed", intent, written), true);
+    }
+    // The first phase waits for the hold; a normal default's skipped hold lets it run.
+    assertEquals(step("Prepare the container").dependsOn!.find((d) => d.step === "Hold the seed")!.condition,
+        { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] });
+    const hold = step("Hold the seed").task.inputs;
+    assert(hold.env!.ORBIT_HOLD_URL.includes('"/seed-hold"'));
+    // The call asks again within ProofSeeds::HoldWaitSeconds (1,800 s), which the deployment's budget counts.
+    assert(hold.run!.startsWith("timeout 1810 curl ") && hold.run!.includes("--retry-max-time 1800"));
+    // A hold that stayed busy fails the run before the container starts: no later step runs and no seed is restored.
+    const busy = { ...written, "Hold the seed": "failed" };
+    for (const name of ["Prepare the container", "Check out in the container", "Finish the container", ...restoreSteps]) {
+        assertEquals(skips(name, proof, busy), true, name);
+    }
 });

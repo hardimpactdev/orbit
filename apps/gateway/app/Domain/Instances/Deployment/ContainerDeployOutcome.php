@@ -20,6 +20,12 @@ final readonly class ContainerDeployOutcome
     /** The step whose first phase starts the container (docs/cli/instance/deploy.mmd). */
     public const string PrepareStep = 'Prepare the container';
 
+    /**
+     * The proof default's step that waits for its seed hold before any phase (docs/reference/development-containers.md#the-seed-hold); at
+     * its bound the deployment fails before it changes the container.
+     */
+    public const string SeedHoldStep = 'Hold the seed';
+
     /** The forEach step that runs each development deploy step, one item per admitted step. */
     public const string DeployStepsStep = 'Run dev deploy steps';
 
@@ -58,10 +64,11 @@ final readonly class ContainerDeployOutcome
             // it in its first phase, `start`; each phase that passed writes itself into `phases_passed` as it ends, also when a later
             // phase is killed before it can write a failure.
             $passed = is_array($file['phases_passed'] ?? null) ? $file['phases_passed'] : [];
-            $payload['started'] = ! in_array($step, ['native_execution', 'Write the container intent'], true)
+            $payload['started'] = ! in_array($step, ['native_execution', 'Write the container intent', self::SeedHoldStep], true)
                 && ($step !== self::PrepareStep || in_array('start', $passed, true));
             $code = match (true) {
                 str_starts_with($step, self::DeployStepsStep) => 'deployment.step_failed',
+                $step === self::SeedHoldStep => 'instance.seed_hold_timeout',
                 is_string($file['error_code'] ?? null) && preg_match('/\A[a-z]+\.[a-z_]+\z/', $file['error_code']) === 1 => $file['error_code'],
                 default => 'operation.native_failed',
             };

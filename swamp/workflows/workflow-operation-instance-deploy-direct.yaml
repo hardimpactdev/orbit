@@ -1786,6 +1786,29 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
+  - name: Hold the seed
+    # Only the proof Project's default, whose seed a seed copy sends (its container intent has `seed_hold`): before any phase, the run
+    # asks the Gateway for the seed hold and waits while a seed copy holds it; the deployment then holds the seed to its end, so no
+    # retake deletes or renames a snapshot that a seed copy pushes (docs/reference/development-containers.md#the-seed-hold). The
+    # Gateway answers 423 after 5 s while it is busy; the call asks again within ProofSeeds::HoldWaitSeconds, which the budget counts.
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Write the container intent
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("seed_hold" in inputs.intent.container) || steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "seed-hold-acquire" }}
+      methodName: execute
+      inputs:
+        run: "timeout 1810 curl --fail --silent --show-error --proto =https --max-time 30 --retry 2000 --retry-all-errors --retry-delay 1 --retry-max-time 1800 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/seed-hold" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
   - name: Prepare the container
     # The container's phases before the checkout, in one play and in this order (docs/cli/instance/deploy.mmd): `start`, the one start
     # of the container; for a nested-fleet default (only its intent has `fleet`) its one fleet check, `fleet_start`, and the seed of the
@@ -1801,6 +1824,12 @@ jobs:
     - step: Write the container intent
       condition:
         type: succeeded
+    - step: Hold the seed
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
     guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
     task:
       type: behavior
@@ -1971,7 +2000,7 @@ jobs:
     - step: Finish the container
       condition:
         type: always
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Prepare the container"])) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Hold the seed", "Prepare the container"])) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -1988,7 +2017,7 @@ jobs:
     - step: Restore the old seed
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Prepare the container"])) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Hold the seed", "Prepare the container"])) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -2017,7 +2046,7 @@ jobs:
     - step: Start on the old seed
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Prepare the container"])) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Hold the seed", "Prepare the container"])) }}
     task:
       type: behavior
       behaviorType: command/shell

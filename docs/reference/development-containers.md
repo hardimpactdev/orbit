@@ -1038,11 +1038,23 @@ A default sleeps like any other development container: after one idle window wit
 
 #### A retake keeps the seed
 
-A retake never leaves the default without a seed. It takes the new snapshot first, beside the old one. It holds the default's seed lock on the Node while it does so. When `seed-<commit>` exists already, the new snapshot waits under `next-<commit>`. Only when the new snapshot exists does the old `seed-<commit>` go, and `next-<commit>` takes its name. Older seeds go last. The seed of a default with an [inner volume](#the-seed-pair) is a pair, and both halves follow the same order.
+A retake never leaves the default without a seed. It takes the new snapshot first, beside the old one. When `seed-<commit>` exists already, the new snapshot waits under `next-<commit>`. Only when the new snapshot exists does the old `seed-<commit>` go, and `next-<commit>` takes its name. Older seeds go last. The seed of a default with an [inner volume](#the-seed-pair) is a pair, and both halves follow the same order.
 
 The proof Project's default can keep one older pair as the base of the next [seed copy](#the-seed-on-each-ci-node). The Gateway names the default's current seed in the seed step's intent (`seed_base`) when a CI Node that is ready for the seed copy records that seed (`ProofSeeds`). Then, after the new seed is whole, the old pair is not deleted but renamed `base-<commit>`, also at the same commit.
 
 Every older `base-` pair goes first, so the default keeps at most one base. Without `seed_base`, the old pair goes as before. A clone and a restore never read a `base-` pair. A rename keeps the snapshot's creation time, and it needs no free ID range. So a retake still needs only one free range, for a moment.
+
+A copy that meets a retake does not fail. A retake at the admitted commit deletes `seed-<commit>` and renames its `next-` snapshot to that name a moment later. So the step before the copy, `clone-seed-wait`, asks the Node's Incus API for the admitted seed with curl's own retry: every 2 seconds, for at most 120 seconds, the bound of a deployment's `seed` phase. A normal copy finds its seed at the first request.
+
+Then the copy reads the default's snapshots once. It copies the admitted seed when it is there. When a deployment replaced it by a newer seed, the copy takes the newest `seed-` snapshot, and a branch that the Node's mirror lacks starts at that seed's commit. When the admitted seed's `next-` snapshot is still there, the retake did not end within the wait: the create fails with `instance.default_seed_moved`, before any change.
+
+#### The seed hold
+
+The seed of the proof Project's default has one hold, `instance_seed:<default id>`, so its lifecycle is serial. A [seed copy](#the-seed-on-each-ci-node) takes the hold as its Operation lock when it is admitted and keeps it to its end, so no retake deletes or renames a snapshot that it pushes.
+
+A deployment of that default asks the Gateway for the hold before its first `seed` phase, in the step "Hold the seed", and keeps it to its end. While a seed copy is open, the Gateway answers `423 instance.seed_busy` after 5 seconds, and the step asks again for up to 1,800 seconds. One seed copy ends well within that, and the deployment's run budget counts it. A hold that stays busy fails the deployment with `instance.seed_hold_timeout` before it changes the container.
+
+A deployment that got a busy answer waits for the seed. While a deployment waits for the seed or holds it, a seed copy is not admitted (`instance.seed_held`). So a seed copy that ends while a deployment waits admits no next copy, and the deployment gets the hold next. Every end of the deployment frees its claim and admits the seed copy again: passed, failed, cancelled, an unreadable result, and a timeout once Swamp confirms that the run stopped or after its hold of 60 minutes. Every other default takes no hold: no seed copy sends its seed.
 
 Incus maps a new snapshot as it maps a new container: it needs a free [isolated ID range](#isolated-id-ranges) for a moment, but a delete or a rename needs none. So the step never uses `incus snapshot create --reuse`, which deletes the old snapshot before it creates the new one. On 2026-11-14 a retake with `--reuse` on a host with no free range left Instance 2454 without a seed for seven minutes.
 
@@ -1361,7 +1373,7 @@ When the mark names this Instance, a resume skips the fetch and the checkout, an
 
 A clone's create checks no Process unit. A dead Process fails the completion's `check` step with `instance.container_process_inactive` and its `process_failure` receipt. When the Process comes from a Project definition, the completion's recovery says `retry.requires=project_process_definition`: change or remove the definition, then run `instance:complete`. Its admission installs the Project's development definitions as they are then.
 
-A deployment of the default can replace the admitted seed before the copy. The copy then refuses with `instance.default_seed_moved`, and the same command takes the new seed. A default with no `seed-` snapshot at all refuses with `instance.default_seed_missing`: deploy the default to take a seed. A default with only a `next-` snapshot is a retake between its delete and its rename, so it refuses with `instance.default_seed_moved`. A clone already copied does not need its seed: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them.
+A deployment of the default can replace the admitted seed before the copy. The copy then [waits for the retake](#a-retake-keeps-the-seed) and copies the new seed. A default with no `seed-` or `next-` snapshot at all refuses with `instance.default_seed_missing`: deploy the default to take a seed. A retake that still runs after 120 seconds refuses with `instance.default_seed_moved`. A clone already copied does not need its seed: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them.
 
 #### What a clone has at its first start
 
@@ -2976,7 +2988,7 @@ The copies to the targets never overlap. Each push of the inner volume takes a s
 
 The certificate reads and the checks run on the CI Nodes, and they still run side by side. Because the copies run one at a time, the run time grows with the number of targets, and the Gateway captures the run budget from it at admission. Each `incus` push stops after 1,200 seconds: a first full copy of the seed pair is a few GB over WireGuard, and a refresh is small.
 
-A retake of the default and a seed copy can still freeze the same volume at the same time. The seed-copy lock is not the default's Instance lock, so a deployment of the default can run beside a copy.
+A retake of the default never runs beside a seed copy: both take [the seed hold](#the-seed-hold). A deployment of the default still runs its other steps beside a copy, because the seed hold is not the default's Instance lock.
 
 An instance copy does not take its attached custom volumes, so the volume has its own copy, first. The holder volume gets the default's `size`, but each snapshot that it receives records `size: 0`; a clone [sets its own size](#the-inner-volume). The container's copy points its `inner-pool` disk at `proof-seed-inner`. Its NIC gets no static address and only the common NIC ACL: the default's address and its own ACL belong to the default's Node, and the holder never starts. A clone sets both for itself.
 
@@ -3022,7 +3034,8 @@ The copy runs after the release, and nothing in a release or a proof waits for i
 | Never blocks the release | The default's run has ended when the Gateway admits a seed copy. A failed copy changes neither the release nor the default |
 | No proof places on an old seed | While a Node's seed is not the default's current seed, the Node offers no proof places. So one proof never mixes the fleets of two seeds. Earlier copies keep running |
 | A failed target | The step fails with `instance.seed_copy_failed`, and the result names the failed command and its error output for that Node. The Node keeps its recorded seed |
-| One copy at a time | An open seed copy holds the default's seed-copy lock. A second admission refuses with `operation.target_busy`; the end of the open copy admits the next one |
+| One copy at a time | An open seed copy holds the default's [seed hold](#the-seed-hold). A second admission refuses with `operation.target_busy`; the end of the open copy admits the next one |
+| No copy during a retake | While a deployment of the default holds the seed, the admission refuses with `instance.seed_held`; the deployment's end admits the copy again |
 | No listener yet | A CI Node whose converge has not added the listener and the trust fails its target. A `ci-runner` converge of the Node adds them, and its end admits the next copy |
 | ID ranges on a CI Node | The holder and the snapshot it receives need a free range of the default's size. The [CI Node's demand](/reference/node-settings#a-ci-node) counts them. Without one, that target fails |
 | A failure shows | Nothing waits for the copy. So each failed target also writes the Activity row `instance.seed_copy_failed` with the Node, the Operation and the detail, as a failed refresh writes `instance.refresh_failed` |
@@ -3278,8 +3291,9 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.fleet_seed_missing` | 502 | A failed refresh found no seed to restore, or the [inner volume](#the-inner-volume) lacks the seed's half. Nothing is restored, and the default stays as the run left it |
 | `instance.container_fleet_no_room` | 502 | A refresh would end under the inner Doctor's disk floor (see [Refresh after a release](#refresh-after-a-release)). The detail names the numbers. Nothing changed |
 | `instance.container_fleet_drift` | 502 | The inner fleet of a nested-fleet default differs from its rules where Orbit does not write, such as `raw.idmap`. The Operation's result `fleet_drift` names each difference. Nothing changed |
-| `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |
+| `instance.default_seed_moved` | 409 | A retake of the default's seed still ran when the copy's wait of 120 seconds ended. The step's report names it; run the same command again |
 | `instance.default_seed_missing` | 409 | The default has no seed snapshot at all. Deploy the default; its seed step takes one |
+| `instance.seed_hold_timeout` | 409 | A deployment of the proof default waited 1,800 seconds for [the seed hold](#the-seed-hold) while a seed copy held it. Nothing changed; deploy again |
 | `instance.refresh_failed` | none | An Activity row, not an API error: a refresh that a release admitted failed. It names the Operation, its code and its detail; see [Refresh after a release](#refresh-after-a-release) |
 | `instance.container_seed_failed` | 502 | The seed step could not take the new snapshot. The error detail names why, such as `No free ID range for the new seed`. The old seed stays; see [A retake keeps the seed](#a-retake-keeps-the-seed) |
 | `instance.seed_volume_snapshot_failed` | 502 | The snapshot of the [inner volume](#the-inner-volume) failed after the container's. Both new halves are deleted and the old pair stays; see [The seed pair](#the-seed-pair) |

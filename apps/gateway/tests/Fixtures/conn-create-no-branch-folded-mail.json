@@ -403,6 +403,7 @@
     },
     "clone_steps": [
         "clone-ci-hold",
+        "clone-seed-wait",
         "clone-container",
         "clone-club-key",
         "clone-t3",
