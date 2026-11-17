@@ -29,7 +29,10 @@
     as_owner: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/agent', container.name,
           '--', 'runuser', '-u', 'agent', '--'] }}
-    as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
+    # In the start phase every exec as root has its bound from the Node, whatever path the wake takes: 60 s, twice the slowest one
+    # (the Club key's write and the proxy environment, 30 s each), so a container that does not answer ends the step with exit 124,
+    # never the run's 240 s bound. The tighter bounds of single execs stay. The private names and the PHP restart handler use it too.
+    as_root: "{{ (['timeout', '60'] if phase == 'start' else []) + ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
     # A clone's T3 and its agents run as `agent`, which alone reaches T3's port in the container.
     as_agent: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,

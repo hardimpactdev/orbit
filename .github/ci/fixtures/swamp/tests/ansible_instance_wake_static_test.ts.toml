@@ -1,6 +1,6 @@
 order = 10
 cases = [
-  "every exec of a wake that resumes or finds the container running has a bound from the Node",
+  "every exec of the start phase has a bound from the Node, on each path of a wake",
 ]
 file = "swamp/tests/ansible_instance_wake_static_test.ts"
 self_hosted = true
@@ -8,12 +8,14 @@ self_hosted = true
 cost = 2
 slices = 1
 inputs = [
+  "swamp/ansible/tasks/instance-container-handlers.yml",
   "swamp/ansible/tasks/instance-container-phase.yml",
   "swamp/ansible/tasks/instance-container-power.yml",
   "swamp/ansible/tasks/instance-nested-club-key.yml",
   "swamp/ansible/tasks/instance-power-call.yml",
   "swamp/ansible/tasks/instance-power-helper.yml",
+  "swamp/ansible/tasks/instance-private-names.yml",
   "bin/swamp-shape-gate",
 ]
 [case_costs]
-"every exec of a wake that resumes or finds the container running has a bound from the Node" = 2 # added 2026-11-17; local under 1 s
+"every exec of the start phase has a bound from the Node, on each path of a wake" = 2 # added 2026-11-17; local under 1 s
