@@ -95,7 +95,7 @@ final class SelfUpdateCommand extends GatewayCommand
         $allowDowngrade = $this->option('allow-downgrade') === true
             || (is_string($downgradeTo) && $downgradeTo !== '' && $downgradeTo === $state->cli->version);
 
-        // When the first update turns the plain binary into a link, this process can load no more code from its path.
+        // If the update replaces the running file, this process can load no more code from its path.
         self::loadClassesUsedAfterReplacement();
         $cli = $progress->during('cli', static fn (): SelfUpdateStep => $lock->hold(
             $host->lockPath(),
@@ -131,7 +131,7 @@ final class SelfUpdateCommand extends GatewayCommand
 
         $status = $outcome === SelfUpdateOutcome::Failed ? self::FAILURE : self::SUCCESS;
 
-        if ($cli->outcome === SelfUpdateOutcome::Updated && $cli->path === $host->runningBinary()->path) {
+        if ($cli->replacedRunningBinary) {
             $host->exitAfterReplacingItself($status);
         }
 
@@ -144,7 +144,7 @@ final class SelfUpdateCommand extends GatewayCommand
      */
     private static function loadClassesUsedAfterReplacement(): void
     {
-        foreach ([SelfUpdateStep::class, SelfUpdateFailure::class, InstalledVersion::class, ProgressOutcome::class, HumanRenderer::class, ConsoleWriter::class, TerminalText::class] as $class) {
+        foreach ([SelfUpdateStep::class, SelfUpdateOutcome::class, SelfUpdateFailure::class, InstalledVersion::class, ProgressOutcome::class, HumanRenderer::class, ConsoleWriter::class, TerminalText::class] as $class) {
             class_exists($class);
         }
     }

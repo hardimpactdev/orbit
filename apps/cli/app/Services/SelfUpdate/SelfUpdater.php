@@ -72,6 +72,8 @@ final readonly class SelfUpdater
         $before = new InstalledVersion($currentVersion, $installed);
         $after = new InstalledVersion($version, $asset->sha256);
 
+        $replacedRunningBinary = false;
+
         try {
             $url = $this->expectedAsset($asset, $this->location->cliAssetName($version, $platform), $this->location->cliAssetUrl($version, $platform));
 
@@ -94,6 +96,7 @@ final readonly class SelfUpdater
                     owner: $this->host->isRoot() ? $this->owner($running) : null,
                     verify: fn (string $candidate) => $this->verifyCandidate($candidate, $version),
                 );
+                $replacedRunningBinary = $target === $running;
             }
 
             $previous = basename($running);
@@ -105,12 +108,13 @@ final readonly class SelfUpdater
             }
 
             $this->installer->link($link, basename($target), 'self_update');
+            $replacedRunningBinary = $replacedRunningBinary || $link === $running;
             $this->prune(dirname($link), [basename($target), $previous]);
         } catch (SelfUpdateFailure $failure) {
-            return new SelfUpdateStep('cli', SelfUpdateOutcome::Failed, $link, $before, $before, failure: $failure);
+            return new SelfUpdateStep('cli', SelfUpdateOutcome::Failed, $link, $before, $before, failure: $failure, replacedRunningBinary: $replacedRunningBinary);
         }
 
-        return new SelfUpdateStep('cli', SelfUpdateOutcome::Updated, $link, $before, $after);
+        return new SelfUpdateStep('cli', SelfUpdateOutcome::Updated, $link, $before, $after, replacedRunningBinary: $replacedRunningBinary);
     }
 
     /**

@@ -180,7 +180,7 @@ The CLI step decides from the running binary, the release status, and the versio
 
 Versions compare by `N`, the commit count. A binary with the release's version but another SHA-256 is replaced, so a damaged binary is repaired.
 
-If your CLI reports a 40-character commit instead of `0.N.0`, reinstall it using [Install a release](/reference/cli-binaries#install-a-release). SHA-era builds cannot self-update.
+Older SHA-stamped binaries run the updater they shipped with and may still attempt the update. If your CLI reports a commit SHA, reinstall it using [Install a release](/reference/cli-binaries#install-a-release).
 
 Releases live side by side. `orbit` is a link to a versioned file in the same directory:
 
@@ -203,7 +203,7 @@ The install runs in this order. Nothing changes the `orbit` link until the last 
 
 A failure or an interruption before step 7 leaves `orbit` on the old release. A process that runs while the link changes keeps reading its own versioned file, so it finishes normally. The command needs write access to the directory: run it with `sudo` for `/usr/local/bin/orbit`, or it fails with `self_update.not_writable`.
 
-The first update of a plain `orbit` file turns it into the link and keeps the old file as `orbit-<old version>`. That one swap replaces the file that running processes read. The command itself prints its result and exits at once. Another `orbit` command that runs during that swap can fail; run it again. Later updates only switch the link. A process still running from a release older than the one kept loses its file when that release is deleted.
+The first update of a plain `orbit` file turns it into the link and keeps the old file as `orbit-<old version>`. That one swap replaces the file that running processes read. The command itself prints its result and exits at once. Another `orbit` command that runs during that swap can fail; run it again. Later upgrades and downgrades only switch the link. A same-version repair can replace the running versioned file. The command prints its result and exits at once after that replacement too. A process still running from a release older than the one kept loses its file when that release is deleted.
 
 ### Result
 

@@ -304,14 +304,23 @@ describe('self-update CLI step', function (): void {
             ->and($this->processes)->toBe([]);
     });
 
-    it('repairs a damaged binary of the same version', function (): void {
+    it('repairs a damaged binary of the same version', function (bool $linked): void {
         config()->set('app.version', '0.4681.0');
+        if ($linked) {
+            rename($this->machine.'/bin/orbit', $this->machine.'/bin/orbit-0.4681.0');
+            symlink('orbit-0.4681.0', $this->machine.'/bin/orbit');
+            $this->host->running = $this->machine.'/bin/orbit-0.4681.0';
+        }
         MockClient::global(gateway_fixture_mock('gateway/self-update/available'));
         fake_self_update_processes($this);
 
         expect(self_update_step(run_self_update(), 'cli')['outcome'])->toBe('updated')
-            ->and(file_get_contents($this->machine.'/bin/orbit'))->toBe(self_update_release_bytes('orbit-0.4681.0-linux-x86_64'));
-    });
+            ->and(file_get_contents($this->machine.'/bin/orbit'))->toBe(self_update_release_bytes('orbit-0.4681.0-linux-x86_64'))
+            ->and($this->host->exitedWith)->toBe(0);
+    })->with([
+        'plain binary' => false,
+        'versioned binary' => true,
+    ]);
 
     it('leaves a source checkout and a PHAR alone', function (RunningBinaryKind $kind, string $reason): void {
         $this->host->kind = $kind;
