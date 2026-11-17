@@ -8,7 +8,7 @@ Read the kind's chart first. Any change to a command's flow starts by updating i
 
 Command verification assets live in [swamp/proof](https://github.com/hardimpactdev/orbit/tree/main/swamp/proof). Review them with the command page and chart. Once a command has an executable verification entrypoint, link to it from its page and chart.
 
-Edit charts here, never in a copy. A command's chart arrives in the one PR of that command change, with its page, cases, code and runnable proof cases; the chart, page and cases are the first commit of the draft PR. A pull request that touches only charts, their placements, and `flows-pending.txt` is for a chart that belongs to no command change, such as a stage chart. A chart whose spec Nick approved carries `%% status: reviewed`.
+Edit charts here, never in a copy. A command's chart arrives in the one PR of that command change, with its page, cases, code and runnable proof cases. The chart, page and cases are the first branch commit; the [pipeline](/reference/command-development-pipeline) requires build and proof before any PR opens. A pull request that touches only charts, their placements, and `flows-pending.txt` is for a chart that belongs to no command change, such as a stage chart. A chart whose spec Nick approved carries `%% status: reviewed`.
 
 Only that approval sets it. A spec PR that changes a reviewed chart sets it to `draft` and keeps the other header lines; the approval in the draft sets `reviewed` again.
 
@@ -43,15 +43,15 @@ These rules come from the October and November 2026 decisions and from Nick's ch
 
 **The Gateway never executes work.** It checks the request, records the intent as a task (ADR 0244; today an Operation), and takes a lock per target. It passes the full intent as Swamp workflow inputs and records state only from the terminal result (R2).
 
-**Node work follows one shape (R4).** The Gateway starts one Swamp run and replies 202. A Swamp worker reaches Nodes over SSH and runs one Ansible phase per logical phase: the playbook reads, changes and checks the machine in one run (rule 22 of the `flow-tighten` skill). A native `@swamp/ssh` or `@swamp/cfgmgmt` step stays only where measured numbers show it beats the phase. There are no per-Node workers.
+**Execution follows the binding shape guide (R4).** [The Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md) alone owns machine execution, placement, secrets, callbacks and result transport. Draw one arrow per logical machine phase; its internal reads, plans and checks get no separate arrows. Show a native machine step only when the guide's measured exception applies.
 
-**Steps call the Gateway only to sign a certificate or to mint a GitHub token** for the step that is about to use it. Admission mints no token for a later step. Secrets go Gateway → vault → step as vault key names, never values (R3).
+Use the guide's callback and result contracts when drawing orchestration. A run-folder result carrier is not a separate machine phase; do not confuse it with a second run that merely reports back.
 
 **Record-only changes start no run (R1).** A change that touches no Node is written by the Gateway and answered at once.
 
 **Read-only commands answer from the Gateway.** Lists and shows (Nodes, Routes, Instances on a Node, installed Tools) read the Gateway's recorded state. Treat it as current: Node agents report changes to the Gateway, and runs record their results. A read starts no task and no Swamp run, and contacts no Node.
 
-**Failure keeps records and allows a rerun.** The record is marked failed, not deleted. Say what stays on the Node (no rollback unless needed) and that a rerun is safe.
+**Define the state after failure.** Decide what the command cleans up, restores or retains; do not default to rollback or retention. Keep records of failed targets and their retry/removal path. Remove only run-owned disposable resources; restore a setting only when its prior value is known and restoration cannot overwrite a later change. Never restore a whole Node snapshot to undo one command. Order access withdrawal after checks that need access. Account for partial changes, interrupted work and cleanup failure; a worker crash does not prove cleanup ran. Show meaningful recovery branches and document their user-visible consequences.
 
 **Steps of other commands aren't kinds.** A former child kind becomes a step in its parent's workflow. Chart it as part of the parent, and report it as "merge into <parent>".
 
@@ -70,6 +70,24 @@ Behavior that is the same for every command (the `--json` output, prompts for mi
 **A chart applies to any Orbit installation.** Use role names and placeholders such as `PORT`, `NODE` and `TASK`. Do not use concrete Node or task IDs, deployment hostnames or fixed execution hosts. Keep lifecycle states and implementation details in the step panel when they do not name the action. Concrete usage examples belong on the command's documentation page.
 
 **Prefer the gentle action.** Reload over restart. Wait briefly for a busy lock within the time budget. Clean up harmless leftovers on a best-effort basis.
+
+### Remove unnecessary work
+
+Use these questions to shorten the common path without losing public outcomes.
+
+**Ownership.** Every step belongs to this command, now, on this target. Move one-time setup to the lifecycle that creates the resource. Do not redo native defaults or create empty reporting runs.
+
+**Actions.** Merge consecutive parts of one action. Keep distinct actions when their progress or failure matters independently. Skip a read before a safe repeatable write or one that refuses by itself. Fold target selection into the action when possible.
+
+**Parallelism.** Independent work runs in parallel. Show work across Nodes once, not once per Node. Use the shape guide for dependencies and cleanup.
+
+**Sharing.** Reuse one workflow when only inputs differ. Split it when branches obscure the order, failures or end checks. Extract cohesive phases with explicit contracts. Each command's chart shows only its own branches.
+
+**Symmetry.** Mirror create, update and removal choices. Update both charts in the same change when work moves between commands.
+
+**Guards.** Refuse by the harm a guard prevents, not a particular input shape. Check narrower and wider inputs, protocols and ranges that reach the same harm. State what the inverse command does.
+
+**Outcomes.** Verify stale holds against current decisions before retaining them. Keep successful skips and reason codes visible rather than only in the detail panel.
 
 ### Decided by Nick
 
@@ -201,4 +219,4 @@ The Swamp shape job runs `swamp/bin/lint-behavior-names.ts`. It rejects a workfl
 
 ## Designing a command
 
-To design a new command or tighten a chart, use the `flow-tighten` skill in `.agents/skills/flow-tighten/SKILL.md`. It holds the rules for a short, efficient flow.
+To design a new command or tighten a chart, use the short critique checklist in `.agents/skills/flow-tighten/SKILL.md`. This README owns the chart rules; update them here when a review changes a rule.

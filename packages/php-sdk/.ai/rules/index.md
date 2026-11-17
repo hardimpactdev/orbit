@@ -7,9 +7,8 @@ Read each rule that covers the files in scope.
 
 The repository guidance is invalid when this index is missing or unreadable,
 an indexed rule is missing or empty, or a material path is not covered. Stop
-package work. Restore the committed guidance with
-`git restore --source=HEAD -- AGENTS.md .ai/rules composer.json`. Do not report a missing `.ai/rules/` tree as a
-non-blocking observation.
+package work and follow the narrow recovery policy in `AGENTS.md`. Do not report
+a missing `.ai/rules/` tree as a non-blocking observation.
 
 This directory is a repository-owned instruction source. The SDK stays
 framework-neutral. Do not add Laravel or Boost for symmetry with other Orbit
