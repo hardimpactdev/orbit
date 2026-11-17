@@ -560,7 +560,7 @@ jobs:
       - name: Prepare stable Rust
         id: rust
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install stable --profile minimal --component clippy
           rustup default stable
           echo "version=$(rustc --version | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -575,6 +575,9 @@ jobs:
       - run: cargo check --locked --all-targets
       - name: Test the agent and composed extension crates
         run: scripts/check-crates test --locked
+      # BeautifulRust (ADR 0267 P9): the executor crates are clippy-clean from their first commit; the observer joins in slice B1.
+      - name: Lint the executor crates
+        run: cargo clippy --locked -p orbit-executor-core -p orbit-executor --all-targets -- -D warnings
 
   changes:
     name: Select build inputs
