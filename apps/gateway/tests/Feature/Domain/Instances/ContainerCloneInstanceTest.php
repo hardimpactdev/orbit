@@ -1859,7 +1859,7 @@ describe('the server a container records', function (): void {
             // An intent built after the Project changed back still names the container's own server.
             ->and($intent['clone']['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server')
             ->and(collect($intent['clone']['files'])->firstWhere('path', InstanceContainer::ServerDropIn)['content'])
-            ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve --host=0.0.0.0 --port=3773 --no-browser\n")
+            ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve --host=0.0.0.0 --port=3773 --no-browser\nEnvironment=CONN_SERVER_BROWSER_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\n")
             ->and(InstanceRuntime::query()->where('instance_id', $later->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3);
     });
 
