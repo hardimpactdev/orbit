@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Fleet\AdmitFleetRolloutAction;
+use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
@@ -291,4 +292,18 @@ it('retains the minute retry after partial admission and admits CI callers when 
     $next = Operation::query()->where('kind', 'fleet.rollout')->latest('id')->firstOrFail();
     expect(array_column($next->input['nodes'], 'node_id'))->toBe([$this->nodes['dev']]);
     expect($next->input['nodes'][0]['release']['url'])->toBe('https://example.test/orbit');
+});
+
+it('refuses host-wide input changes before starting a delivery or a role converge', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    Node::query()->findOrFail($this->nodes['dev'])->forceFill(['release_inputs' => ['host' => str_repeat('c', 64)]])->save();
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    $fleet = $release->refresh()->phases['fleet'];
+    expect($fleet['status'])->toBe('failed')
+        ->and($fleet['nodes'][$this->nodes['dev']]['error_code'])->toBe('fleet.host_inputs_changed')
+        ->and($fleet['nodes'][$this->nodes['db']]['status'])->toBe('pending')
+        ->and(Operation::query()->count())->toBe(0);
 });

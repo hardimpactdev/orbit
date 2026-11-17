@@ -58,8 +58,19 @@
           - secrets.agent_verifier is match('^[0-9a-f]{64}$')
         quiet: true
       tags: [input]
+    - name: Refuse host-wide inputs in an automatic role converge
+      when: intent.release_roles_only | default(false)
+      ansible.builtin.assert:
+        that:
+          - intent.selected_roles | length > 0
+          - intent.roles | map(attribute='role') | list | sort == intent.selected_roles | sort
+          - intent.network == None
+          - intent.tools | length == 0
+        fail_msg: fleet.role_scope_invalid
+        quiet: true
+      tags: [input]
     - name: Require the recorded CLI pin only for a CLI caller
-      when: intent.cli != None
+      when: intent.cli != None and not (intent.release_roles_only | default(false))
       ansible.builtin.assert:
         that:
           - intent.cli.skip_reason == None
@@ -154,7 +165,7 @@
       changed_when: false
       tags: [check]
     - name: Check the recorded CLI artifact
-      when: intent.cli != None
+      when: intent.cli != None and not (intent.release_roles_only | default(false))
       tags: [check]
       block:
         - name: Read the selected CLI checksum
@@ -165,7 +176,7 @@
             that: cli_check.stat.checksum | default('') == intent.cli.release.sha256
             quiet: true
     - name: Check the retired CLI files without changing the Node
-      when: intent.cli == None
+      when: intent.cli == None and not (intent.release_roles_only | default(false))
       ansible.builtin.import_tasks: tasks/node-converge-cli-absent.yml
       vars: { cli_remove: false }
       tags: [check]

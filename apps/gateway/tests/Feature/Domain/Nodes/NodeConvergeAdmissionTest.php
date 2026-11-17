@@ -41,6 +41,7 @@ uses(LazilyRefreshDatabase::class);
 
 beforeEach(function (): void {
     Queue::fake();
+    config(['instances.fleet_marker' => '/fixture/no-nested-fleet']);
     Http::preventStrayRequests();
     Process::preventStrayProcesses();
     config(['swamp.run_token' => 'test-token', 'swamp.read_token' => 'read-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
@@ -530,4 +531,20 @@ it('takes full from the role convergence request', function (): void {
     $this->postJson('/api/v1/nodes/'.$this->node->id.'/roles', ['role' => 'app-dev', 'converge_existing' => true, 'full' => true])->assertAccepted();
 
     expect(Operation::query()->sole()->input['native_role']['recorded_digests'])->toBe([]);
+});
+
+it('limits an automatic converge to active selected roles under the Node lock', function (): void {
+    $role = $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $this->node->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+
+    $operation = app(StartNodeConvergeAction::class)->execute($this->node, roles: ['app-prod'], release: true);
+
+    $capture = $operation->input['_converge'];
+    expect($operation->lock_key)->toBe('node:'.$this->node->id)
+        ->and($capture['intent']['release_roles_only'])->toBeTrue()
+        ->and($capture['intent']['selected_roles'])->toBe(['app-prod'])
+        ->and($capture['intent']['role_units'])->toBe([])
+        ->and($capture['intent']['tools'])->toBe([])
+        ->and($capture['intent']['network'])->toBeNull()
+        ->and(array_keys($capture['release_inputs']['roles']))->toBe([$role->id]);
 });

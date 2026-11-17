@@ -12,7 +12,7 @@ sequenceDiagram
   participant N as Target Node<br/>reached over ssh
   Note over GW: Pick Nodes when no Node<br/>IDs are given
   %%> When:
-  %%> - when the Gateway records a release `verified`: it queues one admission
+  %%> - when the Gateway records a release `verified`: the release’s fleet pass uses this Operation when a Node needs agent or CLI delivery
   %%> - once a day at 03:05 Europe/Amsterdam, when the window of the other Nodes opens; the schedule only queues the admission
   %%> - when an operator runs `orbit fleet:rollout`
   %%> - always while `ORBIT_FLEET_ROLLOUT=true`, and only for a commit whose Gateway release is verified

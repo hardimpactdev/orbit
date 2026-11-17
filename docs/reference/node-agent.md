@@ -634,7 +634,7 @@ The Gateway reads it from `apps/agent/delivery/manifest.json` in its checkout, o
 
 [Gateway release admission](/reference/gateway-recovery#build-and-seal-a-release) reads the target commit's pin and fetches its published manifest in PHP. It verifies the [provenance](/reference/gateway-recovery#release-provenance), checksums and manifest before starting the Swamp run.
 
-The Swamp build step writes the admitted manifest into the release. Its private configuration cache selects that manifest, so a shared env override cannot keep the previous release's pin. The release does not install the agent on the Gateway Node.
+The Swamp build step writes the admitted manifest into the release. Its private configuration cache selects that manifest, so a shared env override cannot keep the previous release's pin. The verified release’s fleet pass delivers the pinned agent to its managed Nodes, including the serving Gateway.
 
 The manifest also supplies the Linux pins in the [recipe identity](/reference/compute-drivers#recipe-identity). The recipe source carries no separate agent version or hashes.
 

@@ -6,9 +6,10 @@ covers:
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/{Infrastructure/Logging/**,Infrastructure/Database/**,Providers/Domains/DatabaseServiceProvider.php}
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
-  - "{apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php}"
+  - "{apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php,apps/gateway/app/Actions/Fleet/ContinueReleaseFleetAction.php}"
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
+  - apps/gateway/database/migrations/*add_release_inputs_to_nodes.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Data/Fleet/**,config/fleet.php}
 ---
 
@@ -135,11 +136,11 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
 | Wait for active Operations | Checks the Gateway DB every 5 seconds for up to 600 seconds. Refuses with `gateway.release_busy` and the blocking Operation IDs if queued, running or waiting Operations covered by the [release idle guard](#release-idle-guard) remain. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
-| Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed: Drain Horizon → Switch the release → Verify the Gateway → Start Horizon → Admit nested-fleet refresh. |
+| Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed: Drain Horizon → Switch the release → Verify the Gateway → Start Horizon. |
 
 The busy guard runs immediately before Swamp load, while the old release and Horizon still serve. It reads current Operation state on each poll and proceeds as soon as none blocks. It does not stop new admissions. A refusal leaves the old release live and pauses automatic releases because migrations already ran. `force` skips only the ancestry check; it never skips this guard.
 
-The activate child admits the [nested-fleet refresh](/reference/development-containers#refresh-after-a-release) only after verification succeeds and Start Horizon finishes (or is skipped because no Horizon unit is configured). It uses the new release’s artisan, so its queued `StartAdmittedSwampRun` jobs reach the new workers. A failed verification, switch back or failed Horizon start admits nothing. Admission is best effort (`allowFailure: true`): failure does not fail the release, and the release waits only for admission to end. No release step admits a task VM image refresh.
+The Gateway queues the fleet pass when it records verification. Once the pass reports `current`, it admits the [nested-fleet refresh](/reference/development-containers#refresh-after-a-release). The defaults then pick up the release using the new Node runtime files. If rollout is disabled, verification admits the refresh directly. The release does not wait for the refresh to finish.
 
 The build adds the worktree of the fetched commit, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
@@ -151,7 +152,7 @@ It checks `/up` and the status version at `https://gateway.orbit`, using `/etc/c
 
 The scheduler restart pauses each release cleanup, such as Documents cleanup, under a new generation. The switch step reads the generations first with `gateway:release:cleanup`. After verify, `gateway:release:cleanup --before=<generations>` waits up to 30 seconds for the new ones, reconciles and resumes. A cleanup that cannot resume stays paused and fails only its own step; the release stays verified. Resume it with `project-documents:cleanup:reconcile` and `project-documents:cleanup:resume`.
 
-Releases do not converge static runtime files. The [gateway role convergence](/cli/node/role-add) owns the PHP-FPM pool, the hibernator and agent-view units and the host retention files, and [node converge](/cli/node/converge) publishes Caddy sites and installs the Node agent.
+The release switch reloads the Gateway application. The [gateway role convergence](/cli/node/role-add) owns the PHP-FPM pool, the hibernator and agent-view units and the host retention files. The fleet pass applies changed workload role inputs after verification.
 
 The Gateway records the run's terminal result. The Gateway reads the snapshot path from the snapshot step's output. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and the old release stays live.
 
@@ -592,35 +593,15 @@ The body serves two kinds of receivers. A receiver that verifies the signature r
 
 ## Fleet rollout
 
-After each verified Gateway release, Swamp brings every managed workload Node to the same release, one Node at a time. A fleet failure never rolls the Gateway back.
+A release is **fleet current** when the `phases.fleet.status` field in `gateway:release:show` is `current`. The release first reports `verified` when the Gateway switch passes its health check. The fleet phase can then be `pending`, `deferred`, `failed`, or `disabled`. It lists each Node's status, delivery and converge Operation IDs, and role results. A fleet failure leaves the verified Gateway serving.
 
-The rollout keeps no records of its own. Each pass is one `fleet.rollout` Operation and its Swamp run. The Operation's input holds the desired state, and its result holds each Node's outcome. Read them with [`operation:list --kind=fleet.rollout`](/cli/operation/list) and [`operation:show`](/cli/operation/show). Swamp's run history keeps each step.
+The existing fleet admission job runs after verification and at 03:05 Europe/Amsterdam. It visits eligible Nodes in order, with the serving Gateway last. For each Node it checks the agent pin and the declared inputs of each active workload role against the Node's applied record. A missing record needs a first apply. Agent delivery uses `fleet.rollout` and checks the executable of the running service. Any required CLI publication happens through the same Operation. Once delivery succeeds, `node.converge` applies only the roles with changed inputs. The next Node starts after the previous visit finishes. The Operation results show the checks. An unconfirmed delivery or converge reports `fleet.agent_delivery_failed` or `fleet.role_converge_failed` when the Operation supplied no more specific code. A verified release never creates another scheduler.
 
-### Turn it on
+The automatic converge can write the selected roles' software, files and services. For example, `app-dev` owns its shared Instance folders and the executor for its action families, and `swamp` owns its worker template. The converge defers T3 restarts for containers with open turns. A change to host-wide inputs, such as the base recipe, kernel policy or network policy, fails with `fleet.host_inputs_changed`. Unreadable inputs fail with `fleet.inputs_unavailable`. An invalid assignment scope fails with `fleet.role_scope_invalid`. Apply a reviewed host change with an explicit Node converge. The pass retries on the next existing fleet window or follows a newer verified release.
 
-The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's environment. While it is off, the Gateway admits no rollout, and Doctor reports no `node.release_lag`.
+`ORBIT_FLEET_ROLLOUT` defaults to `true`. Set it to `false` to pause fleet rollouts. The Gateway reports `disabled` and leaves the release without fleet-current status. `ORBIT_FLEET_ROLLOUT_ORDER` takes a comma-separated list of workload Node names to visit first. The order never adds or removes a Node.
 
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `ORBIT_FLEET_ROLLOUT` | `false` | Run rollouts |
-| `ORBIT_FLEET_ROLLOUT_ORDER` | empty | Node names, comma-separated, that go first, in this order. The other Nodes follow in the default order. It never adds or removes a Node |
-
-### Execution
-
-The Gateway admits one `fleet.rollout` Operation for the [Nodes that need a visit](#which-nodes-a-pass-visits) at two times:
-
-- when it records a release `verified`
-- every day at 03:05 Europe/Amsterdam, when the [window](#rollout-set-and-order) of the other Nodes opens
-
-Both queue the same admission job. The daily schedule only queues it. The job waits a minute at a time while a rollout runs. Nodes with [CLI intent](/reference/node-provisioning#orbit-cli) wait for its release; other Nodes can roll out independently. After admitting those Nodes, the job keeps its one-minute retry for waiting CI callers. CI publishes the CLI release minutes after the release goes live. A plan with no Node to visit admits nothing.
-
-An operator starts a pass with `orbit fleet:rollout` (`POST /api/v1/fleet/rollout`). Without Node IDs, the Gateway picks the Nodes. The Swamp `fleet-maintenance` schedule that admitted a pass each minute was deleted on 2026-11-06.
-
-Admission validates the serving release and captures the desired state: the commit, the CLI release, the agent pin, and each Node's SSH target. One rollout runs at a time; a second admission returns `fleet.rollout_busy` (409). A plan with no Node to visit admits nothing.
-
-The Operation belongs to Node 209, because its steps run there and record the result on it. Swamp owns order, maintenance windows and publication.
-
-A plan from an older release admits no further Node after a newer release becomes current. The Gateway compares release directories rather than versions, so a leftover `APP_VERSION` does not reopen the old rollout.
+An operator can also request an agent and CLI delivery pass with `orbit fleet:rollout` (`POST /api/v1/fleet/rollout`). Each pass is one `fleet.rollout` Operation. Use [`operation:list --kind=fleet.rollout`](/cli/operation/list) and [`operation:show`](/cli/operation/show) for delivery results. The manual pass follows the rest of this section.
 
 ### Rollout set and order
 
@@ -632,7 +613,7 @@ The rollout visits a Node when all of these hold:
 - it holds at least one active role other than `gateway`;
 - it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host;
 
-Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. A [CLI convergence](/cli/fleet#how-it-works) names why it leaves a Node out: `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `cli_not_required`.
+Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The serving Gateway joins the verified release pass for its agent and its workload roles. The Gateway role and the Gateway’s checkout CLI have their own release and maintenance paths. A [CLI convergence](/cli/fleet#how-it-works) names why it leaves a Node out: `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `cli_not_required`.
 
 No Node is a task sandbox any more, so the rollout has no `sandbox` reason and reads no task VM row ([old paths](/reference/old-paths#the-task-vm-readers)).
 
@@ -651,7 +632,7 @@ Orbit has no `agent` or `s3` role yet. The order already places `agent` in group
 
 Control steps run on Node 209. No step asks orbit-agent to act.
 
-App-dev-only Nodes may start at any hour. Other Nodes use 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Swamp checks the admitted role policy before CLI publication and again before observer publication. An effect already running may finish after the window closes. Closed windows and a busy binary-publication lock defer that Node to a later pass.
+App-dev-only Nodes and a task copy’s isolated inner fleet may start at any hour. Other Nodes use 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Swamp checks the admitted role policy before CLI publication and again before observer publication. An effect already running may finish after the window closes. Closed windows and a busy binary-publication lock defer that Node to a later pass.
 
 ### Desired state
 
@@ -669,7 +650,7 @@ Each Node runs the `fleet-release-node` child, and every step runs on Node 209 o
 
 A rollout then publishes the observer with official resources. `@swamp/cfgmgmt/fetch` writes the pinned agent to `/usr/local/bin/orbit-agent` only when its SHA-256 differs. One SSH read prints the running service's binary digest. The agent restarts only when the file changed or the running digest differs from the pin. The same read then checks that the pinned digest runs on an active unit. A failed fetch records `agent.download_failed`, a failed restart `agent.restart_failed`, and a failed check `agent.observer_unhealthy`. The rollout never reads the agent secret or changes observer configuration.
 
-Full Node footprint convergence remains the Nodes family's operation. Release rollout changes only the CLI, its public connection profile and the observer binary. It does not apply Caddy, DNS, PHP or role configuration.
+The delivery Operation applies the CLI, its public connection profile and the observer binary. For a verified release, the fleet pass then admits the scoped role converge when it is needed.
 
 For that repair, use [`orbit node:converge NODE`](/cli/node/converge). It admits one active, managed Linux Node against recorded state, reserves that Node and its recorded VPN hub, and runs the [seven scoped phases](/reference/node-provisioning#converge-the-orbit-footprint). Unlike automatic rollout membership, standalone admission allows a roleless Node or the Gateway Node. The default includes the base and all recorded roles; `--base` limits repair to Orbit's own layer, and `--roles=a,b` limits it to the base and those existing assignments. It changes no Instance or role assignment.
 
@@ -917,17 +898,13 @@ Laravel owns migration discovery, including vendor migrations. The run uses `mig
 
 The Instance pipeline deploys to Nodes over SSH and runs one PHP-FPM pool per Instance. The Gateway is the control plane on its own host. Its release cannot depend on a healthy Gateway to run it.
 
-### The rollout runs one command on each Node
-
-`orbit self-update` is the one node-local updater, on a Node and on an operator's Mac. A rollout in which the Gateway runs each update step over SSH would work, but it keeps the update logic in the Gateway. With one node-local command, a later move to another trigger changes only the trigger.
-
-### One Node at a time, and no rollout records
+### One Node at a time
 
 Converging Nodes in parallel is faster, but a bad release would break many Nodes at once. A failed Node stops the run, because the next Node would most likely fail the same way, and one broken Node is easier to repair than a fleet. A fleet failure never rolls the Gateway back, because the Gateway already verified and serves.
 
-Each pass starts again at the first Node in risk order that the commit has not converged. So a retry visits the failed Node first, and later Nodes stay untouched until it converges. That keeps the halt without a halt record, and the Operations and Swamp's run history are the only record of the rollout.
+Each pass starts again at the first Node in risk order that the commit has not converged. So a retry visits the failed Node first, and later Nodes stay untouched until it converges. The release record names each Node’s Operations. Swamp keeps the step history.
 
-A closed window or a busy publication lock defers a Node instead of failing it. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing. The rollout is off by default, so a Gateway release does not reach Nodes before an operator prepared them.
+A closed window or a busy publication lock defers a Node instead of failing it. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing.
 
 Development [`instance:mail:update`](/cli/instance/mail-update), [`instance:sleep`](/cli/instance/sleep), [`instance:wake`](/cli/instance/wake), [`instance:complete`](/cli/instance/complete) and [`env:sync` on a container Instance](/cli/env/sync#on-a-container-instance) (`instance.connection_environment`) also hold the release idle guard until their Operation settles.
 

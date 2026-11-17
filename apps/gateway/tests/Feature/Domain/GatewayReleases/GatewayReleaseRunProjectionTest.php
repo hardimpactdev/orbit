@@ -69,11 +69,12 @@ it('pauses a failed migration and records the end of its output, which the faile
 
 it('queues the fleet rollout admission after a verified release only', function (): void {
     Queue::fake();
-    endReleaseRun('failed', [], 'Migrate');
+    config(['fleet.rollout' => true]);
+    expect(endReleaseRun('failed', [], 'Migrate')->phases)->not->toHaveKey('fleet');
     Queue::assertNotPushed(AdmitFleetRollout::class);
 
     GatewayRelease::query()->delete();
-    endReleaseRun('succeeded');
+    expect(endReleaseRun('succeeded')->phases['fleet'])->toBe(['status' => 'pending', 'nodes' => []]);
     Queue::assertPushed(AdmitFleetRollout::class, 1);
 });
 

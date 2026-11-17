@@ -41,9 +41,9 @@ Nothing uses the executor yet, so a converge skips its install until the Gateway
 
 Roll out in this order:
 
-1. Publish a release whose agent delivery carries `orbit-executor-linux-x86_64`, and move the Gateway's agent pin to it. The release check accepts the executor beside the agents and checks its digest like theirs.
-2. Set the Gateway's key pair: `ORBIT_EXECUTOR_SIGNING_KEY` and `ORBIT_EXECUTOR_PUBLIC_KEYS` (below).
-3. Converge each `app-dev` Node.
+1. Publish a delivery with the `orbit-executor-linux-x86_64` artifact. The release check verifies its digest alongside the agents.
+2. Set `ORBIT_EXECUTOR_SIGNING_KEY` and `ORBIT_EXECUTOR_PUBLIC_KEYS` on the Gateway.
+3. Move the agent pin to that delivery and release the Gateway. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) converges each `app-dev` Node whose executor input changed.
 
 The Gateway holds two settings in `config/orbit.php` under `orbit.executor`:
 

@@ -64,14 +64,11 @@ sequenceDiagram
   %%> - always runs after activation paths, including failed drain, switch, verification or switch-back; skips only when no Horizon unit is configured
   %%> - a failed start admits no refresh
   alt verification and Horizon pass
-    SW->>GN: Admit nested-fleet refresh<br/>verified release's artisan
-    %%> What it does:
-    %%> - also permits a skipped Horizon start; admits the deployment of each nested-fleet default to the release commit, best effort; with none it admits nothing (stage 6)
     SW-->>GW: Run succeeded<br/>terminal result
     Note over GW: Record the release<br/>verified
     %%> Result:
-    %%> - the Gateway admits the [Fleet rollout](/reference/gateway-recovery#fleet-rollout), and a daily pass at 03:05 Amsterdam visits the Nodes it deferred
-    %%> - no fleet test follows a release; development defaults are not deployed by it, except the refresh of the nested-fleet default (stage 6)
+    %%> - the existing fleet admission job delivers the agent and converges changed roles one Node at a time
+    %%> - once every Node is current, the Gateway admits the nested-fleet refresh (stage 6); the daily fleet pass revisits deferred Nodes
   else verification failed
     SW--xGW: Run failed<br/>switch-back result · alert
     %%> Result:

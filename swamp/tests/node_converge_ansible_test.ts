@@ -539,7 +539,8 @@ Deno.test("the base converge installs the executor only from its intent, after t
         ["intent.executor.skip != None", "executor install skipped: {{ intent.executor.skip }}"]);
     assertEquals(steps[1].when, "intent.executor.skip == None");
     const tasks = steps[1].block as Array<Record<string, unknown>>;
-    assertEquals(tasks[0]["ansible.builtin.assert"], { that: ["intent.executor.plan_error == None"], fail_msg: "{{ intent.executor.plan_error }}", quiet: true });
+    assertEquals(tasks[0]["ansible.builtin.assert"], { that: ["intent.executor.plan_error == None"], fail_msg: "{{ intent.executor.plan_error | default('executor.release_invalid', true) }}", quiet: true });
+    await localPlay({ intent: { executor: { plan_error: null } } }, [tasks[0]]);
     const replace = tasks.find((task) => task.name === "Reconcile the pinned executor binary")!;
     assertEquals((replace.vars as Record<string, Record<string, string>>).converge_replacement.sha256, "{{ intent.executor.sha256 }}");
     const sudoers = tasks.find((task) => task.name === "Allow the Node user the one relay command")!["ansible.builtin.copy"] as Record<string, string>;

@@ -162,8 +162,21 @@ export function windowOpen(daytime: boolean, at: Date): boolean {
 
 /** Native dependencies, placed Node steps and durable outputs own the release lifecycle. */
 export function fleetRelease(
-    makeHttp: (ctx: Context) => Http = (ctx) =>
-        gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
+    makeHttp: (ctx: Context) => Http = (ctx) => {
+        const { gatewayUrl, caFile } = ctx.globalArgs;
+        return async (method, path, body) => {
+            let certificate = caFile;
+            try {
+                await Deno.stat(certificate);
+            } catch (failure) {
+                // The nested fleet provisions its root CA under the managed trust-store name.
+                if (!(failure instanceof Deno.errors.NotFound) ||
+                    caFile !== Globals.shape.caFile.parse(undefined)) throw failure;
+                certificate = "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt";
+            }
+            return await gatewayHttp(gatewayUrl, certificate)(method, path, body);
+        };
+    },
     now = () => new Date(),
 ) {
     async function read(args: z.infer<typeof Args>, ctx: Context) {

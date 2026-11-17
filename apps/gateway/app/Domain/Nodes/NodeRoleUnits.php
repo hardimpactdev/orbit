@@ -19,10 +19,16 @@ use App\Models\NodeRole;
  */
 final readonly class NodeRoleUnits
 {
-    /** @return list<array{name:string,content:string}> */
-    public static function for(Node $node): array
+    /**
+     * @param list<string>|null $selected
+     * @return list<array{name:string,content:string}>
+     */
+    public static function for(Node $node, ?array $selected = null): array
     {
         $roles = $node->roles()->get()->map(static fn (NodeRole $assignment): RoleName => $assignment->role)->all();
+        if ($selected !== null) {
+            $roles = array_filter($roles, static fn (RoleName $role): bool => in_array($role->value, $selected, true));
+        }
         $units = [];
         if (in_array(RoleName::Swamp, $roles, true)) {
             $units[] = ['name' => 'orbit-swamp-worker@.service', 'content' => SwampRoleUnits::for($node->user, $node->id)['worker']];

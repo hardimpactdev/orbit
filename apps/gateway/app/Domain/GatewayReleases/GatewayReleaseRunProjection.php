@@ -7,6 +7,7 @@ namespace App\Domain\GatewayReleases;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubTokenGrant;
+use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
@@ -137,6 +138,9 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             $phases[$phase]['error_code'] = $code;
             $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $previous];
         }
+        if ($code === null) {
+            $phases['fleet'] = ['status' => config('fleet.rollout') ? 'pending' : 'disabled', 'nodes' => []];
+        }
         $recorder = app(GatewayReleaseRecorder::class);
         $recorder->write(new DeployedGatewayRelease(
             id: GatewayReleaseCommit::id($sha),
@@ -154,22 +158,21 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             errorCode: $code,
             message: $code === null ? null : "Swamp run for Operation {$operation->id} ended {$status}".($step === null ? '.' : " at {$step}.").self::failureOutput($data, $phase),
         ), $record);
-        if ($code === null) {
-            // The activate child admits task image refreshes after verification and the new Horizon start.
-            $id = GatewayReleaseCommit::id($sha);
-            DB::afterCommit(static function () use ($id): void {
-                try {
-                    // Stage 8: the verified release is the fleet's desired state, so its footprint rollout follows.
-                    GatewaySchedule::dispatch(new AdmitFleetRollout);
-                } catch (Throwable $failure) {
-                    // The daily window trigger asks again; a release is never held by it.
-                    Log::warning('The fleet rollout after a release was not queued.', ['release' => $id, 'message' => $failure->getMessage()]);
-                }
-            });
-        }
         if ($code === null && $record->trigger === 'deploy') {
             // As the legacy runner: whether this manual deploy pins an older commit decides if automation pauses.
             $recorder->progress($record->refresh(), [...$record->phases, 'newest_green' => app(GatewayReleaseSupersession::class)->check($sha)]);
+        }
+        if ($code === null) {
+            DB::afterCommit(static function () use ($sha, $record): void {
+                try {
+                    GatewaySchedule::dispatch(new AdmitFleetRollout($record->id));
+                    if (! config('fleet.rollout')) {
+                        app(NestedFleetRefresh::class)->admitAll($sha);
+                    }
+                } catch (Throwable) {
+                    Log::warning('Could not queue the fleet work after a verified Gateway release.', ['release' => GatewayReleaseCommit::id($sha)]);
+                }
+            });
         }
     }
 

@@ -7,7 +7,7 @@
       + (['composer', 'unzip'] + recipe.git.packages if 'composer' in managers else []) }}
     # The Swamp Node runs the Tool helper of every converge (operation-node-converge.yml, tools) with the pinned Deno, a zip archive.
     helper_tools: "{{ ['deno', 'unzip'] if 'swamp' in intent.selected_roles else [] }}"
-    names: "{{ (recipe.common + (intent.selected_roles | map('extract', recipe.roles) | flatten) + manager_tools + helper_tools) | unique | list }}"
+    names: "{{ (([] if intent.release_roles_only | default(false) else recipe.common) + (intent.selected_roles | map('extract', recipe.roles) | flatten) + manager_tools + helper_tools) | unique | list }}"
     versions: "{{ names | select('match', '^php:') | map('regex_replace', '^php:', '') | list }}"
     php_names: "{{ (versions | map('extract', recipe.php.versions) | map(attribute='packages') | flatten) + (recipe.php.shared if versions else []) }}"
   ansible.builtin.set_fact:

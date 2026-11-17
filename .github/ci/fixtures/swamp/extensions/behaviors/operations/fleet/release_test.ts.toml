@@ -1,0 +1,21 @@
+order = 1420
+file = "swamp/extensions/behaviors/operations/fleet/release_test.ts"
+cost = 9
+inputs = [
+  "swamp/extensions/behaviors/operations/fleet/release.ts",
+  "swamp/extensions/behaviors/operations/fleet/release_local.ts",
+  "swamp/workflows/workflow-operation-fleet-rollout.yaml",
+  "swamp/workflows/workflow-operation-fleet-cli-converge.yaml",
+  "swamp/workflows/workflow-fleet-release-node.yaml",
+]
+cases = [
+  "a pinned, running observer is unchanged; a fetch or restart makes it converged",
+  "each failed observer step names its own refusal and stops the fleet",
+  "every step runs on 209 and only a rollout publishes the observer",
+  "closed window defers shared nodes; daytime nodes bypass the window",
+  "closed window prevents installation and the run still succeeds",
+  "a failed or missing earlier Node keeps later fleet participants pending",
+  "a rollout admitted before the record tables were dropped still prepares",
+  "fleet.rollout omits CLI publication for a Node with no caller",
+  "fleet.cli_converge omits CLI publication for a Node with no caller",
+]

@@ -11,6 +11,7 @@ use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolStatus;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Support\ValidatedData;
@@ -53,7 +54,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
         }
         $data = [...$data, 'status' => $result['outcome'], 'error_code' => $result['error_code'] ?? null];
 
-        return DB::transaction(function () use ($operation, $data, $result, $tools, $admitted, $intent): Operation {
+        return DB::transaction(function () use ($operation, $data, $result, $tools, $admitted, $intent, $snapshot): Operation {
             $locked = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
             if ($locked->status->terminal()) {
                 return $locked;
@@ -80,6 +81,13 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             self::recordCiRunner($operation, $intent, $rolesPassed);
             if ($result['outcome'] === 'succeeded') {
                 app(NodeConvergePhaseDigest::class)->record(ValidatedData::integer($operation->node_id), ValidatedData::object($result['digests']));
+                if (isset($snapshot['release_inputs'])) {
+                    $node = Node::query()->whereKey($operation->node_id)->lockForUpdate()->firstOrFail();
+                    $inputs = ValidatedData::object($snapshot['release_inputs']);
+                    $recorded = $node->release_inputs ?? [];
+                    $roles = array_replace((array) ($recorded['roles'] ?? []), (array) $inputs['roles']);
+                    $node->forceFill(['release_inputs' => [...$recorded, 'roles' => $roles, 'host' => $inputs['host'] ?? $recorded['host'] ?? null]])->save();
+                }
             }
             if ($rolesPassed) {
                 foreach (is_array($intent['roles'] ?? null) ? $intent['roles'] : [] as $role) {
