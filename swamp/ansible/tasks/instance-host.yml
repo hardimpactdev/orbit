@@ -29,6 +29,14 @@
     fail_msg: "instance.host_unavailable: the Node needs the Incus storage pool {{ instances.pool }}, of driver zfs or dir"
     quiet: true
 
+# Gateway-direct workspace and runtime reads run Incus as the managed SSH user, without sudo. The account already has
+# passwordless sudo, so socket membership adds no authority; append keeps all of its other groups.
+- name: Give the managed user access to the Instance host socket
+  ansible.builtin.user:
+    name: "{{ orbit_user }}"
+    groups: [incus-admin]
+    append: true
+
 # The Gateway gives each Node a unique /24 of 10.253.0.0/16, but it does not see the bridges an operator made, such as a CI bridge.
 # A range that another interface of the Node holds already refuses before any change.
 - name: Read the Node's IPv4 addresses

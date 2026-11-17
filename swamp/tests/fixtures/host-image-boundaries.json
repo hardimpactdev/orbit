@@ -237,6 +237,10 @@
       "targets": {
         "mode": 420,
         "text": "{\"args\":[\"query\",\"--\",\"/1.0/storage-pools/orbit-instances\"],\"remote\":false,\"configRemote\":\"\",\"socket\":\"\"}\n{\"args\":[\"query\",\"/1.0\"],\"remote\":false,\"configRemote\":\"\",\"socket\":\"\"}\n"
+      },
+      "users.json": {
+        "mode": 384,
+        "text": "{\"name\": \"node-reader\", \"groups\": [\"work\", \"operators\", \"incus-admin\"]}"
       }
     }
   },

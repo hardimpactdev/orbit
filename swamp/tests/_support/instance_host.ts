@@ -43,6 +43,15 @@ function transform(task: Task, folder: string): Task {
             };
         }
     }
+    // Model account groups in the fixture; never change the machine running these unprivileged tests.
+    if ("ansible.builtin.user" in task) {
+        task.vars = { ...(task.vars as object ?? {}), fixture_user: task["ansible.builtin.user"] };
+        delete task["ansible.builtin.user"];
+        task["ansible.builtin.copy"] = {
+            dest: `${folder}/users.json`, mode: "0600",
+            content: `{{ {'name': fixture_user.name, 'groups': (((lookup('ansible.builtin.file', '${folder}/users.json') | from_json).groups if fixture_user.append | default(false) else []) + fixture_user.groups) | unique | list} | to_json }}`,
+        };
+    }
     if ("ansible.posix.sysctl" in task) {
         task.vars = {
             ...(task.vars as object ?? {}),
@@ -453,6 +462,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
         Deno.writeTextFileSync(`${folder}/bin/${name}`, `#!/bin/sh\n${body}\n`);
         Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
     }
+    Deno.writeTextFileSync(`${folder}/users.json`, JSON.stringify({ name: "node-reader", groups: ["work", "operators"] }));
     writeTasks(folder);
     Deno.writeTextFileSync(
         `${folder}/play.yml`,
@@ -460,6 +470,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
             name: "Prepare the Instance container host",
             hosts: "localhost",
             gather_facts: false,
+            vars: { orbit_user: "node-reader" },
             tasks: [{
                 name: "Prepare the Instance container host",
                 "ansible.builtin.include_tasks": "tasks/instance-host.yml",

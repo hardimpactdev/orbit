@@ -5,7 +5,7 @@ import { fixture } from "./instance_host.ts";
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 type Entry = { mode: number; text?: string; artifact?: string; source?: string; link?: string; directory?: true };
 export type Boundary = { entries: Record<string, Entry> };
-const roots = ["images", "arc", "arc.conf", "subuid", "subgid", "sysctl", "modules-load", "systemd", "libexec", "hibernation", "bridge-policy",
+const roots = ["users.json", "images", "arc", "arc.conf", "subuid", "subgid", "sysctl", "modules-load", "systemd", "libexec", "hibernation", "bridge-policy",
     "container-libraries", "opt", "cache", "debs", "egress", "etc-orbit", "dev-ports.nft", "state.json", "remote-state.json", "calls", "targets", "nested-image.json", "boundary-facts.json"];
 
 function substitutions(f: Fixture): [string, string][] {
