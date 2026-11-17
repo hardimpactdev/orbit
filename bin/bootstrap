@@ -64,6 +64,34 @@ cleanup() {
 
 trap cleanup EXIT
 
+# Hash names and bytes, not mtimes: a restored seed or a branch switch may preserve timestamps.
+# Inputs are explicit source trees, never dependency trees or generated outputs.
+fingerprint() {
+    python3 - "$repository_root" "$@" <<'PY'
+import hashlib
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+digest = hashlib.sha256()
+outputs = {'docs/docs.json', 'docs/openapi.json', 'docs/flows-data.js', 'docs/generated/context.json'}
+for name in sys.argv[2:]:
+    paths = []
+    for source in sorted(root.glob(name)) or [root / name]:
+        paths.extend(sorted(path for path in source.rglob('*') if path.is_file()) if source.is_dir() else [source])
+    digest.update(name.encode() + b'\0')
+    for path in paths:
+        relative = path.relative_to(root).as_posix()
+        if relative in outputs or '__pycache__' in path.parts or '/bootstrap/cache/' in relative:
+            continue
+        digest.update(relative.encode() + b'\0')
+        digest.update(hashlib.sha256(path.read_bytes()).digest() if path.is_file() else b'missing')
+print(digest.hexdigest())
+PY
+}
+
+composer_version="$(composer --version --no-ansi) $(php -r 'echo PHP_VERSION;')"
+
 # Composer's shared file cache is not safe for concurrent writers. Keep installs
 # serial; each Composer process still downloads its packages concurrently.
 for project in "${projects[@]}"; do
@@ -76,9 +104,56 @@ for project in "${projects[@]}"; do
             cp .env.example .env || exit
         fi
 
-        composer install --no-interaction --prefer-dist
+        inputs="$(fingerprint bin/bootstrap "$project/composer.json" "$project/composer.lock" packages/php-sdk/composer.json) $composer_version" || exit
+        record=vendor/.orbit-bootstrap-install
+        installed=0
+        if [[ ! -f vendor/autoload.php || ! -f "$record" || "$(cat "$record")" != "$inputs" ]]; then
+            rm -f "$record" vendor/.orbit-bootstrap-generate
+            composer install --no-interaction --prefer-dist || exit
+            printf '%s\n' "$inputs" > "$record"
+            installed=1
+        else
+            printf 'Dependencies current.\n'
+        fi
+
+        # Normal Composer hooks own cold generation. Source-only changes need those
+        # generators, not another install (nor another Laravel package discovery).
+        generator_inputs=()
+        outputs=()
+        case "$project" in
+            apps/gateway)
+                generator_inputs=(bin/build-api bin/docs-openapi bin/mcp-tools bin/docs-navigation
+                    apps/gateway/app apps/gateway/bootstrap apps/gateway/config apps/gateway/routes
+                    apps/gateway/extensions apps/gateway/composer.json apps/gateway/composer.lock
+                    apps/gateway/.env packages/php-sdk/src apps/cli/app/Commands docs/site.json docs/navigation)
+                outputs=(docs/openapi.json docs/docs.json apps/gateway/resources/mcp/tools.json)
+                ;;
+            apps/docs)
+                generator_inputs=(bin/docs-navigation docs apps/docs/app apps/docs/config
+                    apps/docs/bootstrap apps/docs/composer.json apps/docs/composer.lock apps/docs/.env)
+                outputs=(docs/docs.json docs/generated/context.json)
+                ;;
+        esac
+        if ((${#generator_inputs[@]})); then
+            generation="$(fingerprint bin/bootstrap "${generator_inputs[@]}") $composer_version" || exit
+            record=vendor/.orbit-bootstrap-generate
+            missing=0
+            for output in "${outputs[@]}"; do
+                [[ -f "$repository_root/$output" ]] || missing=1
+            done
+            if ((installed == 0)) && { ((missing)) || [[ ! -f "$record" || "$(cat "$record")" != "$generation" ]]; }; then
+                rm -f "$record"
+                if [[ "$project" == apps/gateway ]]; then
+                    "$repository_root/bin/build-api" || exit
+                else
+                    "$repository_root/bin/docs-navigation" || exit
+                    php artisan orbit:docs-index || exit
+                fi
+            fi
+            printf '%s\n' "$generation" > "$record"
+        fi
     ) >"$log_file" 2>&1; then
-        printf '\n[%s] installed\n' "$project"
+        printf '\n[%s] ready\n' "$project"
     else
         printf '\n[%s] failed\n' "$project" >&2
         failed=1
@@ -93,15 +168,33 @@ fi
 
 if ((with_bun)); then
     for project in "${bun_projects[@]}"; do
-        printf '\n[%s] bun install\n' "$project"
-        (cd "$repository_root/$project" && bun install --frozen-lockfile)
+        inputs="$(fingerprint bin/bootstrap "$project/package.json" "$project/bun.lock" "$project/bunfig.toml" \
+            "$project/.npmrc" "$project/tools/api-types/package.json") $(bun --version)"
+        record="$repository_root/$project/node_modules/.orbit-bootstrap-install"
+        if [[ ! -f "$record" || "$(cat "$record")" != "$inputs" ]]; then
+            printf '\n[%s] bun install\n' "$project"
+            rm -f "$record"
+            (cd "$repository_root/$project" && bun install --frozen-lockfile)
+            printf '%s\n' "$inputs" > "$record"
+        fi
     done
 fi
 
 if ((with_rust)); then
     for project in "${cargo_projects[@]}"; do
-        printf '\n[%s] cargo fetch\n' "$project"
-        (cd "$repository_root/$project" && cargo fetch --locked)
+        inputs="$(fingerprint bin/bootstrap "$project/Cargo.toml" "$project/Cargo.lock" "$project/crates/*/Cargo.toml" \
+            'apps/gateway/extensions/*/agent/Cargo.toml' "$project/.cargo" "$project/rust-toolchain.toml") $(cargo --version)"
+        record="$repository_root/$project/target/.orbit-bootstrap-fetch"
+        # Cargo knows which cached crates this lock needs. Check offline before reusing
+        # the record, so a cleared or different CARGO_HOME gets fetched again.
+        if [[ ! -f "$record" || "$(cat "$record")" != "$inputs" ]] || \
+            ! (cd "$repository_root/$project" && cargo metadata --locked --offline --format-version=1 >/dev/null 2>&1); then
+            printf '\n[%s] cargo fetch\n' "$project"
+            rm -f "$record"
+            (cd "$repository_root/$project" && cargo fetch --locked)
+            mkdir -p "$(dirname "$record")"
+            printf '%s\n' "$inputs" > "$record"
+        fi
     done
 fi
 
