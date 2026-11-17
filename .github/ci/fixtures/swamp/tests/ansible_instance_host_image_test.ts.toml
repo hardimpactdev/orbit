@@ -6,7 +6,6 @@ cases = [
   "the saved zfs host prepare boundary matches the shipped tasks",
   "the saved nested host system boundary matches the shipped tasks",
   "the saved nested host prepare boundary matches the shipped tasks",
-  "the Instance host appends Incus socket access for its managed user and preserves other groups on rerun",
   "a fleet Node's profile mounts the runtime and agent folders unshifted, as its folder plans say",
   "an unshifted agent folder opens its programs to everyone; an idmapped one keeps them to gid 2750",
   "the normal image on a nested host reaches the verified nested-build boundary",
@@ -41,8 +40,8 @@ cases = [
 file = "swamp/tests/ansible_instance_host_image_test.ts"
 # ESTIMATE: completed Beast run, four workers, each case ceil(local seconds x 2.1) + 1.
 # Cases use verified boundaries; every case remains in Required. No timeout increase.
-cost = 900
-slices = 37
+cost = 885
+slices = 36
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -119,8 +118,6 @@ inputs = [
   "the image names the trust module in agent's NSS store, after it checked the module's library in the build container" = 20 # ESTIMATE: Beast 8s * 2.1, rounded up + 1s
   "an image whose libp11-kit0 is 0.25.5-3 is never published and gets no NSS store" = 10 # ESTIMATE: Beast 2-4s * 2.1, rounded up + 1s
   "an image whose libp11-kit0 is not installed is never published and gets no NSS store" = 10 # ESTIMATE: Beast 2-4s * 2.1, rounded up + 1s
-
-  "the Instance host appends Incus socket access for its managed user and preserves other groups on rerun" = 15 # ESTIMATE: isolated shipped account task, two runs, with startup headroom
 
 [mandatory_cases]
 "swamp/ansible/tasks/instance-host.yml" = [

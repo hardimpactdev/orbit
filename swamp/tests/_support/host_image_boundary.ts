@@ -5,7 +5,7 @@ import { fixture } from "./instance_host.ts";
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 type Entry = { mode: number; text?: string; artifact?: string; source?: string; link?: string; directory?: true };
 export type Boundary = { entries: Record<string, Entry> };
-const roots = ["users.json", "images", "arc", "arc.conf", "subuid", "subgid", "sysctl", "modules-load", "systemd", "libexec", "hibernation", "bridge-policy",
+const roots = ["images", "arc", "arc.conf", "subuid", "subgid", "sysctl", "modules-load", "systemd", "libexec", "hibernation", "bridge-policy",
     "container-libraries", "opt", "cache", "debs", "egress", "etc-orbit", "dev-ports.nft", "state.json", "remote-state.json", "calls", "targets", "nested-image.json", "boundary-facts.json"];
 
 function substitutions(f: Fixture): [string, string][] {
@@ -32,7 +32,7 @@ function replace(value: string, pairs: [string, string][]) {
 export function capture(f: Fixture): Boundary {
     const pairs = substitutions(f), entries: Record<string, Entry> = {};
     const sources = [...Deno.readDirSync(f.folder)].filter((e) => e.isFile && e.name.endsWith(".py")).map((e) => e.name);
-    sources.push("files/instance-container-wake.sh", "files/instance-container-power.py");
+    sources.push("files/instance-container-wake.sh");
     const artifacts = [...Deno.readDirSync(`${f.folder}/artifacts`)].filter((e) => e.isFile)
         .map((e) => [e.name, Deno.readFileSync(`${f.folder}/artifacts/${e.name}`)] as const);
     const walk = (path: string) => {

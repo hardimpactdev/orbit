@@ -2447,7 +2447,7 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 4. It writes the marker `/etc/orbit/instance-fleet-node`.
 5. It runs the rest of the branch as on any `app-dev` Node: project, bridge, folders, egress proxy and the Instance image.
 
-The Instance host role appends the Node's managed SSH user to `incus-admin`. The Gateway's direct workspace and runtime reads call Incus as that user. The account already has passwordless sudo, so this adds no authority. An existing seed gets the membership when `nested-app-dev` converges its `app-dev` role again; fleet start keeps host provisioning in that role.
+Fleet start appends the managed user `orbit` to `incus-admin` on every nested Node marked as an Instance host by `/etc/orbit/instance-fleet-node`. The Gateway's direct workspace and runtime reads call Incus as that user, without sudo. The account already has passwordless sudo, so this adds no authority. The fleet builds its own Nodes; their account setup belongs to fleet start. Every copy start repairs missing membership, including a copy of an existing seed, with no converge or seed refresh. Other groups remain unchanged, and a current membership reports no change.
 
 Its egress proxy goes out through the fleet's proxy (see below).
 
@@ -3188,7 +3188,7 @@ Each phase runs on the Node and reaches the inner Incus with `incus exec` into t
 | Resume | `instance-fleet-resume.yml` | Runs the start, then waits for readiness: the fleet after a passed refresh, or the fleet of a restored seed |
 | Reset | `instance-fleet-reset.yml` | Stops the three nested containers at once and restores `base` on each. Then it runs the start, migrates the nested Gateway forward and waits for readiness |
 
-Fleet start also runs `php artisan gateway:known-hosts:sync` as `orbit` in the nested Gateway. The internal command restores the Gateway's SSH `known_hosts` from Node records that pin a WireGuard address, host-key type, key and fingerprint. It scans no host, retains unrelated entries and reports `{"changed": true}` only when it repairs the file. A current file is left in place. This supplies direct Gateway reads in fleets whose Nodes bypassed enrollment.
+Fleet start first ensures the managed user's Incus socket access on its Instance hosts ([Instance host in the fleet](#instance-host-in-the-fleet)). It then runs `php artisan gateway:known-hosts:sync` as `orbit` in the nested Gateway. The internal command restores the Gateway's SSH `known_hosts` from Node records that pin a WireGuard address, host-key type, key and fingerprint. It scans no host, retains unrelated entries and reports `{"changed": true}` only when it repairs the file. A current file is left in place. This supplies direct Gateway reads in fleets whose Nodes bypassed enrollment.
 
 The fleet rules:
 
