@@ -382,8 +382,17 @@ class SwapTest(Fixture):
     def test_the_configured_swap_is_the_bytes_of_a_size_and_0_otherwise(self):
         for value, expected in (("12GiB", str(12 << 30)), ("5GiB", str(5 << 30)), ("2GB", "2000000000"), ("4096", "4096"),
                                 ("512MiB", str(512 << 20)), ("true", "0"), ("false", "0"), ("", "0"), (None, "0"),
-                                ("50%", "0"), ("12XiB", "0")):
+                                ("50%", "0"), ("12XiB", "0"), ("1", "0"), ("12 GiB", "0")):
             self.assertEqual(power.configured_swap(value), expected, value)
+
+    def test_the_incus_read_takes_the_swap_from_the_expanded_config(self):
+        incus = power.Incus()
+        for config, expected in (({"limits.memory.swap": "12GiB"}, str(12 << 30)), ({}, "0")):
+            incus._request = lambda *args, **kwargs: (200, {"metadata": {
+                "status": "Running", "config": {"volatile.uuid": "uuid-1", "limits.memory.swap": "1GiB"}, "expanded_config": config,
+                "state": {"pid": 42}}})
+            self.assertEqual(incus.instance("orbit-instances-nested", "instance-7"),
+                             {"status": "running", "incarnation": "uuid-1", "init_pid": 42, "swap_max": expected})
 
     def test_an_empty_subtree_opens_only_the_container(self):
         for path in ("init.scope", "app/worker", "app"):

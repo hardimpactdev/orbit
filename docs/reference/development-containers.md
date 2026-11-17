@@ -1576,7 +1576,7 @@ Names from the workspace never become arguments. Git returns them NUL-separated,
 
 A sleeping Instance's container is frozen. Its processes keep their state and memory, but the memory moves to swap: a frozen Laravel and T3 clone holds about 13 MiB of RAM and about 340 MiB of swap. Nothing boots at the wake, so a resume takes a fraction of a second. Its disk, databases, Route, T3 threads and sessions stay. A container never prunes its dependencies.
 
-Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, so a running container never swaps: a busy one meets its limit instead of filling the swap disk. Only a byte size in `limits.memory.swap` gives a container real swap; `true`, `false` and an empty value all give 0. A nested-fleet container has one, [equal to its memory](#the-container), and so does each nested container of its fleet ([fleet rules](#fleet-rules)).
+Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, unless `limits.memory.swap` holds a byte size; `true`, `false` and an empty value all give 0. So a running normal container never swaps: a busy one meets its limit instead of filling the swap disk. A nested-fleet container has a size, [equal to its memory](#the-container), and so does each nested container of its fleet ([fleet rules](#fleet-rules)). A busy nested-fleet container can therefore use swap while it runs, up to that size, and the host's swap disk takes it.
 
 A sleep opens swap (`max`) for every cgroup of the container's subtree that holds 0, freezes the container, records which pages of its processes were resident, and then asks the kernel to reclaim its memory. A wake reads the recorded pages back while the container is still frozen, resumes it, and gives back the limits of exactly the cgroups the sleep opened. Other pages in swap come back when they are used. No Incus setting changes.
 
@@ -1613,7 +1613,7 @@ After the reclaim, the sleep reads the container's memory counters until anonymo
 
 A nested-fleet Instance never takes this stop: a stop loses the Club key in `/run` and the tunnel `wg-nested`, which only a deployment or a start gives back. The sleep resumes it, closes swap, removes the marker and fails with `instance.container_freeze_failed`.
 
-A stopped container keeps each Process unit's enablement, which holds its desired state, so its later boot brings back what ran before. A sleep that fails to freeze writes 0 back and removes the marker, and the container serves as before (`instance.container_freeze_failed`).
+A stopped container keeps each Process unit's enablement, which holds its desired state, so its later boot brings back what ran before. A sleep that fails to freeze closes the swap it opened and removes the marker, and the container serves as before (`instance.container_freeze_failed`).
 
 The runtime's `power_state` is `stopped` for both a frozen and a stopped sleeping container. Each reader treats them alike.
 
@@ -3116,7 +3116,7 @@ The Gateway admits the start only for an active development clone whose runtime 
 
 The run reads the Club key once, at its start. Without a key the fleet's Swamp cannot start, and Doctor cannot pass. So the run then fails before any change, with `instance.nested_club_key_missing`.
 
-The step `Start the container` runs the `start` part of `instance-container.yml`, as a deployment's `Prepare the container` does. It keeps `boot.autostart=false` and checks the egress gates of every bridge NIC. Then it starts the container and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
+The step `Start the container` runs the `start` part of `instance-container.yml`, as a deployment's `Prepare the container` does. It keeps `boot.autostart=false` and `limits.memory.swap` equal to the memory, and checks the egress gates of every bridge NIC. Then it starts the container and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
 
 The step `Start the inner fleet` runs the [fleet step](#the-fleet-step)'s check and resume, as the clone's create does. It checks the fleet rules and starts the nested containers and the tunnel. Then it waits for Doctor. It records its time as `fleet_seconds`.
 

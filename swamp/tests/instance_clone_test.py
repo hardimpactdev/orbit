@@ -1243,7 +1243,8 @@ class CloneTest(unittest.TestCase):
         # InstancePlacement::config of the nested project over the common limits, as the Gateway writes it.
         config = {"limits.cpu": "4", "limits.memory": "12GiB", "limits.processes": "4096", "security.nesting": "true",
                   "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true",
-                  "security.idmap.isolated": "true", "security.idmap.size": "101000000", "boot.autostart": "false"}
+                  "security.idmap.isolated": "true", "security.idmap.size": "101000000", "limits.memory.swap": "12GiB",
+                  "boot.autostart": "false"}
         damages = {
             "raw.lxc": ("raw.lxc", "lxc.apparmor.profile=unconfined"),
             "privileged": ("security.privileged", "true"),
@@ -1415,8 +1416,9 @@ class CloneTest(unittest.TestCase):
                 self.assertTrue(all(len(call) <= 7 for call in guards))
 
     def test_nested_guard_admits_the_live_shape_of_the_first_nested_container(self):
-        # The expanded config of the first nested-fleet container on a real Node, made before `boot.autostart`; the guard's
-        # allowed config is that intent's `config`. Its next start writes `boot.autostart` first, so only that key is missing now.
+        # The expanded config of the first nested-fleet container on a real Node, made before `boot.autostart` and
+        # `limits.memory.swap`; the guard's allowed config is that intent's `config`. Its next start writes both keys first, so
+        # only they are missing now.
         namespace = {}
         exec(NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0]
              + (NETWORK_CHECK.parent / "instance_nested.py").read_text().split('if __name__ == "__main__":')[0], namespace)
@@ -1436,10 +1438,12 @@ class CloneTest(unittest.TestCase):
         }
         allowed = {"limits.cpu": "4", "limits.memory": "12GiB", "limits.processes": "4096", "security.nesting": "true",
                    "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true",
-                   "security.idmap.isolated": "true", "security.idmap.size": "101000000", "boot.autostart": "false"}
+                   "security.idmap.isolated": "true", "security.idmap.size": "101000000", "limits.memory.swap": "12GiB",
+                   "boot.autostart": "false"}
         check = namespace["nested_unsafe_config"]
-        self.assertEqual(check(live, allowed), "config boot.autostart")
-        self.assertEqual(check({**live, "boot.autostart": "false"}, allowed), "")
+        self.assertEqual(check(live, allowed), "config limits.memory.swap")
+        self.assertEqual(check({**live, "limits.memory.swap": "12GiB"}, allowed), "config boot.autostart")
+        self.assertEqual(check({**live, "limits.memory.swap": "12GiB", "boot.autostart": "false"}, allowed), "")
 
     def test_guest_and_node_command_names_stay_in_sync(self):
         def commands(path):

@@ -611,8 +611,9 @@ BYTE_UNITS = {"": 1, "B": 1, "kB": 10**3, "MB": 10**6, "GB": 10**9, "TB": 10**12
 def configured_swap(value):
     """The memory.swap.max that Incus writes for a container's `limits.memory.swap`: its bytes when it is a byte size, else `0`.
     Incus writes 0 for any container with `limits.memory` unless this key holds a size; `true`, `false` and empty give 0 too."""
-    match = re.fullmatch(r"(\d+)\s*([A-Za-z]*)", str(value or "").strip())
-    if match is None or match.group(2) not in BYTE_UNITS:
+    match = re.fullmatch(r"(\d+)([A-Za-z]*)", str(value or ""))
+    # Incus reads `1` and `0` as booleans before sizes.
+    if match is None or match.group(2) not in BYTE_UNITS or value in ("0", "1"):
         return "0"
     return str(int(match.group(1)) * BYTE_UNITS[match.group(2)])
 
