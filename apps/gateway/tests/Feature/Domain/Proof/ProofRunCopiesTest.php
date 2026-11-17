@@ -34,6 +34,7 @@ use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofGroup;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Proof\ProofRunWatch;
+use App\Domain\Proof\ProofWarmPool;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -45,6 +46,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Proof\AdmitProofRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\Tasks\DestroyTaskCopy;
@@ -55,6 +57,7 @@ use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\ProofSeed;
+use App\Models\ProofWarmCopy;
 use App\Models\Route;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
@@ -852,5 +855,166 @@ describe('proof:run in copies: every end removes the copy', function (): void {
 
         Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $ended->id);
         Queue::assertNotPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $running->id);
+    });
+});
+
+/** The default's seed as a refresh records it, so the pool has a current seed to make warm copies from. */
+function copyProofSeedTaken(?CarbonImmutable $at = null): void
+{
+    InstanceRuntime::query()->whereHas('instance', static fn ($instance) => $instance->where('name', 'default'))->firstOrFail()
+        ->update(['seed_taken_at' => $at ?? now()->subHour()->startOfSecond()]);
+}
+
+/** The copy of a warm group as its create and completion leave it: active. */
+function copyProofWarmActive(ProofWarmCopy $warm): Instance
+{
+    $copy = Instance::query()->where('task_workspace_owner_id', $warm->task_id)->firstOrFail();
+    $copy->update(['status' => InstanceState::Active, 'first_setup_pending' => false, 'branch' => $copy->name, 'starting_commit' => str_repeat('c', 40)]);
+    InstanceRuntime::query()->where('instance_id', $copy->id)->update(['power_state' => InstanceRuntimePowerState::Running]);
+    Operation::query()->where('target_type', 'instance')->where('target_id', $copy->id)->update(['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null]);
+
+    return $copy->refresh();
+}
+
+/**
+ * The copies of the groups as their destroy leaves them: gone.
+ *
+ * @param  list<int>  $groups
+ */
+function copyProofCopiesGone(array $groups): void
+{
+    Operation::query()->where('kind', 'tasks.cancel')->update(['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null]);
+    $copies = Instance::query()->whereIn('task_workspace_owner_id', $groups)->pluck('id');
+    InstanceRuntime::query()->whereIn('instance_id', $copies)->delete();
+    Instance::query()->whereKey($copies)->delete();
+}
+
+/** @return Collection<int, Operation> */
+function copyProofGroupCancels(): Collection
+{
+    return Operation::query()->where('kind', 'tasks.cancel')->orderBy('id')->get();
+}
+
+describe('proof:run in copies: the warm pool', function (): void {
+    beforeEach(function (): void {
+        copyProofSeedTaken();
+        config(['proof.warm_copies' => 2]);
+    });
+
+    it('makes proof.warm_copies warm copies on free places from the current seed, and each holds its place', function (): void {
+        $groups = app(ProofWarmPool::class)->keep();
+        $node = Node::query()->where('name', 'beast')->firstOrFail();
+        $copies = app(ProofCopies::class);
+
+        expect($groups)->toHaveCount(2)
+            ->and(ProofWarmCopy::query()->pluck('task_id')->all())->toBe($groups)
+            ->and(ProofWarmCopy::query()->pluck('seed_commit')->unique()->all())->toBe([str_repeat('c', 40)])
+            ->and(Operation::query()->where('kind', 'instance.create')->where('status', '!=', 'succeeded')->count())->toBe(2)
+            // Three places, two held by warm copies: one is free for a new copy, and the warm copies are not ready yet.
+            ->and($copies->freePlaces($this->project, $copies->read()))->toBe([$node->id => 1])
+            ->and($copies->places($this->project, $copies->read()))->toBe([$node->id => 1])
+            // A full pool makes no more.
+            ->and(app(ProofWarmPool::class)->keep())->toBe([]);
+    });
+
+    it('is kept by each reconcile pass, so the pool refills after use and after a seed refresh', function (): void {
+        app()->call([new ReconcileSwampOperations, 'handle']);
+
+        expect(ProofWarmCopy::query()->count())->toBe(2);
+    });
+
+    it('makes none with proof.warm_copies at 0', function (): void {
+        config(['proof.warm_copies' => 0]);
+
+        expect(app(ProofWarmPool::class)->keep())->toBe([])->and(ProofWarmCopy::query()->count())->toBe(0);
+    });
+
+    it('counts a warm copy against the task copy cap of its Node', function (): void {
+        config(['orbit.tasks.copies_max' => 1]);
+        copyProofOtherCopies(1);
+
+        expect(app(ProofWarmPool::class)->keep())->toBe([])->and(ProofWarmCopy::query()->count())->toBe(0);
+    });
+
+    it('lets a proof take ready warm copies first, starts no new copy for them and refills the pool after', function (): void {
+        app(ProofWarmPool::class)->keep();
+        $warm = ProofWarmCopy::query()->orderBy('id')->get();
+        $copies = $warm->map(copyProofWarmActive(...));
+        $creates = Operation::query()->where('kind', 'instance.create')->count();
+
+        $proof = copyProofAdmitted();
+        $runs = copyProofRuns();
+
+        expect($proof->status)->toBe(OperationStatus::Running)
+            ->and($runs->pluck('input.instance_id')->sort()->values()->all())->toBe($copies->pluck('id')->sort()->values()->all())
+            ->and($runs->pluck('target_id')->sort()->values()->all())->toBe($warm->pluck('task_id')->sort()->values()->all())
+            ->and(Operation::query()->where('kind', 'instance.create')->count())->toBe($creates)
+            ->and(ProofWarmCopy::query()->count())->toBe(0)
+            // The taken copy is active, so its run is due at once.
+            ->and($runs->map(fn (Operation $run): string => app(ProofCopies::class)->state($run))->unique()->all())->toBe(['ready'])
+            // Two places run the proof; the third takes one new warm copy.
+            ->and(app(ProofWarmPool::class)->keep())->toHaveCount(1);
+    });
+
+    it('never gives a proof a warm copy whose create has not ended', function (): void {
+        app(ProofWarmPool::class)->keep();
+        $warm = ProofWarmCopy::query()->pluck('task_id');
+
+        copyProofAdmitted();
+
+        // One free place: one new copy, and no run in a copy that is not ready.
+        expect(copyProofRuns())->toHaveCount(1)->and($warm->contains(copyProofRuns()->first()->target_id))->toBeFalse()
+            ->and(ProofWarmCopy::query()->count())->toBe(2);
+    });
+
+    it('destroys and replaces a warm copy of an older seed, and a proof never takes one', function (): void {
+        app(ProofWarmPool::class)->keep();
+        ProofWarmCopy::query()->get()->each(copyProofWarmActive(...));
+        $old = ProofWarmCopy::query()->pluck('task_id')->all();
+        copyProofSeedTaken(now()->startOfSecond()->toImmutable());
+
+        expect(app(ProofWarmPool::class)->takeable())->toBe([])
+            ->and(app(ProofWarmPool::class)->take(Node::query()->where('name', 'beast')->value('id')))->toBeNull();
+        app(ProofWarmPool::class)->keep();
+
+        expect(copyProofGroupCancels()->pluck('target_id')->sort()->values()->all())->toBe($old)
+            ->and(ProofWarmCopy::query()->whereIn('task_id', $old)->whereNotNull('dropped_at')->count())->toBe(2)
+            // The places of the old copies stay held until their destroy ends: the one free place takes one new warm copy.
+            ->and(ProofWarmCopy::query()->whereNull('dropped_at')->count())->toBe(1);
+
+        // Once their copies are gone, their rows go and their places take new warm copies.
+        copyProofCopiesGone($old);
+        app(ProofWarmPool::class)->keep();
+
+        expect(ProofWarmCopy::query()->whereIn('task_id', $old)->count())->toBe(0)->and(ProofWarmCopy::query()->count())->toBe(2);
+    });
+
+    it('drains in one call: destroys the idle warm copies, starts none until the resume, and leaves a running proof alone', function (): void {
+        app(ProofWarmPool::class)->keep();
+        $warm = ProofWarmCopy::query()->orderBy('id')->get();
+        copyProofWarmActive($warm->first());
+        copyProofAdmitted();
+        $run = copyProofRuns()->first();
+        $idle = ProofWarmCopy::query()->pluck('task_id')->all();
+
+        $drained = app(ProofWarmPool::class)->drain();
+
+        // The warm copy whose create still runs is cancelled at a later keep(), once its create has ended.
+        $creating = ProofWarmCopy::query()->where('task_id', '!=', $warm->first()->task_id)->value('task_id');
+        expect($drained)->toBe($idle)
+            ->and(copyProofGroupCancels()->pluck('target_id')->all())->toBe(array_values(array_diff($idle, [$creating])))
+            ->and(copyProofGroupCancels()->pluck('target_id'))->not->toContain($run->target_id)
+            ->and(app(ProofWarmPool::class)->drained())->toBeTrue()
+            ->and(app(ProofWarmPool::class)->keep())->toBe([])
+            ->and(ProofWarmCopy::query()->whereNull('dropped_at')->count())->toBe(0);
+        copyProofWarmActive(ProofWarmCopy::query()->where('task_id', $creating)->firstOrFail());
+        app(ProofWarmPool::class)->keep();
+        expect(copyProofGroupCancels()->pluck('target_id')->sort()->values()->all())->toBe($idle);
+
+        copyProofCopiesGone($idle);
+        $resumed = app(ProofWarmPool::class)->resume();
+
+        expect(app(ProofWarmPool::class)->drained())->toBeFalse()->and($resumed)->not->toBe([])
+            ->and(ProofWarmCopy::query()->pluck('task_id')->all())->toBe($resumed);
     });
 });

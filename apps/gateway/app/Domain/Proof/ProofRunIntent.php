@@ -237,11 +237,13 @@ final readonly class ProofRunIntent
             }
             $nodes = Node::query()->findMany(array_keys($places))->keyBy('id');
             $runs = [];
-            foreach (self::spread($places, count($shards)) as $index => $nodeId) {
+            foreach (ProofCopies::spread($places, count($shards)) as $index => $nodeId) {
                 $assignments = $shards[$index];
                 $case = $assignments[0];
-                $group = $this->group($commit, $case['command']);
-                $copy = Instance::query()->findOrFail(app(TaskCopyStart::class)->admitRead($group, ProofGroup::Trigger, null, $read, $nodes->get($nodeId))->target_id);
+                // A warm copy of the Node first: its create has ended. Else a new copy from the Node's seed.
+                $group = app(ProofWarmPool::class)->take($nodeId);
+                $copy = $group !== null ? Instance::query()->findOrFail($group->taskable_id)
+                    : Instance::query()->findOrFail(app(TaskCopyStart::class)->admitRead($group = $this->group($commit, $case['command']), ProofGroup::Trigger, null, $read, $nodes->get($nodeId))->target_id);
                 $stored = ProofBatchPlan::stored($assignments);
                 $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(StartOperationAction::class)->execute('proof.command', 'task_group', $group->id, $copy->node_id, [
                     'proof_operation_id' => $proof->id, 'commit' => $commit, 'command' => $case['command'], 'file' => $case['file'], 'copy' => true,
@@ -253,27 +255,6 @@ final readonly class ProofRunIntent
             }
             $this->recordRuns($proof, $current, $intent, $runs, $batches);
         });
-    }
-
-    /**
-     * The Node of each shard, one shard per free place: the Nodes take turns, so fewer shards than places spread over the Nodes.
-     *
-     * @param  array<int, int>  $places
-     * @return list<int>
-     */
-    private static function spread(array $places, int $shards): array
-    {
-        $nodes = [];
-        while (count($nodes) < $shards) {
-            foreach ($places as $nodeId => $free) {
-                if ($free > 0 && count($nodes) < $shards) {
-                    $nodes[] = $nodeId;
-                    $places[$nodeId] = $free - 1;
-                }
-            }
-        }
-
-        return $nodes;
     }
 
     private function assertExecutionEnabled(): void
