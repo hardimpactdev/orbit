@@ -134,12 +134,11 @@ cases:
       - executor_key: {}
     act:
       - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
-      - executor_publish: {on: app-dev, operation: proof-ws-first, save: ws_nonce, expect: {done: true}}
+      - executor_publish: {on: app-dev, operation: proof-ws-replay, replay: true, expect: {done: true, refused: replayed_nonce, first: done}}
       - executor_publish: {on: app-dev, operation: proof-ws-bad-signature, tamper: bad_signature, expect: {refused: bad_signature}}
       - executor_publish: {on: app-dev, operation: proof-ws-changed-action, tamper: changed_action, expect: {refused: bad_signature}}
       - executor_publish: {on: app-dev, operation: proof-ws-changed-target, tamper: changed_target, expect: {refused: bad_signature}}
       - executor_publish: {on: app-dev, operation: proof-ws-expired, tamper: expired, expect: {refused: expired}}
-      - executor_publish: {on: app-dev, operation: proof-ws-first, nonce: ws_nonce, expect: {refused: replayed_nonce}}
       - executor_publish: {on: app-dev, operation: proof-ws-unknown-action, tamper: unknown_action, expect: {refused: unknown_action}}
       - executor_publish: {on: app-dev, operation: proof-ws-wrong-node, tamper: wrong_node, expect: {refused: wrong_node}}
     expect:

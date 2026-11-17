@@ -679,10 +679,10 @@ EXECUTOR_JOURNAL = '/var/lib/orbit/executor/journal'
 EXECUTOR_RESULT_SECONDS = 3
 
 
-def executor_refusals(run, node, since, code):
-    """The executor's log since `since`, and how many orders from the observer it refused with `code`."""
+def executor_refusals(run, node, since, refusal):
+    """The executor's log since `since`, and how many of its lines hold `refusal`."""
     log = run.fleet.sh(node, shlex.join(['journalctl', '-u', 'orbit-executor.service', '--since', since, '--no-pager', '-o', 'cat'])).stdout
-    return log, len([line for line in log.splitlines() if 'from Observer: ' + code in line])
+    return log, len([line for line in log.splitlines() if refusal in line])
 
 
 def executor_done(run, node):
@@ -699,30 +699,46 @@ def json_line(line):
     return value if isinstance(value, dict) else {}
 
 
+# The Gateway signs an order to expire 5 s after it signs it: a replay must reach the executor before that.
+EXECUTOR_ORDER_EXPIRY_MS = 5000
+
+
 def executor_publish(run, args):
     """Publish signed proof.noop orders as `executor-order` on the Node's channel through the nested Gateway's own signer and
     publisher, so they reach the executor only through the observer (ADR 0266 slice 2). `tamper` makes one order security test's
-    order. After one wait of EXECUTOR_RESULT_SECONDS, `expect: {done: true}` needs a `done` journal record of every nonce and saves
-    the latency from the Gateway's publish to the executor's result as evidence; `expect: {refused: <code>}` needs each order
-    refused on the observer path with that code."""
+    order. `replay: true` publishes each order twice, the exact same wire, before the one wait, so the second copy arrives inside
+    the first one's expiry. After one wait of EXECUTOR_RESULT_SECONDS, `done: true` needs a `done` journal record of every first
+    copy and saves the latency from the Gateway's publish to the executor's result as evidence; `refused: <code>` needs each
+    order, or each replayed copy, refused on the observer path with that code, and `first: <status>` the first result it carried."""
     node = nodes_of(run, 'executor_publish', args['on'])[0]
     # `operation` only names the evidence: the Gateway's proof support gives each order its own numeric Operation id.
     payload = {'mode': 'publish', 'node': run.fleet.nodes[node]['node_id'], 'count': args.get('count', 1)}
-    payload.update({key: args[key] for key in ('tamper',) if key in args})
-    payload.update({'nonce': run.names[args['nonce']]} if 'nonce' in args else {})
+    payload.update({key: args[key] for key in ('tamper', 'replay') if key in args})
     expect = args['expect']
+    refusal = 'from Observer: ' + expect.get('refused', '') + (f' first={expect["first"]}' if 'first' in expect else '')
     since = run.fleet.sh(node, 'date -u +%Y-%m-%dT%H:%M:%S').stdout.strip()
     # `since` has whole seconds, so an earlier step's refusal can fall inside it: count only the refusals after this publish.
-    before = executor_refusals(run, node, since, expect['refused'])[1] if 'refused' in expect else 0
+    before = executor_refusals(run, node, since, refusal)[1] if 'refused' in expect else 0
     orders = executor_guest(run, payload)['orders']
-    run.names.update({args['save']: orders[0]['nonce']} if 'save' in args else {})
+    firsts = [order for order in orders if not order.get('replay')]
+    replays = [order for order in orders if order.get('replay')]
     run.sleep(EXECUTOR_RESULT_SECONDS)
+    failures = [f'executor {node}: replay of {order["operation"]} published {order["published_ms"] - first["published_ms"]} ms after it, '
+                f'past the {EXECUTOR_ORDER_EXPIRY_MS} ms expiry'
+                for first, order in zip(firsts, replays) if order['published_ms'] - first['published_ms'] >= EXECUTOR_ORDER_EXPIRY_MS]
     if 'refused' in expect:
-        log, count = executor_refusals(run, node, since, expect['refused'])
+        log, count = executor_refusals(run, node, since, refusal)
         run.evidence_text(f'executor-ws-{args["operation"]}.txt', log)
-        missing = len(orders) - (count - before)
-        return [] if missing <= 0 else [
-            f'executor {node} over the WebSocket: {missing} of {len(orders)} orders not refused with {expect["refused"]} within {EXECUTOR_RESULT_SECONDS} s']
+        wanted = len(replays) if replays else len(orders)
+        failures += [] if count - before >= wanted else [
+            f'executor {node} over the WebSocket: {wanted - (count - before)} of {wanted} orders not refused with "{refusal}" within {EXECUTOR_RESULT_SECONDS} s']
+    if expect.get('done'):
+        failures += executor_latency(run, node, args['operation'], firsts)
+    return failures
+
+
+def executor_latency(run, node, label, orders):
+    """Every order has a `done` journal record; the latency from the Gateway's publish to that record goes to the evidence."""
     done = executor_done(run, node)
     found = [(order, done[order['nonce']]) for order in orders if order['nonce'] in done]
     if len(found) < len(orders):
@@ -731,7 +747,7 @@ def executor_publish(run, args):
     summary = {'orders': len(latencies), 'p50_ms': latencies[len(latencies) // 2],
                'p95_ms': latencies[min(len(latencies) - 1, (len(latencies) * 95) // 100)], 'max_ms': latencies[-1],
                'latencies_ms': latencies, 'statuses': sorted({record.get('status') for _, record in found})}
-    run.evidence_text(f'executor-ws-{args["operation"]}.json', json.dumps(summary, indent=2) + '\n')
+    run.evidence_text(f'executor-ws-{label}.json', json.dumps(summary, indent=2) + '\n')
     return [] if summary['statuses'] == ['done'] else [f'executor {node}: results {summary["statuses"]}']
 
 

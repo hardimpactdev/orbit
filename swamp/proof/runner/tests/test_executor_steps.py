@@ -119,5 +119,35 @@ class ExecutorStepsTest(unittest.TestCase):
         self.assertEqual(spec.STEPS['executor_publish'][1], {'on', 'operation', 'expect'})
 
 
+    def test_a_replay_is_the_same_wire_published_with_its_original_before_the_one_wait(self):
+        nonce = 'ab' * 16
+        first = {'operation': '9000000000000000', 'nonce': nonce, 'published_ms': 1000, 'replay': False}
+        replay = dict(first, published_ms=1012, replay=True)
+        signer = ('executor-order.php', done(json.dumps({'orders': [first, replay]})))
+        journal = ('/var/lib/orbit/executor/journal', done(json.dumps({'record': 'done', 'nonce': nonce, 'status': 'done', 'at_ms': 1003}) + '\n'))
+        refused = 'refused order 9000000000000000 from Observer: replayed_nonce first=done\n'
+        args = {'on': 'app-dev', 'operation': 'proof-ws-replay', 'replay': True, 'expect': {'done': True, 'refused': 'replayed_nonce', 'first': 'done'}}
+
+        failures, calls, _, evidence = self.publish([signer, journal, ('journalctl', [done(''), done(refused)])], args)
+        self.assertEqual(failures, [])
+        self.assertEqual(json.loads(next(call for call in calls if 'executor-order.php' in call[1])[2])['replay'], True)
+        commands = [call[1] for call in calls]
+        published = next(index for index, command in enumerate(commands) if 'executor-order.php' in command)
+        waits = [index for index, command in enumerate(commands) if command.startswith('sleep ')]
+        self.assertEqual(len(waits), 1, 'one wait for the pair')
+        self.assertLess(published, waits[0], 'the original and its replay are both published before the wait')
+        self.assertEqual(json.loads(evidence['executor-ws-proof-ws-replay.json'])['orders'], 1, 'only the original runs')
+
+        late = dict(replay, published_ms=1000 + steps.EXECUTOR_ORDER_EXPIRY_MS)
+        failures, _, _, _ = self.publish([('executor-order.php', done(json.dumps({'orders': [first, late]}))), journal,
+                                          ('journalctl', [done(''), done(refused)])], args)
+        self.assertEqual(failures, ['executor app-dev: replay of 9000000000000000 published 5000 ms after it, past the 5000 ms expiry'])
+
+        accepted = ('journalctl', [done(''), done('')])
+        self.assertTrue(self.publish([signer, journal, accepted], args)[0], 'a replay that runs is a failure')
+        without_first = ('journalctl', [done(''), done(refused.replace('first=done', 'first=none'))])
+        self.assertTrue(self.publish([signer, journal, without_first], args)[0], 'the refusal must carry the first result')
+
+
 if __name__ == '__main__':
     unittest.main()

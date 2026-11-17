@@ -104,12 +104,12 @@ function proofOrder(string $secretPath, array $input): array
 /**
  * Publishes `count` orders, one after another, as `executor-order` on the Node's channel through the Gateway's own publisher.
  * An untampered order goes through the Gateway's own signer (ORBIT_EXECUTOR_SIGNING_KEY); a tampered one is made by
- * {@see proofOrder}. The proof records no Operation: each order gets an in-memory Operation with an unused numeric id in a
+ * {@see proofOrder}. `replay` publishes each order a second time, byte for byte, right after the first. The proof records no Operation: each order gets an in-memory Operation with an unused numeric id in a
  * high range and this Node as its `node_id`, so slice 3's listener finds no Operation for its result. Each entry records the
  * Gateway time just before its publish, for the latency to the executor.
  *
  * @param  array<string, mixed>  $input
- * @return array{orders: list<array{operation: string, nonce: string, published_ms: int}>}
+ * @return array{orders: list<array{operation: string, nonce: string, published_ms: int, replay: bool}>}
  */
 function proofPublish(string $secretPath, array $input): array
 {
@@ -120,7 +120,7 @@ function proofPublish(string $secretPath, array $input): array
     $orders = [];
     for ($index = 0; $index < $count; $index++) {
         $operation = (new Operation)->forceFill(['id' => $base + $index, 'node_id' => $node]);
-        if (isset($input['tamper']) || isset($input['nonce'])) {
+        if (isset($input['tamper'])) {
             $made = proofOrder($secretPath, ['node' => (string) $node, 'operation' => (string) ($base + $index)] + $input);
             $order = new SignedExecutorOrder($made['order'], (string) ($base + $index), $made['nonce'], 0);
         } else {
@@ -128,7 +128,13 @@ function proofPublish(string $secretPath, array $input): array
         }
         $published = (int) floor(microtime(true) * 1000);
         $publisher->publish($operation, $order);
-        $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $published];
+        $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $published, 'replay' => false];
+        // A true replay: the exact wire again, same signature and Operation, at once and so well inside its 5 s expiry.
+        if (($input['replay'] ?? false) === true) {
+            $replayed = (int) floor(microtime(true) * 1000);
+            $publisher->publish($operation, $order);
+            $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $replayed, 'replay' => true];
+        }
     }
 
     return ['orders' => $orders];

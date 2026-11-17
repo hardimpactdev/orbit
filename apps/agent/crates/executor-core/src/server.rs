@@ -268,11 +268,6 @@ fn answer<R: Run>(
                 value
             }
             Err(refusal) => {
-                log(&format!(
-                    "refused order {} from {caller:?}: {}",
-                    verified.operation(),
-                    refusal.code()
-                ));
                 let first = match &refusal {
                     StateRefusal::ReplayedNonce { first } => first
                         .as_deref()
@@ -281,6 +276,12 @@ fn answer<R: Run>(
                         .map_err(io::Error::other)?,
                     _ => None,
                 };
+                log(&format!(
+                    "refused order {} from {caller:?}: {}{}",
+                    verified.operation(),
+                    refusal.code(),
+                    replay_suffix(&refusal, first.as_ref())
+                ));
                 json!({ "status": "refused", "reason": refusal.code(), "operation": verified.operation(), "first": first, "node_clock_ms": now })
             }
         },
@@ -288,9 +289,40 @@ fn answer<R: Run>(
     writeln!(out, "{line}")
 }
 
+/// A replay's log line names the first result it carries, ` first=<status>`, or ` first=none` before that result exists, so the
+/// log alone shows what the refused caller got back. Other refusals add nothing.
+fn replay_suffix(refusal: &StateRefusal, first: Option<&serde_json::Value>) -> String {
+    match refusal {
+        StateRefusal::ReplayedNonce { .. } => format!(
+            " first={}",
+            first
+                .and_then(|value| value["status"].as_str())
+                .unwrap_or("none")
+        ),
+        _ => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_replay_log_line_names_the_first_result() {
+        let replay = StateRefusal::ReplayedNonce { first: None };
+        assert_eq!(
+            replay_suffix(&replay, Some(&json!({"status": "done"}))),
+            " first=done"
+        );
+        assert_eq!(replay_suffix(&replay, None), " first=none");
+        assert_eq!(
+            replay_suffix(
+                &StateRefusal::JournalWrite,
+                Some(&json!({"status": "done"}))
+            ),
+            ""
+        );
+    }
 
     #[test]
     fn the_whole_order_has_one_deadline_however_slowly_it_trickles() {

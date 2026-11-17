@@ -88,6 +88,8 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 6. The nonce has never been seen, across restarts too (`replayed_nonce`). The refusal carries the first order's result once it exists.
 7. The Operation: a done record with the same Operation, action and target returns the first result, marked `"repeat": true`, and does not act.
 
+The log line of a `replayed_nonce` refusal ends in `first=<status>`, the status of the first result it carried, or `first=none` before that result exists.
+
 A refusal line holds `"status":"refused"`, the `reason` and the Node's clock as `node_clock_ms`.
 
 Orders for one target run one at a time under that target's lock; different targets run in parallel. The nonce and done maps are held only for one lookup or insert, with no I/O under them.
@@ -154,4 +156,4 @@ The Swamp proof of `node:converge` (`swamp/proof/node/converge.cases.yaml`) send
 
 `executor_order` signs each order with the same script and hands it to the relay. `executor_publish` sends orders over the WebSocket through the Gateway's own signer and publisher, so they reach the executor only through the observer. The proof records no Operation: each order gets an in-memory Operation with an unused numeric id in a high range and the Node as its `node_id`. It reads the result from the executor's journal and its refusal from the executor's log, because the Gateway listener arrives in slice 3.
 
-Its `tamper` option makes the order of each order security test: `bad_signature`, `changed_action`, `changed_target`, `expired`, `unknown_action` and `wrong_node`; a saved nonce makes the replay. The cases `executor-order-security` and `executor-websocket-burst` (50 orders, with the latency from the Gateway's publish to the executor's result saved as evidence) use it. No key is committed, and the secret half never leaves the nested Gateway.
+Its `tamper` option makes the order of each order security test: `bad_signature`, `changed_action`, `changed_target`, `expired`, `unknown_action` and `wrong_node`. Its `replay` option publishes each order twice, the exact same wire for the same Operation, before its one wait, so the copy arrives inside the first one's 5 s expiry; the case expects `replayed_nonce first=done`. The cases `executor-order-security` and `executor-websocket-burst` (50 orders, with the latency from the Gateway's publish to the executor's result saved as evidence) use it. No key is committed, and the secret half never leaves the nested Gateway.
