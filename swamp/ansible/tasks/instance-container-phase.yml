@@ -496,11 +496,7 @@
 - name: Name the app user web
   tags: [container, clone, start]
   when: phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool
-  ansible.builtin.command:
-    argv: >-
-      {{ as_root + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_app_user.py'), container.workspace] }}
-  register: app_user_named
-  changed_when: (app_user_named.stdout | from_json).changed
+  ansible.builtin.include_tasks: { file: instance-app-user.yml, apply: {tags: [container, clone, start]} }
 
 # The inner Incus's pool on the inner volume, once. The inner Incus may still be starting with the container.
 - name: Create the inner pool

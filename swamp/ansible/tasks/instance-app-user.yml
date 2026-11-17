@@ -1,0 +1,122 @@
+---
+# Root's rename of the app user and its group in an older container (docs/reference/development-containers.md#the-app-users-name), as
+# soon as the container runs and before any other command in it. An older image made the user `orbit` (uid 1000) with the group `orbit`
+# (gid 1000), and the group `work` (gid 2760). The app user is now `web`, uid 1000, with the primary group `web`, gid 2760
+# (InstanceHostIntent::WebUid and WebGid, ADR 0268 second amendment). Only the names change.
+#
+# Each step has its own guard from the facts read first, so a renamed container reads three facts and changes nothing, and a run that
+# stopped half way does only the steps that are left. Every command runs in the container through `as_root`.
+- name: Read the app user's accounts
+  ansible.builtin.command: { argv: "{{ as_root + ['getent', 'passwd', 'orbit', 'web'] }}" }
+  register: app_user_passwd
+  changed_when: false
+  # 2: a key is missing, as either name is in every container.
+  failed_when: app_user_passwd.rc not in [0, 2]
+
+- name: Read the app user's groups
+  ansible.builtin.command: { argv: "{{ as_root + ['getent', 'group', 'orbit', 'work', 'web', '1000'] }}" }
+  register: app_user_groups
+  changed_when: false
+  failed_when: app_user_groups.rc not in [0, 2]
+
+# A unit file or drop-in that names the old user, the old groups or a path below the old home. `grep -r` follows no link, so the
+# boot links in `*.wants` are not read twice.
+- name: Find the unit files that name the old account
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['grep', '-rlE', '^(User=orbit|Group=(orbit|work))[[:space:]]*$|/home/orbit([/[:space:]"' ~ "'" ~ ']|$)',
+                    '/etc/systemd/system'] }}
+  register: app_user_files
+  changed_when: false
+  failed_when: app_user_files.rc not in [0, 1]
+
+- name: Note what the rename has left to do
+  ansible.builtin.set_fact:
+    app_user: >-
+      {%- set found = {'users': {}, 'groups': {}, 'gid_1000': ''} -%}
+      {%- for line in app_user_passwd.stdout_lines -%}
+        {%- set fields = line.split(':') -%}{%- set _ = found.users.update({fields[0]: fields}) -%}
+      {%- endfor -%}
+      {%- for line in app_user_groups.stdout_lines -%}
+        {%- set fields = line.split(':') -%}{%- set _ = found.groups.update({fields[0]: fields}) -%}
+        {%- if fields[2] == '1000' -%}{%- set _ = found.update({'gid_1000': fields[0]}) -%}{%- endif -%}
+      {%- endfor -%}
+      {%- set units = app_user_files.stdout_lines | map('regex_replace', '[.]d/[^/]+$', '') | map('basename') | unique | sort -%}
+      {{ {'old_user': (found.users.orbit | default(['', '', '']))[2] == '1000',
+          'old_group': (found.groups.work | default(['', '', '']))[2] == '2760',
+          'primary': found.users.web is defined and found.users.web[3] != '2760',
+          'gid_1000': found.gid_1000,
+          'files': app_user_files.stdout_lines,
+          'named': (units + (units | select('match', '.*[.]service$') | map('regex_replace', '[.]service$', '.timer') | list)) | unique | sort} }}
+
+- name: Rename the app user and its group
+  when: app_user.old_user or app_user.old_group or app_user.primary or app_user.gid_1000 != '' or app_user.files | length > 0
+  block:
+    # A Schedule's timer is read too: one that fires during the rename would start a run under the old name. A timer that does not
+    # exist is neither running nor enabled.
+    - name: Read the units that name the old account
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'show', '--property=LoadState', '--property=ActiveState', '--property=UnitFileState', '--', item] }}" }
+      loop: "{{ app_user.named }}"
+      register: app_user_units
+      changed_when: false
+
+    - name: Note the running and the enabled units
+      ansible.builtin.set_fact:
+        app_user_running: "{{ app_user_units.results | selectattr('stdout', 'search', '(?m)^ActiveState=(active|activating|reloading)$') | map(attribute='item') | list }}"
+        app_user_enabled: "{{ app_user_units.results | selectattr('stdout', 'search', '(?m)^UnitFileState=enabled$') | map(attribute='item') | list }}"
+
+    # The boot started them under the old name. `usermod` refuses a user that still runs a process and names it; the next start
+    # renames again.
+    - name: Stop the units that name the old account
+      when: app_user_running | length > 0
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'stop', '--'] + app_user_running }}" }
+      changed_when: true
+
+    - name: Rename the user orbit to web
+      when: app_user.old_user
+      ansible.builtin.command: { argv: "{{ as_root + ['usermod', '--login', 'web', '--home', '/home/web', '--move-home', 'orbit'] }}" }
+      changed_when: true
+
+    - name: Rename the group work to web
+      when: app_user.old_group
+      ansible.builtin.command: { argv: "{{ as_root + ['groupmod', '--new-name', 'web', 'work'] }}" }
+      changed_when: true
+
+    - name: Make web the primary group of web
+      when: app_user.old_user or app_user.old_group or app_user.primary
+      ansible.builtin.command: { argv: "{{ as_root + ['usermod', '--gid', 'web', 'web'] }}" }
+      changed_when: true
+
+    # `chown -R` follows no link, and `--no-dereference` changes a link itself, never its target. The group goes after its files, so a
+    # run that stops between the two regroups again.
+    - name: Give the files of the group 1000 the group web
+      when: app_user.gid_1000 != ''
+      ansible.builtin.command:
+        argv: "{{ as_root + ['chown', '--recursive', '--no-dereference', '--from=:1000', ':2760', '--', container.workspace, '/home/web'] }}"
+      changed_when: true
+
+    - name: Remove the group 1000
+      when: app_user.gid_1000 != ''
+      ansible.builtin.command: { argv: "{{ as_root + ['groupdel', app_user.gid_1000] }}" }
+      changed_when: true
+
+    - name: Name web in the unit files
+      when: app_user.files | length > 0
+      ansible.builtin.command:
+        argv: >-
+          {{ as_root + ['sed', '--in-place', '--regexp-extended', '-e', 's/^User=orbit[[:space:]]*$/User=web/',
+                        '-e', 's/^Group=(orbit|work)[[:space:]]*$/Group=web/',
+                        '-e', 's#/home/orbit([/[:space:]"' ~ "'" ~ ']|$)#/home/web\1#g', '--'] + app_user.files }}
+      changed_when: true
+
+    - name: Reload systemd for the renamed units
+      when: app_user.files | length > 0
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}" }
+      changed_when: true
+
+    # The units this run stopped, and each enabled one, which an earlier run may have left stopped or which failed under a name that
+    # was gone.
+    - name: Start the renamed units again
+      when: (app_user_running + app_user_enabled) | length > 0
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'start', '--'] + ((app_user_running + app_user_enabled) | unique | sort) }}" }
+      changed_when: true

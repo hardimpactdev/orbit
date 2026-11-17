@@ -541,17 +541,17 @@ Only the names change: every uid and gid other than 1000 stays, and so does `age
 
 Root renames an older container in the `start` phase, which every start, wake and deployment runs. The rename comes as soon as the container runs, before any other step that runs a command in it. A default gets it at its next deployment or start. A copy gets it from its seed; a copy of an older seed gets it at its first start, in its clone, which runs the same steps. A running copy keeps the old names until its next start. No converge is needed.
 
-A container that has the user `web`, no group `work` or 1000 and no unit file that names `orbit` skips it. Otherwise root runs these steps:
+The tasks are `swamp/ansible/tasks/instance-app-user.yml`. They first read three facts in the container: the users `orbit` and `web` (`getent passwd`), the groups `orbit`, `work`, `web` and gid 1000 (`getent group`), and the unit files that name the old account (`grep -rl` in `/etc/systemd/system`). A container that has the user `web`, no group `work` or 1000 and no such unit file changes nothing. Otherwise root runs these steps:
 
-1. Stop each unit whose file or drop-in under `/etc/systemd/system` names the old user, group or home. The boot started them under the old name.
+1. Stop the units that the boot started under the old name: each one whose file or drop-in names the old account, and a Schedule's timer.
 2. `usermod -l web -d /home/web -m orbit`. It refuses a user that still runs a process and names it; the next start renames again.
 3. `groupmod -n web work`, then `usermod -g web web`.
 4. Give each entry with gid 1000 in the workspace and in `/home/web` the group `web`, without following a link. Then remove the group 1000.
-5. Write `User=web`, `Group=web` and `/home/web` in those unit files for the old values. Then reload systemd and start again each unit that step 1 stopped and each enabled one.
+5. Write `User=web`, `Group=web` and `/home/web` in those unit files for the old values with `sed`. Then reload systemd and start again each unit that step 1 stopped and each enabled one.
 
-`usermod -l` also renames `orbit` in the member list of `work`, so a renamed container lists `web` in its own group beside `agent`. The program is `swamp/ansible/instance_app_user.py`.
+`usermod -l` also renames `orbit` in the member list of `work`, so a renamed container lists `web` in its own group beside `agent`.
 
-Each step checks its own result first, so a rename that stopped half way finishes at the next start. A container with the user `web` gets only the steps that are left: the group `work`, the group 1000, or a unit file that still names `orbit`.
+Each step has its own guard from those facts, so a rename that stopped half way finishes at the next start. A container with the user `web` gets only the steps that are left: the group `work`, the group 1000, or a unit file that still names `orbit`.
 
 ### The machine name
 

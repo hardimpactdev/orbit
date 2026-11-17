@@ -147,9 +147,13 @@ if (family === "list") {
   Deno.mkdirSync(`${rootfs(name)}/srv/workspace`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/etc/tmpfiles.d`, { recursive: true });
-  for (const home of ["agent/.codex", "agent/.config/orbit", "orbit"]) {
+  for (const home of ["agent/.codex", "agent/.config/orbit", "web"]) {
     Deno.mkdirSync(`${rootfs(name)}/home/${home}`, { recursive: true });
   }
+  // The image's accounts (InstanceImage::prepare): `web` (uid 1000) in its primary group `web` (gid 2760), with `agent` in it too.
+  Deno.writeTextFileSync(`${rootfs(name)}/etc/passwd`,
+    "root:x:0:0:root:/root:/bin/bash\nagent:x:2750:2750::/home/agent:/bin/bash\nweb:x:1000:2760::/home/web:/bin/bash\n");
+  Deno.writeTextFileSync(`${rootfs(name)}/etc/group`, "root:x:0:\nagent:x:2750:\nweb:x:2760:agent\n");
   Deno.mkdirSync(`${rootfs(name)}/tmp`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/usr/local/bin`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/usr/local/libexec`, { recursive: true });
@@ -395,6 +399,47 @@ if (family === "list") {
     save();
     Deno.exit(0);
   }
+  // The container's accounts are its own /etc/passwd and /etc/group, which these stand-ins read and change as the shadow tools do; a
+  // test writes an older container's. `chown --from` regroups files that the test user may not give away: it is recorded, never run.
+  if (["getent", "usermod", "groupmod", "groupdel"].includes(command[0]) || (command[0] === "chown" && command.some((word) => word.startsWith("--from=")))) {
+    const table = (part: string) => Deno.readTextFileSync(`${rootfs(name)}/etc/${part}`).split("\n").filter(Boolean).map((line) => line.split(":"));
+    const write = (part: string, rows: string[][]) => Deno.writeTextFileSync(`${rootfs(name)}/etc/${part}`, rows.map((row) => row.join(":") + "\n").join(""));
+    const users = table("passwd"), groups = table("group");
+    const must = (row: string[] | undefined, message: string): string[] => row ?? (fail(message) as never);
+    if (command[0] !== "getent") {
+      state.accounts ??= [];
+      state.accounts.push(command);
+    }
+    save();
+    if (command[0] === "getent") {
+      let missing = false;
+      for (const key of command.slice(2)) {
+        const row = (command[1] === "passwd" ? users : groups).find((each) => each[0] === key || each[2] === key);
+        if (row) console.log(row.join(":"));
+        else missing = true;
+      }
+      Deno.exit(missing ? 2 : 0);
+    }
+    if (command[0] === "usermod" && command[1] === "--login") {
+      const [, , login, , home, , old] = command;
+      const user = must(users.find((row) => row[0] === old), `usermod: user '${old}' does not exist`);
+      Deno.renameSync(rootfs(name) + user[5], rootfs(name) + home);
+      [user[0], user[5]] = [login, home];
+      for (const group of groups) group[3] = group[3].split(",").filter(Boolean).map((member) => member === old ? login : member).join(",");
+    } else if (command[0] === "usermod" && command[1] === "--gid") {
+      const group = must(groups.find((row) => row[0] === command[2]), `usermod: group '${command[2]}' does not exist`);
+      users.find((row) => row[0] === command[3])![3] = group[2];
+    } else if (command[0] === "groupmod") {
+      (must(groups.find((row) => row[0] === command[3]), `groupmod: group '${command[3]}' does not exist`))[0] = command[2];
+    } else if (command[0] === "groupdel") {
+      const group = must(groups.find((row) => row[0] === command[1]), `groupdel: group '${command[1]}' does not exist`);
+      if (users.some((row) => row[3] === group[2])) fail(`groupdel: cannot remove the primary group of a user`);
+      groups.splice(groups.indexOf(group), 1);
+    }
+    write("passwd", users);
+    write("group", groups);
+    Deno.exit(0);
+  }
   if (command[0] === "systemctl") {
     state.systemctl ??= [];
     state.systemctl.push(command.slice(1));
@@ -448,7 +493,7 @@ if (family === "list") {
       try {
         Deno.statSync(`${rootfs(name)}/etc/systemd/system/${unit}`);
       } catch {
-        missing = unit.startsWith("orbit-process-");
+        missing = unit.startsWith("orbit-process-") || unit.endsWith(".timer");
       }
       console.log(`ActiveState=${missing || (state.inactive ?? []).includes(unit) ? "inactive" : "active"}`);
       console.log(queued > 0 ? "Job=123" : "Job=");
@@ -630,22 +675,16 @@ if (family === "list") {
     state.workspace_owner_runs.push(command.slice(-3));
     command = [...command.slice(0, -2), "4294967294", command.at(-1)!];
   }
-  // Root's rename of the app user (instance_app_user.py) changes the container's accounts and units, which a fixture container does not
-  // have: swamp/tests/instance_app_user_test.py runs the program itself. The stand-in records the run and finds a renamed container.
-  if (command[0] === "python3" && command.includes("-c") && command[command.indexOf("-c") + 1].startsWith(`"""Root's rename of the app user`)) {
-    state.app_user_runs ??= [];
-    state.app_user_runs.push(name);
-    save();
-    console.log(JSON.stringify({ changed: false, steps: [] }));
-    Deno.exit(0);
-  }
   const done = new Deno.Command(command[0], {
     args: command.slice(1).map((value) => command[0] === "git" && command[1] === "config" ? value : inside(name, value)),
     cwd: cwd === null ? undefined : inside(name, cwd),
     stdin: "inherit",
     env: { GIT_CONFIG_NOSYSTEM: "1", HOME: user === "root" ? `${folder}/home` : `${rootfs(name)}/home/${user}` },
   }).outputSync();
-  Deno.stdout.writeSync(done.stdout);
+  // A search names the files it found by their container paths, as it does in the container.
+  const found = command[0] === "grep" && command[1] === "-rlE"
+    ? new TextEncoder().encode(new TextDecoder().decode(done.stdout).replaceAll(rootfs(name), "")) : done.stdout;
+  Deno.stdout.writeSync(found);
   Deno.stderr.writeSync(done.stderr);
   save();
   Deno.exit(done.code);
