@@ -66,7 +66,7 @@ it('names the runtime folder\'s trust module in agent\'s NSS store of both image
 });
 
 it('keeps the nested image definition of the image built on Beast, so no converge is needed for it', function (): void {
-    // The alias of the nested image since the app user and its group became `web` (ADR 0268, second amendment); Beast held
+    // The alias of the nested image since the app account became the stock `www-data` (ADR 0268, second amendment); Beast held
     // orbit-instance-nested-27a0fc94aee0 before, and orbit-instance-nested-6388773554e6 before `agent`'s grant. A change of the
     // definition gives a new alias, which only a converge builds; change this value only with a planned converge.
     expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-57fbcfc2dbc8');

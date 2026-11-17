@@ -218,7 +218,7 @@ it('changes only the application EnvironmentFile line and adds the public origin
     expect(app(ContainerProcesses::class)->unit($instance, $process, migrate: true)['content'])
         ->toBe(str_replace(
             ['EnvironmentFile=-/srv/workspace/.env'."\n", 'Environment=ORBIT_DEV_SERVER_ORIGIN=', '"ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite"',
-                // ADR 0268, second amendment: the app user and its group are `web`.
+                // ADR 0268, second amendment: the app account is the stock `www-data`.
                 "User=orbit\nGroup=orbit\n", 'HOME=/home/orbit'],
             ['', 'Environment=DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite'."\n".'Environment=ORBIT_DEV_SERVER_ORIGIN=',
                 '"DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite" "ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite"',
@@ -297,7 +297,7 @@ UNIT;
 
 it('adds only the generic public origin to an existing container dev-server unit', function (): void {
     [, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'container', 5195, true);
-    // Captured on main at 718d7b891f; only the Process id is normalized, and the app user and its group are `web` since ADR 0268's
+    // Captured on main at 718d7b891f; only the Process id is normalized, and the app account is the stock `www-data` since ADR 0268's
     // second amendment.
     $baseline = <<<'UNIT'
 [Unit]
@@ -408,7 +408,7 @@ it('preserves main bytes for non-recipients and Project-supplied origins', funct
     'preset-container-supplied', 'preset-checkout-supplied', 'preset-container-supplied-empty',
     'ordinary-route-supplied', 'node-supplied', 'routeless-supplied']);
 
-/** Exact bytes captured from main at 8c0618a2bc; its renderer matches 718d7b891f. A container unit names the app user `web` (ADR 0268, second amendment). */
+/** Exact bytes captured from main at 8c0618a2bc; its renderer matches 718d7b891f. A container unit names the app account `www-data` (ADR 0268, second amendment). */
 function originAliasMainBytes(string $case): array
 {
     return json_decode(<<<'JSON'

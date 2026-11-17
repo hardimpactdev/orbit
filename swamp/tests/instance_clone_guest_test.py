@@ -716,7 +716,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         second = self.phase("services", self.full_container(), self.full_private(), part_commands)
         second["changes"] = self.changed(second)
         self.assertEqual(self.state(), whole_state)
-        # The app user `web` runs the Node store step of the services part, with its own home (ADR 0268, second amendment).
+        # The app account `www-data` runs the Node store step of the services part, with its own home (ADR 0268, second amendment).
         self.assertEqual(self.node_store_runs, [("www-data", "/var/www")])
         # Root's swap file from the boot files runs once, first: a copy of a seed taken before the rename names its `orbit` web before
         # the Node store step runs as web.
