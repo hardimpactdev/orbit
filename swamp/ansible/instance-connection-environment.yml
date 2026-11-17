@@ -182,6 +182,12 @@
         - name: Refresh what runs only after the file changed
           when: connection_result.status == 'changed'
           block:
+            # `config:clear` runs as `web`: a running container of an older image names its app user web first (files/instance-app-user.sh).
+            - name: Name the app user web
+              ansible.builtin.command: { argv: "{{ as_root + ['sh', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/files/instance-app-user.sh'), 'orbit-app-user'] }}" }
+              register: app_user_name
+              changed_when: app_user_name.stdout == 'renamed'
+
             - name: Clear Laravel's cached configuration when PHP and artisan exist
               when: plan.refresh.php is not none
               ansible.builtin.command:
