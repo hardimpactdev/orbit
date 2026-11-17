@@ -111,7 +111,7 @@ A report the Gateway does not accept, for example while a Node boots before the 
 
 The retry keeps both the data and `observed_at` of the failed read, so delayed delivery cannot make an old snapshot look newly observed. It reads the Node again only at the next regular read. A new [watch list](#watch-list) makes the agent read and send `units` at once.
 
-The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout`, `packages`, `env_keys` and `egress` have a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's `received_at` for the stored sample.
+The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout`, `packages`, `env_keys` and `egress` have a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's `received_at` for the stored sample. A request over 1 MiB fails with `agent.fact_too_large` (413). Invalid data fails with `validation.failed` (422).
 
 For `host`, `units` and `ufw`, a matching report with a later observation time advances confirmation and preserves the original sample and its times. Earlier reports and identical retries leave the row unchanged. The Gateway accepts distinct reports with the same timestamp in arrival order. Reports more than one minute ahead of the Gateway clock fail validation. The [rollout inventory](/reference/rollout-base-inventory) also checks the time of the root reading. Other unchanged reports write nothing. Each update uses one short transaction.
 
