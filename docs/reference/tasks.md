@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence}.php"
 ---
 
 # Tasks
@@ -777,6 +777,8 @@ The signal time is the time on the signal, not the time the collector reads the 
 Each row remembers the last 288 windows it counted, in arrival order. A late signal for a window that has already been evicted is counted again and increments `occurrences`.
 
 Readiness counts these occurrences and their times. It does not count log lines. Many log lines in one block are one occurrence. The sample keeps the newest 20.
+
+The database migration converts remaining pre-window evidence once; collectors and filing use only window evidence. It discards old log and Activity occurrence history because those timestamps came from the collector rather than the signal, and clears their first and last seen times. Other sources retain valid timestamps grouped into 5-minute windows. Linked groups, mutes, and unrelated evidence stay unchanged. Rollback keeps the converted evidence; only the pre-release database snapshot can restore discarded history.
 
 ### When a fingerprint is ready
 
