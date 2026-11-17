@@ -27,6 +27,10 @@ use Illuminate\Support\Carbon;
  * @property InstanceRemovalStep|null $failed_step
  * @property string|null $error_code
  * @property Carbon|null $route_withdrawn_at
+ * @property int $retry_count
+ * @property Carbon|null $stuck_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property-read Collection<int, InstanceRemovalMember> $members
  */
 final class InstanceRemoval extends Model
@@ -42,7 +46,7 @@ final class InstanceRemoval extends Model
 
     /** @var array<string, mixed> */
     #[\Override]
-    protected $attributes = ['kind' => 'destroy'];
+    protected $attributes = ['kind' => 'destroy', 'retry_count' => 0];
 
     /** @var list<string> */
     #[\Override]
@@ -61,6 +65,8 @@ final class InstanceRemoval extends Model
         'failed_step',
         'error_code',
         'route_withdrawn_at',
+        'retry_count',
+        'stuck_at',
     ];
 
     /** @return HasMany<InstanceRemovalMember, $this> */
@@ -81,6 +87,8 @@ final class InstanceRemoval extends Model
             'current_step' => InstanceRemovalStep::class,
             'failed_step' => InstanceRemovalStep::class,
             'route_withdrawn_at' => 'datetime',
+            'retry_count' => 'integer',
+            'stuck_at' => 'datetime',
         ];
     }
 }

@@ -38,8 +38,9 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class StartInstanceRestoreAction
 {
-    /** Removal steps that delete data; any of them that ran makes the removal irreversible. */
-    public const array DeletingSteps = ['Remove the source', 'Delete the container', 'Stop, remove Processes', 'Run teardown steps', 'Remove SQLite files'];
+    /** Removal steps that delete data or stop the runtime; any of them that ran makes the removal irreversible. */
+    public const array DeletingSteps = ['Remove the source', 'Stop the container', 'Delete the container', 'Stop, remove Processes', 'Run teardown steps',
+        'Remove SQLite files'];
 
     public function __construct(private StartOperationAction $operations, private OperationIdempotency $idempotency, private NodeAgentLiveness $liveness) {}
 

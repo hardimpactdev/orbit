@@ -1489,7 +1489,7 @@ A removal from Conn without acknowledgement reads the [workspace work state](#wo
 
 The run withdraws the clone's Route, drops its owned server databases, then stops and deletes its Incus container with its Processes, T3 history, snapshots, storage volume and published proxy device. It removes the `instance-<id>` ACL from Incus project `default`, its UFW rules, its Node repository mirror and, for a task copy, the Node scratch of [its sync](/reference/tasks#bring-main-into-a-copy), `/var/tmp/orbit-task-base-<id>`, which a cancelled sync may leave; it holds no credential. Deleting T3 retires every session and unused pairing link. Terminal projection removes execution copies and Conn records, then deletes the runtime row to free its address and T3 port. The default and other clones stay.
 
-An Instance with an [inner volume](#the-inner-volume) loses that volume and its snapshots too, after the container. The run checks that the volume is gone.
+An Instance with an [inner volume](#the-inner-volume) loses that volume and its snapshots too, after the container. The run checks that the volume is gone. A part that is already gone counts as removed, and a record whose ZFS dataset is gone still goes ([Retry and ownership](/reference/instance-removal#retry-and-ownership)).
 
 The run deletes each UFW rule by the rule itself, as `ufw show added` lists it under the Instance's comment. It never deletes by number: another removal on the Node can delete a rule at the same time and shift every number above it.
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Doctor\RunDoctorAction;
 use App\Console\Kernel as GatewayConsoleKernel;
 use App\Console\Scheduling\GatewaySchedule;
+use App\Domain\Instances\InstanceRemovalReaper;
 use App\Domain\Tasks\TaskSchedule;
 use App\Http\Middleware\AnnounceDesiredCliVersion;
 use App\Http\Middleware\EnsureRequestId;
@@ -70,6 +71,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
         GatewaySchedule::command($schedule, 'orbit:activity-finalize-interrupted', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
         GatewaySchedule::command($schedule, 'queue:prune-failed', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--hours='.config()->integer('retention.failed_jobs_hours')])->daily();
         GatewaySchedule::command($schedule, 'activitylog:clean', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--days='.config()->integer('retention.activity_log_days'), '--force'])->daily();
+        // A failed destroy starts again with backoff through the same admission as instance:destroy (InstanceRemovalReaper).
+        GatewaySchedule::command($schedule, InstanceRemovalReaper::Trigger, uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
         // Horizon's metrics for its dashboard, only while Horizon runs.
         GatewaySchedule::command($schedule, 'horizon:snapshot', uniqueFor: 300)->everyFiveMinutes()
             ->when(static fn (): bool => GatewayQueueRedis::configured());

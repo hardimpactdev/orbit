@@ -15,6 +15,8 @@ use App\Domain\Fleet\FleetRebootAlerts;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\InstanceRemovalReaper;
+use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\NodeFacts\NodeAgentLiveness;
 use App\Domain\NodeFacts\NodeAgentState;
 use App\Domain\NodeFacts\NodeFactKind;
@@ -22,6 +24,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\NodeFact;
 use Carbon\CarbonImmutable;
@@ -62,11 +65,16 @@ final readonly class FactDoctor
     {
         $selected = array_values(array_filter(DoctorFamily::cases(), static fn (DoctorFamily $family): bool => $families === [] || in_array($family, $families, true)));
 
-        return DoctorReportData::fromNodes(array_map(fn (Node $node): DoctorNodeReportData => $this->node($node, $selected), $nodes));
+        $instances = in_array(DoctorFamily::Instance, $selected, true) ? self::instancesWithRemovals($nodes) : [];
+
+        return DoctorReportData::fromNodes(array_map(fn (Node $node): DoctorNodeReportData => $this->node($node, $selected, $instances[$node->id] ?? []), $nodes));
     }
 
-    /** @param list<DoctorFamily> $families */
-    private function node(Node $node, array $families): DoctorNodeReportData
+    /**
+     * @param  list<DoctorFamily>  $families
+     * @param  list<array{0:Instance,1:?InstanceRemoval}>  $instances
+     */
+    private function node(Node $node, array $families, array $instances): DoctorNodeReportData
     {
         $agent = $this->liveness->for($node);
         $facts = $agent === null ? [] : NodeFact::query()->where('node_id', $node->id)
@@ -80,6 +88,7 @@ final readonly class FactDoctor
             DoctorFamily::Role => $this->roleFamily($inspect($family)),
             DoctorFamily::Process => $this->processFamily($inspect($family)),
             DoctorFamily::Firewall => $this->firewallFamily($inspect($family)),
+            DoctorFamily::Instance => $this->instanceFamily($inspect($family), $instances),
             default => DoctorFamilyReportData::fromIssues($family, 0, []),
         }, $families), $agent);
     }
@@ -292,6 +301,61 @@ final readonly class FactDoctor
         });
 
         return $check->report();
+    }
+
+    /**
+     * A failed destroy that the removal reaper started again MaxRetries times and that failed again (InstanceRemovalReaper::stuck).
+     * It reads the Gateway's own records, so it needs no fact. Every Instance of the Node is checked, so one whose removal was
+     * restored resolves the Problem; the Instance's deletion resolves it as `resource_gone`. While a later retry runs, the
+     * removal is `removing` again and the check gives no verdict, so the Problem neither resolves nor opens again each retry.
+     */
+    /** @param list<array{0:Instance,1:?InstanceRemoval}> $instances the Node's Instances with the removal each one requested */
+    private function instanceFamily(DoctorFamilyInspection $check, array $instances): DoctorFamilyReportData
+    {
+        foreach ($instances as [$instance, $removal]) {
+            if ($removal !== null && $removal->status === InstanceRemovalStatus::Removing && $removal->retry_count >= InstanceRemovalReaper::MaxRetries) {
+                continue;
+            }
+            if ($removal !== null && InstanceRemovalReaper::stuck($removal)) {
+                $step = $removal->failed_step->value ?? 'unknown';
+                $check->issue(InstanceDoctorIssueCode::RemovalStuck->value, $instance->id, $instance->name,
+                    sprintf('Removal %s failed at %s with %s after %d automatic retries.', $removal->id, $step, $removal->error_code ?? 'unknown', $removal->retry_count),
+                    'removed', $step.': '.($removal->error_code ?? 'unknown'));
+            }
+            $check->observed($instance->id, InstanceDoctorIssueCode::RemovalStuck->value);
+        }
+
+        return $check->report();
+    }
+
+    /**
+     * Every Instance of the Nodes with the live removal it requested, in one query for the whole report, so the family costs the
+     * same however many Nodes and Instances there are.
+     *
+     * @param  list<Node>  $nodes
+     * @return array<int, list<array{0:Instance,1:?InstanceRemoval}>> by Node id
+     */
+    private static function instancesWithRemovals(array $nodes): array
+    {
+        $rows = Instance::query()->whereIn('instances.node_id', array_map(static fn (Node $node): int => $node->id, $nodes))
+            ->leftJoin('instance_removal_members as removal_members', static fn ($join) => $join->on('removal_members.instance_id', '=', 'instances.id')
+                ->whereNull('removal_members.row_deleted_at')->whereNull('removal_members.abandoned_at'))
+            ->leftJoin('instance_removals as removals', static fn ($join) => $join->on('removals.id', '=', 'removal_members.instance_removal_id')
+                ->on('removals.requested_instance_id', '=', 'instances.id'))
+            ->orderBy('instances.id')
+            ->get(['instances.id', 'instances.node_id', 'instances.name', 'removals.id as removal_id', 'removals.status as removal_status',
+                'removals.kind as removal_kind', 'removals.retry_count as removal_retry_count', 'removals.error_code as removal_error_code',
+                'removals.failed_step as removal_failed_step']);
+        $grouped = [];
+        foreach ($rows as $row) {
+            $attributes = $row->getAttributes();
+            $removal = $attributes['removal_id'] === null ? null : (new InstanceRemoval)->newFromBuilder(['id' => $attributes['removal_id'],
+                'status' => $attributes['removal_status'], 'kind' => $attributes['removal_kind'], 'retry_count' => $attributes['removal_retry_count'],
+                'error_code' => $attributes['removal_error_code'], 'failed_step' => $attributes['removal_failed_step']]);
+            $grouped[$row->node_id][] = [$row, $removal];
+        }
+
+        return $grouped;
     }
 
     private static function architecture(string $name): string
