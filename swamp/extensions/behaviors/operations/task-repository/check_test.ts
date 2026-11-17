@@ -728,9 +728,16 @@ Deno.test("every check command is one SSH exec argv in its directory, its output
 /**
  * A checkout with a Pest project `apps/gateway`: its `artisan` and
  * `vendor/bin/pest` print their arguments, and `bin/check` answers
- * `--ci-time-limit DIR` with `limit` for that project, as CI's workflow would.
+ * `--ci-time-limit DIR` with `ci-time-limit: <limit>` for that project, as
+ * CI's workflow would, `ci-time-limit: none` for an empty limit, or a `limit`
+ * that is no number verbatim.
  */
 const pestCheckout = (limit: string, answer = 0) => {
+    const reply = limit === ""
+        ? "ci-time-limit: none"
+        : /^[0-9]+$/.test(limit)
+        ? `ci-time-limit: ${limit}`
+        : limit;
     const root = Deno.makeTempDirSync();
     const file = (path: string, text: string) => {
         Deno.mkdirSync(`${root}/${path}`.replace(/\/[^/]+$/, ""), {
@@ -742,7 +749,9 @@ const pestCheckout = (limit: string, answer = 0) => {
     file("apps/gateway/artisan", '#!/bin/bash\necho "artisan $*"\n');
     file(
         "bin/check",
-        `#!/bin/bash\n[ "$1" = --ci-time-limit ] || exit 9\ncase "$2" in apps/gateway*) echo -n ${limit};; esac\nexit ${answer}\n`,
+        `#!/bin/bash\n[ "$1" = --ci-time-limit ] || exit 9\ncase "$2" in apps/gateway*) printf '%b\\n' ${
+            JSON.stringify(reply)
+        };; *) echo "ci-time-limit: none";; esac\nexit ${answer}\n`,
     );
     return root;
 };
@@ -896,6 +905,69 @@ Deno.test("a Pest call CI passes no limit to keeps phpunit.xml's, and a failed a
         result.output,
         "Task check: bin/check --ci-time-limit gave no limit\n",
     );
+});
+
+Deno.test("a check command that does not declare --ci-time-limit is never run, and the command runs as given", () => {
+    const root = pestCheckout("5");
+    // An ordinary check: it ignores its arguments, prints text and exits 0.
+    Deno.writeTextFileSync(
+        `${root}/bin/check`,
+        '#!/bin/bash\ntouch "$(dirname "$0")/ran"\necho "Running the whole check"\n',
+        { mode: 0o755 },
+    );
+    assertEquals(
+        runIn(
+            `${root}/apps/gateway`,
+            withCiTimeLimit(
+                "vendor/bin/pest tests/X.php",
+                "bin/check",
+                root,
+                root,
+            ),
+        ),
+        { code: 0, output: "pest tests/X.php\n" },
+    );
+    assertThrows(() => Deno.statSync(`${root}/bin/ran`));
+    // A check command path that is no file is not run either.
+    assertEquals(
+        runIn(
+            `${root}/apps/gateway`,
+            withCiTimeLimit(
+                "vendor/bin/pest tests/X.php",
+                "bin/missing",
+                root,
+                root,
+            ),
+        ),
+        { code: 0, output: "pest tests/X.php\n" },
+    );
+});
+
+Deno.test("a declared check command whose answer is not the fixed line fails the command", () => {
+    for (
+        const reply of [
+            "ci-time-limit: 5s",
+            "ci-time-limit:5",
+            "Running the whole check\\nci-time-limit: 5",
+        ]
+    ) {
+        const root = pestCheckout(reply);
+        assertEquals(
+            runIn(
+                `${root}/apps/gateway`,
+                withCiTimeLimit(
+                    "vendor/bin/pest tests/X.php",
+                    "bin/check",
+                    root,
+                    root,
+                ),
+            ),
+            {
+                code: 2,
+                output: "Task check: bin/check --ci-time-limit gave no limit\n",
+            },
+        );
+    }
 });
 
 Deno.test("a Composer test script gets the limit after its argument separator", () => {

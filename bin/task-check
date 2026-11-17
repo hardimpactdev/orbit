@@ -15,9 +15,9 @@ last lines of each failed part, so the stored tail of the output always holds it
 --base REF        the start commit (default: the merge base with origin/main, else main)
 --budget SECONDS  wall time of the whole run (default 270)
 --only PARTS      comma-separated part names, such as pest,phpstan
---ci-time-limit DIR  print the per-test time limit that CI passes to Pest for the project that holds DIR, a path
-                  relative to the checkout, and nothing when CI passes none; the task check's command deliverables
-                  that run Pest append it, so they run with CI's limit"""
+--ci-time-limit DIR  print `ci-time-limit: N`, the per-test time limit that CI passes to Pest for the project that
+                  holds DIR, a path relative to the checkout, or `ci-time-limit: none`; the task check's command
+                  deliverables that run Pest append it, so they run with CI's limit"""
 import argparse
 from contextlib import contextmanager
 from importlib.machinery import SourceFileLoader
@@ -485,8 +485,7 @@ def main(argv=None):
         if os.path.isabs(args.ci_time_limit) or os.path.normpath(args.ci_time_limit).split(os.sep)[0] == '..':
             parser.error(f'--ci-time-limit takes a directory inside the checkout, not {args.ci_time_limit}')
         limit = project_time_limit(args.ci_time_limit)
-        if limit is not None:
-            print(limit)
+        print(f'ci-time-limit: {"none" if limit is None else limit}')
         return 0
     if args.only and set(args.only) - set(PARTS):
         parser.error('unknown part: ' + ', '.join(sorted(set(args.only) - set(PARTS))) + '; parts: ' + ', '.join(PARTS))

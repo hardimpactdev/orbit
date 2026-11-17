@@ -81,15 +81,17 @@ const PestCall =
 /**
  * A command deliverable that runs Pest gets CI's per-test time limit, which a
  * task copy, a shared and loaded host, needs as CI does
- * (docs/reference/tasks.md#deliverables). The Project's check command, when
- * it is one executable path, answers `--ci-time-limit DIR` with that limit for
- * the Pest project that holds DIR, or with nothing when CI passes none. The
- * check asks it for the directory that the final Pest call runs in, relative
- * to `tree`, the checked workspace or a start-commit tree, and appends the
- * limit to that call. A failed answer, or a call outside `tree`, fails the
- * command. A command whose last
- * simple command is not a Pest call, or that passes its own limit, runs
- * unchanged.
+ * (docs/reference/tasks.md#a-pest-command-gets-cis-time-limit). The Project
+ * opts in through its check command: one executable path whose file contains
+ * the text `--ci-time-limit`. Asked `--ci-time-limit DIR`, it prints exactly
+ * `ci-time-limit: N`, or `ci-time-limit: none` when CI passes no limit to the
+ * Pest project that holds DIR. The check asks it for the directory that the
+ * final Pest call runs in, relative to `tree`, the checked workspace or a
+ * start-commit tree, and appends the limit to that call. Any other answer, or
+ * a call outside `tree`, fails the command. A check command that does not
+ * declare the flag is never asked, and the command runs as given; so does a
+ * command whose last simple command is not a Pest call, or that passes its
+ * own limit.
  */
 export function withCiTimeLimit(
     source: string,
@@ -107,20 +109,23 @@ export function withCiTimeLimit(
     ) return source;
     return [
         "orbit_ci_time_limit() {",
+        `    local check=${
+            quoted(`${workspace}/${check}`)
+        } tree directory answer limit extra`,
+        '    [[ -f $check ]] && grep -qF -- --ci-time-limit "$check" || { "$@"; return; }',
         // Physical paths: `env -C` leaves `PWD` unset, so a symlinked checkout would not match.
-        `    local tree directory limit extra`,
         `    tree=$(cd ${quoted(tree)} && pwd -P) && directory=$(pwd -P) &&`,
         '        [[ $directory == "$tree" || $directory == "$tree"/* ]] &&',
         '        directory=${directory#"$tree"} && directory=${directory#/} &&',
-        `        limit=$(${
-            quoted(`${workspace}/${check}`)
-        } --ci-time-limit "\${directory:-.}") && [[ $limit =~ ^[0-9]*$ ]] || {`,
+        '        answer=$("$check" --ci-time-limit "${directory:-.}") &&',
+        "        [[ $answer =~ ^ci-time-limit:\\ ([0-9]+|none)$ ]] || {",
         `        echo ${
             quoted(`Task check: ${check} --ci-time-limit gave no limit`)
         } >&2`,
         "        return 2",
         "    }",
-        '    if [[ -z $limit ]]; then echo "Pest time limit: CI passes none for ${directory:-.}; its phpunit.xml holds"; "$@"; return; fi',
+        "    limit=${BASH_REMATCH[1]}",
+        '    if [[ $limit == none ]]; then echo "Pest time limit: CI passes none for ${directory:-.}; its phpunit.xml holds"; "$@"; return; fi',
         '    echo "Pest time limit: --default-time-limit=$limit, CI\'s limit for ${directory:-.}"',
         '    extra=(--default-time-limit="$limit")',
         '    [[ $1 == composer && " $* " != *" -- "* ]] && extra=(-- "${extra[@]}")',

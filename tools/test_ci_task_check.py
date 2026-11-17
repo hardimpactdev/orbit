@@ -575,14 +575,14 @@ class CiLimitTest(unittest.TestCase):
 
     def test_a_deliverable_asks_for_cis_limit_of_the_pest_project_that_holds_its_directory(self):
         # Check 2579: a deliverable's own Pest run got phpunit.xml's 2 s on a loaded copy, where CI's 5 s holds.
-        self.assertEqual(self.deliverable_limit('apps/gateway'), '5\n')
-        self.assertEqual(self.deliverable_limit('apps/gateway/tests/Feature'), '5\n')
-        self.assertEqual(self.deliverable_limit('./apps/gateway/'), '5\n')
+        self.assertEqual(self.deliverable_limit('apps/gateway'), 'ci-time-limit: 5\n')
+        self.assertEqual(self.deliverable_limit('apps/gateway/tests/Feature'), 'ci-time-limit: 5\n')
+        self.assertEqual(self.deliverable_limit('./apps/gateway/'), 'ci-time-limit: 5\n')
 
-    def test_a_project_ci_passes_no_limit_to_and_a_non_pest_directory_print_nothing(self):
+    def test_a_project_ci_passes_no_limit_to_and_a_non_pest_directory_answer_none(self):
         for directory in ('apps/cli', 'packages/php-sdk', '.', 'swamp', 'apps/gateway-other'):
             with self.subTest(directory=directory):
-                self.assertEqual(self.deliverable_limit(directory), '')
+                self.assertEqual(self.deliverable_limit(directory), 'ci-time-limit: none\n')
 
     def test_a_directory_outside_the_checkout_is_refused_not_answered_with_no_limit(self):
         for directory in ('/srv/workspace/apps/gateway', '../apps/gateway', 'apps/../../x'):
@@ -596,13 +596,13 @@ class CiLimitTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, workflow.parent, ignore_errors=True)
         workflow.write_text((ROOT / '.github/workflows/ci.yml').read_text().replace('--default-time-limit=5', '--default-time-limit=7'))
         with patch.dict(check['ci_time_limit'].__globals__, {'CI_WORKFLOW': workflow}):
-            self.assertEqual(self.deliverable_limit('apps/gateway'), '7\n')
+            self.assertEqual(self.deliverable_limit('apps/gateway'), 'ci-time-limit: 7\n')
 
     def test_the_limit_lookup_runs_no_check(self):
         started = time.monotonic()
         result = subprocess.run([str(ROOT / 'bin/task-check'), '--ci-time-limit', 'apps/gateway'], capture_output=True,
                                 text=True, timeout=30, cwd=tempfile.gettempdir())
-        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '5\n', ''))
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, 'ci-time-limit: 5\n', ''))
         self.assertLess(time.monotonic() - started, 10)
 
     def test_the_check_names_cis_per_unit_cap(self):
