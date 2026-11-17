@@ -17,6 +17,7 @@ use App\Domain\GitHub\GreenCommit;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
@@ -160,4 +161,13 @@ it('resumes a retained release without minting a GitHub token or selecting a new
     expect($input['intent'])->toBe($operation->input)
         ->and(json_encode($input['execution_secrets']))->toBe('{}');
     Http::assertNothingSent();
+});
+
+it('drains the container Horizon fallback only when the Gateway uses its queue', function (): void {
+    $node = Node::query()->firstOrFail();
+    config(['orbit.gateway_queue.connection' => 'queue']);
+    expect(GatewayHorizon::releaseUnit($node, true))->toBe('orbit-gateway-horizon.service')
+        ->and(GatewayHorizon::releaseUnit($node, false))->toBe('');
+    config(['orbit.gateway_queue.connection' => '']);
+    expect(GatewayHorizon::releaseUnit($node, true))->toBe('');
 });

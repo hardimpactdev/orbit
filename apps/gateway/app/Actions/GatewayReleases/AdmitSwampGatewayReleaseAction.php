@@ -18,12 +18,10 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
-use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\Process;
 use Illuminate\Support\Facades\Config;
 use Throwable;
 
@@ -91,7 +89,7 @@ final readonly class AdmitSwampGatewayReleaseAction
                 'web' => ['artifact_id' => $web['artifact_id'], 'size' => $web['size'], 'digest' => $web['digest']],
             ];
         }
-        $horizon = GatewayHorizon::find($gateway);
+        $horizon = GatewayHorizon::releaseUnit($gateway, $this->layout->usesContainers());
 
         // The lock keeps the release unit and a second admission out until the run owns its record.
         return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $publication, $horizon, $gateway): GatewayRelease {
@@ -112,7 +110,7 @@ final readonly class AdmitSwampGatewayReleaseAction
     /**
      * @param  array{repository: string, retained?: true, manifest?: string, web?: array{artifact_id: int, size: int, digest: string}}  $publication
      */
-    private function admit(string $commit, bool $force, string $trigger, string $previous, array $publication, ?Process $horizon, Node $gateway): GatewayRelease
+    private function admit(string $commit, bool $force, string $trigger, string $previous, array $publication, string $horizon, Node $gateway): GatewayRelease
     {
         $record = $this->recorder->begin($trigger, $commit, null, $force) ?? throw new GatewayReleaseException('deploy', 'gateway.release_record_failed', 'The release record cannot be written.', 500);
         try {
@@ -144,7 +142,7 @@ final readonly class AdmitSwampGatewayReleaseAction
     /**
      * @param  array{repository: string, retained?: true, manifest?: string, web?: array{artifact_id: int, size: int, digest: string}}  $publication
      */
-    private function start(GatewayRelease $record, string $commit, bool $force, string $previous, array $publication, ?Process $horizon, Node $gateway): Operation
+    private function start(GatewayRelease $record, string $commit, bool $force, string $previous, array $publication, string $horizon, Node $gateway): Operation
     {
         return $this->operations->execute('gateway.release', 'gateway_release', $record->id, SwampNode::id(), [
             'sha' => $commit,
@@ -152,7 +150,7 @@ final readonly class AdmitSwampGatewayReleaseAction
             'force' => $force,
             'previous' => $previous,
             ...$publication,
-            'horizon_unit' => $horizon === null ? '' : new SystemdProcessRenderer()->unitName($horizon),
+            'horizon_unit' => $horizon,
             'horizon_drain_seconds' => GatewayHorizon::drainSeconds(),
             'keep' => max(2, Config::integer('orbit.gateway_releases.keep')),
             'ssh' => $this->ssh->forNode($gateway),
