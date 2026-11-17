@@ -415,7 +415,7 @@ It changes no schema and restores no snapshot, so the database advice under [Rol
 
 ### Apply an env change
 
-Before editing `/home/orbit/shared/gateway.env`, make a private backup with mode `0600`. Keep both the backup and any temporary replacement out of terminal output, logs, and Git. Every release caches its configuration, so an edit changes nothing until you cache it again. As `orbit`, after the edit:
+Before editing `/home/orbit/shared/gateway.env`, make a private backup with mode `0600`. Keep both the backup and any temporary replacement out of terminal output, logs, and Git. Every release caches its configuration, so an edit changes nothing until you cache it again. For a container deployment, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It publishes the private file to the serving release and reloads its workers. For a host deployment, run the following command as `orbit`.
 
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure

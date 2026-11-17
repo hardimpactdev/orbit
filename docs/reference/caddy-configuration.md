@@ -39,6 +39,8 @@ The render rules below apply to native publication too. The version layout, addr
 
 ## Published layout
 
+After [Gateway container preparation](/reference/gateway-recovery#move-the-gateway-to-release-containers), the Gateway site imports the selected handlers. A switch changes the active upstream and reloads host Caddy. TLS, WireGuard peer checks and the other sites stay on the Node.
+
 The retained Gateway builder writes one file, `/etc/caddy/orbit-versions/<version>/Caddyfile`, and points `/etc/caddy/Caddyfile` at it. The file starts with an Orbit marker line and Orbit's global options block. Then it lists every site of every role on that Node:
 
 ```caddy

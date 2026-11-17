@@ -159,7 +159,7 @@ The file's path depends on how the Gateway runs.
 
 | Gateway | File |
 | --- | --- |
-| Installed Gateway | `/home/orbit/shared/gateway.env`. Every release links to it. |
+| Installed Gateway | `/home/orbit/shared/gateway.env`. Host releases link to it. Container releases read a private mount. |
 | Development checkout | `apps/gateway/.env`. Copy it from `apps/gateway/.env.example`. |
 
 An installed Gateway caches its configuration, so an edit takes effect only after [Apply an env change](/reference/gateway-recovery#apply-an-env-change).
