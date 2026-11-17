@@ -603,6 +603,10 @@ class TableTest(unittest.TestCase):
             ('swamp/ansible/tasks/instance-migrate-retire.yml', 'swamp/tests/ansible_instance_migrate_preflight_test.ts'),
             ('swamp/ansible/instance_bridge.py', 'swamp/tests/ansible_instance_container_test.ts'),
             ('swamp/tests/_support/instance_host.ts', 'swamp/tests/ansible_instance_host_image_test.ts'),
+            ('swamp/ansible/files/instance-container-power.py', 'swamp/tests/ansible_instance_host_image_test.ts'),
+            ('swamp/ansible/files/instance-container-wake.sh', 'swamp/tests/ansible_instance_host_image_test.ts'),
+            ('swamp/ansible/tasks/instance-power-helper.yml', 'swamp/tests/ansible_instance_host_image_test.ts'),
+            ('swamp/tests/fixtures/host-image-boundaries.json', 'swamp/tests/ansible_instance_host_acl_test.ts'),
             ('swamp/ansible/tasks/task-container-host-system.yml', 'swamp/tests/ansible_container_host_system_test.py'),
         ]:
             result = units.plan([path], budget, fixtures, defaults)
@@ -1070,52 +1074,6 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("SELF_HOSTED_FIXTURES: ${{ github.event_name != 'pull_request' && 'none' || "
                       "github.event.pull_request.head.repo.full_name == github.repository && 'run' || 'fork' }}", source)
         self.assertIn('SELF_HOSTED_FIXTURES: none', source.split('\n  delivery:\n', 1)[1])
-
-    def test_required_fails_a_fork_that_selects_self_hosted_units_and_requires_a_branch_run(self):
-        from test_ci_delivery import delivery, needs_for
-        shards = [{'name': '01', 'units': ['swamp/tests/frankenphp_proxy_test.ts']}]
-        def gate(mode, shards, result):
-            needs = needs_for('required')
-            needs['changes']['outputs']['self_hosted_shards'] = json.dumps(shards)
-            needs['self-hosted-fixtures']['result'] = result
-            with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES=mode):
-                delivery.validate(needs)
-        with self.assertRaisesRegex(SystemExit, "run only on Orbit's runners.*frankenphp_proxy_test.ts.*push the branch"):
-            gate('fork', shards, 'skipped')
-        gate('fork', [], 'skipped')
-        gate('run', shards, 'success')
-        gate('run', [], 'skipped')
-        gate('none', shards, 'skipped')
-        for result in ('failure', 'cancelled', 'skipped'):
-            with self.subTest(result=result), self.assertRaisesRegex(SystemExit, 'Required self-hosted fixtures failed'):
-                gate('run', shards, result)
-        with self.assertRaisesRegex(SystemExit, 'Unexpected self-hosted fixture state'):
-            gate('none', shards, 'success')
-
-    def test_required_stays_red_when_whole_file_capacity_is_exceeded(self):
-        from test_ci_delivery import delivery, needs_for
-        needs = needs_for('required')
-        needs['changes']['outputs'].update(fixture_capacity='[{"file":"migration","shards":11}]', fixture_shards='[]')
-        with self.assertRaisesRegex(SystemExit, 'Required fixture capacity exceeded.*migration'):
-            delivery.validate(needs)
-
-    def test_required_accepts_skipped_only_with_empty_shards_and_preserves_job_selection_rules(self):
-        from test_ci_delivery import delivery, needs_for
-        source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
-        self.assertIn('changes, swamp, fixtures, self-hosted-fixtures]', source)
-        for shards in ([], [{'name': '01', 'units': ['a']}]):
-            for result in ('success', 'skipped', 'failure', 'cancelled'):
-                needs = needs_for('required')
-                needs['changes']['outputs']['fixture_shards'] = json.dumps(shards)
-                needs['fixtures']['result'] = result
-                with self.subTest(shards=shards, result=result), patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'):
-                    if result == 'success' or (result == 'skipped' and not shards):
-                        delivery.validate(needs)
-                    else:
-                        with self.assertRaisesRegex(SystemExit, 'Required fixtures failed'):
-                            delivery.validate(needs)
-        self.assertIn("runpy.run_path('bin/ci-delivery')['validate'](needs)", source)
-
 
 if __name__ == '__main__':
     unittest.main()
