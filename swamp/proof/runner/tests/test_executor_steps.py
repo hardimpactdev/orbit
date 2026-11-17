@@ -67,5 +67,91 @@ class ExecutorStepsTest(unittest.TestCase):
         self.assertTrue(self.run_step([signer, ('runuser -u nobody', done('{"status":"accepted"}\n'))], args)[0])
 
 
+    def publish(self, answers, args):
+        calls = []
+
+        def sh(node, command, timeout=60, stdin_text=None):
+            calls.append((node, command, stdin_text))
+            for marker, answer in answers:
+                if marker in command:
+                    return answer.pop(0) if isinstance(answer, list) and len(answer) > 1 else answer[0] if isinstance(answer, list) else answer
+            return done()
+        with tempfile.TemporaryDirectory() as directory:
+            run = runner.Run(FakeFleet(), spec.Spec('node:converge', 'node/converge', 'app-dev', [], [], []), directory)
+            run.fleet.sh = sh
+            failures = steps.executor_publish(run, args)
+            evidence = {path.name: path.read_text() for path in Path(directory).rglob('executor-ws-*')}
+            return failures, calls, run, evidence
+
+    def test_published_orders_need_a_done_record_each_and_their_latency_is_saved(self):
+        orders = [{'operation': str(9_000_000_000_000_000 + index), 'nonce': f'{index:032x}', 'published_ms': 1000 + index} for index in range(3)]
+        signer = ('executor-order.php', done(json.dumps({'orders': orders})))
+        journal = '\n'.join(json.dumps({'record': 'done', 'nonce': order['nonce'], 'status': 'done', 'at_ms': order['published_ms'] + 4 + index})
+                            for index, order in enumerate(orders)) + '\nnot json\n'
+        failures, calls, run, evidence = self.publish([signer, ('/var/lib/orbit/executor/journal', done(journal))],
+                                                      {'on': 'app-dev', 'operation': 'proof-ws', 'count': 3, 'expect': {'done': True}})
+        self.assertEqual(failures, [])
+        payload = json.loads(next(call for call in calls if 'executor-order.php' in call[1])[2])
+        self.assertEqual(payload, {'mode': 'publish', 'node': run.fleet.nodes['app-dev']['node_id'], 'count': 3})
+        summary = json.loads(evidence['executor-ws-proof-ws.json'])
+        self.assertEqual((summary['orders'], summary['p50_ms'], summary['max_ms']), (3, 5, 6))
+        waits = [call for call in calls if call[1].startswith('sleep ')]
+        self.assertEqual([call[:2] for call in waits], [('app-dev', f'sleep {steps.EXECUTOR_RESULT_SECONDS + 1}')], 'one fixed wait on the Node')
+        reads = [call for call in calls if steps.EXECUTOR_JOURNAL in call[1]]
+        self.assertEqual(len(reads), 1, 'the journal is read once')
+
+        missing = '\n'.join(journal.splitlines()[:2])
+        failures, _, _, _ = self.publish([signer, ('/var/lib/orbit/executor/journal', done(missing))],
+                                         {'on': 'app-dev', 'operation': 'proof-ws', 'count': 3, 'expect': {'done': True}})
+        self.assertEqual(failures, ['executor app-dev over the WebSocket: 1 of 3 orders have no done record within 3 s'])
+
+    def test_a_tampered_order_needs_its_refusal_from_the_observer_path(self):
+        signer = ('executor-order.php', done(json.dumps({'orders': [{'operation': '9000000000000000', 'nonce': 'ab' * 16, 'published_ms': 1}]})))
+        args = {'on': 'app-dev', 'operation': 'proof-bad', 'tamper': 'bad_signature', 'expect': {'refused': 'bad_signature'}}
+        earlier = 'refused order from Observer: bad_signature\n'
+        observer = ('journalctl', [done(earlier), done(earlier * 2)])
+        failures, calls, _, _ = self.publish([signer, observer], args)
+        self.assertEqual(failures, [])
+        self.assertEqual(json.loads(next(call for call in calls if 'executor-order.php' in call[1])[2])['tamper'], 'bad_signature')
+        self.assertTrue(self.publish([signer, ('journalctl', [done(earlier), done(earlier)])], args)[0], 'an earlier refusal does not count')
+        relay = ('journalctl', [done(''), done('refused order from Relay: bad_signature\n')])
+        self.assertTrue(self.publish([signer, relay], args)[0])
+        self.assertEqual(spec.STEPS['executor_publish'][1], {'on', 'operation', 'expect'})
+
+
+    def test_a_replay_is_the_same_wire_published_with_its_original_before_the_one_wait(self):
+        nonce = 'ab' * 16
+        operation = '9000000000000000'
+        first = {'operation': operation, 'nonce': nonce, 'published_ms': 1000, 'replay': False}
+        replay = dict(first, published_ms=1012, replay=True)
+        signer = ('executor-order.php', done(json.dumps({'orders': [first, replay]})))
+        ran = json.dumps({'record': 'done', 'nonce': nonce, 'operation': operation, 'status': 'done', 'at_ms': 1003}) + '\n'
+        journal = ('/var/lib/orbit/executor/journal', done(ran))
+        args = {'on': 'app-dev', 'operation': 'proof-ws-replay', 'replay': True, 'expect': {'done': True, 'refused': 'replayed_nonce'}}
+
+        def refused(first_result):
+            return ('journalctl', [done(''), done(f'refused order {operation} from Observer: replayed_nonce first={first_result}\n')])
+
+        failures, calls, _, evidence = self.publish([signer, journal, refused('done')], args)
+        self.assertEqual(failures, [])
+        self.assertEqual(json.loads(next(call for call in calls if 'executor-order.php' in call[1])[2])['replay'], True)
+        commands = [call[1] for call in calls]
+        published = next(index for index, command in enumerate(commands) if 'executor-order.php' in command)
+        waits = [index for index, command in enumerate(commands) if command.startswith('sleep ')]
+        self.assertEqual(len(waits), 1, 'one wait for the pair')
+        self.assertLess(published, waits[0], 'the original and its replay are both published before the wait')
+        self.assertEqual(json.loads(evidence['executor-ws-proof-ws-replay.json'])['orders'], 1, 'only the original runs')
+        self.assertEqual(self.publish([signer, journal, refused('none')], args)[0], [],
+                         'a replay that reaches the executor before the first result exists is refused too')
+
+        late = dict(replay, published_ms=1000 + steps.EXECUTOR_ORDER_EXPIRY_MS)
+        failures, _, _, _ = self.publish([('executor-order.php', done(json.dumps({'orders': [first, late]}))), journal, refused('done')], args)
+        self.assertEqual(failures, ['executor app-dev: replay of 9000000000000000 published 5000 ms after it, past the 5000 ms expiry'])
+
+        self.assertTrue(self.publish([signer, journal, ('journalctl', [done(''), done('')])], args)[0], 'a replay that is not refused fails')
+        twice = ('/var/lib/orbit/executor/journal', done(ran + ran.replace(nonce, 'cd' * 16)))
+        self.assertEqual(self.publish([signer, twice, refused('done')], args)[0],
+                         ['executor app-dev: Operation 9000000000000000 ran 2 times for an order and its replay, not once'])
+
 if __name__ == '__main__':
     unittest.main()
