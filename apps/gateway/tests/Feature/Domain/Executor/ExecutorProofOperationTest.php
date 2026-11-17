@@ -252,7 +252,7 @@ it('fails every open Operation of a burst whose third publish throws, and keeps 
         ->and(Operation::query()->where('kind', OperationKinds::ExecutorProof)->where('status', OperationStatus::Running)->exists())->toBeFalse();
 });
 
-it('records sleep and discard as durable power proof Operations on the Instance and sends their signed target', function (string $action): void {
+it('records sleep, wake and discard as durable power proof Operations on the Instance and sends their signed target', function (string $action): void {
     $instance = (new Instance)->forceFill(['id' => 23, 'node_id' => $this->node->id]);
     $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start(), $instance, $action);
     $order = $this->proof->send($operation, ExecutorOrderSigner::fromConfig());
@@ -268,14 +268,25 @@ it('records sleep and discard as durable power proof Operations on the Instance 
     $this->listener->receive($this->node->id, proofReply($operation, $done));
     $this->proof->finish($operation, $this->proof->wait($operation, 1.0));
     expect($operation->refresh())->status->toBe(OperationStatus::Succeeded)->executor_result->toBe($done);
-})->with(['sleep', 'discard']);
+})->with(['sleep', 'wake', 'discard']);
+
+it('succeeds a wake proof on a partial result: the container runs again before its whole restore', function (): void {
+    $instance = (new Instance)->forceFill(['id' => 23, 'node_id' => $this->node->id]);
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start(), $instance, 'wake');
+    $partial = ['operation' => (string) $operation->id, 'action' => 'wake', 'target' => '23', 'status' => 'partial',
+        'code' => 'instance.restore_deadline', 'repeat' => false];
+    $this->listener->receive($this->node->id, proofReply($operation, $partial));
+    $this->proof->finish($operation, $this->proof->wait($operation, 1.0));
+
+    expect($operation->refresh())->status->toBe(OperationStatus::Succeeded)->executor_result->toBe($partial)->result->toBe($partial);
+});
 
 it('refuses a power proof of another Node or an action outside power before recording an Operation', function (): void {
     $instance = (new Instance)->forceFill(['id' => 23, 'node_id' => $this->node->id + 1]);
     expect(fn () => $this->proof->run($this->node, fn (Closure $start): Operation => $start(), $instance, 'sleep'))
         ->toThrow(InvalidArgumentException::class);
     $instance->node_id = $this->node->id;
-    expect(fn () => $this->proof->run($this->node, fn (Closure $start): Operation => $start(), $instance, 'wake'))
+    expect(fn () => $this->proof->run($this->node, fn (Closure $start): Operation => $start(), $instance, 'proof.noop'))
         ->toThrow(InvalidArgumentException::class);
     expect(Operation::query()->where('kind', OperationKinds::ExecutorPowerProof)->count())->toBe(0);
 });

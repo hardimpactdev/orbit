@@ -70,7 +70,7 @@ it('refuses an unknown action and a target outside the executor form', function 
 
     expect(fn () => (new ExecutorOrderSigner($secret))->sign(executor_operation(), $action, $target))->toThrow(InvalidArgumentException::class);
 })->with([
-    'unknown action' => ['wake', '7'],
+    'unknown action' => ['hibernate', '7'],
     'bad character' => ['proof.noop', '7 8'],
     'empty target' => ['proof.noop', ''],
     'over 128 bytes' => ['proof.noop', str_repeat('a', 129)],
@@ -111,4 +111,4 @@ it('signs sleep and discard on Instance targets', function (string $action): voi
     [$payload, $bytes, $signature] = executor_split($order->wire);
     expect($payload)->toMatchArray(['action' => $action, 'target' => '23'])
         ->and(sodium_crypto_sign_verify_detached($signature, $bytes, $public))->toBeTrue();
-})->with(['sleep', 'discard']);
+})->with(['sleep', 'wake', 'discard']);

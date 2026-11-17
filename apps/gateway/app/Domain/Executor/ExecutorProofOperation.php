@@ -20,7 +20,7 @@ use Throwable;
 
 /**
  * The proof-only Operation kinds `executor.proof` and `executor.power_proof` (docs/reference/executor.md, ADR 0266 slices 3/4). Each is a
- * durable Operation row on its Node, so the listener records its result like any other (D7). It sends `proof.noop`, or sleep/discard on an Instance, as
+ * durable Operation row on its Node, so the listener records its result like any other (D7). It sends `proof.noop`, or sleep, wake or discard on an Instance, as
  * `executor-order` and waits for the result with {@see ExecutorResultWait}, the waiting request's path (D5). It starts no Swamp run.
  * The no-op changes nothing; the power proof hibernates the whole target.
  *
@@ -53,8 +53,8 @@ final readonly class ExecutorProofOperation
      */
     public function run(Node $node, Closure $body, ?Instance $instance = null, string $action = self::Action): mixed
     {
-        if ($instance !== null && (! in_array($action, ['sleep', 'discard'], true) || $instance->node_id !== $node->id)) {
-            throw new InvalidArgumentException('Power proof needs a sleep/discard target on its Node.');
+        if ($instance !== null && (! in_array($action, ['sleep', 'wake', 'discard'], true) || $instance->node_id !== $node->id)) {
+            throw new InvalidArgumentException('Power proof needs a sleep, wake or discard target on its Node.');
         }
         $started = [];
 
@@ -110,10 +110,13 @@ final readonly class ExecutorProofOperation
         return $this->wait->wait($operation->id, $boundSeconds);
     }
 
-    /** Closes the Operation: succeeded on a `done` result, failed with `executor.proof_<status>` otherwise. */
+    /**
+     * Closes the Operation: succeeded on a `done` result, or a `partial` one (a wake whose container runs again before its whole
+     * restore), which it also stores as the result; failed with `executor.proof_<status>` otherwise.
+     */
     public function finish(Operation $operation, ExecutorWaitResult $result): void
     {
-        $this->operations->change($operation, $result->status === ExecutorWaitStatus::Done
+        $this->operations->change($operation, in_array($result->status, [ExecutorWaitStatus::Done, ExecutorWaitStatus::Partial], true)
             ? ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => $result->line]
             : ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'executor.proof_'.$result->status->value]);
     }

@@ -39,12 +39,13 @@
     - name: Remember whether the executor binary changed
       ansible.builtin.set_fact:
         executor_binary_changed: "{{ converge_replacement_commit is changed or converge_replacement_metadata is changed }}"
-    - name: Reconcile the executor's keys, Node id, allowlist and unit
+    - name: Reconcile the executor's keys, Node id, allowlist, restore pool and unit
       ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "0644" }
       loop:
         - { path: /etc/orbit/executor/gateway.pub, content: "{{ intent.executor.gateway_keys }}" }
         - { path: /etc/orbit/executor/node, content: "{{ intent.executor.node }}" }
         - { path: /etc/orbit/executor/enabled, content: "{{ intent.executor.enabled }}" }
+        - { path: /etc/orbit/executor/restore-threads, content: "{{ intent.executor.restore_threads }}" }
         - { path: /etc/systemd/system/orbit-executor.service, content: "{{ intent.executor.unit }}" }
       loop_control: { label: "{{ item.path }}" }
       register: executor_files
