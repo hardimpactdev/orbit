@@ -87,7 +87,7 @@ class ExecutorStepsTest(unittest.TestCase):
             return failures, calls, run, evidence
 
     def test_published_orders_need_a_done_record_each_and_their_latency_is_saved(self):
-        orders = [{'nonce': f'{index:032x}', 'published_ms': 1000 + index} for index in range(3)]
+        orders = [{'operation': str(9_000_000_000_000_000 + index), 'nonce': f'{index:032x}', 'published_ms': 1000 + index} for index in range(3)]
         signer = ('executor-order.php', done(json.dumps({'orders': orders})))
         journal = '\n'.join(json.dumps({'record': 'done', 'nonce': order['nonce'], 'status': 'done', 'at_ms': order['published_ms'] + 4 + index})
                             for index, order in enumerate(orders)) + '\nnot json\n'
@@ -95,7 +95,7 @@ class ExecutorStepsTest(unittest.TestCase):
                                                       {'on': 'app-dev', 'operation': 'proof-ws', 'count': 3, 'expect': {'done': True}})
         self.assertEqual(failures, [])
         payload = json.loads(next(call for call in calls if 'executor-order.php' in call[1])[2])
-        self.assertEqual(payload, {'mode': 'publish', 'node': run.fleet.nodes['app-dev']['node_id'], 'operation': 'proof-ws', 'count': 3})
+        self.assertEqual(payload, {'mode': 'publish', 'node': run.fleet.nodes['app-dev']['node_id'], 'count': 3})
         summary = json.loads(evidence['executor-ws-proof-ws.json'])
         self.assertEqual((summary['orders'], summary['p50_ms'], summary['max_ms']), (3, 5, 6))
 
@@ -105,7 +105,7 @@ class ExecutorStepsTest(unittest.TestCase):
         self.assertEqual(failures, ['executor app-dev over the WebSocket: 1 of 3 orders have no done record within 15 s'])
 
     def test_a_tampered_order_needs_its_refusal_from_the_observer_path(self):
-        signer = ('executor-order.php', done(json.dumps({'orders': [{'nonce': 'ab' * 16, 'published_ms': 1}]})))
+        signer = ('executor-order.php', done(json.dumps({'orders': [{'operation': '9000000000000000', 'nonce': 'ab' * 16, 'published_ms': 1}]})))
         args = {'on': 'app-dev', 'operation': 'proof-bad', 'tamper': 'bad_signature', 'expect': {'refused': 'bad_signature'}}
         earlier = 'refused order from Observer: bad_signature\n'
         observer = ('journalctl', [done(earlier), done(earlier * 2)])

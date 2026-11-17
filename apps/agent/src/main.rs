@@ -406,7 +406,7 @@ async fn connected_session(
             },
             Some(reply)=executor_rx.recv()=>match reply.frame(channel){
                 Some(frame)=>send_raw_frame(&mut socket,frame).await?,
-                None=>eprintln!("orbit-agent: executor reply for {} does not fit one Pusher frame; dropped",reply.reference),
+                None=>eprintln!("orbit-agent: executor reply for Operation {} does not fit one Pusher frame; dropped",reply.operation),
             },
             _=&mut debounce,if !pending.is_empty()=>{if pending.due(Instant::now()){for unit in pending.take(){let event=orbit_agent::process_frame(channel,sequence.advance(),unit)?;send_raw_frame(&mut socket,event).await?;}}},
             message=receive(&mut socket, &mut liveness)=>match message{
@@ -417,12 +417,12 @@ async fn connected_session(
                     Route::LogSubscribed=>{log_subscribed=true;log_pending=false;log_hub.prompt();},
                     Route::LogRefused=>{log_subscribed=false;log_pending=false;eprintln!("orbit-agent: log channel subscription refused; live log tails are off for this connection");},
                     Route::FetchLogStreams=>log_hub.prompt(),
-                    Route::ExecutorOrder(order)=>{let reference=order.reference.clone();match executor.dispatch(order){
+                    Route::ExecutorOrder(order)=>{let operation=order.operation.clone();match executor.dispatch(order){
                         Dispatch::Forwarded=>{},
-                        Dispatch::TooLarge=>eprintln!("orbit-agent: executor order {reference} is larger than 4 KB; dropped"),
-                        Dispatch::Busy=>eprintln!("orbit-agent: executor order {reference} dropped: 64 orders in flight"),
+                        Dispatch::TooLarge=>eprintln!("orbit-agent: executor order of Operation {operation} is larger than 4 KB; dropped"),
+                        Dispatch::Busy=>eprintln!("orbit-agent: executor order of Operation {operation} dropped: 64 orders in flight"),
                     }},
-                    Route::ExecutorOrderMalformed=>eprintln!("orbit-agent: executor-order event without a ref and an order; dropped"),
+                    Route::ExecutorOrderMalformed=>eprintln!("orbit-agent: executor-order event without an operation and an order; dropped"),
                     Route::Ignore=>{}
                 }},
                 Ok(Message::Ping(data))=>{socket_write(socket.send(Message::Pong(data))).await?},
@@ -1298,7 +1298,7 @@ mod protocol_tests {
 
     #[test]
     fn an_executor_order_routes_only_on_the_node_channel() {
-        let data = json!({"ref": "n1", "order": "e30=.c2ln"}).to_string();
+        let data = json!({"operation": "42", "order": "e30=.c2ln"}).to_string();
         let on = |channel: &str| {
             route(
                 &json!({"event": "executor-order", "channel": channel, "data": data}),
@@ -1310,7 +1310,7 @@ mod protocol_tests {
         assert_eq!(
             on("presence-node.12"),
             Route::ExecutorOrder(ExecutorOrder {
-                reference: "n1".into(),
+                operation: "42".into(),
                 wire: "e30=.c2ln".into()
             })
         );

@@ -9,8 +9,9 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 
 /**
  * The server event `executor-order` on a Node's `presence-node.{id}` (ADR 0266 "The path" step 1). Only the Reverb app secret
- * can publish a server event. `ref` is the order's nonce: the observer echoes it, unread, on each `client-executor-result`
- * line, so a reply that carries no Operation (`accepted`, or a refusal before the signature) still finds its order.
+ * can publish a server event. `operation` is the Operation id as a numeric string: the observer copies it, unread, into each
+ * `client-executor-result` line, so a reply that carries no Operation (`accepted`, or a refusal before the payload is read) still
+ * finds its Operation.
  */
 final readonly class ExecutorOrderBroadcast implements ShouldBroadcastNow
 {
@@ -32,9 +33,9 @@ final readonly class ExecutorOrderBroadcast implements ShouldBroadcastNow
         return self::Name;
     }
 
-    /** @return array{ref: string, order: string} */
+    /** @return array{operation: string, order: string} */
     public function broadcastWith(): array
     {
-        return ['ref' => $this->order->nonce, 'order' => $this->order->wire];
+        return ['operation' => $this->order->operation, 'order' => $this->order->wire];
     }
 }

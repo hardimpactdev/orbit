@@ -4,6 +4,7 @@ declare(strict_types=1);
 use App\Domain\Executor\ExecutorOrderPublisher;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Executor\SignedExecutorOrder;
+use App\Models\Operation;
 use Illuminate\Contracts\Console\Kernel;
 
 // Test support only. Runs inside the nested Gateway as its managed user, never installed in a release.
@@ -101,30 +102,33 @@ function proofOrder(string $secretPath, array $input): array
 }
 
 /**
- * Publishes `count` orders, one after another, as `executor-order` on the Node's channel. An untampered order goes through the
- * Gateway's own signer (ORBIT_EXECUTOR_SIGNING_KEY); a tampered one is made by {@see proofOrder}. Each entry records the Gateway
- * time just before its publish, for the latency to the executor.
+ * Publishes `count` orders, one after another, as `executor-order` on the Node's channel through the Gateway's own publisher.
+ * An untampered order goes through the Gateway's own signer (ORBIT_EXECUTOR_SIGNING_KEY); a tampered one is made by
+ * {@see proofOrder}. The proof records no Operation: each order gets an in-memory Operation with an unused numeric id in a
+ * high range and this Node as its `node_id`, so slice 3's listener finds no Operation for its result. Each entry records the
+ * Gateway time just before its publish, for the latency to the executor.
  *
  * @param  array<string, mixed>  $input
- * @return array{orders: list<array{nonce: string, published_ms: int}>}
+ * @return array{orders: list<array{operation: string, nonce: string, published_ms: int}>}
  */
 function proofPublish(string $secretPath, array $input): array
 {
-    $node = (string) $input['node'];
+    $node = (int) $input['node'];
     $count = max(1, min(50, (int) ($input['count'] ?? 1)));
     $publisher = app(ExecutorOrderPublisher::class);
+    $base = random_int(9_000_000_000_000_000, 9_100_000_000_000_000);
     $orders = [];
-    for ($index = 1; $index <= $count; $index++) {
-        $operation = (string) $input['operation'].($count > 1 ? '-'.$index : '');
+    for ($index = 0; $index < $count; $index++) {
+        $operation = (new Operation)->forceFill(['id' => $base + $index, 'node_id' => $node]);
         if (isset($input['tamper']) || isset($input['nonce'])) {
-            $made = proofOrder($secretPath, ['node' => $node, 'operation' => $operation] + $input);
-            $order = new SignedExecutorOrder($made['order'], $made['nonce'], 0);
+            $made = proofOrder($secretPath, ['node' => (string) $node, 'operation' => (string) ($base + $index)] + $input);
+            $order = new SignedExecutorOrder($made['order'], (string) ($base + $index), $made['nonce'], 0);
         } else {
-            $order = ExecutorOrderSigner::fromConfig()->sign('proof.noop', $node, $node, $operation);
+            $order = ExecutorOrderSigner::fromConfig()->sign($operation, 'proof.noop', (string) $node);
         }
         $published = (int) floor(microtime(true) * 1000);
-        $publisher->publish((int) $node, $order);
-        $orders[] = ['nonce' => $order->nonce, 'published_ms' => $published];
+        $publisher->publish($operation, $order);
+        $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $published];
     }
 
     return ['orders' => $orders];

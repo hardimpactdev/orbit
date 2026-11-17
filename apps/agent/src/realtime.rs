@@ -241,9 +241,9 @@ pub async fn join(
 }
 
 // The executor pass-through (ADR 0266 D6, docs/reference/executor.md#the-observer-pass-through). The observer reads only the
-// Pusher envelope of `executor-order`: an opaque `ref` the Gateway sets and the order's wire form. It never parses, verifies or
-// signs the order. It writes the bytes unchanged to the executor's socket and sends each reply line back as
-// `client-executor-result`, with the same `ref`, on the same channel.
+// Pusher envelope of `executor-order`: the Operation id the Gateway sets, which it copies unread, and the order's wire form. It
+// never parses, verifies or signs the order. It writes the bytes unchanged to the executor's socket and sends each reply line
+// back as `client-executor-result`, with the same Operation id, on the same channel.
 
 /// The executor's socket on a Node.
 pub const EXECUTOR_SOCKET: &str = "/run/orbit-executor.sock";
@@ -253,8 +253,8 @@ pub const EXECUTOR_ORDER_EVENT: &str = "executor-order";
 pub const EXECUTOR_RESULT_EVENT: &str = "client-executor-result";
 /// The largest order the observer forwards, in bytes.
 pub const MAX_EXECUTOR_ORDER_BYTES: usize = 4096;
-/// The longest `ref` the observer echoes, in bytes.
-pub const MAX_EXECUTOR_REF_BYTES: usize = 64;
+/// The longest Operation id the observer copies back, in bytes.
+pub const MAX_EXECUTOR_OPERATION_BYTES: usize = 64;
 /// How many orders may wait for their reply at once.
 pub const MAX_EXECUTOR_IN_FLIGHT: usize = 64;
 /// How long the observer reads one order's reply.
@@ -262,10 +262,10 @@ pub const EXECUTOR_REPLY_TIMEOUT: std::time::Duration = std::time::Duration::fro
 /// The most reply bytes the observer reads for one order.
 pub const MAX_EXECUTOR_REPLY_BYTES: u64 = 64 * 1024;
 
-/// One `executor-order` as it arrived: the Gateway's `ref` and the order's wire form, unread.
+/// One `executor-order` as it arrived: the Operation id and the order's wire form, both unread.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutorOrder {
-    pub reference: String,
+    pub operation: String,
     pub wire: String,
 }
 
@@ -276,21 +276,21 @@ impl ExecutorOrder {
             Value::String(text) => serde_json::from_str::<Value>(text).ok()?,
             data => data.clone(),
         };
-        let reference = data["ref"].as_str()?;
-        if reference.is_empty() || reference.len() > MAX_EXECUTOR_REF_BYTES {
+        let operation = data["operation"].as_str()?;
+        if operation.is_empty() || operation.len() > MAX_EXECUTOR_OPERATION_BYTES {
             return None;
         }
         Some(Self {
-            reference: reference.to_owned(),
+            operation: operation.to_owned(),
             wire: data["order"].as_str()?.to_owned(),
         })
     }
 }
 
-/// One reply line of the executor, unread, with the `ref` of its order.
+/// One reply line of the executor, unread and without its newline, with the Operation id of its order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutorReply {
-    pub reference: String,
+    pub operation: String,
     pub line: String,
 }
 
@@ -300,7 +300,7 @@ impl ExecutorReply {
         let frame = crate::frame(
             channel,
             EXECUTOR_RESULT_EVENT,
-            json!({"ref": self.reference, "line": self.line}),
+            json!({"operation": self.operation, "line": self.line}),
         );
         let size = serde_json::to_vec(&frame).ok()?.len();
         (size <= crate::PUSHER_FRAME_LIMIT).then_some(frame)
@@ -353,9 +353,9 @@ impl ExecutorRelay {
         let (socket, replies) = (self.socket.clone(), self.replies.clone());
         tokio::spawn(async move {
             let _permit = permit;
-            let reference = order.reference.clone();
+            let operation = order.operation.clone();
             if let Err(error) = forward(&socket, order, &replies).await {
-                eprintln!("orbit-agent: executor order {reference} not relayed in full: {error}");
+                eprintln!("orbit-agent: executor order of Operation {operation} not relayed in full: {error}");
             }
         });
         Dispatch::Forwarded
@@ -390,7 +390,7 @@ async fn forward(
                 .map_err(|_| std::io::Error::other("a reply line is not UTF-8"))?;
             // The receiver lives as long as the observer; a send fails only while it shuts down.
             let _ = replies.send(ExecutorReply {
-                reference: order.reference.clone(),
+                operation: order.operation.clone(),
                 line,
             });
         }
@@ -416,9 +416,9 @@ mod tests {
         dir.join("executor.sock")
     }
 
-    fn order(reference: &str, wire: &str) -> ExecutorOrder {
+    fn order(operation: &str, wire: &str) -> ExecutorOrder {
         ExecutorOrder {
-            reference: reference.into(),
+            operation: operation.into(),
             wire: wire.into(),
         }
     }
@@ -431,28 +431,27 @@ mod tests {
 
     #[test]
     fn the_envelope_is_read_and_the_order_left_unread() {
-        let as_string = json!({"event": "executor-order", "data": json!({"ref": "n1", "order": "e30=.c2ln"}).to_string()});
+        let as_string = json!({"event": "executor-order", "data": json!({"operation": "42", "order": "e30=.c2ln"}).to_string()});
         assert_eq!(
             ExecutorOrder::from_event(&as_string),
-            Some(order("n1", "e30=.c2ln"))
+            Some(order("42", "e30=.c2ln"))
         );
-        let as_object =
-            json!({"event": "executor-order", "data": {"ref": "n1", "order": "not even base64"}});
+        let as_object = json!({"event": "executor-order", "data": {"operation": "42", "order": "not even base64"}});
         assert_eq!(
             ExecutorOrder::from_event(&as_object),
-            Some(order("n1", "not even base64"))
+            Some(order("42", "not even base64"))
         );
         assert_eq!(
             ExecutorOrder::from_event(&json!({"data": {"order": "x"}})),
             None
         );
         assert_eq!(
-            ExecutorOrder::from_event(&json!({"data": {"ref": "", "order": "x"}})),
+            ExecutorOrder::from_event(&json!({"data": {"operation": "", "order": "x"}})),
             None
         );
-        let long = "r".repeat(MAX_EXECUTOR_REF_BYTES + 1);
+        let long = "r".repeat(MAX_EXECUTOR_OPERATION_BYTES + 1);
         assert_eq!(
-            ExecutorOrder::from_event(&json!({"data": {"ref": long, "order": "x"}})),
+            ExecutorOrder::from_event(&json!({"data": {"operation": long, "order": "x"}})),
             None
         );
     }
@@ -460,7 +459,7 @@ mod tests {
     #[test]
     fn a_reply_line_that_does_not_fit_a_frame_has_none() {
         let small = ExecutorReply {
-            reference: "n1".into(),
+            operation: "42".into(),
             line: r#"{"status":"accepted"}"#.into(),
         };
         let frame = small.frame("presence-node.7").expect("fits");
@@ -468,10 +467,10 @@ mod tests {
         assert_eq!(frame.channel, "presence-node.7");
         assert_eq!(
             frame.data,
-            json!({"ref": "n1", "line": r#"{"status":"accepted"}"#})
+            json!({"operation": "42", "line": r#"{"status":"accepted"}"#})
         );
         let large = ExecutorReply {
-            reference: "n1".into(),
+            operation: "42".into(),
             line: "x".repeat(crate::PUSHER_FRAME_LIMIT),
         };
         assert!(large.frame("presence-node.7").is_none());
@@ -493,13 +492,13 @@ mod tests {
             got
         });
         let (relay, mut replies) = ExecutorRelay::new(&path);
-        assert_eq!(relay.dispatch(order("n1", &wire)), Dispatch::Forwarded);
+        assert_eq!(relay.dispatch(order("42", &wire)), Dispatch::Forwarded);
         assert_eq!(server.await.expect("server"), wire.as_bytes());
         let first = replies.recv().await.expect("accepted line");
         assert_eq!(
             first,
             ExecutorReply {
-                reference: "n1".into(),
+                operation: "42".into(),
                 line: r#"{"status":"accepted"}"#.into()
             }
         );
@@ -517,7 +516,7 @@ mod tests {
         let listener = UnixListener::bind(&path).expect("bind");
         let (relay, _replies) = ExecutorRelay::new(&path);
         assert_eq!(
-            relay.dispatch(order("n1", &"a".repeat(MAX_EXECUTOR_ORDER_BYTES + 1))),
+            relay.dispatch(order("42", &"a".repeat(MAX_EXECUTOR_ORDER_BYTES + 1))),
             Dispatch::TooLarge
         );
         assert_eq!(relay.in_flight(), 0);
@@ -567,7 +566,7 @@ mod tests {
         });
         let (relay, mut replies) = ExecutorRelay::new(&path);
         let started = tokio::time::Instant::now();
-        assert_eq!(relay.dispatch(order("n1", "x")), Dispatch::Forwarded);
+        assert_eq!(relay.dispatch(order("42", "x")), Dispatch::Forwarded);
         assert_eq!(
             replies.recv().await.expect("accepted line").line,
             r#"{"status":"accepted"}"#
@@ -595,7 +594,7 @@ mod tests {
             let _ = stream.write_all(&big).await;
         });
         let (relay, mut replies) = ExecutorRelay::new(&path);
-        assert_eq!(relay.dispatch(order("n1", "x")), Dispatch::Forwarded);
+        assert_eq!(relay.dispatch(order("42", "x")), Dispatch::Forwarded);
         assert_eq!(replies.recv().await.expect("first line").line, "first");
         settle(&relay).await;
         assert!(
@@ -609,7 +608,7 @@ mod tests {
     async fn a_missing_socket_relays_nothing_and_frees_the_slot() {
         let path = socket_path("missing");
         let (relay, mut replies) = ExecutorRelay::new(&path);
-        assert_eq!(relay.dispatch(order("n1", "x")), Dispatch::Forwarded);
+        assert_eq!(relay.dispatch(order("42", "x")), Dispatch::Forwarded);
         settle(&relay).await;
         assert_eq!(relay.in_flight(), 0);
         assert!(replies.try_recv().is_err());

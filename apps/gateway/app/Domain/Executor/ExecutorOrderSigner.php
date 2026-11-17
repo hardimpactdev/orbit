@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Executor;
 
+use App\Models\Operation;
 use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 use RuntimeException;
@@ -47,18 +48,56 @@ final readonly class ExecutorOrderSigner
         return new self(is_string($secret) ? $secret : '');
     }
 
-    /** @throws InvalidArgumentException when the action is unknown, an id is not the executor's form, or the order passes 4 KB. */
-    public function sign(string $action, string $node, string $target, string $operation): SignedExecutorOrder
+    /**
+     * Signs an order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id, so
+     * an order exists only for an Operation that names its Node.
+     *
+     * @throws InvalidArgumentException when the Operation has no id or `node_id`, the action is unknown, the target is not the
+     *                                  executor's form, or the order passes 4 KB.
+     */
+    public function sign(Operation $operation, string $action, string $target): SignedExecutorOrder
     {
+        $node = self::nodeOf($operation);
+        $id = self::idOf($operation);
         $nonce = bin2hex(random_bytes(16));
         $expiresMs = (int) Carbon::now()->getTimestampMs() + self::ExpiresAfterMs;
-        $payload = self::payload($action, $node, $target, $operation, $nonce, $expiresMs);
+        $payload = self::payload($action, (string) $node, $target, $id, $nonce, $expiresMs);
         $wire = base64_encode($payload).'.'.base64_encode(sodium_crypto_sign_detached($payload, $this->secretKey));
         if (strlen($wire) > self::MaxWireBytes) {
             throw new InvalidArgumentException('An executor order may not pass '.self::MaxWireBytes.' bytes.');
         }
 
-        return new SignedExecutorOrder($wire, $nonce, $expiresMs);
+        return new SignedExecutorOrder($wire, $id, $nonce, $expiresMs);
+    }
+
+    /**
+     * The Node an Operation's order goes to: its `node_id`. Slice 3's listener records a result only from that Node.
+     *
+     * @throws InvalidArgumentException when the Operation has no id or no `node_id`.
+     */
+    public static function nodeOf(Operation $operation): int
+    {
+        self::idOf($operation);
+        if ($operation->node_id === null) {
+            throw new InvalidArgumentException('An executor order needs an Operation with an id and a node_id.');
+        }
+
+        return $operation->node_id;
+    }
+
+    /**
+     * The Operation's id as the numeric string an order and its event carry.
+     *
+     * @throws InvalidArgumentException when the Operation has no id.
+     */
+    public static function idOf(Operation $operation): string
+    {
+        $id = $operation->getKey();
+        if (! is_int($id)) {
+            throw new InvalidArgumentException('An executor order needs an Operation with an id and a node_id.');
+        }
+
+        return (string) $id;
     }
 
     /** The signed payload's exact bytes. */

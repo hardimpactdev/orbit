@@ -682,7 +682,8 @@ def executor_publish(run, args):
     order. `expect: {done: true}` waits for a `done` journal record of every nonce and saves the latency from the Gateway's publish
     to the executor's result as evidence; `expect: {refused: <code>}` waits for the observer's order refused with that code."""
     node = nodes_of(run, 'executor_publish', args['on'])[0]
-    payload = {'mode': 'publish', 'node': run.fleet.nodes[node]['node_id'], 'operation': args['operation'], 'count': args.get('count', 1)}
+    # `operation` only names the evidence: the Gateway's proof support gives each order its own numeric Operation id.
+    payload = {'mode': 'publish', 'node': run.fleet.nodes[node]['node_id'], 'count': args.get('count', 1)}
     if 'tamper' in args:
         payload['tamper'] = args['tamper']
     if 'nonce' in args:

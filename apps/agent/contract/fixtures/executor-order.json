@@ -1,14 +1,14 @@
 {
     "comment": "Signed by the Gateway signer with a throwaway key whose secret half was discarded. Rust verifies it with order::check; Pest checks the payload bytes and the signature.",
-    "public_key": "77V80Pc/Pls8D44BK9uMtgLMiqsihoACUhbaf1CNe3M=",
+    "public_key": "d76uoBv682t+DwGdza2k5qwRLlc9PziTIUO3t1dCDvA=",
     "now_ms": 1800000000000,
     "fields": {
         "action": "proof.noop",
         "node": "7",
         "target": "7",
-        "operation": "op-fixture-1",
-        "nonce": "55ced7fecaeb9dcf38353725dddba440",
+        "operation": "42",
+        "nonce": "c8d06ea69b6048d61dca3bc3e076e047",
         "expires_ms": 1800000005000
     },
-    "wire": "eyJhY3Rpb24iOiJwcm9vZi5ub29wIiwibm9kZSI6IjciLCJ0YXJnZXQiOiI3Iiwib3BlcmF0aW9uIjoib3AtZml4dHVyZS0xIiwibm9uY2UiOiI1NWNlZDdmZWNhZWI5ZGNmMzgzNTM3MjVkZGRiYTQ0MCIsImV4cGlyZXNfbXMiOjE4MDAwMDAwMDUwMDB9.lDOwiVH+CducNEuJH+My5bVgCVk9J1bRgb+qgRzgwULfNmwrVOPR7oW/ILh3p0U1su1BL/XeNdl3q20l0m9zAQ=="
+    "wire": "eyJhY3Rpb24iOiJwcm9vZi5ub29wIiwibm9kZSI6IjciLCJ0YXJnZXQiOiI3Iiwib3BlcmF0aW9uIjoiNDIiLCJub25jZSI6ImM4ZDA2ZWE2OWI2MDQ4ZDYxZGNhM2JjM2UwNzZlMDQ3IiwiZXhwaXJlc19tcyI6MTgwMDAwMDAwNTAwMH0=.hUUF0mAD7Ees10PZ6ZiwctvWoxBeSlqS9S0h+dlXL9zuTAlfDc2e2OVSk2vQKIuuEXFIB1/JxMJoQguuAVWsBg=="
 }
