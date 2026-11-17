@@ -1,0 +1,19 @@
+order = 10
+cases = [
+  "every exec of a wake that resumes or finds the container running has a bound from the Node",
+]
+file = "swamp/tests/ansible_instance_wake_static_test.ts"
+self_hosted = true
+# This fixture reads the shipped task files only; it runs no phase.
+cost = 2
+slices = 1
+inputs = [
+  "swamp/ansible/tasks/instance-container-phase.yml",
+  "swamp/ansible/tasks/instance-container-power.yml",
+  "swamp/ansible/tasks/instance-nested-club-key.yml",
+  "swamp/ansible/tasks/instance-power-call.yml",
+  "swamp/ansible/tasks/instance-power-helper.yml",
+  "bin/swamp-shape-gate",
+]
+[case_costs]
+"every exec of a wake that resumes or finds the container running has a bound from the Node" = 2 # added 2026-11-17; local under 1 s
