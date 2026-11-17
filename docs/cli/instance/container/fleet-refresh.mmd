@@ -49,7 +49,7 @@ sequenceDiagram
   %%> - first reads the room on the nested Nodes' disk (`df` in the container of `/`, or of the inner volume's mount when the default has one: where the nested Nodes' `/` lies): the inner Doctor wants at least 2 GiB and 10% of it free (`node.disk_low`), and a refresh writes up to 2 GiB more (checkout, installs, the nested Gateway's records, and a `base` retake); it refuses `instance.container_fleet_no_room` when the free space minus 2 GiB is under that floor, and the detail names the size, the free space, the floor and the need
   %%> - the one fleet check of the run: waits for the inner Incus, compares the three nested containers with the fleet rules, starts a nested container that is stopped, links the Club key and brings up `wg-nested` with `ip` and `wg`
   %%> - appends orbit to incus-admin on nested Nodes marked as Instance hosts; preserves other groups, skips non-hosts, and reports changed only for new membership; every copy start repairs this without a converge or seed refresh
-  %%> - restores the nested Gateway's SSH known_hosts from Node pins with `gateway:known-hosts:sync` as orbit; never scans; reports changed only when the file changes
+  %%> - reads the nested Gateway's command list as orbit; if `gateway:known-hosts:sync` exists, restores SSH known_hosts from recorded Node pins; otherwise records `command_unavailable` and continues on the old checkout
   %%> - gives `wg-nested` the hub's resolver `10.45.0.1` for the routing domains `~nested-dev` and `~nested-prod` with `resolvectl`, never `~orbit`, setting only what differs (docs/reference/development-containers.md#the-fleet-step)
   %%> - checks only what a start can promise: the three containers run and the tunnel reaches the hub; no Doctor wait
   %%> - changes no device or configuration key: on a running fleet it only reads
@@ -92,6 +92,7 @@ sequenceDiagram
   %%> Phase processes:
   %%> - installs the new and changed Process units and waits for each running unit
   %%> Phase fleet_refresh:
+  %%> - after migrating to the new checkout, retries the same command check and SSH pin sync, even when the code digest is unchanged; pins are written before readiness and base
   %%> - reads the refresh record in the container (`/var/lib/orbit/fleet-refresh.json`) and the digest `code` of the checkout: `apps/gateway`, which holds the migrations and the Composer lock of packages that ship migrations, and `apps/agent/contract`, which it reads
   %%> - after the migrate, makes one converge digest per nested Node from what its default converge reads: the `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists, the role, software, Tool and network includes too, the nested Gateway's digest of that Node's default intent (`orbit:node-converge-digest`, which admits and writes nothing) and the fleet intent
   %%> - a part runs when its digest differs from the record; a missing record, or one it cannot read, makes every part run, and an unreadable record adds a warning

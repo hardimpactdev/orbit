@@ -1,5 +1,14 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  fleet-command-current:
+    fleet_gateway_commands:
+      stdout: "list  List commands\ngateway:known-hosts:sync  Restore recorded pins\n"
+  fleet-command-old:
+    fleet_gateway_commands:
+      stdout: "list  List commands\ngateway:other  Another command\n"
+  fleet-command-prefix:
+    fleet_gateway_commands:
+      stdout: "gateway:known-hosts:sync-other  Another command\n"
   # `incus query /1.0/instances/<name>` of a nested-fleet default, cut to its root disk (2026-11-14, Beast).
   root-smaller:
     phase: start
@@ -2570,6 +2579,43 @@ cases:
   field: loop
   context: seed-copy-release
   expected: [base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e]
+
+- file: tasks/instance-fleet-known-hosts.yml
+  task: Record unavailable SSH pin synchronization
+  field: when
+  context: fleet-command-current
+  expected: false
+
+- file: tasks/instance-fleet-known-hosts.yml
+  task: Record unavailable SSH pin synchronization
+  field: when
+  context: fleet-command-old
+  expected: true
+
+- file: tasks/instance-fleet-known-hosts.yml
+  task: Record unavailable SSH pin synchronization
+  field: when
+  context: fleet-command-prefix
+  expected: true
+
+- file: tasks/instance-fleet-known-hosts.yml
+  task: Restore the nested Gateway SSH host pins
+  field: when
+  context: fleet-command-current
+  expected: true
+
+- file: tasks/instance-fleet-known-hosts.yml
+  task: Restore the nested Gateway SSH host pins
+  field: when
+  context: fleet-command-old
+  expected: false
+
+- file: tasks/instance-fleet-known-hosts.yml
+  task: Restore the nested Gateway SSH host pins
+  field: when
+  context: fleet-command-prefix
+  expected: false
+
 non_command_output:
 - file: tasks/gateway-swamp-pin.yml
   task: Remove the other Swamp releases

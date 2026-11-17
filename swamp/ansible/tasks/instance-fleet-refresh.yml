@@ -219,6 +219,7 @@
   vars:
     fleet_migrate_due: "{{ fleet_due.code }}"
     fleet_restart_due: "{{ fleet_due.code or fleet_tokens is changed }}"
+- { name: Restore SSH trust on the refreshed checkout, ansible.builtin.import_tasks: instance-fleet-known-hosts.yml }
 # One read of all the services, every run: `systemctl is-active` prints one state per unit, in order, and its exit says only that one of
 # them is active, so each line is checked. With the Club key it covers Swamp serve and its three workers, which readiness does not.
 - name: Read the services

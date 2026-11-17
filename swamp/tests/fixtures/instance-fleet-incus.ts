@@ -284,7 +284,13 @@ if (command[0] === "incus") {
     const asOrbit = rest[0] === "runuser" && rest[1] === "-u" && rest[2] === "orbit" && rest[3] === "--";
     if ((rest[0] === "install" || rest[0] === "php") && !asOrbit) fail(`${rest[0]} as root: the app user runs it`);
     if (asOrbit) rest = rest.slice(4);
+    if (rest.join(" ") === "php artisan list --raw --no-interaction") {
+      if (!asOrbit || name !== "nested-gateway" || !inner.includes("/home/orbit/orbit/apps/gateway")) fail("Wrong command-list context");
+      if (state.failCommandList) fail("Gateway command list unavailable");
+      done(state.oldGatewayCommands ? "list  List commands" : "gateway:known-hosts:sync  Restore recorded pins");
+    }
     if (rest[0] === "php" && rest.includes("gateway:known-hosts:sync")) {
+      if (state.oldGatewayCommands) fail("Command gateway:known-hosts:sync is not defined");
       if (!asOrbit || name !== "nested-gateway" || !inner.includes("/home/orbit/orbit/apps/gateway")) fail("Wrong known-hosts command context");
       if (state.failKnownHostsSync) fail("Gateway pin store unavailable");
       const gateway = container(name);
