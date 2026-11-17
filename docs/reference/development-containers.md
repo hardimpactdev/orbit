@@ -1910,8 +1910,8 @@ The phase uses these commands, as `agent` in `/srv/workspace`.
 
 | Purpose | Command | What Orbit sets |
 | --- | --- | --- |
-| Start a thread with its first turn and wait for its run | `t3 thread start --provider P --model M --title T --wait --json /srv/workspace -` | The composed prompt on stdin, the provider instance of the effort and the [turn model](#turn-model-and-effort), the title `Orbit task GROUP thread THREAD`, and a 3,600-second `timeout` |
-| Continue a thread and wait for its run | `t3 thread send --wait --json T3THREAD -` | The composed prompt on stdin and a 3,600-second `timeout`. The thread keeps its provider instance, so its model and effort. |
+| Create a new thread | `node - T3 create TITLE INSTANCE MODEL OPTIONS`, with `t3_copy_rpc.mjs` on stdin | Through T3's own RPC: the title `Orbit task GROUP thread THREAD`, the provider instance of the effort, the [turn model](#turn-model-and-effort) and its model options, in full access, with no message. Bounded at 60 seconds |
+| Run a turn and wait for its run | `t3 thread send --wait --json T3THREAD -` | On the created or the continued thread: the composed prompt on stdin and a 3,600-second `timeout`. The thread keeps its provider instance and options, so its model and effort. |
 | Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title: before a continued turn, and after every turn, also when the bound cut the wait before T3 printed the thread id. Bounded at 60 seconds |
 | Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages. Bounded at 60 seconds |
 | Put a reviewer on the candidate | `git status --porcelain`, `git symbolic-ref --short HEAD`, `git rev-parse HEAD`, `git checkout --detach CANDIDATE` | Before a reviewer turn: a clean checkout on a branch, its tip, the detach mark at it, then the candidate, detached. Each bounded at 20 seconds |
@@ -1925,6 +1925,8 @@ The start returns the run's status. `completed` is `done`, `waiting` is `asking_
 A continued turn whose title T3 lists not exactly once launches nothing and is `failed` with `tasks.copy_thread_missing`; a list that fails or is not JSON is `failed` with `tasks.copy_turn_failed`.
 
 A reviewer turn on a checkout with changes or no branch launches nothing and is `failed` with `tasks.copy_tree_dirty`, and one whose checkout is not clean on its branch at its earlier tip afterwards is `failed` with `tasks.copy_review_unrestored`, whatever its run did. The phase marks the detach as soon as it is done, so a reviewer turn cut before the restore is unrestored too.
+
+A reviewer turn's composed prompt names the checked commit and ends with two fixed rules: the [reviewer rule](/reference/tasks#the-reviewer-rule), which bounds the review by the task's scope, and the [pull request text](/reference/tasks#the-reviewers-pull-request-text) rule. An implementer turn's prompt ends with the rule on how to ask instead.
 
 ### A question ends the turn
 
@@ -1949,14 +1951,24 @@ This was tried on a throwaway T3 0.1.7 server on 2026-11-14. A run that asked tw
 
 ### Turn model and effort
 
-A new thread of each role takes the role's provider, model and effort from the task, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_*` settings, as [copy turn agents](/reference/tasks#copy-turn-agents) describes. The Gateway ships `claude` and `claude-opus-5-5` for both roles, at `medium` effort for the implementer and `high` for the reviewer: a container reaches only the Claude model forwarder.
+A new thread of each role takes the role's provider, model and effort from the task, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_*` settings, as [copy turn agents](/reference/tasks#copy-turn-agents) describes. The Gateway ships `claude` and `claude-opus-5-5` for both roles, at `medium` effort for the implementer and `high` for the reviewer. A Project can set `codex`, for example for its reviewer with `gpt-6.1-sol` at `high`. Codex reaches the model router through the copy's `/home/agent/.codex/config.toml`, with the same model key as Claude Code: no other credential enters the container.
 
-Stock T3's CLI takes no effort, but T3's settings can hold several provider instances of one driver, each with its own environment. The create of a task copy writes `/home/agent/.t3/userdata/settings.json` with one `claudeAgent` instance per effort level: `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh` and `claudeMax`, each with `CLAUDE_CODE_EFFORT_LEVEL` set to its level.
+Stock T3's CLI takes no effort, but T3's settings can hold several provider instances of one driver. The create of a task copy writes `/home/agent/.t3/userdata/settings.json` with one instance per provider and effort:
 
-A new thread starts with `--provider` set to the instance of its provider and effort. Before it starts, Orbit refuses a provider and effort with no instance (`tasks.copy_turn_unoffered`), and the turn checks the model against T3's cached model catalog (`tasks.copy_turn_model_unoffered`). A turn's result names the provider instance, the model and the effort the thread started with.
+| Provider | Instances | How the effort reaches the agent |
+| --- | --- | --- |
+| `claude` | `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh`, `claudeMax`, driver `claudeAgent` | `CLAUDE_CODE_EFFORT_LEVEL` in the instance's environment |
+| `codex` | `codexLow`, `codexMedium`, `codexHigh`, `codexXhigh`, `codexMax`, `codexUltra`, driver `codex` | The thread's `reasoningEffort` model option |
 
-Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7; a newer version may change it. A continued thread stays on its instance, so it keeps its model and effort. A copy made before these instances existed refuses new threads; cancel it and start the task again.
+A new thread is created on the instance of its provider and effort, through T3's own RPC, with its model and model options; its first turn is then a `t3 thread send`, as a continued turn is. Before that, Orbit refuses a provider and effort with no instance (`tasks.copy_turn_unoffered`), and the turn checks the model against T3's cached model catalog (`tasks.copy_turn_model_unoffered`). A turn's result names the provider instance, the model and the effort the thread started with.
 
+Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7. A Claude thread carries no model options.
+
+Codex takes no effort from its instance. T3 0.1.7 sends Codex, on every turn, the effort of the thread's `reasoningEffort` option, and no effort without one. Codex's own `model_reasoning_effort`, through `-c` launch arguments or a per-instance `CODEX_HOME`, is then dropped, and Codex runs at the model's default: `low` for `gpt-6.1-sol`. So a Codex thread carries its effort as that option, and `t3 thread start`, which takes no options, cannot start it.
+
+This was verified with T3 0.1.7 and Codex 0.167.0: `gpt-6.1-sol` ran at `high`, in full access (approval `never`, sandbox `danger-full-access`), and T3's cached catalog lists `gpt-6.1-sol` for the `codex` driver. Codex leaves variables whose name holds `KEY` out of its shell commands, so the reviewer's pull request text rule sources `model.env` first. A newer version may change any of this.
+
+A continued thread stays on its instance and keeps its options, so it keeps its model and effort. A copy made before these instances existed refuses new threads, and a copy made before the Codex instances cannot run a new Codex thread; cancel it and start the task again on a new copy.
 ### Gaps of the CLI path
 
 These hold until a T3 server gives Swamp a full-access MCP session:

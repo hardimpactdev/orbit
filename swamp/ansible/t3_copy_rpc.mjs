@@ -1,7 +1,10 @@
-// Reads a waiting T3 run's question, or interrupts that run, or stops a thread's active run, through the stock T3 server's own WebSocket
-// RPC in a task copy (docs/cli/task/copy-turn.mmd). task-copy-turn.yml runs it as agent in the copy, on stdin of the runtime's Node:
-// `node - T3 read THREAD`, `node - T3 interrupt THREAD RUN REQUESTS` and `node - T3 stop THREAD`, T3 being the admitted path of T3's
-// command and REQUESTS the stored request ids joined by newlines. `stop` ends the run of a turn that is over in Orbit: one its bound cut,
+// Reads a waiting T3 run's question, or interrupts that run, or stops a thread's active run, or creates a new thread, through the stock
+// T3 server's own WebSocket RPC in a task copy (docs/cli/task/copy-turn.mmd). task-copy-turn.yml runs it as agent in the copy, on stdin of
+// the runtime's Node: `node - T3 read THREAD`, `node - T3 interrupt THREAD RUN REQUESTS`, `node - T3 stop THREAD` and
+// `node - T3 create TITLE INSTANCE MODEL OPTIONS`, T3 being the admitted path of T3's command, REQUESTS the stored request ids joined by
+// newlines and OPTIONS the thread's model options as JSON. `create` makes the thread with no message: stock T3's `thread start` takes
+// no model options, and T3 0.1.7 runs a Codex thread at the effort of its `reasoningEffort` option alone. The first turn is then
+// `t3 thread send`. `stop` ends the run of a turn that is over in Orbit: one its bound cut,
 // or an earlier turn's. Both stops take one path: T3's `run.interrupt`, then the wait for the run's end. Stock T3's CLI can neither read
 // a question nor stop a run; its server can, for a session that
 // `t3 auth session issue` grants. The session lives only in this process: it is never written, printed or passed as an argument, and it
@@ -26,9 +29,12 @@ const ReadBytes = 150000;
 /** Run states in which T3 is done with a run. */
 const Over = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
 
-const [T3, command, threadId, runId, stored] = process.argv.slice(2);
-if (!T3 || !["read", "interrupt", "stop"].includes(command) || !threadId || (command === "interrupt" && (!runId || !stored))) {
-    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 stop THREAD\n");
+const [T3, command, ...rest] = process.argv.slice(2);
+const [threadId, runId, stored] = command === "create" ? [] : rest;
+const [title, instance, model, options] = command === "create" ? rest : [];
+if (!T3 || !["read", "interrupt", "stop", "create"].includes(command) || (command !== "create" && !threadId)
+    || (command === "interrupt" && (!runId || !stored)) || (command === "create" && (!title || !instance || !model || options === undefined))) {
+    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 stop THREAD | T3 create TITLE INSTANCE MODEL OPTIONS\n");
     process.exit(64);
 }
 
@@ -48,6 +54,11 @@ async function connect() {
             const frame = JSON.parse(line);
             if (frame._tag === "Ping") socket.send(JSON.stringify({ _tag: "Pong" }));
             if (frame._tag === "Exit" && pending.has(String(frame.requestId))) pending.get(String(frame.requestId))(frame.exit);
+            // A stream's first chunk answers it; the stream then ends.
+            if (frame._tag === "Chunk" && pending.has(String(frame.requestId))) {
+                pending.get(String(frame.requestId))({ _tag: "Success", value: frame.values?.[0] });
+                socket.send(JSON.stringify({ _tag: "Interrupt", requestId: String(frame.requestId) }));
+            }
         }
     };
     const timed = (promise, what) => {
@@ -114,6 +125,25 @@ async function interrupt(rpc, run, reason) {
     return { error, after };
 }
 
+/**
+ * A new thread of the workspace's T3 project, with the turn's title, provider instance, model and model options, in full access as
+ * `t3 thread start` makes one. No message: its first turn is the phase's `t3 thread send`.
+ */
+async function create(rpc) {
+    const shell = await rpc.call("orchestration.subscribeShell", {});
+    const project = (shell?.snapshot?.projects ?? []).find((entry) => entry.workspaceRoot === "/srv/workspace" && entry.archivedAt == null);
+    if (project === undefined) return { thread_id: null, error: "T3 holds no project at /srv/workspace." };
+    const created = `orbit:${randomUUID()}`;
+    try {
+        await rpc.call("orchestration.dispatchCommand", { type: "thread.create", commandId: `orbit:${randomUUID()}`, threadId: created,
+            projectId: project.id, title, modelSelection: { instanceId: instance, model, options: JSON.parse(options) }, runtimeMode: "full-access",
+            interactionMode: "default", branch: null, worktreePath: null, createdBy: "system", creationSource: "server", createdAt: new Date().toISOString() });
+    } catch (cause) {
+        return { thread_id: null, error: cause.message };
+    }
+    return { thread_id: created, error: null };
+}
+
 let raw = "";
 let issued = null;
 let rpc = null;
@@ -128,7 +158,9 @@ try {
         throw new Error("t3 auth session issue printed no JSON.");
     }
     rpc = await connect();
-    if (command === "read") {
+    if (command === "create") {
+        out = await create(rpc);
+    } else if (command === "read") {
         const seen = await state(rpc);
         const read = { runs: seen.runs, requests: seen.requests };
         out = { ...read, stoppable: stoppable(seen) && Buffer.byteLength(JSON.stringify(read)) < ReadBytes };
