@@ -137,6 +137,15 @@ fn install(
     files: &Files,
     host: &mut impl Host,
 ) -> Result<Package, PackageError> {
+    install_in(input, files, host, &std::env::temp_dir())
+}
+/// Installs with its work directory under `temporary`, which comes from `TMPDIR` and may not be UTF-8.
+fn install_in(
+    input: &PackageInput,
+    files: &Files,
+    host: &mut impl Host,
+    temporary: &std::path::Path,
+) -> Result<Package, PackageError> {
     validate(input)?;
     preflight(files)?;
     let mut current = installed(host)?;
@@ -144,7 +153,7 @@ fn install(
         Some(v) => !at_least(host, v, &input.minimum_version)?,
         None => true,
     };
-    let work = WorkDir::new().map_err(|e| failed(e.reason))?;
+    let work = WorkDir::within(temporary).map_err(|e| failed(e.reason))?;
     let package = if needs_package {
         let architecture = run(host, &["dpkg", "--print-architecture"])?;
         let architecture = architecture.trim();

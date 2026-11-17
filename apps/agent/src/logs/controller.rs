@@ -13,7 +13,9 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
+    pin::Pin,
     sync::{Arc, Mutex, MutexGuard},
+    task::{Context, Poll},
     time::Duration,
 };
 use tokio::{
@@ -57,7 +59,8 @@ impl LogHub {
         )
     }
 
-    /// Locks the registry. A poisoned lock is fatal: the observer panics and systemd restarts it.
+    /// Locks the registry. A poisoned lock is fatal: the holder panics, `crate::supervise` ends the observer
+    /// with exit code 1, and systemd restarts it.
     fn registry(&self) -> MutexGuard<'_, Registry> {
         self.registry
             .lock()
@@ -150,7 +153,9 @@ pub fn spawn_stream(spec: StreamSpec, queue: Arc<StreamQueue>) -> JoinHandle<()>
 
 struct Controller<F> {
     hub: LogHub,
-    running: BTreeMap<String, JoinHandle<()>>,
+    /// The reader of each started stream. A reader that has finished keeps its entry with no handle, so the
+    /// stream is not started again while the Gateway still lists it.
+    running: BTreeMap<String, Option<JoinHandle<()>>>,
     start: F,
 }
 
@@ -194,12 +199,12 @@ impl<F: FnMut(StreamSpec, Arc<StreamQueue>) -> JoinHandle<()>> Controller<F> {
             drop(registry);
             let id = spec.id.clone();
             let handle = (self.start)(spec, queue);
-            self.running.insert(id, handle);
+            self.running.insert(id, Some(handle));
         }
     }
 
     fn stop(&mut self, id: &str) {
-        if let Some(handle) = self.running.remove(id) {
+        if let Some(handle) = self.running.remove(id).flatten() {
             handle.abort();
         }
         self.hub.registry().streams.remove(id);
@@ -219,16 +224,37 @@ impl<F: FnMut(StreamSpec, Arc<StreamQueue>) -> JoinHandle<()>> Controller<F> {
         let running = std::mem::take(&mut self.running);
         let registry = self.hub.registry();
         for (id, handle) in running {
-            handle.abort();
+            if let Some(handle) = handle {
+                handle.abort();
+            }
             if let Some(queue) = registry.streams.get(&id) {
                 queue.end(LIST_UNAVAILABLE);
             }
         }
     }
+
+    /// Resolves when a stream reader panicked, with its panic. A reader that ends normally gives up its handle.
+    fn poll_panicked(&mut self, context: &mut Context<'_>) -> Poll<tokio::task::JoinError> {
+        for slot in self.running.values_mut() {
+            let Some(handle) = slot else { continue };
+            if let Poll::Ready(result) = Pin::new(handle).poll(context) {
+                *slot = None;
+                if let Err(error) = result {
+                    if error.is_panic() {
+                        return Poll::Ready(error);
+                    }
+                }
+            }
+        }
+        Poll::Pending
+    }
 }
 
 /// Fetches the list when prompted and every 15 seconds while a stream runs, with at most one fetch in
 /// flight, and starts and stops streams to match it. Without a list for 60 seconds, it stops all.
+///
+/// A stream reader that panics panics the controller with the same panic, so the observer's owner of this
+/// task ends the process (`crate::supervise`).
 pub async fn run_controller<L: ListSource>(
     hub: LogHub,
     mut prompts: mpsc::UnboundedReceiver<()>,
@@ -254,6 +280,9 @@ pub async fn run_controller<L: ListSource>(
             },
             _ = refresh.tick() => if controller.running.is_empty() {
                 continue;
+            },
+            error = std::future::poll_fn(|context| controller.poll_panicked(context)) => {
+                std::panic::resume_unwind(error.into_panic());
             },
             _ = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if armed => {
                 eprintln!("orbit-agent: no log stream list for 60 seconds; ending every stream");
@@ -612,5 +641,49 @@ mod tests {
         })
         .join();
         hub.running();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_panicked_stream_reader_ends_the_observer_run() {
+        let fake = FakeList::default();
+        fake.set(list(&[&id(1)]));
+        let (hub, prompts) = LogHub::new();
+        let mut supervised = tokio::task::JoinSet::new();
+        supervised.spawn(run_controller(hub.clone(), prompts, fake, |_, _| {
+            tokio::spawn(async { panic!("the stream reader failed") })
+        }));
+        hub.prompt();
+        let error = tokio::time::timeout(REFRESH, crate::supervise(&mut supervised))
+            .await
+            .expect("the panic ends the run");
+        assert!(
+            error.to_string().contains("the stream reader failed"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stream_reader_that_ends_is_not_fatal_or_started_again() {
+        let fake = FakeList::default();
+        fake.set(list(&[&id(1)]));
+        let (hub, prompts) = LogHub::new();
+        let started: Started = Arc::default();
+        let record = started.clone();
+        let mut supervised = tokio::task::JoinSet::new();
+        supervised.spawn(run_controller(
+            hub.clone(),
+            prompts,
+            fake,
+            move |spec, _| {
+                record.lock().unwrap().push(spec.id.clone());
+                tokio::spawn(async {})
+            },
+        ));
+        hub.prompt();
+        settle().await;
+        hub.prompt();
+        let supervision = tokio::time::timeout(REFRESH * 2, crate::supervise(&mut supervised));
+        assert!(supervision.await.is_err(), "no panic, so the run goes on");
+        assert_eq!(*started.lock().unwrap(), [id(1)], "never started again");
     }
 }

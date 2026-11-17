@@ -531,7 +531,8 @@ async fn fetch_watch_list(
     };
     Ok((parse_watch_list(&body)?, facts))
 }
-/// Locks the shared states. A poisoned lock is fatal: the observer panics and systemd restarts it.
+/// Locks the shared states. A poisoned lock is fatal: the holder panics, `crate::supervise` ends the observer
+/// with exit code 1, and systemd restarts it.
 pub fn lock_workspaces(
     shared: &SharedWorkspaces,
 ) -> std::sync::MutexGuard<'_, BTreeMap<u64, WorkspaceState>> {

@@ -117,9 +117,21 @@ Some(Value::Number(number)) => match number.as_u64() { Some(value) => value, Non
 
 ### 3. Poisoned locks are recovered with `into_inner` (`src/workspace.rs:540`, `src/logs/controller.rs:63`)
 
-**Done in `5bcbe7d35`.** Decision: lock poisoning is fatal, and systemd restarts the observer. The workspace lock, the log
-registry lock and the stream queue and token bucket locks (`src/logs/limits.rs`, which the review missed) now `expect()`
-with the reason the lock is never held across a panic. A test per shared lock proves the panic.
+**Done in `5bcbe7d35` and "Observer B1: a panicked lock holder ends the observer".** Decision: lock poisoning is
+fatal, and systemd restarts the observer. The workspace lock, the log registry lock and the stream queue and token bucket
+locks (`src/logs/limits.rs`, which the review missed) `expect()` with the reason the lock is never held across a panic.
+
+`expect()` alone was not fatal: Tokio catches a panic in a spawned task, so the first commit ended only the task.
+`run` now keeps the tasks that hold these locks (`watch_workspaces`, `run_controller`) in a `JoinSet`. It races
+`orbit_agent::supervise` against the session, so a panic in one ends the run with an error, and the process exits 1. The
+log controller re-raises a panic of a stream reader it started. A reader that ends normally stays ended, as before. The
+binary keeps `panic = "unwind"`. `abort` would also end the process on a panic in tasks that need not be fatal, such as
+the blocking reads whose panics the observer already reports.
+
+Lock order: the registry, then a queue, then the agent bucket. `would_accept` takes the queue and bucket locks one after
+the other. `push` nests them to check and take both buckets in one step. Tests prove that a panic ends the run (from a
+poisoned workspace lock, and from a stream reader). They also prove that each of the four locks is fatal when poisoned,
+and they cover both new error returns.
 
 **Rule:** lock poisoning is fatal; don't recover with `into_inner` (rust-best-practices §5, §7; ADR 0267 P9
 "Concurrency").

@@ -636,6 +636,38 @@ mod tests {
     }
 
     #[test]
+    fn a_target_without_a_file_name_fails_and_removes_the_candidate() {
+        let fixture = Fixture::new();
+        let candidate = fixture.write("candidate-8", "new");
+        let target = fixture.directory.join("bin/..");
+        let error = install(
+            &fixture.input(&candidate),
+            &target,
+            &fixture.lock(),
+            Instant::now() + Duration::from_secs(2),
+            Instant::now() + Duration::from_secs(60),
+            Observer::Fake(true),
+        )
+        .unwrap_err();
+        assert_eq!(
+            crate::command::CommandError::code(&error),
+            "agent.replace_failed"
+        );
+        assert!(
+            matches!(&error, InstallError::InstallFailed { step: "target directory", reason } if reason == "no file name"),
+            "{error:?}"
+        );
+        assert!(!candidate.exists(), "the candidate is removed");
+        assert_eq!(
+            std::fs::read_dir(fixture.directory.join("bin"))
+                .unwrap()
+                .count(),
+            0,
+            "nothing is staged"
+        );
+    }
+
+    #[test]
     fn a_first_installation_has_no_previous_binary() {
         let fixture = Fixture::new();
         let candidate = fixture.write("candidate-6", "first");
