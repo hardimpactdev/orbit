@@ -73,18 +73,71 @@ class ChangedPathsTest(unittest.TestCase):
         plan = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD', python_args=('-I', '-S'))
         self.assertIn(path, [unit for shard in plan['shards'] for unit in shard['units']])
 
-    def test_yaml_comment_only_changes_skip_fixtures_and_keep_build_checks(self):
+    def test_yaml_comment_changes_skip_only_fixtures_that_consume_parsed_values(self):
         path = 'swamp/ansible/tasks/instance-fleet.yml'
-        self.commit(path, '- name: Read fleet\n  command: "incus list"\n')
+        fleet = 'swamp/tests/ansible_instance_fleet_test.ts'
+        container = 'swamp/tests/ansible_instance_container_test.ts'
+        source = (ROOT / path).read_text()
+        self.commit(path, source)
         base = self.git('rev-parse', 'HEAD')
-        self.commit(path, '# Explain the fleet\n- name: Read fleet # a comment\n  command: "incus list"\n')
+        self.commit(path, '# Explain the fleet\n' + source)
         fixtures = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
-        self.assertEqual([], fixtures['shards'])
-        self.assertEqual([], fixtures['self_hosted_shards'])
+        units = self.selected_files(fixtures)
+        self.assertNotIn(fleet, units)
+        self.assertIn(container, units)
+        self.assertIn('swamp/tests/proof_verify_copy_test.ts', units)
+        self.assertTrue(any(row['file'] == container for row in fixtures['mandatory']))
         clean = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD', python_args=('-I', '-S'))
-        self.assertTrue(clean['shards'])
+        self.assertIn(fleet, self.selected_files(clean))
         result = self.cli('ci-build-plan', '--base', base, '--head', 'HEAD')
         self.assertTrue(result['swamp_checks']['tests'])
+        self.git('update-index', '--chmod=+x', path)
+        self.git('-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Change the mode as well')
+        mode_change = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
+        self.assertIn(fleet, self.selected_files(mode_change))
+
+        # A change to the fixture still selects it even when its input edit is a comment.
+        self.git('reset', '--hard', 'HEAD^')
+        self.commit(fleet, '// fixture implementation changed')
+        fixture_change = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
+        self.assertIn(fleet, self.selected_files(fixture_change))
+
+    def selected_files(self, plan):
+        return {unit.split('#', 1)[0] for shard in plan['shards'] + plan['self_hosted_shards'] for unit in shard['units']}
+
+    def test_yaml_comments_remain_inputs_for_registered_raw_source_checks(self):
+        scenarios = [
+            ('swamp/workflows/workflow-dependency-results-prune.yaml',
+             '# This workflow does not use /serve-tls/.',
+             'swamp/tests/swamp_node_schedules_test.ts',
+             'a workflow with a built-in trigger reads nothing of the production Swamp Node'),
+            ('swamp/workflows/workflow-operation-instance-connection-environment.yaml',
+             '# The vault.get() expression supplies the connection environment.',
+             'swamp/tests/ansible_instance_env_keys_test.py',
+             'test_playbook_keeps_values_out_of_argv_and_logs'),
+        ]
+        for path, comment, fixture, case in scenarios:
+            with self.subTest(path=path):
+                source = (ROOT / path).read_text()
+                self.commit(path, source)
+                base = self.git('rev-parse', 'HEAD')
+                self.commit(path, comment + '\n' + source)
+                report = self.repo / 'plan.json'
+                plan = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD', '--plan-json', str(report))
+                self.assertIn(fixture, self.selected_files(plan))
+                # Python fixtures run as a whole file. Collection verifies the named method is in that unit.
+                names = (self.cli('ci-units', 'collect', '--file', fixture)['cases'] if fixture.endswith('.py')
+                         else json.loads(report.read_text())['units'][fixture]['cases'])
+                self.assertIn(case, names)
+
+    def test_unmapped_yaml_comment_changes_keep_default_fixtures(self):
+        path = 'swamp/unknown-ci-input.yml'
+        self.commit(path, 'name: unknown\n')
+        base = self.git('rev-parse', 'HEAD')
+        self.commit(path, '# Still unmapped\nname: unknown\n')
+        plan = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
+        self.assertEqual([path], plan['unmapped'])
+        self.assertTrue(plan['shards'])
 
     def test_yaml_scalar_and_key_ambiguity_selects_the_workflow_fixture(self):
         path = 'swamp/workflows/workflow-operation-instance-complete.yaml'
@@ -123,15 +176,13 @@ class ChangedPathsTest(unittest.TestCase):
                     base = self.git('rev-parse', 'HEAD')
                     self.commit(path, after)
                     plan = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
-                    if selects:
-                        units = [unit for shard in plan['shards'] for unit in shard['units']]
-                        self.assertIn(fixture, units)
-                    else:
-                        self.assertEqual([], plan['shards'])
-                        self.assertEqual([], plan['self_hosted_shards'])
+                    units = self.selected_files(plan)
+                    self.assertEqual(selects, fixture in units)
+                    self.assertIn('swamp/bin/source_test.ts', units)
 
     def test_yaml_meaning_changes_and_uncertain_comparisons_keep_fixtures(self):
         path = 'swamp/ansible/tasks/instance-fleet.yml'
+        fleet = 'swamp/tests/ansible_instance_fleet_test.ts'
         changes = [
             ('command: incus list\n', 'command: incus stop\n'),
             ('value: 1\n', 'value: true\n'),
@@ -154,19 +205,20 @@ class ChangedPathsTest(unittest.TestCase):
                 base = self.git('rev-parse', 'HEAD')
                 self.commit(path, after)
                 fixtures = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
-                self.assertTrue(fixtures['shards'])
+                self.assertIn(fleet, self.selected_files(fixtures))
 
     def test_yaml_additions_and_deletions_keep_fixtures(self):
         path = 'swamp/ansible/tasks/instance-fleet.yml'
+        fleet = 'swamp/tests/ansible_instance_fleet_test.ts'
         base = self.git('rev-parse', 'HEAD')
         self.commit(path, '# new file\n')
         fixtures = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
-        self.assertTrue(fixtures['shards'])
+        self.assertIn(fleet, self.selected_files(fixtures))
         base = self.git('rev-parse', 'HEAD')
         self.git('rm', path)
         self.git('-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Delete YAML')
         fixtures = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
-        self.assertTrue(fixtures['shards'])
+        self.assertIn(fleet, self.selected_files(fixtures))
 
 
 if __name__ == '__main__':

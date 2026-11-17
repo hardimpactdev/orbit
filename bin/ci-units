@@ -30,6 +30,7 @@ MACHINERY = ('bin/ci-units', 'bin/ci-registry', 'bin/swamp-shape-gate', PRELOAD,
 # Fixture metadata keys that only schedule a fixture: where it runs, its declared costs and its slices. The retired
 # after-merge keys, with their reason, also only scheduled a fixture or some of its cases (ADR 0262).
 SCHEDULING = ('self_hosted', 'cost', 'case_costs', 'slices', 'after_merge', 'after_merge_cases', 'reason')
+YAML_SUFFIXES = ('.yaml', '.yml')
 OUTPUT_LOCK = threading.Lock()
 CANCELLED = threading.Event()
 
@@ -124,6 +125,15 @@ def configuration(path=TABLE):
                     any(not isinstance(name, str) or name not in fixture.get('cases', []) for name in cases) or \
                     len(cases) != len(set(cases)):
                 raise ValueError(f'{file}: mandatory_cases needs a declared input and unique case names')
+        parsed = fixture.get('parsed_yaml_inputs', [])
+        if not isinstance(parsed, list) or any(
+            not isinstance(path, str) or Path(path).suffix.lower() not in YAML_SUFFIXES or
+            path == file or path in MACHINERY or any(char in path for char in '*?') or
+            not any(selection_regex(pattern).fullmatch(path) for pattern in fixture['inputs']) or
+            any(selection_regex(pattern).fullmatch(path) for pattern in mandatory)
+            for path in parsed
+        ) or len(parsed) != len(set(parsed)):
+            raise ValueError(f'{file}: parsed_yaml_inputs must list unique declared YAML paths without mandatory cases')
         # The host programs the fixture's tests run, such as zip or jq. A check on a host without one names the unit as skipped.
         programs = fixture.get('host_programs', [])
         if not isinstance(programs, list) or 'host_programs' in fixture and not programs or len(programs) != len(set(programs)) or \
@@ -194,15 +204,24 @@ def inventory_changes(base, head):
     return sorted(file for file in before.keys() | after.keys() if before.get(file) != after.get(file))
 
 
-def fixture_inputs(paths, base, head):
-    """Ignore comment-only YAML edits when both revisions can be compared safely."""
-    yaml_paths = {path for path in paths if Path(path).suffix.lower() in ('.yaml', '.yml')}
-    if not yaml_paths:
-        return paths
+def comment_only_yaml_paths(paths, base, head, fixtures):
+    """Find comment-only edits among the exact paths opted in by at least one fixture."""
+    opted_in = {path for fixture in fixtures.values() for path in fixture.get('parsed_yaml_inputs', [])}
+    candidates = opted_in.intersection(paths)
+    if not candidates:
+        return set()
     try:
         import yaml
     except ImportError:
-        return paths
+        return set()
+    try:
+        diff = subprocess.check_output(['git', 'diff', '--raw', '--no-renames', '--diff-filter=M', '-z', base, head],
+                                       text=True, timeout=60).split('\0')
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, UnicodeError):
+        return set()
+    # A regular file must remain regular, with the same permissions.
+    candidates.intersection_update(path for header, path in zip(diff[::2], diff[1::2])
+                                   if header.startswith((':100644 100644 ', ':100755 100755 ')))
 
     plain_key = re.compile(r'[A-Za-z_][A-Za-z0-9_.-]*')
     quoted_key = re.compile(r'[ -~]*')
@@ -262,7 +281,7 @@ def fixture_inputs(paths, base, head):
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, yaml.YAMLError, ValueError, TypeError, RecursionError):
             return False
 
-    return [path for path in paths if path not in yaml_paths or not unchanged_yaml(path)]
+    return {path for path in candidates if unchanged_yaml(path)}
 
 
 def registry_changes(base, head):
@@ -303,7 +322,8 @@ def direct_files(paths, fixtures):
         {file for file in fixtures if registry.metadata_path(file) in paths}
 
 
-def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_changed=(), shared_registry=False):
+def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_changed=(), shared_registry=False,
+         comment_only_yaml=()):
     selected, unmapped = {}, []
     machinery = shared_registry or any(path in MACHINERY for path in paths)
     for path in paths:
@@ -311,6 +331,8 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
             continue
         matched = path_matches(path, fixtures)
         for file, priority in matched.items():
+            if path in comment_only_yaml and path in fixtures[file].get('parsed_yaml_inputs', []):
+                continue
             selected[file] = max(selected.get(file, (-1, 0, 0)), priority)
         if path.startswith('swamp/') and not matched:
             unmapped.append(path)
@@ -847,10 +869,11 @@ def main():
         signal.signal(signal.SIGINT, lambda *_: CANCELLED.set())
         return run(units, budget, fixtures, args.times, args.tools.resolve() if args.tools is not None else None)
     base, paths = selection.changed_inputs(gate.resolve_base(args.base), args.head)
-    paths = fixture_inputs(paths, base, args.head)
+    comment_only_yaml = comment_only_yaml_paths(paths, base, args.head, fixtures)
     inventory_changed = inventory_changes(base, args.head) if registry.metadata_changed(paths) else []
     registry_changed, shared_registry = registry_changes(base, args.head) if registry.metadata_changed(paths) else ([], False)
-    result = plan(paths, budget, fixtures, defaults, inventory_changed, registry_changed, shared_registry)
+    result = plan(paths, budget, fixtures, defaults, inventory_changed, registry_changed, shared_registry,
+                  comment_only_yaml=comment_only_yaml)
     if args.plan_json:
         costs = {name: cost for f in fixtures.values() for name, cost in units_for(f, budget)}
         selected = planned_units(result)
