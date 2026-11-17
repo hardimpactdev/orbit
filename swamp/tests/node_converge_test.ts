@@ -572,6 +572,20 @@ Deno.test("a role Operation's digests skip every role phase only when its writte
         ["/x/ansible", "/x/ext/ansible-input/converge_tool.ts", "/x/ext/tools", "/x/ext/ansible-input/role_add_plans.ts"]);
 });
 
+Deno.test("a node:add role run compares with the empty record its enrollment intent carries, and an intent with no record is refused", async () => {
+    const role = async (intent: Record<string, unknown>) => {
+        const folder = await Deno.makeTempDir();
+        try {
+            await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify(intent));
+            await Deno.writeTextFile(`${folder}/vars.yml`, "kind: node.role_add\n");
+            return await roleDigests(folder, 9, []);
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    };
+    // PHP sends the enrollment's empty record (NativeNodeRoleAddInput) as an empty list.
+    assertEquals((await role({ role: "app-prod", recorded_digests: [] })).unchanged, []);
+    await assertRejects(() => role({ role: "app-prod" }));
+});
+
 Deno.test("each skippable role phase is guarded by the role digests; every other role step runs as before", () => {
     const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-node-role-add.yaml", import.meta.url))) as {
         jobs: { name: string; steps: { name: string; guard?: string }[] }[];

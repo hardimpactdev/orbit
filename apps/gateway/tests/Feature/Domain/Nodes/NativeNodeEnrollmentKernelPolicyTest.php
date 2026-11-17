@@ -20,7 +20,14 @@ use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
-it('gives a new Linux Node the kernel policy that node:converge applies', function (): void {
+/**
+ * The node:add intent of a new Linux Node that asks for the given roles.
+ *
+ * @param  list<RoleName>  $roles
+ * @return array<string,mixed>
+ */
+function enrollmentIntent(array $roles = []): array
+{
     $gateway = SwampNodeFixture::ensure();
     $gateway->forceFill(['ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key'])->saveQuietly();
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
@@ -49,7 +56,9 @@ it('gives a new Linux Node the kernel policy that node:converge applies', functi
             return 'ssh-ed25519 unused';
         }
     });
-    $this->mock(LeafCertificateSigner::class, fn ($mock) => $mock->shouldReceive('rootCertificate')->andReturn("-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n"));
+    $signer = Mockery::mock(LeafCertificateSigner::class);
+    $signer->shouldReceive('rootCertificate')->andReturn("-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n");
+    app()->instance(LeafCertificateSigner::class, $signer);
     $frames = [];
     $socket = Mockery::mock(WebSocketClient::class);
     $socket->shouldReceive('connect', 'close')->andReturnNull();
@@ -69,16 +78,29 @@ it('gives a new Linux Node the kernel policy that node:converge applies', functi
         'status' => 'queued', 'input' => [], 'triggered_by' => 'test']);
 
     try {
-        $intent = app(NativeNodeEnrollmentInput::class)->capture($node, $operation, ['candidate' => $candidate, 'bootstrap_user' => 'root',
+        return app(NativeNodeEnrollmentInput::class)->capture($node, $operation, ['candidate' => $candidate, 'bootstrap_user' => 'root',
             'requested_architecture' => null, 'managed_user' => 'orbit', 'fingerprint' => 'SHA256:joining', 'roleless_operator' => true],
-            new ProvisionNodeData(name: 'joining', publicSshHost: '192.0.2.9'))['intent'];
+            new ProvisionNodeData(name: 'joining', publicSshHost: '192.0.2.9', roles: $roles))['intent'];
     } finally {
         app(SwampConnection::class)->release();
         File::deleteDirectory($folder);
     }
+}
+
+it('gives a new Linux Node the kernel policy that node:converge applies', function (): void {
+    $intent = enrollmentIntent();
+    $node = Node::query()->where('name', 'joining')->sole();
 
     expect($intent['kernel'])->toBe(['files' => [['path' => '/etc/modprobe.d/orbit-no-sctp.conf', 'content' => "install sctp /bin/false\n"]],
         'sysctl' => [['name' => 'net.ipv4.ip_nonlocal_bind', 'value' => '1', 'file' => '/etc/sysctl.d/60-orbit-nonlocal-bind.conf']]])
         ->and($intent['updates'])->toBe(NodeUpdatePolicy::for($node))
         ->and($intent['cli'])->toBeNull();
+});
+
+it('gives every role run of node:add a phase digest record to compare with: none', function (): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: the role digests step reads the record of each role intent.
+    $intent = enrollmentIntent([RoleName::AppProd]);
+
+    expect($intent['roles'])->not->toBe([])
+        ->and(array_map(static fn (array $role): mixed => $role['intent']['recorded_digests'] ?? 'missing', $intent['roles']))->each->toBe([]);
 });

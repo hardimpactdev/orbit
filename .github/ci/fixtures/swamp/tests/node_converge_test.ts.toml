@@ -63,6 +63,7 @@ cases = [
   "a changed shipped Tool file that the Tool helper imports moves the tools digest",
   "a record of the other kind's phases never matches and never refuses the run",
   "a role Operation's digests skip every role phase only when its written input, kind and code did not move",
+  "a node:add role run compares with the empty record its enrollment intent carries, and an intent with no record is refused",
   "each skippable role phase is guarded by the role digests; every other role step runs as before",
 ]
 file = "swamp/tests/node_converge_test.ts"
