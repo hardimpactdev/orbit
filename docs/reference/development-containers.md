@@ -209,7 +209,7 @@ There is one exception to "a URL reaches only `orbit`". An agent may start its o
 
 ### Agent development servers
 
-An agent's development server answers at the Instance's Route with its own port, such as `https://feature.tool.test:5173`. Any port from 1024 to 65535 works, and the agent picks it. It opens that URL in T3's browser. Conn needs no change.
+An agent's development server answers at the Instance's Route with its own port, such as `https://feature.tool.test:5173`. Any port from 1024 to 65535 works, and the agent picks it. It opens that URL in the browser panel of its client, T3 or Conn, or checks it headless with [agent-browser](#agent-browser).
 
 The way in has two parts on the Node. A Caddyfile cannot bind a range of ports, and a listener per port would fail the Node's whole Caddy reload whenever another program held one. So Orbit binds nothing in the range:
 
@@ -320,11 +320,11 @@ The software that the app and the agents run lives once per Node, in two version
 | `/opt/orbit-runtime/<version>/{lib,fonts}` | The [browser libraries and fonts](#browser-libraries-and-fonts) | Everyone |
 | `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |
 | `/opt/orbit-runtime/vite-plus/<digest>` | The [Vite+ home](/reference/compute-drivers#the-vite-home) that `vp` runs from, linked as `<version>/vite-plus-home` | Everyone |
-| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex`, `conn-server` and `chrome-headless-shell` ([Container server](#container-server)) | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
-| `/opt/orbit-agent/<version>/agent/{t3,conn-server,chrome-headless-shell,claude-code,codex}` | The releases | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
+| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex`, `conn-server`, `chrome-headless-shell` ([Container server](#container-server)) and `agent-browser` ([agent-browser](#agent-browser)) | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
+| `/opt/orbit-agent/<version>/agent/{t3,conn-server,chrome-headless-shell,agent-browser,claude-code,codex}` | The releases | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
 
-The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, its Chrome headless shell, Claude Code and Codex. The runtime folder holds Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
+The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, the Chrome headless shell, agent-browser, Claude Code and Codex. The runtime folder holds Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
 
 A folder's version is the first 12 hex digits of a digest of everything in it, the notes included, so any change is a new version. Each program in `bin` links to its path in its part.
 
@@ -357,11 +357,26 @@ When Orbit reserves the runtime of a container with a server, a clone or a [migr
 
 The record names the program that every call inside the container runs: the create's sessions and `project add`, and a task turn's `thread` commands and its RPC helper. The drop-in `/etc/systemd/system/t3.service.d/20-orbit-server.conf` sets the unit's `ExecStart` to the same program, with the image's arguments: `serve --host=0.0.0.0 --port=3773 --no-browser`. A clone gets it before its first start, with [T3's other files](#t3-starts-with-the-copy). A migrated checkout gets it with the agent's files, and its T3 phase reloads systemd before it starts the unit.
 
-For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`. This is the unpacked executable in the current agent folder version, beside its support files, rather than its `bin` link. It also sets `T3CODE_SERVER_BROWSER_SANDBOX=0` because the container has no user namespaces. T3 gets neither override. The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
+For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`. This is the unpacked executable in the current agent folder version, beside its support files, rather than its `bin` link. [agent-browser](#agent-browser) opens the same executable. It also sets `T3CODE_SERVER_BROWSER_SANDBOX=0` because the container has no user namespaces. T3 gets neither override. The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
 
 The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins Conn Server 0.2.0 as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, so every agent folder holds both programs. Its releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host.
 
 The part `chrome-headless-shell` pins Chrome 157.0.8103.78 from `nckrtl/conn`'s `apps/conn-server/crates/conn-preview/chrome.json`. Its ZIP unpacks with its `.pak`, `.so` and locale files beside the executable. The runtime folder's [browser libraries](#browser-libraries-and-fonts) supply its system libraries. With this path configured, Conn never downloads Chrome; it refuses preview tools with a typed error if the executable is missing or has the wrong version.
+
+#### agent-browser
+
+Every container, with T3 or Conn, gives its agents one headless browser: [agent-browser](https://github.com/vercel-labs/agent-browser) on the agent folder's `chrome-headless-shell`. The Conn Server's preview uses the same executable. So each Node holds one pinned Chrome for both, and no agent downloads a browser.
+
+- **The program.** The part `agent-browser` pins one release binary, `agent-browser-linux-x64`, with its SHA-256. It comes from the tag `v<version>` of `vercel-labs/agent-browser`.
+- **The link.** Its `bin` link is `agent-browser`. It is on the `PATH` of T3 and Conn, and so on the `PATH` of their agents.
+- **The browser.** `AGENT_BROWSER_EXECUTABLE_PATH` names the same executable as `CONN_SERVER_BROWSER_PATH`. agent-browser accepts any headless Chrome. So the version that Conn needs serves both.
+- **Where it is set.** It is set beside `PLAYWRIGHT_BROWSERS_PATH=0`, in the same places ([Playwright browsers](#playwright-browsers)). Those are the deploy steps' environment and a new clone's two boot files.
+- **Existing containers.** An existing container gets it only when Orbit clones it again.
+- **Who runs it.** Only `agent` runs it, because only gid 2750 opens the agent folder's programs. The Project's own Playwright keeps its own build.
+
+The browser is in the agent folder because it serves the agents and the Conn Server, not the app. The runtime folder holds what the app and its Processes run, for every user. Both folders are one copy per Node, so the choice changes no disk use.
+
+The [environment notes](#environment-notes) tell agents to use `agent-browser` for a headless check on the server, and the browser panel of their client, T3 or Conn, for a check in a real browser.
 
 ## Workspace volumes (draft)
 
@@ -508,7 +523,7 @@ The default's deploy steps and a [task check](#a-task-copy-starts-clean) both ru
 
 So a Project whose check runs browser tests installs the browser in a [development deploy step](/reference/deployments#development-deploy-steps) of its own, after its JavaScript install, such as `bunx playwright install chromium`. The step downloads only when the Project's Playwright version changed. Otherwise it does nothing.
 
-| Where | What sets `PLAYWRIGHT_BROWSERS_PATH=0` |
+| Where | What sets `PLAYWRIGHT_BROWSERS_PATH=0` and `AGENT_BROWSER_EXECUTABLE_PATH` ([agent-browser](#agent-browser)) |
 | --- | --- |
 | Deploy steps of a default Instance | The intent's `environment` list |
 | A new clone: its units (T3, its agents and their commands) and login shells (the task check runs `bash -lc`) | Two boot files, `/etc/systemd/system.conf.d/91-orbit-browsers.conf` and `/etc/profile.d/91-orbit-browsers.sh`, written before the copy's first start |
@@ -988,7 +1003,7 @@ Orbit sets the proxy for everything that runs in a container. Tools read the upp
 | --- | --- |
 | Every unit: T3, FrankenPHP and each Process. Claude Code, Codex and their commands inherit it from T3 | `DefaultEnvironment` in `/etc/systemd/system.conf.d/90-orbit-runtime.conf`, beside the runtime folder's variables |
 | `incus exec`: the Node's patch run and the image build | The profile's `environment.*` keys |
-| Deploy steps of a default Instance, which run under `env -i` | The intent's `environment` list: `HOME`, `USER`, `LOGNAME`, `PATH`, the container environment and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |
+| Deploy steps of a default Instance, which run under `env -i` | The intent's `environment` list: `HOME`, `USER`, `LOGNAME`, `PATH`, the container environment `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) and `AGENT_BROWSER_EXECUTABLE_PATH` ([agent-browser](#agent-browser)) |
 | Login shells | `/etc/profile.d/90-orbit-runtime.sh` |
 | apt | `/etc/apt/apt.conf.d/90orbit-egress` |
 
@@ -1087,7 +1102,7 @@ A proof copy's runtime still names the default as its clone source, so the defau
 | Git | The Node fetches with the read token into its mirror `/var/lib/orbit/instance-repositories/<id>.git`. A bundle carries the branch into the container, and `agent` checks it out in `/srv/workspace` |
 | Checkout path | The workspace's path on the Node, inside the container's root file system. It keeps the path unique on the Node; Orbit never works in it from the Node |
 | `.env` | In the workspace's application directory, for `orbit` with group `work`, mode 0640. Git never takes it: see [the `.env` stays out of Git](#the-env-stays-out-of-git) |
-| Deploy steps | Each runs as `agent` at `/srv/workspace`, from its own vault copy ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)). Its environment holds only `HOME=/home/agent`, `USER=agent`, `LOGNAME=agent`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, the [proxy settings](#proxy-settings-in-a-container), and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |
+| Deploy steps | Each runs as `agent` at `/srv/workspace`, from its own vault copy ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)). Its environment holds only `HOME=/home/agent`, `USER=agent`, `LOGNAME=agent`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, the [proxy settings](#proxy-settings-in-a-container), `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) and `AGENT_BROWSER_EXECUTABLE_PATH` ([agent-browser](#agent-browser)) |
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders |
 | FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile` as `orbit` on port 8080. The Route proxies to the bridge address; the Node runs no PHP pool for it |
 | Seed | The first build and each passed deployment take `seed-<commit>` with the units stopped. Older seeds go, except the proof default's [base](#a-retake-keeps-the-seed). The runtime row records the commit |
