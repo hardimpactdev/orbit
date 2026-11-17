@@ -252,6 +252,9 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
     {
         $container = ValidatedData::object($operation->input['container'] ?? []);
         $result = ValidatedData::object($data['result'] ?? []);
+        if (is_array($operation->input['model_route'] ?? null)) {
+            $result['model_route'] = $operation->input['model_route'];
+        }
         $run = ValidatedData::object($data['native_run'] ?? []);
         if ($run !== []) {
             $data['step_outcomes'] = $this->steps($run);

@@ -17,6 +17,7 @@ use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceLifecycleContributions;
+use App\Domain\Instances\InstanceModelRoute;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
@@ -25,7 +26,6 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\DatabaseConnection;
@@ -153,6 +153,7 @@ final readonly class StartInstanceMigrateAction
                     'retire' => $this->retire($instance, $default),
                 ],
                 'container' => $container,
+                ...($default === null ? [] : ['model_route' => app(InstanceModelRoute::class)->status()]),
             ], $caller, $requestId);
             $runtime->update(['operation_id' => $operation->id]);
 
@@ -192,10 +193,6 @@ final readonly class StartInstanceMigrateAction
                 "The Project's default Instance runs on Node [{$default->node_id}]. Its other Instances live there.", 409);
         }
         app(InstanceLifecycleContributions::class)->assertCreateAvailable();
-        if (! app()->bound(TaskVmModelRoute::class)) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'An Instance with T3 needs the model router.', 503);
-        }
-        app(TaskVmModelRoute::class)->assertReady();
 
         return $default;
     }

@@ -31,9 +31,8 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
 
     public function assertCreateAvailable(): void
     {
-        if (! $this->extensions->enabled('conn')) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'A clone needs Conn enabled: Conn records its T3 server.', 503);
-        }
+        // The container run creates T3 and its admin session. Recording that result works while Conn is off;
+        // enabling Conn later makes the recorded server available to pairing and session renewal.
     }
 
     public function projectDestroy(Instance $instance): void
