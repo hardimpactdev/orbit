@@ -435,7 +435,7 @@ CI uses `pull_request_target` only in the label workflow `proof-outside.yml`, wh
 
 The plan passes three booleans and the resolved comparison base to the Swamp workflow. Each selected subjob starts directly, and Required checks requires the reusable call's result as a static dependency.
 
-On a push to `main`, the `Start the CLI release` job runs after `Required checks` passes and dispatches `Orbit CLI Release` for the commit. The release does not wait for the rest of the run. A later release run from CI completion changes nothing when the release already exists with the expected commit and assets. See [published releases](/reference/cli-binaries#published-releases).
+On a push or manual CI run on `main`, the `Start the CLI release` job runs after `Main delivery checks` passes and dispatches `Orbit CLI Release` for the commit. This is the only automatic release trigger; the release does not wait for the rest of the run. A manual release dispatch can backfill a missed commit with the same delivery and immutable-asset checks. See [published releases](/reference/cli-binaries#published-releases).
 
 Known documentation, contract-generation and proof tools select only their consumers. The plan job always runs. The plan, PHP syntax, Docs and Swamp shape jobs keep full history for their comparisons. The plan resolves the initial import's retained comparison source before shape checks run current and frozen rules. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
