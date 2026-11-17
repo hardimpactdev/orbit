@@ -7,12 +7,12 @@ use App\Actions\Instances\StartInstanceMigrateAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\MigratedProcessDefinitions;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
@@ -34,7 +34,7 @@ it('deploys a keep-alive edit of a captured vp-dev definition to the default and
     ]));
     $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
     app(ExtensionStore::class)->set('conn', true);
-    $this->mock(TaskVmModelRoute::class, function ($mock): void {
+    $this->mock(ContainerModelRoute::class, function ($mock): void {
         $mock->shouldReceive('assertReady')->andReturnNull();
         $mock->shouldReceive('origin')->andReturn('http://10.44.0.3:8318');
         $mock->shouldReceive('key')->andReturn('fixture-model-key');

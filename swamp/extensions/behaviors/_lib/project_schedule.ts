@@ -216,7 +216,7 @@ export function cleanedCancelledGroup(group: Record<string, unknown>): boolean {
         !row.assistance_requested && !row.assistance_kind &&
         !row.assistance_reason && !row.assistance_question;
     return group.status === "cancelled" &&
-        group.vm_power === null && group.taskable_id === null &&
+        group.taskable_id === null &&
         noAssistance(group) && Array.isArray(group.tasks) &&
         group.tasks.every((task: Record<string, unknown>) =>
             ["completed", "cancelled", "failed"].includes(

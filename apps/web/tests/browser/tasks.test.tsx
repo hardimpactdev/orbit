@@ -144,24 +144,17 @@ it("groups every status, opens details, and keeps unsuccessful outcomes visible"
     await expect.element(pane("Todo")).toBeVisible();
 });
 
-it.each(["running", "stopped", "destroyed", null, undefined] as const)(
-    "opens a task with VM power %s without changing its review status",
-    async (power) => {
-        const task = { ...group(1, "waiting_for_review"), vm_power: power };
-        await openTasks(async (_, path) => ({
-            status: 200,
-            payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
-        }));
-        await pane("In progress").getByRole("link").click();
-        await expect
-            .element(pane("Description"))
-            .toMatchTextContent("Deliver the requested feature.");
-        await expect.element(pane("Task")).toMatchTextContent("In progress");
-        expect(queryClient.getQueryData<TaskGroup>(["tasks", "1"])?.status).toBe(
-            "waiting_for_review",
-        );
-    },
-);
+it("opens a task without changing its review status", async () => {
+    const task = group(1, "waiting_for_review");
+    await openTasks(async (_, path) => ({
+        status: 200,
+        payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
+    }));
+    await pane("In progress").getByRole("link").click();
+    await expect.element(pane("Description")).toMatchTextContent("Deliver the requested feature.");
+    await expect.element(pane("Task")).toMatchTextContent("In progress");
+    expect(queryClient.getQueryData<TaskGroup>(["tasks", "1"])?.status).toBe("waiting_for_review");
+});
 
 it("distinguishes direction requests from failures on task and subtask cards", async () => {
     const direction = {

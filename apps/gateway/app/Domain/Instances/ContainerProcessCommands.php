@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 
 /** One recipe-owned executable rule for checkout migration, definitions and container unit rendering. */
 final readonly class ContainerProcessCommands
 {
-    public function __construct(private RecipeImageBuilds $recipes) {}
+    public function __construct(private CurrentRecipe $recipes) {}
 
     /** @param list<string> $command
      * @return list<string>

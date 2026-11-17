@@ -339,7 +339,6 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'Title' => $group->title,
             'Project' => $group->project ?? $group->projectId,
             'Status' => $group->status,
-            ...($group->vmPower === null ? [] : ['VM power' => $group->vmPower]),
             'Preview' => $group->preview,
             ...($group->previewUrl === null ? [] : ['Preview URL' => $group->previewUrl]),
             'Last activity' => $group->lastActivityAt,

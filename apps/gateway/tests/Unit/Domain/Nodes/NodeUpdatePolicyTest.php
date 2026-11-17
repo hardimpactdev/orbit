@@ -28,7 +28,7 @@ it('installs Ubuntu security updates every day and never reboots the Node itself
         ->toContain("Unattended-Upgrade::Automatic-Reboot \"false\";\n");
 });
 
-it('keeps the daily timers off on a Node of a task VM nested fleet, so a proof cannot change under an upgrade', function (): void {
+it('keeps the daily timers off on a Node of an Instance container nested fleet, so a proof cannot change under an upgrade', function (): void {
     expect(NodeUpdatePolicy::for(new Node(['public_ssh_host' => '10.232.2.11']))['daily'])->toBeFalse();
 });
 

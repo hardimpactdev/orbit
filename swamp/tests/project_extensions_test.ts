@@ -100,25 +100,13 @@ Deno.test("cancelled schedule cleanup requires ended children, no assistance and
     const clean = {
         status: "cancelled",
         taskable_id: null,
-        vm_power: null,
         tasks: [{ status: "cancelled" }],
     };
     assertEquals(cleanedCancelledGroup(clean), true);
-    assertEquals(
-        cleanedCancelledGroup({
-            ...clean,
-            taskable_id: 7,
-            vm_power: "destroyed",
-        }),
-        false,
-    );
     for (
         const changes of [
             { status: "failed" },
             { taskable_id: 7 },
-            { vm_power: "running" },
-            { vm_power: "parked" },
-            { vm_power: undefined },
             { assistance_requested: true },
             { assistance_reason: "Review cancellation" },
             { tasks: [{ status: "running" }] },

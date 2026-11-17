@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\HubEndpoint;
+use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Infrastructure\AgentCommands\AgentDelivery;
