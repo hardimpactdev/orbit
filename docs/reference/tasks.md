@@ -14,7 +14,7 @@ covers:
 
 # Tasks
 
-Swamp is the only executor of task groups; it runs provision, agent turns, checks, publication, review parking and cleanup as keyed operations. The Gateway stores the board and evidence and exposes keyed operations; it never claims a group, advances a subtask, retries a turn, appends a fixup or merges a PR on a timer. All groups use `external` orchestration, including groups created without an explicit mode. Existing records move to that mode without changing their status, workspace, assistance or receipts.
+Swamp is the only executor of task groups; it runs provision, agent turns, checks, publication, review parking and cleanup as keyed operations. The Gateway stores the board and evidence and exposes keyed operations; it never claims a group, advances a subtask, retries a turn, appends a fixup or merges a PR on a timer. Two ticks are the exceptions: the [automatic publish](#publish-by-itself) of a done group, and the [merge round](#the-merge-round) after a copy publish conflicted. All groups use `external` orchestration, including groups created without an explicit mode. Existing records move to that mode without changing their status, workspace, assistance or receipts.
 
 Tasks is an optional Gateway extension. It runs planned work with coding agents. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet): no task VM starts today. Tasks move to copies of a container Instance. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check and CI verify the handoff, and a fresh reviewer approves it. Orbit commits and pushes the work. After the last approval, Orbit opens the pull request and watches it until it merges.
 
@@ -362,7 +362,7 @@ A copy's publish states the base it publishes against. After the token is minted
 | `overlapping_more` | How many overlapping paths lie beyond the listed ones: at most 100 paths in at most 3,000 bytes |
 | `merged_default` | The default head that the worker merged at publish, or null when it pushed the checked commit itself |
 
-`git merge-tree --write-tree` then merges the two inside the scratch repository; no workspace is touched. Of the merge, only a real conflict refuses: `tasks.publish_conflict` names the conflicting paths in `conflicting_paths`, at most 100 in at most 3,000 bytes so the refusal fits the step detail Orbit keeps, with `conflicting_more` counting the rest, and nothing is pushed. Bring main into the copy with [`task:sync`](#bring-main-into-a-copy), merge or rebase, check again and publish. Being behind, with or without overlapping paths, never refuses.
+`git merge-tree --write-tree` then merges the two inside the scratch repository; no workspace is touched. Of the merge, only a real conflict refuses: `tasks.publish_conflict` names the conflicting paths in `conflicting_paths`, at most 100 in at most 3,000 bytes so the refusal fits the step detail Orbit keeps, with `conflicting_more` counting the rest, and nothing is pushed. Such a failure starts a [merge round](#the-merge-round): Orbit brings main in, merges, checks, reviews and publishes again by itself. Being behind, with or without overlapping paths, never refuses.
 
 These fields join the result. With `--title` and `--body`, the pull request body gets a fixed `## Base` section after the caller's text and the [waiver lines](#docs-impact-waivers-in-a-copy) the publish adds. It states the base commit, the default head and how far behind. After a merge at publish it adds the line `- Merged main <sha> at publish`. Then it lists the overlapping paths, or none. An Orbit marker opens the section, so a body that carries an earlier one gets it replaced and a re-publish states it once, with any waiver line that followed it kept before the new section.
 
@@ -402,6 +402,61 @@ Then the worker always merges, also when no workflow differs: the parents are th
 Any other tip that is not an ancestor fails at the push with `tasks.not_fast_forward`, as before.
 
 The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone, and adds the six base fields for a copy: `base_commit`, `default_commit`, `behind_by`, `overlapping_paths`, `overlapping_more` and `merged_default`. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
+
+###### The merge round
+
+A copy publish that fails with `tasks.publish_conflict` starts a merge round. Orbit syncs the copy, runs one implementer turn on the group's last subtask with a fixed merge prompt, runs a handoff check, runs one narrow reviewer turn on that check, and publishes it the same way as the failed publish. A turn that asks or fails, a failed sync or check, a reviewer that does not approve, or a second conflict in the same round stops the round and asks a person (group assistance, with the reason).
+
+The Gateway scheduler runs `task:merge-round` every minute while the Tasks extension is on, beside `task:pr-when-done`. It reads Orbit's own records and admits each step through the same action as a person's command, with the caller `gateway:merge-round`. Swamp runs every step, as it runs any Operation. The driver does nothing on a `tasks.publish_conflict`.
+
+A tick takes each open group whose workspace is a task copy, with or without its pull request, when:
+
+- the group's newest `tasks.publish`, P, failed with `tasks.publish_conflict`;
+- the group has no assistance request;
+- the group is idle: no Operation of the group runs, and no copy turn may still run.
+
+From the group's Operations after P, the tick starts at most one step per group:
+
+| After P | The tick starts |
+| --- | --- |
+| Nothing | [`task:sync`](#bring-main-into-a-copy) |
+| The sync succeeded | An implementer turn on the subtask of P's check, which continues its thread. A `completed` subtask is [reopened](#reopen-the-last-subtask) first |
+| The turn ended `done` | A handoff check of that subtask: C1 |
+| C1 passed | A reviewer turn on C1, which continues the reviewer thread |
+| The reviewer turn ended `done` and sent its [pull request text](#the-reviewers-pull-request-text) on C1 | The publish of C1, as P was published |
+
+The turn's prompt names the conflicting paths from P's result and the default head that the sync brought in. It asks the agent to:
+
+- merge `origin/<default branch>` into the task branch;
+- resolve each conflict at its cause, for example regenerate a generated file with its own tool, such as `bin/ci-units collect --file`;
+- keep the intent of both sides;
+- run only the tests that cover the conflicting paths, and commit the merge;
+- ask when a conflict needs a decision.
+
+The reviewer turn reviews only the merge's own change. For each merge commit in `git log --merges <C0 commit>..<C1 commit>`, where C0 is P's check, it reads `git show --remerge-diff <merge>`: the difference between the reviewed head merged with main and the resolved tree. It judges that against the original brief and nothing else of the branch. Its approval is the text it sends, as for every reviewer turn: it keeps the earlier text, or updates it when the merge changes what the text says. A reviewer that does not approve sends nothing and lists the defects.
+
+P was a done-check publish when its input carries a pull request text: the automatic publish, a release, or a named done check. Then the tick completes the subtask again and publishes C1 as the done check. The normal [done rule](#when-the-work-is-done) holds: the reviewer turn reviewed exactly C1, and the subtask completed after it. Any other P was a push of a named check: the subtask stays as it is, and the tick pushes C1 with `--check` only. The round adds no state and no column. Each step is keyed `merge-round:<group>:<P>:<step>`, with the steps `sync`, `turn`, `check`, `review` and `publish`, so a repeat tick starts nothing twice.
+
+The round stops, and the tick requests assistance on the group once, when any of these happens:
+
+- the sync fails;
+- the turn fails or asks;
+- the check fails;
+- the reviewer turn fails, asks or sends no text;
+- Orbit refuses to start a step for any reason but a busy group;
+- a publish of a check that the round made fails with `tasks.publish_conflict` again.
+
+The request is a failure. Its reason names the step, the Operation and the conflicting paths.
+
+The round yields to a person. When the group's newest Operation is neither P nor a step of this round, a person or a driver acted, and the round starts nothing more.
+
+Orbit never starts a second round for a group by itself. A conflict of the round's own check is no new P. A later conflict of a check that no round made starts a new round, such as a person's publish after their own new check.
+
+C1 is published once. The round publishes it only while no publish of C1 exists. The `task:pr-when-done` tick never publishes it too:
+
+- an open publish makes the group busy for the other tick;
+- a group with its pull request is outside the automatic publish;
+- a publish of C1 by the automatic publish is newer than the round's steps, so the round yields.
 
 ### Task lifecycle
 
