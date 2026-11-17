@@ -13,6 +13,8 @@ orbit task:turn 43 --role=reviewer --prompt="Review the checked commit." --threa
 
 The agent receives the group's title and brief, then the title, brief and deliverables of the subtask, then Orbit's copy rules, then your prompt, for every role. Send only what this turn adds; do not paste the group's brief or the subtask's brief, and do not restate the copy rules.
 
+Build and prove the feature end to end in the copy before its pull request opens: [Build a feature in one copy](/reference/tasks#build-a-feature-in-one-copy).
+
 The prompt also gives the agent the turn's clock, for every role: `This turn started at 2026-11-16T10:00:00Z and Orbit ends it at 2026-11-16T11:00:00Z. Commit your work before then.` The start is the time Orbit admitted the turn, in UTC; the end is one hour later, the turn's bound.
 
 `--role` is `implementer` or `reviewer`. A turn without `--thread` continues the role's thread, `--thread=new` starts a new thread, and `--thread=ID` names the thread the turn continues. A new thread takes its role's model; a continued thread keeps its model.
