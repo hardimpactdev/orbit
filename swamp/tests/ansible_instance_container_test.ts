@@ -5,7 +5,7 @@
  */
 import { assert, assertEquals, assertMatch, assertStringIncludes, assertThrows } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
-import { fixture as hostFixture } from "./_support/instance_host.ts";
+import { fixture as hostFixture, appAccountSwap } from "./_support/instance_host.ts";
 import { helperCalls, installPowerHelper } from "./_support/power_helper.ts";
 
 /** The normal host transcript of main; see the case that compares it. */
@@ -149,7 +149,7 @@ function fixture() {
     // A normal container: the workspace group and the pass's writer are the stock `www-data` (InstanceContainer::intent).
     workspace_ids: { group: 33, writer: 33 },
     // Root's swap file as the Gateway renders it into every container intent (InstanceImage::appAccount).
-    app_account: { path: "/usr/local/libexec/orbit-app-user", content: Deno.readTextFileSync(new URL("../ansible/files/instance-app-user.sh", import.meta.url)) },
+    app_account: { path: "/usr/local/libexec/orbit-app-user", content: appAccountSwap() },
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=www-data\n" }],
     web_config: { path: "/etc/orbit/frankenphp.Caddyfile", content: ":8080 {\n    php_server\n}\n" },
     web_port: 8080,
@@ -819,6 +819,7 @@ function olderContainer(f: ReturnType<typeof fixture>, passwd = OLDER_PASSWD, gr
   delete state.accounts;
   delete state.handover;
   state.acl_2760 = true;
+  state.unit_file_states = {"orbit-schedule-9.service": "static", "orbit-schedule-9.timer": "enabled"};
   state.systemctl = [];
   Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
   return root;
@@ -835,8 +836,24 @@ Deno.test({
       // The image's own accounts need no move.
       assertEquals([f.state().accounts, f.state().handover], [undefined, undefined]);
       const root = olderContainer(f);
+      // Review regression: an enabled timer is waiting; its static oneshot service is idle.
+      const waiting = f.state();
+      waiting.inactive = ["orbit-schedule-9.service"];
+      for (const [unit, state] of [["orbit-static.service", "static"], ["orbit-indirect.service", "indirect"],
+        ["orbit-generated.service", "generated"], ["orbit-disabled.timer", "disabled"], ["foreign.service", "enabled"]]) {
+        Deno.writeTextFileSync(`${root}/etc/systemd/system/${unit}`, "[Service]\nUser=www-data\n");
+        waiting.unit_file_states[unit] = state;
+        waiting.inactive.push(unit);
+      }
+
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(waiting));
       const result = f.run("start");
       assert(result.ok, result.output);
+      assert(!systemctlCalls(f).includes("start orbit-schedule-9.service"), systemctlCalls(f).join("\n"));
+      for (const unit of ["orbit-static.service", "orbit-indirect.service", "orbit-generated.service", "orbit-disabled.timer", "foreign.service"]) {
+        assert(!systemctlCalls(f).includes(`start ${unit}`), systemctlCalls(f).join("\n"));
+      }
+
       assertEquals(Deno.readTextFileSync(`${root}/etc/passwd`), IMAGE_PASSWD);
       assertEquals(Deno.readTextFileSync(`${root}/etc/group`), IMAGE_GROUP);
       // www-data keeps its stock home; the old home's files come with it.
@@ -855,7 +872,7 @@ Deno.test({
       // The units that ran under the old name, and the Schedule's timer, stop before the move and start after the reload.
       const calls = systemctlCalls(f);
       const reload = calls.indexOf("daemon-reload");
-      for (const unit of [...OLDER_UNITS, "orbit-schedule-9.timer"]) {
+      for (const unit of ["orbit-frankenphp.service", "orbit-schedule-9.timer"]) {
         assert(calls.indexOf(`stop ${unit}`) >= 0 && calls.indexOf(`stop ${unit}`) < reload && reload < calls.indexOf(`start ${unit}`), calls.join("\n"));
       }
 
@@ -977,7 +994,20 @@ Deno.test({
       // Nothing ran under the old name, so nothing stops; the enabled units that failed start after the reload.
       const calls = systemctlCalls(f);
       assert(!calls.some((call: string) => call.startsWith("stop ")), calls.join("\n"));
-      for (const unit of OLDER_UNITS) assert(calls.indexOf("daemon-reload") < calls.indexOf(`start ${unit}`), calls.join("\n"));
+      assert(calls.indexOf("daemon-reload") < calls.indexOf("start orbit-frankenphp.service"), calls.join("\n"));
+      assert(!calls.includes("start orbit-schedule-9.service"), calls.join("\n"));
+      // Review regression: the enabled Schedule timer stopped by the interrupted move must resume too.
+      assert(!(f.state().inactive ?? []).includes("orbit-schedule-9.timer"), calls.join("\n"));
+      // Even a retry after the account and all unit files moved must recover enabled timers, without re-running a static service.
+      const later = f.state();
+      later.inactive = ["orbit-frankenphp.service", "orbit-schedule-9.service", "orbit-schedule-9.timer"];
+      later.systemctl = [];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(later));
+      const again = f.run("start");
+      assert(again.ok, again.output);
+      assertEquals(f.state().inactive, ["orbit-schedule-9.service"]);
+      assert(!systemctlCalls(f).includes("start orbit-schedule-9.service"));
+
     } finally {
       f.cleanup();
     }
@@ -995,6 +1025,11 @@ Deno.test({
       // The nested-fleet image's AppArmor marker (InstanceImage::nestedFiles).
       Deno.mkdirSync(`${root}/etc/orbit`, { recursive: true });
       Deno.writeTextFileSync(`${root}/etc/orbit/apparmor-off`, "N\n");
+      Deno.writeTextFileSync(`${root}/etc/nftables.conf`, "destroy table inet orbit_agent_guard\ntable inet orbit_agent_guard {\n chain output {\n  type filter hook output priority 0; policy accept;\n  ip daddr { 10.45.0.0/24, 10.232.2.0/24 } meta skuid 1000 drop\n }\n}\n");
+      const before = f.state();
+      before.nft_guard = Deno.readTextFileSync(`${root}/etc/nftables.conf`);
+      before.nft_inner = "table ip incus { chain nat { counter; } }";
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(before));
       const result = f.run("start");
       assert(result.ok, result.output);
       assertEquals(Deno.readTextFileSync(`${root}/etc/passwd`), OLDER_PASSWD);
@@ -1006,6 +1041,29 @@ Deno.test({
       assertEquals(f.state().acl_2760, true);
       assertEquals(Deno.readTextFileSync(`${root}/etc/systemd/system/orbit-frankenphp.service`), OLDER_UNIT);
       assert(Deno.statSync(`${root}/home/orbit`).isDirectory);
+      assertStringIncludes(f.state().nft_guard, "meta skuid { 33, 1000 } drop");
+      assertEquals(f.state().nft_inner, before.nft_inner);
+      const processes = f.run("processes");
+      assert(processes.ok, processes.output);
+      assertStringIncludes(Deno.readTextFileSync(`${root}/etc/systemd/system/orbit-frankenphp.service`), "User=www-data\n");
+      assertStringIncludes(Deno.readTextFileSync(`${root}/etc/nftables.conf`), "meta skuid { 33, 1000 } drop");
+      assertEquals(f.state().nft_guard, Deno.readTextFileSync(`${root}/etc/nftables.conf`));
+      assertEquals(f.state().nft_inner, before.nft_inner);
+      assertEquals(f.state().nft_reloads, 1);
+      const file = Deno.statSync(`${root}/etc/nftables.conf`).mtime;
+      const again = f.run("start");
+      assert(again.ok, again.output);
+      assertEquals(f.state().nft_reloads, 1);
+      assertEquals(Deno.statSync(`${root}/etc/nftables.conf`).mtime, file);
+      // A crash after writing the file but before loading it is repaired from the live table too.
+      const stale = f.state();
+      stale.nft_guard = before.nft_guard;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(stale));
+      const repaired = f.run("start");
+      assert(repaired.ok, repaired.output);
+      assertEquals(f.state().nft_reloads, 2);
+      assertEquals(f.state().nft_inner, before.nft_inner);
+
     } finally {
       f.cleanup();
     }

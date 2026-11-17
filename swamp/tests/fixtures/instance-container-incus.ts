@@ -425,17 +425,17 @@ if (family === "list") {
     // The stand-in runs its own tools from the plain PATH, so a routed call never finds these shims again.
     const back = 'PATH=$APP_USER_PATH exec incus --project "$APP_USER_PROJECT" exec "$APP_USER_NAME" --';
     Deno.mkdirSync(bin, { recursive: true });
-    for (const tool of ["getent", "id", "usermod", "userdel", "groupdel", "systemctl", "pgrep", "find", "chown", "chgrp", "getfacl", "setfacl", "cp", "mkdir", "rm"]) {
+    for (const tool of ["getent", "id", "usermod", "userdel", "groupdel", "systemctl", "nft", "pgrep", "find", "chown", "chgrp", "getfacl", "setfacl", "cp", "mkdir", "rm"]) {
       Deno.writeTextFileSync(`${bin}/${tool}`, `#!/bin/sh\n${back} orbit-app-user-tool ${tool} "$@"\n`, { mode: 0o755 });
     }
     // Only the search of the unit files and their rewrite act on the container; a filter of the script's own output does not.
     for (const [tool, flag] of [["grep", "-rlE"], ["sed", "-i"]]) {
-      Deno.writeTextFileSync(`${bin}/${tool}`, `#!/bin/sh\n[ "$1" = ${flag} ] && ${back} orbit-app-user-tool ${tool} "$@"\nPATH=$APP_USER_PATH exec ${tool} "$@"\n`, { mode: 0o755 });
+      Deno.writeTextFileSync(`${bin}/${tool}`, `#!/bin/sh\n[ "$1" = ${flag} ] && ${back} orbit-app-user-tool ${tool} "$@"\ncase "$*" in *"/etc/nftables.conf"*) ${back} orbit-app-user-tool ${tool} "$@" ;; esac\nPATH=$APP_USER_PATH exec ${tool} "$@"\n`, { mode: 0o755 });
     }
     save();
     // The file's own path tests (`[ -e … ]`, `[ -d … ]`) are shell builtins: they read the container's folder here, not this machine.
     const source = Deno.readTextFileSync(installed);
-    const script = source.replace(/\[ -([def]) "?(\/[^" \]]*|\$WS)"? \]/g, (_, flag, path) => `[ -${flag} "${rootfs(name)}${path}" ]`);
+    const script = source.replace(/\[ -([def]) "?(\/[^" \]]*|\$WS)"? \]/g, (_, flag, path) => `[ -${flag} "${rootfs(name)}${path}" ]`).replaceAll('"$SYS"/orbit-*', `"${rootfs(name)}/etc/systemd/system"/orbit-*`);
     const done = new Deno.Command("sh", {
       args: ["-c", script, "orbit-app-user"],
       env: { PATH: `${bin}:${Deno.env.get("PATH")}`, APP_USER_PATH: Deno.env.get("PATH")!, APP_USER_PROJECT: project ?? "default", APP_USER_NAME: name },
@@ -513,6 +513,22 @@ if (family === "list") {
     write("group", groups);
     Deno.exit(0);
   }
+  if (swapTool && command[0] === "nft") {
+    state.nft_calls ??= [];
+    state.nft_calls.push(command.slice(1));
+    if (command[1] === "--numeric") {
+      save();
+      if (!state.nft_guard) Deno.exit(1);
+      console.log(state.nft_guard);
+    } else if (command[1] === "-f") {
+      const rules = Deno.readTextFileSync(inside(name, command[2]));
+      if (/^\s*flush ruleset/m.test(rules)) delete state.nft_inner;
+      state.nft_guard = rules;
+      state.nft_reloads = (state.nft_reloads ?? 0) + 1;
+      save();
+    } else fail(`Unexpected nft call: ${command.join(" ")}`);
+    Deno.exit(0);
+  }
   if (command[0] === "systemctl") {
     state.systemctl ??= [];
     state.systemctl.push(command.slice(1));
@@ -554,6 +570,12 @@ if (family === "list") {
       }
     }
     save();
+    if (command[1] === "is-enabled") {
+      const unit = command.at(-1)!;
+      const status = state.unit_file_states?.[unit] ?? (exists(`${rootfs(name)}/etc/systemd/system/${unit}`) ? "enabled" : "not-found");
+      if (!command.includes("--quiet")) console.log(status);
+      Deno.exit(["enabled", "static", "indirect", "generated"].includes(status) ? 0 : 1);
+    }
     if (command[1] === "show") {
       const unit = command.at(-1)!;
       const queued = state.stopDue && Date.now() < state.stopDue ? 1 : (state.queued?.[unit] ?? 0);

@@ -340,7 +340,7 @@ describe('the Instance image', function (): void {
             // sudo reads only a grant that is not writable by others; the converge and the clone push it with this mode, root-owned.
             ->and(array_column($shared, 'mode', 'path'))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf' => '0644', '/etc/fonts/fonts.conf' => '0644', '/etc/gitconfig' => '0644', '/etc/sudoers.d/orbit-agent' => '0440', InstanceImage::AppUserSwap => '0755'])
             // Root runs the app account's swap file; its content is the one shipped file (swamp/ansible/files/instance-app-user.sh).
-            ->and($shared[InstanceImage::AppUserSwap]['content'])->toBe(file_get_contents(base_path('../../swamp/ansible/files/instance-app-user.sh')))
+            ->and($shared[InstanceImage::AppUserSwap]['content'])->toBe(str_replace('@nested-app-guard@', InstanceImage::NestedAppGuard, file_get_contents(base_path('../../swamp/ansible/files/instance-app-user.sh'))))
             ->and($image['finish'])->toContain(['rm', '-f', '/etc/ld.so.cache'])
             ->and(array_key_last($image['finish']))->toBe(array_search(['rm', '-f', '/etc/ld.so.cache'], $image['finish'], true))
             ->and(InstanceImage::for('10.253.0.1', app(RecipeImageBuilds::class)->currentRecipe()->incus('amd64'))['files'])->toContain(...InstanceImage::shared());

@@ -18,10 +18,39 @@ old_units() {
   done | sort -u
 }
 
+# Recovery also runs after all old account text is gone. Only exactly enabled Orbit unit files resume: a static Schedule
+# service runs through its timer, never because is-enabled returned success for "static", "indirect" or "generated".
+resume_enabled() {
+  resumed=""
+  for file in "$SYS"/orbit-*; do
+    [ -f "$file" ] || continue
+    u=${file##*/}
+    enabled=$(systemctl is-enabled "$u" 2>/dev/null || true)
+    if [ "$enabled" = enabled ] && ! systemctl is-active --quiet "$u" 2>/dev/null; then
+      systemctl start "$u"
+      resumed="$resumed $u"
+    fi
+  done
+}
+
 # A nested-fleet container (the image's AppArmor marker, InstanceImage::nestedFiles) keeps `orbit` (1000) and `work` (2760) with
 # their files and ACLs: its inner guests are Nodes whose `orbit` the ID map puts on those numbers over the shared checkout. There
 # `agent` joins www-data, and www-data joins `work`, the workspace's group, so the app opens the workspace.
 if [ -e /etc/orbit/apparmor-off ]; then
+  # InstanceImage renders the same guard into this file and the image's nftables configuration.
+  guard='@nested-app-guard@'
+  firewall=/etc/nftables.conf
+  if ! grep -Fq "$guard" "$firewall"; then
+    sed -i -E "s@^([[:space:]]*)ip daddr .* meta skuid 1000 drop[[:space:]]*\$@\1$guard@" "$firewall"
+  fi
+  # A nested reload must replace Orbit's table only; a global flush would erase the inner Incus NAT and ACLs.
+  if ! grep -Fq "$guard" "$firewall" || grep -Eq '^[[:space:]]*flush[[:space:]]+ruleset' "$firewall"; then
+    echo "orbit-app-user: nested firewall is not an Orbit guard" >&2; exit 1
+  fi
+  live=$(nft --numeric list table inet orbit_agent_guard 2>/dev/null || true)
+  if ! printf '%s\n' "$live" | grep -Fq "$guard"; then
+    nft -f "$firewall"
+  fi
   id -nG agent | tr ' ' '\n' | grep -qx www-data || usermod -a -G www-data agent
   id -nG www-data | tr ' ' '\n' | grep -qx work || usermod -a -G work www-data
   echo "orbit-app-user: nested-fleet container keeps orbit"; exit 0
@@ -30,6 +59,7 @@ fi
 units=$(old_units)
 if ! has_user orbit && ! has_group work && ! getent group 1000 >/dev/null && [ -z "$units" ] \
    && id -nG agent | tr ' ' '\n' | grep -qx www-data; then
+  resume_enabled
   echo "orbit-app-user: already www-data"; exit 0
 fi
 
@@ -41,9 +71,9 @@ for u in $units; do
   systemctl is-active --quiet "$u" 2>/dev/null && { systemctl stop "$u"; stopped="$stopped $u"; }
 done
 
-# 2. Nothing else may still run as uid 1000. A refusal starts the stopped units again, so the app keeps serving as before.
+# 2. Nothing else may still run as uid 1000. A refusal resumes enabled Orbit units and timers, without firing static services.
 if pgrep -u 1000 >/dev/null 2>&1; then
-  for u in $stopped; do systemctl start "$u"; done
+  resume_enabled
   echo "orbit-app-user: processes still run as uid 1000: $(pgrep -u 1000 -d, )" >&2; exit 3
 fi
 
@@ -71,16 +101,10 @@ has_user orbit && userdel orbit
 has_group work && groupdel work
 g=$(getent group 1000 | cut -d: -f1 || true); [ -n "$g" ] && groupdel "$g"
 
-# 6. Units: rewrite, reload, start what was stopped and every enabled unit that is not running.
+# 6. Units: rewrite, reload, and recover inactive Orbit units and timers whose unit-file state is exactly enabled.
 grep -rlE "$OLD" "$SYS" 2>/dev/null | while read -r f; do
   sed -i -E 's/^User=orbit$/User=www-data/; s/^Group=(orbit|work)$/Group=www-data/; s#/home/orbit#/var/www#g' "$f"
 done
 systemctl daemon-reload
-for u in $stopped; do systemctl start "$u"; done
-# A unit that failed under a name a half-done run had already removed is enabled but not running.
-for u in $units; do
-  if systemctl is-enabled --quiet "$u" 2>/dev/null && ! systemctl is-active --quiet "$u" 2>/dev/null; then
-    systemctl start "$u"; stopped="$stopped $u"
-  fi
-done
-echo "orbit-app-user: moved to www-data (restarted:${stopped:- none})"
+resume_enabled
+echo "orbit-app-user: moved to www-data (restarted:${resumed:- none})"

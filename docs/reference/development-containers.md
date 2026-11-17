@@ -555,7 +555,7 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 
 The app account of a container is the stock Debian `www-data`, uid and gid 33, with its stock home `/var/www`. FrankenPHP, every Process and Schedule run as it, with `HOME=/var/www`. `agent` (2750) is in the group `www-data`. The workspace is `agent:www-data`, group read and write, with setgid folders and the ACL `g:www-data:rwX` and its default. A normal container has no user `orbit`, no group `work` and no group with gid 1000.
 
-A nested-fleet container is different. Its inner guests are Nodes, and the ID map puts their `orbit` on the outer uid 1000 and gid 2760; the inner fleet writes the shared checkout as them. So a nested-fleet container keeps `orbit` (uid 1000), `work` (gid 2760) and all their files and ACLs, and its workspace stays `agent:work`. `agent` is in `www-data` there too, and `www-data` is in `work`, so FrankenPHP, the Processes and the Node store step open the workspace. Its firewall drops the traffic of uid 33 and uid 1000 to the inner fleet's networks.
+A nested-fleet container is different. Its inner guests are Nodes, and the ID map puts their `orbit` on the outer uid 1000 and gid 2760; the inner fleet writes the shared checkout as them. So a nested-fleet container keeps `orbit` (uid 1000), `work` (gid 2760) and all their files and ACLs, and its workspace stays `agent:work`. `agent` is in `www-data` there too, and `www-data` is in `work`, so FrankenPHP, the Processes and the Node store step open the workspace. Its firewall drops the traffic of uid 33 and uid 1000 to the inner fleet's networks. The swap file repairs an older nested guard from the image's rule before the app runs, reloading only Orbit's table and preserving the inner Incus tables.
 
 The container intent says which ids the workspace uses (`workspace_ids`): its group for `.env` and the checkout bundle, and the uid whose entries root's [workspace pass](#who-runs-what) gives to `agent`. They are 33 and 33 in a normal container, and 2760 and 1000 in a nested-fleet one.
 
@@ -571,16 +571,18 @@ Root runs it before the first command as `www-data` on every path:
 
 So an existing default moves at its next deployment, start or wake that boots, or at the first Orbit command that writes or changes one of its units. A copy of a seed taken before the move moves in its own completion: no release step is needed. A move to a container (`instance:migrate`) makes a new container of the new image.
 
+The file recovers inactive Orbit units and timers only when their unit-file state is exactly `enabled`. It never starts a static Schedule service between calendar fires. A retry also recovers enabled timers after the account and unit files have already moved.
+
 The file runs these steps:
 
-1. In a nested-fleet container (the image's AppArmor marker `/etc/orbit/apparmor-off`), add `agent` to `www-data` and `www-data` to `work`, and stop.
-2. Read the old accounts, `agent`'s groups and the unit files that name `orbit`. A moved container stops here with `already www-data`.
+1. In a nested-fleet container (the image's AppArmor marker `/etc/orbit/apparmor-off`), repair and load the image's guard for uid 33 and uid 1000 without flushing the inner Incus tables, add `agent` to `www-data` and `www-data` to `work`, and stop.
+2. Read the old accounts, `agent`'s groups and the unit files that name `orbit`. A moved container recovers inactive enabled Orbit units and timers, then stops here with `already www-data`.
 3. Stop those units and their timers.
-4. Refuse a process of uid 1000 that still runs, such as a stray shell. The file then starts the stopped units again and exits 3.
+4. Refuse a process of uid 1000 that still runs, such as a stray shell. The file then resumes enabled Orbit units and timers and exits 3; a static Schedule service stays idle.
 5. Give the files of uid 1000 and of gid 1000 and 2760 on the container's own file system to 33, and the workspace ACL of gid 2760 to 33.
 6. Copy the old home's files into `/var/www`, and remove `/home/orbit`.
 7. Add `agent` to `www-data`, and remove `orbit`, `work` and the group 1000.
-8. Write `User=www-data`, `Group=www-data` and `/var/www` in the unit files, reload systemd, and start the units it stopped and each enabled unit that is not running.
+8. Write `User=www-data`, `Group=www-data` and `/var/www` in the unit files, reload systemd, and recover inactive Orbit units and timers whose unit-file state is exactly `enabled`.
 
 It never touches `agent` beyond its group. Each step reads what is left, so a move that stopped half way finishes at the next run.
 
@@ -1818,7 +1820,7 @@ A link must have both its named target and its resolved destination inside the c
 
 Prediction accepts these Git paths: `.git`, `.git/HEAD`, `.git/config`, `.git/index`, `.git/FETCH_HEAD`, `.git/objects`, `.git/objects/info`, `.git/objects/pack`, the checked-out branch at `.git/refs/heads/BRANCH`, the fetched branch at `.git/refs/remotes/origin/BRANCH`, and the directories that contain those refs. The workspace's init, fetch and checkout steps create these paths. Every other `.git/**` target refuses before downtime, including `.git/local-only`. Template files, reflogs and object filenames are not promised.
 
-Directories absent after the Git checkout and file archive are copied too, including empty untracked and ignored trees. Added directories keep their exact modes, including setgid and sticky bits, with the normal `web:web` ownership mapping.
+Directories absent after the Git checkout and file archive are copied too, including empty untracked and ignored trees. Added directories keep their exact modes, including setgid and sticky bits, with the normal `www-data:www-data` ownership mapping.
 
 The Node passes their mode manifest through the protected execution result and stdin; it creates no manifest file in the container. Restoration runs as `www-data` and opens each path component relative to the workspace with directory descriptors that refuse symlinks. Absolute paths and parent traversal refuse before any mode changes. The directory scan excludes `.git` metadata and tracked submodule contents and never follows directory links. Selected nested repositories still enter the file archive as before. Absolute links in ignored directories follow the same rule, including links from `storage/framework/testing` into tracked `database/migrations` files.
 
@@ -1842,7 +1844,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
 | Retirement check | Checks identity before downtime and retention. Carries local branches, stash history, staging and all copied file bytes. Active clean/smudge filters, intent-to-add, submodule changes, owner dependencies and registered descendants still block |
 | Branch | The mirror fetches the recorded branch locally; the files phase imports every local branch tip and complete stash history into independent Git metadata |
-| Files | One archive carries changed, untracked and ignored files and missing directories. Added directories keep their modes; ownership maps to `web:web`. Deleted tracked files are removed |
+| Files | One archive carries changed, untracked and ignored files and missing directories. Added directories keep their modes; ownership maps to `www-data:www-data`. Deleted tracked files are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
 | Database server | The NIC ACL and the Node's firewall rule to every attached target. The container phase checks every port from inside before quiesce, else `instance.database_unreachable`, with zero downtime |
 | SQLite | The file moves with the files. The Gateway drops the connection record of a SQLite file inside the checkout |

@@ -52,6 +52,8 @@ final readonly class InstanceImage
      */
     public const string AppUserSwap = '/usr/local/libexec/orbit-app-user';
 
+    public const string NestedAppGuard = 'ip daddr { '.TaskVmNestedFleet::WireGuardSubnet.', '.TaskVmNestedFleet::Subnet.' } meta skuid { '.InstanceHostIntent::AppUid.', '.InstanceHostIntent::OrbitUid.' } drop';
+
     /**
      * The environment of every program from the runtime folder: Vite+ links the prepared runtime from its writable home,
      * where it can install the Project's package manager without changing the pinned runtime.
@@ -217,7 +219,7 @@ final readonly class InstanceImage
     {
         $content = file_get_contents(base_path('../../swamp/ansible/files/instance-app-user.sh'));
 
-        return $content === false ? throw new \LogicException('The app user swap file is missing.') : $content;
+        return $content === false ? throw new \LogicException('The app user swap file is missing.') : str_replace('@nested-app-guard@', self::NestedAppGuard, $content);
     }
 
     private static function fonts(string $folder): string
@@ -337,7 +339,7 @@ final readonly class InstanceImage
         $forwarder = InstanceHostIntent::ModelForwarderPort;
         $t3 = InstanceHostIntent::T3Port;
         $reset = $nested ? 'destroy table inet orbit_agent_guard' : 'flush ruleset';
-        $guard = $nested ? "\n        ip daddr { ".TaskVmNestedFleet::WireGuardSubnet.', '.TaskVmNestedFleet::Subnet.' } meta skuid { '.InstanceHostIntent::AppUid.', '.InstanceHostIntent::OrbitUid.' } drop' : '';
+        $guard = $nested ? "\n        ".self::NestedAppGuard : '';
 
         return <<<NFT
             #!/usr/sbin/nft -f
