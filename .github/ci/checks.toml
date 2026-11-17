@@ -4,20 +4,24 @@
 # Unmeasured primary cases use their file's largest completed retained case; they remain estimates.
 # The inventory binds these declarations to exact registered names. Startup is budgeted separately.
 [budget]
+# The declared seconds one unit may fill. A lane that holds several units is shorter: see [runner-pool].
 shard_seconds = 150
-shard_deadline_seconds = 190
+# Counted from the job's first step, not from the start of the units: the job's own limit is shard_ceiling_seconds,
+# and a pool job needs 14 seconds at most after its last unit (17 November 2026, 999 jobs).
+shard_deadline_seconds = 222
 shard_ceiling_seconds = 240
 shard_workers = 2
 unit_ceiling_seconds = 180
 slice_seconds = 60
 slice_startup_seconds = 6
-pr_shards = 18
-# Maximum planned fixture jobs across both classes, independent of available runner slots.
-runner_shards = 18
+pr_shards = 20
+# Maximum planned fixture jobs across both classes, independent of available runner slots. The shorter shared lane of
+# [runner-pool] needs two more jobs than the former 18 and 8 for the largest plans of 17 November 2026.
+runner_shards = 20
 # Extra spreading target, not a wave count. Retain jobs needed for admission up to runner_shards.
 spread_shards = 16
 # Tool-dependent shards keep a separate per-class limit and also count against runner_shards.
-self_hosted_shards = 8
+self_hosted_shards = 10
 # Concurrent units in one self-hosted shard. Its runner container shares the Node's memory with proof copies; four
 # Ansible units at once made the cgroup reclaim memory until the heaviest units ran past unit_ceiling_seconds.
 self_hosted_workers = 2
@@ -51,6 +55,12 @@ capacity_gap = [
 # Observed shared pool for pressure reports: ci-sabre-1..5 and ci-shark-1..5, measured in main CI on 2026-11-17.
 # This is not online inventory or a reservation. See implementation-loop.md#shared-fixture-capacity.
 slots = 10
+# A shard can start on either host, and the plan cannot choose. The same unit takes 1.57 times as long on Sabre as on
+# Shark (median of 335 units in 97 runs on 17 November 2026), and a Sabre shard ran up to 1.51 times its declared lane
+# before the deadline cut it. The planner divides shard_seconds by this factor for a lane that holds more than one unit:
+# 130 declared seconds, which 1.6 times over still ends inside the shard deadline. A unit alone in a lane may still fill
+# shard_seconds. See implementation-loop.md#the-lane-of-the-slowest-runner.
+slowest_runner_factor = 1.15
 
 [fixtures]
 default = ["swamp/tests/ansible_inputs_test.py"]

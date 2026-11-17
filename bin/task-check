@@ -409,8 +409,9 @@ def fixtures(plan, deadline, table, paths):
     costs = {unit: plan['units'][unit]['declared_seconds'] for unit in planned}
     direct = units.direct_files(paths, table)
     workers = fixture_workers()
-    capacity = {**plan['budget'], 'shard_seconds': deadline - time.monotonic() - FIXTURE_SETUP_SECONDS, 'pr_shards': 1,
-                'shard_workers': workers}
+    # The time left in this copy is the lane. CI's lane for its slowest runner does not apply here.
+    left = deadline - time.monotonic() - FIXTURE_SETUP_SECONDS
+    capacity = {**plan['budget'], 'shard_seconds': left, 'lane_seconds': left, 'pr_shards': 1, 'shard_workers': workers}
     admitted, deferred = [], []
     # The units of directly touched fixtures first, then the rest; each group cheapest first, so a quick check of the
     # change runs before a long suite can take the budget.
