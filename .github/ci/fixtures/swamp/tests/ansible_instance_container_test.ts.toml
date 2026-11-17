@@ -17,6 +17,7 @@ cases = [
   "a Process write on a running container of an older image moves its app account to www-data first; a stray uid 1000 process refuses it",
   "a start finishes a move that stopped after the user: the group work, the unit files and the units that failed under orbit",
   "a nested-fleet container keeps orbit, work and their files for its inner fleet; agent joins www-data and www-data joins work",
+  "a failed start retains its task and bounded stderr and hides private task output",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions",
   "a rerun of a clone's clone and workspace phases changes nothing",
   "a rerun of a clone's agent, processes and T3 phases changes nothing, and its T3 phase dispatches no other phase",
@@ -113,7 +114,7 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 8747
+cost = 8752
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
@@ -160,6 +161,7 @@ inputs = [
 ]
 
 [case_costs]
+"a failed start retains its task and bounded stderr and hides private task output" = 5
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 103 # hosted run 43787856522: 88.8s x 1.15, rounded up
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary" = 102 # hosted run 43787856522: 88.3s x 1.15, rounded up
   "a deployment at the seed's commit retakes the seed; a seed phase outside a deployment keeps it" = 98 # hosted run 43787856522: 84.9s x 1.15, rounded up
@@ -274,6 +276,7 @@ inputs = [
 "a start finishes a move that stopped after the user: the group work, the unit files and the units that failed under orbit" = 45
 "a nested-fleet container keeps orbit, work and their files for its inner fleet; agent joins www-data and www-data joins work" = 40
 [mandatory_cases]
+"swamp/ansible/instance-container.yml" = ["a failed start retains its task and bounded stderr and hides private task output"]
 "swamp/ansible/tasks/instance-fleet.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]
 "swamp/ansible/tasks/instance-container-*.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]
 "swamp/ansible/instance_nested.py" = ["nested fleet start gate: kernel-modules"]

@@ -2322,6 +2322,8 @@ It is the normal image with these changes:
 
 The firewall resets only its own table. So a reload or restart of nftables keeps the inner Incus's own tables, its bridge NAT and ACLs.
 
+At start, the app account script also converts an older nested image's `flush ruleset` to `destroy table inet orbit_agent_guard` before loading the updated guard. It repairs a partially applied guard too. It never loads a global flush into a running nested fleet. A failed start records the task name and the end of its stderr in the public failure detail, up to 4096 characters in all. Private tasks keep their output private.
+
 The inner Incus wants `network-online.target`. Netplan's own wait asks for a DNS server on eth0, which a container never gets, so it held a start for 120 s. The image's wait asks only for a route. It is not masked, so the inner Incus still starts after eth0 has its address.
 
 The Node fetches each Incus package through the artifact cache, checks its SHA-256 and pushes it into the build container. The build container installs both packages with their dependencies through the egress proxy. A `policy-rc.d` file stops the packages from starting the inner Incus during the build; the build removes it before it publishes.
