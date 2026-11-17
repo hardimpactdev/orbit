@@ -340,23 +340,28 @@ def t3_files(entries, state):
 
 # The run states of a T3 thread whose turn is open: task-copy-turn.yml settles the same set.
 T3_OPEN = ("preparing", "queued", "starting", "running", "waiting")
-# Every project's threads, as the server itself lists them. The Conn Server's `thread list` without `--project` lists them all. T3
-# 0.1.7's lists one project and T3 has no project list, so the script reads the project ids from T3's own state, read-only, and
-# asks T3 for each. Runs as agent in the container, on stdin of the runtime folder's Node; prints one JSON list of every thread.
+# Every project's threads, as the server itself lists them. Neither server lists more than one project's threads, nor has a project
+# list, so the script reads the projects from the server's own state, read-only, and asks the server for each: T3 0.1.7 keeps their
+# ids in `statev2.sqlite`, the Conn Server their folders in `projects.json`. Runs as agent in the container, on stdin of the runtime
+# folder's Node; prints one JSON list of every thread.
 T3_THREADS = r"""
 const { execFileSync } = require("node:child_process");
+const { existsSync, readFileSync } = require("node:fs");
 const program = process.argv.at(-1);
-const list = (...project) => JSON.parse(execFileSync(program, ["thread", "list", ...project, "--json"], { encoding: "utf8", timeout: 20000 }));
-let threads;
+const state = process.env.HOME + "/.t3/userdata/";
+const list = (project) => JSON.parse(execFileSync(program, ["thread", "list", "--project", project, "--json"], { encoding: "utf8", timeout: 20000 }));
+let projects;
 if (program.endsWith("/conn-server")) {
-    threads = list();
+    // A Conn Server that was never given a project has no file, and no threads.
+    projects = existsSync(state + "projects.json")
+        ? JSON.parse(readFileSync(state + "projects.json", "utf8")).map((project) => project.workspaceRoot) : [];
 } else {
     const { DatabaseSync } = require("node:sqlite");
-    const db = new DatabaseSync(process.env.HOME + "/.t3/userdata/statev2.sqlite", { readOnly: true });
-    const ids = db.prepare("SELECT project_id FROM projection_projects WHERE deleted_at IS NULL").all().map((row) => row.project_id);
+    const db = new DatabaseSync(state + "statev2.sqlite", { readOnly: true });
+    projects = db.prepare("SELECT project_id FROM projection_projects WHERE deleted_at IS NULL").all().map((row) => row.project_id);
     db.close();
-    threads = ids.flatMap((id) => list("--project", id));
 }
+const threads = projects.flatMap(list);
 process.stdout.write(JSON.stringify(threads));
 """
 

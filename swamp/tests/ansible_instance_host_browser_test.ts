@@ -439,6 +439,65 @@ Deno.test({
     },
 });
 
+Deno.test({
+    name: "a Conn Server's open turn in any of its projects defers its restart, read with the real thread script; once its threads settle it restarts once",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders"]);
+            Deno.writeTextFileSync(`${f.folder}/bin/incus`,
+                `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-host-t3-incus.ts", import.meta.url).pathname}' "$@"\n`);
+            const ready = await f.run();
+            assert(ready.ok, ready.output);
+            const server = "/etc/systemd/system/t3.service.d/20-orbit-server.conf";
+            const state = f.state();
+            state.instances.push({ project: "orbit-instances", name: "app-conn", status: "Running" });
+            state.files = { [`app-conn${server}`]: { content: "# old\n", mode: "0644", uid: "0", gid: "0" } };
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+            // The Conn Server as a live one answers (T3's shape): its projects' folders in projects.json, and `thread list` refuses a
+            // call without a project it knows. The turn is open in the second project, not the workspace.
+            const home = `${f.folder}/homes/app-conn`;
+            Deno.mkdirSync(`${home}/.t3/userdata`, { recursive: true });
+            Deno.mkdirSync(`${home}/threads`);
+            Deno.mkdirSync(`${home}/bin`);
+            Deno.writeTextFileSync(`${home}/.t3/userdata/projects.json`,
+                JSON.stringify([{ title: "workspace", workspaceRoot: "/srv/workspace" }, { title: "other", workspaceRoot: "/home/agent/other" }]));
+            const threads = (status: string) => {
+                Deno.writeTextFileSync(`${home}/threads/_srv_workspace.json`, JSON.stringify([{ threadId: "thread-done", status: "completed" }]));
+                Deno.writeTextFileSync(`${home}/threads/_home_agent_other.json`, JSON.stringify([{ threadId: "thread-conn", status }]));
+            };
+            Deno.writeTextFileSync(`${home}/bin/conn-server`, `#!/bin/sh
+[ "$1 $2 $3" = "thread list --project" ] && [ -f "$HOME/threads/$(printf %s "$4" | tr '/:' '__').json" ] && exec cat "$HOME/threads/$(printf %s "$4" | tr '/:' '__').json"
+echo "No T3 Code project matches '.'. Pass a project id or a path inside a project." >&2
+exit 1
+`);
+            Deno.chmodSync(`${home}/bin/conn-server`, 0o755);
+            f.write({ ...f.instances, t3_files: [{ project: "orbit-instances", container: "app-conn", program: "/opt/orbit-agent/current/agent/bin/conn-server",
+                files: [{ path: server, content: "# new\n", mode: "0644" }] }] });
+            const exec = (...command: string[]) => ["exec", "--project", "orbit-instances", "app-conn", "--", "systemctl", ...command];
+            const pass = async () => {
+                const before = f.has("calls") ? f.calls().length : 0;
+                const run = await f.run();
+                assert(run.ok, run.output);
+                return { run, execs: f.calls().slice(before).filter((call) => call[0] === "exec" && !call.includes("NeedDaemonReload")) };
+            };
+
+            threads("running");
+            const busy = await pass();
+            assertEquals(busy.execs, [exec("daemon-reload")]);
+            assertStringIncludes(busy.run.output, "open turn in thread-conn");
+            assertEquals(JSON.parse(Deno.readTextFileSync(`${f.folder}/t3-restart.json`)), [{ project: "orbit-instances", name: "app-conn" }]);
+
+            threads("completed");
+            assertEquals((await pass()).execs, [exec("try-restart", "t3.service")]);
+            assert(!f.has("t3-restart.json"));
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
 /** The restart rule's own script: whether the new folder version keeps everything the version in use holds. */
 function same(old: string, next: string) {
     const out = new Deno.Command("python3", { args: ["-I", new URL("../ansible/instance_folder_same.py", import.meta.url).pathname, old, next] }).outputSync();
