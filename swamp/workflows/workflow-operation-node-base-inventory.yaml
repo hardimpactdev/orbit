@@ -46,7 +46,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/ansible-input'
-      behaviorName: ansible-input
+      behaviorName: ${{ "ansible-input" }}
       methodName: baseInventorySource
       inputs:
         admission: ${{ steps["Read the private admission"].outputs.stdout }}
@@ -90,7 +90,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/ansible-input'
-      behaviorName: node-base-inventory
+      behaviorName: ${{ "node-base-inventory" }}
       methodName: baseInventoryReceipt
       inputs:
         stdout: ${{ steps["Read the Node"].outputs.stdout }}
