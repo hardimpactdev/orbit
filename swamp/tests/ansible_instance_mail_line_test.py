@@ -349,7 +349,7 @@ sys.exit(result.returncode)
         wrapper['vars'] = {'ansible_python_interpreter': sys.executable, 'container': {'project': 'fixture', 'name': 'fixture'},
                            'mail_refresh': {'php': '/fixture/php' if php else None, 'application': '/fixture/app',
                                             'units': ['orbit-frankenphp.service', 'orbit-process-42.service', 'orbit-process-stopped.service']},
-                           'as_root': ['incus', 'exec', 'fixture', '--'], 'as_orbit': ['incus', 'exec', 'fixture', '--']}
+                           'as_root': ['incus', 'exec', 'fixture', '--'], 'as_web': ['incus', 'exec', 'fixture', '--']}
         wrapper['vars']['intent'] = {'migrate': {}} if migrate else {}
         if probe_preserved:
             wrapper['post_tasks'] = [
@@ -489,15 +489,15 @@ sys.exit(result.returncode)
             self.assertTrue(self.envfile.read_bytes() == copied.replace(b'log', b'smtp'))
 
 
-    def test_the_config_clear_runs_as_orbit_with_its_groups(self):
+    def test_the_config_clear_runs_as_web_with_its_groups(self):
         import yaml
-        play = next(play for play in yaml.safe_load((ROOT / 'swamp/ansible/instance-mail-update.yml').read_text()) if 'as_orbit' in play.get('vars', {}))
-        # `runuser` gives `orbit` its groups, among them `work`, which opens the workspace that `agent` owns (ADR 0268); `incus exec
+        play = next(play for play in yaml.safe_load((ROOT / 'swamp/ansible/instance-mail-update.yml').read_text()) if 'as_web' in play.get('vars', {}))
+        # `runuser` gives `web` its groups, among them `web`, which opens the workspace that `agent` owns (ADR 0268); `incus exec
         # --user 1000 --group 1000` gives none, so its `cd` into the workspace failed and `failed_when: false` hid it.
-        self.assertEqual(play['vars']['as_orbit'],
-                         "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/home/orbit', container.name, '--', 'runuser', "
-                         "'-u', 'orbit', '--'] }}")
-        self.assertIn("as_orbit + ['sh', '-c', 'if [ -x \"$1\" ] && [ -f \"$2/artisan\" ]; then cd -- \"$2\" && \"$1\" artisan config:clear",
+        self.assertEqual(play['vars']['as_web'],
+                         "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/home/web', container.name, '--', 'runuser', "
+                         "'-u', 'web', '--'] }}")
+        self.assertIn("as_web + ['sh', '-c', 'if [ -x \"$1\" ] && [ -f \"$2/artisan\" ]; then cd -- \"$2\" && \"$1\" artisan config:clear",
                       (ROOT / 'swamp/ansible/tasks/instance-mail-line.yml').read_text())
 
 if __name__ == '__main__':

@@ -252,7 +252,7 @@ class NodeRuntimeTest(unittest.TestCase):
         source = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
         source = source.replace("Path('/opt/orbit-runtime/current/vite-plus-home')", 'Path(' + repr(str(self.shared)) + ')')
         source = source.replace("VP = '/opt/orbit-runtime/current/bin/vp'", 'VP = ' + repr(str(self.vp)))
-        source = source.replace("app_user='orbit'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
+        source = source.replace("app_user='web'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
         helper = self.root / 'helper.py'
         helper.write_text(source)
         result = subprocess.run([sys.executable, str(helper), 'clone-fetch',
@@ -341,7 +341,7 @@ class NodeRuntimeTest(unittest.TestCase):
         (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')
         script = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
         script = script.replace("Path('/opt/orbit-runtime/current/vite-plus-home')", 'Path(' + repr(str(self.shared)) + ')')
-        script = script.replace("app_user=\'orbit\'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
+        script = script.replace("app_user=\'web\'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
         script = script.replace("VP = '/opt/orbit-runtime/current/bin/vp'", 'VP = ' + repr(str(self.vp)))
         (self.root / 'instance_node_runtime.py').write_text(script)
         (self.root / 'tasks').mkdir()
@@ -355,7 +355,7 @@ class NodeRuntimeTest(unittest.TestCase):
                           'intent': {'migrate': {'checkout': str(self.checkout)}},
                           'phase': 'node-runtime', 'node_fetch': True,
                           'as_root': [str(incus), 'exec', '--project', 'fixture', 'fixture', '--'],
-                          'as_orbit': [str(incus), 'exec', '--project', 'fixture', 'fixture', '--', 'runuser', '-u', 'orbit', '--'],
+                          'as_web': [str(incus), 'exec', '--project', 'fixture', 'fixture', '--', 'runuser', '-u', 'web', '--'],
                           'incus_project': [str(incus), '--project', 'fixture']},
                  'tasks': [{'ansible.builtin.include_tasks': 'tasks/instance-node-runtime.yml'}]}]
         path = self.root / 'play.yml'

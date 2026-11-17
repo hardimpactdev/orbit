@@ -30,9 +30,9 @@
     container: "{{ intent.container }}"
     plan: "{{ intent.connection_environment }}"
     as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
-    # The app user, through `runuser` so it has its groups: `work` opens the workspace, which `agent` owns (ADR 0268). A bare
+    # The app user, through `runuser` so it has its groups: `web` opens the workspace, which `agent` owns (ADR 0268). A bare
     # `--user 1000 --group 1000` has no supplementary group and cannot enter it.
-    as_orbit: "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/home/orbit', container.name, '--', 'runuser', '-u', 'orbit', '--'] }}"
+    as_web: "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/home/web', container.name, '--', 'runuser', '-u', 'web', '--'] }}"
   tasks:
     - name: Apply and check the connection keys
       block:
@@ -186,7 +186,7 @@
               when: plan.refresh.php is not none
               ansible.builtin.command:
                 argv: >-
-                  {{ as_orbit + ['sh', '-c', 'if [ -x "$1" ] && [ -f "$2/artisan" ]; then cd -- "$2" && "$1" artisan config:clear >/dev/null 2>&1; fi',
+                  {{ as_web + ['sh', '-c', 'if [ -x "$1" ] && [ -f "$2/artisan" ]; then cd -- "$2" && "$1" artisan config:clear >/dev/null 2>&1; fi',
                       'sh', plan.refresh.php, plan.refresh.application] }}
                 expand_argument_vars: false
               no_log: true

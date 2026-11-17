@@ -39,7 +39,7 @@ Deno.test("directory modes stay in the protected result and restore through the 
   assertEquals(archive.no_log, true);
   const restore = tasks.find(task => task.name === "Restore the added directories' exact modes including special bits")!;
   const command = restore["ansible.builtin.command"] as Task;
-  assert((command.argv as string).startsWith("{{ as_orbit +"));
+  assert((command.argv as string).startsWith("{{ as_web +"));
   assert((command.argv as string).includes("--restore-directories"));
   assertEquals(command.stdin, "{{ (migrate_archive.stdout | from_json).directory_modes }}");
   assertEquals(restore.no_log, true);
