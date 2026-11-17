@@ -21,6 +21,7 @@ use App\Models\InstanceRuntime;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Support\ValidatedData;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -66,6 +67,7 @@ function mergeRoundWorld(TaskPrMode $mode = TaskPrMode::ReviewBeforePr, bool $do
     return [$world, mergeRoundConflict($publish)];
 }
 
+/** @return list<array<string, mixed>> */
 function mergeRoundTick(): array
 {
     return app(RunTaskMergeRoundAction::class)->execute();
@@ -112,7 +114,7 @@ function mergeRoundTurnEnded(Operation $turn, string $state = 'done', OperationS
 function mergeRoundChecked(Task $group, Operation $publish, TaskCheckStatus $status = TaskCheckStatus::Passed): TaskCheck
 {
     $operation = mergeRoundStep($group, $publish, 'check');
-    $check = TaskCheck::query()->findOrFail($operation->input['check_id']);
+    $check = TaskCheck::query()->findOrFail(ValidatedData::integer($operation->input['check_id']));
     $check->update(['status' => $status, 'pid' => 1, 'process_started' => 'x', 'head_before' => TaskCopyDoneFixture::Commit, 'tree_before' => str_repeat('4', 40),
         'head_after' => MergeRoundMerged, 'tree_after' => str_repeat('5', 40), 'commit_sha' => MergeRoundMerged, 'exit_code' => $status === TaskCheckStatus::Passed ? 0 : 1,
         'finished_at' => now(), 'pr_mode' => $group->pr_mode]);
@@ -152,6 +154,7 @@ function mergeRoundDrive(Task $group, Operation $publish, string $until): array
             'turn' => mergeRoundTurnEnded($operation),
             'check' => $c1 = mergeRoundChecked($group, $publish),
             'review' => mergeRoundReviewed($group, $publish, $c1 ?? throw new LogicException('No C1.')),
+            'publish' => null,
         };
     }
     throw new LogicException("No step {$until}.");
