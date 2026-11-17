@@ -60,6 +60,17 @@
       {{ fleet_start_failed | map(attribute='stderr') | map('trim') | join('; ') | truncate(400) }}
     quiet: true
 
+# These Nodes bypassed enrollment, which normally publishes their pins to the Gateway's SSH store. Restore only recorded pins
+# for direct Gateway reads; runuser supplies orbit's groups and keeps the file owned by the application account.
+- name: Restore the nested Gateway SSH host pins
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--cwd',
+          intent.fleet.checkout.path ~ '/apps/gateway', '--'] + fleet_as_app_user
+          + ['php', 'artisan', 'gateway:known-hosts:sync', '--no-interaction'] }}
+  register: fleet_known_hosts
+  changed_when: (fleet_known_hosts.stdout | from_json).changed
+
 # The nested Swamp reads its key file `api-key` as a link into the folder that the `club-key` device shows. The link is in the nested
 # Gateway's own disk, so `base` keeps it; a start sets it only when it differs.
 - name: Read the Club key link of the nested Gateway

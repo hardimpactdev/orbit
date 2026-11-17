@@ -284,6 +284,16 @@ if (command[0] === "incus") {
     const asOrbit = rest[0] === "runuser" && rest[1] === "-u" && rest[2] === "orbit" && rest[3] === "--";
     if ((rest[0] === "install" || rest[0] === "php") && !asOrbit) fail(`${rest[0]} as root: the app user runs it`);
     if (asOrbit) rest = rest.slice(4);
+    if (rest[0] === "php" && rest.includes("gateway:known-hosts:sync")) {
+      if (!asOrbit || name !== "nested-gateway" || !inner.includes("/home/orbit/orbit/apps/gateway")) fail("Wrong known-hosts command context");
+      if (state.failKnownHostsSync) fail("Gateway pin store unavailable");
+      const gateway = container(name);
+      gateway.files ??= {};
+      const path = "/home/orbit/.orbit/ssh/known_hosts";
+      const changed = gateway.files[path] !== "recorded-node-pins";
+      gateway.files[path] = "recorded-node-pins";
+      done(JSON.stringify({ changed }));
+    }
     // wg-quick makes the interface before it sets its private key; a read in between prints `(none)` with exit 0.
     if (rest[0] === "wg" && rest[1] === "show") {
       if ((state.hubKeyNone ?? 0) > 0) {

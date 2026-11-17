@@ -1,5 +1,6 @@
 order = 30
 cases = [
+  "a fleet start restores the nested Gateway pins as orbit, reports a no-op on rerun and fails if the store cannot be repaired",
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
   "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check",
@@ -79,8 +80,8 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2840
-slices = 77
+cost = 2880
+slices = 78
 inputs = [
   # Exercise every case when the workflow changes its runner or concurrency policy.
   ".github/workflows/ci.yml",
@@ -180,3 +181,5 @@ inputs = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps" = 45
   "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current" = 84 # ESTIMATE: local 39.196s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
   "a shrink check or run that fails or prints no result never fails the refresh: a failed check keeps base, a failed run is named" = 22
+
+  "a fleet start restores the nested Gateway pins as orbit, reports a no-op on rerun and fails if the store cannot be repaired" = 40 # ESTIMATE: local 18 s x 2.1, rounded up plus 1 s

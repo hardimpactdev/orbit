@@ -262,9 +262,11 @@ const reads = [
 const compareReads = reads.slice(0, names.length + 1);
 /** A start, which is also a deployment's one fleet check, waits for the inner Incus and compares the rules first. */
 const startReads = ["incus admin waitready --timeout 80", ...compareReads];
+const knownHostsSync = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan gateway:known-hosts:sync --no-interaction";
 const startCalls = [
   "incus list --format csv --columns ns",
   ...names.map((name) => `incus start ${name}`),
+  knownHostsSync,
   // The nested Swamp's key file is a link into the folder of the club-key device.
   "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
   "incus exec nested-gateway -- ln -sfnT club/swamp-club-api-key /home/orbit/.config/swamp/api-key",
@@ -394,6 +396,25 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a fleet start restores the nested Gateway pins as orbit, reports a no-op on rerun and fails if the store cannot be repaired",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled());
+    try {
+      const first = f.run("start"); assert(first.ok, first.output);
+      assertEquals(f.state().containers["nested-gateway"].files["/home/orbit/.orbit/ssh/known_hosts"], "recorded-node-pins");
+      assert(f.calls().includes(knownHostsSync));
+      const again = f.run("start"); assert(again.ok, again.output);
+      assertEquals(again.changed, 0);
+      assert(f.calls().includes(knownHostsSync));
+      f.change((state) => state.failKnownHostsSync = true);
+      const failed = f.run("start"); assert(!failed.ok);
+      assertStringIncludes(failed.output, "Gateway pin store unavailable");
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
   name: "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
   ignore: !hasAnsible,
   fn() {
@@ -413,7 +434,7 @@ Deno.test({
       const again = f.run("start");
       assert(again.ok, again.output);
       assertEquals(again.changed, 0);
-      assertEquals(f.calls(), [...startReads, "incus list --format csv --columns ns", "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key", "test -s /etc/wireguard/wg-nested.key",
+      assertEquals(f.calls(), [...startReads, "incus list --format csv --columns ns", knownHostsSync, "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key", "test -s /etc/wireguard/wg-nested.key",
         "incus exec nested-gateway -- wg show orbit public-key", "wg show wg-nested", "ip -j addr show dev wg-nested", ...tunnelDnsReads, ...reachCalls]);
     } finally {
       f.cleanup();

@@ -71,7 +71,8 @@
           "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
           "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n",
-          "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n"
+          "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n",
+          "/home/orbit/.orbit/ssh/known_hosts": "recorded-node-pins"
         },
         "status": "Running",
         "snapshots": {
@@ -133,7 +134,8 @@
               "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
               "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n",
-              "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n"
+              "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n",
+              "/home/orbit/.orbit/ssh/known_hosts": "recorded-node-pins"
             },
             "links": {
               "/home/orbit/.config/swamp/api-key": "club/swamp-club-api-key"
