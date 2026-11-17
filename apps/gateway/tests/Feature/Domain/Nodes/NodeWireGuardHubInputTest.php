@@ -137,7 +137,10 @@ it('marks the hub\'s WireGuard packets, and leaves the source rule to its own un
         ->not->toContain('PartOf=')->toContain("Restart=on-failure\nRestartSec=30\n")
         ->and($intent['source']['networkd'])->toBe("[Network]\nManageForeignRoutingPolicyRules=no\nManageForeignRoutes=no\n")
         ->and($intent['source']['priorities'])->toBe([31820, 31821])
-        ->and($intent['lan_ssh_argv'])->toBe([['ufw', 'allow', 'in', 'proto', 'tcp', 'from', '10.0.0.0/24', 'to', '10.0.0.2', 'port', '22', 'comment', 'orbit:vpn-lan-ssh']]);
+        ->and($intent['lan_ssh_argv'])->toBe([['ufw', 'allow', 'in', 'proto', 'tcp', 'from', '10.0.0.0/24', 'to', '10.0.0.2', 'port', '22', 'comment', 'orbit:vpn-lan-ssh']])
+        // Production's hand rule on its hub, argument for argument (docs/cli/firewall/index.mdx#vpn-peer-forwarding).
+        ->and($intent['peer_forwarding_argv'])->toBe([['ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'from', '10.44.0.0/24', 'to',
+            '10.44.0.0/24', 'comment', 'orbit:vpn-peer-forwarding']]);
 });
 
 it('keeps only private ranges on the main table, so the hub\'s own public prefix leaves from the endpoint too', function (): void {

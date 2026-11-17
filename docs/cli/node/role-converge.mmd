@@ -100,7 +100,6 @@ sequenceDiagram
   SW->>N: Open the firewall<br/>Ansible phase: firewall
   %%> What it does:
   %%> - adds the role's rules, each specific allow before its isolation deny and the broader peer trust rule; unrelated rules stay
-  %%> - on the `vpn` hub: the routed rule `orbit:vpn-peer-forwarding`, in and out on `orbit` from the VPN subnet to the VPN subnet, so one member reaches another through the hub; a hand rule of the same shape and comment is kept as it is (docs/cli/firewall/index.mdx#vpn-peer-forwarding)
   opt role changes DNS
     SW->>N: Publish private DNS<br/>native delta publication
     %%> Why last:
