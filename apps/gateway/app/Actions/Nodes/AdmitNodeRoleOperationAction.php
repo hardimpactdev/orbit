@@ -177,9 +177,6 @@ final readonly class AdmitNodeRoleOperationAction
             }
             NodeRoleRemoveInput::refuseOffline($offline, $deleted);
             $input = ['node_id' => $node->id, 'role' => $role->value, 'purge_data' => $purgeData, 'offline' => $offline];
-            // A removal takes no admission lock but changes the Node's roles, so the next converge or role Operation runs every phase
-            // (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
-            app(NodeConvergePhaseDigest::class)->clear($node->id);
             if ($assignment->neverTouchedNode()) {
                 return $this->recordRemoval($node, $assignment, $input, $requestId);
             }

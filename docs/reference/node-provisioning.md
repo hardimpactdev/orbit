@@ -631,7 +631,7 @@ Every phase reads the same variables, so all phase digests move together. A chan
 
 Swamp compares each digest with the digest that the Node records for that phase, and skips the phase only when they are equal. A skipped phase does not connect to the Node and does not read its state.
 
-A succeeded `node:converge`, role addition or role convergence records the digest of each of its phases on the Node (`nodes.converge_digests`), whether the phase ran or skipped. It replaces the whole record. Nothing else writes the record. The admission of any Operation that takes the Node's Operation admission lock clears it after it reads it: a converge, a role addition or convergence, an enrollment or an agent rekey. The admission of a role removal also clears it, though a removal does not take that lock. So these run a phase in full:
+A succeeded `node:converge`, role addition or role convergence records the digest of each of its phases on the Node (`nodes.converge_digests`), whether the phase ran or skipped. It replaces the whole record. Nothing else writes the record. The admission of any Operation that takes the Node's Operation admission lock clears it after it reads it: a converge, a role addition, convergence or removal, an enrollment or an agent rekey. So these run a phase in full:
 
 - a changed digest: a changed intent, secret value or release;
 - no record: the first converge, or a converge after a failed or interrupted converge;

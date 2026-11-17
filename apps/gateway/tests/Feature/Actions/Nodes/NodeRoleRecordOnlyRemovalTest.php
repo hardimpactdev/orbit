@@ -222,7 +222,8 @@ it('refuses --offline on a role that never touched the Node and keeps the row', 
 });
 
 it('clears the Node phase digest record on both removal paths', function (bool $untouched): void {
-    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: a removal takes no admission lock but changes the roles.
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: both removal paths take the Node's admission lock,
+    // and the store clears the record under it.
     Http::preventStrayRequests();
     recordOnlyDispatch();
     $node = recordOnlyNode();
