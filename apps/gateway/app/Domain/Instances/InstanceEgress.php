@@ -146,10 +146,12 @@ final readonly class InstanceEgress
      * The proxy's own nftables table. Each chain runs before the `filter` priority, where Docker's and UFW's chains sit, and a reject
      * in any base chain is final.
      * - The input chain resets every connection to the proxy that does not come in on the bridge, so no process on the Node uses it.
-     * - The output chain rejects every new connection of `proxy` but to the Node's stub resolver: to any address of the Node itself,
-     *   to the WireGuard interface, to every private or special IPv4 address, and to all of IPv6. Replies to containers belong to known
+     * - The output chain sends only packets whose socket belongs to `proxy` to the chain `squid_out`. A packet of a kernel socket, such
+     *   as a WireGuard handshake, has no socket user: it matches no `meta skuid`, so it leaves the table, as every other user's does.
+     * - `squid_out` rejects every new connection of `proxy` but to the Node's stub resolver: to any address of the Node itself, to the
+     *   WireGuard interface, to every private or special IPv4 address, and to all of IPv6. Replies to containers belong to known
      *   connections.
-     * - With a parent, the output chain also returns new connections to exactly the parent's address and TCP port, before any reject.
+     * - With a parent, `squid_out` also returns new connections to exactly the parent's address and TCP port, before any reject.
      * The file replaces the table whole and atomically, so loading it again leaves no moment without it.
      *
      * @param  array{host: string, port: int}|null  $parent
@@ -180,7 +182,9 @@ final readonly class InstanceEgress
             	}
             	chain output {
             		type filter hook output priority filter - 10; policy accept;
-            		meta skuid != "{$user}" return
+            		meta skuid "{$user}" jump squid_out
+            	}
+            	chain squid_out {
             		ct state != new return
             		ip daddr {$resolver} meta l4proto { tcp, udp } th dport 53 return{$parentRule}
             		fib daddr type local counter reject
