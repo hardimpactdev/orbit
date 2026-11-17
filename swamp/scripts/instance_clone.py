@@ -28,11 +28,6 @@ GUEST_COMMANDS = ("conn-server", "curl", "git", "mkdir", "php", "python3", "syst
 # A failed command's detail: its code line, what it did and the end of its stderr, in at most this many UTF-8 bytes, so the native
 # step's wrapper ("exec failed on 1/1 host(s): target (exit 1: ...)") still fits the Gateway's 4,096-byte detail.
 DETAIL_BYTES = 4000
-# A copy that meets a retake of its default's seed (its admitted seed is gone, or a `next-` snapshot is there) waits this long for the
-# retake to end, then copies the seed that is there: the bound of a deployment's `seed` phase, so a retake that runs ends within it
-# (docs/reference/development-containers.md#a-retake-keeps-the-seed). It reads the snapshots again after each pause.
-SEED_WAIT_SECONDS = 120
-SEED_WAIT_PAUSE = 2
 # The shortest private value that is replaced; shorter ones would blank ordinary words (the Gateway's LogRedactor::ShortestValue).
 SHORTEST_VALUE = 8
 
@@ -632,32 +627,28 @@ def main():
             copy_timer.__enter__()
             if read is None:
                 clone = container["clone"]
+                snapshots = json.loads(
+                    run(
+                        [
+                            "incus",
+                            "query",
+                            f"/1.0/instances/{clone['source']}/snapshots?project={container['project']}&recursion=1",
+                        ]
+                    ).stdout
+                )
+                names = [row["name"] for row in snapshots]
+                # The step before this one waited, by curl's own retry, up to 120 s for the admitted seed: a retake at its commit has a
+                # moment between the delete and the rename (docs/reference/development-containers.md#a-retake-keeps-the-seed). This
+                # reads the snapshots once. A default with no seed at all refuses by its own code; the admitted seed's `next-` still
+                # there is a retake that did not end within the wait; a seed that a deployment replaced by a newer one is copied.
                 snapshot = clone["snapshot"]
-                waited = time.monotonic() + SEED_WAIT_SECONDS
-                while True:
-                    snapshots = json.loads(
-                        run(
-                            [
-                                "incus",
-                                "query",
-                                f"/1.0/instances/{clone['source']}/snapshots?project={container['project']}&recursion=1",
-                            ]
-                        ).stdout
-                    )
-                    names = [row["name"] for row in snapshots]
-                    # A default with no seed at all refuses by its own code.
-                    if not any(name.startswith(("seed-", "next-")) for name in names):
-                        raise RuntimeError("instance.default_seed_missing")
-                    # A `next-` snapshot is a retake that runs; a missing admitted seed is one that a deployment replaced. The copy waits
-                    # for the retake to end, then copies the newest seed (docs/reference/development-containers.md#a-retake-keeps-the-seed).
+                if not any(name.startswith(("seed-", "next-")) for name in names):
+                    raise RuntimeError("instance.default_seed_missing")
+                if snapshot not in names:
                     seeds = [row for row in snapshots if row["name"].startswith("seed-")]
-                    if seeds and not any(name.startswith("next-") for name in names):
-                        if snapshot not in names:
-                            snapshot = max(seeds, key=lambda row: row.get("created_at") or "")["name"]
-                        break
-                    if time.monotonic() >= waited:
+                    if "next-" + snapshot[len("seed-"):] in names or not seeds:
                         raise RuntimeError("instance.default_seed_moved")
-                    time.sleep(SEED_WAIT_PAUSE)
+                    snapshot = max(seeds, key=lambda row: row.get("created_at") or "")["name"]
                 if snapshot != clone["snapshot"]:
                     # The later phases start the branch at this seed's commit, which its own repository holds.
                     (folder / "seed-commit").write_text(snapshot[len("seed-"):] + "\n")

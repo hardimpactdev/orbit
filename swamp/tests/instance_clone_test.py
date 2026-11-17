@@ -10,7 +10,6 @@ import pwd
 import runpy
 import shutil
 import subprocess
-import time
 import tempfile
 import unittest
 import urllib.parse
@@ -341,11 +340,7 @@ class CloneTest(unittest.TestCase):
                         return subprocess.CompletedProcess(argv, 1, "", "Error: Project not found")
                     return subprocess.CompletedProcess(argv, 0 if acl else 1, json.dumps(acl) if acl else "", "" if acl else "Error: Network ACL not found")
                 if argv[:2] == ["incus", "query"]:
-                    if "snapshots?" in argv[2] and "fixture_snapshot_reads" in container and "/instances/" in argv[2]:
-                        # The default's snapshots at each read: a retake moves on between two reads; the last answer stays.
-                        reads = container["fixture_snapshot_reads"]
-                        output = json.dumps(reads.pop(0) if len(reads) > 1 else reads[0])
-                    elif "snapshots?" in argv[2]:
+                    if "snapshots?" in argv[2]:
                         output = json.dumps(container.get("fixture_snapshots", [{"name": "seed-abc"}]))
                     elif "sockets.target.wants" in argv[2]:
                         output = json.dumps(["orbit-mail-1025.socket", "orbit-mail-2525.socket", "orbit-node-service-3308.socket", "project.socket"])
@@ -381,10 +376,6 @@ class CloneTest(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, status, output, "")
 
             output, error = io.StringIO(), io.StringIO()
-            self.slept = []
-            clock = [0.0]
-            real_monotonic = time.monotonic
-            real_sleep = time.sleep
             with (
                 patch(
                     "sys.argv",
@@ -403,11 +394,6 @@ class CloneTest(unittest.TestCase):
                 patch("sys.stdin", io.StringIO(stdin)),
                 patch("subprocess.run", command),
                 patch("os.chown"),
-                # A pause of the seed wait (2 s) moves a fake clock on, so no test sleeps; any other sleep, such as a thread's own
-                # back-off, sleeps as it would.
-                patch("time.sleep", lambda seconds: (self.slept.append(seconds), clock.__setitem__(0, clock[0] + seconds))
-                      if seconds == 2 else real_sleep(seconds)),
-                patch("time.monotonic", lambda: real_monotonic() + clock[0]),
                 contextlib.redirect_stdout(output),
                 contextlib.redirect_stderr(error),
             ):
@@ -428,38 +414,29 @@ class CloneTest(unittest.TestCase):
         calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "other"}]})
         self.assertIn("instance.default_seed_missing", error)
         self.assertFalse(any("copy" in call for call in calls))
-        self.assertEqual(self.slept, [])
 
-    def test_a_retake_that_does_not_end_within_the_bound_still_refuses_as_moved(self):
-        # A retake between its delete and its rename that stays so: the copy waits its bound, then refuses as before.
-        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "next-abc"}]})
-        self.assertIn("instance.default_seed_moved", error)
-        self.assertFalse(any("copy" in call for call in calls))
-        self.assertGreaterEqual(sum(self.slept), 120)
-        self.assertLess(sum(self.slept), 125)
+    def test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved(self):
+        # The wait step's bound passed between the retake's delete and its rename: the admitted seed's `next-` is still there.
+        for snapshots in ([{"name": "next-abc"}], [{"name": "next-abc"}, {"name": "seed-old", "created_at": "2026-11-16T03:00:00Z"}]):
+            calls, _, error = self.clone(overrides={"fixture_snapshots": snapshots})
+            self.assertIn("instance.default_seed_moved", error)
+            self.assertFalse(any("copy" in call for call in calls))
+            self.assertIsNone(self.seed_commit)
 
-    def test_a_copy_that_meets_a_retake_waits_and_copies_the_new_seed_at_its_commit(self):
-        # The admitted seed went and the retake's `next-` is not renamed yet; then the new seed has its name.
-        calls, _, error = self.clone(overrides={"fixture_snapshot_reads": [
-            [{"name": "next-def", "created_at": "2026-11-17T03:10:00Z"}],
-            [{"name": "next-def", "created_at": "2026-11-17T03:10:00Z"}],
-            [{"name": "seed-def", "created_at": "2026-11-17T03:10:00Z"}]]})
+    def test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit(self):
+        # The retake took a seed at another commit and deleted the admitted one: the copy takes the new seed and records its commit.
+        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "seed-def", "created_at": "2026-11-17T03:10:00Z"}]})
         self.assertNotIn("instance.default_seed_moved", error)
-        self.assertGreater(sum(self.slept), 0)
-        copies = [call for call in calls if call[3:4] == ["copy"]]
-        self.assertEqual(copies[0][4], "instance-1/seed-def")
-        # The later phases start the branch at the copied seed's commit, not the admitted one.
+        self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-def")
         self.assertEqual(self.seed_commit, "def\n")
-        # The admitted seed is still there, but a retake at the same commit runs beside it: the copy waits for its end.
-        calls, _, error = self.clone(overrides={"fixture_snapshot_reads": [
-            [{"name": "seed-abc"}, {"name": "next-abc"}], [{"name": "seed-abc"}]]})
-        self.assertEqual(sum(self.slept), 2)
+        # The admitted seed whole beside a retake that runs: it is copied, and nothing is recorded.
+        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "seed-abc"}, {"name": "next-abc"}]})
         self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-abc")
         self.assertIsNone(self.seed_commit)
 
-    def test_a_normal_copy_of_its_admitted_seed_waits_for_nothing(self):
+    def test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing(self):
         calls, _, error = self.clone()
-        self.assertEqual(self.slept, [])
+        self.assertEqual(len([call for call in calls if call[:2] == ["incus", "query"] and "/instances/instance-1/snapshots?" in call[2]]), 1)
         self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-abc")
         self.assertIsNone(self.seed_commit)
 
