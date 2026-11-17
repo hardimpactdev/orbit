@@ -6,14 +6,14 @@
 # The input, and the one place that defines it:
 #   intent.container.project, .name       The Incus project and name of the Instance container (as for instance-container.yml).
 #   intent.container.workspace            The workspace in the container: the source of the `checkout` device.
-#   intent.fleet.guests                   {gateway, app-dev, app-prod}: the nested containers by role (NestedFleetLayout::Guests).
-#   intent.fleet.layout.<role>.address    The address of each nested container on the inner bridge (NestedFleetLayout::Layout).
+#   intent.fleet.guests                   {gateway, app-dev, app-prod}: the nested containers by role (TaskVmNestedFleet::Guests).
+#   intent.fleet.layout.<role>.address    The address of each nested container on the inner bridge (TaskVmNestedFleet::Layout).
 #   intent.fleet.layout.<role>.memory     Its memory limit, an owned rule (NestedFleetIntent::Memory).
 #   intent.fleet.host                     Whether the refresh builds the Instance host on nested-app-dev: the default's ID map is
 #                                         2,000,000 or more (NestedFleetIntent).
 #   intent.fleet.operator                 {address, hub, network, domains}: the container as operator, the nested Gateway as hub, the
-#                                         fleet's network and the TLDs its app Nodes serve (NestedFleetLayout::operator()).
-#   intent.fleet.checkout.path            Where the three nested Nodes see the workspace (NestedFleetLayout::CheckoutPath).
+#                                         fleet's network and the TLDs its app Nodes serve (TaskVmNestedFleet::operator()).
+#   intent.fleet.checkout.path            Where the three nested Nodes see the workspace (TaskVmNestedFleet::CheckoutPath).
 #   intent.fleet.proxy                    The egress proxy environment, name to value: HTTP_PROXY, HTTPS_PROXY, http_proxy,
 #                                         https_proxy, NO_PROXY and no_proxy. The fleet's own names and networks are in NO_PROXY.
 #   intent.container.config               Its `environment.NO_PROXY` and `environment.no_proxy`, and
@@ -58,7 +58,7 @@
     fleet_shrink_record: /var/lib/orbit/fleet-shrink.json
     fleet_inner_pools: /var/lib/incus/storage-pools
     fleet_tunnel: wg-nested
-    # The inner bridge of the nested containers. The seed holds it; no fleet step creates it.
+    # The inner bridge of the nested containers (TaskVmNestedFleet::Network). The seed holds it; no fleet step creates it.
     fleet_network: oe-nested
     fleet_tunnel_port: "51821"
     fleet_hub_port: "51820"
@@ -77,7 +77,7 @@
     fleet_token_names: [serve-driver, orbit-gateway-run, orbit-gateway-read, orbit-worker-a-access, orbit-worker-b-access, orbit-worker-c-access]
     fleet_state_mounts: [home-orbit-orbit-apps-gateway-.env.mount, home-orbit-orbit-apps-gateway-storage.mount,
                          home-orbit-orbit-apps-gateway-bootstrap-cache.mount]
-    # The nested Gateway's Swamp state on its own disk: run records, vault files and the grants.
+    # The nested Gateway's Swamp state on its own disk: run records, vault files and the grants (TaskVmNestedFleet::GatewayState).
     fleet_swamp_state_mounts: [home-orbit-orbit-swamp-.swamp.mount, home-orbit-orbit-swamp-vaults.mount, home-orbit-orbit-swamp-grants.mount]
 
 # The fleet rules by role: devices with the keys they must have, configuration keys, and files with their whole content (the proxy
@@ -120,7 +120,8 @@
           {% for key, value in intent.fleet.proxy.items() %}
           env[{{ key }}] = "{{ value }}"
           {% endfor %}
-    # The marker of the nested Gateway of an Instance fleet (InstanceFleetGateway::Marker): the Gateway reads its parent egress proxy.
+    # The marker of the nested Gateway of an Instance fleet (InstanceFleetGateway::Marker): the Gateway reads it and names no task VM
+    # package cache for its Nodes (TaskVmAptCache).
     fleet_marker_files:
       - path: /etc/orbit/instance-fleet
         content: |
@@ -134,9 +135,9 @@
     # A nested Node's base converge runs apt and downloads the agent over SSH, where the `environment.*` keys do not reach: apt reads
     # its proxy from its own file, and sudo and SSH sessions read /etc/environment. Both name the egress proxy; /etc/environment has
     # the same NO_PROXY, so the fleet's names and networks stay off the proxy. The apt file is the fleet's own: Orbit's Node plays
-    # remove `90orbit-package-cache` (the old task VM package cache, swamp/ansible/tasks/apt-proxy.yml) and never touch this one. It sorts
+    # own `90orbit-package-cache` (the task VM package cache, swamp/ansible/tasks/apt-proxy.yml) and never touch this one. It sorts
     # after that file, so its proxy wins over a cache file that an older role add left; the next role add or role converge through
-    # the nested Gateway removes that file, because Gateway-generated Node intents name no cache.
+    # the nested Gateway removes that file, because the marker above makes the Gateway name no cache.
     fleet_egress_files:
       - path: /etc/apt/apt.conf.d/95orbit-nested-egress
         content: |
