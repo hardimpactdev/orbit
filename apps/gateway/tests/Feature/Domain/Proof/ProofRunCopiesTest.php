@@ -967,6 +967,7 @@ describe('proof:run in copies: the warm pool', function (): void {
             ->and($runs->pluck('target_id')->sort()->values()->all())->toBe($warm->pluck('task_id')->sort()->values()->all())
             ->and(Operation::query()->where('kind', 'instance.create')->count())->toBe($creates)
             ->and(ProofWarmCopy::query()->count())->toBe(0)
+            ->and(Task::topLevel()->whereKey($runs->pluck('target_id'))->pluck('title')->every(static fn (string $title): bool => str_starts_with($title, 'Proof firewall:')))->toBeTrue()
             // The taken copy is active, so its run is due at once.
             ->and($runs->map(fn (Operation $run): string => app(ProofCopies::class)->state($run))->unique()->all())->toBe(['ready'])
             // Two places run the proof; the third takes one new warm copy.

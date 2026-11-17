@@ -242,6 +242,7 @@ final readonly class ProofRunIntent
                 $case = $assignments[0];
                 // A warm copy of the Node first: its create has ended. Else a new copy from the Node's seed.
                 $group = app(ProofWarmPool::class)->take($nodeId);
+                $group?->update(self::groupText($commit, $case['command']));
                 $copy = $group !== null ? Instance::query()->findOrFail($group->taskable_id)
                     : Instance::query()->findOrFail(app(TaskCopyStart::class)->admitRead($group = $this->group($commit, $case['command']), ProofGroup::Trigger, null, $read, $nodes->get($nodeId))->target_id);
                 $stored = ProofBatchPlan::stored($assignments);
@@ -340,11 +341,22 @@ final readonly class ProofRunIntent
         });
     }
 
+    /**
+     * The title and brief of a proof run's group: a new group's, and a taken warm copy's group's from then on.
+     *
+     * @return array{title: string, brief: string}
+     */
+    private static function groupText(string $commit, string $command): array
+    {
+        return ['title' => 'Proof '.$command.' '.substr($commit, 0, 12), 'brief' => 'Prove '.$command.' at commit '.$commit.'.'];
+    }
+
     private function group(string $commit, string $command): Task
     {
-        return app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), 'Proof '.$command.' '.substr($commit, 0, 12),
-            'Prove '.$command.' at commit '.$commit.'.', TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
-                'The Swamp workflow operation-proof-run-copy proves the command in its own copy.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
+        $text = self::groupText($commit, $command);
+
+        return app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), $text['title'], $text['brief'], TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
+            'The Swamp workflow operation-proof-run-copy proves the command in its own copy.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
     }
 
     /**
