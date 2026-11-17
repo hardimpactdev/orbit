@@ -275,7 +275,7 @@ A repeat Operation returns its journaled result under the per-target lock. Start
 
 The kind chart is [`docs/cli/proof/executor-power-proof.mmd`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/proof/executor-power-proof.mmd). The executor logs the complete action time, including receipt and asleep-marker fsync, with reclaim measured separately. The private receipt timer ends before its own publication.
 
-The proof of record remains 30 sleeps of a real clone with T3 and Vite. Measurements of a default Instance with T3/Vite started by hand are development evidence only.
+The real-clone, swap-backed 30-sleep proof is open and waits for the clone-fix PR and the nested-swap PR.
 
 | Error or result | Meaning |
 | --- | --- |

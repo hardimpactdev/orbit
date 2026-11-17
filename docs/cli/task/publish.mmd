@@ -18,7 +18,7 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as Task VM, Node<br/>reached over ssh
+  participant N as Instance Node<br/>reached over ssh
   participant GH as GitHub<br/>repository · PRs
   CLI->>GW: task:publish 42<br/>--check=17
   %%> Command:
@@ -43,7 +43,7 @@ sequenceDiagram
   %%> - no other task runs on group 42; the Gateway holds one lock per group
   %%> - a release, and a `--check` that takes the reviewer's text: the done check is read again under the group lock, else `tasks.not_done`
   %%> What it does:
-  %%> - captures the repository, default branch, commit, checked tree and the task VM's SSH target
+  %%> - captures the repository, default branch, commit, checked tree and the copy Node's SSH target
   %%> - for a task copy: its Node's SSH target, its container, its start commit and the path of the `.env` Orbit wrote, from the Instance's record
   %%> - names two `task-publish-token-<uuid>` vault keys for the token and the Git authorization header; it mints and writes no value at admission
   %%> - the `task:pr-when-done` tick admits through this same step, keyed `pr-when-done:<group>:<check>`; its refusal is stored on the group as the publication's error code
@@ -66,7 +66,6 @@ sequenceDiagram
   Note over SW: Create publication scratch
   %%> How:
   %%> - a private worker directory holds the bundle, bare repository and bounded CLI replies
-  alt a task copy
     SW->>N: Preflight the copy
     %%> How:
     %%> - the workspace phase reads the checkout as `agent` in the container through its Node; HEAD must be the checked commit
@@ -85,29 +84,6 @@ sequenceDiagram
     SW->>SW: Read the copy check
     %%> How:
     %%> - typed data reads the evidence: a secret refuses with `tasks.publish_secret_value`, naming its items; an error refuses with `tasks.publish_secret_unchecked`
-  else a task VM
-    SW->>N: Read the index
-    %%> How:
-    %%> - one bounded native Git command, with an isolated alternate index on the task VM
-    SW->>N: Add workspace files
-    %%> How:
-    %%> - one bounded native Git command, with an isolated alternate index on the task VM
-    SW->>N: Read workspace tree
-    %%> How:
-    %%> - one bounded native Git command, with an isolated alternate index on the task VM
-    SW->>N: Read workspace HEAD
-    %%> How:
-    %%> - one bounded native Git command, with an isolated alternate index on the task VM
-    Note over SW: Check the workspace
-    %%> How:
-    %%> - typed data compares HEAD and the complete tree to the admitted candidate; a mismatch refuses before export
-    SW->>N: Export the commit
-    %%> How:
-    %%> - one bounded native command on the worker; no shipped script
-    SW->>N: Copy the bundle
-    %%> How:
-    %%> - official SSH copy reads the bundle onto the worker; no code is copied to the task VM
-  end
   Note over SW: Init the bare repo
   %%> How:
   %%> - one bounded native command on the worker; no shipped script
@@ -120,7 +96,6 @@ sequenceDiagram
   Note over SW: Check imported commit
   %%> How:
   %%> - typed data compares the imported commit and tree without a second workspace observation
-  opt a task copy
     Note over SW: Add the waiver lines
     %%> How:
     %%> - typed data writes the PR title and body: the caller's body, then each `Docs-unaffected:` line of the proposed body that the body lacks, in the file's order, while the body stays within 65,536 characters
@@ -137,13 +112,11 @@ sequenceDiagram
     %%> How:
     %%> - typed data reads the check's exit code and its one refusal line from the private scratch, because Swamp keeps no stderr of a failed command step
     %%> - exit 0 passes; a refusal fails the step with that line as its detail; anything else fails with `tasks.publish_secret_unchecked`; a copy mints only after this step and "Read the copy check" succeeded
-  end
   SW->>GW: Mint the push token<br/>operation:direct:github-token
   %%> How:
   %%> - one bounded `curl` step posts the run id to the Gateway when the push is next; the run id proves the caller
   %%> - the Gateway checks the Operation, the run and the repository, mints a token for that one repository with `contents: write` and `pull_requests: write`, never `workflows`, and writes the two vault values; the reply holds the vault descriptors only
-  %%> - no step writes the token into the task VM; the VM receives no credential, in the bundle, the Git configuration or the environment
-  opt a task copy
+  %%> - no step writes the token into the copy; it receives no credential, in the bundle, the Git configuration or the environment
     SW->>GH: Read the base
     %%> How:
     %%> - one bounded fetch of the default branch head into the scratch repository, with the minted token as an extra header, so the head is the one at publish time
@@ -166,7 +139,6 @@ sequenceDiagram
     %%> - a conflict of the merge fails with `tasks.publish_conflict`, naming at most 100 conflicting paths in at most 3,000 bytes, so the line fits the 4,096 bytes of detail the Gateway keeps, and the count beyond, before the push; any other error fails with `tasks.publish_failed`
     %%> - a copy pushes only after this step succeeded; a skip of it is never a pass
     %%> - `behind_by` and overlapping paths never refuse on their own
-  end
   SW->>GH: Push the branch
   %%> How:
   %%> - one bounded push without force; authorization is a vault-backed extra header in the environment
@@ -195,15 +167,9 @@ sequenceDiagram
   SW->>GH: Revoke the token
   %%> How:
   %%> - one bounded gh api call, only after a token was minted; a refused revoke is best effort and the token expires within an hour
-  alt a task copy
     SW->>N: Discard the copy scratch
     %%> How:
     %%> - the workspace phase removes its guest scratch after failure too, once the preflight passed
-  else a task VM
-    SW->>N: Remove remote scratch
-    %%> How:
-    %%> - one bounded SSH argv removes this run's index and bundle after failure too
-  end
   Note over SW: Remove local scratch
   %%> How:
   %%> - one bounded command removes the private worker directory and CLI configuration

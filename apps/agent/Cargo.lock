@@ -1503,7 +1503,6 @@ dependencies = [
  "schemars 1.2.2",
  "serde",
  "serde_json",
- "sha1",
  "sha2",
  "tar",
  "time",

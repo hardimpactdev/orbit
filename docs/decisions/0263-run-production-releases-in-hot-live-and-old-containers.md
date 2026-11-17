@@ -18,7 +18,7 @@ When hot is ready, Caddy points the Routes at it in one reload, and hot becomes 
 
 In progress.
 
-Proposed: a design for review, with no part built. It specifies step 10 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order) and takes the place of the release design in [Container instances and releases](/solutions/container-instances-and-releases#production-design) and PR 18 of the [container runtime plan](/solutions/development-container-runtime#production-instances).
+Proposed: a design for review, with no part built. It specifies the production work of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance). The [container spikes](/solutions/development-container-runtime#a-release-switch-is-not-a-data-rollback) inform this design but do not deliver it.
 
 Principle: [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles). Production uses the container machinery of development: images, ZFS clones, snapshots, the runtime folder, the bridge and the egress proxy. Each old production path below goes when its replacement is built.
 
@@ -36,7 +36,7 @@ Without old, the only way back after the handover is a new build. An Incus snaps
 
 Today a production Instance is a checkout home on an `app-prod` Node ([Instance releases](/reference/deployments#the-production-home)). Each deploy clones a release into `releases/<name>`, links shared paths into the home, runs the steps, swaps the `current` link and reloads a dedicated PHP-FPM pool. The home keeps three releases. A rollback swaps `current` back. Processes run on the Node as the Project account, and per-minute schedulers keep Node timers.
 
-ADR 0250 moves every Instance into an Incus container. [Instance containers](/reference/development-containers#production-instances) holds the decided basics for production: the `app-prod` role installs the container setup and the runtime folder, not PHP-FPM; a production container has only the user `orbit`; FrankenPHP serves it after its [production gate](/solutions/development-container-runtime#production-gate); existing checkouts are migrated. [ADR 0265](/decisions/0265-sleep-idle-production-containers) lets an idle live sleep and wake fully ready.
+ADR 0250 moves every Instance into an Incus container. [Instance containers](/reference/development-containers#production-instances) holds the decided basics for production: the `app-prod` role installs the container setup and the runtime folder, not PHP-FPM; a production container has only the user `orbit`; FrankenPHP serves it after the [production gate](#production-gate); existing checkouts are migrated. [ADR 0265](/decisions/0265-sleep-idle-production-containers) lets an idle live sleep and wake fully ready.
 
 The development side proved the machinery: a ZFS clone of a snapshot takes about a second and copies no file, and a default Instance's [seed](/reference/development-containers#the-default-instance) carries warm dependencies to its clones. An earlier production spike proved a warm deploy in containers with a clone, a candidate and a Route switch. Its proposal had a separate preparation container that stayed between deploys.
 
@@ -147,7 +147,13 @@ FrankenPHP serves every release container, in classic mode, from the runtime fol
 
 ### 10. Next steps
 
-The build follows the [container runtime plan](/solutions/development-container-runtime#production-instances) after the production gate. The planned charts in part 1 are the specification of each command. The [production containers](/reference/production-containers) page links here and holds no copy of this list.
+The build follows the production gate below. The planned charts in part 1 are the specification of each command. The [production containers](/reference/production-containers) page links here and holds no copy of this list.
+
+#### Production gate
+
+Before production implementation, confirm these proposed criteria and record four weeks of development evidence: no FrankenPHP-specific failure that PHP-FPM would avoid; working PHP Data Bridge and development Processes; and default-Instance median and 95th-percentile response times no worse than the measured PHP-FPM baseline. If the gate fails, decide the production server again. This cleanup records no such acceptance or live rollout.
+
+Operational acceptance must exercise the managed path, not the spike scripts: changed dependencies, compatible migrations, a long request during switching, bad-candidate refusal, sessions, shared-volume persistence, old hashed assets, code rollback, and one owner for workers and schedules. Test real object storage when configured or claimed supported. Cover Node restart, failed proxy reload, disk/memory pressure and interruption on both sides of the switch. Record cold, warm and dependency-change timings from admission to HTTPS separately from drain completion, along with toolchain, cache and load. Retained releases consume disk; prove retention and cleanup without deleting the serving or rollback release. Repeat provider-specific provisioning and cleanup before claiming support.
 
 #### Build subtasks
 

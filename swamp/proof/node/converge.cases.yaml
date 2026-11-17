@@ -26,7 +26,7 @@ uncovered:
   "admission:recorded-only": "Need request-time contact tracing to prove admission uses recorded state and never contacts the Node before starting the Operation, including with missing or stale agent facts. A missing agent report is not an additional eligibility refusal."
 
 waits:
-  clone_sleep: "ADR 0266 slice 4: needs a real executor-sleep-clone with T3/Vite, a current executor/observer delivery and host swap. Clone create currently fails instance.clone_private_names_failed (copied UID 131072, clone UID 196608); this copy also cannot enable swap (EPERM). Default-Instance stop-policy measurements are development evidence only. CI proof remains disabled. The required 30 clone sleep/wake cycles and Python comparison remain open."
+  clone_sleep: "The real-clone, swap-backed 30-sleep proof is open and waits for the clone-fix PR and the nested-swap PR."
   idmap: "A converge with the app-dev role runs nested-app-dev's roles phase, which builds the Instance host's stock image. That needs the default's 2,000,000 ID map; below it the phase fails with too few uid/gid. The owner schedules the ID map window; until then the plan skips these cases."
 
 cases:

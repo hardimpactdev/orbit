@@ -27,7 +27,7 @@ Principle: <Name the mission principle this decision serves, with a link to docs
 
 ## Affects
 
-- Components: <apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web, packages/php-sdk, or none>
+- Components: <apps/cli, apps/docs, apps/gateway, apps/web, packages/php-sdk, or none>
 - ADRs: <Links to in-progress decisions this changes, or none>
 - Detail: <The documentation page section that receives this decision when it is built>
 - Verify: <Tests or commands that verify the decision>

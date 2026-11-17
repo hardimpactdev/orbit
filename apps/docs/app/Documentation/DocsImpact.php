@@ -61,7 +61,7 @@ final readonly class DocsImpact
         'problems:collect' => 'docs/reference/tasks.md',
         'problems:file' => 'docs/reference/tasks.md',
         'task:archive-threads' => 'docs/reference/tasks.md',
-        'orbit:node-recipe' => 'docs/reference/incus-topologies.md',
+        'orbit:node-recipe' => 'docs/reference/node-agent.md',
         'orbit:machine-recipe' => 'docs/reference/compute-drivers.md',
         // The task VM worker. Keyed by name, so a change of its options keeps the owner.
         'queue:work' => 'docs/reference/compute-drivers.md',
@@ -350,6 +350,12 @@ final readonly class DocsImpact
                     $findings[] = ['page' => $page, 'pattern' => $pattern, 'message' => 'covers: pattern does not match a tracked path.'];
                 } else {
                     $patterns[] = $pattern;
+                    foreach ($this->expandBraces($pattern) as $alternative) {
+                        // Wildcard alternatives may deliberately cover either a file or a directory.
+                        if (! str_contains($alternative, '*') && ! isset($trackedSet[$alternative]) && ! is_dir($this->root.'/'.$alternative)) {
+                            $findings[] = ['page' => $page, 'pattern' => $alternative, 'message' => 'covers: explicit alternative does not exist.'];
+                        }
+                    }
                 }
             }
             if ($patterns === []) {
@@ -412,7 +418,7 @@ final readonly class DocsImpact
             }
             // A deleted non-API source needs no new ownership binding. Owned removals are routed above.
             // The API generators decide for a deleted API source. A deleted CLI command needs no page.
-            if ($deleted && ! $this->isApiPath($path) && (str_starts_with($error, 'Unowned error identifier [') || str_starts_with($error, 'Unowned Gateway console command [') || str_starts_with($error, 'Unowned migration surface')
+            if ($deleted && ! $this->isApiPath($path) && (str_starts_with($error, 'Unowned error identifier [') || str_starts_with($error, 'Unowned Gateway console command [') || str_starts_with($error, 'Unowned scheduled or Artisan command [') || str_starts_with($error, 'Unowned migration surface')
                 || (str_starts_with($error, 'CLI command [') && str_contains($error, '] has no documentation page at ')))) {
                 continue;
             }

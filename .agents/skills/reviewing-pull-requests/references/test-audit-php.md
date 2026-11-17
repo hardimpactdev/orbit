@@ -2,11 +2,11 @@
 
 ## Establish the environment
 
-Orbit has five Composer projects: `apps/cli`, `apps/gateway`, `apps/docs`, `packages/php-sdk`, and `apps/e2e`. Read each project's manifests, lockfile, Pest bootstrap, PHPUnit configuration, and guidance. Confirm versions from the lockfile and installed packages. The repository uses stock Pest; confirm a flag against the locked version before you rely on it.
+Orbit has four Composer projects: `apps/cli`, `apps/gateway`, `apps/docs`, and `packages/php-sdk`. Read each project's manifests, lockfile, Pest bootstrap, PHPUnit configuration, and guidance. Confirm versions from the lockfile and installed packages. The repository uses stock Pest; confirm a flag against the locked version before you rely on it.
 
 If dependencies are missing, install from the lockfile before interpreting failures. Do not overwrite modified guidance to fix an absent `vendor/` directory. Keep environment failures separate from test failures.
 
-Inventory declarations, expanded datasets, helpers, fixtures, architecture tests, excluded groups, and separate PHPUnit configurations. Use runner discovery once dependencies are available; filename or regex counts are only an initial inventory. In E2E, ordinary unit and feature tests verify the harness. Cold and snapshot scenarios use separate configurations and exercise infrastructure.
+Inventory declarations, expanded datasets, helpers, fixtures, architecture tests, excluded groups, and separate PHPUnit configurations. Use runner discovery once dependencies are available; filename or regex counts are only an initial inventory.
 
 ## Find candidates
 
@@ -29,7 +29,7 @@ For Gateway, retain authentication, directed node access, ownership, validation 
 
 For CLI, distinguish SDK request construction, exit status, output streams, terminal behavior, and pipe behavior. Rendering assertions may be real public contracts. For SDK, Saloon fakes should exercise real requests and DTO mapping; exact verbs, paths, headers, omitted versus empty input, request IDs, TLS, and redaction remain meaningful contracts.
 
-For Docs, separate generator and lint behavior from checks that freeze prose. Generated API or MCP schema checks can detect drift that a runtime endpoint test cannot. For E2E, preserve topology ownership, safe cleanup, process failures, and real integration behavior separately from harness unit tests.
+For Docs, separate generator and lint behavior from checks that freeze prose. Generated API or MCP schema checks can detect drift that a runtime endpoint test cannot.
 
 Prefer datasets for cases sharing setup and assertions. Move duplicate validation matrices to their owner only when a retained request test still proves the wiring and error response. Do not consolidate superficially similar security failures that exercise different guards.
 

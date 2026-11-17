@@ -98,7 +98,7 @@ class TaskInstanceCheckTest(SUPPORT["CheckHarness"]):
     def test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch(self):
         self.git('checkout', '--quiet', '-b', 'user-branch')
         self.ran('prepare', self.behavior('task-repository/check.ts', 'prepare', {
-            'intent': self.check, 'node_id': self.check['node_id'], 'root': self.cel('prepare', 'root')}))
+            'intent': self.check, 'node_id': self.check['node_id']}))
         output = self.run_phase('check', self.write_input('input'), ok=False)
         self.assertIn('tasks.workspace_identity_changed', output)
         # The entry playbook records the refusal; the child turns it into the check's error receipt.
@@ -113,13 +113,6 @@ class TaskInstanceCheckTest(SUPPORT["CheckHarness"]):
         self.assertNotIn('checked', output)
         self.assertFalse(self.scratch.exists())
         self.assertFalse((self.folder / 'output').exists())
-
-    def test_task_vm_intents_keep_the_task_vm_steps(self):
-        vm = {key: value for key, value in self.check.items() if key != 'workspace'}
-        self.assertTrue(self.cel('Check in the Instance', 'guard', PARENT, check=vm))
-        self.assertFalse(self.cel('Build every argv', 'guard', PARENT, check=vm))
-        self.assertFalse(self.cel('Push the candidate', 'guard', PARENT, check=vm))
-        self.assertEqual(self.cel('Push the candidate', 'workflow', PARENT, check=vm), 'task-check-push')
 
     def test_check_phases_need_their_check_and_candidate(self):
         intent = self.ansible_intent()

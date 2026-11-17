@@ -1,6 +1,10 @@
 """Operation schemas describe the parent record without deleted Gateway step receipts."""
 import ast
 from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -8,6 +12,34 @@ SOURCE = ast.parse((ROOT / 'bin/docs-openapi').read_text())
 
 
 class OpenApiOperationsTest(unittest.TestCase):
+    def test_openapi_check_reports_the_generated_diff_without_writing_outputs(self):
+        temporary = tempfile.TemporaryDirectory(prefix='openapi fixture ')
+        self.addCleanup(temporary.cleanup)
+        fixture = Path(temporary.name)
+        (fixture / 'bin').mkdir()
+        (fixture / 'apps').mkdir()
+        (fixture / 'docs').mkdir()
+        for project in ('gateway', 'cli'):
+            (fixture / 'apps' / project).symlink_to(ROOT / 'apps' / project, target_is_directory=True)
+        (fixture / 'packages').symlink_to(ROOT / 'packages', target_is_directory=True)
+        script = fixture / 'bin/docs-openapi'
+        shutil.copyfile(ROOT / 'bin/docs-openapi', script)
+        shutil.copyfile(ROOT / 'bin/docs-navigation', fixture / 'bin/docs-navigation')
+        shutil.copyfile(ROOT / 'docs/site.json', fixture / 'docs/site.json')
+        shutil.copytree(ROOT / 'docs/navigation', fixture / 'docs/navigation')
+        (fixture / 'docs/docs.json').write_text('{"stale": true}\n')
+        document = fixture / 'docs/openapi.json'
+        document.write_text('{"stale": true}\n')
+        navigation = (fixture / 'docs/docs.json').read_bytes()
+        result = subprocess.run([sys.executable, str(script), '--check'], capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn('Run bin/docs-openapi', result.stderr)
+        self.assertIn('--- docs/openapi.json', result.stdout)
+        self.assertIn('+++ generated/docs/openapi.json', result.stdout)
+        self.assertIn('-{"stale": true}', result.stdout)
+        self.assertEqual('{"stale": true}\n', document.read_text())
+        self.assertEqual(navigation, (fixture / 'docs/docs.json').read_bytes())
+
     def test_show_and_cancel_return_operation_data_without_step_receipts(self):
         namespace = {
             'RESPONSE_OVERRIDES': {},

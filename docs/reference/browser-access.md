@@ -31,7 +31,7 @@ Public Routes, custom proxy Routes, app Routes, and analytics tracking hosts gra
 
 `vp dev` in `apps/web` proxies `/api` to the Gateway and `/grafana` to Grafana. For both, the proxy removes the browser's `Origin` header, because it serves the page on its own origin. The browser's `Sec-Fetch-Site` header still reaches the Gateway, so a cross-site request through the development server is refused too.
 
-For disposable UI work, [run the web app against a topology](/reference/web-app#run-against-a-topology) with `bin/e2e-topology web ISSUE`. Its proxy runs inside the topology's operator VM as that topology's WireGuard peer, with a Gateway access grant. It pins the selected Gateway URL and CA for Gateway, realtime, and metrics traffic. It does not fall back to the caller's live profile. Loopback publication and SSH forwarding expose the development page, not a new Gateway origin or an exception to the browser-origin policy.
+For disposable UI work that needs a Gateway, use the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). The manual topology harness and its operator VM web proxy are removed. Use [web verification](/reference/web-verification) for demo-mode layout checks; do not exercise mutating actions against the live fleet.
 
 The `bin/web-verify` tests use a demo Gateway and real Chromium and WebKit to check that off-origin requests, redirects, and WebSockets cannot reach another server. A blocked WebSocket must close or report an error; a timeout does not pass.
 

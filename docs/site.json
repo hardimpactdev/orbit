@@ -207,7 +207,7 @@
     },
     {
       "source": "/decisions/0195-request-topologies-for-review-with-an-operator-container",
-      "destination": "/reference/incus-topologies#nested-in-the-task-vm"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0192-stop-a-group-whose-pull-request-ended",
@@ -515,15 +515,15 @@
     },
     {
       "source": "/decisions/0002-candidate-deployment-proof-boundary",
-      "destination": "/reference/incus-topologies#exact-ownership"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0005-rolling-incus-development-topology",
-      "destination": "/reference/incus-topologies#composed-from-one-template"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0006-topology-led-feature-development",
-      "destination": "/reference/incus-topologies#a-live-mount"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0010-record-decisions-before-implementation-issues",
@@ -539,7 +539,7 @@
     },
     {
       "source": "/decisions/0019-run-disposable-incus-scenario-lanes",
-      "destination": "/reference/incus-topologies#composed-from-one-template"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0022-track-the-issue-workspace-and-delete-it-before-merge",
@@ -547,15 +547,15 @@
     },
     {
       "source": "/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot",
-      "destination": "/reference/incus-topologies#composed-from-one-template"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0037-promote-fresh-three-node-topology-snapshots",
-      "destination": "/reference/incus-topologies#composed-from-one-template"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0040-extend-issue-proof-with-one-app-prod-node",
-      "destination": "/reference/incus-topologies#declared-nodes"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0049-keep-delivery-artifacts-off-the-merge-head",
@@ -575,19 +575,19 @@
     },
     {
       "source": "/decisions/0114-expand-the-three-node-incus-cluster",
-      "destination": "/reference/incus-topologies#declared-roles-only"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree",
-      "destination": "/reference/incus-topologies"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0136-run-long-lived-topology-processes-as-transient-units",
-      "destination": "/reference/incus-topologies#long-lived-processes-as-systemd-units"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0143-record-topology-evidence-and-sync-without-verification",
-      "destination": "/reference/incus-topologies#evidence-log"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0162-verify-web-ui-changes-with-bin-web-verify",
@@ -595,7 +595,7 @@
     },
     {
       "source": "/reference/proof-plans",
-      "destination": "/reference/incus-topologies"
+      "destination": "/reference/tasks#build-a-feature-in-one-copy"
     },
     {
       "source": "/decisions/0083-default-sqlite-journal-mode-to-wal",

@@ -1,5 +1,5 @@
 {
- "maxUnreviewed": 171,
+ "maxUnreviewed": 146,
  "nativeDataMethods": {
   "@nckrtl/analytics-runtime#observe": "Compares supplied container observations and writes only Swamp metadata.",
   "@nckrtl/analytics-runtime#plan": "Builds runtime intents and argv as Swamp metadata without executing them.",
@@ -540,20 +540,10 @@
   },
   "operation-task-publish": {
    "Check the environment file": "read-only",
-   "Copy the bundle": "idempotent",
    "Read bundle contents": "read-only",
    "Read open PRs": "unreviewed",
    "Read the .env check": "read-only",
-   "Read the copy check": "read-only",
-   "Read workspace HEAD": "unreviewed"
-  },
-  "operation-task-sync": {
-   "Clean up the VM directory": "unreviewed",
-   "Clean up the scratch": "unreviewed",
-   "Copy the bundle": "idempotent",
-   "Fetch the refs": "idempotent",
-   "Prepare the VM directory": "unreviewed",
-   "Read the refs": "unreviewed"
+   "Read the copy check": "read-only"
   },
   "operation-tool-manager-setup": {
    "Check Composer manifest": "idempotent",
@@ -670,42 +660,6 @@
    "snapshot-${{ self.check.attributes.inputs.operation_id }}-head": "unreviewed",
    "snapshot-${{ self.check.attributes.inputs.operation_id }}-index": "unreviewed",
    "snapshot-${{ self.check.attributes.inputs.operation_id }}-tree": "unreviewed"
-  },
-  "task-check-commit": {
-   "commit_read": "unreviewed"
-  },
-  "task-check-deliverables": {
-   "base_archive-${{ self._index }}": "unreviewed",
-   "base_directory-${{ self._index }}": "unreviewed",
-   "diff": "unreviewed"
-  },
-  "task-check-prepare": {
-   "original": "unreviewed",
-   "output_local": "unreviewed",
-   "prepare_remote": "unreviewed"
-  },
-  "task-check-push": {
-   "cleanup_local": "unreviewed",
-   "cleanup_remote": "unreviewed",
-   "copy_bundle": "idempotent",
-   "import": "unreviewed",
-   "prepare_local": "unreviewed",
-   "revoke_unused_read": "idempotent",
-   "revoke_write": "idempotent"
-  },
-  "task-check-snapshot-after": {
-   "changed": "unreviewed",
-   "output_copy": "idempotent",
-   "snapshot-after-add": "unreviewed",
-   "snapshot-after-head": "unreviewed",
-   "snapshot-after-index": "unreviewed",
-   "snapshot-after-tree": "unreviewed"
-  },
-  "task-check-snapshot-before": {
-   "snapshot-before-add": "unreviewed",
-   "snapshot-before-head": "unreviewed",
-   "snapshot-before-index": "unreviewed",
-   "snapshot-before-tree": "unreviewed"
   },
   "task-nested-apply": {
    "Check the services": "read-only",
