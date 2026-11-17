@@ -6,6 +6,8 @@ cases = [
   "the saved zfs host prepare boundary matches the shipped tasks",
   "the saved nested host system boundary matches the shipped tasks",
   "the saved nested host prepare boundary matches the shipped tasks",
+  "a fleet Node's profile mounts the runtime and agent folders unshifted, as its folder plans say",
+  "an unshifted agent folder opens its programs to everyone; an idmapped one keeps them to gid 2750",
   "the normal image on a nested host reaches the verified nested-build boundary",
   "a passed nested-fleet image build repeats the host system stage without changes",
   "a passed nested-fleet image build repeats the host prepare stage without changes",
@@ -38,8 +40,8 @@ cases = [
 file = "swamp/tests/ansible_instance_host_image_test.ts"
 # ESTIMATE: completed Beast run, four workers, each case ceil(local seconds x 2.1) + 1.
 # Cases use verified boundaries; every case remains in Required. No timeout increase.
-cost = 754
-slices = 34
+cost = 885
+slices = 36
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -84,6 +86,8 @@ inputs = [
   "the saved zfs host prepare boundary matches the shipped tasks" = 40
   "the saved nested host system boundary matches the shipped tasks" = 40
   "the saved nested host prepare boundary matches the shipped tasks" = 49
+  "a fleet Node's profile mounts the runtime and agent folders unshifted, as its folder plans say" = 60 # ESTIMATE: local 28s * 2.1, rounded up + 1s
+  "an unshifted agent folder opens its programs to everyone; an idmapped one keeps them to gid 2750" = 71 # ESTIMATE: local 33s * 2.1, rounded up + 1s
   "the normal image on a nested host reaches the verified nested-build boundary" = 17
   "a passed nested-fleet image build repeats the host system stage without changes" = 24
   "a passed nested-fleet image build repeats the host prepare stage without changes" = 39

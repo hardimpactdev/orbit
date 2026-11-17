@@ -82,15 +82,34 @@ describe('the container branch of the app-dev converge', function (): void {
         $intent = static fn (Node $node): array => array_diff_key(app(InstanceHostIntent::class)->for($node->refresh()), ['bridge_admitted_at' => true]);
         [$realBefore, $fleetBefore] = [$intent($real), $intent($fleet)];
         touch($marker);
+        $folders = app(RecipeImageBuilds::class)->currentRecipe()->instances;
         try {
             expect($intent($real))->toBe($realBefore)
                 ->and($realBefore)->not->toHaveKey('fleet_node')
                 ->and($fleetBefore)->not->toHaveKey('fleet_node')
-                ->and(array_diff_key($intent($fleet), ['fleet_node' => true]))->toBe($fleetBefore)
+                ->and($fleetBefore['folders'])->toBe(InstanceFolderPlan::for($folders))
+                // The fleet Node also mounts the shared folders unshifted, so its folder plans say so.
+                ->and(array_diff_key($intent($fleet), ['fleet_node' => true, 'folders' => true]))->toBe(array_diff_key($fleetBefore, ['folders' => true]))
+                ->and($intent($fleet)['folders'])->toBe(InstanceFolderPlan::for($folders, false))
+                ->and(array_column($intent($fleet)['folders'], 'shift'))->toBe(['false', 'false'])
                 ->and($intent($fleet)['fleet_node'])->toBeTrue();
         } finally {
             unlink($marker);
         }
+    });
+
+    // docs/reference/development-containers.md#shared-folders: an unshifted folder says so, and is another version of the same content.
+    it('marks each folder plan of unshifted mounts with shift false, under another version, and leaves the idmapped plans as they were', function (): void {
+        $folders = app(RecipeImageBuilds::class)->currentRecipe()->instances;
+        $shifted = InstanceFolderPlan::for($folders);
+        $unshifted = InstanceFolderPlan::for($folders, false);
+        foreach (['runtime', 'agent'] as $name) {
+            expect($shifted[$name])->not->toHaveKey('shift')
+                ->and($unshifted[$name]['shift'])->toBe('false')
+                ->and($unshifted[$name]['version'])->not->toBe($shifted[$name]['version'])
+                ->and(array_diff_key($unshifted[$name], ['shift' => true, 'version' => true]))->toBe(array_diff_key($shifted[$name], ['version' => true]));
+        }
+        expect(InstanceFolderPlan::for($folders, true))->toBe($shifted);
     });
 
     // docs/reference/development-containers.md#instance-host-in-the-fleet: the refresh rebuilds the host when this digest moves.

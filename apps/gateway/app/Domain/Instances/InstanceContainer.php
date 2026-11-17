@@ -205,7 +205,7 @@ final readonly class InstanceContainer
             $server->assertPinned($folders);
             $port = self::nextT3Port($node);
         }
-        $plan = InstanceFolderPlan::for($folders);
+        $plan = InstanceFolderPlan::for($folders, InstanceFolderPlan::shift($node));
 
         return InstanceRuntime::query()->create([
             'instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => $incusProject,
@@ -392,8 +392,8 @@ final readonly class InstanceContainer
                 'security.acls' => InstanceHostIntent::NicAcl.','.$runtime->container_name,
                 'security.acls.default.egress.action' => 'reject', 'security.acls.default.ingress.action' => 'reject',
                 ...InstanceHostIntent::NicFilters],
-            'orbit-runtime' => ['type' => 'disk', 'source' => InstanceHostIntent::RuntimeFolder, 'path' => InstanceHostIntent::RuntimeFolder, 'readonly' => 'true', 'shift' => 'true'],
-            'orbit-agent' => ['type' => 'disk', 'source' => InstanceHostIntent::AgentFolder, 'path' => InstanceHostIntent::AgentFolder, 'readonly' => 'true', 'shift' => 'true'],
+            'orbit-runtime' => InstanceFolderPlan::device(InstanceHostIntent::RuntimeFolder, $instance->node),
+            'orbit-agent' => InstanceFolderPlan::device(InstanceHostIntent::AgentFolder, $instance->node),
             ...($runtime->t3_port === null ? [] : [self::T3Device => ['type' => 'proxy',
                 'listen' => 'tcp:'.ValidatedData::string($instance->node->wireguard_ip).':'.$runtime->t3_port,
                 'connect' => 'tcp:'.$runtime->bridge_address.':'.InstanceHostIntent::T3Port, 'nat' => 'true']]),

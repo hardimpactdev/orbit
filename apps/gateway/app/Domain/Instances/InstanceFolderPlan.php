@@ -8,11 +8,12 @@ use App\Infrastructure\MachineSoftware\FolderPin;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
 use App\Infrastructure\MachineSoftware\VitePlusHome;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
+use App\Models\Node;
 
 /**
  * The two shared folders as a container host installs them (docs/reference/development-containers.md#shared-folders). A folder's
  * version is a digest of everything in it, so any change to a pin, a program path or a note is a new version beside the old one;
- * the host then flips the folder's `current` link to it.
+ * the host then flips the folder's `current` link to it. A Node whose containers mount the folders unshifted gets plans that say so.
  */
 final readonly class InstanceFolderPlan
 {
@@ -20,15 +21,38 @@ final readonly class InstanceFolderPlan
      * @return array{runtime: array{path: string, version: string, parts: list<array<string, mixed>>},
      *     agent: array{path: string, version: string, parts: list<array<string, mixed>>, notes: array<string, string>}}
      */
-    public static function for(InstanceFolders $folders): array
+    public static function for(InstanceFolders $folders, bool $shift = true): array
     {
+        // Unshifted folders carry `shift: false`, so their versions differ: the agent's programs are open to everyone there.
+        $mount = $shift ? [] : ['shift' => 'false'];
         $runtime = ['path' => InstanceHostIntent::RuntimeFolder, 'parts' => [...self::parts($folders->runtime), ...self::php($folders)]];
         if ($folders->vitePlus instanceof VitePlusHome) {
             $runtime = self::vitePlus($runtime, $folders->vitePlus);
         }
-        $agent = ['path' => InstanceHostIntent::AgentFolder, 'parts' => self::parts($folders->agent), 'notes' => InstanceNotes::all()];
+        $runtime = [...$runtime, ...$mount];
+        $agent = ['path' => InstanceHostIntent::AgentFolder, 'parts' => self::parts($folders->agent), 'notes' => InstanceNotes::all(), ...$mount];
 
         return ['runtime' => ['version' => self::version($runtime), ...$runtime], 'agent' => ['version' => self::version($agent), ...$agent]];
+    }
+
+    /**
+     * Whether the containers on the Node mount the folders idmapped: the one rule for the profile, the start guard and the clone. An
+     * idmapped mount fails a third level below the host, so an Instance fleet Node mounts them unshifted
+     * (docs/reference/development-containers.md#instance-host-in-the-fleet).
+     */
+    public static function shift(Node $node): bool
+    {
+        return ! ContainerNodes::fleetNode($node);
+    }
+
+    /**
+     * The read-only disk device of a shared folder in every container on the Node, as the profile mounts it.
+     *
+     * @return array<string, string>
+     */
+    public static function device(string $path, Node $node): array
+    {
+        return ['type' => 'disk', 'source' => $path, 'path' => $path, 'readonly' => 'true', 'shift' => self::shift($node) ? 'true' : 'false'];
     }
 
     /**

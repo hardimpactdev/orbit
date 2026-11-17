@@ -233,7 +233,7 @@ final readonly class InstanceHostIntent
             ...($nested ? ['nested' => ['project' => InstancePlacement::NestedProject, 'image' => InstanceImage::for($gateway, $incus)]] : []),
             // The shared-folder refresh restarts running containers in every project that the Node's runtimes record.
             ...($nestedRuntimes > 0 ? ['runtime_projects' => InstancePlacement::projects()] : []),
-            'folders' => InstanceFolderPlan::for($folders),
+            'folders' => InstanceFolderPlan::for($folders, InstanceFolderPlan::shift($node)),
             // The presented machine name of each container on the Node, which the converge writes into its files (InstanceMachineName).
             'machine_names' => InstanceMachineName::forNode($node),
             // What the Node's Caddy serves, which a CI Node does not run: the redirect of agent development ports on the WireGuard
