@@ -1244,7 +1244,7 @@ The copy step writes T3's files into the stopped copy before its first start. Fi
 
 Before the first start, Orbit checks the stopped copy's on-disk ID map. A restricted Incus project strips that map during a local copy. On Nodes without idmapped mounts, the files still hold the source's shifted IDs. When the copy records an empty map and the source records a shift, Orbit unshifts the copied rootfs on a `dir` pool. Incus can then shift it to the copy's own map at start.
 
-This preserves owners, setuid and setgid modes, named POSIX ACL entries and file capability root IDs. IDs outside the source map stay unchanged, so a retry can finish a partial pass. Sources with an empty map, including Nodes using idmapped mounts, need no change. Another pool driver in this state refuses before start with `instance.clone_idmap_unshift_unsupported`.
+This preserves owners, setuid and setgid modes, named POSIX ACL entries and file capability root IDs. IDs outside the source map stay unchanged. If normalization fails, Orbit deletes the incomplete copy and fails the create with its error code. A retry copies the seed again; it never resumes partially restored metadata. Sources with an empty map, including Nodes using idmapped mounts, need no change. Another pool driver in this state refuses before start with `instance.clone_idmap_unshift_unsupported`.
 
 The drop-in turns off T3's default dependencies. T3 then starts after `nftables.service`, the local file systems, the journal socket and `systemd-sysctl.service`, and stops before shutdown. T3 skips the wait for `sysinit.target`, which udev's trigger holds about 0.6 s in a container. `Requires=nftables.service` stays in the unit, so T3 still starts only with its firewall.
 
@@ -3215,7 +3215,7 @@ Each phase runs on the Node and reaches the inner Incus with `incus exec` into t
 | Resume | `instance-fleet-resume.yml` | Runs the start, then waits for readiness: the fleet after a passed refresh, or the fleet of a restored seed |
 | Reset | `instance-fleet-reset.yml` | Stops the three nested containers at once and restores `base` on each. Then it runs the start, migrates the nested Gateway forward and waits for readiness |
 
-Fleet start first ensures the managed user's Incus socket access on its Instance hosts ([Instance host in the fleet](#instance-host-in-the-fleet)). It then runs `php artisan gateway:known-hosts:sync` as `orbit` in the nested Gateway. The internal command restores the Gateway's SSH `known_hosts` from Node records that pin a WireGuard address, host-key type, key and fingerprint. It scans no host, retains unrelated entries and reports `{"changed": true}` only when it repairs the file. A current file is left in place. This supplies direct Gateway reads in fleets whose Nodes bypassed enrollment.
+Fleet start first ensures the managed user's Incus socket access on its Instance hosts ([Instance host in the fleet](#instance-host-in-the-fleet)). It then runs `php artisan gateway:known-hosts:sync` as `orbit` in the nested Gateway. The internal command restores the Gateway's SSH `known_hosts` from Node records that pin a WireGuard address, host-key type, key and fingerprint. It scans no host, retains unrelated entries and reports `{"changed": true}` only when it repairs the file. A file is current only when its pins match, its mode is `0600` and its directory mode is `0700`. Permission repairs also report a change. This supplies direct Gateway reads in fleets whose Nodes bypassed enrollment.
 
 The fleet rules:
 
@@ -3391,8 +3391,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
 | `instance.clone_trust_bundle_refused` | 502 | A clone's copy has no regular `/etc/ssl/certs/ca-certificates.crt`, or the file API could not read it. The create stops before the copy starts |
 | `instance.clone_t3_files_refused` | 502 | A folder or JSON file of [T3's files](#t3-starts-with-the-copy) in a clone's copy is a link or of another type. The create stops before the copy starts |
-| `instance.clone_idmap_unshift_unsupported` | 502 | A copied rootfs needs its source's ownership shift removed, but its storage pool does not use the `dir` driver. The copy stays stopped |
-| `instance.clone_idmap_unshift_failed` | 502 | Orbit could not read or normalize a stopped copy's ownership, permissions, ACLs or capabilities before its first start. The copy stays stopped |
+| `instance.clone_idmap_unshift_unsupported` | 502 | A copied rootfs needs its source's ownership shift removed, but its storage pool does not use the `dir` driver. The incomplete copy is deleted |
+| `instance.clone_idmap_unshift_failed` | 502 | Orbit could not read or normalize a stopped copy's ownership, permissions, ACLs or capabilities before its first start. The incomplete copy is deleted so a retry copies the seed again |
 | `instance.clone_private_names_failed` | 502 | A clone's create could not read, render or write `/etc/hosts` right after the copy's first start. The create's failure step stops the copy, and a retry writes it again |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
