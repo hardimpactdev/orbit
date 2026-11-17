@@ -79,9 +79,11 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 3262
+cost = 3174
 slices = 77
 inputs = [
+  # Exercise every case when the workflow changes its runner or concurrency policy.
+  ".github/workflows/ci.yml",
   "swamp/ansible/instance_fleet_shrink.py",
   "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",
@@ -156,7 +158,7 @@ inputs = [
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken" = 27 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base" = 46 # ESTIMATE: local 21s x 2.1, rounded up, plus 1s
   "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge only after the base converges ended" = 37 # ESTIMATE: local 17s x 2.1, rounded up, plus 1s
-  "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s" = 113 # ESTIMATE: local 53s x 2.1, rounded up, plus 1s
+  "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s" = 25 # ESTIMATE: short pending sequence, local 11.33s x 2.1, rounded up, plus 1s
   "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only" = 31 # ESTIMATE: local 14s x 2.1, rounded up, plus 1s
   "a fleet without worker c remints at once and names it incomplete" = 22 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints" = 6 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s

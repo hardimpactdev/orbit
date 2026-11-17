@@ -47,7 +47,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, task handoff pushes and manual runs use the same fast checks. Main can [reuse a green PR tree](#reuse-a-green-pr-tree-on-main).
 
-Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units on the shared Sabre and Shark runner pool. [Tool-dependent fixture shards](#self-hosted-fixture-shards) keep their own two-worker packing; ordinary shards keep four workers. Fork pull requests run ordinary shards on GitHub-hosted runners. Self-hosted fixture jobs use the managed Deno and Python installations and persistent local fixture-tools cache; hosted jobs install and cache their tools in Actions.
+Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units on the shared Sabre and Shark runner pool. Ordinary and [tool-dependent fixture shards](#self-hosted-fixture-shards) both pack and run two workers. Fork pull requests run ordinary shards on GitHub-hosted runners. Self-hosted fixture jobs use the managed Deno and Python installations and persistent local fixture-tools cache; hosted jobs install and cache their tools in Actions.
 
 Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees. The expression-end fixture reads every workflow file and fails when an expression holds a `}}` before its end, because Swamp ends a `${{ … }}` expression at the first `}}`. Any change under `swamp/workflows` selects it.
 
@@ -195,7 +195,9 @@ Each registry entry of a `self_hosted` file names the source of its cost:
 - When the unit ceiling cut such a case, it costs the larger of its cut time and the scaled cost.
 - A file or case that no pool run has reached keeps its hosted cost until a pool run measures it.
 
-Tool-dependent shards retain their limit, `self_hosted_shards` in `[budget]`. Both shard classes also share `runner_shards = 9`, matching the pool, so one run cannot schedule a second wave behind its own fixture jobs. Mandatory cases reserve capacity first; named capacity gaps stay last. This admission bound does not reserve runners against other workflows: push-to-Required measurements include any queue delay. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
+Tool-dependent shards retain their limit, `self_hosted_shards` in `[budget]`. Both shard classes also share `runner_shards = 18`, the maximum number of planned fixture jobs in one run. Mandatory cases reserve capacity first; named capacity gaps stay last.
+
+After admission, a plan with more than one shard uses spare planned shards to spread its admitted units into shorter lanes. This keeps the small machinery canary in one job and does not admit extra gap cases or change costs. This admission bound does not reserve runners against other workflows: push-to-Required measurements include any queue delay. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
 
 `capacity_gap` in the `[budget]` of `checks.toml` lists the self-hosted files that cannot fit the self-hosted shards when selected; [ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) names each one with its reason. The planner admits a gap file after all other work. Its units that fit run. The plan summary names the rest: `Not run: <file>, N units, reason: capacity gap per ADR 0262`. They do not fail `Required checks`.
 
@@ -244,11 +246,15 @@ Such a change selects the fixtures whose own code it touches, plus the machinery
 
 A canary file must be a registered hosted fixture; `bin/ci-units plan` refuses a list that names an unregistered or `self_hosted` file, or that needs more than one shard.
 
-`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most nine fixture jobs across both shard classes per run.
+`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill two lanes per shard, each with at most 150 declared seconds, with at most eighteen fixture jobs across both shard classes per run.
 
-Ordinary fixture jobs run on the shared Sabre and Shark pool, with nine runners total. Each ordinary shard runs up to four units at once; tool-dependent shards run two. Both classes count against the planner's nine-job bound, so a run fits one wave when the pool is idle. Other jobs and proof holds can still occupy places; measure queue delay as part of the five-minute push-to-Required limit. A file can declare a larger slice count when its cases need finer slices.
+Ordinary fixture jobs run on the shared Sabre and Shark pool. Each host has six physical cores with twelve CPU threads and at most four active runners. Each runner has three disjoint CPU threads from three different cores and two fixture workers; eight workers per host leave room for Ansible child processes. Extra runner containers stay stopped with their listener and autostart disabled. Both classes count against the planner's eighteen-job bound; jobs beyond the eight active runners wait for a place.
 
-For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per case, so a long refresh cannot share its unit with another refresh.
+Four concurrent Ansible units on a shared runner can exceed the unit ceiling even when each case passes alone. The complete fleet fixture names the CI workflow as an input, so workflow changes exercise every fleet case.
+
+Fork shards use the same two-lane plan on GitHub-hosted runners. Other jobs and proof holds can still occupy places; measure queue delay as part of the five-minute push-to-Required limit. A file can declare a larger slice count when its cases need finer slices.
+
+For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per case, so a long refresh cannot share its unit with another refresh. Its host-converge case checks the rendered 360-retry budget and polls through pending to success; it does not spend 200 subprocess calls just to cross the shorter base-converge budget.
 
 A slice takes every n-th case, so a new case can move two long cases into one slice; then raise the slice count until no slice is above the lane budget. A slice count equal to the number of retained cases always meets this: each case gets its own slice.
 

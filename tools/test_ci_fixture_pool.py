@@ -1,5 +1,6 @@
-"""Fixture matrices share nine runner places without admitting fork code or a second wave."""
+"""Fixture matrices share eighteen planned shards without admitting fork code or losing units."""
 from pathlib import Path
+import heapq
 import sys
 import unittest
 
@@ -60,10 +61,52 @@ class FixturePoolTest(unittest.TestCase):
         self.assertTrue(any(step.get('run', '').startswith('bin/ci-units run ') for step in job['steps']))
         self.assertEqual(['self-hosted', 'hardimpact', 'orbit-shard'], workflow['jobs']['self-hosted-fixtures']['runs-on'])
         budget, _, _ = units.configuration()
-        self.assertEqual(9, budget['runner_shards'])
+        self.assertEqual(18, budget['runner_shards'])
         self.assertEqual((150, 180, 190, 240), tuple(budget[key] for key in
                          ('shard_seconds', 'unit_ceiling_seconds', 'shard_deadline_seconds', 'shard_ceiling_seconds')))
-        self.assertEqual((4, 2), (budget['shard_workers'], budget['self_hosted_workers']))
+        self.assertEqual((2, 2), (budget['shard_workers'], budget['self_hosted_workers']))
+
+    def test_shared_policy_runs_the_whole_fleet_in_two_lane_shards(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/ansible_instance_fleet_test.ts'
+        plan = units.plan(['.github/workflows/ci.yml'], budget, fixtures, defaults)
+        self.assertNotIn('capacity', plan)
+        selected = units.planned_units(plan)
+        expected = [name for name, _ in units.units_for(fixtures[file], budget)]
+        self.assertEqual(77, len(expected))
+        self.assertEqual(set(expected), {name for name in selected if name.split('#')[0] == file})
+        self.assertEqual(18, len(plan['shards']) + len(plan['self_hosted_shards']))
+        costs = {name: cost for fixture in fixtures.values() for name, cost in units.units_for(fixture, budget)}
+        for shard in plan['shards'] + plan['self_hosted_shards']:
+            self.assertEqual(2, units.shard_workers(shard['units'], budget, fixtures))
+            lanes = [0, 0]
+            for name in shard['units']:
+                heapq.heappush(lanes, heapq.heappop(lanes) + costs[name])
+            self.assertLessEqual(max(lanes), budget['shard_seconds'])
+
+
+    def test_host_input_places_all_updates_units_without_capacity_failure(self):
+        budget, fixtures, defaults = units.configuration()
+        plan = units.plan(['swamp/ansible/tasks/instance-host.yml'], budget, fixtures, defaults)
+        file = 'swamp/tests/ansible_instance_host_updates_test.ts'
+        expected = {name for name, _ in units.units_for(fixtures[file], budget)}
+        self.assertEqual(4, len(expected))
+        self.assertEqual(expected, {name for name in units.planned_units(plan) if name.split('#')[0] == file})
+        self.assertNotIn('capacity', plan)
+        self.assertEqual([], units.unplaced_units(plan))
+        self.assertLessEqual(len(plan['shards']) + len(plan['self_hosted_shards']), budget['runner_shards'])
+
+
+    def test_spare_places_shorten_lanes_without_changing_admitted_units(self):
+        budget = {**BUDGET, 'runner_shards': 3, 'pr_shards': 3, 'shard_workers': 2}
+        rows = [(f'unit{i}', 50, 0) for i in range(12)]
+        self.assertEqual(2, len(units.pack(rows, budget)))
+        result = units.spread({False: rows, True: []}, budget)
+        self.assertEqual(3, len(result[False]))
+        self.assertEqual(sorted(name for name, _, _ in rows),
+                         sorted(name for shard in result[False] for name in shard['units']))
+        self.assertTrue(all(len(shard['units']) == 4 for shard in result[False]))
+        self.assertEqual([], result[True])
 
 
 if __name__ == '__main__':
