@@ -5,6 +5,9 @@
  *
  * - `systemctl show -p NeedDaemonReload --value t3.service` prints `yes` for a container in the state's `need_reload`.
  * - `systemctl daemon-reload` takes the container out of `need_reload`.
+ * - `systemctl is-active t3.service` prints `inactive` (exit 3) for a container in `t3_inactive`, else `active`.
+ * - The agent's thread list (`runuser -u agent ... node - PROGRAM`) prints one `running` thread for a container in `t3_busy`, fails
+ *   for one in `t3_list_fail`, and prints no thread otherwise. Both checks go to the state's `t3_checks`, not to `calls`.
  * - `systemctl try-restart t3.service` without the agent folder's `.restart` mark, the restart for a new drop-in alone, is recorded in
  *   `folder_restarts` as the shared fake records the folder's own restarts. A name in `fail_restarts` refuses the call instead.
  */
@@ -23,7 +26,8 @@ const marked = () => {
 };
 const own = args[0] === "exec" && !args.includes("--user") && command[0] === "systemctl" && (
     (command[1] === "show" && command.includes("NeedDaemonReload")) || command[1] === "daemon-reload"
-    || (command[1] === "try-restart" && command[2] === "t3.service" && !marked()));
+    || (command[1] === "try-restart" && command[2] === "t3.service" && !marked()) || (command[1] === "is-active" && command[2] === "t3.service"))
+    || (args[0] === "exec" && command[0] === "/usr/sbin/runuser" && command.includes("node"));
 
 if (!own) {
     const shared = new Deno.Command(Deno.execPath(), {
@@ -35,6 +39,22 @@ if (!own) {
 
 const file = `${folder}/state.json`;
 const state = JSON.parse(Deno.readTextFileSync(file));
+if (command[0] === "/usr/sbin/runuser" || command[1] === "is-active") {
+    state.t3_checks ??= [];
+    state.t3_checks.push({ name, check: command[1] === "is-active" ? "is-active" : "list", program: command.at(-1) });
+    Deno.writeTextFileSync(file, JSON.stringify(state));
+    if (command[1] === "is-active") {
+        const inactive = (state.t3_inactive ?? []).includes(name);
+        console.log(inactive ? "inactive" : "active");
+        Deno.exit(inactive ? 3 : 0);
+    }
+    if ((state.t3_list_fail ?? []).includes(name)) {
+        console.error("injected T3 list failure");
+        Deno.exit(1);
+    }
+    console.log(JSON.stringify((state.t3_busy ?? []).includes(name) ? [{ threadId: `thread-${name}`, status: "running" }] : []));
+    Deno.exit(0);
+}
 Deno.writeTextFileSync(`${folder}/calls`, JSON.stringify(Deno.args) + "\n", { append: true });
 if (command[1] === "show") {
     console.log((state.need_reload ?? []).includes(name) ? "yes" : "no");

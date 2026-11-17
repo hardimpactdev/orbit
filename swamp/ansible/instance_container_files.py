@@ -28,7 +28,8 @@ Nothing restarts: every later process reads the files by itself.
 (InstanceContainer::t3DropIns) through the file API, uid 0, gid 0, only where the text differs, running, stopped or frozen. A running
 container with a new drop-in runs `systemctl daemon-reload` and joins the Node's restart list, `state`; `reload` names the whole list.
 The agent folder's step then restarts each running T3 there once, with the folder's own restart if one is due, and removes only
-completed entries (instance-folder.yml). A frozen or stopped container stays on the list; a vanished container leaves it. A run
+completed entries (`t3_restart` mode, from instance-folder.yml). Right before each restart it asks that T3 for its threads: a T3 with
+an open turn, or whose list fails while its unit is active, does not restart and stays on the list until a converge finds it idle. A frozen or stopped container stays on the list; a vanished container leaves it. A run
 that fails between the reload and the restart leaves outstanding entries, so a later converge restarts them.
 A stopped container reads the drop-in at its next boot, and a
 frozen one, which refuses `incus exec`, at the first converge that finds it running and its unit not reloaded (NeedDaemonReload). The agent-owned files of a create (T3's settings, `.claude.json`,
@@ -337,9 +338,87 @@ def t3_files(entries, state):
     return 0
 
 
+# The run states of a T3 thread whose turn is open: task-copy-turn.yml settles the same set.
+T3_OPEN = ("preparing", "queued", "starting", "running", "waiting")
+# Every project's threads, as the server itself lists them. The Conn Server's `thread list` without `--project` lists them all. T3
+# 0.1.7's lists one project and T3 has no project list, so the script reads the project ids from T3's own state, read-only, and
+# asks T3 for each. Runs as agent in the container, on stdin of the runtime folder's Node; prints one JSON list of every thread.
+T3_THREADS = r"""
+const { execFileSync } = require("node:child_process");
+const program = process.argv.at(-1);
+const list = (...project) => JSON.parse(execFileSync(program, ["thread", "list", ...project, "--json"], { encoding: "utf8", timeout: 20000 }));
+let threads;
+if (program.endsWith("/conn-server")) {
+    threads = list();
+} else {
+    const { DatabaseSync } = require("node:sqlite");
+    const db = new DatabaseSync(process.env.HOME + "/.t3/userdata/statev2.sqlite", { readOnly: true });
+    const ids = db.prepare("SELECT project_id FROM projection_projects WHERE deleted_at IS NULL").all().map((row) => row.project_id);
+    db.close();
+    threads = ids.flatMap((id) => list("--project", id));
+}
+process.stdout.write(JSON.stringify(threads));
+"""
+
+
+def t3_busy(project, name, program):
+    """Why T3 in the running container must not restart now, or None: an open turn, or a list that failed while its unit is active."""
+    try:
+        if incus("exec", "--project", project, name, "--", "systemctl", "is-active", "t3.service", ok=(0, 3, 4),
+                 timeout=30).stdout.strip() != "active":
+            return None
+        listed = incus("exec", "--project", project, name, "--cwd", "/home/agent", "--", "/usr/sbin/runuser", "-u", "agent", "--",
+                       "/usr/bin/env", "-i", "HOME=/home/agent", "PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin",
+                       "/usr/bin/timeout", "60", "node", "-", program, stdin=T3_THREADS, timeout=90)
+        threads = json.loads(listed.stdout)
+    except (IncusFailure, subprocess.TimeoutExpired, ValueError) as failure:
+        return f"T3 is active and its thread list failed: {str(failure)[:200]}"
+    open_turns = sorted({thread.get("threadId", "?") for thread in threads if thread.get("status") in T3_OPEN})
+    return f"open turn in {', '.join(open_turns)}" if open_turns else None
+
+
+def t3_restart(targets, t3_files, state):
+    """The agent folder's T3 restarts (`t3_restart` mode): each running target whose T3 has no open turn restarts; a busy or failed one
+    stays on the Node's restart list, `state`, for a later converge. Prints {restarted, deferred, failed}; a failed restart fails the
+    run after every other target had its turn."""
+    state_file = Path(state)
+    pending = json.loads(state_file.read_text()) if state_file.is_file() else []
+    programs = {(entry["project"], entry["container"]): entry["program"] for entry in t3_files}
+    summary = {"restarted": [], "deferred": [], "failed": []}
+    for target in targets:
+        project, name = target["project"], target["name"]
+        entry = {"project": project, "name": name}
+        # A container the Gateway names no T3 for has none: nothing to ask.
+        reason = t3_busy(project, name, programs[(project, name)]) if (project, name) in programs else None
+        if reason is None:
+            try:
+                incus("exec", "--project", project, name, "--", "systemctl", "try-restart", "t3.service")
+                summary["restarted"].append(entry)
+                pending = [held for held in pending if held != entry]
+                continue
+            except IncusFailure as failure:
+                summary["failed"].append(f"{project}/{name}: {failure}")
+        else:
+            summary["deferred"].append({**entry, "reason": reason})
+        if entry not in pending:
+            pending.append(entry)
+    if pending:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps(pending) + "\n")
+    elif state_file.is_file():
+        state_file.unlink()
+    if summary["failed"]:
+        print(json.dumps({"error_code": "instance.host_unavailable", **summary}))
+        return 1
+    print(json.dumps(summary))
+    return 0
+
+
 if __name__ == "__main__":
     spec = json.loads(sys.argv[1])
     if spec.get("mode") == "t3":
         sys.exit(t3_files(spec["t3_files"], spec["state"]))
+    if spec.get("mode") == "t3_restart":
+        sys.exit(t3_restart(spec["targets"], spec["t3_files"], spec["state"]))
     sys.exit(converge(spec["projects"], spec["files"], spec["trust"], spec["browser_trust"], spec["libraries"], spec["state"],
                       spec["machine_names"], spec["machine_name_code"]))

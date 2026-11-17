@@ -190,7 +190,8 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($intent['profile_config'])->toHaveCount(count(InstanceImage::environment('10.253.0.1')) + 1);
     });
 
-    // docs/reference/development-containers.md#existing-containers: the converge rewrites a changed drop-in in every container with a T3.
+    // docs/reference/development-containers.md#existing-containers: the converge rewrites a changed drop-in in every container with a T3,
+    // and asks that container's program for open turns before it restarts T3 there.
     it('hands the converge the unit drop-ins of each container with a T3, as a clone\'s create writes them, and none of a default', function (): void {
         $node = instanceHostNode();
         config(['instances.container_nodes' => [$node->id]]);
@@ -214,13 +215,13 @@ describe('the container branch of the app-dev converge', function (): void {
         $files = app(InstanceHostIntent::class)->for($node->refresh())['t3_files'];
 
         expect($files)->toBe([
-            ['project' => 'orbit-instances', 'container' => $t3->container_name, 'files' => [
+            ['project' => 'orbit-instances', 'container' => $t3->container_name, 'program' => '/opt/orbit-agent/current/agent/bin/t3', 'files' => [
                 ['path' => InstanceContainer::T3BootDropIn, 'mode' => '0644', 'content' => $boot],
                 ['path' => InstanceContainer::ServerDropIn, 'mode' => '0644',
                     'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3{$serve}\n"],
             ]],
             // A Conn container's server drop-in carries the preview browser of the recipe's agent folder.
-            ['project' => 'orbit-instances-nested', 'container' => $conn->container_name, 'files' => [
+            ['project' => 'orbit-instances-nested', 'container' => $conn->container_name, 'program' => '/opt/orbit-agent/current/agent/bin/conn-server', 'files' => [
                 ['path' => InstanceContainer::T3BootDropIn, 'mode' => '0644', 'content' => $boot],
                 ['path' => InstanceContainer::ServerDropIn, 'mode' => '0644',
                     'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server{$serve}\n"

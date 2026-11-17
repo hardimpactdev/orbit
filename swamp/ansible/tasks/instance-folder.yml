@@ -185,7 +185,8 @@
   register: folder_flip
 
 # The agent folder's step also restarts T3 in each running container whose unit drop-in changed and was reloaded
-# (the T3 drop-in step of instance-host.yml): with the folder's restart, which reaches it anyway, or alone. Either way T3 restarts once.
+# (the T3 drop-in step of instance-host.yml): with the folder's restart, which reaches it anyway, or alone. Either way T3 restarts once,
+# and never while it has an open turn: that container waits on the Node's list for a converge that finds it idle.
 - name: Restart what runs from the folder in each running container
   when: folder_restart.stat.exists or (folder_name == 'agent' and instance_t3_reload | length > 0)
   block:
@@ -209,38 +210,34 @@
             {%- endif -%}
           {%- endfor -%}
           {{ running }}
-    - name: Restart the targets and retain unfinished T3 restarts
-      block:
-        - name: Restart them one after another
-          ansible.builtin.command:
-            argv: >-
-              {{ ['incus', 'exec', '--project', item.project, item.name, '--', 'systemctl', 'try-restart']
-                 + (['t3.service'] if folder_name == 'agent' else ['orbit-*.service']) }}
-          loop: "{{ folder_targets }}"
-          loop_control: { label: "{{ item.project }}/{{ item.name }}" }
-          register: folder_restarted
-          changed_when: true
-      always:
-        # A later target may fail. Acknowledge successes even then, and keep frozen, stopped and failed targets for another run.
-        - name: Keep only outstanding T3 restarts
-          when: folder_name == 'agent' and instance_t3_reload | length > 0
-          block:
-            - name: Name the outstanding T3 restarts
-              ansible.builtin.set_fact:
-                instance_t3_pending: >-
-                  {{ instance_t3_reload | difference(folder_restarted.results | default([])
-                     | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | map(attribute='item') | list) }}
-            - name: Store the outstanding T3 restart list
-              when: instance_t3_pending | length > 0 and instance_t3_pending != instance_t3_reload
-              ansible.builtin.copy:
-                dest: /var/lib/orbit/instance-t3-restart.json
-                content: "{{ instance_t3_pending | to_json }}\n"
-                owner: root
-                group: root
-                mode: "0644"
-            - name: Clear the completed T3 restart list
-              when: instance_t3_pending | length == 0
-              ansible.builtin.file: { path: /var/lib/orbit/instance-t3-restart.json, state: absent }
+    - name: Restart them one after another
+      when: folder_name != 'agent'
+      ansible.builtin.command:
+        argv: "{{ ['incus', 'exec', '--project', item.project, item.name, '--', 'systemctl', 'try-restart', 'orbit-*.service'] }}"
+      loop: "{{ folder_targets }}"
+      loop_control: { label: "{{ item.project }}/{{ item.name }}" }
+      changed_when: true
+    # instance_container_files.py `t3_restart` asks each target's T3 for its threads right before its restart. A T3 with an open turn,
+    # or whose list fails while it runs, does not restart: it stays on the Node's list, with the frozen, stopped and failed targets,
+    # until a converge finds it idle. Restarted targets leave the list; the run fails after every target had its turn if one failed.
+    - name: Restart T3 where no turn is open and keep the others on the Node's list
+      when: folder_name == 'agent'
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -I
+          - "-"
+          - >-
+            {{ {'mode': 't3_restart', 'targets': folder_targets, 'state': '/var/lib/orbit/instance-t3-restart.json',
+                't3_files': instances.t3_files | default([])} | to_json }}
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_container_files.py') }}"
+      register: folder_t3_restart
+      changed_when: (folder_t3_restart.stdout | from_json).restarted | length > 0
+      failed_when: folder_t3_restart.rc != 0
+    - name: Report the T3 restarts deferred for an open turn
+      when: folder_name == 'agent' and (folder_t3_restart.stdout | from_json).deferred | length > 0
+      ansible.builtin.debug:
+        msg: "{{ {'t3_restart': folder_t3_restart.stdout | from_json} }}"
     - name: Clear the restart mark
       when: folder_restart.stat.exists
       ansible.builtin.file: { path: "{{ folder.path }}/.restart", state: absent }

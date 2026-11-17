@@ -28,6 +28,9 @@ async function deb(folder: string, name: string, files: Record<string, string>) 
     };
 }
 
+/** The T3 program each t3_files entry names, as the Gateway's ContainerServer::program() does. */
+const program = "/opt/orbit-agent/current/agent/bin/t3";
+
 const shared = [
     { path: "/etc/ld.so.conf.d/zz-orbit-browser.conf", content: "# Managed by Orbit.\n/opt/orbit-runtime/current/lib\n", uid: 0, gid: 0, mode: "0644", existing: true },
     { path: "/etc/fonts/fonts.conf", content: "<fontconfig><dir>/opt/orbit-runtime/current/fonts</dir></fontconfig>\n", uid: 0, gid: 0, mode: "0644", existing: true },
@@ -232,7 +235,7 @@ Deno.test({
                 [`${name}${server}`, { content: name === "app-current" ? old + "Environment=A=1\n" : old, mode: "0644", uid: "0", gid: "0" }]]));
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
             const pass = async (extra: string) => {
-                f.write({ ...f.instances, t3_files: names.map((container) => ({ project: "orbit-instances", container, files: [boot, text(extra)] })) });
+                f.write({ ...f.instances, t3_files: names.map((container) => ({ project: "orbit-instances", container, program, files: [boot, text(extra)] })) });
                 // The first pass with a container makes the fixture's call log.
                 const before = f.has("calls") ? f.calls().length : 0;
                 const run = await f.run();
@@ -300,7 +303,7 @@ Deno.test({
             state.instances.push(...names.map((name) => ({ project: "orbit-instances", name, status: "Running" })));
             state.files = Object.fromEntries(names.map((name) => [name + file.path, { content: "# stale\n", mode: "0644", uid: "0", gid: "0" }]));
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-            f.write({ ...f.instances, t3_files: names.map((container) => ({ project: "orbit-instances", container, files: [file] })) });
+            f.write({ ...f.instances, t3_files: names.map((container) => ({ project: "orbit-instances", container, program, files: [file] })) });
             const entry = (name: string) => ({ project: "orbit-instances", name });
             const pending = () => f.has("t3-restart.json") ? JSON.parse(Deno.readTextFileSync(`${f.folder}/t3-restart.json`)) : [];
             const host = `${f.folder}/tasks/instance-host.yml`;
@@ -345,6 +348,91 @@ Deno.test({
             assert(!f.has("t3-restart.json"));
             assertEquals(await pass(), []);
             assertEquals(f.state().folder_restarts.map((row: { name: string }) => row.name), ["app-done", "app-frozen", "app-stopped"]);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name: "a T3 with an open turn gets its drop-in and reload but no restart, stays on the Node's list as deferred, and restarts once when idle",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders"]);
+            Deno.writeTextFileSync(`${f.folder}/bin/incus`,
+                `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-host-t3-incus.ts", import.meta.url).pathname}' "$@"\n`);
+            const ready = await f.run();
+            assert(ready.ok, ready.output);
+            const server = "/etc/systemd/system/t3.service.d/20-orbit-server.conf";
+            const names = ["app-busy", "app-idle"];
+            const state = f.state();
+            state.instances.push(...names.map((name) => ({ project: "orbit-instances", name, status: "Running" })));
+            state.files = Object.fromEntries(names.map((name) => [name + server, { content: "# old\n", mode: "0644", uid: "0", gid: "0" }]));
+            state.t3_busy = ["app-busy"];
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+            const write = (content: string, only = names) =>
+                f.write({ ...f.instances, t3_files: only.map((container) => ({ project: "orbit-instances", container, program, files: [{ path: server, content, mode: "0644" }] })) });
+            const entry = (name: string) => ({ project: "orbit-instances", name });
+            const pending = () => f.has("t3-restart.json") ? JSON.parse(Deno.readTextFileSync(`${f.folder}/t3-restart.json`)) : [];
+            const exec = (name: string, ...command: string[]) => ["exec", "--project", "orbit-instances", name, "--", "systemctl", ...command];
+            const pass = async () => {
+                const before = f.has("calls") ? f.calls().length : 0;
+                const run = await f.run();
+                assert(run.ok, run.output);
+                return { run, execs: f.calls().slice(before).filter((call) => call[0] === "exec" && !call.includes("NeedDaemonReload")) };
+            };
+
+            // (a) Only the busy container: its drop-in is written and reloaded, but its T3 keeps running its turn.
+            write("# new\n", ["app-busy"]);
+            let { run, execs } = await pass();
+            assertEquals(f.state().files[`app-busy${server}`].content, "# new\n");
+            assertEquals(execs, [exec("app-busy", "daemon-reload")]);
+            assertEquals(pending(), [entry("app-busy")]);
+            assertStringIncludes(run.output, "open turn in thread-app-busy");
+            // T3 itself is asked, as agent, with the program the Gateway names.
+            assertEquals(f.state().t3_checks.filter((check: { check: string }) => check.check === "list").map((check: { program: string }) => check.program), [program]);
+
+            // (b) The turn ended: the next converge restarts that T3 once and empties the list; a third changes nothing.
+            const idle = f.state();
+            idle.t3_busy = [];
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(idle));
+            assertEquals((await pass()).execs, [exec("app-busy", "try-restart", "t3.service")]);
+            assert(!f.has("t3-restart.json"));
+            assertEquals((await pass()).execs, []);
+
+            // (c) An agent folder flip with one busy and one idle T3: only the idle one restarts, the busy one waits on the list.
+            const busyAgain = f.state();
+            busyAgain.t3_busy = ["app-busy"];
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(busyAgain));
+            write("# new\n");
+            const agent = f.instances.folders.agent;
+            Deno.writeTextFileSync(`${agent.path}/${agent.version}/old`, "a file the new version lacks");
+            f.instances.folders.agent = { ...agent, version: "444444444444" };
+            write("# new\n");
+            ({ run, execs } = await pass());
+            const restarted = execs.filter((call) => call.includes("try-restart")).map((call) => call[3]);
+            assert(restarted.includes("app-idle") && !restarted.includes("app-busy"), JSON.stringify(execs));
+            assertEquals(pending(), [entry("app-busy")]);
+            // Every target was restarted or listed, so the folder's restart mark is gone.
+            assert(!(() => { try { return Deno.statSync(`${agent.path}/.restart`).isFile; } catch { return false; } })());
+
+            // (d) A list that fails while T3 runs counts as busy: no blind restart.
+            const failing = f.state();
+            failing.t3_busy = [];
+            failing.t3_list_fail = ["app-busy"];
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(failing));
+            ({ run, execs } = await pass());
+            assertEquals(execs, []);
+            assertEquals(pending(), [entry("app-busy")]);
+            assertStringIncludes(run.output, "its thread list failed");
+            // A T3 that does not run needs no list: its try-restart is a no-op, and it leaves the list.
+            const stopped = f.state();
+            stopped.t3_inactive = ["app-busy"];
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(stopped));
+            assertEquals((await pass()).execs, [exec("app-busy", "try-restart", "t3.service")]);
+            assert(!f.has("t3-restart.json"));
         } finally {
             f.cleanup();
         }
