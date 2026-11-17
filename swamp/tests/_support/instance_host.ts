@@ -14,7 +14,7 @@ export function appAccountSwap(): string {
     const source = Deno.readTextFileSync(new URL("../../../apps/gateway/app/Domain/Instances/InstanceImage.php", import.meta.url));
     const expression = source.match(/public const string NestedAppGuard = (.*);/)![1];
     const files: Record<string, string> = {
-        TaskVmNestedFleet: "TaskVms/TaskVmNestedFleet.php",
+        NestedFleetLayout: "Instances/NestedFleetLayout.php",
         InstanceHostIntent: "Instances/InstanceHostIntent.php",
     };
     const guard = [...expression.matchAll(/'([^']*)'|(\w+)::(\w+)/g)].map((match) => {
