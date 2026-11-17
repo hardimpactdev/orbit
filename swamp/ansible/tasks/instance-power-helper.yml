@@ -45,7 +45,7 @@
       ReadWritePaths=-/var/lib/orbit/hibernation -/dev/shm/orbit/hibernation /sys/fs/cgroup
   register: power_helper_unit
 
-- name: Load the power helper unit properties
+- name: Load the power helper unit properties # noqa: no-handler -- the capability probe below needs the new properties
   ansible.builtin.systemd_service: { daemon_reload: true }
   when: power_helper_unit.changed
 

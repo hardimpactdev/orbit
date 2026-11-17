@@ -11,7 +11,7 @@
   ansible.builtin.file: { path: "{{ item }}", state: absent }
   loop: [/etc/systemd/system/orbit-task-vms-hub.service, /etc/orbit/task-vms/hub.nft]
   register: hub_filter_files
-- name: Forget the deleted hub filter unit
+- name: Forget the deleted hub filter unit # noqa: no-handler -- finish retiring the unit before subsequent hub work can fail
   when: hub_filter_files.results[0].changed
   ansible.builtin.systemd: { daemon_reload: true }
   changed_when: true

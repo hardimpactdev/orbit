@@ -2,8 +2,9 @@
 # The container branch of the app-dev role on a Node of the build list (docs/reference/compute-drivers.md#prepare-an-instance-container-host),
 # and of the ci-runner role on a CI Node that hosts proof copies (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node). The
 # Gateway sends `instances` only for such a Node, so every other Node runs none of this. A CI Node runs no Caddy: its intent has no
-# `dev_ports` and no `own_site`, so it gets no development port redirect, no own-site rules and no wake of frozen containers. It shares the kernel, Incus and container
-# side with a task container host, then installs the two shared folders and builds the image. It creates no Instance.
+# `dev_ports` and no `own_site`, so it gets no development port redirect, no own-site rules and no wake of frozen containers. It shares
+# the kernel, Incus and container side with a task container host, then installs the two shared folders and builds the image.
+# It creates no Instance.
 # The Node provides the Incus pool: ZFS, where a copy is a clone, or a directory pool on a nested proof Node, where a copy is a full copy.
 # A CI-only Node's converge creates it first (instance-pool-create.yml). An Instance fleet Node (`nested-app-dev`) gets Incus and a
 # directory pool first (instance-fleet-node.yml).
@@ -474,13 +475,16 @@
     - name: Record the failed nested-fleet image build
       ansible.builtin.copy:
         dest: /var/lib/orbit/instance-nested-image.json
-        content: "{{ {'error': 'nested image build failed', 'alias': instances.nested.image.alias, 'task': ansible_failed_task.name | default('')} | to_json }}\n"
+        content: "{{ {'error': 'nested image build failed', 'alias': instances.nested.image.alias,
+          'task': ansible_failed_task.name | default('')} | to_json }}\n"
         owner: root
         group: root
         mode: "0644"
     - name: Report the failed nested-fleet image build
       ansible.builtin.debug:
-        msg: "nested image build failed: {{ ansible_failed_task.name | default('') }}; nested-fleet creates refuse until a converge builds {{ instances.nested.image.alias }}"
+        msg: >-
+          nested image build failed: {{ ansible_failed_task.name | default('') }};
+          nested-fleet creates refuse until a converge builds {{ instances.nested.image.alias }}
 
 # Read-only end check: a later regression on any NIC fails convergence instead of silently opening an Instance.
 - name: Check every Instance bridge NIC at the end of the role
