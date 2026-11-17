@@ -74,7 +74,6 @@ jobs:
             # Only its validation is used: the guest phase builds the agent's own commands.
             intent: '${{ inputs.intent }}'
             node_id: '${{ inputs.node_id }}'
-            root: '${{ "/tmp/orbit-task-workspace-" + inputs.intent.workspace.snapshot_id }}'
       # The handoff check of a copy (docs/reference/tasks.md#the-handoff-check-merges-main-first): the same base phase as task:sync,
       # through the same child. A failed base never blocks the check: it runs on the tree as it is, and the result says so.
       - name: Bring in the base
@@ -180,7 +179,7 @@ jobs:
           behaviorName: '${{ ("task-instance-check-" + string(inputs.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}'
           methodName: execute
           inputs:
-            # No native successful run exists yet. The guest bounds each command as the task VM steps do
+            # No native successful run exists yet. The guest bounds each command
             # (setup by its own limit, Project and deliverables 3600 s, start-commit runs 600 s); this covers them.
             run: timeout 10800 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/task-instance-workspace.yml"
             env:

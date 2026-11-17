@@ -1,9 +1,9 @@
 order = 790
 cases = [
-  "only the mint workflow and the check push post to the Gateway mint",
+  "only the mint workflow posts to the Gateway mint",
   "every mint step names a purpose the Gateway issues and the run it belongs to",
   "a step reads a minted key only after the step that mints it",
-  "copy-only secret checks do not read the VM mint key, and losing that guard or reading the key is detected",
+  "copy secret checks do not read a minted key before the token exists",
 ]
 file = "swamp/tests/github_mint_test.ts"
 cost = 1

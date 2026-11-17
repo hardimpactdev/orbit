@@ -263,7 +263,7 @@ esac
 Deno.test("JavaScript repair replaces stale extracted runtimes and then skips matching state", async () => {
     const folder = await Deno.makeTempDir();
     try {
-        const allTasks = parse(await Deno.readTextFile(taskPath("task-vm-javascript"))) as Array<Record<string, unknown>>;
+        const allTasks = parse(await Deno.readTextFile(taskPath("node-converge-javascript"))) as Array<Record<string, unknown>>;
         const install = allTasks.find((task) => task.name === "Install the JavaScript tools")!;
         const block = install.block as Array<Record<string, unknown>>;
         const unpack = JSON.parse(JSON.stringify(block.find((task) => task.name === "Unpack the runtimes"))
@@ -419,7 +419,7 @@ Deno.test("the Tool helper runs with the pinned Deno of the Swamp Node, not with
         const { convergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
         await convergeInput(folder, 1, "/unused", toolHelper, []);
         const vars = parse(await Deno.readTextFile(`${folder}/vars.yml`)) as { converge_deno: string; converge_tool_helper: string };
-        const install = parse(await Deno.readTextFile(taskPath("task-vm-deno"))) as Array<{ block?: Array<Record<string, unknown>> }>;
+        const install = parse(await Deno.readTextFile(taskPath("node-converge-deno"))) as Array<{ block?: Array<Record<string, unknown>> }>;
         const launcher = install.flatMap((task) => task.block ?? []).find((task) => task.name === "Publish Deno")!["ansible.builtin.file"] as { dest: string };
         assertEquals(vars.converge_deno, launcher.dest);
         assertEquals(vars.converge_tool_helper, toolHelper);

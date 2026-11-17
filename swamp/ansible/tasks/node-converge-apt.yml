@@ -1,5 +1,5 @@
 ---
-# Packages install from the pinned Ubuntu snapshot through their own apt configuration; the VM's sources stay as they are.
+# Packages install from the pinned Ubuntu snapshot through their own apt configuration; the Node's sources stay as they are.
 - name: Read installed packages
   ansible.builtin.package_facts: { manager: apt }
 - name: Find the packages that miss their pin
@@ -26,7 +26,7 @@
 - name: Install what misses its pin
   when: ubuntu_missing | length > 0 or snapshot_missing | length > 0 or deb_missing | length > 0
   block:
-    - { name: Configure apt, ansible.builtin.import_tasks: task-vm-apt-config.yml }
+    - { name: Configure apt, ansible.builtin.import_tasks: node-converge-apt-config.yml }
     - name: Install the Ubuntu packages
       when: ubuntu_missing | length > 0 or snapshot_missing | length > 0
       ansible.builtin.apt:
