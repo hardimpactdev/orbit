@@ -56,6 +56,7 @@ if 'device' in args:
  sys.exit()
 args=args[args.index('--')+1:]
 if args[0]=='runuser':args=args[args.index('--')+1:]
+if args[:2]==['sh','-c'] and args[3:]==['orbit-app-user']:print('unchanged');sys.exit()
 if args[0]=='cat':
  p=root/'guest'/args[1].lstrip('/')
  if not p.exists():sys.exit(1)
@@ -346,6 +347,8 @@ class NodeRuntimeTest(unittest.TestCase):
         (self.root / 'instance_node_runtime.py').write_text(script)
         (self.root / 'tasks').mkdir()
         shutil.copy(ROOT / 'swamp/ansible/tasks/instance-node-runtime.yml', self.root / 'tasks')
+        (self.root / 'files').mkdir()
+        shutil.copy(ROOT / 'swamp/ansible/files/instance-app-user.sh', self.root / 'files')
         incus = self.root / 'incus'
         incus.write_text(FAKE_INCUS)
         incus.chmod(0o755)
@@ -368,6 +371,9 @@ class NodeRuntimeTest(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertIn('instance.node_runtime_prepare_failed', done.stdout + done.stderr)
         calls = [json.loads(line) for line in (self.root / 'incus-calls').read_text().splitlines()]
+        # Root names the app user web first: the phase's first command in the container is the swap file.
+        execs = [call for call in calls if 'exec' in call]
+        self.assertEqual(execs[0][execs[0].index('--') + 1:][3:], ['orbit-app-user'])
         self.assertTrue(any('add' in call and 'readonly=true' in call for call in calls))
         self.assertTrue(any('remove' in call and 'orbit-node-source' in call for call in calls))
         self.assertFalse(any('systemctl' in call and any(x in call for x in ('start', 'stop', 'restart', 'try-restart', '--now')) for call in calls))
