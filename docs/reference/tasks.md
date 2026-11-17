@@ -686,10 +686,17 @@ A subtask's diff runs from its start commit to the working tree that the check s
 
 A task copy is a shared, loaded host, as CI's runners are. So a `command` deliverable that runs Pest gets the per-test time limit that CI passes to Pest, not the local limit in the project's `phpunit.xml`. The Pest calls are `php artisan test`, `vendor/bin/pest`, `bin/pest-plain … vendor/bin/pest` and `composer test`.
 
-The Project's check command supplies the limit. The check asks it only when the command is one executable path, such as `bin/task-check`:
+The Project's check command supplies the limit, and the Project opts in through that command. The check asks it only when both hold:
+
+- The check command is one executable path, such as `bin/task-check`.
+- That file is a regular file in the workspace and contains the text `--ci-time-limit`.
+
+A check command that does not declare the flag is never run for the limit. Its Project's deliverables run exactly as given.
+
+The lookup works like this:
 
 - The check runs `<check command> --ci-time-limit <directory>`. The directory is where the Pest call runs, relative to the checkout.
-- The check command prints the limit, or nothing when CI passes none.
+- The check command prints exactly one line: `ci-time-limit: <N>`, or `ci-time-limit: none` when CI passes no limit.
 - `bin/task-check` reads the limit from `.github/workflows/ci.yml`, as its own Pest part does. For `apps/gateway` that is 5 seconds.
 - A project whose CI job passes no limit keeps its `phpunit.xml` limit.
 
@@ -699,9 +706,9 @@ These commands run unchanged:
 
 - A command that already passes `--default-time-limit`.
 - A command whose Pest call is not its last simple command, such as one with a pipe, a `;` or a redirect.
-- Every command of a Project whose check command is not one executable path.
+- Every command of a Project whose check command is not one executable path, or does not contain `--ci-time-limit`.
 
-The deliverable fails with exit 2 when the check command fails or prints something other than a number. It fails the same way when its Pest call runs outside the checkout. Its output then says `Task check: <check command> --ci-time-limit gave no limit`.
+A check command that declares the flag and then breaks the contract fails the deliverable with exit 2. It breaks it when it fails or prints anything but that one line. It fails the same way when its Pest call runs outside the checkout. Its output then says `Task check: <check command> --ci-time-limit gave no limit`.
 
 ### Prove a command fails on the start commit
 
