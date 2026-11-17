@@ -10,7 +10,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
-            hostTasks(f.folder, ["Install the shared folders", "Bring the existing containers to the image's shared files"]);
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders", "Bring the existing containers to the image's shared files"]);
             let result = await f.run();
             assert(result.ok, result.output);
             const state = f.state();
@@ -126,7 +126,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
-            hostTasks(f.folder, ["Read the Instance pool", "Install the shared folders", "Prepare the Instance bridge, project and profile"]);
+            hostTasks(f.folder, ["Read the Instance pool", "Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders", "Prepare the Instance bridge, project and profile"]);
             // Beast after the first release: every restriction, the idmapped folders, and the path list that refused every start.
             let result = await f.run();
             assert(result.ok, result.output);
@@ -171,7 +171,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
-            hostTasks(f.folder, ["Install the shared folders"]);
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders"]);
             let result = await f.run();
             assert(result.ok, result.output);
             const parts = await f.artifacts("1.1");

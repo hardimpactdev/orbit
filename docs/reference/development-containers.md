@@ -356,9 +356,11 @@ A Project chooses the server that runs in its containers, in its [`container_ser
 
 When Orbit reserves the runtime of a container with a server, a clone or a [migrated checkout](#migrate-a-checkout-instance), the runtime records the Project's choice as its own `container_server`. The default's runtime records none: the default runs no server. Every later step reads the runtime's record, never the Project's setting. So a changed setting reaches only containers that Orbit reserves after the change. An existing container keeps its server: the two servers store threads and pairings differently, and nothing converts them.
 
-The record names the program that every call inside the container runs: the create's sessions and `project add`, and a task turn's `thread` commands and its RPC helper. The drop-in `/etc/systemd/system/t3.service.d/20-orbit-server.conf` sets the unit's `ExecStart` to the same program, with the image's arguments: `serve --host=0.0.0.0 --port=3773 --no-browser`. A clone gets it before its first start, with [T3's other files](#t3-starts-with-the-copy). A migrated checkout gets it with the agent's files, and its T3 phase reloads systemd before it starts the unit.
+The record names the program that every call inside the container runs: the create's sessions and `project add`, and a task turn's `thread` commands and its RPC helper. The drop-in `/etc/systemd/system/t3.service.d/20-orbit-server.conf` sets the unit's `ExecStart` to the same program, with the image's arguments: `serve --host=0.0.0.0 --port=3773 --no-browser`. A clone gets it before its first start, with [T3's other files](#t3-starts-with-the-copy). A migrated checkout gets it with the agent's files, and its T3 phase reloads systemd before it starts the unit. The Node's converge keeps it and `10-orbit-boot.conf` current in every existing container: see [T3's unit drop-ins](#t3s-unit-drop-ins).
 
-For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`. This is the unpacked executable in the current agent folder version, beside its support files, rather than its `bin` link. [agent-browser](#agent-browser) opens the same executable. It also sets `T3CODE_SERVER_BROWSER_SANDBOX=0` because the container has no user namespaces. T3 gets neither override. The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
+For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`. This is the unpacked executable in the current agent folder version, beside its support files, rather than its `bin` link. [agent-browser](#agent-browser) opens the same executable. It also sets `T3CODE_SERVER_BROWSER_SANDBOX=0` because the container has no user namespaces. T3 gets neither override.
+
+The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
 
 The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins Conn Server 0.2.0 as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, so every agent folder holds both programs. Its releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host.
 
@@ -550,6 +552,25 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 - **Frozen.** A frozen container gets the files through the file API. `incus exec` refuses it, so it gets no exec.
 - **Thaw.** A frozen container keeps its cache, because it thaws without a boot. Its wake rebuilds a cache that lacks a runtime library.
 - **Failure.** A failed Incus call fails the converge after every other container had its turn.
+
+#### T3's unit drop-ins
+
+A container with a T3, a clone or a migrated checkout, holds two root-owned drop-ins of `t3.service`: `10-orbit-boot.conf` and `20-orbit-server.conf` in `/etc/systemd/system/t3.service.d/`. `InstanceContainer::t3DropIns` renders both. The create writes them before the first start, and the Gateway hands the same texts to the Node converge as `t3_files`, one entry for each container with a T3. A default has none.
+
+When a drop-in in a container holds other text, the converge rewrites it through the file API, as root with mode 0644. It does this in its own step, before the shared folders, so a change such as a new Conn environment line reaches existing containers:
+
+| State | What the converge does |
+| --- | --- |
+| Running | Writes the file and runs `systemctl daemon-reload`. The agent folder's step then restarts T3 once, after the reload. |
+| Stopped | Writes the file only. systemd reads it at the next boot |
+| Frozen | Writes the file only: `incus exec` refuses a frozen container. The first converge that finds it running sees that systemd has not reloaded the unit (`NeedDaemonReload`), so it reloads and restarts T3 then |
+| Same text | No rewrite. A retained restart or `NeedDaemonReload` still gets its catch-up; otherwise a second converge writes nothing and restarts nothing |
+
+The restart is `systemctl try-restart t3.service`. When the agent folder changed in the same converge, its restart covers the container, so T3 does not restart twice. The Node lists each reloaded container in `/var/lib/orbit/instance-t3-restart.json` until its T3 restarted. So a converge that fails between the reload and the restart leaves the list.
+
+Each successful restart removes only its own entry, even if another restart fails. A frozen or stopped container keeps its entry until a converge finds it running and successfully restarts T3; a deleted container leaves the list. A stopped container may already have read the new drop-in at boot, but the entry still requires that explicit restart rather than inferring completion from its power state.
+
+The converge writes only these root-owned drop-ins. T3's settings, `.claude.json` and Codex's `config.toml` belong to `agent`: T3 and the agents change them, and root never writes through `agent`'s paths. `/etc/orbit/instance` keeps the text of its create.
 
 ### The machine name
 
@@ -1958,13 +1979,14 @@ The phase uses these commands, as `agent` in `/srv/workspace`.
 | Purpose | Command | What Orbit sets |
 | --- | --- | --- |
 | Create a new thread | `node - T3 create TITLE INSTANCE MODEL OPTIONS`, with `t3_copy_rpc.mjs` on stdin | Through T3's own RPC: the title `Orbit task GROUP thread THREAD`, the provider instance of the effort, the [turn model](#turn-model-and-effort) and its model options, in full access, with no message. Bounded at 60 seconds |
+| Resolve stored answered requests | `node - T3 answered T3THREAD REQUEST...`, with `t3_copy_rpc.mjs` on stdin | Before reviewer checkout or send: cancel only the stored pending questions, then confirm resolution in one RPC session. Bounded at 60 seconds |
 | Run a turn and wait for its run | `t3 thread send --wait --json T3THREAD -` | On the created or the continued thread: the composed prompt on stdin and a 3,600-second `timeout`. The thread keeps its provider instance and options, so its model and effort. |
 | Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title: before a continued turn, and after every turn, also when the bound cut the wait before T3 printed the thread id. Bounded at 60 seconds |
 | Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages. Bounded at 60 seconds |
 | Put a reviewer on the candidate | `git status --porcelain`, `git symbolic-ref --short HEAD`, `git rev-parse HEAD`, `git checkout --detach CANDIDATE` | Before a reviewer turn: a clean checkout on a branch, its tip, the detach mark at it, then the candidate, detached. Each bounded at 20 seconds |
 | Restore the checkout after a reviewer | `git reset --hard`, `git clean -fd`, `git checkout BRANCH`, then the status, branch and tip reads again | After a reviewer turn, also a cut one: the reviewer's changes go and the task branch is back at its earlier tip. A verified restore clears the detach mark |
 | Read the question of a run that asks | `node - T3 read T3THREAD`, with `t3_copy_rpc.mjs` on stdin | When the start exits 2. Prints the open runs, the pending requests with their questions, and whether Orbit may stop on them. Bounded at 60 seconds |
-| Stop the run that asks | `node - T3 interrupt T3THREAD RUN REQUESTS`, with `t3_copy_rpc.mjs` on stdin | After the question's evidence is written, only while the run waits for exactly the stored requests. Waits for its end within a 42-second deadline, inside a 60-second bound |
+| Stop the run that asks | `node - T3 interrupt T3THREAD RUN REQUESTS`, with `t3_copy_rpc.mjs` on stdin | After storing the questions, only for those exact requests whose nodes belong to this run. Waits for its end within 42 seconds, inside a 60-second bound |
 | Stop a thread's active run | `node - T3 stop T3THREAD`, with `t3_copy_rpc.mjs` on stdin | After a wait cut by the bound, and before the launch for an earlier turn that T3 shows active. Same interrupt and wait; bounded at 60 seconds |
 
 The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input` once [the question ends the turn](#a-question-ends-the-turn), and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`; the phase stops its run, and the turn is over once that stop ended it. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
@@ -1977,24 +1999,28 @@ A reviewer turn's composed prompt names the checked commit and ends with two fix
 
 ### A question ends the turn
 
-Stock T3's CLI cannot answer a question or stop a run. `t3 thread send` to a run that waits queues a second run behind it, and the answer never reaches the agent. Stock T3's server can do both through its own WebSocket RPC, which T3's web client uses:
+Stock T3's CLI cannot resolve a pending question request or stop a run. Sending a new message with `t3 thread send` does not resolve that request. Stock T3's server exposes both operations through its own WebSocket RPC, which T3's web client uses:
 
 - `POST /api/auth/websocket-ticket` with a bearer session gives a ticket.
 - `GET /ws?orchestrationProtocol=2&wsTicket=TICKET` opens the RPC.
 - `orchestration.getThreadProjection {threadId}` gives the thread's runs, its pending requests and each `user_input_request` with its questions.
-- `orchestration.dispatchCommand` with `run.interrupt {commandId, threadId, runId, reason}` stops a run; `runtime-request.respond` with `answers` would answer one.
+- `orchestration.dispatchCommand` with `run.interrupt {commandId, threadId, runId, reason}` stops a run; `runtime-request.respond {commandId, threadId, requestId, decision: "cancel"}` resolves a question request without sending a reply message.
 
 `t3 auth session issue` grants the session. Its MCP endpoint `/mcp` refuses that session, so the MCP tools are not a path.
 
 So the phase ends a turn at its question. When `--wait` exits 2, `t3_copy_rpc.mjs read` stores every pending request with its questions: the id, header, text, options and flags, as the agent asked them. A free-text question without options is stored too. Only after that evidence is written does `t3_copy_rpc.mjs interrupt` stop the run.
 
-The stop has two guards. The read must find questions alone: no approval, no request without a question, and no more text than the result can hold. And the run must still wait for exactly the stored requests. A run that someone answered meanwhile, or that now asks something else, goes on, so no new question is lost.
+The read must find questions alone: no approval, no request without a question, and no more text than the result can hold. The run must still wait for exactly the stored requests, and every request's node must belong to the run being stopped. A run that someone answered meanwhile, that now asks something else, or whose pending question belongs to an earlier run goes on.
 
 The helper runs on the runtime's Node.js, `/opt/orbit-runtime/current/bin/node`, from stdin. It takes a session of one minute, read-only for the read, holds it only in its memory and revokes it before it exits. Its `stop` finds the thread's active run, sends the same `run.interrupt` as `interrupt` and waits for the run's end the same way. It answers `{stopped, run, state}`. A thread with no active run answers `stopped: false` and no run. No session reaches an argument, a file, a log or the run folder. T3 stays stock.
 
-The turn is then `asking_for_input` and over, and its Operation succeeds. Its result and its thread keep the questions. The role's next turn quotes them before the caller's prompt and continues the thread with `t3 thread send`, as a normal follow-up. A question the helper could not read is `tasks.copy_question_unread`, and a run it could not stop is `tasks.copy_question_unstopped`. Neither is over, so the group holds.
+The turn is then `asking_for_input` and over, and its Operation succeeds. Its result and its thread keep the questions. A question the helper could not read is `tasks.copy_question_unread`, and a run it could not stop is `tasks.copy_question_unstopped`. Neither is over, so the group holds.
 
-This was tried on a throwaway T3 0.1.7 server on 2026-11-14. A run that asked two questions was read, then stopped: its run became `interrupted` and its request `cancelled`. A `t3 thread send` with the answer then ran at once as the thread's next run. `runtime-request.respond` with `answers` let the same run continue instead; Orbit does not use it, so a turn's end stays the run's end.
+The Gateway passes the stored question request IDs in the continued turn's `answered` list. Before any reviewer checkout or send, `t3_copy_rpc.mjs answered` cancels exactly those pending user-input requests and reads them back in one RPC session. Requests already resolved, cancelled or absent need no action. An older admitted intent without `answered` treats it as an empty list.
+
+If a stored request remains pending, or resolution cannot be confirmed, the turn fails before launch with `tasks.copy_question_unresolved` and keeps the questions for retry. Once resolution is confirmed, the role's next turn quotes the questions with “You asked in your last turn” and sends the caller's answer as a new run with `t3 thread send`.
+
+In T3 0.1.7, interrupting a Claude question with a `live` response capability cancels its request. A Codex question with a `message` response capability can remain pending after interruption. The CLI checks the thread's pending requests after a 15-second wait slice, so a stale request can make a continued run return `waiting` while it is doing work. Resolving the stored requests before sending the answer prevents that stale question from ending the new turn.
 
 ### Turn model and effort
 

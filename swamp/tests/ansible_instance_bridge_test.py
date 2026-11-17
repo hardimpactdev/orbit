@@ -90,7 +90,7 @@ class BridgePolicy(unittest.TestCase):
         def run(action):
             try:
                 action()
-            except BaseException as error:
+            except BaseException as error:  # noqa: BLE001 -- report every worker failure to the asserting parent thread
                 failures.append((threading.current_thread().name, str(error)))
 
         threads = [threading.Thread(target=run, args=(action,), name=name)
@@ -99,9 +99,8 @@ class BridgePolicy(unittest.TestCase):
             threads[0].start()
             try:
                 self.assertTrue(paused.wait(5), 'First writer did not reach its record/ACL work')
-                with (root / 'writer.lock').open('a') as contender:
-                    with self.assertRaises(BlockingIOError):
-                        flock(contender, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
+                with (root / 'writer.lock').open('a') as contender, self.assertRaises(BlockingIOError):
+                    flock(contender, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
                 threads[1].start()
                 self.assertTrue(attempted.wait(5), 'Second writer did not attempt the shared lock')
                 threads[1].join(1)
@@ -225,9 +224,8 @@ class BridgePolicy(unittest.TestCase):
                     raise bridge.subprocess.TimeoutExpired('curl', 5)
                 return incus.api(name, value, etag)
 
-            with patch.object(bridge, 'api', side_effect=timeout_then_read):
-                with self.assertRaises(bridge.subprocess.TimeoutExpired):
-                    bridge.apply(root, intent(2, '10.44.0.7'), True)
+            with patch.object(bridge, 'api', side_effect=timeout_then_read), self.assertRaises(bridge.subprocess.TimeoutExpired):
+                bridge.apply(root, intent(2, '10.44.0.7'), True)
             self.assertEqual(calls, [None, None])  # Exactly one bounded readback; no PUT.
             self.assertEqual(list((root / 'endpoints').glob('*.json')), [])
             self.assertEqual(list((root / '.staged').glob('*.json')), [])
@@ -245,7 +243,7 @@ class BridgePolicy(unittest.TestCase):
                 puts, readbacks = 0, 0
                 ambiguous = False
 
-                def timeout_second_put(name, value=None, etag=None, deadline=None):
+                def timeout_second_put(name, value=None, etag=None, deadline=None, delivered=delivered, incus=incus):
                     nonlocal puts, readbacks, ambiguous
                     if value is not None:
                         puts += 1
@@ -276,9 +274,9 @@ class BridgePolicy(unittest.TestCase):
                 with patch.object(bridge, 'api', side_effect=incus.api):
                     if delivered is None:
                         missing = {**intent(3), 'endpoints': [{'host': '10.44.0.9', 'port': 3306, 'docker': True}]}
-                        with patch.object(bridge.subprocess, 'check_output', return_value=''):
-                            with self.assertRaisesRegex(bridge.PolicyError, 'instance.container_endpoint_unresolved'):
-                                bridge.apply(root, missing)
+                        with (patch.object(bridge.subprocess, 'check_output', return_value=''),
+                              self.assertRaisesRegex(bridge.PolicyError, 'instance.container_endpoint_unresolved')):
+                            bridge.apply(root, missing)
                         self.assertEqual(json.loads((root / 'health.json').read_text())['error_code'], 'instance.bridge_state_unresolved')
                     bridge.apply(root, None)
                     if delivered is None:
@@ -297,7 +295,7 @@ class BridgePolicy(unittest.TestCase):
                 failed = False
                 readbacks = 0
 
-                def remove_then_timeout(name, value=None, etag=None, deadline=None):
+                def remove_then_timeout(name, value=None, etag=None, deadline=None, delivered=delivered, readable=readable, incus=incus):
                     nonlocal failed, readbacks
                     if value is not None and not any(row['destination'] == '10.44.0.8/32' for row in value['egress']):
                         self.assertFalse(any(row['destination'] == '10.44.0.7/32' for row in incus.current['egress']))
@@ -353,7 +351,7 @@ class BridgePolicy(unittest.TestCase):
             def run_helper(incoming, reconcile=False):
                 return subprocess.run([sys.executable, str(root / 'instance_bridge.py'), '--state-dir', str(state)]
                                       + ['--intent'] + (['--reconcile'] if reconcile else []),
-                                      input=json.dumps(incoming), capture_output=True, text=True, env=env, timeout=30)
+                                      input=json.dumps(incoming), capture_output=True, text=True, env=env, timeout=30, check=False)
 
             for incoming, reconcile in [(intent(1, '10.44.0.7', '10.44.0.8', '10.44.0.3'), True), (intent(4, '10.44.0.9'), False)]:
                 seeded = run_helper(incoming, reconcile)
@@ -374,7 +372,7 @@ class BridgePolicy(unittest.TestCase):
                              'bridge_endpoints': config['endpoints'], 'bridge_reconcile': True, 'bridge_withdraw': True}
                 return subprocess.run(['ansible-playbook', '-i', 'localhost,', '--connection', 'local',
                                        '--extra-vars', json.dumps(variables), str(playbook)],
-                                      capture_output=True, text=True, env=env, timeout=30)
+                                      capture_output=True, text=True, env=env, timeout=30, check=False)
 
             # Execute the shipped Ansible task under real contention. It must
             # refuse before curl or any record/health write, with no delayed work.
@@ -395,7 +393,7 @@ class BridgePolicy(unittest.TestCase):
             self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
             self.assertIn('instance.bridge_command_timeout', refused.stdout + refused.stderr)
             refreshed = subprocess.run([sys.executable, str(installed), '--state-dir', str(state)],
-                                       capture_output=True, text=True, env=env, timeout=30)
+                                       capture_output=True, text=True, env=env, timeout=30, check=False)
             self.assertEqual(refreshed.returncode, 0, refreshed.stdout + refreshed.stderr)
             self.assertEqual({row['destination'] for row in json.loads(acl.read_text())['metadata']['egress']},
                              {'10.44.0.3/32', '10.44.0.8/32', '10.44.0.9/32'})
@@ -438,9 +436,9 @@ class BridgePolicy(unittest.TestCase):
             bridge.state_file(root, 'endpoint', row, host=row['host'], port=row['port'], capture=row['admitted_at'])
             before = copy.deepcopy(incus.current)
 
-            with patch.object(bridge, 'api', side_effect=AssertionError('ACL touched before ownership was resolved')):
-                with self.assertRaisesRegex(bridge.PolicyError, 'instance.container_endpoint_unresolved'):
-                    bridge.apply(root, intent(2), True, withdraw=True)
+            with (patch.object(bridge, 'api', side_effect=AssertionError('ACL touched before ownership was resolved')),
+                  self.assertRaisesRegex(bridge.PolicyError, 'instance.container_endpoint_unresolved')):
+                bridge.apply(root, intent(2), True, withdraw=True)
 
             self.assertEqual(incus.current, before)
             self.assertTrue(path.exists())
@@ -479,9 +477,8 @@ class BridgePolicy(unittest.TestCase):
             original_state = bridge.state_file
 
             def assert_owned():
-                with (root / 'writer.lock').open('a') as contender:
-                    with self.assertRaises(BlockingIOError):
-                        bridge.fcntl.flock(contender, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
+                with (root / 'writer.lock').open('a') as contender, self.assertRaises(BlockingIOError):
+                    bridge.fcntl.flock(contender, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
 
             def write(root, kind, *args, **kwargs):
                 assert_owned()

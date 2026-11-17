@@ -9,8 +9,10 @@
       - intent.runtime.name | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
       - intent.snapshot_id | default('') is match('^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$')
       - intent.branch | default('') | length > 0
-      - workspace_phase in workspace_check_phases + workspace_base_phases + ['base-merge'] or intent.head | default('') is match('^[0-9a-f]{40}([0-9a-f]{24})?$')
-      - workspace_phase in ['preflight', 'before', 'after', 'receipt', 'export', 'discard', 'scan', 'base-merge'] + workspace_check_phases + workspace_base_phases
+      - workspace_phase in workspace_check_phases + workspace_base_phases + ['base-merge']
+        or intent.head | default('') is match('^[0-9a-f]{40}([0-9a-f]{24})?$')
+      - workspace_phase in ['preflight', 'before', 'after', 'receipt', 'export', 'discard', 'scan', 'base-merge']
+        + workspace_check_phases + workspace_base_phases
       - workspace_phase not in ['check', 'commit'] or intent.check | default(none) is mapping
       - workspace_phase != 'commit-ref' or intent.candidate_commit | default('') | length in [40, 64]
       # A publication's content check also takes the copy's .env, by its path under the fixed workspace root.

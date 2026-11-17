@@ -2,8 +2,9 @@
 # The container branch of the app-dev role on a Node of the build list (docs/reference/compute-drivers.md#prepare-an-instance-container-host),
 # and of the ci-runner role on a CI Node that hosts proof copies (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node). The
 # Gateway sends `instances` only for such a Node, so every other Node runs none of this. A CI Node runs no Caddy: its intent has no
-# `dev_ports` and no `own_site`, so it gets no development port redirect, no own-site rules and no wake of frozen containers. It shares the kernel, Incus and container
-# side with a task container host, then installs the two shared folders and builds the image. It creates no Instance.
+# `dev_ports` and no `own_site`, so it gets no development port redirect, no own-site rules and no wake of frozen containers. It shares
+# the kernel, Incus and container side with a task container host, then installs the two shared folders and builds the image.
+# It creates no Instance.
 # The Node provides the Incus pool: ZFS, where a copy is a clone, or a directory pool on a nested proof Node, where a copy is a full copy.
 # A CI-only Node's converge creates it first (instance-pool-create.yml). An Instance fleet Node (`nested-app-dev`) gets Incus and a
 # directory pool first (instance-fleet-node.yml).
@@ -131,6 +132,30 @@
       when: instance_custom_volmode.stdout | trim != 'dev'
       ansible.builtin.command: { argv: [zfs, set, volmode=dev, "{{ instance_pool_root.stdout | trim }}/custom"] }
       changed_when: true
+
+# The drop-ins of T3's unit in each existing container with a T3 (docs/reference/development-containers.md#existing-containers):
+# instance_container_files.py `t3` writes each one whose text the Gateway changed, in running, stopped and frozen containers, and
+# reloads systemd in each running one it changed. The Node keeps those containers in its restart list until the agent folder's step
+# that follows restarts T3 there once, beside its own restart when the folder changed (instance-folder.yml). A stopped container reads
+# the drop-in at boot, a frozen one at its T3's next restart.
+# Before the shared folders, so the reload comes before the agent folder's restart.
+- name: Bring the T3 unit drop-ins of the existing containers to their text
+  block:
+    - name: Write the changed T3 unit drop-ins into each existing container
+      ansible.builtin.command:
+        argv: [python3, -I, "-", "{{ {'mode': 't3', 't3_files': instances.t3_files, 'state': instance_t3_restart_list} | to_json }}"]
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_container_files.py') }}"
+      register: t3_files
+      vars:
+        # The Node's restart list, which instance-folder.yml empties.
+        instance_t3_restart_list: /var/lib/orbit/instance-t3-restart.json
+      changed_when: (t3_files.stdout | from_json).written | length > 0
+      failed_when: t3_files.rc != 0
+
+    # The running containers whose T3 reads a new drop-in at its restart in the agent folder's step.
+    - name: Keep the containers whose T3 restarts for its drop-ins
+      ansible.builtin.set_fact:
+        instance_t3_reload: "{{ (t3_files.stdout | from_json).reload }}"
 
 - name: Install the shared folders
   ansible.builtin.include_tasks: instance-folder.yml
@@ -474,13 +499,16 @@
     - name: Record the failed nested-fleet image build
       ansible.builtin.copy:
         dest: /var/lib/orbit/instance-nested-image.json
-        content: "{{ {'error': 'nested image build failed', 'alias': instances.nested.image.alias, 'task': ansible_failed_task.name | default('')} | to_json }}\n"
+        content: "{{ {'error': 'nested image build failed', 'alias': instances.nested.image.alias,
+          'task': ansible_failed_task.name | default('')} | to_json }}\n"
         owner: root
         group: root
         mode: "0644"
     - name: Report the failed nested-fleet image build
       ansible.builtin.debug:
-        msg: "nested image build failed: {{ ansible_failed_task.name | default('') }}; nested-fleet creates refuse until a converge builds {{ instances.nested.image.alias }}"
+        msg: >-
+          nested image build failed: {{ ansible_failed_task.name | default('') }};
+          nested-fleet creates refuse until a converge builds {{ instances.nested.image.alias }}
 
 # Read-only end check: a later regression on any NIC fails convergence instead of silently opening an Instance.
 - name: Check every Instance bridge NIC at the end of the role

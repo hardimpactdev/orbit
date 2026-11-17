@@ -529,11 +529,9 @@ final readonly class InstanceContainer
                 // A task copy's turns pick their effort through these instances: stock T3's CLI takes none.
                 ['path' => '/home/agent/.t3/userdata/settings.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
                     ...($instance->task_workspace_owner_id === null ? [] : ['providerInstances' => [...self::claudeInstances(), ...self::codexInstances()]])]],
-                // No default dependencies: T3 waits for nftables, the local file systems, the journal and sysctl, not for `sysinit.target`.
-                ['path' => self::T3BootDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
-                    'content' => "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"],
-                // The unit starts the runtime's recorded server (docs/reference/development-containers.md#container-server).
-                ['path' => self::ServerDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => $runtime->server()->dropIn($this->folders())],
+                // No default dependencies, and the runtime's recorded server; the Node converge keeps both current (t3DropIns).
+                ...array_map(static fn (array $file): array => ['path' => $file['path'], 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => $file['mode'],
+                    'content' => $file['content']], self::t3DropIns($runtime, $this->folders())),
             ],
             // A checkout that moved into a container links the agents' instructions to the note of the Project's type, which states facts
             // about the container only. A clone links them into its own agent folder, which its create fills from the note and the
@@ -541,6 +539,22 @@ final readonly class InstanceContainer
             'links' => $source === null
                 ? [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]]
                 : InstanceAgentInstructions::links(),
+        ];
+    }
+
+    /**
+     * The root-owned drop-ins of T3's unit in a container with a T3: no default dependencies, and the runtime's recorded server
+     * (docs/reference/development-containers.md#container-server). A clone's create writes them before its first start; the Node
+     * converge rewrites each one whose text changed in every existing container (docs/reference/development-containers.md#existing-containers).
+     *
+     * @return list<array{path: string, content: string, mode: string}>
+     */
+    public static function t3DropIns(InstanceRuntime $runtime, InstanceFolders $folders): array
+    {
+        return [
+            ['path' => self::T3BootDropIn, 'mode' => '0644',
+                'content' => "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"],
+            ['path' => self::ServerDropIn, 'mode' => '0644', 'content' => $runtime->server()->dropIn($folders)],
         ];
     }
 

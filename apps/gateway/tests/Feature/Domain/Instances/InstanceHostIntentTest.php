@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceDevPorts;
 use App\Domain\Instances\InstanceEgress;
@@ -10,6 +11,7 @@ use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstanceNotes;
+use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
@@ -26,8 +28,11 @@ use App\Infrastructure\MachineSoftware\StaticPhpBuild;
 use App\Infrastructure\MachineSoftware\VitePlusHome;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
+use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -171,6 +176,8 @@ describe('the container branch of the app-dev converge', function (): void {
             'forwarder_port' => 8319, 'bridge_endpoints' => [], 'ids' => 201 * 65536,
             // A Node without Instance runtimes names no container's machine name (InstanceMachineName::forNode).
             'machine_names' => [],
+            // ... and no container's T3 unit drop-ins.
+            't3_files' => [],
         ])
             ->and($intent['incus'])->toBe($recipe->incus('amd64'))
             ->and($intent['image'])->toBe(InstanceImage::for('10.253.0.1'))
@@ -181,6 +188,48 @@ describe('the container branch of the app-dev converge', function (): void {
                 'environment.VP_HOME' => '/var/lib/orbit/vite-plus-home', 'environment.VP_NO_UPDATE_CHECK' => '1',
                 'environment.HTTPS_PROXY' => 'http://10.253.0.1:3128', 'environment.no_proxy' => 'localhost,127.0.0.1,::1,10.253.0.1'])
             ->and($intent['profile_config'])->toHaveCount(count(InstanceImage::environment('10.253.0.1')) + 1);
+    });
+
+    // docs/reference/development-containers.md#existing-containers: the converge rewrites a changed drop-in in every container with a T3.
+    it('hands the converge the unit drop-ins of each container with a T3, as a clone\'s create writes them, and none of a default', function (): void {
+        $node = instanceHostNode();
+        config(['instances.container_nodes' => [$node->id]]);
+        app(InstanceHostIntent::class)->prepare($node);
+        $project = Project::query()->create(['name' => 'tool', 'slug' => 'tool', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/tool.git',
+            'default_branch' => 'main', 'root' => '.', 'is_laravel' => false]);
+        $runtime = static function (string $name, ?ContainerServer $server, string $incus = 'orbit-instances') use ($node, $project): InstanceRuntime {
+            $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => '/srv/'.$name, 'status' => 'active']);
+
+            return InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => $incus,
+                'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.'.($instance->id + 1), 'runtime_version' => 'r', 'agent_version' => 'a',
+                't3_port' => $server === null ? null : 3800 + $instance->id, 'container_server' => $server, 'power_state' => InstanceRuntimePowerState::Running,
+                ...($incus === 'orbit-instances' ? [] : ['idmap_size' => InstanceHostIntent::NestedIdMapSize])]);
+        };
+        $runtime('default', null);
+        $t3 = $runtime('feature', ContainerServer::T3);
+        $conn = $runtime('trial', ContainerServer::Conn, 'orbit-instances-nested');
+        $boot = "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n";
+        $serve = ' serve --host=0.0.0.0 --port=3773 --no-browser';
+
+        $files = app(InstanceHostIntent::class)->for($node->refresh())['t3_files'];
+
+        expect($files)->toBe([
+            ['project' => 'orbit-instances', 'container' => $t3->container_name, 'files' => [
+                ['path' => InstanceContainer::T3BootDropIn, 'mode' => '0644', 'content' => $boot],
+                ['path' => InstanceContainer::ServerDropIn, 'mode' => '0644',
+                    'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3{$serve}\n"],
+            ]],
+            // A Conn container's server drop-in carries the preview browser of the recipe's agent folder.
+            ['project' => 'orbit-instances-nested', 'container' => $conn->container_name, 'files' => [
+                ['path' => InstanceContainer::T3BootDropIn, 'mode' => '0644', 'content' => $boot],
+                ['path' => InstanceContainer::ServerDropIn, 'mode' => '0644',
+                    'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server{$serve}\n"
+                        ."Environment=CONN_SERVER_BROWSER_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\n"
+                        ."Environment=T3CODE_SERVER_BROWSER_SANDBOX=0\n"],
+            ]],
+        ])
+            // The same texts a clone's create writes before its first start.
+            ->and($files[1]['files'])->toBe(InstanceContainer::t3DropIns($conn, app(CurrentRecipe::class)->currentRecipe()->instances ?? throw new LogicException('no folders')));
     });
 
     it('lets the bridge ACL admit what a container\'s ACL may admit: the Node to FrankenPHP and the development ports, and T3\'s clients', function (): void {

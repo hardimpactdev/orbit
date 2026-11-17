@@ -1120,6 +1120,8 @@ The `pi` driver ran turns on task VMs and is removed with the Pi task loop. Thre
 
 ### Copy turn agents
 
+When a copy turn asks a question, Orbit stores it and stops the run. The next turn of that thread answers it: Orbit first resolves exactly the stored question requests in T3, then sends the answer with the questions quoted for context. Stopping the run alone can leave a question pending. Already resolved requests need no action. If resolution cannot be confirmed, the turn fails before launch with `tasks.copy_question_unresolved` and keeps the questions for another attempt. See [turn questions](/cli/task/turn#a-task-that-runs-in-a-copy).
+
 Each role of a copy turn, implementer and reviewer, runs with a provider, a model and an effort. A new copy thread resolves each of the three values on its own:
 
 1. the task's value, set with [`task:create`](/cli/task/create) or [`task:update`](/cli/task/update);
