@@ -9,10 +9,12 @@
 // or an earlier turn's. Both stops take one path: T3's `run.interrupt`, then the wait for the run's end. Stock T3's CLI can neither read
 // a question nor stop a run; its server can, for a session that
 // `t3 auth session issue` grants. The session lives only in this process: it is never written, printed or passed as an argument, and it
-// is revoked before the exit. One JSON object goes to stdout; the phase writes it to the run folder and the result step bounds it.
+// is revoked before the exit. Conn uses the same transport for `inspect-launch ENVIRONMENT`, `launch` and `reconcile-launch`.
+// For dispatch and recovery, run the script with `node --input-type=module -e SCRIPT -- orbit-rpc T3 COMMAND` and pass the frozen
+// private JSON on stdin. Only bounded public evidence goes to stdout. Recovery reads the original server and never sends a message.
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 
 // The shortest session that outlives one read, or one interrupt or stop and its wait for the run to end.
 const SessionTtl = "1m";
@@ -31,18 +33,22 @@ const ReadBytes = 150000;
 const Over = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
 
 const [T3, command, ...rest] = process.argv.slice(2);
-const [threadId, runId, stored] = command === "create" ? [] : rest;
+const launchCommand = ["inspect-launch", "launch", "reconcile-launch"].includes(command);
+const [threadId, runId, stored] = command === "create" || launchCommand ? [] : rest;
 const answeredRequests = command === "answered" ? rest.slice(1) : [];
 const [title, instance, model, options] = command === "create" ? rest : [];
-if (!T3 || !["read", "interrupt", "answered", "stop", "create"].includes(command) || (command !== "create" && !threadId)
+if (!T3 || (!launchCommand && (!["read", "interrupt", "answered", "stop", "create"].includes(command) || (command !== "create" && !threadId)))
+    || (command === "inspect-launch" && rest.length !== 1) || (["launch", "reconcile-launch"].includes(command) && rest.length !== 0)
     || (command === "interrupt" && (!runId || !stored)) || (command === "answered" && (answeredRequests.length === 0 || answeredRequests.some((id) => !id)))
     || (command === "create" && (!title || !instance || !model || options === undefined))) {
-    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 answered THREAD REQUEST... | T3 stop THREAD | T3 create TITLE INSTANCE MODEL OPTIONS\n");
+    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 answered THREAD REQUEST... | T3 stop THREAD | T3 create TITLE INSTANCE MODEL OPTIONS | T3 inspect-launch ENVIRONMENT | T3 launch | T3 reconcile-launch\n");
     process.exit(64);
 }
 
-const origin = JSON.parse(readFileSync(`${process.env.HOME}/.t3/userdata/server-runtime.json`, "utf8")).origin;
-const scopes = command === "read" ? ["orchestration:read"] : ["orchestration:read", "orchestration:operate"];
+const userdata = `${process.env.HOME}/.t3/userdata`;
+const origin = JSON.parse(readFileSync(`${userdata}/server-runtime.json`, "utf8")).origin;
+const readOnly = ["read", "inspect-launch", "reconcile-launch"].includes(command);
+const scopes = readOnly ? ["orchestration:read"] : ["orchestration:read", "orchestration:operate"];
 
 /** One RPC socket on a fresh ticket; T3's RPC frames are newline-separated JSON. */
 async function connect() {
@@ -63,6 +69,9 @@ async function connect() {
                 socket.send(JSON.stringify({ _tag: "Interrupt", requestId: String(frame.requestId) }));
             }
         }
+    };
+    socket.onclose = () => {
+        for (const finish of pending.values()) finish({ _tag: "Failure", message: "T3 closed the RPC socket." });
     };
     const timed = (promise, what) => {
         let timer;
@@ -149,8 +158,7 @@ async function interrupt(rpc, run, reason) {
  * `t3 thread start` makes one. No message: its first turn is the phase's `t3 thread send`.
  */
 async function create(rpc) {
-    const shell = await rpc.call("orchestration.subscribeShell", {});
-    const project = (shell?.snapshot?.projects ?? []).find((entry) => entry.workspaceRoot === "/srv/workspace" && entry.archivedAt == null);
+    const project = await workspaceProject(rpc);
     if (project === undefined) return { thread_id: null, error: "T3 holds no project at /srv/workspace." };
     const created = `orbit:${randomUUID()}`;
     try {
@@ -161,6 +169,61 @@ async function create(rpc) {
         return { thread_id: null, error: cause.message };
     }
     return { thread_id: created, error: null };
+}
+
+async function workspaceProject(rpc) {
+    const shell = await rpc.call("orchestration.subscribeShell", {});
+    return (shell?.snapshot?.projects ?? []).find((entry) => entry.workspaceRoot === "/srv/workspace" && entry.archivedAt == null);
+}
+
+async function launchIdentity(environmentId) {
+    const response = await fetch(`${origin}/.well-known/t3/environment`, { redirect: "error", signal: AbortSignal.timeout(left()) });
+    if (!response.ok) return null;
+    const descriptor = await response.json();
+    const localEnvironmentId = readFileSync(`${userdata}/environment-id`, "utf8").trim();
+    if (!environmentId || descriptor.environmentId !== environmentId || localEnvironmentId !== environmentId || descriptor.serverVersion !== "0.1.7") return null;
+    // The state file's identity survives a normal process restart and detects a replaced file even if its environment ID was copied.
+    // Read filesystem metadata only; message and receipt evidence always comes through T3's RPC.
+    const { dev, ino } = statSync(`${userdata}/statev2.sqlite`, { bigint: true });
+    return createHash("sha256").update(`${environmentId}\0${dev}\0${ino}`).digest("hex");
+}
+
+async function inspectLaunch(rpc, environmentId) {
+    const incarnation = await launchIdentity(environmentId);
+    if (incarnation === null) return { error_code: "conn.launch_server_changed" };
+    const project = await workspaceProject(rpc);
+    if (typeof project?.id !== "string") return { error_code: "conn.launch_workspace_failed" };
+    return { environment_id: environmentId, incarnation, project_id: project.id, error_code: null };
+}
+
+function initialAcceptance(projection, request) {
+    if (projection?.thread?.id !== request.threadId || projection.thread.projectId !== request.projectId) return null;
+    const expected = request.initialMessage;
+    const matches = Array.isArray(projection.messages) ? projection.messages.filter((message) => message.id === expected.messageId) : [];
+    if (matches.length !== 1 || matches[0].threadId !== request.threadId || matches[0].role !== "user"
+        || matches[0].text !== expected.text || typeof matches[0].createdAt !== "string") return null;
+    const at = Date.parse(matches[0].createdAt);
+    return Number.isFinite(at) ? new Date(at).toISOString() : null;
+}
+
+async function launchMessage(rpc, send) {
+    const frozen = JSON.parse(readFileSync(0, "utf8"));
+    const request = frozen?.request;
+    if (typeof frozen?.incarnation !== "string" || typeof request?.commandId !== "string" || typeof request.threadId !== "string"
+        || typeof request.projectId !== "string" || typeof request.initialMessage?.messageId !== "string"
+        || typeof request.initialMessage.text !== "string" || !Array.isArray(request.initialMessage.attachments)
+        || request.initialMessage.attachments.length !== 0 || request.reuseExistingThread !== undefined) {
+        return { error_code: "conn.launch_invalid_dispatch" };
+    }
+    if (await launchIdentity(frozen.environment_id) !== frozen.incarnation) return { error_code: "conn.launch_server_changed" };
+    const projection = send
+        ? (await rpc.call("orchestration.launchThread", request))?.projection
+        : await rpc.call("orchestration.getThreadProjection", { threadId: request.threadId });
+    if (await launchIdentity(frozen.environment_id) !== frozen.incarnation) return { error_code: "conn.launch_server_changed" };
+    const acceptedAt = initialAcceptance(projection, request);
+    return acceptedAt === null
+        ? { error_code: "conn.launch_first_message_unconfirmed" }
+        : { accepted_at: acceptedAt, error_code: null };
 }
 
 let raw = "";
@@ -177,7 +240,11 @@ try {
         throw new Error("t3 auth session issue printed no JSON.");
     }
     rpc = await connect();
-    if (command === "create") {
+    if (command === "inspect-launch") {
+        out = await inspectLaunch(rpc, rest[0]);
+    } else if (launchCommand) {
+        out = await launchMessage(rpc, command === "launch");
+    } else if (command === "create") {
         out = await create(rpc);
     } else if (command === "answered") {
         out = await answered(rpc);
@@ -206,6 +273,10 @@ try {
             out = { stopped: error === null && after.runs.length === 0, run: active.id, state: after.all.find((run) => run.id === active.id)?.status ?? active.status };
         }
     }
+} catch (cause) {
+    if (!launchCommand) throw cause;
+    // A failed launch response can contain submitted text. Keep diagnostics to the bounded receipt.
+    out = { error_code: command === "inspect-launch" ? "conn.launch_workspace_failed" : "conn.launch_first_message_unconfirmed" };
 } finally {
     rpc?.close();
     const session = issued?.sessionId ?? /"sessionId"\s*:\s*"([^"]+)"/.exec(raw)?.[1];
