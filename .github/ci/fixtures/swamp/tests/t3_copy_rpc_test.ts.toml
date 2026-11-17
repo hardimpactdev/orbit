@@ -9,6 +9,10 @@ cases = [
   "answered resolves exactly the stored pending questions once and leaves unrelated requests alone",
   "answered confirms resolution after a concurrent answer and refuses a stored request that stays pending",
   "interrupt never stops a new run for a stored question owned by an earlier run",
+  "Conn launch uses its frozen first message and recovers a lost reply without resending",
+  "Conn launch fails closed on a replaced server or mismatched first message",
+  "Conn launch keeps the requested model on an enabled provider and resolves the fallback for the workspace",
+  "Conn launch finds the first message in older local history without consulting a command receipt",
 ]
 file = "swamp/tests/t3_copy_rpc_test.ts"
 cost = 45
