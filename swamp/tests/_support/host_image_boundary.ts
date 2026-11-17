@@ -32,7 +32,8 @@ function replace(value: string, pairs: [string, string][]) {
 export function capture(f: Fixture): Boundary {
     const pairs = substitutions(f), entries: Record<string, Entry> = {};
     const sources = [...Deno.readDirSync(f.folder)].filter((e) => e.isFile && e.name.endsWith(".py")).map((e) => e.name);
-    sources.push("files/instance-container-wake.sh");
+    // Keep installed helpers tied to the shipped source instead of freezing another copy of their implementation.
+    sources.push("files/instance-container-wake.sh", "files/instance-container-power.py");
     const artifacts = [...Deno.readDirSync(`${f.folder}/artifacts`)].filter((e) => e.isFile)
         .map((e) => [e.name, Deno.readFileSync(`${f.folder}/artifacts/${e.name}`)] as const);
     const walk = (path: string) => {
