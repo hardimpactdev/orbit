@@ -76,7 +76,7 @@ The Gateway keeps its one release record and its one Swamp run per release. The 
 | Start Horizon, always | inline | Start Horizon in whichever container is live at the end, always. The rest of the [handover](#3-long-running-parts-and-their-switch) follows |
 | Admit nested-fleet refresh | inline | Unchanged, run in live after Horizon starts |
 | Resume document cleanup | `artisan gateway:release:cleanup` | Unchanged, run in live |
-| Prune old releases | `gateway-release-prune.sh` | **Retire.** After the previous live has no request in flight, freeze it as old, reclaim its memory to swap, then retire the earlier old container. ZFS keeps a dataset while a clone depends on it |
+| Prune old releases | `gateway-release-prune.sh` | **Retire.** After requests drain, freeze the former live, reclaim its memory to swap and retire the earlier old container |
 
 [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor) keeps the `gateway-release-*.sh` scripts as release steps outside the executor. This design changes what they do, not where they run.
 

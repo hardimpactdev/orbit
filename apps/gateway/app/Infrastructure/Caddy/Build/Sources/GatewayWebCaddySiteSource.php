@@ -49,13 +49,15 @@ final readonly class GatewayWebCaddySiteSource implements NodeCaddySiteSource
         $checkout = $this->checkoutPath ?? rtrim(StoredValue::string(config('orbit.gateway_checkout')), '/');
         $webRoot = $this->webRoot ?? StoredValue::string(config('orbit.gateway_web'));
 
+        $prepared = is_file(rtrim(StoredValue::string(config('orbit.home')), '/').'/gateway-site-prepared');
+
         return [new CaddySite(
             source: 'gateway',
             name: $hostname,
             listener: CaddyListenerRule::WireGuard,
             hosts: [$hostname, $address],
             port: 443,
-            body: $this->renderer->render($hostname, $address, $checkout, $webRoot),
+            body: $this->renderer->render($hostname, $address, $checkout, $webRoot, $prepared),
         )];
     }
 }

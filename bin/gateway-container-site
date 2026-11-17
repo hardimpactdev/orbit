@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Switch only the Gateway handlers under the Node's Caddy publication lock."""
+
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+CADDY = Path("/etc/caddy")
+CONFIG = CADDY / "Caddyfile"
+MODES = CADDY / "orbit-gateway-modes"
+SELECTION = CADDY / "orbit-gateway-handlers.caddy"
+PREPARED = Path("/home/orbit/.orbit/gateway-site-prepared")
+
+
+def write(path, content, mode=0o644, owner=None):
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+        stage = Path(stream.name)
+        try:
+            if owner is not None:
+                os.fchown(stream.fileno(), *owner)
+            os.fchmod(stream.fileno(), mode)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+            os.replace(stage, path)
+        finally:
+            stage.unlink(missing_ok=True)
+
+
+def select(mode):
+    source = MODES / (mode + ".caddy")
+    if not source.is_file():
+        raise ValueError(f"missing prepared handlers: {source}")
+    if SELECTION.exists() and not SELECTION.is_symlink():
+        raise ValueError(f"refusing to replace an unmanaged file: {SELECTION}")
+    temp = MODES / "selection.next"
+    temp.unlink(missing_ok=True)
+    temp.symlink_to(source)
+    os.replace(temp, SELECTION)
+
+
+def prepare(config):
+    if not config.startswith("# Managed by Orbit: Node Caddy build\n"):
+        raise ValueError("expected a managed Node Caddyfile")
+    sections = tuple(re.finditer(r"(?ms)^# orbit: gateway [^\n]+\n.*?^\}", config))
+    if len(sections) != 1:
+        raise ValueError("expected exactly one Gateway site")
+    block = sections[0]
+    match = re.search(r"(?m)^    bind (\d+\.\d+\.\d+\.\d+)$", block[0])
+    if not match:
+        raise ValueError("Gateway site has no private IPv4 bind")
+    include = f"    import {SELECTION} {match[1]}\n"
+    if include in block[0]:
+        if not SELECTION.is_symlink() or not (MODES / "host.caddy").is_file():
+            raise ValueError("missing handler selection or host recovery configuration")
+        return config
+    start = block[0].find("    @gateway path ")
+    if start < 0 or "php_fastcgi unix//run/php/orbit-gateway.sock" not in block[0][start:]:
+        raise ValueError("Gateway site does not contain the expected PHP-FPM handlers")
+    handlers = block[0][start:-1]
+    write(MODES / "host.caddy", handlers.encode())
+    select("host")
+    return config[:block.start() + start] + include + config[block.end()-1:]
+
+
+def reload_config():
+    subprocess.run(["caddy", "validate", "--adapter", "caddyfile", "--config", CONFIG], check=True)
+    subprocess.run(["systemctl", "reload", "caddy.service"], check=True)
+
+
+def apply(mode):
+    status = CONFIG.stat()
+    permissions = status.st_mode & 0o777
+    owner = (status.st_uid, status.st_gid)
+    original = CONFIG.read_bytes()
+    previous = SELECTION.readlink() if SELECTION.is_symlink() else None
+    changed_config = False
+    try:
+        if mode == "prepare":
+            candidate = prepare(original.decode()).encode()
+            if candidate != original:
+                write(CONFIG, candidate, permissions, owner)
+                changed_config = True
+        else:
+            if not PREPARED.is_file():
+                raise ValueError("prepare the Gateway Caddy site first")
+            select(mode)
+        reload_config()
+        if mode == "prepare":
+            write(PREPARED, b"1\n")
+    except BaseException:
+        changed_selection = (SELECTION.readlink() if SELECTION.is_symlink() else None) != previous
+        if changed_config:
+            write(CONFIG, original, permissions, owner)
+        if previous is None:
+            SELECTION.unlink(missing_ok=True)
+        elif changed_selection:
+            restore = MODES / "selection.next"
+            restore.unlink(missing_ok=True)
+            restore.symlink_to(previous)
+            os.replace(restore, SELECTION)
+        if changed_config or changed_selection:
+            reload_config()
+        raise
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2 or sys.argv[1] not in {"prepare", "host", "container"}:
+        sys.exit("usage: orbit-gateway-site prepare|host|container")
+    with (CADDY / ".orbit-publish.lock").open("a") as lock:
+        subprocess.run(["flock", "--exclusive", "--timeout", "30", str(lock.fileno())],
+                       pass_fds=(lock.fileno(),), check=True)
+        apply(sys.argv[1])

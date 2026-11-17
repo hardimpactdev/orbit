@@ -7,6 +7,8 @@ use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\GatewayReleases\GatewayReleaseRunProjection;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCheckRun;
@@ -17,6 +19,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\GatewayRelease;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -135,4 +138,26 @@ it('rolls back to a retained release by releasing its commit, and refuses an unk
         ->and(fn () => $admit->rollback(substr(ReleaseA, 0, 12)))->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_already_current'))
         ->and(fn () => $admit->rollback(substr(ReleaseB, 0, 12)))->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_provenance_invalid'))
         ->and($fetched)->toBe([ReleaseB]);
+});
+
+it('observes the two container releases without a host worktree and detects a former live process', function (): void {
+    $layout = GatewayReleaseLayout::fromConfig();
+    mkdir(dirname($layout->containerInventoryPath()), 0700);
+    file_put_contents($layout->containerInventoryPath(), json_encode(['version' => 1, 'live' => ReleaseB, 'old' => ReleaseA]));
+    $inventory = $layout->observe($this->base.'/releases/'.substr(ReleaseA, 0, 12).'/apps/gateway');
+    expect($inventory->state)->toBe('adopted')
+        ->and($inventory->retained)->toBe([substr(ReleaseB, 0, 12), substr(ReleaseA, 0, 12)])
+        ->and($inventory->superseded)->toBeTrue()
+        ->and($layout->observe($this->base.'/releases/'.substr(ReleaseB, 0, 12).'/apps/gateway')->superseded)->toBeFalse();
+    file_put_contents($layout->containerInventoryPath(), '{"version":1,"live":null,"old":null}');
+    expect(fn () => $layout->observe())->toThrow(GatewayReleaseException::class);
+});
+
+it('resumes a retained release without minting a GitHub token or selecting a new artifact', function (): void {
+    $operation = new Operation(['input' => ['sha' => ReleaseB, 'retained' => true, 'repository' => 'hardimpactdev/orbit']]);
+    $input = app(GatewayReleaseRunProjection::class)->workflowInput($operation);
+
+    expect($input['intent'])->toBe($operation->input)
+        ->and(json_encode($input['execution_secrets']))->toBe('{}');
+    Http::assertNothingSent();
 });

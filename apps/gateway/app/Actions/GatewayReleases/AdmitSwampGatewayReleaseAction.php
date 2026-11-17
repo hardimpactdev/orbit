@@ -16,6 +16,7 @@ use App\Infrastructure\Gateway\GatewayCommandNode;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -74,12 +75,26 @@ final readonly class AdmitSwampGatewayReleaseAction
             throw new GatewayReleaseException('deploy', 'gateway.release_not_adopted', 'The Gateway is not running from a release. Run gateway:release:adopt first.');
         }
         $gateway = GatewayCommandNode::find() ?? throw new GatewayReleaseException('deploy', 'gateway.release_gateway_node_missing', 'No active Gateway Node exists.', 500);
-        $delivery = $this->agent->fetch($commit, $gateway);
-        $web = $this->web->select($commit);
+        if ($this->layout->usesContainers() && $previous === GatewayReleaseCommit::id($commit)) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_already_current', 'This release already serves traffic.', 409);
+        }
+
+        if ($this->layout->usesContainers() && $trigger === 'rollback') {
+            $source = app(GatewayReleaseSource::class)->repository();
+            $publication = ['retained' => true, 'repository' => $source->owner.'/'.$source->name];
+        } else {
+            $delivery = $this->agent->fetch($commit, $gateway);
+            $web = $this->web->select($commit);
+            $publication = [
+                'manifest' => $delivery['manifest'],
+                'repository' => $web['repository'],
+                'web' => ['artifact_id' => $web['artifact_id'], 'size' => $web['size'], 'digest' => $web['digest']],
+            ];
+        }
         $horizon = GatewayHorizon::find($gateway);
 
         // The lock keeps the release unit and a second admission out until the run owns its record.
-        return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $delivery, $web, $horizon, $gateway): GatewayRelease {
+        return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $publication, $horizon, $gateway): GatewayRelease {
             // An automatic record that waits for its commit's publication is superseded by begin().
             if (GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->get()
                 ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
@@ -90,18 +105,18 @@ final readonly class AdmitSwampGatewayReleaseAction
                 throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The current release changed during admission.', 409);
             }
 
-            return $this->admit($commit, $force, $trigger, $previous, $delivery['manifest'], $web, $horizon, $gateway);
+            return $this->admit($commit, $force, $trigger, $previous, $publication, $horizon, $gateway);
         });
     }
 
     /**
-     * @param  array{repository: string, artifact_id: int, size: int, digest: string}  $web
+     * @param  array{repository: string, retained?: true, manifest?: string, web?: array{artifact_id: int, size: int, digest: string}}  $publication
      */
-    private function admit(string $commit, bool $force, string $trigger, string $previous, string $manifest, array $web, ?Process $horizon, Node $gateway): GatewayRelease
+    private function admit(string $commit, bool $force, string $trigger, string $previous, array $publication, ?Process $horizon, Node $gateway): GatewayRelease
     {
         $record = $this->recorder->begin($trigger, $commit, null, $force) ?? throw new GatewayReleaseException('deploy', 'gateway.release_record_failed', 'The release record cannot be written.', 500);
         try {
-            $operation = $this->start($record, $commit, $force, $previous, $manifest, $web, $horizon, $gateway);
+            $operation = $this->start($record, $commit, $force, $previous, $publication, $horizon, $gateway);
         } catch (Throwable $exception) {
             // Swamp may run a start it did not confirm: the record stays running under its Operation, which the shared
             // observer settles.
@@ -127,18 +142,16 @@ final readonly class AdmitSwampGatewayReleaseAction
     }
 
     /**
-     * @param  array{repository: string, artifact_id: int, size: int, digest: string}  $web
+     * @param  array{repository: string, retained?: true, manifest?: string, web?: array{artifact_id: int, size: int, digest: string}}  $publication
      */
-    private function start(GatewayRelease $record, string $commit, bool $force, string $previous, string $manifest, array $web, ?Process $horizon, Node $gateway): Operation
+    private function start(GatewayRelease $record, string $commit, bool $force, string $previous, array $publication, ?Process $horizon, Node $gateway): Operation
     {
         return $this->operations->execute('gateway.release', 'gateway_release', $record->id, SwampNode::id(), [
             'sha' => $commit,
             'id' => GatewayReleaseCommit::id($commit),
             'force' => $force,
             'previous' => $previous,
-            'repository' => $web['repository'],
-            'manifest' => $manifest,
-            'web' => ['artifact_id' => $web['artifact_id'], 'size' => $web['size'], 'digest' => $web['digest']],
+            ...$publication,
             'horizon_unit' => $horizon === null ? '' : new SystemdProcessRenderer()->unitName($horizon),
             'horizon_drain_seconds' => GatewayHorizon::drainSeconds(),
             'keep' => max(2, Config::integer('orbit.gateway_releases.keep')),

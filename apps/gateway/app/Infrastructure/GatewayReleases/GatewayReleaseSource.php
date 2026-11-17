@@ -26,8 +26,13 @@ final readonly class GatewayReleaseSource
     public function repository(): GitHubRepository
     {
         $layout = $this->layout ?? GatewayReleaseLayout::fromConfig();
-        $origin = Process::timeout(10)->run(['git', '--git-dir', $layout->repositoryPath(), 'config', '--get', 'remote.origin.url']);
-        $repository = $origin->successful() ? GitHubRepository::fromOrigin(trim($origin->output())) : null;
+        if ($layout->usesContainers()) {
+            $origin = @file_get_contents($layout->currentPath().'/GATEWAY_ORIGIN', length: 256);
+            $repository = is_string($origin) ? GitHubRepository::fromOrigin(trim($origin)) : null;
+        } else {
+            $origin = Process::timeout(10)->run(['git', '--git-dir', $layout->repositoryPath(), 'config', '--get', 'remote.origin.url']);
+            $repository = $origin->successful() ? GitHubRepository::fromOrigin(trim($origin->output())) : null;
+        }
 
         if (! $repository instanceof GitHubRepository) {
             throw new GatewayReleaseException(
