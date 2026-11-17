@@ -1,6 +1,9 @@
 /** Exercise host ACL convergence and effective NIC audits against disposable local boundaries. */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { fixture, hasAnsible } from "./_support/instance_host.ts";
+import { readBoundaries, restore } from "./_support/host_image_boundary.ts";
+
+const boundaries = readBoundaries();
 
 // Each case is one stage that fits a 150-second lane: the initial converge, then the converges its own check needs.
 for (const status of ["Running", "Stopped"]) {
@@ -45,13 +48,12 @@ for (const status of ["Running", "Stopped"]) {
         async fn() {
             const f = await fixture({ pool: "dir" });
             try {
-                let result = await f.run();
-                assert(result.ok, result.output);
+                restore(f, boundaries["dir-finish"]);
                 // Removing the whole local device restores the profile gate; individual missing properties do not inherit.
                 const fixed = f.state();
                 fixed.instances.push({name, project: "orbit-instances", status, devices: {}});
                 Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(fixed));
-                result = await f.run();
+                const result = await f.run();
                 assert(result.ok, result.output);
             } finally { f.cleanup(); }
         },

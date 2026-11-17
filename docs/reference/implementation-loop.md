@@ -63,6 +63,8 @@ Migration Git fixtures use real temporary repositories to compare branches, comp
 
 Image fixture cases run one host preparation, image build, replacement or retry from a saved boundary. Producer cases run the shipped tasks and compare the full saved state before other cases consume it. The boundaries preserve the Incus state, persistent fixture files and facts used by the next stage. The saved files include the stock-image archives: the next stock check reads both the archive and the Incus API state.
 
+The ACL inheritance cases restore the verified directory-host finish boundary, attach the profile-only container, then run one complete host converge. They do not rebuild the host before testing the attachment. The image fixture's CI inputs include the installed power helper, its install tasks and the wake worker: changing any of them must select the boundary producers, even when no image task changed.
+
 When a host task changes persistent state, run `deno run -A swamp/tests/_support/regenerate_host_image_boundaries.ts --write` from the repository root with the pinned Ansible tools on `PATH`. The helper captures all twelve boundaries from the shipped stages, including replacement and failure states. Use `--check` to compare fresh captures with the saved file without writing it. Keep the producer comparisons and zero-change repeat assertions; do not repair expected state by hand.
 
 Default-remote replacement and failure cases rerun full preparation, including stock reconciliation, the clone probe and local-daemon identity checks. The five repeat-stage cases cover the complete host role and each require zero changes.
