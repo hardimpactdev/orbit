@@ -256,6 +256,8 @@ The optional `steps` list uses typed `OperationStep` metadata. Start responses c
 
 `operation:show`, `operation:cancel` and `task:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
 
+The stored column `executor_result` holds the [executor](/reference/executor#the-listener-and-the-hand-off)'s result line for the Operation's order. Only the agent view subscriber writes it, once. The record does not carry it.
+
 Every operation has the same fields, whatever its kind.
 
 | Field | Contract |

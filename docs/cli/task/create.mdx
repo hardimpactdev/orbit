@@ -33,6 +33,8 @@ orbit task:create "Add tasks CLI" --project=1 --brief="$(cat brief.md)"
 orbit task:create "Add tasks CLI" --project=1 --brief="$(cat brief.md)" --subtasks=subtasks.json --status=todo
 ```
 
+Plan one group, and one pull request, for the whole feature. Build and prove the feature end to end in the copy before its pull request opens: [Build a feature in one copy](/reference/tasks#build-a-feature-in-one-copy).
+
 The CLI does not prompt for the status, the subtasks, or the notification. After the Gateway answers, the CLI shows the task as `task:show` does. A task created in `todo` waits for an explicit `task:start <id>`.
 
 ## Errors

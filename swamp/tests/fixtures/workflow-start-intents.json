@@ -138,7 +138,8 @@
                         "https_proxy=http://10.253.0.1:3128",
                         "no_proxy=localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
                         "NODE_USE_ENV_PROXY=1",
-                        "PLAYWRIGHT_BROWSERS_PATH=0"
+                        "PLAYWRIGHT_BROWSERS_PATH=0",
+                        "AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell"
                     ],
                     "proxy_environment": {
                         "NO_PROXY": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
@@ -242,14 +243,14 @@
                             },
                             {
                                 "path": "/etc/systemd/system.conf.d/91-orbit-browsers.conf",
-                                "content": "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PLAYWRIGHT_BROWSERS_PATH=0\n",
+                                "content": "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PLAYWRIGHT_BROWSERS_PATH=0 AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\n",
                                 "uid": 0,
                                 "gid": 0,
                                 "mode": "0644"
                             },
                             {
                                 "path": "/etc/profile.d/91-orbit-browsers.sh",
-                                "content": "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0\n",
+                                "content": "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0 AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\n",
                                 "uid": 0,
                                 "gid": 0,
                                 "mode": "0644"
@@ -609,7 +610,8 @@
                             "https_proxy=http://10.253.0.1:3128",
                             "no_proxy=localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
                             "NODE_USE_ENV_PROXY=1",
-                            "PLAYWRIGHT_BROWSERS_PATH=0"
+                            "PLAYWRIGHT_BROWSERS_PATH=0",
+                            "AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell"
                         ],
                         "proxy_environment": {
                             "NO_PROXY": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
@@ -713,14 +715,14 @@
                                 },
                                 {
                                     "path": "/etc/systemd/system.conf.d/91-orbit-browsers.conf",
-                                    "content": "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PLAYWRIGHT_BROWSERS_PATH=0\n",
+                                    "content": "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PLAYWRIGHT_BROWSERS_PATH=0 AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\n",
                                     "uid": 0,
                                     "gid": 0,
                                     "mode": "0644"
                                 },
                                 {
                                     "path": "/etc/profile.d/91-orbit-browsers.sh",
-                                    "content": "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0\n",
+                                    "content": "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0 AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\n",
                                     "uid": 0,
                                     "gid": 0,
                                     "mode": "0644"

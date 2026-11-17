@@ -74,6 +74,8 @@ return [
     // during a rotation, base64, comma-separated. The signing key and its signer arrive in slice 2.
     'executor' => [
         'public_keys' => array_values(array_filter(array_map(trim(...), explode(',', (string) env('ORBIT_EXECUTOR_PUBLIC_KEYS', ''))))),
+        // How long a waiting request waits on Valkey for an order's result (ADR 0266 slice 3). A starting value: slice 6 measures it.
+        'wait_ms' => (int) env('ORBIT_EXECUTOR_WAIT_MS', 500),
     ],
 
     'websocket' => [
