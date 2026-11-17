@@ -102,7 +102,7 @@ The WireGuard range `10.44.0.128/25` stays reserved. The address allocator never
 A later release drops what nothing read any more. Its migration `2027_03_01_000000_drop_vm_era_columns_and_task_vms_setting` removes the key `task_vms` from every Node's stored `settings` and drops the columns `nodes.image_refresh_hold`, `tasks.topology`, `tasks.idle_saved_commit` and `tasks.idle_saved_at`. Its rollback adds the four columns back empty; it cannot bring the settings key back, so the release takes a backup first. With the stored value go its three readers:
 
 - The Instance bridge allocation keeps clear only of each Node's Instance and CI bridges, not of a stored task bridge.
-- The agent watch list sends `egress: null` for every Node, so no agent reads a task bridge's log for the egress fact.
+- The agent watch list has no `egress` member, and the agent has no task bridge egress observer.
 - The Gateway refuses every `egress` fact with `agent.fact_not_expected`. The recorder that added its rows to a task group is deleted.
 - The rows already in `task_group_egress` stay readable through `task:egress`.
 - The fleet reboot intent of a Node has no `task_project`, and the pass has no `task_hosts`. Swamp drains no task guests: the step `Drain the task guests` and its task files `fleet-reboot-drain-tasks.yml` and `fleet-reboot-park.yml` are deleted.

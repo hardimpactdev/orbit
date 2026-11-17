@@ -470,13 +470,7 @@ The first phase of every base refresh prepared its host through Ansible; the ref
 
 `incus.volumes` reads the custom volumes in the configured project and pool. Swamp owns volume changes through keyed Operation children; the Gateway keeps volume ownership and inventory reads.
 
-`incus.vm-state` returns one VM's running state, explicit `settled: true`, guest bridge address, and original image fingerprint. It refuses a VM unless Incus reports `Running` or `Stopped`.
-
-`incus.vm` creates, starts, stops, or deletes that VM under one target lock. The agent owns exact-name matching, Incus output validation, clean shutdown followed by forced stop, and the observation after a failed mutation. Create intent supplies the Gateway public key, image claim, resource limits, and topology requirement. The agent renders the fixed cloud-init account and QEMU configuration, clones a required seed before launch, and refuses an existing VM with a different claimed image. Delete removes the VM before releasing its seed clone. The Gateway keeps placement and resource-size policy.
-
-Image builders and smoke VMs use the same `incus.vm` boundary. Their `create_image` intent selects the source image, account key, resource limits, and builder account mode. Rust renders cloud-init, attaches an Incus cloud-init configuration disk, and initializes the VM with NIC isolation. Before its first start, Rust removes the source image’s NoCloud seed templates. The disk supplies the account configuration at power-on, so cloud-init cannot run with an empty datasource while the Incus agent copies seed files and requests a reboot. This applies to stock builders, smoke VMs, and task VMs.
-
-A stopped VM receives the same metadata preparation before it starts. A repeat preserves a VM from the requested image and refuses a different image. `remove_instance` removes an exact VM without changing storage volumes; the Gateway's existing image and orphan sweep decides which names it may remove. An absent VM counts as removed.
+The agent has no VM lifecycle commands. Its Incus inventory and container primitives stay; nothing calls a VM create, start, stop or delete through the agent.
 
 No agent command reaches a guest before enrollment. Nothing built an agent guest, so S10d removed the guest command runner and its `incus exec` transport, with that transport's refusal `task_vm.git_credential_refused` ([old paths](/reference/old-paths#the-guest-agent-chain)). The command runner reaches only a Node, through the [Node transports](/reference/node-agent#transports).
 
@@ -597,16 +591,7 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 
 #### Send branches to the VM
 
-1. The Gateway fetches the operation's branches into the mirror. Only `task-<id>` may be missing on GitHub.
-2. It calls `task-vm.read-git-refs` through the agent runner as the checkout account. The Gateway keeps IDs that the mirror holds as commits.
-3. It packs the objects of the branches that are not in the history of those commits.
-4. It calls `task-vm.import-git-pack` through the agent runner and workspace executor. The command sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
-5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. The [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) setup step reads the default branch there.
-6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
-
-The imported pack follows the JSON envelope as bounded binary input, without a token, staging call, or script. The command validates the pack and approved ref names, then updates the refs in one Git transaction.
-
-The ref command returns at most 1,000 distinct ref object IDs, the worktree's recorded cache baseline, its branch, and its `HEAD`.
+The VM branch transfer is removed. No caller sends `task-vm.read-git-refs` or `task-vm.import-git-pack`, and Swamp's command inventory lists neither. Task copies use the [Instance workspace](/reference/task-instance-workspace).
 
 [New task workspace selection](/reference/implementation-loop#ci-cache-refs) separates the starting code commit from the cache baseline. A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. Another branch with no recorded baseline whose `HEAD` is a main commit, such as a fresh agent branch, uses that `HEAD` commit, not a newer main commit. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
 
