@@ -46,6 +46,7 @@ it('puts the group, then the subtask, then the copy rules in front of the prompt
     Copy rules:
     - Run every command in the foreground. Leave none running when this turn ends.
     - The Project's long gates and full test sets are the work of the task check and CI (`task:check`). Run single test files by path.
+    - Keep each new or changed test unit within the per-unit time cap of the Project's CI, which the task check prints.
     - Commit your work before this turn ends.
     - Never print an environment file, a token, a key or a session value.
 

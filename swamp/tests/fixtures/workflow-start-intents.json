@@ -347,6 +347,30 @@
                                                     "value": "max"
                                                 }
                                             ]
+                                        },
+                                        "codexLow": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, low effort"
+                                        },
+                                        "codexMedium": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, medium effort"
+                                        },
+                                        "codexHigh": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, high effort"
+                                        },
+                                        "codexXhigh": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, xhigh effort"
+                                        },
+                                        "codexMax": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, max effort"
+                                        },
+                                        "codexUltra": {
+                                            "driver": "codex",
+                                            "displayName": "Codex, ultra effort"
                                         }
                                     }
                                 }
@@ -794,6 +818,30 @@
                                                         "value": "max"
                                                     }
                                                 ]
+                                            },
+                                            "codexLow": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, low effort"
+                                            },
+                                            "codexMedium": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, medium effort"
+                                            },
+                                            "codexHigh": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, high effort"
+                                            },
+                                            "codexXhigh": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, xhigh effort"
+                                            },
+                                            "codexMax": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, max effort"
+                                            },
+                                            "codexUltra": {
+                                                "driver": "codex",
+                                                "displayName": "Codex, ultra effort"
                                             }
                                         }
                                     }
@@ -1026,7 +1074,9 @@
                 "snapshot_id": "ee4a94ce-2808-4939-a754-8f54aeb91ef6",
                 "start": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "mirror": "/var/lib/orbit/instance-repositories/2.git",
-                "source_mirror": "/var/lib/orbit/instance-repositories/1.git"
+                "source_mirror": "/var/lib/orbit/instance-repositories/1.git",
+                "published": [],
+                "approved": ""
             },
             "git_authorization": {
                 "vault": "orbit-control-inputs",

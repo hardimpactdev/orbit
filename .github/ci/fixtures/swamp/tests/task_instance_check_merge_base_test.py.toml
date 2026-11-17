@@ -1,0 +1,24 @@
+file = "swamp/tests/task_instance_check_merge_base_test.py"
+slices = false
+cost = 41
+cases = [
+  "test_after_a_merge_of_main_the_deliverable_diff_is_the_subtasks_own",
+  "test_a_recheck_whose_head_already_holds_main_compares_with_the_start_plus_that_head"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/fixtures/task-instance-workspace.json",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/extensions/behaviors/operations/task-repository/check.ts",
+  "swamp/workflows/workflow-task-instance-check.yaml"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_after_a_merge_of_main_the_deliverable_diff_is_the_subtasks_own" = 15
+"test_a_recheck_whose_head_already_holds_main_compares_with_the_start_plus_that_head" = 26

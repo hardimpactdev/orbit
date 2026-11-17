@@ -24,6 +24,7 @@ final class ConvergeNodeRequest extends GatewayRequest implements HasBody
         private readonly bool $base = false,
         private readonly ?string $idempotencyKey = null,
         private readonly ?array $roles = null,
+        private readonly bool $full = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -42,9 +43,9 @@ final class ConvergeNodeRequest extends GatewayRequest implements HasBody
         return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
     }
 
-    /** @return array{base: bool, roles?: list<string>} */
+    /** @return array{base: bool, roles?: list<string>, full?: true} */
     protected function defaultBody(): array
     {
-        return ['base' => $this->base, ...($this->roles === null ? [] : ['roles' => $this->roles])];
+        return ['base' => $this->base, ...($this->roles === null ? [] : ['roles' => $this->roles]), ...($this->full ? ['full' => true] : [])];
     }
 }

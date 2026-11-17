@@ -20,6 +20,12 @@ use App\Data\Tasks\TaskTurnData;
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubAppCredentials;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubPullRequest;
+use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
@@ -55,6 +61,7 @@ use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCheckIntent;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Domain\Tasks\TaskCopyStart;
@@ -76,6 +83,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Jobs\Tasks\DestroyTaskCopy;
+use App\Jobs\Tasks\RetryTaskCopyCreate;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -85,14 +93,17 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskComment;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Mockery\MockInterface;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -281,6 +292,25 @@ function runningOperation(Operation $operation): Operation
     $operation->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
 
     return $operation->refresh();
+}
+
+/** The copy's create ended failed at `$step` with `$code`, as OperationStore records every end. */
+function failCopyCreate(Operation $create, string $code, string $step): void
+{
+    app(OperationStore::class)->change(runningOperation($create), ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => $code,
+        'failed_step' => $step, 'lock_key' => null]);
+}
+
+/** The queued DestroyTaskCopy of the copy ran, and its destroy succeeded. */
+function removeFailedCopy(int $copyId): void
+{
+    destroyTaskCopy(Instance::query()->findOrFail($copyId));
+    destroySucceeded(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copyId)->sole());
+}
+
+function retryTaskCopy(Task $group, Operation $failed): void
+{
+    app()->call([new RetryTaskCopyCreate($group->id, $failed->id), 'handle']);
 }
 
 describe('the decision point', function (): void {
@@ -765,8 +795,121 @@ describe('the address of a copy (docs/reference/development-containers.md#the-ad
     });
 });
 
+describe('a failed create of the copy retries once', function (): void {
+    it('records the first failure, removes the copy and starts the create once more for the same group', function (string $code, string $step): void {
+        $group = copyGroup(copySource()->project);
+        $first = startCopy($group);
+
+        failCopyCreate($first, $code, $step);
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Todo)
+            ->and($group->taskable_id)->toBe($first->target_id)
+            ->and($group->copy_create_failure)->toBe(['operation_id' => $first->id, 'failed_step' => $step, 'error_code' => $code])
+            ->and($group->assistance_requested)->toBeFalse();
+        Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $first->target_id);
+        Queue::assertNotPushed(RetryTaskCopyCreate::class);
+
+        // The retry waits for the copy to be gone: its name and its isolated range are the new copy's.
+        removeFailedCopy($first->target_id);
+        expect($group->refresh()->taskable_id)->toBeNull()->and(Instance::query()->find($first->target_id))->toBeNull();
+        Queue::assertPushed(RetryTaskCopyCreate::class, static fn (RetryTaskCopyCreate $job): bool => $job->groupId === $group->id && $job->operationId === $first->id);
+
+        retryTaskCopy($group, $first);
+
+        $retry = Operation::query()->where('kind', 'instance.create')->whereKeyNot($first->id)->latest('id')->firstOrFail();
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)
+            ->and($group->taskable_id)->toBe($retry->target_id)
+            ->and($retry->triggered_by)->toBe($first->triggered_by)
+            ->and(Instance::query()->findOrFail($retry->target_id)->name)->toBe('task-'.$group->id);
+    })->with([
+        'a failed run' => ['instance.create_failed', 'clone'],
+        'a register failure' => ['instance.create_register_failed', 'register'],
+        'an unreadable baseline' => ['instance.workspace_baseline_unavailable', 'clone-register'],
+        'a start that Swamp refused' => ['swamp.run_start_refused', 'start'],
+    ]);
+
+    it('puts the group in todo, never failed, with both failures named, and removes the copy without a third create', function (): void {
+        $group = copyGroup(copySource()->project);
+        $first = startCopy($group);
+        failCopyCreate($first, 'instance.workspace_baseline_unavailable', 'clone-register');
+        removeFailedCopy($first->target_id);
+        retryTaskCopy($group, $first);
+        $retry = Operation::query()->where('kind', 'instance.create')->whereKeyNot($first->id)->latest('id')->firstOrFail();
+
+        failCopyCreate($retry, 'instance.create_register_failed', 'register');
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Todo)
+            ->and($group->taskable_id)->toBe($retry->target_id)
+            ->and($group->copy_create_failure)->toBeNull()
+            ->and($group->assistance_kind)->toBe(AssistanceKind::Failure)
+            ->and($group->assistance_reason)->toBe(TaskCopyLifecycle::CreateFailedReason
+                ."Operation {$first->id} ended at step clone-register with instance.workspace_baseline_unavailable, and its retry, Operation {$retry->id}, "
+                ."ended at step register with instance.create_register_failed. Orbit removes the copy; start the task again with `orbit task:start {$group->id}` once it is gone.");
+        Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $retry->target_id);
+
+        removeFailedCopy($retry->target_id);
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Todo)->and($group->taskable_id)->toBeNull()
+            ->and($group->assistance_kind)->toBe(AssistanceKind::Failure);
+        Queue::assertPushed(RetryTaskCopyCreate::class, 1);
+    });
+
+    it('retries only a create that failed: not one whose budget expired, and not a cancelled one', function (): void {
+        $project = copySource(nested: false)->project;
+        [$failed, $expired, $cancelled] = [copyGroup($project), copyGroup($project), copyGroup($project)];
+        $failure = startCopy($failed);
+        $expiry = startCopy($expired);
+        $cancel = startCopy($cancelled);
+
+        failCopyCreate($failure, 'instance.create_failed', 'clone');
+        failCopyCreate($expiry, 'operation.timed_out', 'clone');
+        app(CancelOperationAction::class)->execute($cancel);
+        removeFailedCopy($failure->target_id);
+        removeFailedCopy($cancel->target_id);
+
+        expect([$failed->refresh()->status, $expired->refresh()->status, $cancelled->refresh()->status])
+            ->toBe([TaskGroupStatus::Todo, TaskGroupStatus::Reserved, TaskGroupStatus::Failed])
+            ->and([$expired->copy_create_failure, $cancelled->copy_create_failure])->toBe([null, null]);
+        Queue::assertPushed(RetryTaskCopyCreate::class, 1);
+        Queue::assertPushed(RetryTaskCopyCreate::class, static fn (RetryTaskCopyCreate $job): bool => $job->groupId === $failed->id);
+    });
+
+    it('cancels a todo group that task:cancel ends while it holds its failed copy, and starts no retry', function (): void {
+        $group = copyGroup(copySource()->project);
+        $first = startCopy($group);
+        failCopyCreate($first, 'instance.create_failed', 'clone');
+
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        destroySucceeded(Operation::query()->findOrFail($cancel->result['destroy_operation_id'] ?? $cancel->state['destroy_operation_id']));
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled)->and($group->taskable_id)->toBeNull();
+        Queue::assertNotPushed(RetryTaskCopyCreate::class);
+    });
+
+    it('refuses task:start with tasks.copy_removing while the failed copy is bound, and starts the group again once it is gone', function (): void {
+        $group = copyGroup(copySource()->project);
+        $first = startCopy($group);
+        failCopyCreate($first, 'instance.create_failed', 'clone');
+        removeFailedCopy($first->target_id);
+        retryTaskCopy($group, $first);
+        $retry = Operation::query()->where('kind', 'instance.create')->whereKeyNot($first->id)->latest('id')->firstOrFail();
+        failCopyCreate($retry, 'instance.create_failed', 'clone');
+
+        expect(copyRefusal(fn () => startCopy($group->refresh())))->toBe('tasks.copy_removing 409');
+
+        removeFailedCopy($retry->target_id);
+        $again = startCopy($group->refresh());
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)->and($group->taskable_id)->toBe($again->target_id);
+        // The copy that finally comes up ends the request that named the two failures.
+        Instance::query()->findOrFail($again->target_id)->update(['status' => InstanceState::Active]);
+        app(OperationStore::class)->change($again, ['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->assistance_requested)->toBeFalse();
+    });
+});
+
 describe('the end of the copy\'s create', function (): void {
-    it('fails the group and queues the copy\'s destroy when the create fails; a clone that no group owns changes nothing', function (): void {
+    it('puts the group back in todo and queues the copy\'s destroy when the create fails; a clone that no group owns changes nothing', function (): void {
         $default = copySource();
         $group = copyGroup($default->project);
         $operation = runningOperation(startCopy($group));
@@ -777,7 +920,7 @@ describe('the end of the copy\'s create', function (): void {
         app(DevelopmentInstanceCreateProjection::class)->apply($operation, [...$failed, 'result' => [...$failed['result'], 'instance_id' => $operation->target_id]]);
         app(DevelopmentInstanceCreateProjection::class)->apply($normal, [...$failed, 'result' => [...$failed['result'], 'instance_id' => $normal->target_id]]);
 
-        expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Todo)
             ->and($group->taskable_id)->toBe($operation->target_id)
             ->and($operation->refresh()->status)->toBe(OperationStatus::Failed)
             ->and($normal->refresh()->status)->toBe(OperationStatus::Failed);
@@ -979,14 +1122,14 @@ describe('the end of the copy\'s create', function (): void {
         Queue::assertNotPushed(DestroyTaskCopy::class);
     });
 
-    it('fails the group and queues the destroy when the create\'s run ended without a readable result', function (): void {
+    it('puts the group back in todo and queues the destroy when the create\'s run ended without a readable result', function (): void {
         $group = copyGroup(copySource()->project);
         $operation = runningOperation(startCopy($group));
 
         app(FailUnreadableResultAction::class)->execute($operation, 'run-1', ['status' => 'succeeded', 'completedAt' => now()->toIso8601ZuluString()], 'finish', 'skipped');
 
         expect($operation->refresh()->error_code)->toBe('operation.result_unreadable')
-            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Todo);
         Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $operation->target_id);
     });
 
@@ -1134,7 +1277,7 @@ describe('a cancel of a group that owns a copy', function (): void {
             $this->fail('The cancel destroyed unpublished work.');
         } catch (ResourceOperationException $error) {
             expect($error->errorCode)->toBe('tasks.copy_unpublished_work')->and($error->status)->toBe(409)
-                ->and($error->details)->toBe(['head' => str_repeat('e', 40), 'unpushed' => 3, 'uncommitted' => 3, 'modified' => 1, 'untracked' => 2, 'stashes' => 0]);
+                ->and($error->details)->toBe(['head' => str_repeat('e', 40), 'commits' => 3, 'unpushed' => 3, 'work' => null, 'uncommitted' => 3, 'modified' => 1, 'untracked' => 2, 'stashes' => 0]);
         }
         expect(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse()
             ->and(Instance::query()->find($copy->id))->not->toBeNull()
@@ -1542,7 +1685,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($turn->input['runtime'])->toBe(['project' => InstancePlacement::NestedProject, 'name' => $copy->runtime->container_name])
             ->and($turn->input['branch'])->toBe('task-'.$group->id)
             ->and(Arr::except($turn->input['turn'], 'prompt'))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'node' => '/opt/orbit-runtime/current/bin/node',
-                'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'candidate' => null, 'settle' => [], 'seconds' => 3600,
+                'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [], 'seconds' => 3600,
                 'title' => 'Orbit task '.$group->id.' thread '.$thread->id])
             // The implementer learns how to ask: a question ends the turn.
             // The group's title and brief come first, the copy rules once, then the turn's clock: the admission's time and the end of its bound.
@@ -1714,14 +1857,15 @@ describe('a turn of a group that owns a copy', function (): void {
             $this->fail('The turn was admitted.');
         } catch (ResourceOperationException $error) {
             expect($error->errorCode.' '.$error->status)->toBe('tasks.copy_turn_unoffered 422')
-                ->and($error->details['offered'])->toBe(['claude' => ['low', 'medium', 'high', 'xhigh', 'max']]);
+                ->and($error->details['offered'])->toBe(['claude' => ['low', 'medium', 'high', 'xhigh', 'max'], 'codex' => ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']]);
         }
         expect(AgentThread::query()->count())->toBe(0)->and(Operation::query()->count())->toBe($before);
     })->with([
         'a Gateway effort Claude Code has no instance for' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.effort' => 'minimal'])],
-        'a Gateway provider the copy has no instance of' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.provider' => 'codex'])],
+        'a Gateway provider the copy has no instance of' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.provider' => 'pi'])],
+        'a Codex effort Claude Code has no instance for' => [static fn (Task $group) => $group->update(['implementer_agent_effort' => 'ultra'])],
         'a stored group effort the copy no longer offers' => [static fn (Task $group) => $group->update(['implementer_agent_effort' => 'minimal'])],
-        'a stored Project provider the copy no longer offers' => [static fn (Task $group) => $group->project->update(['task_implementer_provider' => 'codex'])],
+        'a stored Project provider the copy no longer offers' => [static fn (Task $group) => $group->project->update(['task_implementer_provider' => 'pi'])],
     ]);
 
     it('refuses a new thread whose Gateway model is no model name, and records nothing', function (): void {
@@ -1734,15 +1878,18 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(AgentThread::query()->count())->toBe(0)->and(Operation::query()->count())->toBe($before);
     });
 
-    it('gives a task copy\'s T3 one Claude provider instance per effort, each with CLAUDE_CODE_EFFORT_LEVEL', function (): void {
+    it('gives a task copy\'s T3 one Claude provider instance per effort, each with CLAUDE_CODE_EFFORT_LEVEL, and one Codex instance per effort', function (): void {
         $group = copyGroup(copySource()->project);
 
         $files = collect(ValidatedData::object(containerIntentOf(startCopy($group))['clone'])['files'])->keyBy('path');
 
         $instances = $files['/home/agent/.t3/userdata/settings.json']['json']['providerInstances'];
-        expect(array_keys($instances))->toBe(['claudeLow', 'claudeMedium', 'claudeHigh', 'claudeXhigh', 'claudeMax'])
+        expect(array_keys($instances))->toBe(['claudeLow', 'claudeMedium', 'claudeHigh', 'claudeXhigh', 'claudeMax',
+            'codexLow', 'codexMedium', 'codexHigh', 'codexXhigh', 'codexMax', 'codexUltra'])
             ->and($instances['claudeMedium'])->toBe(['driver' => 'claudeAgent', 'displayName' => 'Claude, medium effort',
                 'environment' => [['name' => 'CLAUDE_CODE_EFFORT_LEVEL', 'value' => 'medium']]])
+            // Codex takes its effort from the thread's model options, not from its instance (InstanceContainer::providerOptions).
+            ->and($instances['codexHigh'])->toBe(['driver' => 'codex', 'displayName' => 'Codex, high effort'])
             ->and($files['/home/agent/.t3/userdata/settings.json']['json']['linkedEnvironmentsEnabled'])->toBeTrue();
     });
 
@@ -1762,7 +1909,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect($next->input['thread_id'])->toBe($first->input['thread_id'])
             ->and(Arr::except($next->input['turn'], 'prompt'))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'node' => '/opt/orbit-runtime/current/bin/node',
-                'thread' => 'continue', 'provider' => null, 'model' => 'claude-opus-5-5', 'candidate' => null, 'settle' => [], 'seconds' => 3600, 'title' => $first->input['turn']['title']])
+                'thread' => 'continue', 'provider' => null, 'model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [], 'seconds' => 3600, 'title' => $first->input['turn']['title']])
             ->and($next->input['turn']['prompt'])->toEndWith("Prompt of this turn:\nFix the failing test.\n\n".TaskCopyTurn::AskRule)
             ->and($named->input['thread_id'])->toBe($first->input['thread_id'])->and($named->input['turn']['thread'])->toBe('continue')
             ->and(AgentThread::query()->where('task_group_id', $group->id)->sole()->only(['model', 'effort', 'provider_instance']))
@@ -1784,6 +1931,22 @@ describe('a turn of a group that owns a copy', function (): void {
         expect($fresh->input['thread_id'])->not->toBe($first->input['thread_id'])->and($fresh->input['turn']['thread'])->toBe('new')
             ->and($next->input['thread_id'])->toBe($fresh->input['thread_id'])->and($next->input['turn']['thread'])->toBe('continue')
             ->and($group->tasks()->firstOrFail()->implementer_agent_thread_id)->toBe($fresh->input['thread_id']);
+    });
+
+    it('starts a Codex reviewer on its effort\'s instance with the effort as its reasoningEffort option, and the reviewer rule', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        copyTurnEnded(copyTurn($group), 'succeeded', copyTurnDone('mcp:1'));
+        $check = copyCandidate($group);
+        $group->project->update(['task_reviewer_provider' => 'codex', 'task_reviewer_model' => 'gpt-6.1-sol', 'task_reviewer_effort' => 'high']);
+
+        $review = copyTurn($group, ['role' => 'reviewer', 'check' => $check->id]);
+
+        expect($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'codexHigh', 'model' => 'gpt-6.1-sol',
+            'options' => [['id' => 'reasoningEffort', 'value' => 'high']]])
+            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::ReviewRule."\n\n".TaskCopyTurn::PrTextRule)
+            ->and(AgentThread::query()->findOrFail($review->input['thread_id'])->only(['model', 'effort', 'provider_instance']))
+            ->toBe(['model' => 'gpt-6.1-sol', 'effort' => 'high', 'provider_instance' => 'codexHigh']);
     });
 
     it('starts a new thread when the role\'s recorded thread is not a T3 thread of this copy', function (): void {
@@ -1816,14 +1979,22 @@ describe('a turn of a group that owns a copy', function (): void {
                 'effort' => 'high', 'external_id' => 'mcp:2'])
             ->and($review->input)->toMatchArray(['role' => 'reviewer', 'check' => $check->id, 'candidate' => $check->commit_sha])
             // The phase checks the candidate out for the reviewer, and the prompt names it.
-            ->and($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'claudeHigh', 'candidate' => $check->commit_sha])
+            // A Claude thread carries no model options: its instance's CLAUDE_CODE_EFFORT_LEVEL sets its effort, as before.
+            ->and($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'claudeHigh', 'model' => 'claude-opus-5-5', 'options' => [],
+                'candidate' => $check->commit_sha])
             // The reviewer gets the group's title and brief first, the copy rules once and its clock, as the implementer does.
             ->and($review->input['turn']['prompt'])->toStartWith("Task group: Group\n\nGroup brief:\nBrief\n\nSubtask: Step\n\n")
             ->and(substr_count($review->input['turn']['prompt'], TaskTurnPrompt::CopyRules))->toBe(1)
             ->and($review->input['turn']['prompt'])->toMatch('/'.preg_quote(TaskTurnPrompt::CopyRules, '/').'\n\nThis turn started at \S+Z and Orbit ends it at \S+Z\. Commit your work before then\.\n\n'
                 .'Prompt of this turn:\nReview the checked commit\.\n\nThe checked commit under review: '.$check->commit_sha.'\./')
-            // A reviewer that approves sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
-            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::PrTextRule)
+            // The reviewer rule bounds the review by the task's scope (docs/reference/tasks.md#the-reviewer-rule); a reviewer that approves
+            // then sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
+            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::ReviewRule."\n\n".TaskCopyTurn::PrTextRule)
+            ->and(substr_count($review->input['turn']['prompt'], TaskCopyTurn::ReviewRule))->toBe(1)
+            // The scope bounds the findings, not a count.
+            ->and(TaskCopyTurn::ReviewRule)->toContain('Report every finding inside that scope.')->not->toMatch('/at most|\bno more than\b/i')
+            ->and($implementer->input['turn']['prompt'])->not->toContain(TaskCopyTurn::ReviewRule)
+            ->and($implementer->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::AskRule)
             ->and($again->input['turn']['candidate'])->toBe($check->commit_sha)
             ->and($group->refresh()->reviewer_agent_thread_id)->toBe($thread->id)
             ->and($again->input['thread_id'])->toBe($thread->id)->and($again->input['turn']['thread'])->toBe('continue');
@@ -2335,4 +2506,317 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect(copyRefusal(fn () => app(ReadAgentThreadAction::class)->execute($group, $thread, null)))->toBe('tasks.agent_transcript_unavailable 409');
     });
+});
+
+describe('a cancel or complete of a copy group whose work was carried to the default branch', function (): void {
+    /**
+     * A running copy group without a watched pull request, whose copy now reads `$head`, and the content read of its latest sync:
+     * `$work` overrides the read of a hand-carried branch (docs/reference/tasks.md#published-work-of-a-copy).
+     *
+     * @param  array<string, mixed>|null  $work
+     * @return array{Task, Instance}
+     */
+    function carriedCopy(?array $work, string $approved = ''): array
+    {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        // The reader names the branch as `head` and its commit as `head_commit`; the content read is of the commit.
+        $head = str_repeat('d', 40);
+        test()->ssh->answer['head_commit'] = $head;
+        if ($work !== null) {
+            Operation::query()->create(['kind' => 'tasks.sync', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+                'input' => ['copy' => ['approved' => $approved]], 'state' => [], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 0,
+                'finished_at' => now(), 'result' => ['work' => [...['state' => 'clean', 'head' => $head, 'default_commit' => str_repeat('e', 40), 'empty' => false,
+                    'paths' => ['count' => 0, 'names' => []], 'uncommitted' => 0, 'untracked' => 0, 'stashes' => 0, 'approved_held' => null], ...$work]]]);
+        }
+
+        return [$group->refresh(), $copy];
+    }
+
+    function completeRefusal(Task $group): ?string
+    {
+        try {
+            app(CompleteTaskGroupAction::class)->execute($group);
+        } catch (ResourceOperationException $error) {
+            return $error->errorCode.' '.($error->details['reason'] ?? '');
+        }
+
+        return null;
+    }
+
+    it('completes a running copy group with no watched pull request whose committed work is on the default branch, and destroys its copy', function (): void {
+        [$group, $copy] = carriedCopy([]);
+
+        $completed = app(CompleteTaskGroupAction::class)->execute($group);
+
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        expect($completed->status)->toBe(TaskGroupStatus::Completed)
+            ->and($completed->settled_at)->not->toBeNull()
+            ->and($completed->tasks()->where('status', TaskStatus::Cancelled)->count())->toBe(1)
+            ->and($destroy->target_id)->toBe($copy->id)->and($destroy->input['force'])->toBeTrue();
+    });
+
+    it('refuses a running copy group whose work is not shown on the default branch with tasks.not_settling and the reason', function (?array $work, string $reason): void {
+        [$group] = carriedCopy($work);
+
+        expect(completeRefusal($group))->toBe('tasks.not_settling '.$reason)
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+    })->with([
+        'never read' => [null, 'work_unread'],
+        'read of an older head' => [['head' => str_repeat('f', 40)], 'work_unread'],
+        'a path that differs' => [['state' => 'dirty', 'paths' => ['count' => 1, 'names' => ['work.txt']]], 'work_not_on_default'],
+        'an empty copy: cancel it' => [['empty' => true], 'work_empty'],
+    ]);
+
+    it('cancels a squash-merged copy without discard: its local commits are on the default branch by content', function (): void {
+        [$group, $copy] = carriedCopy([]);
+        // The read counts the copy's own commits and the check's empty handoff commit: origin lacks their ids.
+        $this->ssh->answer = [...$this->ssh->answer, 'state' => 'dirty',
+            'commits' => ['count' => 2, 'branch_count' => 1, 'branches' => [['name' => 'task-'.$group->id, 'count' => 2]], 'head' => 2]];
+
+        $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
+
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        expect($cancel->result['destroy_operation_id'])->toBe($destroy->id)->and($destroy->target_id)->toBe($copy->id)
+            ->and($cancel->result['workspace'])->toMatchArray(['state' => 'clean', 'commits' => 2, 'unpushed' => 0, 'work' => 'on_default']);
+    });
+
+    it('still refuses a copy whose committed work is on the default branch but which holds uncommitted work, or whose commits were not read', function (array $answer, ?array $work, array $details): void {
+        [$group] = carriedCopy($work);
+        $this->ssh->answer = [...$this->ssh->answer, 'state' => 'dirty',
+            'commits' => ['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'task-'.$group->id, 'count' => 1]], 'head' => 1], ...$answer];
+
+        try {
+            app(TaskCancelIntent::class)->start($group, 'test', null);
+            $this->fail('The cancel destroyed unpublished work.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('tasks.copy_unpublished_work')->and($error->details)->toMatchArray($details);
+        }
+        expect(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse();
+    })->with([
+        'an uncommitted file' => [['modified' => ['count' => 1, 'names' => ['a.php']]], [], ['unpushed' => 0, 'work' => 'on_default', 'uncommitted' => 1]],
+        'a stash' => [['stashes' => ['count' => 1, 'names' => ['stash@{0}']]], [], ['unpushed' => 0, 'stashes' => 1]],
+        'no read of this head' => [[], ['head' => str_repeat('f', 40)], ['unpushed' => 1, 'work' => 'work_unread']],
+        // The content read is of the checked-out branch alone: a commit that only another branch holds is never cleared.
+        'a commit only another branch holds' => [['commits' => ['count' => 2, 'branch_count' => 2,
+            'branches' => [['name' => 'experiment', 'count' => 1], ['name' => 'task-1', 'count' => 1]], 'head' => 1]], [],
+            ['commits' => 2, 'unpushed' => 1, 'work' => 'on_default', 'uncommitted' => 0, 'stashes' => 0]],
+        'a path that differs' => [[], ['state' => 'dirty', 'paths' => ['count' => 1, 'names' => ['a.php']]], ['unpushed' => 1, 'work' => 'work_not_on_default']],
+    ]);
+
+    it('takes the approved commit as kept when the content read holds it on the default branch, though origin\'s branch cannot be read', function (bool $held): void {
+        $approved = str_repeat('a', 40);
+        [$group] = carriedCopy(['approved_held' => $held], $approved);
+        // No GitHub origin: the branch compare refuses without a read, so only the content read can keep the approved work.
+        $group->project->update(['repository_url' => 'https://git.example.test/trial.git']);
+        TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $group->tasks()->value('id'), 'type' => TaskCommentType::Approved,
+            'body' => 'Approved.', 'author' => 'reviewer', 'commit_sha' => $approved, 'posted_at' => now()]);
+
+        expect(completeRefusal($group->refresh()))->toBe($held ? null : 'tasks.approved_work_unpublished ');
+    })->with(['held' => [true], 'not held' => [false]]);
+});
+
+describe('a copy group whose watched pull request merged settles itself', function (): void {
+    /**
+     * A running copy group whose watched pull request is #7, on a Project with maintenance off: the settle does not depend on it.
+     *
+     * @return array{Task, Instance}
+     */
+    function watchedCopy(): array
+    {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'settle', 'settle', 'nckrtl', 'organization', 'https://github.com/apps/settle', 'unused'));
+        expect($group->project->maintenance)->toBeFalse();
+        $group->update(['watched_pr_url' => 'https://github.com/nckrtl/trial/pull/7', 'watched_pr_state' => 'open']);
+
+        return [$group->refresh(), $copy];
+    }
+
+    /**
+     * One `task:copy-settle` tick, with a GitHub that serves the watched pull request in `$state` and fails every other read with
+     * `$branch` (docs/reference/tasks.md#a-copy-group-settles-on-merge). Returns how often the tick read the pull request.
+     */
+    function settleTick(string $state, ?Throwable $branch = null): int
+    {
+        $reads = 0;
+        $pull = new GitHubPullRequest(GitHubPullRequestState::from($state), null, null, str_repeat('a', 40), 'main', mergedAt: $state === 'merged' ? '2026-11-16T20:00:00Z' : null);
+        app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($pull, $branch, &$reads): void {
+            $github->shouldReceive('repositoryInstallation')->andReturn(7);
+            $github->shouldReceive('repositoryPullRequestReadToken')->andReturn('read-token');
+            $github->shouldReceive('repositoryReadToken')->andReturn('contents-token');
+            $github->shouldReceive('pullRequest')->andReturnUsing(function () use ($pull, &$reads): GitHubPullRequest {
+                $reads++;
+
+                return $pull;
+            });
+            $github->shouldReceive('branchHead')->andThrow($branch ?? new GitHubApiException('No branch read expected.'));
+        }));
+        expect(Artisan::call('task:copy-settle'))->toBe(0);
+
+        return $reads;
+    }
+
+    it('runs every five minutes beside the other task jobs', function (): void {
+        Artisan::call('schedule:list');
+
+        expect(Artisan::output())->toMatch('/\*\/5\s+\*\s+\*\s+\*\s+\*\s+php artisan task:copy-settle/');
+    });
+
+    it('records the merge, completes the group and admits the copy\'s destroy, in a Project with maintenance off, and only reads the pull request', function (): void {
+        [$group, $copy] = watchedCopy();
+        Http::fake();
+
+        $reads = settleTick('merged');
+
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+            ->and($group->watched_pr_state)->toBe('merged')->and($group->watched_pr_completion)->toBe('merged')
+            ->and($group->merged_at?->toIso8601ZuluString())->toBe('2026-11-16T20:00:00Z')->and($group->settled_at)->not->toBeNull()
+            ->and($group->tasks()->where('status', TaskStatus::Cancelled)->count())->toBe(1)
+            ->and($destroy->target_id)->toBe($copy->id)->and($destroy->input['force'])->toBeTrue()
+            ->and($group->assistance_requested)->toBeFalse();
+        // Orbit never merges, readies or comments: the tick reads the pull request once, and nothing else goes to GitHub.
+        expect($reads)->toBe(1);
+        Http::assertNothingSent();
+        // A repeated tick while the destroy runs admits nothing more and reads no pull request.
+        expect(settleTick('merged'))->toBe(0);
+        expect(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+
+        destroySucceeded($destroy);
+        expect(Instance::query()->find($copy->id))->toBeNull()->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($group->taskable_id)->toBeNull();
+    });
+
+    it('records a pull request that closed without a merge, and leaves the group and its copy for a person', function (): void {
+        [$group, $copy] = watchedCopy();
+
+        settleTick('closed');
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->watched_pr_state)->toBe('closed')
+            ->and($group->watched_pr_completion)->toBeNull()->and($group->taskable_id)->toBe($copy->id)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+    });
+
+    it('skips a group while an Operation of its own runs, and completes it on the next tick once that ended', function (): void {
+        [$group] = watchedCopy();
+        $turn = Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $group->taskable->node_id,
+            'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
+
+        settleTick('merged');
+
+        // The merge is recorded; the running turn is not stopped.
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->watched_pr_completion)->toBe('merged')
+            ->and($turn->refresh()->status)->toBe(OperationStatus::Running)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+
+        $turn->forceFill(['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null])->save();
+        settleTick('merged');
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+    });
+
+    it('completes a group whose merge an earlier tick recorded before it crashed, without reading the pull request again', function (): void {
+        [$group] = watchedCopy();
+        $group->update(['watched_pr_state' => 'merged', 'watched_pr_completion' => 'merged', 'merged_at' => '2026-11-16T20:00:00Z']);
+
+        expect(settleTick('merged'))->toBe(0);
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+    });
+
+    it('keeps a completed group with its copy when the destroy fails, and the next tick admits a new destroy', function (): void {
+        [$group, $copy] = watchedCopy();
+        settleTick('merged');
+        Operation::query()->where('kind', 'instance.destroy')->sole()->forceFill(['status' => 'failed', 'finished_at' => now(), 'lock_key' => null])->save();
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($group->taskable_id)->toBe($copy->id);
+
+        settleTick('merged');
+
+        expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->count())->toBe(2)
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed);
+    });
+
+    it('retries a destroy that an earlier complete could not admit, and leaves any other request on a completed group to a person', function (string $reason, int $destroys): void {
+        [$group, $copy] = watchedCopy();
+        $group->update(['watched_pr_state' => 'merged', 'watched_pr_completion' => 'merged', 'merged_at' => '2026-11-16T20:00:00Z', 'status' => TaskGroupStatus::Completed]);
+        TaskAssistance::apply($group->refresh(), AssistanceKind::RemovalFailure, null, $reason, replaceFailure: true);
+
+        settleTick('merged');
+
+        expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->count())->toBe($destroys);
+    })->with([
+        'a refused destroy admission' => [RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node refused the destroy.', 1],
+        'another request' => ['A person looks at this copy.', 0],
+    ]);
+
+    it('retries a copy read that timed out or a failed GitHub read of origin\'s branch, with no request for a person, and completes on the next tick', function (string $cause): void {
+        [$group] = watchedCopy();
+        if ($cause === 'github') {
+            // An approval whose commit origin's branch must reach: GitHub fails that read.
+            TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $group->tasks()->value('id'), 'type' => TaskCommentType::Approved,
+                'body' => 'Approved.', 'author' => 'reviewer', 'commit_sha' => str_repeat('a', 40), 'posted_at' => now()]);
+        } else {
+            $this->ssh->answer = [...$this->ssh->answer, 'state' => 'unknown', 'reason' => 'timeout'];
+        }
+
+        settleTick('merged', new GitHubApiException('GitHub answered 500.'));
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->watched_pr_completion)->toBe('merged')
+            ->and($group->assistance_requested)->toBeFalse()
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+
+        // The cause passes: the copy answers, and origin's branch is the approved commit.
+        $this->ssh->answer = [...$this->ssh->answer, 'state' => 'clean', 'reason' => null];
+        TaskComment::query()->where('task_group_id', $group->id)->delete();
+        settleTick('merged');
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+    })->with(['an SSH timeout' => ['timeout'], 'a GitHub 500' => ['github']]);
+
+    it('does not destroy a copy that a person must fix: it records the request once, never pointing to a discard, and skips the group', function (array $answer, string $request): void {
+        [$group, $copy] = watchedCopy();
+        $this->ssh->answer = [...$this->ssh->answer, ...$answer];
+
+        settleTick('merged');
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->taskable_id)->toBe($copy->id)
+            ->and($group->assistance_kind)->toBe(AssistanceKind::Failure)
+            ->and($group->assistance_reason)->toContain($request)->not->toContain('discard')
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+        $reads = $this->ssh->calls;
+
+        settleTick('merged');
+
+        expect($this->ssh->calls)->toBe($reads)->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+    })->with([
+        'uncommitted work' => [['state' => 'dirty', 'modified' => ['count' => 1, 'names' => ['a.php']]], 'Publish or remove that work'],
+        'a stopped copy' => [['state' => 'unknown', 'reason' => 'stopped'], 'Start the copy'],
+    ]);
+
+    it('refuses a complete of a copy that holds work that is not published, and changes nothing', function (array $answer, string $code, array $details): void {
+        [$group] = watchedCopy();
+        $group->update(['status' => TaskGroupStatus::Settling]);
+        $group->tasks()->update(['status' => TaskStatus::Completed]);
+        $this->ssh->answer = [...$this->ssh->answer, ...$answer];
+
+        try {
+            app(CompleteTaskGroupAction::class)->execute($group->refresh());
+            $this->fail('The complete destroyed unpublished work.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe($code)->and($error->status)->toBe(409)->and($error->details)->toMatchArray($details);
+        }
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Settling)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+    })->with([
+        'an uncommitted file' => [['state' => 'dirty', 'modified' => ['count' => 1, 'names' => ['a.php']]], 'tasks.copy_unpublished_work', ['uncommitted' => 1]],
+        'an untracked file' => [['state' => 'dirty', 'untracked' => ['count' => 1, 'names' => ['b.txt']]], 'tasks.copy_unpublished_work', ['untracked' => 1]],
+        'a stash' => [['state' => 'dirty', 'stashes' => ['count' => 1, 'names' => ['stash@{0}']]], 'tasks.copy_unpublished_work', ['stashes' => 1]],
+        'a commit only another branch holds' => [['state' => 'dirty', 'commits' => ['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'experiment', 'count' => 1]], 'head' => 0]],
+            'tasks.copy_unpublished_work', ['unpushed' => 1]],
+        'a copy that cannot be read' => [['state' => 'unknown', 'reason' => 'stopped'], 'tasks.copy_workspace_unknown', ['reason' => 'stopped']],
+    ]);
 });

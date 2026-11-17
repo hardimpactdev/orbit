@@ -1,6 +1,6 @@
 file = "swamp/tests/task_copy_publish_base_test.py"
 slices = false
-cost = 52
+cost = 62
 cases = [
   "test_a_branch_level_with_main_is_zero_behind_and_overlaps_nothing",
   "test_a_branch_behind_without_a_shared_path_is_stated_and_publishes",
@@ -12,6 +12,7 @@ cases = [
   "test_a_republish_after_a_merge_at_publish_is_a_fast_forward_over_that_merge",
   "test_a_tip_that_is_no_earlier_publish_merge_is_not_a_fast_forward",
   "test_the_same_branch_after_it_merged_the_default_head_publishes",
+  "test_a_checked_merge_of_main_publishes_level_with_main_and_merges_again_only_after_main_moved",
   "test_a_default_commit_that_changed_a_workflow_carried_in_by_hand_is_no_change_of_the_copy",
   "test_a_workflow_change_of_the_copy_that_a_later_commit_undoes_is_no_change",
   "test_a_copy_commit_of_its_own_that_changes_a_workflow_is_refused_with_its_path",
@@ -40,6 +41,7 @@ inputs = [
 "test_a_republish_after_a_merge_at_publish_is_a_fast_forward_over_that_merge" = 6
 "test_a_tip_that_is_no_earlier_publish_merge_is_not_a_fast_forward" = 9
 "test_the_same_branch_after_it_merged_the_default_head_publishes" = 2
+"test_a_checked_merge_of_main_publishes_level_with_main_and_merges_again_only_after_main_moved" = 10
 "test_a_default_commit_that_changed_a_workflow_carried_in_by_hand_is_no_change_of_the_copy" = 2
 "test_a_workflow_change_of_the_copy_that_a_later_commit_undoes_is_no_change" = 2
 "test_a_copy_commit_of_its_own_that_changes_a_workflow_is_refused_with_its_path" = 2

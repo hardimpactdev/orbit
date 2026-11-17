@@ -41,16 +41,61 @@ The view joins four sources. Each has its own age, and the response gives the ob
 
 A runner's name is its container name in the Incus project `orbit-ci`. `setup.sh` registers the runner with the same name, so a job's `runner_name` matches it.
 
-The repositories are the same set that the [fleet reboot](/reference/gateway-recovery#ci-jobs-lost-at-the-freeze) reads: each repository of a Project read through the GitHub App, when the App is installed on it. For each repository, the Gateway lists the workflow runs created in the last 48 hours, at most 5 pages of 100, and the latest attempt's jobs of each run. It leaves out skipped runs and every job that did not ask for a `self-hosted` runner.
+The repositories are the same set that the [fleet reboot](/reference/gateway-recovery#ci-jobs-lost-at-the-freeze) reads: each repository of a Project read through the GitHub App, when the App is installed on it. The Gateway leaves out skipped runs and every job that did not ask for a `self-hosted` runner.
 
-The jobs of a completed run do not change, so the Gateway keeps them until they leave the window and reads again only the runs that have not completed. One answer reads job lists for at most 20 seconds, newest runs first. When that time runs out, the repository is marked `truncated`, and the next answer goes on from the runs that the Gateway kept.
+### The workflow filter
+
+A busy repository has many more runs than self-hosted jobs. On 16 November 2026, `hardimpactdev/orbit` had 1,592 runs in 48 hours, while 11 runs of that day held its 137 self-hosted jobs. So the Gateway reads the runs of a workflow only when the workflow can ask for a self-hosted runner.
+
+For each repository, the Gateway lists the workflows and reads each workflow file on the default branch, with a token that holds only `contents: read` from the App's existing `Contents: write`. A workflow is left out only when its file shows that every job asks for labels without `self-hosted`. The Gateway keeps a workflow, and reads its runs, when:
+
+- a job's `runs-on` names `self-hosted`, also inside `labels` of a runner group;
+- a job's `runs-on` is an expression, such as `${{ matrix.runner }}` or `${{ fromJSON(vars.ORBIT_PROOF_RUNNER) }}`;
+- a job calls another workflow with `uses`;
+- the file does not parse;
+- GitHub gives no content for the file.
+
+GitHub gives no content when the default branch has no such file or the file is over 1 MB. It gives none for its own workflows either, such as `dynamic/dependabot/dependabot-updates`, so the Gateway reads their runs too.
+
+The Gateway keeps this list, and the verdict on each file, for an hour. A workflow that starts to ask for a self-hosted runner shows its jobs within the hour; the window still holds its older runs. A workflow that could ask for one stays in the list for 49 hours after its file stops asking, so its self-hosted runs stay in the window. The file on the default branch decides: a branch that makes a GitHub-hosted workflow ask for a self-hosted runner is not seen until the change reaches the default branch.
+
+### Paging
+
+For each kept workflow, the Gateway lists the runs created in the last 48 hours and the latest attempt's jobs of each run. It reads each list in pages of 100 until it holds GitHub's `total_count`, so a run with 301 jobs gives all 301. GitHub gives at most 1,000 runs for one run list query, so a window with more runs of one workflow is read in halves until each half fits.
+
+The jobs of a completed run do not change, so the Gateway keeps them until they leave the window and reads again only the runs that have not completed. A workflow that runs only on GitHub-hosted runners costs no run list and no job list.
+
+### Time budget and `truncated`
+
+One answer reads workflow files and the jobs of runs that it did not keep for at most 20 seconds. The run lists and the kept jobs are always read, so a repository keeps its known jobs when the time ran out. When the time runs out, the Gateway reads no more files or job lists, and each repository with a run or a file left unread is `truncated`.
+
+The next answer starts with the first repository that the last answer did not finish, then takes the others in order. When the repository that started the last answer is still unfinished, the next unfinished one starts instead, so one busy repository cannot keep the others unread. Each answer goes on from the runs and files that the Gateway kept. `truncated` means only that the time ran out.
+
+### Requests to GitHub
+
+The installations of the App share GitHub's rate limit of 5,000 requests an hour with every other reader. The Gateway builds at most one answer a minute, whatever the number of viewers. For each repository, one answer makes these requests:
+
+| Case | Requests |
+| --- | --- |
+| No workflow can ask for a self-hosted runner, list kept | None. |
+| Steady state | 2 App requests for the `actions: read` token, and the run and job lists below the table. |
+| Once an hour, when the workflow list is read again | 2 more App requests for the `contents: read` token, one workflow list page per 100 workflows, and one read of each workflow file. |
+| A run that completed since the last answer | One job list page per 100 jobs, once. |
+
+In steady state, each kept workflow costs one run list page per 100 runs of the window, at least one. Each run that has not completed costs one job list page.
+
+A window with more than 1,000 runs of one workflow costs one more page at each split. The Gateway reads the first page of the whole window, sees the count, drops the page, and reads the halves.
+
+Take `hardimpactdev/orbit` with about 1,000 runs of its kept workflows in the window and five runs in progress. Its steady state is 2 token requests, about 10 run list pages and 5 job list pages. That is about 17 requests an answer, and about 1,000 an hour while someone watches the view. A repository without self-hosted workflows adds no run list or job list read to an answer. It still costs the hourly token, workflow list and file reads of the table.
+
+The worst case is a start without kept runs, for example after the cache was cleared: each run of a kept workflow needs one job list read. The run lists are read in full, and the 20-second budget bounds the file and job list reads; at GitHub's usual 0.2 to 0.5 seconds a request, that is 40 to 100 requests an answer. The answers of the next minutes go on from the kept runs, until they cover the window.
 
 ## What the view never does
 
 The view stays a cheap read. It keeps these limits:
 
 - It never reads a runner list from GitHub, for the organization or a repository.
-- It asks GitHub for no new permission. Every token holds only `actions: read` for one repository.
+- It asks GitHub for no new permission. Every token holds one read permission for one repository: `actions: read`, or `contents: read` for the workflow files.
 - It starts no Operation and no Swamp workflow for a page view.
 - The Gateway does not connect to a Node over SSH for a request, and sends no Node agent command.
 - It changes nothing on a Node or on GitHub.
@@ -76,7 +121,7 @@ A source that cannot answer does not fail the read. The response marks that part
 | `github_error_code` | Null, or the reason that no repository was read. |
 | `jobs` | Every job of the window that asked for a self-hosted runner, newest first. See below. |
 
-In `repositories`, `error_code` is null when the read succeeded. `truncated` is true when the Gateway did not read every run of the window: the repository had more runs than the Gateway reads, or the answer ran out of time to read their jobs.
+In `repositories`, `error_code` is null when the read succeeded. `truncated` is true when the answer's 20 seconds ran out before the Gateway read every run and workflow file of the repository. The next answer starts with that repository. See [Time budget and `truncated`](#time-budget-and-truncated).
 
 Each entry of `nodes`:
 

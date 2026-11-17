@@ -23,6 +23,7 @@ final readonly class TaskTurnPrompt
     public const string CopyRules = "Copy rules:\n"
         ."- Run every command in the foreground. Leave none running when this turn ends.\n"
         ."- The Project's long gates and full test sets are the work of the task check and CI (`task:check`). Run single test files by path.\n"
+        ."- Keep each new or changed test unit within the per-unit time cap of the Project's CI, which the task check prints.\n"
         ."- Commit your work before this turn ends.\n"
         .'- Never print an environment file, a token, a key or a session value.';
 

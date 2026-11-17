@@ -3,6 +3,7 @@ sequenceDiagram
   %% Nick 2026-11-14: every Project whose default Instance is a container gets task groups as copies too; a plain clone, with no inner fleet.
   %% Orchestrator 2026-11-15 (step 5): task VMs are removed. A Project whose default is no container is refused by name; the VM claim and its queue are gone.
   %% Orchestrator 2026-11-15 (task small fixes): the CLI waits for an active copy by default, as instance:create --wait-active; the API stays asynchronous.
+  %% Orchestrator 2026-11-16 (task 5634): a failed create no longer ends the task: it goes back to todo, the create starts once more after the copy is gone, and a second failure asks for assistance.
   %% status: draft
   %% command: task:start
   %% kind: tasks.provision
@@ -23,6 +24,7 @@ sequenceDiagram
     %%> - before the transaction, one bounded read of the default's container (at most about 6 s) confirms it runs or sleeps: its power record can be stale after a stop by hand; a container that does not run and has no asleep marker, or that cannot be read, refuses the same way
     %%> - an asleep default stays asleep: the copy clones its seed snapshot, which needs no running container
     %%> - no Instance is named `task-TASK` yet; otherwise `tasks.copy_name_taken`
+    %%> - the task holds no copy of a failed create that Orbit still removes; otherwise `tasks.copy_removing`
     %%> - for a nested-fleet Project only: the default's Node holds fewer nested-fleet task copies than the Gateway's `ORBIT_TASKS_COPIES_MAX` (default 1); every nested copy that a task owns counts, also one that fails or is being destroyed; otherwise `tasks.copy_capacity_full`, with no wait. A copy of any other Project is a plain clone: it neither counts nor waits
     %%> - before the transaction, one bounded read of the Node's ID ranges (at most about 4 s): root's subordinate range and every container's ID map, stopped ones too; an unreadable Node refuses, `tasks.copy_id_ranges_unreadable`
     %%> - with the copy placed as Incus places ranges, a free isolated ID range stays for the next seed of every default on the Node; a container that an open create admitted counts as held; otherwise `tasks.copy_id_range_full`, with no wait, also for a plain clone
@@ -61,10 +63,15 @@ sequenceDiagram
       end
     else the create fails
       SW--xGW: Run failed<br/>failed step
-      Note over GW: Fail the task<br/>queue the copy's destroy
+      Note over GW: Task back to todo<br/>remove copy, retry once
       %%> On failure:
-      %%> - every end of the create but success and an expired run budget counts: a failed run, a start that Swamp refuses, a cancel before the run starts
-      %%> - the task is `failed` and still owns the copy; a queued job removes the copy with `instance:destroy` with force
+      %%> - every end of the create but success, a cancel and an expired run budget counts: a failed run, a failed register or baseline read, a start that Swamp refuses
+      %%> - the task goes back to `todo` and still owns the copy until its destroy; a queued job removes the copy with `instance:destroy` with force
+      %%> - the first failure is recorded on the task: its Operation, failed step and error code; when the destroy succeeds, Orbit starts the create once more for the same task, as its first caller
+      %%> - the retry's failure, or a retry that the start refuses, leaves the task in `todo` with no workspace and records a failure assistance request that names both Operations, their failed steps and their error codes; `task:show` shows it; no third create starts
+      %%> - `task:start` of that task works once the copy is gone; while it is still bound, `tasks.copy_removing`; a copy that comes up `active` clears that request
+      %%> - a cancel of the create, and the create of a proof's copy, fail the task as before: nothing starts again
+      %%> - `task:cancel` of the `todo` task while it holds the failed copy cancels it when the copy's destroy succeeds; a task moved to `backlog` before then owes no retry
       %%> - the job destroys at once only when the records prove that no agent could have worked in the copy: the create did not succeed and no T3 server is registered for it
       %%> - otherwise it first reads the copy's work as `task:cancel` does and destroys only a clean copy; a copy with work origin lacks, or a read that does not answer, stays, and the task records a `removal_failure` assistance request with the unpushed, uncommitted, untracked and stash counts, or the read's reason, and `orbit task:cancel TASK`, with `--discard` if the work is not wanted
       %%> - an expired budget changes nothing: the run may still be stopping, so the task stays `reserved` with its copy

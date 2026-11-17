@@ -47,7 +47,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, task handoff pushes and manual runs use the same fast checks. Main can [reuse a green PR tree](#reuse-a-green-pr-tree-on-main).
 
-Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards, or in [self-hosted fixture shards](#self-hosted-fixture-shards) when they need runner tools.
+Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units on the shared Sabre and Shark runner pool. [Tool-dependent fixture shards](#self-hosted-fixture-shards) keep their own two-worker packing; ordinary shards keep four workers. Fork pull requests run ordinary shards on GitHub-hosted runners. Self-hosted fixture jobs use the managed Deno and Python installations and persistent local fixture-tools cache; hosted jobs install and cache their tools in Actions.
 
 Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees. The expression-end fixture reads every workflow file and fails when an expression holds a `}}` before its end, because Swamp ends a `${{ … }}` expression at the first `}}`. Any change under `swamp/workflows` selects it.
 
@@ -173,13 +173,19 @@ No registry entry keeps a fixture or a case out of pull requests: the metadata k
 
 ### Self-hosted fixture shards
 
-A fixture file whose metadata sets `self_hosted = true` runs only on the self-hosted CI pool. These are the files that came from the after-merge set: the registry kept them out of pull requests before ADR 0262. The planner puts their units in their own shard jobs, `Self-hosted fixtures (N)`. These jobs use only the shared runner labels `self-hosted`, `hardimpact` and `orbit-shard`, as every CI runner does. A hosted shard never runs such a unit, and a self-hosted shard runs no other unit. The quick checks of the public repository stay on hosted runners.
+Runtime, browser and update fixtures run the named subsystem tasks from the shipped host caller, retaining their variables, loops and conditions. They fail if a selected caller is removed, renamed, duplicated or reordered. Full host and image fixtures retain the integration path; subsystem cases avoid repeating unrelated kernel, network and image preparation.
+
+The nested-fleet caller fixture uses the Gateway's per-guest memory limits. Its tag routing, failure diagnostics and seed checks run as separate cases. Changes to the fleet rules or container phase tasks reserve these cases before capacity-gap admission, so a full plan cannot hide the seed contract.
+
+A fixture file whose metadata sets `self_hosted = true` runs only on the self-hosted CI pool. These are the files that came from the after-merge set: the registry kept them out of pull requests before ADR 0262. The planner puts their units in their own shard jobs, `Self-hosted fixtures (N)`. These jobs use only the shared runner labels `self-hosted`, `hardimpact` and `orbit-shard`, as every CI runner does. An ordinary shard never runs such a unit, and a tool-dependent shard runs no other unit. Other quick checks of the public repository stay on GitHub-hosted runners.
+
+Ordinary `Fixtures (N)` jobs use the same shared runner labels on repository branches, handoffs and main; forks keep the hosted image. The pool has five Sabre runners and four Shark runners. Beast has no general runner containers and keeps its two proof-only places.
 
 The self-hosted shard jobs run only for a pull request whose head repository is the base repository: a branch of `hardimpactdev/orbit`. The job condition states this in full: the event is `pull_request` and `github.event.pull_request.head.repo.full_name == github.repository`. No other event and no fork starts them.
 
 When a fork pull request selects a self-hosted unit, the plan names the unit and `Required checks` fails. The message says that the change selects fixtures that run only on Orbit's runners, and that a maintainer must push the branch to the repository. The fork's code never reaches a self-hosted runner.
 
-The units follow the hosted lane budget: each unit costs at most 150 declared seconds with startup, and each shard job has a four-minute limit, so every job ends within five minutes. A self-hosted shard holds two lanes, not four: `self_hosted_workers` in the `[budget]` of `checks.toml`. Its runner container shares the Node's memory with proof copies, and four Ansible units at once make it reclaim memory until the heaviest units run past the unit ceiling. The planner packs and the runner runs each shard with the lanes of its pool. A shard holds the units of one pool only.
+The units follow the hosted lane budget: each unit costs at most 150 declared seconds with startup, and each shard job has a four-minute limit, so every job ends within five minutes. A self-hosted shard holds two lanes, not four: `self_hosted_workers` in the `[budget]` of `checks.toml`. Four heavy Ansible units at once made the runner reclaim memory until the heaviest units ran past the unit ceiling. The planner packs and the runner runs each shard with the lanes of its pool. A shard holds the units of one pool only.
 
 Each registry entry of a `self_hosted` file names the source of its cost:
 
@@ -189,7 +195,7 @@ Each registry entry of a `self_hosted` file names the source of its cost:
 - When the unit ceiling cut such a case, it costs the larger of its cut time and the scaled cost.
 - A file or case that no pool run has reached keeps its hosted cost until a pool run measures it.
 
-Self-hosted shards have their own limit, `self_hosted_shards` in the `[budget]` of `checks.toml`, set from the CI places of the pool; they do not count against the ten hosted shards. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
+Tool-dependent shards retain their limit, `self_hosted_shards` in `[budget]`. Both shard classes also share `runner_shards = 9`, matching the pool, so one run cannot schedule a second wave behind its own fixture jobs. Mandatory cases reserve capacity first; named capacity gaps stay last. This admission bound does not reserve runners against other workflows: push-to-Required measurements include any queue delay. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
 
 `capacity_gap` in the `[budget]` of `checks.toml` lists the self-hosted files that cannot fit the self-hosted shards when selected; [ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) names each one with its reason. The planner admits a gap file after all other work. Its units that fit run. The plan summary names the rest: `Not run: <file>, N units, reason: capacity gap per ADR 0262`. They do not fail `Required checks`.
 
@@ -238,9 +244,9 @@ Such a change selects the fixtures whose own code it touches, plus the machinery
 
 A canary file must be a registered hosted fixture; `bin/ci-units plan` refuses a list that names an unregistered or `self_hosted` file, or that needs more than one shard.
 
-`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most ten shards per pull request.
+`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most nine fixture jobs across both shard classes per run.
 
-Runs with six shards peaked at 16 to 17 concurrent hosted jobs, so ten shards reach about 21, one above the organisation's 20 concurrent hosted jobs: the last shard can wait for a free job, and a second run at the same time queues. Each shard's own time limit starts when its job starts, so a wait does not cut its units. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
+Ordinary fixture jobs run on the shared Sabre and Shark pool, with nine runners total. Each ordinary shard runs up to four units at once; tool-dependent shards run two. Both classes count against the planner's nine-job bound, so a run fits one wave when the pool is idle. Other jobs and proof holds can still occupy places; measure queue delay as part of the five-minute push-to-Required limit. A file can declare a larger slice count when its cases need finer slices.
 
 For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per case, so a long refresh cannot share its unit with another refresh.
 
@@ -328,7 +334,7 @@ A new push cancels the previous proof. The runner rechecks eligibility immediate
 
 A fork keeps its separate trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner. That workflow publishes `Orbit outside proof` on the exact head. While proof admission is on, Required checks reads its latest trusted status and fails if it is missing, pending or failed. After the outside proof succeeds, rerun the failed Required job.
 
-CI proofs join one FIFO admission queue. Its front takes one copy of the Orbit container in each free CI place across the CI Nodes. Orbit balances whole batches by measured case time, runs them in the copies' inner fleets, merges the verdicts and destroys the copies. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
+CI proofs join one FIFO admission queue. Its front takes one copy of the Orbit container in each free CI place across the CI Nodes. Orbit balances batches by measured case time, splits a long batch that changes the fleet by case, runs them in the copies' inner fleets, merges the verdicts and destroys the copies. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
 
 A clean CLI exit is insufficient: the job requires a passing result with case verdicts for every selected command. A failed case, an unrun case, a missing result or a selected command with no verdict fails. A result with no selected command passes. A capacity message with no cases always fails; it has no successful skip classification.
 
@@ -655,7 +661,7 @@ Before it writes, the gate removes the `review-*` directories its own Unix user 
 
 ### The scoped task check
 
-`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks what the task changed since its start commit, and the pin tests of the Pest jobs that change selects, so it catches in the copy what CI would otherwise catch after the push. It runs in under five minutes.
+`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks what the task changed since its start commit, and the pin tests of the Pest jobs that change selects, so it catches in the copy what CI would otherwise catch after the push. Each part runs as CI runs it, with CI's limits. It runs in under five minutes. Fixture units it does not reach are deferred to CI and named.
 
 ```bash
 bin/task-check                    # against the start commit
@@ -674,23 +680,20 @@ The [start commit](/reference/tasks#start-commit) has one rule, which the tasks 
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
 | `phpstan <project>` | The plan selects the project's static job | `vendor/bin/phpstan analyse` with the project's `phpstan.neon`, on the changed PHP files inside the paths that config analyses |
 | `swamp-shape` | The plan selects the Swamp checks | `bin/swamp-shape-gate --only control`, the static controls that CI's shape job runs, in a checkout of the candidate |
-| `ci-policy` | A path that the CI policy tests read changed (see below) | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, the CI policy tests that CI's `changes` job runs on every PR |
+| `ci-policy` | Always | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy and budget tests that CI's "Select build inputs" job runs on every PR |
 | `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
 | `pest <project>` | The plan selects the project's Pest job | See below |
-| `fixtures` | `bin/ci-units plan` plans units | The planned units that fit the budget, through `bin/ci-units run`. A unit whose declared host program is missing does not run |
+| `fixtures` | `bin/ci-units plan` plans units | Directly touched planned units, then other planned units that fit the budget, through `bin/ci-units run`; the rest are deferred to CI (see below) |
 
-A changed path selects `ci-policy` when the CI policy tests read it:
+The `ci-policy` part runs on every change, whatever it touched, as CI runs it. CI's budget tests catch a fixture unit above CI's lane even when no CI input changed. The part runs before Pest and the fixtures, so the budget never leaves it out for them. On a loaded Beast it takes about 65 seconds.
 
-- the CI registry and its fixture tomls, under `.github/ci/`, and the workflows under `.github/workflows/`;
-- the CI policy tests themselves, `tools/test_ci_*.py`, their evidence under `tools/tests/`, and `tools/ci*`;
-- the CI scripts `bin/ci-*` and `bin/task-check`;
-- a Swamp test file, `swamp/tests/*_test.py` or `*_test.ts`, whose cases and source the registry pins.
-
-A Pest test, an extension's own Deno test or a Swamp test helper does not select it: the CI policy tests do not read them. Such a change, and any other, leaves the part `not selected`. The part runs before Pest and the fixtures, so the budget never leaves it out for them. On a clean `main` it takes about 40 seconds.
+The check prints CI's per-unit time caps at its start: the most seconds a fixture unit declares, `shard_seconds`, and the ceiling that stops it, `unit_ceiling_seconds`, both from `.github/ci/checks.toml`, and the Pest per-test limit of each CI job that sets one. Keep each new or changed test unit within them.
 
 The Pest jobs are `gateway-tests`, `cli-tests`, `sdk-tests` and `docs` for the docs app. For a selected job:
 
 - `packages/php-sdk` runs its whole suite. It takes about a second.
+- Each Pest run uses the per-test time limit of the project's CI job, read from `.github/workflows/ci.yml`. For `apps/gateway` that is `--default-time-limit=5`.
+- A job that sets no limit keeps its project's `phpunit.xml` limit. A copy, like CI, runs on a shared and loaded host.
 - `apps/gateway`, `apps/cli` and `apps/docs` run their changed test files in one Pest run. `apps/cli` also runs the CLI tests that replay a changed SDK fixture, as `bin/cli-contract --changed <start commit>` names them.
 - `apps/gateway` and `apps/cli` also run their pin test files in that run, whatever changed. The `PIN_TESTS` table in `bin/task-check` lists them.
 - The line's detail counts the changed and pin files and names the pins, such as `0 changed or contract-mapped, 1 pin test files: CommandSurfaceTest`.
@@ -710,11 +713,19 @@ The population check catches a Deno fixture whose registered cases differ from t
 
 The budget is wall time from the start of the run. Each part gets the time left as a hard limit. A part that reaches the end of the budget is stopped and reported as `skipped (budget: stopped after Ns)`. A part with no time left does not start and is reported as skipped.
 
-A fixture collection starts only with at least 15 seconds left; a collection that outlasts its 15-second limit, such as with a cold Deno cache, is a named budget skip. Units join cheapest first, by their declared cost, so a quick source check of the change runs before a long suite can take the budget. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
+The default budget is 270 seconds. A copy's check runs on Beast, the scarcest CPU, so it does not try to run every fixture unit of a large plan. CI's fixture shards run them in about five minutes.
 
-The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`. Every file and unit that did not start or was stopped is named, with the reason. A budget skip does not fail the check; CI still runs it.
+A fixture collection starts only with at least 15 seconds left; a collection that outlasts its 15-second limit, such as with a cold Deno cache, is a named budget skip.
 
-Only the check's own time limit stops a unit. A unit that did not run for another reason, such as a failed tool setup, fails the `fixtures` part, with the end of the output. A capacity row of the CI plan, which `bin/ci-units` marks "Required checks will fail", is a failed `fixture-capacity` line.
+The `fixtures` part runs units of CI's plan only: the same planner, changed-file rules and not-run rules for capacity gaps, hosted and self-hosted units alike. A unit whose declared host program is missing in the copy does not run, and is named.
+
+First come the units the change touches directly: the units of a changed fixture file, of a fixture whose declared input changed, or of a fixture whose metadata file under `.github/ci/fixtures/` changed. `bin/ci-units` owns that input mapping, `path_matches`, and its planner uses the same one. A change to the fixture machinery touches no fixture directly. The other planned units follow. Each group runs cheapest first. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
+
+The units that did not join, or that the check's own time limit stopped, are deferred to CI. The `fixtures` line names them with their count and total declared seconds, such as `deferred to CI: 76 units, 3200s declared: …`. A deferral never fails the check: CI runs those units. A unit that ran and failed fails the check.
+
+The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`.
+
+Only the check's own time limit stops a unit; such a unit is deferred to CI. A unit that did not run for another reason, such as a failed tool setup, fails the `fixtures` part, with the end of the output. A capacity row of the CI plan, which `bin/ci-units` marks "Required checks will fail", is a failed `fixture-capacity` line.
 
 Measure the check with `ORBIT_CHECK_PROCESSES=1`. Orbit sets that value for every task check, whatever the copy's CPU count, so PHPStan and Pest run in one process.
 
@@ -728,7 +739,7 @@ A fixture unit whose fixture declares a host program in `host_programs` does not
 
 #### What it leaves to CI
 
-The scoped check does not run Rector, the full PHPStan analysis or the Gateway, CLI and docs Pest suites beyond the changed, contract-mapped and pin test files. Nor does it run the web app checks, Rust formatting, the Generated contracts job, the Swamp shape fixtures outside the plan, or Swamp workflow validation. It also leaves out a fixture unit whose declared host program the copy lacks. It does not fix files: Pint runs with `--test`. CI runs all of these on the handoff commit.
+The scoped check does not run Rector, the full PHPStan analysis or the Gateway, CLI and docs Pest suites beyond the changed, contract-mapped and pin test files. Nor does it run the web app checks, Rust formatting, the Generated contracts job, or Swamp workflow validation. It also leaves out a fixture unit whose declared host program the copy lacks. It does not fix files: Pint runs with `--test`. CI runs all of these on the handoff commit.
 
 #### Its tests
 

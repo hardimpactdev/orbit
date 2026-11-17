@@ -194,6 +194,7 @@ jobs:
           methodName: convergeInput
           inputs:
             folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+            operation_id: ${{ inputs.operation_id }}
   -
     name: input
     labels:
@@ -235,6 +236,8 @@ jobs:
         labels:
           role: swamp
         writes: true
+        # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+        guard: '${{ "agent" in steps["Prepare private input"].outputs.unchanged }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -261,6 +264,8 @@ jobs:
         labels:
           role: swamp
         writes: true
+        # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+        guard: '${{ "software" in steps["Prepare private input"].outputs.unchanged }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -287,6 +292,8 @@ jobs:
         labels:
           role: swamp
         writes: true
+        # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+        guard: '${{ "roles" in steps["Prepare private input"].outputs.unchanged }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -315,6 +322,8 @@ jobs:
         labels:
           role: swamp
         writes: true
+        # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+        guard: '${{ "tools" in steps["Prepare private input"].outputs.unchanged }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -341,6 +350,8 @@ jobs:
         labels:
           role: swamp
         writes: true
+        # Skipped when its digest equals the Node's record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+        guard: '${{ "network" in steps["Prepare private input"].outputs.unchanged }}'
         task:
           type: behavior
           behaviorType: command/shell

@@ -9,9 +9,12 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskCopyEnd;
+use App\Domain\Tasks\TaskCopyWork;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskInstanceWorkspace;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Instance;
@@ -29,10 +32,13 @@ final readonly class CompleteTaskGroupAction
         private StopTaskSubtaskAction $stop,
         private TaskExecutionLock $execution,
         private TaskFinalReview $review,
+        private TaskCopyWork $work,
+        private TaskCopyEnd $end,
     ) {}
 
     /**
-     * Completes a settling group, or a running/reviewing group whose watched PR ended, and removes its workspace.
+     * Completes a settling group, or a running/reviewing group whose watched PR ended or whose task copy's work is already on the
+     * default branch (a hand-carry), and removes its workspace. A task copy that holds work that is not published refuses it.
      *
      * A manual complete still ends the group when removal fails, keeps the Instance, and reports the failure
      * on the completed group. Merge cleanup passes `$finishWhenRemovalFails` false so a failed removal leaves
@@ -51,16 +57,27 @@ final readonly class CompleteTaskGroupAction
         $group->refresh()->load(['project', 'tasks', 'taskable']);
 
         // Approved work that origin does not have refuses the completion before it changes anything: task:publish comes first.
+        $carried = false;
         if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
-            $ended = $this->endedPullRequest($group);
+            try {
+                $ended = $this->endedPullRequest($group);
+            } catch (ResourceOperationException $notEnded) {
+                // No ended watched pull request: a copy group's work may have reached the default branch another way.
+                $this->assertCarried($group, $notEnded);
+                [$ended, $carried] = [null, true];
+            }
             $this->review->assertOnOrigin($group);
+            $this->assertCopyDiscardable($group);
             if ($ended !== null) {
                 $this->authorizeEndedPullRequest($group, ...$ended);
             }
         } elseif ($group->status !== TaskGroupStatus::Completed && ! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-            throw $this->notReady();
+            throw $this->notReady('status');
         } else {
             $this->review->assertOnOrigin($group);
+            if ($group->status !== TaskGroupStatus::Completed) {
+                $this->assertCopyDiscardable($group);
+            }
         }
         app(TaskOperations::class)->cancelOpen($group);
 
@@ -71,7 +88,7 @@ final readonly class CompleteTaskGroupAction
         }
 
         if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
-            $this->completeOpenSubtasks($group);
+            $this->completeOpenSubtasks($group, $carried);
 
             $this->removeOrFinish($group, $finishWhenRemovalFails);
 
@@ -130,7 +147,7 @@ final readonly class CompleteTaskGroupAction
                 $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
                 if (! in_array($locked->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)
                     || $locked->watched_pr_url !== $url) {
-                    throw $this->notReady();
+                    throw $this->notReady('status');
                 }
                 if ($locked->watched_pr_completion === null) {
                     $locked->update(['watched_pr_completion' => $state, 'merged_at' => $locked->merged_at ?? $mergedAt]);
@@ -140,10 +157,40 @@ final readonly class CompleteTaskGroupAction
         $group->refresh();
     }
 
-    /** Remote stops precede the transaction; no subtask is ended unless the parent can end with it. */
-    private function completeOpenSubtasks(Task $group): void
+    /**
+     * A running or reviewing copy group without an ended watched pull request completes only when the copy's content read finds its
+     * committed work on the default branch, and that work is not empty (docs/reference/tasks.md#published-work-of-a-copy). The
+     * refusal names why.
+     */
+    private function assertCarried(Task $group, ResourceOperationException $notEnded): void
     {
-        $this->execution->synchronized($group->id, function () use ($group): void {
+        $copy = TaskInstanceWorkspace::forGroup($group);
+        if ($copy === null) {
+            throw $notEnded;
+        }
+        $reason = $this->work->refusal($group, $copy);
+        if ($reason !== null) {
+            throw $this->notReady($reason);
+        }
+    }
+
+    /**
+     * The copy's destroy takes what it holds, so a copy that holds uncommitted, untracked, stashed or other-branch work, or that cannot
+     * be read, refuses the completion before it changes anything, as a cancel without discard does (TaskCopyEnd). A completed group's
+     * retry reads nothing: the completion that ended it read the copy.
+     */
+    private function assertCopyDiscardable(Task $group): void
+    {
+        $copy = TaskInstanceWorkspace::forGroup($group);
+        if ($copy !== null) {
+            TaskCopyEnd::assertDiscardable($this->end->workspace($group, $copy->instance), discard: false);
+        }
+    }
+
+    /** Remote stops precede the transaction; no subtask is ended unless the parent can end with it. */
+    private function completeOpenSubtasks(Task $group, bool $carried): void
+    {
+        $this->execution->synchronized($group->id, function () use ($group, $carried): void {
             $open = [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing];
             do {
                 $stopped = [];
@@ -152,14 +199,14 @@ final readonly class CompleteTaskGroupAction
                     $this->stop->execute($group, $task);
                 }
 
-                $completed = DB::transaction(function () use ($group, $open, $stopped): bool {
+                $completed = DB::transaction(function () use ($group, $open, $stopped, $carried): bool {
                     $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
                     if ($locked->status === TaskGroupStatus::Completed) {
                         return true;
                     }
                     if (! in_array($locked->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)
-                        || ! in_array($locked->watched_pr_completion, ['merged', 'closed'], true)) {
-                        throw $this->notReady();
+                        || (! $carried && ! in_array($locked->watched_pr_completion, ['merged', 'closed'], true))) {
+                        throw $this->notReady('status');
                     }
                     $tasks = $locked->tasks()->whereIn('status', $open)->orderBy('id')->lockForUpdate()->get();
                     $current = [];
@@ -190,12 +237,14 @@ final readonly class CompleteTaskGroupAction
         $group->refresh()->load(['project', 'tasks', 'taskable']);
     }
 
-    private function notReady(): ResourceOperationException
+    /** `$reason`: why a running copy group is not ready, as docs/cli/task/complete.mdx lists it. */
+    private function notReady(string $reason = 'pull_request_not_ended'): ResourceOperationException
     {
         return new ResourceOperationException(
             errorCode: 'tasks.not_settling',
             message: __('The task group is not ready to complete.'),
             status: 409,
+            details: ['reason' => $reason],
         );
     }
 

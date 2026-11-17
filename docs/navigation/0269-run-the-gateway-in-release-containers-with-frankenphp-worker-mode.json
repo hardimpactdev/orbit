@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 269,
+      "pages": [
+        "decisions/0269-run-the-gateway-in-release-containers-with-frankenphp-worker-mode"
+      ]
+    }
+  ]
+}

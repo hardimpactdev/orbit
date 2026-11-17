@@ -129,7 +129,7 @@ final readonly class TaskCopyAgent
      * The agent a new copy thread of the role starts with. A provider and effort the copy's T3 has no instance for is refused here,
      * before Swamp runs anything, with what the copy offers.
      *
-     * @return array{provider: string, instance: string, model: string, effort: string}
+     * @return array{provider: string, instance: string, model: string, effort: string, options: list<array{id: string, value: string}>}
      */
     public static function forNewThread(Task $group, TaskThreadRole $role): array
     {
@@ -143,7 +143,8 @@ final readonly class TaskCopyAgent
             throw new ResourceOperationException('tasks.copy_turn_model_invalid', 'ORBIT_TASKS_COPY_'.strtoupper($role->value).'_MODEL must be a model name.', 503);
         }
 
-        return ['provider' => $provider, 'instance' => InstanceContainer::providerInstance($provider, $effort), 'model' => $model, 'effort' => $effort];
+        return ['provider' => $provider, 'instance' => InstanceContainer::providerInstance($provider, $effort), 'model' => $model, 'effort' => $effort,
+            'options' => InstanceContainer::providerOptions($provider, $effort)];
     }
 
     /**

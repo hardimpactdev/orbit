@@ -99,29 +99,40 @@ final readonly class ProofRunIntent
         $uncovered = [];
         $waitStep = ProofCopies::WaitStep;
         try {
-            $this->trust->assert($commit);
-            $selection = isset($input['base'])
-                ? $this->selectRange(ValidatedData::string($input['base']), $commit)
-                : $this->select($commit, ($input['all'] ?? false) === true);
-            $uncovered = $selection->uncovered;
-            $intent = [...$input, 'everything_because' => $selection->everythingBecause, 'cases' => $selection->cases, 'selected_commands' => array_values(array_unique(array_column($selection->cases, 'command'))), 'uncovered' => $selection->uncovered];
-            // A proof that was cancelled or ended as lost while the job read GitHub stays as it is.
-            if (! $this->whileOpen($proof->id, fn (Operation $current) => $current->input['runs'] !== [] ? null : $this->store->change($current, ['input' => $intent]))) {
-                return;
-            }
-            if ($selection->nothingToProve()) {
-                $this->whileOpen($proof->id, fn (Operation $current) => ValidatedData::object($current->input)['runs'] !== [] ? null : $this->store->change($current, ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => [
-                    'commit' => $commit, 'outcome' => 'nothing_to_prove', 'reason' => 'proof.nothing_to_prove', 'cases' => [],
-                    'uncovered' => $selection->uncovered, 'receipt_url' => null,
-                ]]));
+            if (array_key_exists('batches', $input)) {
+                // A retry after a wait for a place: the first pass checked the commit, selected the cases and planned the batches, and
+                // recorded them, so a retry reads GitHub no more and keeps that selection (docs/cli/proof/run.mmd).
+                $intent = $input;
+                $uncovered = self::storedUncovered($input['uncovered'] ?? null);
+                $batches = ProofBatchPlan::stored($input['batches']);
+                $this->assertExecutionEnabled();
+            } else {
+                $this->trust->assert($commit);
+                $selection = isset($input['base'])
+                    ? $this->selectRange(ValidatedData::string($input['base']), $commit)
+                    : $this->select($commit, ($input['all'] ?? false) === true);
+                $uncovered = $selection->uncovered;
+                $intent = [...$input, 'everything_because' => $selection->everythingBecause, 'cases' => $selection->cases, 'selected_commands' => array_values(array_unique(array_column($selection->cases, 'command'))), 'uncovered' => $selection->uncovered];
+                // A proof that was cancelled or ended as lost while the job read GitHub stays as it is.
+                if (! $this->whileOpen($proof->id, fn (Operation $current) => $current->input['runs'] !== [] ? null : $this->store->change($current, ['input' => $intent]))) {
+                    return;
+                }
+                if ($selection->nothingToProve()) {
+                    $this->whileOpen($proof->id, fn (Operation $current) => ValidatedData::object($current->input)['runs'] !== [] ? null : $this->store->change($current, ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => [
+                        'commit' => $commit, 'outcome' => 'nothing_to_prove', 'reason' => 'proof.nothing_to_prove', 'cases' => [],
+                        'uncovered' => $selection->uncovered, 'receipt_url' => null,
+                    ]]));
 
-                return;
+                    return;
+                }
+                $this->assertExecutionEnabled();
+                // Record all children together, after the trust check above: only then may a copy, which holds the nested fleet's Club key, be made.
+                $batches = app(ProofBatchPlan::class)->read($commit, $selection->cases);
+                $intent = [...$intent, 'batches' => $batches];
+                if (! $this->whileOpen($proof->id, fn (Operation $current) => $current->input['runs'] !== [] ? null : $this->store->change($current, ['input' => $intent]))) {
+                    return;
+                }
             }
-            if (! $this->settings->executionEnabled()) {
-                throw new ResourceOperationException('proof.execution_disabled', 'Proof execution is switched off: the commit is trusted and the cases are selected, but nothing runs.', 409);
-            }
-            // Record all children together, after the trust check above: only then may a copy, which holds the nested fleet's Club key, be made.
-            $batches = app(ProofBatchPlan::class)->read($commit, $selection->cases);
             // A missing proof Project has no default to copy either: the same refusal names what to do.
             $project = Project::query()->find($this->settings->projectId());
             if (! $project instanceof Project || ! ProofCopies::runs($project)) {
@@ -263,6 +274,31 @@ final readonly class ProofRunIntent
         }
 
         return $nodes;
+    }
+
+    private function assertExecutionEnabled(): void
+    {
+        if (! $this->settings->executionEnabled()) {
+            throw new ResourceOperationException('proof.execution_disabled', 'Proof execution is switched off: the commit is trusted and the cases are selected, but nothing runs.', 409);
+        }
+    }
+
+    /**
+     * The uncovered paths that the first pass recorded with its selection.
+     *
+     * @return list<array{path:string,reason:string}>
+     */
+    private static function storedUncovered(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new \InvalidArgumentException('The recorded uncovered paths must be a list.');
+        }
+
+        return array_map(static function (mixed $row): array {
+            $row = ValidatedData::stringMap($row);
+
+            return ['path' => ValidatedData::string($row['path'] ?? null), 'reason' => ValidatedData::string($row['reason'] ?? null)];
+        }, $value);
     }
 
     /** A held proof reads `waiting` until admission makes it `running`; a proof with no free CI place waits within the total admission budget.

@@ -39,3 +39,30 @@ it('follows a footprint Operation and renders its final receipt', function (bool
         new Filesystem()->deleteDirectory($home);
     }
 })->with([true, false])->with([2, 17]);
+
+it('sends --full and shows which phases ran and which were unchanged', function (): void {
+    $home = sys_get_temp_dir().'/orbit-converge-'.Str::uuid();
+    config(['orbit.home' => $home]);
+    app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://10.44.0.1', caPath: '/unused'));
+    $phases = array_map(static fn (string $name): array => ['name' => $name, 'status' => in_array($name, ['input', 'check'], true) ? 'succeeded' : 'unchanged',
+        'changed' => 0, 'elapsed_seconds' => 0], ['input', 'agent', 'software', 'roles', 'tools', 'network', 'check']);
+    $operation = ['id' => 7, 'kind' => 'node.converge', 'target_type' => 'node', 'target_id' => 2,
+        'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'steps' => [], 'result' => ['phases' => $phases],
+        'finished_at' => '2026-10-28T12:00:00Z'];
+    $envelope = ['data' => $operation, 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']];
+    $mock = MockClient::global([
+        ConvergeNodeRequest::class => MockResponse::make($envelope, 202),
+        ShowOperationRequest::class => MockResponse::make($envelope),
+        '*/api/v1/realtime' => MockResponse::make(['error' => ['code' => 'http.404', 'message' => 'Unavailable']], 404),
+    ]);
+
+    try {
+        $this->artisan('node:converge', ['node' => '2', '--full' => true])
+            ->expectsOutputToContain('Phases: input succeeded, agent unchanged')->expectsOutputToContain('check succeeded')
+            ->assertExitCode(0);
+        $mock->assertSent(fn ($pending): bool => $pending instanceof ConvergeNodeRequest && ($pending->body()->all()['full'] ?? null) === true);
+    } finally {
+        MockClient::destroyGlobal();
+        new Filesystem()->deleteDirectory($home);
+    }
+});
