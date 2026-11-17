@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\RunTaskMergeRoundAction;
 use App\Actions\Tasks\RunTaskPublishWhenDoneAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Data\Tasks\StartTaskPublishData;
@@ -18,6 +19,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskPublishProjection;
+use App\Domain\Tasks\TaskStatus;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
@@ -95,6 +97,25 @@ it('never starts the publish of the same done check twice, also after its run fa
         ->and(whenDonePublishes($world->group))->toBe(1);
 });
 
+it('leaves a done check whose publish conflicted with main to the merge round, which starts its sync once', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    whenDoneTick();
+    $conflicted = whenDoneEndPublish($world->group, RunTaskMergeRoundAction::ConflictCode);
+
+    $tick = whenDoneTick();
+    $round = app(RunTaskMergeRoundAction::class)->execute();
+    $again = [...whenDoneTick(), ...app(RunTaskMergeRoundAction::class)->execute()];
+
+    $sync = Operation::query()->where('kind', OperationKinds::TasksSync)->sole();
+    expect($tick)->toBe([['group' => $world->group->id, 'check' => $world->check->id, 'result' => 'skipped', 'code' => RunTaskMergeRoundAction::ConflictCode, 'operation' => $conflicted->id]])
+        ->and($round)->toBe([['group' => $world->group->id, 'publish' => $conflicted->id, 'step' => 'sync', 'result' => 'admitted', 'code' => null, 'operation' => $sync->id]])
+        ->and($sync->idempotency_key)->toBe("merge-round:{$world->group->id}:{$conflicted->id}:sync")
+        ->and($sync->triggered_by)->toBe(RunTaskMergeRoundAction::Caller)
+        ->and(array_column($again, 'result'))->toBe(['busy'])
+        ->and(whenDonePublishes($world->group))->toBe(1);
+});
+
 it('leaves a group waiting while its mode or the mode its done check recorded is review_before_pr', function (?TaskPrMode $group, ?TaskPrMode $project, ?TaskPrMode $recorded): void {
     $world = TaskCopyDoneFixture::make($recorded);
     $world->group->update(['pr_mode' => $group]);
@@ -133,6 +154,20 @@ it('keeps a refused admission on the group with its code, keeps the copy, and do
         ->and($group->status)->toBe(TaskGroupStatus::Running)
         ->and($group->taskable_id)->toBe($world->instance->id)
         ->and(Instance::query()->find($world->instance->id)?->task_workspace_owner_id)->toBe($group->id);
+});
+
+it('refuses the tick\'s publish of the done check it read with tasks.not_done once a todo subtask was added', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    $publication = TaskDonePublication::for($world->group, $world->check);
+    Task::query()->create(['parent_id' => $world->group->id, 'position' => 2, 'title' => 'Add the header row', 'brief' => 'Add it.', 'status' => TaskStatus::Todo]);
+
+    expect(fn () => app(StartTaskPublishAction::class)->execute($world->group->refresh(), $publication, RunTaskPublishWhenDoneAction::Caller, null,
+        doneCheck: $world->check->id, byItself: true))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('tasks.not_done');
+        });
+    expect(whenDonePublishes($world->group))->toBe(0);
 });
 
 it('tries again for a new done check and clears the refusal once a publish is admitted', function (): void {
