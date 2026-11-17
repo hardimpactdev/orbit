@@ -586,6 +586,8 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 
 A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. The automatic scope refuses host-wide inputs.
 
+[Rollout base inventory](/reference/rollout-base-inventory) captures host metadata through the same pinned worker route and provides separate before-and-after evidence.
+
 With no scope flag, the attempt includes Orbit's base and every recorded role. `--base` selects only the agent, the Node’s CLI state and Orbit-owned files and units. `--roles=a,b` selects the base plus the named existing assignments, and refuses an empty, unknown or unassigned role. The two scope flags are mutually exclusive. `--full` runs every phase of the scope, whatever its [digest](#skip-a-phase-whose-input-did-not-change) says.
 
 The Gateway validates recorded state without a live preflight, reserves the target and its first recorded VPN hub until settlement, and captures an immutable intent. Unreachable machines fail during execution, not admission. The CLI validates inputs, calls the SDK and renders the Operation; the Gateway admits, records and projects; Swamp executes.

@@ -73,6 +73,35 @@ function checkCutImport(cut: (typeof list.cut_imports)[number]) {
   assert(uses > 0, `${cut.file}: nothing uses the cut import ${cut.import}`);
 }
 
+// These inputs are bundled with ansible-input, but only the inventory methods use them.
+const inventoryReceipt = "../node-base-inventory/receipt.ts";
+const inventoryCollector = "extensions/behaviors/operations/node-base-inventory/collect.py";
+
+function checkInventoryCut(source: string, called: string[]) {
+  const methods = ["baseInventorySource", "baseInventoryReceipt"];
+  assertEquals(called.filter((name) => methods.includes(name)), [], "converge now calls a base inventory method");
+  const lines = source.split("\n");
+  const blocks = methodBlocks(lines).filter((block) => methods.includes(block.name));
+  assertEquals(blocks.map(({ name }) => name).sort(), [...methods].sort(), "the base inventory methods still exist");
+  const sourceSchemas = /^const (?:InventoryAdmission|InventorySource) = z\.object\(/;
+  const inventoryResource = '        inventorySource: { schema: InventorySource, lifetime: "1d", garbageCollection: 5 },';
+  const receiptImport = `import { InventoryProfile, InventoryReceiptInput, inventoryReceipt } from "${inventoryReceipt}";`;
+  assertEquals(lines.filter((line) => line === receiptImport).length, 1, "the receipt must have exactly one named import");
+  let inSchema = false;
+  lines.forEach((line, index) => {
+    inSchema ||= sourceSchemas.test(line);
+    const inMethod = blocks.some(({ from, to }) => index > from && index < to);
+    if (!inMethod && line !== receiptImport && line !== inventoryResource) {
+      assert(!line.includes(inventoryReceipt) && !line.includes(inventoryCollector), `ansible-input/write.ts:${index + 1}: inventory file escaped its method`);
+      assert(!/\b(?:InventoryReceiptInput|inventoryReceipt|inventorySource)\b/.test(line), `ansible-input/write.ts:${index + 1}: inventory receipt or resource escaped its method`);
+      const schemaDeclaration = sourceSchemas.test(line);
+      assert(schemaDeclaration || !/\b(?:InventoryAdmission|InventorySource)\b/.test(line), `ansible-input/write.ts:${index + 1}: inventory schema escaped its method`);
+      assert(inSchema || !/\bInventoryProfile\b/.test(line), `ansible-input/write.ts:${index + 1}: inventory profile escaped its schema`);
+    }
+    if (inSchema && /;\s*$/.test(line)) inSchema = false;
+  });
+}
+
 const covered = (path: string) => list.inputs.some((input) => input === path || (input.endsWith("/") && path.startsWith(input)));
 
 /** The files the walker reads, so a test can give it a small tree of its own. Paths are relative to the repository. */
@@ -253,13 +282,17 @@ function reached() {
     if (files.has(module)) continue;
     files.add(module);
     const source = read(module);
+    const isSharedBehavior = module === extension + "write.ts";
+    if (isSharedBehavior) checkInventoryCut(source, calledMethods());
     for (const [, relative] of source.matchAll(/^\s*(?:import|export)\b[^;]*?from\s+"(\.{1,2}\/[^"]+)"/gm)) {
       // A cut import: used only by methods a converge never runs.
+      if (isSharedBehavior && relative === inventoryReceipt) continue;
       if (list.cut_imports.some((cut) => cut.file === module && cut.import === relative)) continue;
       modules.push(new URL(relative, new URL(module, repo)).pathname.slice(repo.pathname.length));
     }
     for (const [, name] of source.matchAll(/extensionFile\(\s*["']([^"']+)["']\s*\)/g)) {
       shipped.add(name);
+      if (isSharedBehavior && name === inventoryCollector) continue;
       if (name.endsWith(".ts")) modules.push("swamp/" + name);
       else files.add("swamp/" + name);
     }
@@ -318,6 +351,10 @@ Deno.test("a cut import fails when the converge workflow calls its method or a u
   const cut = list.cut_imports.find((entry) => entry.import === "./fleet_reboot_result.ts")!;
   assertThrows(() => checkCutImport({ ...cut, methods: [...cut.methods, "convergeResult"] }), Error, "the converge workflow now calls convergeResult");
   assertThrows(() => checkCutImport({ ...cut, methods: ["composeRole"] }), Error, "is used outside composeRole");
+  const source = read("swamp/extensions/behaviors/operations/ansible-input/write.ts");
+  assertThrows(() => checkInventoryCut(source, ["baseInventoryReceipt"]), Error, "converge now calls a base inventory method");
+  assertThrows(() => checkInventoryCut(source + `\nconst collector = "${inventoryCollector}";`, calledMethods()), Error, "inventory file escaped its method");
+  assertThrows(() => checkInventoryCut(source + "\nconst schema = InventorySource;", calledMethods()), Error, "inventory schema escaped its method");
 });
 
 Deno.test("the converge workflow's Node plays lock a behavior per Node, so the refresh starts the inner Nodes side by side", () => {

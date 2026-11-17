@@ -1,6 +1,7 @@
 {
  "maxUnreviewed": 146,
  "nativeDataMethods": {
+  "@nckrtl/ansible-input#baseInventorySource": "Validates admitted public metadata and reads the fixed bundled collector.",
   "@nckrtl/analytics-runtime#observe": "Compares supplied container observations and writes only Swamp metadata.",
   "@nckrtl/analytics-runtime#plan": "Builds runtime intents and argv as Swamp metadata without executing them.",
   "@nckrtl/artifact-fetch-policy#classify": "Classifies a supplied exit code and writes only the Swamp decision.",
@@ -104,6 +105,9 @@
   },
   "cluster-router-probe": {
    "probe": "unreviewed"
+  },
+  "operation-node-base-inventory": {
+   "Read the Node": "read-only"
   },
   "dependency-upgrade": {
    "fetch": "read-only",
