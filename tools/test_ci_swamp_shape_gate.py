@@ -134,7 +134,7 @@ class PlanTest(unittest.TestCase):
                     code = gate['main'](['--only', 'shape', '--reports', scratch, '--tools', '/custom-tools', '--base', BASE, *arguments])
                 self.assertEqual(code, 0)
                 calls = [call.args[0] for call in runner.call_args_list]
-                self.assertEqual(calls[0], [sys.executable, str(ROOT / 'bin/ci-units'), 'plan',
+                self.assertEqual(calls[0], ['/tools/python3', str(ROOT / 'bin/ci-units'), 'plan',
                                  '--base', BASE, '--head', 'HEAD', '--plan-json', str(Path(scratch) / 'fixture-plan.json')])
                 commands = [argv for argv in calls if argv[:3] == [sys.executable, str(ROOT / 'bin/ci-units'), 'run']]
                 self.assertEqual([json.loads(argv[argv.index('--units') + 1]) for argv in commands], selected)
@@ -187,7 +187,7 @@ class PlanTest(unittest.TestCase):
     def test_missing_fixture_programs_name_the_tools_and_fail_without_strict(self):
         planned = {'shards': [], 'self_hosted_shards': [{'units': ['swamp/tests/ansible_instance_host_runtime_test.ts#4/5']}], 'unmapped': []}
         with patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(planned))):
-            expanded = gate['fixture_commands'](steps('shape'), Path('/reports'), Path('/tools'), BASE)
+            expanded = gate['fixture_commands'](steps('shape'), Path('/reports'), Path('/tools'), BASE, Path('/tools/python3'))
         runtime = next(step for step in expanded if step.name == 'CI fixture shard 1')
         code, calls, output = ExitCodeTest().run_gate(['--only', 'shape', '--base', BASE], [],
                                                     selected_steps=[runtime], available=lambda *_args, **_kwargs: '/tool')
@@ -282,7 +282,7 @@ class ExitCodeTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as scratch, patch.dict(scope['os'].environ, environment or {}, clear=True), \
                 patch.dict(scope, {'tool_path': lambda tools: Path(scratch),
-                                   'fixture_commands': lambda steps, reports, tools, base: selected_steps if selected_steps is not None else steps}), \
+                                   'fixture_commands': lambda steps, *_args: selected_steps if selected_steps is not None else steps}), \
                 patch.object(scope['shutil'], 'which', side_effect=available or (lambda *_args, **_kwargs: '/tool')), \
                 patch.object(scope['subprocess'], 'run', run), redirect_stdout(io.StringIO()) as output:
             scope['os'].environ['PATH'] = '/usr/bin'

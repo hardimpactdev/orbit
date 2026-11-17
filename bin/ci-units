@@ -30,6 +30,7 @@ MACHINERY = ('bin/ci-units', 'bin/ci-registry', 'bin/swamp-shape-gate', PRELOAD,
 # Fixture metadata keys that only schedule a fixture: where it runs, its declared costs and its slices. The retired
 # after-merge keys, with their reason, also only scheduled a fixture or some of its cases (ADR 0262).
 SCHEDULING = ('self_hosted', 'cost', 'case_costs', 'slices', 'after_merge', 'after_merge_cases', 'reason')
+YAML_SUFFIXES = ('.yaml', '.yml')
 OUTPUT_LOCK = threading.Lock()
 CANCELLED = threading.Event()
 
@@ -124,6 +125,15 @@ def configuration(path=TABLE):
                     any(not isinstance(name, str) or name not in fixture.get('cases', []) for name in cases) or \
                     len(cases) != len(set(cases)):
                 raise ValueError(f'{file}: mandatory_cases needs a declared input and unique case names')
+        parsed = fixture.get('parsed_yaml_inputs', [])
+        if not isinstance(parsed, list) or any(
+            not isinstance(path, str) or Path(path).suffix.lower() not in YAML_SUFFIXES or
+            path == file or path in MACHINERY or any(char in path for char in '*?') or
+            not any(selection_regex(pattern).fullmatch(path) for pattern in fixture['inputs']) or
+            any(selection_regex(pattern).fullmatch(path) for pattern in mandatory)
+            for path in parsed
+        ) or len(parsed) != len(set(parsed)):
+            raise ValueError(f'{file}: parsed_yaml_inputs must list unique declared YAML paths without mandatory cases')
         # The host programs the fixture's tests run, such as zip or jq. A check on a host without one names the unit as skipped.
         programs = fixture.get('host_programs', [])
         if not isinstance(programs, list) or 'host_programs' in fixture and not programs or len(programs) != len(set(programs)) or \
@@ -194,6 +204,86 @@ def inventory_changes(base, head):
     return sorted(file for file in before.keys() | after.keys() if before.get(file) != after.get(file))
 
 
+def comment_only_yaml_paths(paths, base, head, fixtures):
+    """Find comment-only edits among the exact paths opted in by at least one fixture."""
+    opted_in = {path for fixture in fixtures.values() for path in fixture.get('parsed_yaml_inputs', [])}
+    candidates = opted_in.intersection(paths)
+    if not candidates:
+        return set()
+    try:
+        import yaml
+    except ImportError:
+        return set()
+    try:
+        diff = subprocess.check_output(['git', 'diff', '--raw', '--no-renames', '--diff-filter=M', '-z', base, head],
+                                       text=True, timeout=60).split('\0')
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, UnicodeError):
+        return set()
+    # A regular file must remain regular, with the same permissions.
+    candidates.intersection_update(path for header, path in zip(diff[::2], diff[1::2])
+                                   if header.startswith((':100644 100644 ', ':100755 100755 ')))
+
+    plain_key = re.compile(r'[A-Za-z_][A-Za-z0-9_.-]*')
+    quoted_key = re.compile(r'[ -~]*')
+    comments = re.compile(r'^[ \t]*#[^\r\n]*(?:\r?\n|$)|[ \t]+#[^\r\n]*', re.MULTILINE)
+
+    def comment_comparison(source):
+        class UniqueLoader(yaml.SafeLoader):
+            def construct_mapping(self, node, deep=False):
+                keys = set()
+                for key, _ in node.value:
+                    # Deno turns resolved keys into strings. Require literal string keys in both parsers,
+                    # since PyYAML can see a string where Deno sees a number (for example, 1e3).
+                    if not isinstance(key, yaml.ScalarNode) or key.tag != 'tag:yaml.org,2002:str':
+                        raise ValueError('Ambiguous YAML key')
+                    spelling = source[key.start_mark.index:key.end_mark.index]
+                    if key.style is None:
+                        literal = plain_key.fullmatch(spelling)
+                    else:
+                        literal = (key.style in ("'", '"') and quoted_key.fullmatch(key.value)
+                                   and spelling == f'{key.style}{key.value}{key.style}')
+                    if not literal or key.value in keys:
+                        raise ValueError('Ambiguous or duplicate YAML key')
+                    keys.add(key.value)
+                return super().construct_mapping(node, deep=deep)
+
+        # PyYAML and Deno differ on which Unicode characters end a line.
+        if any(char in source for char in '\x85\u2028\u2029'):
+            raise ValueError('Ambiguous YAML line break')
+        parts = []
+        scalar_values = []
+        end = 0
+        for token in yaml.scan(source):
+            if isinstance(token, (yaml.AliasToken, yaml.TagToken, yaml.DirectiveToken)):
+                raise ValueError('Ambiguous YAML syntax')
+            start, stop = token.start_mark.index, token.end_mark.index
+            if start == stop and not isinstance(token, yaml.StreamEndToken):
+                continue
+            # Strip comments only in gaps between tokens. Preserve scalar spelling and layout,
+            # including any text that looks like a comment inside a quoted or block scalar.
+            for comment in comments.finditer(source, end, start):
+                parts.append(source[end:comment.start()])
+                end = comment.end()
+            parts.append(source[end:stop])
+            end = stop
+            if isinstance(token, yaml.ScalarToken):
+                # A comment can end a block scalar before blank lines that keep-chomping would retain.
+                # Compare decoded values from the original source alongside the comment-stripped text.
+                scalar_values.append(token.value)
+        yaml.load(source, Loader=UniqueLoader)
+        return ''.join(parts), scalar_values
+
+    def unchanged_yaml(path):
+        try:
+            before, after = (subprocess.check_output(['git', 'show', f'{ref}:{path}'], stderr=subprocess.DEVNULL,
+                                                     timeout=60).decode('utf-8') for ref in (base, head))
+            return comment_comparison(before) == comment_comparison(after)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, yaml.YAMLError, ValueError, TypeError, RecursionError):
+            return False
+
+    return {path for path in candidates if unchanged_yaml(path)}
+
+
 def registry_changes(base, head):
     """Scope table edits to fixture entries; shared execution policy affects all."""
     before, _ = registry.read_revision(Path.cwd(), base)
@@ -232,7 +322,8 @@ def direct_files(paths, fixtures):
         {file for file in fixtures if registry.metadata_path(file) in paths}
 
 
-def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_changed=(), shared_registry=False):
+def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_changed=(), shared_registry=False,
+         comment_only_yaml=()):
     selected, unmapped = {}, []
     machinery = shared_registry or any(path in MACHINERY for path in paths)
     for path in paths:
@@ -240,6 +331,8 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
             continue
         matched = path_matches(path, fixtures)
         for file, priority in matched.items():
+            if path in comment_only_yaml and path in fixtures[file].get('parsed_yaml_inputs', []):
+                continue
             selected[file] = max(selected.get(file, (-1, 0, 0)), priority)
         if path.startswith('swamp/') and not matched:
             unmapped.append(path)
@@ -776,9 +869,11 @@ def main():
         signal.signal(signal.SIGINT, lambda *_: CANCELLED.set())
         return run(units, budget, fixtures, args.times, args.tools.resolve() if args.tools is not None else None)
     base, paths = selection.changed_inputs(gate.resolve_base(args.base), args.head)
+    comment_only_yaml = comment_only_yaml_paths(paths, base, args.head, fixtures)
     inventory_changed = inventory_changes(base, args.head) if registry.metadata_changed(paths) else []
     registry_changed, shared_registry = registry_changes(base, args.head) if registry.metadata_changed(paths) else ([], False)
-    result = plan(paths, budget, fixtures, defaults, inventory_changed, registry_changed, shared_registry)
+    result = plan(paths, budget, fixtures, defaults, inventory_changed, registry_changed, shared_registry,
+                  comment_only_yaml=comment_only_yaml)
     if args.plan_json:
         costs = {name: cost for f in fixtures.values() for name, cost in units_for(f, budget)}
         selected = planned_units(result)
