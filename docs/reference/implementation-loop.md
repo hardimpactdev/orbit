@@ -248,7 +248,7 @@ A canary file must be a registered hosted fixture; `bin/ci-units plan` refuses a
 
 `bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill two lanes per shard, each with at most 150 declared seconds, with at most eighteen fixture jobs across both shard classes per run.
 
-Ordinary fixture jobs run on the shared Sabre and Shark pool. Each host has six physical cores with twelve CPU threads and at most four active runners. Each runner has three disjoint CPU threads from three different cores and two fixture workers; eight workers per host leave room for Ansible child processes. Extra runner containers stay stopped with their listener and autostart disabled. Both classes count against the planner's eighteen-job bound; jobs beyond the eight active runners wait for a place.
+Ordinary fixture jobs run on the shared Sabre and Shark pool. Each host has six physical cores with twelve CPU threads and at most five active runners. Two runners have three CPU threads each; three runners have two each. The CPU sets are disjoint, each runner spans different physical cores, and its CPU quota matches its assigned thread count. Each runner has two fixture workers, for ten workers per host. Extra runner containers stay stopped with their listener and autostart disabled. Both classes count against the planner's eighteen-job bound; jobs beyond the ten active runners wait for a place.
 
 Four concurrent Ansible units on a shared runner can exceed the unit ceiling even when each case passes alone. The complete fleet fixture names the CI workflow as an input, so workflow changes exercise every fleet case.
 
