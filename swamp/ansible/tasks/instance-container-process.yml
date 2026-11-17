@@ -32,6 +32,19 @@
     fail_msg: process.target_inactive
     quiet: true
 
+# The Process's unit runs as `www-data`: a running container of an older image moves its app account from `orbit` to `www-data` first
+# (/usr/local/libexec/orbit-app-user).
+# A moved container only reads.
+- name: Move the app account to www-data
+  # The file from the intent, root's and 0755, written only when it is missing or differs; then it runs (InstanceImage::appAccount).
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['sh', '-c', 'set -e; t=$(mktemp); cat >"$t"; cmp -s "$t" "$0" || install -D -o 0 -g 0 -m 0755 "$t" "$0"; rm -f "$t"; exec "$0"', container.app_account.path] }}
+    stdin: "{{ container.app_account.content }}"
+    stdin_add_newline: false
+  register: app_user_name
+  changed_when: "'moved to www-data' in app_user_name.stdout"
+
 # The boot policy follows the desired state, as on a Node: a stopped Process stays stopped when the container starts again.
 - name: Change the unit
   when: process_action in ['start', 'stop', 'restart']

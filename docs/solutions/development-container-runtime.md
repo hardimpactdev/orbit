@@ -21,6 +21,8 @@ Outer WireGuard needed `ip` and `wg` rather than `wg-quick`. Nested Docker neede
 
 The early UpCloud fixture restored a small nested container in 2.9–3.9 seconds. A directory pool made an outer copy take 55 seconds, while the host ZFS copy took about 0.57 seconds. Test the real storage path; these figures promise no universal latency. The reference owns inner-volume measurements and the current seed contract, not a second rollout plan.
 
+The app runs as stock `www-data` (33:33) in normal containers, with `agent` in its group. Nested-fleet containers keep `orbit` (1000) and `work` (2760) for the inner Nodes’ ID maps; `www-data` joins `work` to read and write the shared workspace. `agent` has passwordless sudo and inner Incus access; the app account has neither. [Instance accounts](/reference/development-containers#users) owns the account contract.
+
 ## Measure database locality before changing the runtime
 
 Moving the spike's PostgreSQL database from Services to the application Node reduced median response time from 95.166 ms to 24.635 ms. A new local connection still cost about 7.558 ms while `SELECT 1` took about 0.2 ms. Persistent PDO reduced the warm median to about 9 ms; persistent SQLite measured 0.1445 ms in its fixture. These are small-application samples, not capacity comparisons.
