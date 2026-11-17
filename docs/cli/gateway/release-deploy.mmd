@@ -34,14 +34,18 @@ sequenceDiagram
   %%> - fetches the commit with the read token when the shared repository lacks it; the token reaches git only in its environment
   %%> Decided by the orchestrator, for review:
   %%> - the fetch is its own step, so that the build runs its script from the commit being released, not from the live release
-  SW->>GN: Build the release<br/>worktree · composer · REVISION
+  SW->>GN: Wake preparation<br/>or start after a reboot
+  SW->>GN: Deploy the commit off traffic<br/>persistent preparation container
   %%> What it does:
   %%> - refuses a commit that does not descend from the current release
-  %%> - links shared env and storage, installs dependencies, seals with `REVISION` and a cached config
-  %%> - a sealed release of the commit is reused
+  %%> - checks out the exact commit and installs dependencies in the preparation container; its workers and scheduler stay disabled
+  %%> - a retry after an incomplete build starts from a clean checkout and discards partial build output
   %%> On failure:
   %%> - a new build refuses with `gateway.release_disk_low` before it writes, when the free space and the snapshots that may go cannot hold the build, a database copy and the floor
   SW->>GN: Install the web build<br/>artifact · digest · rename
+  SW->>GN: Seal the build<br/>commit and artifact
+  SW->>GN: Snapshot the build<br/>clone hot
+  Note over GN: Sleep preparation<br/>in parallel with candidate checks
   SW->>GN: Snapshot the database<br/>VACUUM INTO
   %%> What it does:
   %%> - keeps the floor of Doctor's `node.disk_low`: 2 GiB and 10 % of the disk stay free after the copy
@@ -66,6 +70,9 @@ sequenceDiagram
   alt Operations still active after 10 minutes
     SW--xGW: gateway.release_busy<br/>blocking Operation IDs
   else idle
+    SW->>GN: Start FrankenPHP<br/>verify hot
+    %%> On failure:
+    %%> - discard the candidate; live keeps serving and the Swamp load does not start
     Note over SW: Load Swamp on Node 209<br/>operation-gateway-swamp-load
     %%> What it does:
     %%> - the load child: checkout, grants the new release rendered, serve reload
@@ -78,9 +85,9 @@ sequenceDiagram
     %%> - refuses to stop a unit that lacks the stop policy (`KillMode=mixed`, `SendSIGKILL=no`), because it would kill a running job
     %%> On failure:
     %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time; Horizon is started again below
-    AC->>GN: Switch the release<br/>gateway-rollback · Horizon
+    AC->>GN: Switch traffic<br/>reload host Caddy
     %%> Why:
-    %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart
+    %%> - Caddy points to the verified clone; the preparation container stays off traffic
     AC->>GN: Verify the Gateway<br/>/up · status version
     opt the check failed
       AC->>GN: Switch back<br/>gateway-rollback previous
@@ -91,6 +98,7 @@ sequenceDiagram
     %%> - starting a running unit changes nothing
     %%> Decided by the orchestrator, for review:
     %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
+    opt switch verified
     AC->>GN: Admit nested-fleet refresh<br/>artisan · verified release
     %%> What it does:
     %%> - only after verification succeeds and Start Horizon finishes (or is skipped), admits one `instance.deploy` to the release commit for each nested-fleet default on a switched-on Node (instance/container/fleet-refresh.mmd)
@@ -100,7 +108,8 @@ sequenceDiagram
     AC->>GN: Resume document cleanup<br/>best effort
     %%> Why:
     %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release
-    AC->>GN: Prune old releases<br/>best effort
+    AC->>GN: Freeze previous live<br/>drain then reclaim to swap
+    end
     alt every step succeeded
       SW-->>GW: Run succeeded<br/>terminal result
       Note over GW: Record verified<br/>fleet rollout follows

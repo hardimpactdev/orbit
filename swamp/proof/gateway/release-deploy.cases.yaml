@@ -1,0 +1,21 @@
+command: gateway:release:deploy
+chart: gateway/release-deploy
+target: gateway
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  main: "Deploy two releases from the same preparation container. Verify the sealed commit and web digest, private readiness, and that only the selected clone serves or processes jobs. Check swap use for preparation and rollback after the handover and resume each for its intended operation."
+  retry: "Interrupt preparation before the seal. Retry with the same commit and verify that partial web assets cannot enter the snapshot."
+  recovery: "Exercise both sides of the switch: a failed private check leaves live untouched, and a failed public check restores the previous live. A request started before the switch finishes there. Rollback resumes old and switches only after readiness."
+cases:
+  - id: invalid-commit
+    batch: fresh-fleet
+    covers: []
+    summary: Reject an incomplete commit locally before admitting a release.
+    act:
+      - cli:
+          run: [gateway:release:deploy, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: gateway.release_commit_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
