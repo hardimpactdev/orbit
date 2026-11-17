@@ -22,13 +22,13 @@ Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behaviour i
 
 ### Documentation first
 
-Every group starts with a docs subtask. Run `bin/docs-impact --base <start-commit>` once, with one `--paths` for each planned path, including paths that do not exist yet; the start commit follows [its one rule](../../../docs/reference/tasks.md#start-commit). The docs subtask updates the impacted pages, or delivers the JSON report when nothing is impacted. The [contributor guide](../../../docs/contributor-guide.md#2-write-the-documentation) defines the report. The handoff check runs the impact check again on every later subtask. For a page that needs no update, put its `Docs-unaffected: <page>: <reason>` line in `<git-common-dir>/orbit/proposed-pr-bodies/<branch>.md` on the task checkout's machine before handoff. The handoff check reads that branch-specific file in a fresh session: `bin/review-check` on a task VM, and `bin/task-check` through the same gate command in a task copy, where the file is `/srv/workspace/.git/orbit/proposed-pr-bodies/task-<id>.md` ([waivers in a copy](../../../docs/reference/tasks.md#docs-impact-waivers-in-a-copy)). An export in your own shell cannot reach it. The contributor guide gives the path commands. The reviewer confirms the reason. Orbit's publish of a task copy copies the same lines into the PR body; for a pull request opened another way, copy them before READY. Private Git notes cannot waive the gate.
+Every group starts with a docs subtask. Run `bin/docs-impact --base <start-commit>` once, with one `--paths` for each planned path, including paths that do not exist yet; the start commit follows [its one rule](../../../docs/reference/tasks.md#start-commit). The docs subtask updates the impacted pages, or delivers the JSON report when nothing is impacted. The [contributor guide](../../../docs/contributor-guide.md#2-write-the-documentation) defines the report. The handoff check runs the impact check again on every later subtask. For a page that needs no update, follow [Docs-impact waivers in a copy](../../../docs/reference/tasks.md#docs-impact-waivers-in-a-copy). The reviewer confirms the reason. Orbit's publish copies the same lines into the PR body; for a pull request opened another way, copy them before READY. Private Git notes cannot waive the gate.
 
 Record a significant decision in an ADR with the status `In progress.`, as the [ADR guide](../../../docs/decisions/README.md) describes. The last subtask that completes a decision absorbs the ADR into its owning page; give that subtask a `file` deliverable for the page. An implementer absorbs an ADR only when its deliverables name that page.
 
-### Topology and web UI
+### Fleet proof and web UI
 
-A task group cannot declare a `topology`: the Gateway refuses any nonempty list with `tasks.orchestration_unsupported`. A subtask that changes Node, agent, guest, deployment, or routing code proves its deliverables with its own commands and tests. A check on shared machines, such as beast or the live Gateway, is an operator step after deploy, listed in the pull request.
+A task group cannot declare a `topology`: the Gateway refuses any nonempty list with `tasks.orchestration_unsupported`. For live behavior checks, use [verifying-commands](../verifying-commands/SKILL.md) against the copy's nested fleet before opening the PR. A check on shared machines, such as beast or the live Gateway, is an operator step after deploy, listed in the pull request; it does not replace that proof.
 
 A subtask that changes the web UI gets a `review` deliverable for the phone and desktop screenshots from `bin/web-verify`. The reviewer judges the phone layout as [verifying-web-ui](../verifying-web-ui/SKILL.md) describes.
 
@@ -66,7 +66,7 @@ Name implementation paths only where the contract fixes them. Express each promi
 
 Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, its goal, and its deliverables. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
 
-Create the parent in Backlog with `task-create` and `project_id` for the Orbit Project. Create its subtasks with the same tool and `parent_id`. Select either level by its existing Task ID. Moving the parent to Todo changes board state only; `task-start` starts its VM through the internal `tasks.provision` operation. Select a child directly for `task-check` and `task-turn`.
+Create the parent in Backlog with `task-create` and `project_id` for the Orbit Project. Create its subtasks with the same tool and `parent_id`. Select either level by its existing Task ID. Moving the parent to Todo changes board state only. `task-start` creates a [task copy](../../../docs/reference/tasks.md#task-copy) of the Project's default container Instance. Follow that contract for start failures and removal, and [Task Instance workspace phases](../../../docs/reference/task-instance-workspace.md) for workspace checks and export. Select a child directly for `task-check` and `task-turn`.
 
 ## Implement a subtask
 
@@ -74,7 +74,7 @@ Create the parent in Backlog with `task-create` and `project_id` for the Orbit P
 - Build test fixtures from real output.
 - When the handoff check fails, read the failed step's log and fix the cause before you hand off again.
 
-Every task read uses recorded Gateway state, including the agent viewer and stream. Never contact Pi or a Node during a read. Swamp records turn evidence; agent observations record workspace line counts.
+Every task read uses [recorded Gateway state](../../../docs/reference/tasks.md#recorded-snapshots-for-all-readers), including the agent viewer and stream; it does not contact the runtime. Follow [copy turn agents](../../../docs/reference/tasks.md#copy-turn-agents) for execution and evidence.
 
 ## Review a subtask
 

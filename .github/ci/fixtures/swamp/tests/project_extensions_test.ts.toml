@@ -3,7 +3,7 @@ cases = [
   "the data file holds the recorded Project 20 configuration",
   "weekly slots cross year boundaries and hourly inspection stays separate",
   "project findings retain reports and blocked reasons and create one deterministic whole batch receipt",
-  "cancelled schedule cleanup requires ended children, no assistance and a removed or absent VM",
+  "cancelled schedule cleanup requires ended children, no assistance and no bound copy",
 ]
 file = "swamp/tests/project_extensions_test.ts"
 cost = 1

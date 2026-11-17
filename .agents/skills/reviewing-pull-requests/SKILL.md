@@ -17,12 +17,12 @@ Check correctness, regressions, test coverage, architectural decisions, and docu
 
 For command behavior, use [designing-cli-commands](../designing-cli-commands/SKILL.md) and the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) for real terminal checks. For a web UI change, open the phone and desktop screenshots from [verifying-web-ui](../verifying-web-ui/SKILL.md) and judge the layout on a phone. Do not stop at the diff.
 
-A task group cannot declare a topology, and agents never acquire or release one in an Orbit task.
+Review the author's pre-PR proof evidence from the [task copy and its nested fleet](../../../docs/reference/tasks.md#build-a-feature-in-one-copy). Use [verifying-commands](../verifying-commands/SKILL.md) to reproduce user-visible behavior and important failure cases there. Verify the running source and the exact cases and verdicts, not just a green summary. Task groups do not declare topologies; do not acquire a legacy topology for review.
 
-Use an available topology to reproduce the feature's user-visible behavior and important failure cases. Verify the running source commit. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. A missing topology does not block task approval. Return the code findings and record any discovery limitation. A required check on the running Gateway is an operator step after deploy, not a reason to acquire a topology manually.
+Unavailable, failed, unrun or interrupted proof is not a pass. Record the missing evidence and apply the [blocking rule](../../../docs/reference/tasks.md#reviewer-outcomes); do not infer coverage from CI, whose proof job is intentionally off for now. A required check on the running production Gateway is an operator step after deploy, not a replacement for pre-PR proof.
 
 ## Report
 
-Give actionable findings with file references, their effect, and suggested corrections. Include the reviewed commit, check results, Incus observations, and limitations. Link sanitized evidence stored outside the repository.
+Give actionable findings with file references, their effect, and suggested corrections. Include the reviewed commit, check results, copy/nested-fleet proof evidence, and limitations. Link sanitized evidence stored outside the repository.
 
 After fixes, review the changes and repeat affected checks. Confirm that the final assessment covers the current PR commit. Publish the review when authorized. The gate and the merge are stage 4 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx#4-pr-and-ci).
