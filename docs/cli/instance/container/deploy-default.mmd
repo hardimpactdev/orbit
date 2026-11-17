@@ -67,6 +67,18 @@ sequenceDiagram
   %%> - a step with `inputs` runs only when they or its command changed since its last passed run in this workspace: the checkout compares the Git object IDs of its inputs at the commit and its command's digest with the step's record in `.git/orbit-deploy-steps`, and the step's guard skips it when they match; a passed step records them; a step without `inputs` always runs
   %%> Why:
   %%> - most releases change no lock file: an install that finds nothing to do still costs its tool's start, its autoload and its scripts, about 4 s a step
+  opt the proof Project's default
+    SW->>GW: Hold the seed<br/>seed-hold call
+    %%> When:
+    %%> - before the first step that runs the `seed` phase: "Prepare the container" for a nested-fleet default, else "Finish the container"; only the proof Project's default, whose seed a seed copy sends (instance/seed-copy.mmd); the intent's `seed_hold` names it
+    %%> What it does:
+    %%> - asks the Gateway for the default's seed hold `instance_seed:DEFAULT_ID`; while a seed copy holds it (its Operation lock), the Gateway answers busy after a short wait and the step asks again, within its bound
+    %%> - once granted, the deployment holds the seed until it ends; a seed copy is not admitted meanwhile (`instance.seed_held`), and the deployment's end, passed or failed, admits it again
+    %%> Why:
+    %%> - a retake deletes or renames `seed-COMMIT`, also at the same commit; a push of that snapshot to a CI Node at that moment fails the seed copy, and the retake's own snapshot calls can fail too (docs/reference/development-containers.md#the-seed-hold)
+    %%> On failure:
+    %%> - the bound passes while the seed copy runs: the deployment fails with `instance.seed_hold_timeout` before it changes the container; the old seed stays
+  end
   SW->>C: Finish the container<br/>Ansible · processes · seed · check
   %%> What it does:
   %%> - one play runs the phases `processes`, `seed` and `check`, in this order; a nested-fleet default refreshes its fleet between `processes` and `seed`: container/fleet-refresh.mmd

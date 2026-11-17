@@ -394,7 +394,7 @@ Every minute, a Gateway scheduler job reads each eligible Project's default bran
 - A manual [`instance:deploy`](/cli/instance/deploy) resets the count.
 - A passed deploy records `up_to_date` and the new `seed_commit`. The run that settles it goes on to the newest head in the same run.
 
-A commit is seen within one minute and deploys when its Operation starts. A clone or task copy that starts during the deploy copies the old seed. If the deploy replaces that seed before the copy, the copy refuses with [`instance.default_seed_moved`](/reference/development-containers#what-a-clone-has-at-its-first-start); the same command then takes the new seed.
+A commit is seen within one minute and deploys when its Operation starts. A clone or task copy that starts during the deploy copies the old seed. If the deploy replaces that seed before the copy, the copy [waits for the retake](/reference/development-containers#a-retake-keeps-the-seed) and copies the new seed.
 
 A deploy wakes a sleeping default and lets it sleep again: an automatic deploy does not count as activity for the [idle sleep](/reference/development-containers#sleep-and-wake). A manual deploy and a release refresh still count.
 

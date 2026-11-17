@@ -27,7 +27,11 @@ sequenceDiagram
   %%> - when the default moves to another Node, no CI Node is a target until its `ci-runner` role is converged again
   %%> Not a target:
   %%> - a Node whose listener is not ready: no copy fails on it and no copy marks it tried; its next passed `ci-runner` converge makes it a target
-  %%> - one copy at a time: an open copy holds the default's seed-copy lock, `operation.target_busy`
+  %%> - one copy at a time: an open copy holds the default's seed hold, `operation.target_busy`
+  %%> - while a deployment of the default holds the seed: the admission is refused, `instance.seed_held`, and the deployment's end admits it again (the seed moved or the Nodes are still behind)
+  %%> The seed hold (one rule for one resource, docs/reference/development-containers.md#the-seed-hold):
+  %%> - one hold key per default, `instance_seed:DEFAULT_ID`: the seed copy takes it as its Operation lock at admission and keeps it to its end, so every push of the run sends a seed that no retake deletes or renames
+  %%> - a deployment of the default asks the Gateway for the seed before its first `seed` phase and keeps it to its end; it waits while a seed copy is open (see container/deploy-default.mmd)
   %%> - a Node past the run's target limit: the copies run one target at a time, so the run budget grows with the targets and must fit in the Swamp serve run cap; the limit is the number of copy steps that fit beside the fixed phases (`ProofSeeds::maxTargets`), and the end of the run admits the Nodes it left out; a `ci-runner` add or converge names its own Node, and the limit keeps that Node, because the end of a run admits no Node that a copy tried at the seed
   %%> Result:
   %%> - a task is recorded with the full intent: the default's Node, container and inner volume, per target its Node and WireGuard address, and `release_base` when the run's targets are all the Nodes behind the seed
