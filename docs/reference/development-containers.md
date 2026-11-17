@@ -1806,7 +1806,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | Part | What Orbit does |
 | --- | --- |
 | Admission | An active checkout Instance on a Node of the build list, with no Route beside its own. Otherwise `instance.migrate_unsupported` |
-| Non-default | The Project default is on the same Node. Source identity and a T3 recording contribution are required. Conn and a ready model route are optional. No migrated default or seed is needed |
+| Non-default | The Project default is on the same Node; source identity and T3 registration are required. Conn and model routing are optional. No migrated default or seed is needed |
 | Deployment | An unfinished deployment refuses the move with `instance.lifecycle_busy` |
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the next free T3 port after the Node's last one. It names no clone source |
