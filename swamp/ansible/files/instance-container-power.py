@@ -49,6 +49,9 @@ USER_LIMIT = 1 << 56
 MAX_ADVISE_BYTES = 1 << 30
 PAGEMAP_CHUNK = 1 << 16
 RESUME_SECONDS = 1
+# The bound of a thaw that the helper writes itself, when the kernel holds a container frozen that Incus no longer calls frozen.
+THAW_SECONDS = 5.0
+UNMANAGED = "instance.container_frozen_unmanaged"
 RECEIPTS_KEPT = 16
 
 PROJECTS = ("orbit-instances", "orbit-instances-nested")
@@ -559,6 +562,38 @@ def read_value(path):
         return handle.read().strip()
 
 
+def kernel_frozen(host, relative):
+    """Whether the kernel holds the container's own cgroup frozen: its `cgroup.freeze` is 1, or `cgroup.events` still says `frozen 1`.
+    Incus reads a container's state only from its liblxc monitor, which can lose a freeze: on 2026-11-17 Instance 2454 read Running
+    while its cgroup stayed frozen, and every exec into it hung. A cgroup that cannot be read is not frozen: Incus's word stands."""
+    path = os.path.join(host.cgroups, relative)
+    try:
+        if read_value(os.path.join(path, "cgroup.freeze")) == "1":
+            return True
+        events = read_value(os.path.join(path, "cgroup.events"))
+    except OSError:
+        return False
+    return any(line.split() == ["frozen", "1"] for line in events.splitlines())
+
+
+def thaw(host, relative, seconds):
+    """Thaw the container's own cgroup in the kernel and wait until `cgroup.events` says `frozen 0`, at most `seconds`. Only for a
+    container that Incus calls running: Incus refuses to unfreeze it. True when the kernel thawed it within the bound."""
+    path = os.path.join(host.cgroups, relative)
+    deadline = time.monotonic() + seconds
+    try:
+        with open(os.path.join(path, "cgroup.freeze"), "w") as handle:
+            handle.write("0")
+    except OSError:
+        return False
+    while True:
+        if not kernel_frozen(host, relative):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.01)
+
+
 def open_swap(host, instance_id, relative, boot_id):
     """Open `max` on each cgroup of the subtree whose memory.swap.max holds 0; record exactly what was opened."""
     zero = []
@@ -1001,6 +1036,10 @@ def prepare(host, instance_id, operation_id, intent):
     if live["status"] == "stopped":
         remove(os.path.join(base, "plan"))
         return dict(result, outcome="stopped", state_after="stopped", prepared_restore={"version": 1, "status": "not_applicable"})
+    # A container that Incus calls running but the kernel holds frozen is never frozen again or changed: its earlier sleep's files stay
+    # for the wake, which thaws it. The sleep fails with the asleep marker in place, so a visitor gets the wake page and starts that wake.
+    if live["status"] == "running" and kernel_frozen(host, relative):
+        return dict(result, outcome="failed", error_code=UNMANAGED, state_after="frozen")
     remove(os.path.join(base, "plan"))
     remove(os.path.join(base, "sleep.json"))
     write_target(host, instance_id, intent, live["incarnation"])
@@ -1128,6 +1167,8 @@ def restore(host, instance_id, operation_id, intent):
         ensure_dir(base)
         write_target(host, instance_id, intent, live["incarnation"])
         target = read_target(host, instance_id)
+    if live["status"] == "running" and kernel_frozen(host, relative):
+        return thaw_unmanaged(host, instance_id, relative, result)
     if live["status"] == "running":
         result["swap_subtree"] = close_swap(host, instance_id, relative)
         return dict(result, outcome="already_running", state_after="running",
@@ -1179,7 +1220,31 @@ def restore(host, instance_id, operation_id, intent):
     if after is None or after["incarnation"] != live["incarnation"] or after["status"] != "running":
         return dict(result, outcome="failed", error_code="instance.container_start_failed",
                     state_after=after["status"] if after else "missing")
+    # liblxc marks the container running before it writes the thaw; a thaw that the kernel has not made yet is waited for, within the
+    # bound, and one that never comes fails clearly instead of a later exec hanging.
+    if kernel_frozen(host, relative) and not thaw(host, relative, THAW_SECONDS):
+        return dict(result, outcome="failed", error_code=UNMANAGED, state_after="frozen")
     result["seconds"]["resume"] = round(time.monotonic() - resuming, 3)
+    closing = time.monotonic()
+    result["swap_subtree"] = close_swap(host, instance_id, relative)
+    remove(os.path.join(base, "sleep.json"))
+    result["seconds"]["close"] = round(time.monotonic() - closing, 3)
+    return dict(result, outcome="resumed", state_after="running")
+
+
+def thaw_unmanaged(host, instance_id, relative, result):
+    """The resume of a container that the kernel holds frozen while Incus calls it running: no memory call and no Incus call (Incus
+    refuses to unfreeze a container it thinks runs). The helper thaws the container's own cgroup within THAW_SECONDS, drops the plan
+    as stale and closes the swap the sleep opened, as any resume does. One that stays frozen fails `instance.container_frozen_unmanaged`
+    and keeps its files, so a later wake tries again."""
+    base = host.instance_dir(instance_id)
+    result = dict(result, kernel_frozen=True)
+    resuming = time.monotonic()
+    if not thaw(host, relative, THAW_SECONDS):
+        return dict(result, outcome="failed", error_code=UNMANAGED, state_after="frozen")
+    result["seconds"]["resume"] = round(time.monotonic() - resuming, 3)
+    remove(os.path.join(base, "plan"))
+    result["prepared_restore"] = skipped("plan_stale")
     closing = time.monotonic()
     result["swap_subtree"] = close_swap(host, instance_id, relative)
     remove(os.path.join(base, "sleep.json"))

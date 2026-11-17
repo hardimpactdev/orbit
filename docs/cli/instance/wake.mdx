@@ -75,4 +75,6 @@ For a nested-fleet clone:
 | `instance.power_helper_busy` | Another power action on the Instance's Node stayed busy past the wait, for example a restore stuck in disk I/O. The marker stays. |
 | `instance.power_helper_failed` | The power helper refused its input or crashed. The asleep marker stays; the run's output has the helper's error. Retry, or read the Node's journal. |
 | `instance.web_unready` | FrankenPHP gave no answer within about 30 seconds. The marker stays. |
+| `instance.container_frozen_unmanaged` | The kernel held the container frozen while Incus called it running, and the thaw did not end within 5 seconds. Nothing ran in the container, and the marker stays. See [a freeze that Incus lost](/reference/prepared-restore#a-freeze-that-incus-lost). |
+| `instance.container_exec_timeout` | A nested-fleet container did not answer a command within 10 seconds at its start. The marker stays. |
 | `instance.t3_unready` | T3 did not answer within about 30 seconds. The app already serves: the marker is gone, and the Instance is recorded as running. |

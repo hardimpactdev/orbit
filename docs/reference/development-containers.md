@@ -1590,6 +1590,8 @@ A stopped container keeps each Process unit's enablement, which holds its desire
 
 The runtime's `power_state` is `stopped` for both a frozen and a stopped sleeping container. Each reader treats them alike.
 
+Incus can lose a freeze: on 17 November 2026 it read Instance 2454 as running while the kernel still held its cgroup frozen, and every `incus exec` into it hung. So a wake or a deployment also reads the kernel's `cgroup.freeze` and `cgroup.events` of a container that Incus calls running, before any exec. The power helper thaws such a container itself within 5 s, or the run fails at once with `instance.container_frozen_unmanaged` ([a freeze that Incus lost](/reference/prepared-restore#a-freeze-that-incus-lost)). A clone needs no wake of a sleeping default: it copies one of the default's seed snapshots and never touches the live container.
+
 By hand, resume a frozen container before you stop it: `incus resume` first, then `incus stop`. A clean `incus stop` of a frozen container times out and leaves it running (Incus 7.0.2). `incus start` of a frozen container only unfreezes it.
 
 | Part | State |

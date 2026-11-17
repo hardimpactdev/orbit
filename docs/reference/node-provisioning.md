@@ -523,6 +523,7 @@ When the helper changed or its manifest is missing, the converge runs `orbit-ins
 | --- | --- |
 | `instance.container_freeze_failed` | `prepare` could not pause the container, or its reclaim failed |
 | `instance.container_start_failed` | `restore` could not unfreeze the container |
+| `instance.container_frozen_unmanaged` | The kernel holds the container frozen while Incus calls it running, and the helper's own thaw did not end within 5 s; `prepare` refuses such a container too |
 | `instance.power_helper_failed` | The helper refused its input or crashed; it exits 70 |
 
 A [CI-only Node](#proof-copies-on-a-ci-node) gets the same branch through its `ci-runner` role.

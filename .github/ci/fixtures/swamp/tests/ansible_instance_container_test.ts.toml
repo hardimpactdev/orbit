@@ -33,6 +33,7 @@ cases = [
   "a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit",
   "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait",
   "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one",
+  "a wake of a container that Incus calls Running but the kernel holds frozen thaws it through the helper, or fails clearly before any exec",
   "a deployment's start resumes a Frozen container and then converges as usual",
   "a clone runs its own Process units: the default's units and folders from the seed go, and its own start, also at its next boot",
   "a clone's first boot starts no unit of the default and the clone has its own machine-id",
@@ -105,7 +106,7 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 7996
+cost = 8081
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
@@ -229,6 +230,7 @@ inputs = [
 "a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name" = 46 # ESTIMATE: local 21s * 2.1, rounded up + 1s
 "a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit" = 43 # ESTIMATE: local 20s * 2.1, rounded up + 1s
 "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one" = 119 # ESTIMATE: local 56s * 2.1, rounded up + 1s
+"a wake of a container that Incus calls Running but the kernel holds frozen thaws it through the helper, or fails clearly before any exec" = 85 # ESTIMATE: local 40s * 2.1, rounded up + 1s
 "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait" = 90 # ESTIMATE: local 42s * 2.1, rounded up + 1s
 "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase" = 164 # local 142s x 1.15; above the 150-second lane, a named capacity gap (ADR 0262)
 "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing" = 96 # ESTIMATE: local 45s * 2.1, rounded up + 1s
