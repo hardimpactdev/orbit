@@ -627,6 +627,7 @@ Deno.test({
         ...startReads,
         "incus list --format csv --columns ns",
         ...names.map((name) => `incus start ${name}`),
+        knownHostsSync,
         "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
         "test -s /etc/wireguard/wg-nested.key",
         "incus exec nested-gateway -- wg show orbit public-key",
@@ -779,6 +780,7 @@ Deno.test({
         "incus list --format csv --columns ns",
         // One call starts the three after the rules check: Incus boots them in parallel.
         `incus start ${names.join(" ")}`,
+        knownHostsSync,
         "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
         "incus exec nested-gateway -- ln -sfnT club/swamp-club-api-key /home/orbit/.config/swamp/api-key",
         "test -s /etc/wireguard/wg-nested.key",
