@@ -8,9 +8,7 @@ use App\Domain\Executor\SignedExecutorOrder;
 use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Infrastructure\Executor\ExecutorWaitResult;
-use App\Infrastructure\Executor\ExecutorWaitStatus;
 use App\Models\Node;
-use App\Models\Operation;
 use Illuminate\Contracts\Console\Kernel;
 
 // Test support only. Runs inside the nested Gateway as its managed user, never installed in a release.
@@ -123,39 +121,39 @@ function proofOrder(string $secretPath, array $input): array
  */
 function proofPublish(string $secretPath, array $input): array
 {
-    $node = (int) $input['node'];
+    $node = Node::query()->findOrFail((int) $input['node']);
     $count = max(1, min(50, (int) ($input['count'] ?? 1)));
     $publisher = app(ExecutorOrderPublisher::class);
     $proof = app(ExecutorProofOperation::class);
-    $operations = [];
-    $orders = [];
-    for ($index = 0; $index < $count; $index++) {
-        $operation = $operations[] = $proof->start(Node::query()->findOrFail($node));
-        $orders = [...$orders, ...closing($proof, $operation, function () use ($secretPath, $input, $node, $operation, $publisher): array {
+
+    // One proof run: a throw at any point, in a publish or a wait, fails every Operation it recorded that is still open.
+    return $proof->run($node, function (Closure $start) use ($secretPath, $input, $node, $count, $publisher, $proof): array {
+        $operations = [];
+        $orders = [];
+        for ($index = 0; $index < $count; $index++) {
+            $operation = $operations[] = $start();
             if (isset($input['tamper'])) {
-                $made = proofOrder($secretPath, ['node' => (string) $node, 'operation' => (string) $operation->id] + $input);
+                $made = proofOrder($secretPath, ['node' => (string) $node->id, 'operation' => (string) $operation->id] + $input);
                 $order = new SignedExecutorOrder($made['order'], (string) $operation->id, $made['nonce'], 0);
             } else {
-                $order = ExecutorOrderSigner::fromConfig()->sign($operation, 'proof.noop', (string) $node);
+                $order = ExecutorOrderSigner::fromConfig()->sign($operation, 'proof.noop', (string) $node->id);
             }
             $published = (int) floor(microtime(true) * 1000);
             $publisher->publish($operation, $order);
-            $sent = [['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $published, 'replay' => false]];
+            $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $published, 'replay' => false];
             // A true replay: the exact wire again, same signature and Operation, at once and so well inside its 5 s expiry.
             if (($input['replay'] ?? false) === true) {
                 $replayed = (int) floor(microtime(true) * 1000);
                 $publisher->publish($operation, $order);
-                $sent[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $replayed, 'replay' => true];
+                $orders[] = ['operation' => $order->operation, 'nonce' => $order->nonce, 'published_ms' => $replayed, 'replay' => true];
             }
+        }
+        foreach ($operations as $operation) {
+            $proof->finish($operation, $proof->wait($operation));
+        }
 
-            return $sent;
-        })];
-    }
-    foreach ($operations as $operation) {
-        $proof->finish($operation, $proof->wait($operation));
-    }
-
-    return ['orders' => $orders];
+        return ['orders' => $orders];
+    });
 }
 
 /**
@@ -170,18 +168,22 @@ function proofRoundTrip(array $input): array
 {
     $node = Node::query()->findOrFail((int) $input['node']);
     $proof = app(ExecutorProofOperation::class);
-    $trips = [];
-    for ($index = 0, $count = max(1, min(50, (int) ($input['count'] ?? 1))); $index < $count; $index++) {
-        $operation = $proof->start($node);
-        $started = hrtime(true);
-        $order = closing($proof, $operation, fn (): SignedExecutorOrder => $proof->send($operation, ExecutorOrderSigner::fromConfig()));
-        $result = $proof->wait($operation);
-        $trips[] = ['operation' => (string) $operation->id, 'nonce' => $order->nonce, 'latency_ms' => elapsedMs($started)] + waited($result)
-            + ['recorded' => $operation->refresh()->executor_result];
-        $proof->finish($operation, $result);
-    }
+    $count = max(1, min(50, (int) ($input['count'] ?? 1)));
 
-    return ['wait_ms' => (int) round(ExecutorResultWait::boundSeconds() * 1000), 'round_trips' => $trips];
+    return $proof->run($node, function (Closure $start) use ($proof, $count): array {
+        $trips = [];
+        for ($index = 0; $index < $count; $index++) {
+            $operation = $start();
+            $started = hrtime(true);
+            $order = $proof->send($operation, ExecutorOrderSigner::fromConfig());
+            $result = $proof->wait($operation);
+            $trips[] = ['operation' => (string) $operation->id, 'nonce' => $order->nonce, 'latency_ms' => elapsedMs($started)] + waited($result)
+                + ['recorded' => $operation->refresh()->executor_result];
+            $proof->finish($operation, $result);
+        }
+
+        return ['wait_ms' => (int) round(ExecutorResultWait::boundSeconds() * 1000), 'round_trips' => $trips];
+    });
 }
 
 /**
@@ -198,8 +200,9 @@ function proofLostResult(array $input): array
 {
     $node = Node::query()->findOrFail((int) $input['node']);
     $proof = app(ExecutorProofOperation::class);
-    $operation = $proof->start($node);
-    [$first, $dropped, $lost, $repeat, $recovered, $latency] = closing($proof, $operation, function () use ($proof, $operation): array {
+
+    return $proof->run($node, function (Closure $start) use ($proof): array {
+        $operation = $start();
         $first = $proof->send($operation, ExecutorOrderSigner::fromConfig());
         $dropped = $proof->wait($operation);
         app('redis')->connection('gateway')->command('del', [ExecutorResults::resultKey($operation->id), ExecutorResults::acceptedKey($operation->id)]);
@@ -207,33 +210,13 @@ function proofLostResult(array $input): array
         $started = hrtime(true);
         $repeat = $proof->send($operation, ExecutorOrderSigner::fromConfig());
         $recovered = $proof->wait($operation);
+        $latency = elapsedMs($started);
+        $proof->finish($operation, $recovered);
 
-        return [$first, $dropped, $lost, $repeat, $recovered, elapsedMs($started)];
+        return ['operation' => (string) $operation->id, 'first_nonce' => $first->nonce, 'repeat_nonce' => $repeat->nonce,
+            'recorded' => $operation->refresh()->executor_result, 'dropped' => waited($dropped), 'lost' => waited($lost),
+            'recovered' => ['latency_ms' => $latency] + waited($recovered), 'status' => $operation->status->value];
     });
-    $proof->finish($operation, $recovered);
-
-    return ['operation' => (string) $operation->id, 'first_nonce' => $first->nonce, 'repeat_nonce' => $repeat->nonce,
-        'recorded' => $operation->refresh()->executor_result, 'dropped' => waited($dropped), 'lost' => waited($lost),
-        'recovered' => ['latency_ms' => $latency] + waited($recovered), 'status' => $operation->status->value];
-}
-
-/**
- * Runs `$step` for an open proof Operation and fails the Operation when the step throws, so no proof Operation stays open.
- *
- * @template T
- *
- * @param  Closure(): T  $step
- * @return T
- */
-function closing(ExecutorProofOperation $proof, Operation $operation, Closure $step): mixed
-{
-    try {
-        return $step();
-    } catch (Throwable $exception) {
-        $proof->finish($operation, new ExecutorWaitResult(ExecutorWaitStatus::Failed, null, 0.0));
-
-        throw $exception;
-    }
 }
 
 /** @return array{status: string, accepted_ms: float|null, wait_ms: float, line: array<string, mixed>|null} */

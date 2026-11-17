@@ -192,16 +192,18 @@ The Gateway and the executor share one fixture, `apps/agent/contract/fixtures/ex
 
 The Operation kind `executor.proof` exists only for the proof. Each one is a real Operation row with `node_id` set to its Node ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) D7). Its target is the Node, as for `proof.noop`, and its input is `{"action": "proof.noop"}`. Its orders go out as `executor-order` on `presence-node.{id}`, and the listener records its result on it.
 
-`ExecutorProofOperation` (`apps/gateway/app/Domain/Executor`) holds the whole kind:
+The kind's chart is [`docs/cli/proof/executor-proof.mmd`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/proof/executor-proof.mmd). No page places it, because no command starts the kind. `ExecutorProofOperation` (`apps/gateway/app/Domain/Executor`) holds the whole kind:
 
-1. `start` records the Operation as `running`, triggered by `executor-proof`.
+1. `run` holds one proof run. The run records each Operation as `running` through the `start` closure it gets.
 2. `send` signs a new order, with a new nonce, and publishes it. It refuses a closed Operation and every other kind.
 3. `wait` waits for the result through `ExecutorResultWait` within `ORBIT_EXECUTOR_WAIT_MS`, as a waiting request does.
 4. `finish` closes the Operation: `succeeded` on a `done` result, which it also stores as the result, and `failed` with `executor.proof_<status>` otherwise.
 
+When a run throws, `run` fails every Operation the run recorded that is still open, with `executor.proof_aborted`. So no proof Operation stays `running` after a failed publish or wait.
+
 The Gateway runs and closes the kind itself. It starts no Swamp run, and `proof.noop` changes nothing on the Node.
 
-`tests/Feature/Domain/Executor/ExecutorProofOperationTest.php` covers the kind in CI, with a faked publish and an in-memory Valkey. It checks the row and its `node_id`, a new nonce for each order, a result the listener records reaching the waiter, a lost hand-off recovered by a repeat, a failed result, and that the kind cannot be reached from outside.
+`tests/Feature/Domain/Executor/ExecutorProofOperationTest.php` covers the kind in CI, with a faked publish and an in-memory Valkey. It checks the row and its `node_id`, a new nonce for each order, a result the listener records reaching the waiter, a lost hand-off recovered by a repeat, a failed result, and that the kind cannot be reached from outside. Two more tests make a run throw, once with Valkey down in a wait and once when Reverb refuses the third publish of a burst. Both check that no Operation is left `running`.
 
 **Who can create it.** Only the proof support on a nested Gateway, `tools/swamp-proof-guest/executor-order.php`, run there by the proof runner as the Gateway's managed user. That script is the only caller of `ExecutorProofOperation`. No route, CLI command, job or schedule names the kind. It has no direct Operation declaration, so the Node routes under `direct-operations/` refuse it with `operation.direct_invalid`. `ExecutorProofOperationTest` holds this: no route that starts an Operation names the kind, and only `OperationKinds` and `ExecutorProofOperation` name it in the Gateway's code. To create one you must run PHP as the Gateway's user, which can already sign any order ([Key custody](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#the-order)).
 
@@ -243,17 +245,22 @@ The evidence `executor-round-trip-<operation>.json` holds every trip. It gives t
 - the first result kept on the Operation, and the Operation `succeeded`;
 - one `done` record for the Operation in the journal.
 
-**Measured.** On 2026-11-17, task 5739 ran both steps by hand on its copy's nested fleet, without the converge. The executor and an observer with the pass-through were built from the branch and installed on the nested `app-dev` Node. The proof key was pinned through `executor_key`'s script. Four runs of 50 round trips each, from publish to the result in the waiting request:
+**Measured.** On 2026-11-17, task 5739 ran both steps by hand on its copy's nested fleet, without the converge. The executor and an observer with the pass-through were built from the branch and installed on the nested `app-dev` Node. The proof key was pinned through `executor_key`'s script. Each run made 50 round trips. Latency runs from the publish to the result in the waiting request:
 
-| Run | p50 | p95 | max | `accepted` line p50 |
-| --- | --- | --- | --- | --- |
-| Observer without `TCP_NODELAY` | 46.0 ms | 54.1 ms | 88.3 ms | 0.9 ms |
-| With `TCP_NODELAY`, run 1 | 6.2 ms | 27.7 ms | 35.3 ms | 1.6 ms |
-| With `TCP_NODELAY`, run 2 | 6.2 ms | 11.5 ms | 13.4 ms | 1.3 ms |
-| With `TCP_NODELAY`, run 3 | 6.2 ms | 13.8 ms | 14.5 ms | 1.3 ms |
-| With `TCP_NODELAY`, run 4 | 4.0 ms | 7.0 ms | 38.1 ms | 0.7 ms |
+| Run | p50 | p95 | max | `accepted` p50 | `accepted` p95 | `accepted` max |
+| --- | --- | --- | --- | --- | --- | --- |
+| Observer without `TCP_NODELAY` | 46.0 ms | 54.1 ms | 88.3 ms | 0.9 ms | 10.6 ms | 36.0 ms |
+| With `TCP_NODELAY`, run 1 | 6.2 ms | 27.7 ms | 35.3 ms | 1.6 ms | 22.8 ms | 30.9 ms |
+| With `TCP_NODELAY`, run 2 | 6.2 ms | 11.5 ms | 13.4 ms | 1.3 ms | 6.1 ms | 6.6 ms |
+| With `TCP_NODELAY`, run 3 | 6.2 ms | 13.8 ms | 14.5 ms | 1.3 ms | 7.3 ms | 9.6 ms |
+| With `TCP_NODELAY`, run 4 | 4.0 ms | 7.0 ms | 38.1 ms | 0.7 ms | 1.6 ms | 33.7 ms |
+| With `TCP_NODELAY`, run 5 | 4.7 ms | 13.9 ms | 32.0 ms | 1.2 ms | 5.2 ms | 27.8 ms |
 
-The executor wrote its `done` record 3–4 ms after the publish (median of 50 orders, `executor-websocket-burst`'s step). Every trip was `done`, recorded on its Operation and run once. In each lost-result run the second waiter timed out at its 500 ms bound. The repeat then brought the first result back in 7–19 ms, and the journal held `open`, `done` and `seen` for that Operation: one run. The `accepted` line's own p95 of 6–23 ms shows that the remaining tail comes before the executor answers, on the publish or the Reverb side.
+The executor wrote its `done` record 3–4 ms after the publish (median of 50 orders, `executor-websocket-burst`'s step). Every trip was `done`, recorded on its Operation and run once.
+
+**The tail is not explained yet.** The `accepted` line shows the same tail: its p95 was 1.6–22.8 ms and its max up to 33.7 ms with `TCP_NODELAY`. That line leaves the executor at once, so the tail comes before the executor answers, on the publish or the Reverb side.
+
+**The lost result.** In each of the six lost-result runs the second waiter timed out. Its bound was 500 ms (`ORBIT_EXECUTOR_WAIT_MS`), and it returned after 504–575 ms. This lateness is the one [the waiting request](#the-listener-and-the-hand-off) describes: Valkey checks a blocked `BLPOP`'s timeout on its server tick, and the nested Gateway's Valkey runs the default `hz 10`. Slice 6 plans `hz 100`. The repeat then brought the first result back in 7–19 ms. The journal held `open`, `done` and `seen` for that Operation: one run.
 
 **Status.** In the proof plan both cases keep `waits: idmap`, like every `app-dev` converge case: the converge builds the Instance host's stock image, which needs the 2,000,000 ID map. Both also keep `fails_today`, because the pinned agent delivery has no `executor-linux-x86_64` and no observer release with the pass-through yet.
 

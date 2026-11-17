@@ -24,6 +24,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Testing\Fakes\EventFake;
 use Psr\Log\NullLogger;
 
 /*
@@ -52,8 +53,14 @@ beforeEach(function (): void {
             $this->lists[$key][] = $line;
         }
 
+        public bool $fails = false;
+
         public function pop(array $keys, float $timeoutSeconds): ?array
         {
+            if ($this->fails) {
+                throw new RuntimeException('Valkey is down.');
+            }
+
             foreach ($keys as $key) {
                 if (($this->lists[$key] ?? []) !== []) {
                     return [$key, array_shift($this->lists[$key])];
@@ -88,7 +95,7 @@ function proofDone(Operation $operation, bool $repeat, int $clock): array
 }
 
 it('records a running executor.proof Operation on its Node that the Gateway closes, with no Swamp run', function (): void {
-    $operation = $this->proof->start($this->node);
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
 
     expect($operation->refresh())
         ->kind->toBe(OperationKinds::ExecutorProof)
@@ -103,7 +110,7 @@ it('records a running executor.proof Operation on its Node that the Gateway clos
 });
 
 it('sends each order of the Operation as executor-order on its Node, with a new nonce each time', function (): void {
-    $operation = $this->proof->start($this->node);
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
     $signer = ExecutorOrderSigner::fromConfig();
 
     $first = $this->proof->send($operation, $signer);
@@ -120,7 +127,7 @@ it('sends each order of the Operation as executor-order on its Node, with a new 
 });
 
 it('hands the result the listener records to the waiting request and closes the Operation', function (): void {
-    $operation = $this->proof->start($this->node);
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
     $done = proofDone($operation, repeat: false, clock: 1);
 
     $this->listener->receive($this->node->id, proofReply($operation, ['status' => 'accepted']));
@@ -137,7 +144,7 @@ it('hands the result the listener records to the waiting request and closes the 
 });
 
 it('recovers a lost hand-off by a repeat: the record keeps the first result and the waiter gets the repeat', function (): void {
-    $operation = $this->proof->start($this->node);
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
     $first = proofDone($operation, repeat: false, clock: 1);
     $repeat = proofDone($operation, repeat: true, clock: 2);
 
@@ -157,7 +164,7 @@ it('recovers a lost hand-off by a repeat: the record keeps the first result and 
 });
 
 it('fails the Operation with its result status and sends no order for a closed one or another kind', function (): void {
-    $operation = $this->proof->start($this->node);
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
     $this->listener->receive($this->node->id, proofReply($operation, ['status' => 'refused', 'reason' => 'expired', 'node_clock_ms' => 3]));
     $this->proof->finish($operation, $this->proof->wait($operation, 1.0));
     $other = Operation::query()->create(['kind' => 'instance.wake', 'target_type' => 'instance', 'target_id' => 7,
@@ -174,7 +181,7 @@ it('is not reachable through the public API, the direct Operation routes or any 
         ->filter(fn (RoutingRoute $route): bool => is_string($controller = $route->getControllerClass()) && method_exists($controller, $route->getActionMethod()))
         ->map(fn (RoutingRoute $route): ?StartsOperation => StartsOperation::forRoute($route))->filter()
         ->flatMap(fn (StartsOperation $start): array => [$start->kind, ...array_values($start->kindWhenTrue)]);
-    $operation = $this->proof->start($this->node);
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
     // Only the registry and the proof class name the kind; the proof support on a nested Gateway is the one caller of that class.
     $naming = collect([...glob(app_path('{,*/,*/*/,*/*/*/,*/*/*/*/}*.php'), GLOB_BRACE), ...glob(base_path('routes/{,*/}*.php'), GLOB_BRACE)])
         ->filter(fn (string $path): bool => preg_match('/executor\.proof\b|ExecutorProof\b|ExecutorProofOperation\b/', (string) file_get_contents($path)) === 1)
@@ -184,4 +191,52 @@ it('is not reachable through the public API, the direct Operation routes or any 
         ->and(app(DirectOperation::class)->definition(OperationKinds::ExecutorProof))->toBeNull()
         ->and(fn () => app(DirectOperation::class)->projection($operation))->toThrow(ResourceOperationException::class)
         ->and($naming)->toBe(['app/Domain/Executor/ExecutorProofOperation.php', 'app/Domain/Operations/OperationKinds.php']);
+});
+
+it('fails every Operation of a run that throws in a wait, so none stays running', function (): void {
+    $this->queue->fails = true;
+
+    expect(fn () => $this->proof->run($this->node, function (Closure $start): void {
+        $operation = $start();
+        $this->proof->send($operation, ExecutorOrderSigner::fromConfig());
+        $this->proof->wait($operation, 1.0);
+    }))->toThrow(RuntimeException::class, 'Valkey is down.');
+
+    expect(Operation::query()->where('kind', OperationKinds::ExecutorProof)->get(['status', 'error_code'])->toArray())
+        ->toBe([['status' => 'failed', 'error_code' => ExecutorProofOperation::Aborted]]);
+});
+
+it('fails every open Operation of a burst whose third publish throws, and keeps the ones that closed', function (): void {
+    // Reverb refuses the third `executor-order`, so its publish throws.
+    Event::swap(new class(app('events'), [ExecutorOrderBroadcast::class]) extends EventFake
+    {
+        public int $accepted = 2;
+
+        public function dispatch($event, $payload = [], $halt = false)
+        {
+            if ($event instanceof ExecutorOrderBroadcast && $this->accepted-- <= 0) {
+                throw new RuntimeException('Reverb refused the event.');
+            }
+
+            return parent::dispatch($event, $payload, $halt);
+        }
+    });
+    $done = null;
+
+    expect(fn () => $this->proof->run($this->node, function (Closure $start): void {
+        $operations = [];
+        for ($index = 0; $index < 5; $index++) {
+            $operations[] = $operation = $start();
+            $this->proof->send($operation, ExecutorOrderSigner::fromConfig());
+            if ($index === 0) {
+                $this->listener->receive($this->node->id, proofReply($operation, proofDone($operation, repeat: false, clock: 1)));
+                $this->proof->finish($operation, $this->proof->wait($operation, 1.0));
+            }
+        }
+    }))->toThrow(RuntimeException::class, 'Reverb refused the event.');
+
+    $statuses = Operation::query()->where('kind', OperationKinds::ExecutorProof)->orderBy('id')->get(['status', 'error_code'])->toArray();
+    expect($statuses)->toBe([['status' => 'succeeded', 'error_code' => null], ['status' => 'failed', 'error_code' => ExecutorProofOperation::Aborted],
+        ['status' => 'failed', 'error_code' => ExecutorProofOperation::Aborted]])
+        ->and(Operation::query()->where('kind', OperationKinds::ExecutorProof)->where('status', OperationStatus::Running)->exists())->toBeFalse();
 });

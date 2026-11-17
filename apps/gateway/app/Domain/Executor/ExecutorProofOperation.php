@@ -12,8 +12,10 @@ use App\Infrastructure\Executor\ExecutorWaitResult;
 use App\Infrastructure\Executor\ExecutorWaitStatus;
 use App\Models\Node;
 use App\Models\Operation;
+use Closure;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Throwable;
 
 /**
  * The proof-only Operation kind `executor.proof` (docs/reference/executor.md#the-proof-operation, ADR 0266 slice 3). Each one is a
@@ -30,14 +32,45 @@ final readonly class ExecutorProofOperation
 
     public const string TriggeredBy = 'executor-proof';
 
+    /** The error code of a proof Operation whose run threw before it could close it with its result. */
+    public const string Aborted = 'executor.proof_aborted';
+
     public function __construct(
         private OperationStore $operations,
         private ExecutorOrderPublisher $publisher,
         private ExecutorResultWait $wait,
     ) {}
 
-    /** Records a running `executor.proof` Operation on the Node; its target is the Node too, the target of `proof.noop`. */
-    public function start(Node $node): Operation
+    /**
+     * Runs one proof run, `$body`, which records its Operations through the `start` closure it gets. When `$body` throws, every
+     * Operation it recorded that is still open closes `failed` with {@see self::Aborted}, so no proof Operation stays running.
+     *
+     * @template T
+     *
+     * @param  Closure(Closure(): Operation): T  $body
+     * @return T
+     */
+    public function run(Node $node, Closure $body): mixed
+    {
+        $started = [];
+
+        try {
+            return $body(function () use ($node, &$started): Operation {
+                return $started[] = $this->start($node);
+            });
+        } catch (Throwable $exception) {
+            foreach ($started as $operation) {
+                if (! $operation->refresh()->status->terminal()) {
+                    $this->operations->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => self::Aborted]);
+                }
+            }
+
+            throw $exception;
+        }
+    }
+
+    /** Records a running `executor.proof` Operation on the Node; its target is the Node too, the target of `proof.noop`. Only {@see self::run} calls it. */
+    private function start(Node $node): Operation
     {
         $operation = $this->operations->create(OperationKinds::ExecutorProof, 'node', $node->id, $node->id,
             ['action' => self::Action], self::TriggeredBy, (string) Str::uuid());
