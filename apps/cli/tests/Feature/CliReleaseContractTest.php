@@ -384,9 +384,7 @@ describe('CLI release workflow', function (): void {
     it('publishes only verified main delivery commits through the shared builder', function (): void {
         $workflow = (string) file_get_contents(cli_release_repo_root().'/.github/workflows/orbit-cli-release.yml');
 
-        expect($workflow)->toContain("workflow_run:\n    workflows: [CI]\n    types: [completed]\n    branches: [main]")
-            ->and($workflow)->not->toContain("github.event.workflow_run.conclusion == 'success'")
-            ->and($workflow)->not->toContain('check_name=Required%20checks')
+        expect($workflow)->not->toContain('check_name=Required%20checks')
             ->and($workflow)->toContain('python3 bin/ci-delivery verify --sha "$COMMIT"')
             ->and($workflow)->toContain('fetch-depth: 0')
             ->and($workflow)->toContain('bin/orbit-cli-release-version --on-main origin/main "$REQUESTED_COMMIT"')
@@ -399,24 +397,24 @@ describe('CLI release workflow', function (): void {
             ->and($workflow)->toContain('cancel-in-progress: false');
     });
 
-    it('admits only main CI events and verifies their exact delivery result before building', function (): void {
+    it('admits only main dispatches and verifies exact delivery before building', function (): void {
         $workflow = cli_release_workflow();
 
-        // Overall CI may be red from independent fixtures; exact main delivery must still pass.
-        expect(preg_replace('/\s+/', ' ', $workflow['jobs']['resolve']['if']))->toBe(
-            "(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || ( "
-            ."github.event_name == 'workflow_run' && "
-            ."contains(fromJSON('[\"push\", \"workflow_dispatch\"]'), github.event.workflow_run.event) && "
-            ."github.event.workflow_run.head_branch == 'main' && "
-            .'github.event.workflow_run.head_repository.full_name == github.repository )',
-        );
+        expect(array_keys($workflow['on']))->toBe(['workflow_dispatch'])
+            ->and($workflow['on']['workflow_dispatch']['inputs']['commit'])->toMatchArray(['required' => true, 'type' => 'string'])
+            ->and($workflow['jobs']['resolve']['if'])->toBe("github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'")
+            ->and($workflow['concurrency']['group'])->toBe('orbit-cli-release-${{ inputs.commit }}');
+
+        $release = collect($workflow['jobs']['resolve']['steps'])->firstWhere('id', 'release');
+        expect($release['env']['REQUESTED_COMMIT'])->toBe('${{ inputs.commit }}');
 
         $verification = collect($workflow['jobs']['resolve']['steps'])->firstWhere(
             'name', 'Require exact main CI delivery evidence and link fixture report',
         );
         expect($verification['run'])->toBe('python3 bin/ci-delivery verify --sha "$COMMIT"')
             ->and($verification['env']['COMMIT'])->toBe('${{ steps.release.outputs.commit }}')
-            ->and($verification['env']['SOURCE_RUN_ID'])->toBe('${{ github.event.workflow_run.id }}')
+            ->and($verification['env'])->not->toHaveKey('SOURCE_RUN_ID')
+            ->and($verification)->not->toHaveKey('if')
             ->and($workflow['jobs']['build']['needs'])->toBe('resolve')
             ->and($workflow['jobs']['publish']['needs'])->toBe(['resolve', 'build', 'agent-linux', 'agent-macos']);
     });

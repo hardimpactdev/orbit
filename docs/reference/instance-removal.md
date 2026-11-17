@@ -3,7 +3,7 @@ title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, how to retry an interrupted removal, and how to unregister a host checkout and keep its folder."
 covers:
   - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction,StartInstanceUnregisterAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,InstanceRemovalKind.php,InstanceUnregisterProjection.php,Removal/**,InstanceRemovalReaper.php}
+  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,InstanceRemovalKind.php,InstanceUnregisterProjection.php,Removal/**,InstanceRemovalReaper.php}
   - apps/gateway/app/Console/Commands/ReapFailedInstanceRemovalsCommand.php
   - apps/gateway/app/{Http/Requests/Instances/RemoveInstanceRequest,Models/InstanceRemoval,Models/InstanceRemovalMember}.php
   - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_03_01_000000_add_kind_to_instance_removals,2027_03_02_000000_allow_ci_only_proof_copy_removals,2027_03_04_000000_add_reaper_retries_to_instance_removals,2027_03_05_000000_add_start_refusal_to_instance_removals}.php
@@ -242,4 +242,3 @@ The Gateway refuses before any change in these cases:
 The run checks that each planned database exists and accepts connections. Restore settles no fence: a database that the removal closed and nobody opened again refuses with `instance.restore_database_closed`. The run then republishes the same Route through the Route create workflow, with the same Route ID and domain. Last, it deletes the fence journal rows whose OID and name match a planned database, in one server transaction that checks again that each is open. The Gateway then records, in one transaction, the members and removal `abandoned`, the Instance `active` and the Route `active`.
 
 A restore holds the Instance's Operation lock and the Route's publication Nodes like Route create. `instance:destroy` refuses while a restore holds the Instance, and a restore refuses while a destroy runs. A failed restore leaves the failed removal as it was.
-

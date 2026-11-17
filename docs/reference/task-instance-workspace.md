@@ -13,7 +13,7 @@ covers:
 
 # Task Instance workspace phases
 
-This internal child workflow supplies workspace evidence and branch export for task copies. It provides no checkout restoration. The [check phases](#check-phases) run `tasks.check` for a group that owns a container Instance workspace. [`task:start`](/cli/task/start#a-task-copy) creates that ownership for a [task copy](/reference/tasks#task-copy). Task check, publish and sync require that copy; there is no VM alternative.
+This internal child workflow supplies workspace evidence and branch export for task copies. It provides no checkout restoration. The [check phases](#check-phases) run `tasks.check` for a group that owns a container Instance workspace. [`task:start`](/cli/task/start#a-task-copy) creates that ownership for a [task copy](/reference/tasks#task-copy). Task check, publish and sync require that copy; there is no VM alternative. These phases own neither runtime selection nor the Instance lifecycle. [Task commands](/reference/tasks) own admission and cleanup.
 
 [Internal phase chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/instance-workspace.mmd).
 

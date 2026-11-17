@@ -7,11 +7,11 @@ description: Use when an Orbit web UI change needs phone and desktop screenshots
 
 Verify a web app change with `bin/web-verify`. The command runs `apps/web` in demo mode and drives it with Playwright. Stdout is one JSON object and nothing else. The contract is [Web verification](../../../docs/reference/web-verification.md). [ADR 0162](../../../docs/reference/web-verification.md#why-it-works-this-way) records the decision.
 
-## Check the group's topology
+## Check live behavior
 
-First run `bin/e2e-topology status TASK-<group>`. When the group holds a topology, also check the changed page and actions there with `bin/e2e-topology web TASK-<group>` and the operator's Playwright tooling. Follow [using-incus-topologies](../using-incus-topologies/SKILL.md#check-the-web-ui-on-the-held-topology) for startup, browser prerequisites, live reload, isolated actions, and Mac access. The demo screenshots below still prove layout; they do not prove Gateway behavior. Use IDs from the sample fleet for the live check and never test actions against the real Gateway. Stop the web command when finished, leaving the topology held.
+The demo screenshots below establish layout, not Gateway behavior. For changed live behavior, use [verifying-commands](../verifying-commands/SKILL.md) on the [task copy's nested fleet](../../../docs/reference/tasks.md#build-a-feature-in-one-copy) before opening the PR. Verify the running source and use records from that isolated fleet; never test actions against the production Gateway. Task groups and subtasks do not declare topologies.
 
-If no topology is held, continue with demo screenshots and tests and record that limitation. In a task VM group, a topology comes only from the subtask's declaration. In a shared workspace, a reviewer or an implementer asks for one through its question tool. Missing discovery infrastructure is not itself a reason to withhold approval.
+If the nested fleet cannot run, capture the demo screenshots and run available tests, but report live behavior as unverified. Unavailable proof is not a pass; do not substitute a legacy topology allocation for the nested fleet.
 
 ## Capture evidence
 

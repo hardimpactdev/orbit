@@ -9,7 +9,7 @@ covers:
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py,user-manager.sh},agent_command.py}
   - .github/{ci/**,workflows/*.yml,actions/php/action.yml}
-  - apps/gateway/{phpunit.xml,database/migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Support/PythonPrograms.php,tests/Support/FixtureProcessRunner.php,tests/Support/GatewayReleaseFixture.php,tests/Support/TaskSchedulerTickFixtures.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Infrastructure/Instances/DevelopmentSourceRemovalCommandTest.php}
+  - apps/gateway/{phpunit.xml,database/migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php}
 ---
 
 # Feature delivery
@@ -143,7 +143,7 @@ The job depends on input selection; only an explicit false selection skips it. R
 
 The CLI Pest job installs `apps/cli` dev Composer dependencies with the shared PHP 8.5 action and coverage disabled. It runs the complete suite in one process with a 1 GiB memory limit and uploads JUnit results even after a failure.
 
-The checks table also defines CLI Pest inputs. Required checks requires the job whenever selected; only an explicit false selection permits a skip.
+The checks table also defines CLI Pest inputs, including files outside the CLI that its tests read or execute. Changes to `orbit-cli-release.yml` or `orbit-cli-binary.yml` select the full suite because it owns their release and binary contracts. Changes to `ci.yml` already select all checks. Required checks requires the job whenever selected; only an explicit false selection permits a skip.
 
 The PHP SDK Pest job installs `packages/php-sdk` dev Composer dependencies with scripts disabled, using the shared pinned PHP 8.5 action with coverage disabled. Its vendor cache is separate from runtime dependencies. SDK code, tests, fixtures and configuration select it; shared PHP action changes select all checks. Unrelated docs and app changes skip it. Both Required checks and Main delivery checks require selected SDK tests to pass. Missing or non-boolean selections, failures, cancellation and unexpected skips fail the gate.
 

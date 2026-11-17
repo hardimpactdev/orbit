@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 6 of the command development pipeline. Each Node with the nested-fleet switch keeps the nested-fleet Project's default Instance, an Incus container that holds the inner fleet. After each Gateway release, Orbit deploys that default to the release commit, refreshes its fleet and takes the seed snapshot that a task or a new Instance of the Project clones. There is no VM, no image publish and no daily run. The per-Node run: docs/cli/instance/container/fleet-refresh.mmd. The task VM refresh is removed from the Gateway; its Swamp workflow stays one release, and nothing starts it (docs/reference/old-paths.md).
+  %% Current flow: stage 6 of the command development pipeline. Each Node with the nested-fleet switch keeps the nested-fleet Project's default Instance, an Incus container that holds the inner fleet. After each verified Gateway release, when refresh is enabled, Orbit deploys that default to the release commit, refreshes its fleet and takes the seed snapshot that a task or a new Instance of the Project clones. There is no image publish and no daily run. The per-Node run: docs/cli/instance/container/fleet-refresh.mmd.
   %% status: draft
   %% command: development pipeline stage 6 · per-Node seed refresh
   %% kind: pipeline.6-task-image-seed-refresh

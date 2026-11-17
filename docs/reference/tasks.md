@@ -3,10 +3,10 @@ title: "Tasks"
 description: "How the optional Gateway Tasks extension runs tasks. It covers the model, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, cleanup, and the outer loop that files recurring problems."
 covers:
   - "apps/gateway/{app/{Data/Tasks/**,Domain/{Tasks,Problems}/**,Infrastructure/Tasks/**,Support/Percentile.php},config/{swamp,task_pull_requests}.php}"
-  - "apps/gateway/app/{Actions/Tasks/**,Jobs/{PublishTaskVmCommit.php,Problems/**}}"
+  - apps/gateway/app/Actions/Tasks/**
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
-  - "apps/gateway/app/Console/Commands/{TaskPullRequestGateCommand,TaskPublishWhenDoneCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
+  - "apps/gateway/app/Console/Commands/{TaskPullRequestGateCommand,TaskPublishWhenDoneCommand,FileProblemsCommand}.php"
+  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes}.php"
@@ -16,7 +16,7 @@ covers:
 
 Swamp is the only executor of task groups; it runs provision, agent turns, checks, publication, review parking and cleanup as keyed operations. The Gateway stores the board and evidence and exposes keyed operations; it never claims a group, advances a subtask, retries a turn, appends a fixup or merges a PR on a timer. Two ticks are the exceptions: the [automatic publish](#publish-by-itself) of a done group, and the [merge round](#the-merge-round) after a copy publish conflicted. All groups use `external` orchestration, including groups created without an explicit mode. Existing records move to that mode without changing their status, workspace, assistance or receipts.
 
-Tasks is an optional Gateway extension. It runs planned work with coding agents. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet): no task VM starts today. Tasks move to copies of a container Instance. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check and CI verify the handoff, and a fresh reviewer approves it. Orbit commits and pushes the work. After the last approval, Orbit opens the pull request and watches it until it merges.
+Tasks is an optional Gateway extension. It runs planned work with coding agents in [task copies](#task-copy) of a Project's default container Instance. The task VM runtime is removed, not disabled. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check verifies the handoff, and a fresh reviewer approves it. A container handoff that requires hosted CI currently refuses with `tasks.instance_hosted_check_unavailable`; [check phases](/reference/task-instance-workspace#check-phases) describes this limit. Publication pushes the checked work and can open a pull request.
 
 While a subtask is open, Orbit also watches a pull request on `task-{id}`. It stops starting subtasks when that pull request merges or closes.
 
@@ -48,7 +48,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `title`, `brief` | both | Short name, and the goal and acceptance |
 | `status` | both | Lifecycle state |
 | `orchestration` | task | `external` (the default and only value). Create sets it; it never changes |
-| `current_recipe` | task | Whether the task needs the current machine recipe. Create sets it, default `false`. When `true`, provision never starts its VM from a [fallback image](/reference/compute-drivers#image-fallback) and waits for the current recipe image |
+| `current_recipe` | task | Stored create-time boolean, default `false`. It selects no VM image. Task starts clone the default container's seed |
 | `parent_id` | subtask | The top-level task. Null on a top-level task |
 | `assistance_requested`, `assistance_reason` | both | Whether the record asks an operator for help, and why. See the [assistance lifecycle](#assistance-and-resolution) for ended tasks and cleanup failures |
 | `assistance_kind`, `assistance_question` | both | The typed [assistance cause](#direction-requests) and the one question for a `direction` request. Other kinds have no question |
@@ -61,7 +61,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `taskable_type`, `taskable_id` | task | The task workspace Instance. Null until a provision operation creates it |
 | `implementer_agent_provider`, `implementer_agent_model`, `implementer_agent_effort` | task | The [copy turn agent](#copy-turn-agents) the group names for its implementer. Null takes the Project's default, then the Gateway's |
 | `reviewer_agent_provider`, `reviewer_agent_model`, `reviewer_agent_effort` | task | The same for the reviewer |
-| `implementer_model`, `reviewer_model` | task | The task VM path's models. A new task stores each role's resolved copy model here, so an earlier Gateway release can read the row. No read shows them |
+| `implementer_model`, `reviewer_model` | task | Stored model columns. A new task stores each role's resolved copy model here; reads use the copy agent fields above |
 | `pr_url` | task | The reviewed pull request Orbit opened on the last subtask, or the [incoming pull request](#ready-and-merge-a-task-pull-request) Orbit reviews |
 | `pr_branch` | task | The incoming pull request's head branch, which Orbit fetches and pushes. Null for a task whose branch is `task-{id}` |
 | `merge_status`, `merge_reason`, `merged_sha` | task | The [merge step](#merge-step) result: `waiting`, `refused`, or `merged`, its reason, and the merge commit |
@@ -103,10 +103,6 @@ The message says what to do: `Task VMs are removed. A task runs only in a copy o
 
 The Pi task loop is removed ([old paths](/reference/old-paths#the-pi-task-loop)): `task:prep`, `task:prep-fix`, the build, the review round, the maintenance run, the package install, the repository script, the idle save and the Pi turn. The routes `prep`, `prep-fix`, `package` and `script` are gone, so a call answers HTTP 404, and the MCP tools `task-prep`, `task-prep-fix`, `task-package` and `task-script` are gone from the catalogue. The [gate check](#gate-check) starts neither a build, nor corrections, nor a review round. Their old Operations stay as history.
 
-#### Release a task VM for review
-
-Publishing a task PR released its VM, workspace, Node identity, keys and VPN peer. No new task VM starts: a fix turn of such a group answers the [refusal](#task-runtime).
-
 #### Provision an external group
 
 `task:start <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/tasks/{task}/start`. Its target is `task_group` with the group ID. Admission locks the group row while it captures the intent. It holds no Gateway execution lease or target hold. An ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.
@@ -123,29 +119,9 @@ The [writes audit](/reference/operations) also checks custom behavior and model 
 
 The group lifecycle after provision stays in separate keyed operations (`tasks.check`, the turn, `tasks.publish` and `tasks.cancel`), each with its own receipt and time budget.
 
-A step on Node 209 first asks the Gateway for the clone credential (`operation:direct:github-token` with `purpose: clone`). The Gateway writes a read-only Git authorization header to the vault key that admission named, or an empty value for a repository that needs none. Admission mints nothing, because the VM step before the clone can wait for capacity for longer than the hour that an installation token lives.
+Start uses the default container's seed, not a fresh repository clone or VM image. The [copy create](/reference/development-containers#a-task-copy-starts-clean) removes uncommitted work from that seed. Its app and dependencies come from the default; a baseline does not rerun setup. The [task copy](#task-copy) contract owns placement, create results and failed-create cleanup.
 
-Separate steps then clone the source on Node 209, with full history, and copy a Git bundle through official SSH. The VM never holds the credential: `origin` is the plain repository URL, and `.git/config`, a credential helper and the environment files hold none.
-
-Each read and command on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Two reads take the checkout's HEAD and branch, and a `stat` of `composer.json` and the entry point. When the profile needs a regular `composer.json`, one official `@swamp/ssh copy` downloads it into the private worker directory. TypeScript on Node 209 turns them into the source profile; it reads and deletes the downloaded file.
-
-"Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)). Such a Gateway records finished runs through its own queue: its bootstrap starts the scheduler and Horizon units, and its `gateway` role keeps them.
-
-Early in the workspace run, beside the clone credential, a step asks the Gateway for a read token (`purpose: dependencies`). Two parallel steps write the Composer and npm configuration of the task account from it, right before the first setup command. After the last setup command, on success or failure, two parallel steps remove both files and revoke the token. The revoke step reports the outcome in the receipt as `dependency_token`. A revoke that could not run says so: `The revoke step could not run.` Any other failed revoke says `The revoke request did not complete.`
-
-Each captured Project setup command runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the proof club credential reached the VM; the Gateway reads that key no more on SSH stdin of one more exec; no script runs there either.
-
-No refresh candidate proof takes a task VM CI place: the refresh is removed. A [`proof:run`](/cli/proof/run#the-run) never takes a VM place: it runs in copies. Task starts never take it, even when it is idle. See [Place task VMs](/reference/compute-drivers#place-task-vms) for the budget units and place numbers.
-
-Admission captures the workspace's runtime with the same actions as `instance:create`. A Project that serves a web root with `task_workspace_routed` on gets a private Route on the development Cluster. Development Process definitions become Instance Processes. Schedule definitions are production-only ([ADR 0215](/decisions/0215-start-development-processes-from-project-definitions)), so a workspace gets none. The guest's host key is unknown at admission, so the Gateway captures the guest's SSH targets with `host_keys: null`.
-
-`Bind the workspace keys` fills those keys from the VM step's pinned key and refuses any other Node. The run uses the child-observed SSH host key and the captured Node 209 identity; it issues no guest worker credentials. Success activates the Route and completes the Processes; a failure marks them failed. The projection reads the admitted Process members only when the receipt reports Process outcomes.
-
-Task VMs reuse WireGuard addresses. Official `@swamp/ssh` pins the observed host key per step, but the official cfgmgmt behaviors check keys against the 209 worker account's `known_hosts`. So enrollment first replaces any entry for the guest's address with its observed key, and destroy removes the address again.
-
-Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the pinned start commit. The workspace step refuses a checkout on any other commit. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, image }`, naming the workspace Instance, guest Node, start commit and the image the VM got. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
-
-`image` is `{ recipe_identity, fingerprint, build_id, fallback }`, copied from the VM row while task VMs ran; the table `task_vms` is dropped ([old paths](/reference/old-paths#the-task-vm-tables)). `fallback` is `true` when the VM started from the host's last promoted image instead of the current recipe's; `recipe_identity` then names that older recipe.
+"Node 209" below means the production fleet's Swamp Node. Admission finds it by the `swamp` role, not a fixed id. SSH reaches the container's host Node; the container has no Node identity of its own.
 
 #### Last activity
 
@@ -157,29 +133,27 @@ The idle release and its save, `tasks.idle_save`, are removed with the task VMs.
 
 #### Keep command output out of run history
 
-Official `@swamp/ssh` records the stdout and stderr of each exec verbatim in native run history on Node 209. So every repository command on a task VM writes its output to a file instead: provision setup, check setup, the Project check, command deliverables, scripts, and teardown. The file lives in a private (`0700`) run directory on the VM. The exec step captures no output; history keeps its exit code.
-
-One official `@swamp/ssh copy` downloads the files into a private worker directory on Node 209. The TypeScript step that shapes the result reads each file, redacts it, keeps a bounded tail and deletes the file. Best-effort steps remove both run directories.
+Task checks write command output to guest files. Ansible fetches those files through the Node into a private worker directory and removes the guest and Node copies on success or failure. The result reader redacts a bounded tail and deletes the worker files. [Check phases](/reference/task-instance-workspace#check-phases) owns this transport; raw repository output must not enter native history.
 
 One module holds the rule: `swamp/extensions/behaviors/_lib/public_output.ts`. It reads at most the last 1 MiB of a file and replaces invalid UTF-8 before matching. It replaces known values of eight characters or more in one pass. Then it replaces credential-shaped text: PEM blocks, URL user info, `Authorization` headers, `Bearer` tokens, GitHub tokens, 64-character hex credentials and the values of secret-named assignments.
 
 It splits the redacted capture into lines and keeps the newest whole lines that fit the bound. It drops a first line that may start mid-value when older bytes were discarded, and any line that still holds an 8-byte piece of a known value. A line longer than the room left is replaced by `[a line of N bytes omitted]`, and older lines still fill the bound, so one long line never hides the lines before it. Task commands receive no credentials, except that setup commands can read the token files of the private dependencies, so they pass no known values today.
 
-Repository files follow the same rule. Provision downloads `composer.json` instead of reading it through an exec. The profile step keeps only its facts, the PHP version and whether the source is Laravel, and deletes the file.
-
-Scripts and checks keep 16 KiB of output. Provision setup and teardown keep 4 KiB per command in their step output.
+Checks keep 16 KiB of redacted output.
 
 #### Check an external group
 
-`task:check <task> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/tasks/{task}/check` with `{ phase }`. The Gateway admits the open group, current child and task copy, records one check row and supplies the full public intent and named vault descriptors to `operation-task-check`. Same-key replay returns that Operation before mutable admission.
+`task:check <task> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/tasks/{task}/check` with `{ phase }`. The Gateway admits the open group, current child and owned task copy, records one check row and supplies the public intent to `operation-task-check`. Same-key replay returns that Operation before mutable admission.
 
-A task copy is required: a group without one returns `409 tasks.no_workspace` ("The group requires its task copy."). The run always calls `task-instance-check`, whose [Instance phases](/reference/task-instance-workspace#check-phases) validate deliverable paths, check the workspace and commit the candidate. The root reads the child's typed receipt and checks its execution result. There is no SSH VM alternative.
+A task copy is required: a group without one returns `409 tasks.no_workspace` ("The group requires its task copy."). The run always calls `task-instance-check`, whose [Instance phases](/reference/task-instance-workspace#check-phases) validate deliverable paths, check the workspace and commit the candidate. The root reads the child's typed receipt and checks its execution result. There is no SSH VM alternative. A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. A handoff whose Project requires hosted CI refuses with `tasks.instance_hosted_check_unavailable`.
+
+Ansible reaches the admitted host Node over pinned SSH and runs the Project check and deliverables as `agent` in the container. A baseline runs no setup: the seed already ran it. Handoff first brings in the default branch. The workspace phases own snapshots, start-commit command runs and candidate commits.
 
 The result preserves the admitted subtask base as its start commit, including after a failed check. It uses `original` only when no base was admitted. A retry must not replace its base with the candidate it just checked.
 
 A snapshot runs `git read-tree HEAD`, `git add --all` and `git write-tree` against the run's own index file, and `git rev-parse HEAD`; the real index is untouched. The first snapshot follows the Project check because its formatters run in fix mode: their edits belong to the checked tree, so they do not make the check `changed`.
 
-Each command runs as `env -C <directory> COMPOSER_NO_INTERACTION=1 ORBIT_CHECK_PROCESSES=1 COMPOSER_CACHE_DIR=… [INERTIA_SSR_PORT=… INERTIA_SSR_URL=…] /bin/bash -lc <command>` in the SSH account's environment. A setup step named `@orbit/ci-caches` expands to the same shared program that provision runs. Commands receive no GitHub or Gateway credentials. Their output stays out of native history ([command output](#keep-command-output-out-of-run-history)); the result keeps a redacted tail of at most 16 KiB.
+Commands receive no GitHub or Gateway credentials. Their output stays out of native history ([command output](#keep-command-output-out-of-run-history)); the result keeps a redacted tail of at most 16 KiB.
 
 A command marked `fails_on_base` also runs on its start commit, in separate steps: `git archive` of the base commit, `tar -x` into the run's scratch directory, `find … -exec cp -a --parents` of the installed `vendor` and `node_modules` directories, `cp --parents` of only the declared test paths, and `test -d` of its directory. A missing overlay file or directory refuses the check as `tasks.deliverable_invalid`; any other failed step refuses it as `tasks.repository_execution_unknown`.
 
@@ -187,7 +161,7 @@ A changed checked tree returns `changed`; a failed command, an unmet deliverable
 
 A command deliverable stored without `fails_on_base` is admitted with `false`; the subtask keeps it as stored. The check workflows read the value of each command deliverable and never default it.
 
-A passing handoff creates its candidate commit in the copy with `git add --all` and one `git commit` as `Orbit <orbit@users.noreply.github.com>`, with hooks off and the admitted message. TypeScript on Node 209 reads `HEAD`, its tree and its parent back: they must be the checked tree on the checked HEAD, or the check is `changed` and records no candidate. `git update-ref` then records the candidate under `refs/orbit/check-operations/{operation}`. Native history owns successful step reuse. The workspace path is run intent; checks add no lease, ownership token or cross-step lock. Cancellation uses native Swamp cancel and official SSH session teardown. Leftover remote descendants are accepted until normal group cleanup or VM destruction.
+A passing handoff records the checked candidate under `refs/orbit/check-operations/{operation}` in the copy. It reuses a clean candidate that an earlier check recorded; otherwise it commits the checked tree with the admitted message and hooks off. [Check phases](/reference/task-instance-workspace#check-phases) describes the exact Git evidence.
 
 Hosted CI is refused for task copies at admission. The old scheduled CI observation remains for recorded checks. A native `trigger.schedule` runs about once a minute and performs one bounded status observation per pending check: one `gh api` read of the latest check runs for the exact SHA, at most 100, without paging. TypeScript on 209 keeps only the public run fields.
 
@@ -257,9 +231,7 @@ A step of the run asks the Gateway for the token right before the push (`operati
 
 A copy's [base read](#the-base-of-a-copy-publish) refuses a workflow change of the copy's own before the push, and merges the default head into a copy that is only behind one.
 
-A worker on Node 209 uses official SSH to verify HEAD and the whole working tree against the checked candidate. Each VM read and command is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Four reads take `git read-tree HEAD`, `git add --all` and `git write-tree` on a per-run index file, and `git rev-parse HEAD`. A moved candidate fails with `tasks.head_moved` before a push.
-
-`git bundle create` exports HEAD on the VM, official SSH copies the bundle to 209, and separate bounded Git commands initialize a disposable bare repository, import the bundle and read its commit and tree. A bundle whose HEAD or tree is not the candidate fails with `tasks.head_moved`. Only the `git push` and `gh api` steps on 209 resolve their needed execution copy, as an environment value; it never enters argv or run history. Repository commands and the VM receive no token. The workspace path stays in intent, without a new lease or cross-step lock.
+A worker on Node 209 runs the [workspace phases](/reference/task-instance-workspace#contract) `preflight` and `export` through the recorded host Node. They read the checkout as `agent` and fetch the exact candidate bundle to the worker; the Node keeps no copy. Bounded Git commands import it into a disposable bare repository and verify its commit and tree. Only `git push` and `gh api` resolve the execution credential, as an environment value, never in argv or run history. Neither repository commands nor the task copy receive a token.
 
 The chart names every native command and data step. Separate operations stay visible; ordering-only child workflows and result programs are removed.
 
@@ -271,13 +243,11 @@ Without `pull_request`, publication only pushes. With it, a `gh api` step looks 
 
 After cleanup removes scratch, start a fresh command. Its push step mints a fresh token, pushes again and repeats the PR lookup before another mutation. Native resume cannot recreate scratch from a completed step, and it cannot reopen a terminal Operation.
 
-Token revocation (`gh api --method DELETE installation/token`) and scratch cleanup on the VM and on 209 are separate native steps. Publication requests no reviewers and runs no brief coverage. A native assert confirms publication and worker cleanup. The Gateway projects the PR step’s public metadata into `pr_url` and the watched PR fields and releases the VM after successful publication. Raw Git and GitHub replies stay in the private scratch directory. Typed data readers preserve public refusal codes without retaining those replies in run history.
+Token revocation (`gh api --method DELETE installation/token`) and scratch cleanup are separate native steps. Publication requests no reviewers and runs no brief coverage. A native assert confirms publication and worker cleanup. The Gateway projects the PR step's public metadata into `pr_url` and the watched PR fields. The copy stays until completion or cancellation. Raw Git and GitHub replies stay in private scratch; typed readers retain only public refusal codes.
 
-A group whose workspace is a [task copy](#task-copy) publishes the same way, with the same result. The Gateway admits it without a task VM, while its last completion did not fail (`tasks.copy_completion_failed`), it is `active` (`tasks.copy_not_ready`), its container runs (`tasks.instance_not_running`) and no earlier copy turn may still run (`tasks.copy_turn_unended`). The intent adds the copy's container, its start commit and the path of its `.env`, from the Instance's record.
+The Gateway requires the [task copy](#task-copy)'s last completion not to have failed (`tasks.copy_completion_failed`), its Instance to be `active` (`tasks.copy_not_ready`), its container to run (`tasks.instance_not_running`) and no earlier copy turn to remain open (`tasks.copy_turn_unended`). The intent holds the copy's container, start commit and `.env` path from the Instance record.
 
 When the run starts, the Gateway also renders the `.env` from the Instance's stored values and passes it as a vault copy (`execution_secrets.environment`, key `task-publish-environment-<operation>`), never as a run input. The agent cannot change that copy, unlike the file in the copy. It holds the copy's own keys as Orbit stored them; it is not the copy's file byte for byte, because a clone keeps the default's file from the seed and rewrites only its own keys ([the environment of a clone](/reference/development-containers#the-environment-of-a-clone)). When the copy is destroyed, these copies are deleted with the Instance's other execution copies.
-
-Instead of the VM reads, the [workspace phases](/reference/task-instance-workspace#contract) `preflight` and `export` read the checkout as `agent` and fetch the branch bundle to 209; the Node keeps no copy, and the copy receives no token.
 
 After the import, a step on 209 checks every commit from the copy's start to the candidate: each must hold the `.env` path exactly as the start does. A commit that adds or changes it fails with `tasks.publish_secret_path` before the token is minted, also when a later commit removes it again, because the key would stay in the pushed history. The same code answers when the branch history lacks the start commit, for example after a rebase past it.
 
@@ -304,7 +274,7 @@ The content check catches copies and plain lines, not transformed text. It misse
 
 A long value of the copy that is no secret is refused too, when the start tree lacks it: its `APP_URL`, a host address or a user name. So is such a value in new commits of the default branch that the task branch merged. Remove it from the branch history and check again.
 
-A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write changes the tracked file, so every check commit holds it. No task VM is released: the copy stays until `task:cancel`, and the group keeps its status. A moved head refuses in the preflight and fails with `tasks.publish_failed`, not `tasks.head_moved`.
+A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write changes the tracked file, so every check commit holds it. A moved head refuses in the preflight and fails with `tasks.publish_failed`, not `tasks.head_moved`.
 
 ##### The copy check
 
@@ -356,8 +326,6 @@ These fields join the result. With `--title` and `--body`, the pull request body
 The body stays within its 65,536-character limit: when the path list does not fit, the section names only their count, and when the section does not fit at all, the body has none; the result states the base either way.
 
 A copy's handoff check already [merged the head it judged against](#the-handoff-check-merges-main-first). So when the default branch did not move since that check, the publish reads `behind_by` 0 and pushes the checked merge commit itself. A conflict that a busy main brings shows up at the check, before review, not at publish.
-
-A run that started on the workflow before this step has none of the fields and no `## Base` section.
 
 The base read also judges workflow changes. It lists the copy's own: the paths under `.github/workflows/` that the checked commit changed since the merge base, `git diff --name-only <base> <commit>`, which is `git diff <default>...<commit>`. A commit that the default branch already holds is never a change of the copy, whether [`task:sync`](#bring-main-into-a-copy) brought it, even from a main newer than the last release, or it was carried in by hand. A workflow change of the copy that a later commit undoes is no change either. A merge that keeps the copy's own version of a workflow that the default branch changed is a change of the copy.
 
@@ -454,7 +422,7 @@ C1 is published once. The round publishes it only while no publish of C1 exists.
 
 A group starts in `backlog` or `todo`. Moving it to `todo` requires at least one subtask and a deliverable on every subtask. Provision reserves capacity, then records `running` once the workspace is ready. Swamp chooses subsequent status updates: `running`, `reviewing`, `settling` and `waiting_for_review`. Explicit completion, cancellation or failed provisioning records an ended status. Terminal history and assistance remain readable.
 
-One group uses one task VM and one branch. Subtasks share the workspace in order. The keyed operations enforce workspace ownership and persist results; they never select the next subtask.
+One group uses one task copy and one branch. Subtasks share the workspace in order. The keyed operations enforce workspace ownership and persist results; they never select the next subtask.
 
 Maintenance reads the complete receipt from the native `shape.result_json` producer in its terminal history read. Its parent and each path end with native assertions; no reporting script forwards the receipt. Maintenance admits its next operation only after the terminal projection commits. A rolled-back projection starts no continuation. This keeps GitHub token requests outside the SQLite write transaction; see [write-lock diagnostics](/reference/gateway-recovery#gateway-request-logs).
 
@@ -489,9 +457,9 @@ Each MCP tool name is the operation name with hyphens, such as `task-create`. Th
 
 Parent creation requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). Child creation uses `parent_id` instead of `project_id` and inherits the Project; a contradictory Project is refused. The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App.
 
-Parent creation accepts an ordered `subtasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Creating in Todo changes board state only; `task:start` starts the parent's VM. Parent creation accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `task:create --orchestration`, and MCP expose this field. Update cannot change it.
+Parent creation accepts an ordered `subtasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Creating in Todo changes board state only; `task:start` creates the parent's task copy. Parent creation accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `task:create --orchestration`, and MCP expose this field. Update cannot change it.
 
-Create also accepts `review`, `manual` (default) or `automatic`, the mode of the gate of the group's pull request; update cannot change it, and show returns it. Create also accepts a strict boolean `current_recipe` (CLI `--current-recipe`, default `false`) for a task that needs the current machine recipe; update cannot change it. [List tasks](#list-tasks) pages the groups. Show returns the task and its subtasks in position order.
+Create also accepts `review`, `manual` (default) or `automatic`, the mode of the gate of the group's pull request; update cannot change it, and show returns it. The strict boolean `current_recipe` (CLI `--current-recipe`, default `false`) remains a stored create-time field; it selects no VM image and changes no task-copy start behavior. Update cannot change it. [List tasks](#list-tasks) pages the groups. Show returns the task and its subtasks in position order.
 
 Update changes a task's `title`, `brief`, or `status`. Title and brief change only in `backlog`. Status updates start no work.
 
@@ -507,7 +475,7 @@ A task moves to `todo`, by create or update, only when it has subtasks and every
 
 A list row has every field of `task:show` except the group's [`publication`](#publication-state) and, on each subtask, `completion_summary`, `fixup_problem` and the latest check's `output`. A summary is stored in full and a check keeps 16 KiB of output, so a page of full rows grows without bound. Publication reads the group's publish Operations and done check, several reads per group. Read one group with `task:show` to get them.
 
-The list reads each row's columns, subtasks, latest checks, task VM, reviewed commits, workspace route and runtime, task group mode, thread tokens and activity in a fixed number of queries per page, whatever the number of groups. `compact` still applies on top of a list row.
+The list reads each row's columns, subtasks, latest checks, reviewed commits, workspace route and runtime, task group mode, thread tokens and activity in a fixed number of queries per page, whatever the number of groups. `compact` still applies on top of a list row.
 
 ### Change subtasks
 
@@ -926,60 +894,21 @@ Swamp drives each group through the API and MCP operations documented above. `ta
 
 The Gateway retains task state, operation recovery, provider jobs and transcripts. A keyed operation performs only the requested primitive and records its result. Operation workers can resume an unfinished primitive; they do not choose the next task phase.
 
-The group execution lock waits at most five seconds for every waiting caller, including HTTP actions, operation workers and VM jobs. A caller that does not wait refuses immediately. A busy lock retains recorded state and leaves the caller to retry.
+The group execution lock waits at most five seconds for every waiting caller, including HTTP actions and operation workers. A caller that does not wait refuses immediately. A busy lock retains recorded state and leaves the caller to retry.
 
 A resolution clears group assistance only when its kind, question, and reason match the resolved subtask request and no sibling still needs assistance. A different or newer request stays open.
 
-### Behavior names
+## Credentials in task copies
 
-The long [Instance check phases](/reference/task-instance-workspace#check-phases) name their behavior by Node and group, so another group's check on the Node does not wait for the same lock. Their short steps keep Node names. The VM-only `task-check-*` children and their behavior names are removed.
-
-The steps of `tasks.pr_ready` and `tasks.pr_merge` keep fixed names: they make short GitHub calls, and a name per group would grow without bound. The `collect` step of the scheduled check observation is shared; the per-group `task-check-pending` record keeps its earlier name.
-
-## Credentials in task VMs
-
-A task VM holds only placeholder keys. Nick set this as the rule for every key a task VM needs (2026-11-07).
-
-A guard proxy runs outside the VM, on the Node that holds the real key. It answers as this table shows:
-
-| Request | Answer |
-| --- | --- |
-| From an admitted source, on a path the VM needs, with the placeholder | Passed upstream with the real key in place of the placeholder |
-| Anything else from an admitted source | 401 |
-| Anything from any other source | 403 |
-
-The admitted sources are the reserved WireGuard range `10.44.0.128/25`, which the WireGuard address allocator never hands to a Node, and each agent Node that runs a [container model forwarder](/reference/ai-router#container-model-forwarder), where only containers on its bridge reach the guard. So the real key never leaves its Node and the Gateway, and a leaked placeholder is useless outside those sources. Each further key is one more placeholder-to-real pair in a guard.
-
-The one exception is a short-lived minted token that never stays on the VM, such as a GitHub App token that a step mints for one push.
-
-The first use is the model router guard on `services`, at `10.44.0.3:8318`.
-
-All task VMs share one placeholder model key. The Gateway keeps it as a secret setting and changes it only on an incident, with no scheduled refresh. A task start writes it, with the guard origin, into the VM's Pi models file inside the claim; no start and no release calls the model router. The guard passes only a `POST` to the inference routes, and swaps in the router's anchor key. [Task VM guard](/reference/ai-router#task-vm-guard) describes it. Containers on agent Nodes use the same guard and placeholder through a [forwarder with no key](/reference/ai-router#container-model-forwarder) on their Node.
+Container model calls use a [Node forwarder with no key](/reference/ai-router#container-model-forwarder) and the model guard's placeholder. The real router key stays outside the container. This is not a general secret boundary: `agent` has root in its container, which must hold only development-scoped secrets. Publication runs on a trusted worker and gives the copy no GitHub token ([publish an external group](#publish-an-external-group)).
 
 ## Task workspace
 
-The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#clone-and-set-up-every-workspace), which holds only this workspace. Its checkout clones from the Gateway mirror and runs the Project's setup steps, using the CI cache ref bound to the tested SHA.
-
-Before returning the workspace or activating its Route, Orbit inspects its source. An inspection failure leaves the workspace unexposed and the claim fails. Project setup owns dependency copies.
-
-A visitable Laravel task workspace inherits the configured web root; a nested root such as `apps/site/public` uses the shared [application directory](/reference/projects#application-directory) for environment and runtime consumers. Preparation and inspection still verify Git identity, checkout ownership, and task metadata over the whole repository. Unrouted workspaces skip application classification; inspection does not discover a nested app.
-
-The VM's managed user `orbit` owns the checkout and runs the agents, the setup steps, and the checks. So the workspace needs no ACLs and no `safe.directory` entry.
-
-| Project setting | New workspace |
-| --- | --- |
-| `task_workspace_routed: false` | Not visitable. The checkout has no Route and stays in the lifecycle state `source_resolved`. |
-| `task_workspace_routed: true` | Visitable. The usual development provisioner gives it an inspect subdomain, and it becomes `active`. |
-
-The setting defaults to true and does not depend on the Project slug. Provisioning records the selected mode on the workspace. Changing the Project setting affects future workspaces; it neither creates nor removes Routes on an existing workspace. Doctor uses the recorded mode when it checks that workspace. See [Task workspace routing](/reference/projects#task-workspace-routing).
-
-[Doctor](/cli/doctor) treats `source_resolved` as the healthy state of a workspace that is not visitable, and `active` for a visitable one. An ordinary development Instance, including a monorepo `default` without a Route, settles at `active` instead. It runs the Project's create-time setup list and can supply dependencies to task workspaces without serving an endpoint. See [Provision the application endpoint](/domains/applications#provision-the-application-endpoint).
-
-Orbit writes an untracked `.mcp.json` into the workspace before a reviewer starts, unless the workspace already has one, tracked or not. It points at `{gateway origin}/mcp/search`, which lists only `search_tools` and `execute_tools`. The file is excluded from Git. The [MCP server](/reference/mcp) describes both endpoints.
+Every subtask shares the group's task copy, with name and branch `task-{id}` and checkout at `/srv/workspace`. The copy's [workspace phases](/reference/task-instance-workspace) own checks and publication exports. Proofs use its [nested fleet](/reference/development-containers#nested-fleet), not a separate task VM.
 
 ### Task copy
 
-A new task of a Project whose default Instance is a container, or that has [`nested_fleet`](/reference/projects#nested-fleet-setting) on, gets no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) and [`task:complete`](/cli/task/complete) destroy it. A cancel refuses a copy that holds work origin lacks unless the caller discards it, and its result records what the copy held. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
+A new task requires an active container default with a ready seed, including for a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) enabled. Its workspace is a task copy: a clone named and branched `task-{id}`, which the task owns from its create. There is no VM fallback. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) and [`task:complete`](/cli/task/complete) destroy it. A cancel refuses a copy that holds work origin lacks unless the caller discards it, and its result records what the copy held. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
 
 The copy clones the seed of the Node it is placed on (`TaskCopyStart::seed`). Today that is always the default's Node, so it clones the default's seed. On a CI Node it would clone that Node's [seed holder](/reference/development-containers#the-seed-on-each-ci-node), and a Node whose seed is not the default's current seed refuses with `tasks.copy_source_unavailable`.
 
@@ -1065,15 +994,15 @@ Copies of several groups can share a Node, and their checks, publishes and syncs
 | The clone and bundle of a sync on 209 | `task-sync-clone-<group>`, `task-sync-bundle-<group>` | 180 s, 60 s |
 | The base phase of a copy's sync or handoff check, on its Node | `task-copy-base-<node>-<group>` | 600 s |
 
-One group never runs two of these at once, because the Gateway admits one task Operation of a group at a time. Every other step keeps its name by Node or one shared name. It runs 30 seconds or less, such as `ansible-input` and the evidence and cleanup steps, or only on a task VM, whose Node holds one group at a time. Swamp keeps each name as a definition for good, so only these steps get one per group. A publish that still fails on a behavior lock is retried, as [A refused automatic publish](#a-refused-automatic-publish) describes.
+One group never runs two of these at once, because the Gateway admits one task Operation of a group at a time. The short input, evidence and cleanup steps keep their names by Node or one shared name. Swamp retains behavior definitions, so only the long container steps get one per group. A publish that still fails on a behavior lock is retried, as [A refused automatic publish](#a-refused-automatic-publish) describes.
 
 ### Build a feature in one copy
 
-Build and prove a feature end to end inside one task copy before any pull request opens. When the feature touches the fleet, use the copy's nested fleet.
+Build and prove a feature end to end inside one task copy before any pull request opens, draft or ready. Design the proofs before implementation; for a command, the spec (chart, page and cases) is the first commit on the feature branch. When the feature touches the fleet, use the copy's nested fleet. CI confirms the already-passing proof; it is not the first end-to-end test.
 
 1. Work live in the copy. Change it, run it and fix the next layer until the real end result works there.
 2. Log each change you make by hand.
-3. Codify all of it in one pull request and prove it once. Only a reviewer's request splits it.
+3. Codify all of it on the same branch, pass the end-to-end proof, then open one complete pull request. Only a reviewer's request splits it.
 
 The end result is the real one: an app container serves a page, or a create, deploy or wake succeeds.
 
@@ -1087,7 +1016,7 @@ Nested fleet work once took 18 hours through 3 live windows; a hand build in one
 
 A copy holds no credential, so it cannot fetch. [`task:sync`](/cli/task/sync) of a group with a task copy makes the default branch's newest head available in the copy as `refs/remotes/origin/<default branch>`. It is one `tasks.sync` Operation, whose run is the copy's own workflow, [`operation-task-sync-copy`](/cli/task/sync#how-it-works):
 
-1. The Gateway mints the sync's read token as the run starts, as a Git header, the same as for a task VM.
+1. The Gateway mints the sync's read token as the run starts, as a Git header.
 2. On the Node, Git fetches the default branch into the copy's own mirror, `/var/lib/orbit/instance-repositories/<instance>.git`.
 3. The header is the environment of that one fetch alone. It is never written to a file.
 4. A copy without its mirror first gets one from the default's mirror. A copy whose mirror exists needs no default.
@@ -1128,9 +1057,7 @@ After the merge step succeeds, HEAD holds the default head. The check then compa
 
 A Project without a GitHub repository or a valid default branch brings in no base, and its result names none of these fields.
 
-The result names `default_commit`, the head the check judged against, and `merged_default`, the head it merged or null, so the driver and the reviewer see the base. `base` is `current` when the head was brought in. Only the copy's own workflow changes refuse at publish: the default branch's workflow changes that this merge brings in are never the copy's ([The base of a copy publish](#the-base-of-a-copy-publish)). A baseline check and a task VM check bring in no base.
-
-A task VM keeps its own path, which fetches both branches on 209 and copies one bundle over SSH. Task VMs get no new work.
+The result names `default_commit`, the head the check judged against, and `merged_default`, the head it merged or null, so the driver and the reviewer see the base. `base` is `current` when the head was brought in. Only the copy's own workflow changes refuse at publish: the default branch's workflow changes that this merge brings in are never the copy's ([The base of a copy publish](#the-base-of-a-copy-publish)). A baseline check brings in no base.
 
 ### Workspace ownership
 
@@ -1140,14 +1067,12 @@ The owner is the only record of task workspace ownership:
 
 - A task holds only the workspace it owns. Orbit refuses to attach any other Instance to a task.
 - Claims, cancel, complete, and the sweep find and remove a task's workspace only through its owner, attached or not.
-- A task operation runs only in the workspace the task owns, on the task's ready task VM or in its task copy.
+- A task operation runs only in the task copy the task owns.
 - The name and branch `task-{id}` never make an Instance a task workspace. A task never removes your own Instance named or branched `task-{id}`.
 
 Task operations include agent turns, checks, pushes, commit signing, and `.mcp.json` writes. Orbit refuses them on any other Instance.
 
 Task cleanup never removes an Instance without that task as its recorded owner. To remove another Instance explicitly, run [`instance:destroy`](/cli/instance/destroy).
-
-A task VM holds only its task's workspace, and destroying the VM waits only for that workspace. Any other Instance row on the VM's Node describes a checkout inside the VM, so it goes with the VM and never keeps the VM alive.
 
 ## Swamp run output
 
@@ -1227,7 +1152,7 @@ Without the cache file, T3 uses the catalog it ships, which no file holds; the c
 
 ### Archive finished threads
 
-Swamp records a redacted transcript with each terminal turn result. The Gateway stores normalized entries at `storage/app/private/task-transcripts/{task}/{thread}.json`. It keeps the thread row, metrics and transcript after the VM is deleted. A turn without transcript evidence keeps its previous snapshot. Cleanup makes no transcript request. Transcripts from turns that finished before recorded turn snapshots shipped may be unavailable. This loss is accepted for those test and pipeline tasks; no migration fetches them.
+Swamp records a redacted transcript with each terminal turn result. The Gateway stores normalized entries at `storage/app/private/task-transcripts/{task}/{thread}.json`. It keeps the thread row, metrics and transcript after the copy is destroyed. A turn without transcript evidence keeps its previous snapshot. Cleanup makes no transcript request. Transcripts from turns that finished before recorded turn snapshots shipped may be unavailable. This loss is accepted for those test and pipeline tasks; no migration fetches them.
 
 ## Session routing
 
@@ -1237,42 +1162,9 @@ Swamp selects a subtask, role, brief and operation key for each turn. The Gatewa
 
 This section and [Turn receipt](#turn-receipt) describe the Pi turn on a task VM, which is removed with the [Pi task loop](/reference/old-paths#the-pi-task-loop). A copy turn fetches nothing and writes no receipt ([chart](/cli/task/turn#in-a-task-copy)).
 
-A keyed turn fetches the default branch before it starts or sends agent work. The operation records its workspace and review baseline so recovery uses the same context.
-
 ### Turn receipt
 
-The agent ends its turn by writing `.git/orbit/receipt.json` in the workspace with its own file tools. No helper command exists. The turn prompt states the schema, the turn's thread and the outcomes its role may use:
-
-```json
-{"thread": 14, "outcome": "ready_for_review", "summary": "The export command works and tests/Feature/ExportTest.php covers it.", "deliverables": {"export-test": "tests/Feature/ExportTest.php"}}
-```
-
-| Field | Rule |
-| --- | --- |
-| `thread` | Required. The thread of this turn |
-| `outcome` | Required. One of the outcomes the role may use, listed below |
-| `summary` | Required, not blank |
-| `question` | Required when `outcome` is `blocked` |
-| `deliverables` | Optional map of deliverable ID to evidence text |
-| `cause`, `pull_request` | Optional, when the prompt asks for them |
-
-| Role | Outcomes |
-| --- | --- |
-| Implementer | `ready_for_review`, `blocked` |
-| Reviewer | `approved`, `changes_requested`, `blocked` |
-| Consult | `answered`, `blocked` |
-
-Before Pi starts, the turn creates `.git/orbit` and removes an earlier receipt. After the turn, it downloads the file and checks it in TypeScript. A receipt that breaks a rule is kept out of the result with one fixed code in `receipt_error`:
-
-| Code | Cause |
-| --- | --- |
-| `tasks.receipt_invalid` | Not a regular file, larger than 64 KiB, not JSON, or a field of the wrong type |
-| `tasks.receipt_thread_mismatch` | `thread` is missing or names another thread |
-| `tasks.receipt_outcome_invalid` | `outcome` is unknown or not allowed for the role |
-| `tasks.receipt_summary_missing` | `summary` is missing or blank |
-| `tasks.receipt_question_missing` | A `blocked` receipt has no question |
-
-A missing or invalid receipt is evidence for Swamp to handle.
+The Pi file receipt and its validation are removed with that turn path. A copy turn records its Operation result, thread and transcript. It does not ask an agent to write `.git/orbit/receipt.json`.
 
 ### Questions
 
@@ -1569,21 +1461,7 @@ A test in CI lists every Swamp workflow that calls GitHub's merge API. A new one
 
 Orbit publishes through the Project's [GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request) installation. Agents hold no GitHub token and never fetch or push. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states how that is enforced. A task whose Project changes to `source_access: gh_cli` fails to publish and asks for assistance.
 
-After each approval, the Gateway imports the stored commit from the task VM into its Git mirror and pushes from that mirror, never from the agent's checkout. It runs `git push --quiet origin <commit_sha>:refs/heads/task-{id}`, using the stored commit, never `HEAD`. The push is never forced. Then the next subtask starts. In a [review-and-merge](#review-and-merge) task, an approval commits and does not push: only a final review's approval pushes. On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head.
-
-Publication then requests the GitHub logins in `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` as reviewers so the fleet reviewer wakes. It skips the pull request author, because GitHub rejects that request. Unset or empty logins request no one. A failed reviewer request is logged and does not block publication. Orbit stores `pr_url`. During settling, it records `settled_at` and moves the task from `settling` to `waiting_for_review`. The `waiting_for_review` status uses the pull request watch, fixup, and completion rules of [Settling](#settling).
-
-A task's push runs in a [queued job](/reference/compute-drivers#publish-from-the-vm), because the commit comes out of the VM at the VM's pace. While the job waits or runs, the subtask stays in `reviewing` without a failure, and each tick checks the job again. The job's error counts as one failed push.
-
-A failed push or open keeps the subtask in `reviewing` and keeps its commit. It retries after 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. The fifth failure asks for assistance with a reason that starts with `Approved commit publication failed: `. The reason names Git's error. When GitHub refuses a push that changes `.github/workflows/`, it names the missing `Workflows` permission. A later success clears only that reason.
-
-The task title is the pull request title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each delivered subtask passed the task check and reviewer approval. Cancelled and failed subtasks are not counted.
-
-Before Orbit commits the approval that opens the pull request, Orbit checks the change list against each subtask that is not cancelled or failed. First, a change covers a subtask when the change starts with the subtask's exact title, after both are trimmed.
-
-Case and punctuation count, so `Publish preparatory PR (not CLEAN) with report: ...` covers the subtask `Publish preparatory PR (not CLEAN) with report`. The title must end the change, or be followed by a character that is not a letter or a digit, so `Route` does not cover a change that starts with `Routes`. Then Jev checks the subtasks that no change covers this way. When every subtask is covered by its title, Orbit does not call Jev.
-
-Jev is Orbit's TypeSafe classifier, called through Laravel AI with `TYPESAFE_API_KEY`. Without that key, the call fails with `TypeSafe Jev is not configured. Set TYPESAFE_API_KEY.` For each remaining subtask, it answers whether a listed change delivers that subtask, and it counts a probability of at least one half as "yes". Its input lists only the remaining subtasks. A subtask without a "yes" fails `brief_coverage`, and the reviewer's reminder names it. Jev reads briefs and the change list, not code, so it checks coverage, not correctness. A failed Jev call is a communication failure.
+Publication exports the checked candidate from the copy and pushes from the trusted worker, never the agent's checkout. [Publish an external group](#publish-an-external-group) owns token handling, exact-commit checks, failure recovery and pull request text. It requests no reviewers and runs no brief-coverage classifier. The removed VM publisher's queued retries and approval tick are not task-copy behavior. The [group mode](#task-group-modes) decides when publication starts; [settling](#settling) observes its pull request.
 
 ### Watch the branch while subtasks are open
 
@@ -1900,11 +1778,7 @@ Task create accepts no planner. There is no `plan` field, no planner thread, and
 
 ### Starting from the default checkout
 
-A new task workspace is a linked worktree of the Project's `default` repository on the selected Node. Its task branch starts at the last commit that [deployed](/reference/deployments#development-defaults) in the default's checkout, not a newer fetched default branch. Orbit reads that commit under the Node source lock, records `seed_path` and `seed_commit` on the new Instance before preparing its source, and preserves that selection on retries. An empty selection is recorded too: a later default deployment does not reseed a clone that already started without a seed.
-
-Both explicit Instance setup and asynchronous task baseline setup receive the recorded `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`; the Project copies its own dependency and cache folders from the default checkout with reflinks, then runs its locked installs. A deployment of the default can change those folders during the copy. The seed path names the default's checkout, not a release directory. The workspace never writes back to the seed.
-
-When the Project's default has not deployed on that Node, Orbit creates an independent clone at the fetched default branch tip. Task VMs select caches separately under the [workspace CI baseline rule](/reference/implementation-loop#ci-cache-refs), including on baseline retries. The seed variables are empty and setup must install dependencies from its lock files. There is no automatic root-only dependency copy. External `instance:register` callers read `seed_path` and `seed_commit` from the `default` Instance API, create a branch and linked worktree at that commit, then register it and run setup.
+A task starts from the Project's default container seed, with source, runtime and installed dependencies already present. It is not a linked host worktree and does not run checkout setup or select a VM dependency cache. [A task copy starts clean](/reference/development-containers#a-task-copy-starts-clean) owns branch selection and removal of uncommitted seed work.
 
 ### Routing and cleanup
 
@@ -1922,11 +1796,11 @@ New Projects have no task check until one is configured, regardless of type. Exi
 
 ### Publish uses the checked commit and trusted Git
 
-A raw commit would bypass the handoff check. Taking its check ID binds publication to the evidence and the commit recorded together. Exporting that commit through official SSH lets a trusted bare repository on 209 push it without lending the VM a GitHub token or loading its Git configuration. One observation checks the workspace before export; the import checks that the bundle holds the same commit and tree, so no second observation is needed.
+A raw commit would bypass the handoff check. Taking its check ID binds publication to the evidence and the commit recorded together. The workspace phases export that candidate to a trusted bare repository on 209 without lending the copy a GitHub token or loading its Git configuration. The import verifies that the bundle holds the admitted commit and tree.
 
 An open-pull-request lookup lets a new admission reconcile a lost create reply. The orchestrator owns review gates and board states, so publication adds no brief coverage, reviewer request, or settling decision.
 
-A push that started can reach GitHub even after its client stops. Native cancellation therefore does not prove that the remote branch stayed unchanged. A fresh admission pushes again without force: Git pushes nothing for an identical tip and refuses a divergent one. The group's VM workspace path remains part of intent, with no new ownership mechanism.
+A push that started can reach GitHub even after its client stops. Native cancellation therefore does not prove that the remote branch stayed unchanged. A fresh admission pushes again without force: Git pushes nothing for an identical tip and refuses a divergent one. The recorded copy remains the group's workspace; publication adds no new ownership mechanism.
 
 These reasons explain the design. Check them before you propose a change.
 
@@ -1944,9 +1818,7 @@ The orchestrator owns the prompt, gates, budgets, and assistance. The turn opera
 
 ### Provision keeps effects separate from lifecycle decisions
 
-An external orchestrator needs the same task VM and workspace as the other keyed operations, without starting a baseline or an agent. Provision shares the workspace provisioner and stops at a usable workspace. One operation hold per group keeps later task effects from overlapping. Capacity waits retain the reservation and release the operation worker; configuration and VM errors end the group instead of starting a Gateway retry policy. Clearing the reservation on cancellation lets existing cleanup own removal.
-
-That VM is always large, so no Project size list decides it. The [compute drivers](/reference/compute-drivers#apply-and-check-the-nested-fleet) page has the steps.
+An external orchestrator needs a usable task copy without starting a baseline or an agent. Provision shares the copy start path. One operation hold per group keeps later task effects from overlapping; it does not choose the next phase. Missing or stale seeds refuse rather than selecting an older runtime.
 
 ### An optional, generic extension
 
@@ -1956,11 +1828,9 @@ Three alternatives were rejected. Selecting one Project's behavior by its slug w
 
 Shared prompts stay free of Project policy. They do not name a feature contract or an Orbit lease rule. The repository's instructions and `orbit-tasks` skill carry that policy.
 
-### Every task group runs on its own task VM
+### Every task group owns its task copy
 
-Each task group gets its own [task VM](#task-workspace). One user runs its agents and checks in the same environment. The [VM edge](/reference/compute-drivers#why-task-vms-work-this-way) is the boundary. A task waits for its VM; there is no shared-host fallback.
-
-Operators can inspect the task Node's last reported resource use with [`node:metrics`](/cli/node/metrics). The read does not contact or wake the VM. An offline VM retains its last snapshot with the original observation time and a `possibly outdated` label; this is resource evidence, not proof that an agent turn is still running.
+Each task group gets one [task copy](#task-copy). Agents and checks use that checkout; proofs use its nested fleet. Containers share their host kernel, so this is not a dedicated-kernel boundary. The copy has only the development credentials and resources its work needs.
 
 ### Backlog before Todo
 
@@ -1992,8 +1862,6 @@ The loop reads Doctor, Activity, the Gateway log, and assistance reasons. Waitin
 
 ### A release alert files on its first occurrence
 
-Task VM image build incidents recover after a verified build or a superseding recipe generation.
-
 A failed release is a verdict from deterministic checks, not a noisy signal, so waiting for three windows would only delay it. The release command pushes the alert at that moment, and the next hourly run files it.
 
 The release producer supplies the failing resource, attempt, and fault. The Gateway SHA stays in evidence, so a Gateway update does not create another incident for an unchanged failure. The Activity key lacks that incident identity, and a single Activity row would never be ready. Filing release alerts first keeps a burst of recurring noise from taking the daily cap before them. The webhook, not the task, is the prompt signal, so the filer keeps its hourly run.
@@ -2020,7 +1888,7 @@ Orbit cannot check prose, so a subtask names typed items. The check runs each co
 
 A command that only passes on the fixed code does not prove it covers the bug. So a base run uses the start commit and adds only the files named in `paths`. It also copies installed `vendor` and `node_modules` directories so a Composer or JavaScript command can run, and it copies nothing else. A missing Python or Rust dependency tree is not proof that the bug existed on the start commit.
 
-The base tree is an extracted archive in the run's scratch directory on the VM, `/tmp/orbit-task-check-<run>/base-<n>`, not a registered worktree, because a killed run would leave a registered worktree that blocks removal of the clone. The run removes the directory at its end. Exit 126 or 127 is not that proof: the command did not run.
+The base tree is an extracted archive in the check's container scratch, not a registered worktree that a killed run could leave attached. The [check phases](/reference/task-instance-workspace#check-phases) own its lifecycle. Exit 126 or 127 is not proof of a regression: the command did not run.
 
 ### Assistance is recorded in Activity
 
@@ -2032,9 +1900,9 @@ Each consult and direction request has a record with its answer and cause, while
 
 The reviewer chooses a cause from a fixed list when it hands off, because it already holds the contract and the answer. Asking a model to infer the cause later was rejected: the handoff has the evidence, and a fixed list avoids another model call and its cost. A cause stays empty until that reviewer receipt, so an open, escalated, or migrated question does not claim a diagnosis nobody has made.
 
-### Transcripts outlive the task VM
+### Transcripts outlive the task copy
 
-A task VM is deleted when its task ends, and its Pi sessions go with it. Without a copy, nobody can read what an agent did after the task settles, so prompts cannot be audited or replayed against real turns. Swamp records redacted transcript evidence when each turn ends. The Gateway keeps it after the VM is deleted. Cleanup needs no live transcript read.
+A task copy is destroyed when its group ends, and its server sessions go with it. Swamp records redacted transcript evidence when each turn ends; the Gateway keeps it after destruction. Cleanup needs no live transcript read. Stored Pi transcripts remain readable without the old runtime.
 
 ### Recorded snapshots for all readers
 
@@ -2062,15 +1930,7 @@ The thread spent the tokens, so the split lives there. A total alone does not sh
 
 This section is history. Task VMs and the Pi task loop are removed, and every turn runs in a task copy on T3 ([Drivers](#drivers)).
 
-Host T3 task threads ran as the operator's Unix user and had that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool.
-
-Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers on a task VM. A task copy runs its implementer and reviewer turns with T3's own CLI as `agent`, as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
-
-Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. Swamp has no T3 metric collector or thread archive.
-
-Each role kept its driver setting, with a `pi` default, because deployment selected Pi explicitly.
-
-Finishing an open T3 task turn would preserve the second runtime, so a managed task that records a driver other than `pi` never starts or resumes an agent turn. The operator cancels or replaces it. Deleting its thread row, metrics, or `t3_*` columns would erase the record of work that already ran, so that history stays. A transcript request returns HTTP 409 `tasks.agent_transcript_unavailable` rather than contacting T3. Pi session files stay on the Node; Orbit keeps their thread rows and metrics too.
+The [old-paths ledger](/reference/old-paths#the-pi-task-loop) records the retirement. Current implementer and reviewer turns use the [copy turn agents](#copy-turn-agents); there is no Pi restart or publication path to operate.
 
 ### Jev only checks coverage
 
