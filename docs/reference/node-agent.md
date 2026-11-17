@@ -26,7 +26,7 @@ Native `node.add` fetches the pinned Linux binary and writes the observer config
 
 Fixed **service entry points** run under their own Linux systemd units. `service schedules-run <uuid>` reads the protected Schedule command file and executes its project command as the service user. `service schedules-complete <uuid>` runs as root, reads only the pinned CA, and reports completion. It runs no project code and reads no agent secret. [Schedules](/reference/schedules#node-timers) owns their units and execution context.
 
-> **Target design, not built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) a separate Rust binary from this workspace, the **executor**, sleeps and wakes app containers on `app-dev` Nodes. The Gateway publishes a signed order as the server event `executor-order` on `presence-node.{id}`. The observer writes the bytes unchanged to `/run/orbit-executor.sock` and sends the reply back as `client-executor-result` on the same channel. It cannot sign and does not parse the order. Sleep and wake are then the one Node change that is not a typed command over SSH. Slice 1 built the [executor](/reference/executor) and its install; until slice 2 lands, the observer only observes, as this page says.
+> **Partly built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) a separate Rust binary from this workspace, the **executor**, sleeps and wakes app containers on `app-dev` Nodes. Slice 1 built the [executor](/reference/executor) and its install. Slice 2 built the observer's pass-through of `executor-order` ([How it connects](#how-it-connects)), with only the no-op `proof` action behind it. Sleep and wake still run as this page says until later slices land; they then become the one Node change that is not a typed command over SSH.
 
 The observer listens on no port. Nothing reaches command mode over the network: only a process that SSH or the Gateway starts runs it. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
@@ -514,6 +514,8 @@ The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `w
 3. It asks `POST /api/v1/agent/broadcasting/auth` to sign its membership, with `socket_id`, `channel_name`, and `version`. The Gateway signs `agent.{id}` only on the caller's own two channels.
 4. It joins `presence-node.{id}`, sends its snapshot, and then publishes its events.
 5. It joins `presence-node-logs.{id}` the same way and fetches its [stream list](#stream-list).
+
+On `presence-node.{id}` the agent also takes the server event `executor-order` and passes it on to the [executor](/reference/executor#the-observer-pass-through). It does not parse, verify or sign the order: it writes the bytes unchanged to `/run/orbit-executor.sock` and sends each reply line back as the client event `client-executor-result` on the same channel. This one event is the exception that [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) makes to the frozen agent: it adds no command and no fact. Orders that arrive while the agent reconnects are lost.
 
 When the `gateway` role moves, the Gateway's WireGuard address changes. Every agent then loses the Gateway until its configuration is rewritten. Run `orbit node:add <node>` or a role converge on each Node. The Reverb address needs no converge, because each realtime response carries it.
 

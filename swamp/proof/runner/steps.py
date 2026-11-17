@@ -673,6 +673,63 @@ EXECUTOR_CALLERS = {
 }
 
 
+EXECUTOR_JOURNAL = '/var/lib/orbit/executor/journal'
+
+
+def executor_publish(run, args):
+    """Publish signed proof.noop orders as `executor-order` on the Node's channel through the nested Gateway's own signer and
+    publisher, so they reach the executor only through the observer (ADR 0266 slice 2). `tamper` makes one order security test's
+    order. `expect: {done: true}` waits for a `done` journal record of every nonce and saves the latency from the Gateway's publish
+    to the executor's result as evidence; `expect: {refused: <code>}` waits for the observer's order refused with that code."""
+    node = nodes_of(run, 'executor_publish', args['on'])[0]
+    payload = {'mode': 'publish', 'node': run.fleet.nodes[node]['node_id'], 'operation': args['operation'], 'count': args.get('count', 1)}
+    if 'tamper' in args:
+        payload['tamper'] = args['tamper']
+    if 'nonce' in args:
+        payload['nonce'] = run.names[args['nonce']]
+    expect = args['expect']
+    since = run.fleet.sh(node, 'date -u +%Y-%m-%dT%H:%M:%S').stdout.strip()
+
+    def refusals():
+        log = run.fleet.sh(node, shlex.join(['journalctl', '-u', 'orbit-executor.service', '--since', since, '--no-pager', '-o', 'cat'])).stdout
+        return log, len([line for line in log.splitlines() if 'from Observer: ' + expect['refused'] in line])
+    # `since` has whole seconds, so an earlier step's refusal can fall inside it: count only the refusals after this publish.
+    before = refusals()[1] if 'refused' in expect else 0
+    orders = executor_guest(run, payload)['orders']
+    if 'save' in args:
+        run.names[args['save']] = orders[0]['nonce']
+    deadline = time.monotonic() + 15
+    while True:
+        if 'refused' in expect:
+            log, count = refusals()
+            refused = count - before
+            if refused >= len(orders):
+                run.evidence_text(f'executor-ws-{args["operation"]}.txt', log)
+                return []
+            missing = f'{len(orders) - refused} of {len(orders)} orders not refused by the observer path with {expect["refused"]}'
+        else:
+            done = {}
+            for line in run.fleet.sh(node, shlex.join(['cat', EXECUTOR_JOURNAL])).stdout.splitlines():
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                if record.get('record') == 'done':
+                    done[record.get('nonce')] = record
+            found = [(order, done[order['nonce']]) for order in orders if order['nonce'] in done]
+            if len(found) == len(orders):
+                latencies = sorted(record['at_ms'] - order['published_ms'] for order, record in found)
+                summary = {'orders': len(latencies), 'p50_ms': latencies[len(latencies) // 2],
+                           'p95_ms': latencies[min(len(latencies) - 1, (len(latencies) * 95) // 100)], 'max_ms': latencies[-1],
+                           'latencies_ms': latencies, 'statuses': sorted({record.get('status') for _, record in found})}
+                run.evidence_text(f'executor-ws-{args["operation"]}.json', json.dumps(summary, indent=2) + '\n')
+                return [] if summary['statuses'] == ['done'] else [f'executor {node}: results {summary["statuses"]}']
+            missing = f'{len(orders) - len(found)} of {len(orders)} orders have no done record'
+        if time.monotonic() >= deadline:
+            return [f'executor {node} over the WebSocket: {missing} within 15 s']
+        time.sleep(0.5)
+
+
 def executor_order(run, args):
     """Sign one proof.noop order for the Node and hand it to the executor as one caller. `expect` names the result line's fields, or
     `refused_caller` with the executor's logged refusal code (an empty reply), or `connect: denied` for a user the socket's mode
@@ -914,4 +971,5 @@ FUNCTIONS = {name: unbuilt(name) for name in spec.STEPS}
 FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6_addresses, 'listener': listener, 'ufw_rule': ufw_rule, 'probe': probe, 'cli': cli, 'ufw': ufw, 'record': record, 'doctor': doctor,
                   'service': service, 'package': package, 'ansible_changes': ansible_changes, 'unchanged': unchanged, 'ufw_delete': ufw_delete, 'agent_report': agent_report, 'node_down': node_down,
                   'node_access_remove': node_access_remove, 'node_fixture': node_fixture, 'recorded_request': recorded_request,
-                  'executor_key': executor_key, 'executor_order': executor_order})
+                  'executor_key': executor_key, 'executor_order': executor_order,
+                  'executor_publish': executor_publish})

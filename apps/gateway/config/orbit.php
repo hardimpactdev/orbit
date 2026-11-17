@@ -71,9 +71,11 @@ return [
     // seconds belongs to a request that was killed.
     'activity_interrupted_after' => 900,
     // The Gateway's Ed25519 public keys that each executor Node pins in /etc/orbit/executor/gateway.pub (ADR 0266): one, or two
-    // during a rotation, base64, comma-separated. The signing key and its signer arrive in slice 2.
+    // during a rotation, base64, comma-separated. `signing_key` is the secret half that signs every order: the base64 64-byte
+    // libsodium secret key, readable only by `orbit` (docs/reference/executor.md#rollout). Never log or print it.
     'executor' => [
         'public_keys' => array_values(array_filter(array_map(trim(...), explode(',', (string) env('ORBIT_EXECUTOR_PUBLIC_KEYS', ''))))),
+        'signing_key' => env('ORBIT_EXECUTOR_SIGNING_KEY'),
     ],
 
     'websocket' => [

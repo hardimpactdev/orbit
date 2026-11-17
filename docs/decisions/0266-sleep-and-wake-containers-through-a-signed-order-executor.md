@@ -12,7 +12,7 @@ A new Rust binary, the **executor**, sleeps and wakes app containers on its Node
 
 In progress.
 
-The owner decided D1–D8 below on 2026-11-16. This record is design only: nothing is built.
+The owner decided D1–D8 below on 2026-11-16. Slices 1 and 2 are built ([Executor](/reference/executor)): the executor with the no-op `proof` action, its install, the Gateway signer, the `executor-order` event and the observer's pass-through. Slice 2 puts an opaque `ref`, the order's nonce, beside the order in the event. The observer echoes it unread with each reply line, because the `accepted` line and a refusal before the payload is read carry no Operation. Sleep and wake are not built yet.
 
 Principle: [One way, one name](/mission#principles), [Deterministic first](/mission#principles) and [Security fits the real threat model](/mission#principles). One executor does every sleep and wake for every caller. The kernel's page records decide what comes back. The signature is the security boundary, and root on a Node is an accepted risk. Exceptions:
 
