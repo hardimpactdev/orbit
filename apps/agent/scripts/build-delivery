@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds the agent delivery that a Gateway pins (ADR 0225): a static x86_64 Linux binary and native macOS command binaries, their
-# SHA256SUMS, and manifest.json with the source commit, the Cargo version, and each artifact's SHA-256.
+# SHA256SUMS, and manifest.json with the source commit, the Cargo version, and each artifact's SHA-256. A Linux target also builds
+# the executor (ADR 0266), as artifact `executor-linux-x86_64` in the same manifest.
 #
 # Usage: scripts/build-delivery OUT_DIR [--commit SHA] [--url-base URL] [--target TRIPLE ...]
 #
@@ -43,13 +44,19 @@ for target in "${targets[@]}"; do
         x86_64-apple-darwin) key=macos-x86_64 ;;
         *) echo "build-delivery: unsupported target $target" >&2; exit 1 ;;
     esac
-    cargo build --locked --release --target "$target"
-    name="orbit-agent-$key"
-    install -m 0755 "target/$target/release/orbit-agent" "$out/$name"
-    sha=$(shasum -a 256 "$out/$name" | cut -d ' ' -f 1)
-    printf '%s  %s\n' "$sha" "$name" >> "$out/SHA256SUMS"
-    artifacts=$(jq -c --arg key "$key" --arg sha "$sha" --arg name "$name" --arg base "$url_base" \
-        '. + {($key): ({sha256: $sha, path: $name} + (if $base == "" then {} else {url: ($base + "/" + $name)} end))}' <<<"$artifacts")
+    builds=(orbit-agent)
+    [[ $key == linux-* ]] && builds+=(orbit-executor)
+    for binary in "${builds[@]}"; do
+        cargo build --locked --release --target "$target" -p "$binary"
+        name="$binary-$key"
+        artifact=$key
+        [[ $binary == orbit-executor ]] && artifact="executor-$key"
+        install -m 0755 "target/$target/release/$binary" "$out/$name"
+        sha=$(shasum -a 256 "$out/$name" | cut -d ' ' -f 1)
+        printf '%s  %s\n' "$sha" "$name" >> "$out/SHA256SUMS"
+        artifacts=$(jq -c --arg key "$artifact" --arg sha "$sha" --arg name "$name" --arg base "$url_base" \
+            '. + {($key): ({sha256: $sha, path: $name} + (if $base == "" then {} else {url: ($base + "/" + $name)} end))}' <<<"$artifacts")
+    done
 done
 
 jq -n --arg commit "$commit" --arg version "$version" --argjson artifacts "$artifacts" \

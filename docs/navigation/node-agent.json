@@ -5,7 +5,8 @@
       "group": "Fleet",
       "order": 14,
       "pages": [
-        "reference/node-agent"
+        "reference/node-agent",
+        "reference/executor"
       ]
     }
   ]

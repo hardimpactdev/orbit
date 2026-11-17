@@ -143,6 +143,8 @@ final readonly class NodeDesiredConvergeInput
             'cli' => app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
             'tools' => $tools, 'network' => $network, 'role_units' => NodeRoleUnits::for($node),
+            // Only a Node whose roles enable an executor family carries the install (docs/reference/executor.md).
+            ...(($executor = NodeExecutorInput::for($node)) === null ? [] : ['executor' => $executor]),
             ...($playbook === null ? [] : ['playbook' => $playbook]),
             // The roles phase of an Instance fleet Node may build its first Instance host, the stock and Instance images included
             // (docs/reference/development-containers.md#instance-host-in-the-fleet); every other converge keeps 900 s.
