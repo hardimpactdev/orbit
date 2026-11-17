@@ -577,21 +577,30 @@ def kernel_frozen(host, relative):
 
 
 def thaw(host, relative, seconds):
-    """Thaw the container's own cgroup in the kernel and wait until `cgroup.events` says `frozen 0`, at most `seconds`. Only for a
-    container that Incus calls running: Incus refuses to unfreeze it. True when the kernel thawed it within the bound."""
+    """Thaw the container's own cgroup in the kernel and wait until it is no longer frozen, at most `seconds`. Only for a container
+    that Incus calls running: Incus refuses to unfreeze it. The kernel signals each change of `cgroup.events` with POLLPRI, as liblxc
+    waits for it; the wait reads the state again at least every 50 ms. True when the kernel thawed it within the bound."""
     path = os.path.join(host.cgroups, relative)
     deadline = time.monotonic() + seconds
     try:
-        with open(os.path.join(path, "cgroup.freeze"), "w") as handle:
-            handle.write("0")
+        events = os.open(os.path.join(path, "cgroup.events"), os.O_RDONLY)
     except OSError:
         return False
-    while True:
-        if not kernel_frozen(host, relative):
-            return True
-        if time.monotonic() >= deadline:
-            return False
-        time.sleep(0.01)
+    try:
+        with open(os.path.join(path, "cgroup.freeze"), "w") as handle:
+            handle.write("0")
+        waiter = select.poll()
+        waiter.register(events, select.POLLPRI | select.POLLERR)
+        while kernel_frozen(host, relative):
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return False
+            waiter.poll(min(left, 0.05) * 1000)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(events)
 
 
 def open_swap(host, instance_id, relative, boot_id):
