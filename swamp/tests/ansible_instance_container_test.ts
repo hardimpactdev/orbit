@@ -14,10 +14,11 @@ import { helperCalls, installPowerHelper } from "./_support/power_helper.ts";
 // `update-ca-certificates` in the definition's finish); the host files stay as they were. The NIC address filters add two `--device`
 // keys to the build container's init (digest 4f193b4c… → b21a521d…). The strict filter check has no report task, so the tasks are
 // 174 again and the digest, which covers the task names, is 20b1670d…; the Incus calls stay the same.
+// The www-data image preparation and audit change commands and two task names; call and task counts stay the same.
 // Chromium's trust adds six tasks: the folder gathers its one Debian package part (the trust module), the image checks the module's
 // library (one exec) and writes agent's NSS store (one exec and one push), and the container step keeps its list of containers
 // without the store for the Operation result; the host files stay as they were.
-const MAIN_NORMAL_HOST = {calls: 69, tasks: 190, digest: "35473ebd9aa2dfcdb8e27ee2c38f1b2c2676cda7195b6ead4e95d9c3d7f08731"};
+const MAIN_NORMAL_HOST = {calls: 69, tasks: 190, digest: "94eef3a56597f8034ff7c9ca5649b51e42eea00061b70950bfb52fe36912d6aa"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
