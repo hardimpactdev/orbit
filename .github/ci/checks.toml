@@ -154,7 +154,8 @@ inputs = [
   "apps/gateway/tests/Feature/Infrastructure/Executor/**",
   "bin/ci-runner-prerequisites",
 ]
-# Local group: 8 cases, 59 assertions, 32.29s wall. Estimated cost includes cold image pulls and setup pending hosted evidence.
+# Hosted run 44180546260: 113s including setup, cold image pulls and cleanup; 8 cases, 59 assertions.
+# Retain setup and download headroom within the four-minute ceiling.
 cost = 180
 ceiling = 240
 
