@@ -11,6 +11,11 @@ return [
     'fleet.rollout' => [
         'workflow' => 'operation-fleet-rollout',
         'projection' => FleetReleaseProjection::class,
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'finish', 'step' => 'finish', 'native' => true, 'captures' => [
+            'nodes' => ['job' => 'finish', 'step' => 'finish', 'field' => 'nodes'],
+            'error_code' => ['job' => 'finish', 'step' => 'finish', 'field' => 'error_code'],
+        ]],
     ],
     'fleet.reboot' => [
         'workflow' => 'operation-fleet-reboot',
@@ -23,6 +28,11 @@ return [
     'fleet.cli_converge' => [
         'workflow' => 'operation-fleet-cli-converge',
         'projection' => FleetReleaseProjection::class,
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'finish', 'step' => 'finish', 'native' => true, 'captures' => [
+            'nodes' => ['job' => 'finish', 'step' => 'finish', 'field' => 'nodes'],
+            'error_code' => ['job' => 'finish', 'step' => 'finish', 'field' => 'error_code'],
+        ]],
     ],
     'fleet.peer_dns' => [
         'workflow' => 'operation-fleet-peer-dns',

@@ -29,7 +29,8 @@ sequenceDiagram
   %%> - in risk order: `app-dev`, then `ci-runner` `metrics` `analytics`, then `database` `websocket` `vpn` `router`, then `app-prod` `ingress`
   GW->>SW: Start run, full intent<br/>operation-fleet-rollout
   %%> Input:
-  %%> - the commit, the agent pin and each picked Node; CLI intent only for Nodes that require it
+  %%> - each picked Node with its agent pin; CLI intent only for Nodes that require it
+  %%> - the commit stays on the Gateway for visit history and alerts; steps never fetch intent or post results
   %%> Requirements:
   %%> - no other rollout is running
   loop each Node, in risk order
@@ -47,6 +48,10 @@ sequenceDiagram
     %%> - a Node without CLI intent skips the CLI child and publishes its observer independently
     %%> - the running digest and active unit prove the pinned observer
   end
+  Note over SW: Return each Node's outcome<br/>finish
+  %%> What it does:
+  %%> - shapes one bounded result from child outputs; a native assertion fails the run when a Node failed
+  %%> - the Gateway's shared terminal reader captures the result, including when the run failed
   alt every Node converged or deferred
     SW-->>GW: Run succeeded
     %%> Result:

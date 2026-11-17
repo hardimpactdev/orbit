@@ -10,12 +10,13 @@ inputs = [
 ]
 cases = [
   "a pinned, running observer is unchanged; a fetch or restart makes it converged",
-  "each failed observer step names its own refusal and stops the fleet",
-  "every step runs on 209 and only a rollout publishes the observer",
+  "each failed observer step names its refusal and stops the fleet",
+  "every child step runs on 209 and only a rollout publishes the observer",
   "closed window defers shared nodes; daytime nodes bypass the window",
-  "closed window prevents installation and the run still succeeds",
+  "full admitted input prepares and a closed window returns a deferred result without Gateway access",
+  "retired rollout fields are refused rather than silently accepted",
   "a failed or missing earlier Node keeps later fleet participants pending",
-  "a rollout admitted before the record tables were dropped still prepares",
+  "missing child output is uncertain and foreign Node output is refused",
   "fleet.rollout omits CLI publication for a Node with no caller",
   "fleet.cli_converge omits CLI publication for a Node with no caller",
 ]

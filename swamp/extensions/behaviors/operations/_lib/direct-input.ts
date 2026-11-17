@@ -13,15 +13,3 @@ export const DirectResult = z.preprocess(
 );
 export type DirectIntent = z.infer<typeof DirectArgs>;
 export type Result = z.infer<typeof DirectResult>;
-
-/** An action may cancel a read-only wait only after confirming no effect is running. */
-export class DirectOperationCancelled extends Error {
-    constructor(evidence: { effectRunning: false }) {
-        super("Direct Operation cancelled with no effect running");
-        if (evidence.effectRunning !== false) {
-            throw new Error(
-                "Cancellation requires confirmation that no effect is running",
-            );
-        }
-    }
-}
