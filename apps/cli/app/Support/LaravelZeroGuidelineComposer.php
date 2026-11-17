@@ -34,8 +34,7 @@ final class LaravelZeroGuidelineComposer extends GuidelineComposer
 
             ## Project Rules
 
-            - `.ai/rules/index.md` and every indexed rule file are required repository state. Open the index, read every rule whose globs match the files in scope, and search `.ai/rules` for relevant terms before planning or editing.
-            - If `.ai/rules` does not exist, the checkout or Boost bootstrap is incomplete. Restore or regenerate the guidance before planning or editing any file. Do not silently continue without the project rule set.
+            - Open `.ai/rules/index.md`, read rules whose globs match the files in scope, and search `.ai/rules` for relevant terms before planning or editing. Required Guidance Bootstrap above owns missing-guidance recovery.
             - Store durable project decisions in a concise repository-owned rule file and keep its frontmatter globs in the index.
 
             ## Boost Commands
