@@ -156,4 +156,13 @@ The Swamp proof of `node:converge` (`swamp/proof/node/converge.cases.yaml`) send
 
 `executor_order` signs each order with the same script and hands it to the relay. `executor_publish` sends orders over the WebSocket through the Gateway's own signer and publisher, so they reach the executor only through the observer. The proof records no Operation: each order gets an in-memory Operation with an unused numeric id in a high range and the Node as its `node_id`. It reads the result from the executor's journal and its refusal from the executor's log, because the Gateway listener arrives in slice 3.
 
-Its `tamper` option makes the order of each order security test: `bad_signature`, `changed_action`, `changed_target`, `expired`, `unknown_action` and `wrong_node`. Its `replay` option publishes each order twice, the exact same wire for the same Operation, before its one wait, so the copy arrives inside the first one's 5 s expiry; the case expects `replayed_nonce first=done`. The cases `executor-order-security` and `executor-websocket-burst` (50 orders, with the latency from the Gateway's publish to the executor's result saved as evidence) use it. No key is committed, and the secret half never leaves the nested Gateway.
+### Orders over the WebSocket
+
+The step `executor_publish` has two options for the order security tests:
+
+- `tamper` makes the order of each order security test: `bad_signature`, `changed_action`, `changed_target`, `expired`, `unknown_action` and `wrong_node`.
+- `replay` publishes each order twice, the exact same wire for the same Operation, before the step's one wait.
+
+The copy therefore arrives inside the first one's 5 s expiry. The case expects the copy refused with `replayed_nonce` and the action run exactly once for that Operation. The two copies race through the observer, so the refusal may carry the first result (`first=done`) or not yet (`first=none`); both are correct. The executor's unit tests prove that a replay after the original completed carries the stored first result.
+
+The cases `executor-order-security` and `executor-websocket-burst` (50 orders, with the latency from the Gateway's publish to the executor's result saved as evidence) use it. No key is committed, and the secret half never leaves the nested Gateway.
