@@ -254,8 +254,8 @@ inputs = [
   "!apps/cli/tests/**",
   "!packages/php-sdk/tests/**",
 ]
-cost = 38
-ceiling = 120
+cost = 150
+ceiling = 180
 
 [check.agent]
 inputs = [

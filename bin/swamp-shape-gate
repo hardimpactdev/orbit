@@ -49,6 +49,7 @@ ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py
                  'tests/task_instance_workspace_receipt_test.py',
                  'tests/task_instance_workspace_export_test.py',
                  'tests/task_instance_check_test.py',
+                 'tests/task_instance_check_dependencies_test.py',
                  'tests/ansible_node_add_test.py', 'tests/ansible_shape_gate_tools_test.py',
                  'tests/ansible_gateway_swamp_grants_test.py',
                  'tests/ansible_task_vm_fleet_wait_test.py',
