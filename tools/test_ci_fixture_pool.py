@@ -2,6 +2,7 @@
 from pathlib import Path
 import heapq
 import sys
+import tomllib
 import unittest
 
 import yaml
@@ -61,7 +62,11 @@ class FixturePoolTest(unittest.TestCase):
         self.assertTrue(any(step.get('run', '').startswith('bin/ci-units run ') for step in job['steps']))
         self.assertEqual(['self-hosted', 'hardimpact', 'orbit-shard'], workflow['jobs']['self-hosted-fixtures']['runs-on'])
         budget, _, _ = units.configuration()
+        # Observed shared runners are a reporting denominator, not a per-run job limit.
+        table = tomllib.loads((ROOT / '.github/ci/checks.toml').read_text())
+        self.assertEqual(10, table['runner-pool']['slots'])
         self.assertEqual(18, budget['runner_shards'])
+        self.assertEqual(16, budget['spread_shards'])
         self.assertEqual((150, 180, 190, 240), tuple(budget[key] for key in
                          ('shard_seconds', 'unit_ceiling_seconds', 'shard_deadline_seconds', 'shard_ceiling_seconds')))
         self.assertEqual((2, 2), (budget['shard_workers'], budget['self_hosted_workers']))

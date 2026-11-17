@@ -195,6 +195,41 @@ Deno.test("failure before input preparation still publishes a failed terminal an
 
 const apt = { node_id: 7, user: "orbit", tool: { manager: "apt", package: "tree", version_constraint: "^2.2", protected: [] } };
 const aptFacts = { version: { rc: 0, stdout: "apt 3.1.16 (amd64)" }, query: { rc: 0, stdout: "tree\tinstall ok installed\t2.2.1-1\n" } };
+Deno.test("Node snapshot packages use direct HTTPS configuration, bounded retries and exact pins without removals", () => {
+    // Retain the live package policy formerly covered beside the retired VM role.
+    // deno-lint-ignore no-explicit-any
+    const read = (name: string) => parse(Deno.readTextFileSync(new URL(`../ansible/${name}`, import.meta.url))) as Record<string, any>[];
+    const target = read("operation-node-converge.yml").find((play) => play.hosts === "target")!;
+    assertEquals([target.vars.apt_retries, target.vars.apt_delay], [4, 30]);
+    assertEquals(target.module_defaults["ansible.builtin.apt"].lock_timeout, 300);
+    assertEquals(target.vars.apt_index_environment, "{{ apt_environment }}");
+    const config = read("tasks/node-converge-apt-config.yml");
+    const sources = config.find((task) => task.name === "Point apt at the Ubuntu snapshot")!["ansible.builtin.copy"].content;
+    assertEquals(sources.includes("URIs: https://snapshot.ubuntu.com/ubuntu/{{ recipe.ubuntu.snapshot }}/"), true);
+    const direct = config.find((task) => task.name === "Write the apt configuration")!["ansible.builtin.copy"].content;
+    assertEquals(direct.includes("Proxy"), false);
+    const packages = read("tasks/node-converge-apt.yml");
+    const operations = [...config, ...packages, ...packages.flatMap((task) => task.block ?? [])];
+    const installs = operations.filter((task) => "ansible.builtin.apt" in task || String(task["ansible.builtin.command"]?.argv).includes("apt-get"));
+    assertEquals(installs.map((task) => task.name).sort(), ["Install the Ubuntu packages", "Install the packages that come as files", "Read the package indexes"]);
+    for (const task of operations) {
+        assertEquals("ansible.builtin.shell" in task || "ansible.builtin.raw" in task, false, task.name);
+    }
+    for (const task of installs) {
+        const index = task.name === "Read the package indexes";
+        assertEquals(task.environment, index ? "{{ apt_index_environment }}" : "{{ apt_environment }}");
+        if (index) {
+            assertEquals(task["ansible.builtin.apt"], { update_cache: true, update_cache_retries: 12, update_cache_retry_max_delay: 30 });
+        } else {
+            assertEquals([task.retries, task.delay, task.until], ["{{ apt_retries }}", "{{ apt_delay }}", `${task.register} is succeeded`]);
+        }
+    }
+    const ubuntu = installs.find((task) => task.name === "Install the Ubuntu packages")!["ansible.builtin.apt"];
+    assertEquals([ubuntu.install_recommends, ubuntu.fail_on_autoremove, ubuntu.allow_downgrade], [false, true, true]);
+    const deb = installs.find((task) => task.name === "Install the packages that come as files")!["ansible.builtin.command"].argv;
+    for (const flag of ["--no-install-recommends", "--no-remove", "--allow-downgrades"]) assertEquals(deb.includes(flag), true, flag);
+});
+
 Deno.test("matching Tool inventory is a read-only no-op", () => {
     assertEquals(toolState("inspect", { ...apt, ...aptFacts }), { installed_version: "2.2.1-1", needs_write: false });
 });

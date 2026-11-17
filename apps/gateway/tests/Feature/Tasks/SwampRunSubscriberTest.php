@@ -95,7 +95,7 @@ it('requests child evidence reconciliation and keeps following the parent root',
     $operation = Operation::query()->create(['kind' => 'tasks.check', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
         'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run], 'input' => []]);
     config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.run_token' => 'run-token']);
-    $socket = endedRunSocket('task-check-project', 'succeeded', true);
+    $socket = endedRunSocket('task-instance-check', 'succeeded', true);
     $subscriber = new SwampRunSubscriber($socket, new NullLogger);
     $subscriber->follow($operation->id);
     $subscriber->pass();

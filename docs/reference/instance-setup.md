@@ -2,9 +2,9 @@
 title: "Instance setup and teardown"
 description: "How a Project stores named setup and teardown commands, and when Orbit runs them for a development Instance."
 covers:
-  - apps/gateway/app/Domain/{Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleStepStore,GatewaySetupSteps}.php,Instances/{StepLists/**,InstanceSourceProfileGuard.php,DependencyCopy/InstanceDependencyCopier.php}}
-  - apps/gateway/app/Actions/*/{Create*InstanceAction,CopyInstanceDependenciesAction,RegisterInstanceAction,StartInstanceStepListAction}.php
-  - apps/gateway/app/Infrastructure/{Instances/{RemoteDevelopmentInstanceConfigurator,RemoteInstanceDependencyCopier},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
+  - apps/gateway/app/Domain/{Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleStepStore,GatewaySetupSteps}.php,Instances/{StepLists/**,InstanceSourceProfileGuard.php}}
+  - apps/gateway/app/Actions/*/{StartDevelopmentInstanceCreateAction,RegisterInstanceAction,StartInstanceStepListAction}.php
+  - apps/gateway/app/Infrastructure/{Instances/RemoteDevelopmentInstanceConfigurator,AppDev/DevelopmentSshExecutor}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
   - apps/gateway/{app/Models/ProjectLifecycleStep.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/cli/app/Commands/Instances/{SetupInstanceCommand,*SetupStepCommand,*TeardownStepCommand}.php
@@ -188,7 +188,7 @@ A failed native run exposes a bounded, redacted stderr tail or native step error
 
 ## Bootstrap the Orbit repository
 
-The Orbit Project can record `bin/bootstrap` as a setup step, or record its locked dependency installs as separate steps. It installs the locked dependencies, seeds caches, and runs the checks in all five Composer projects. A cold bootstrap can exceed the list budget.
+The Orbit Project can record `bin/bootstrap` as a setup step, or record its locked dependency installs as separate steps. It installs the locked dependencies, seeds caches, and runs the checks in all four Composer projects. A cold bootstrap can exceed the list budget.
 
 ```bash
 orbit instance:setup-step:create bootstrap --project=PROJECT_ID --command='bin/bootstrap' --timeout=540
@@ -210,9 +210,9 @@ Add a first setup step that copies the website's `vendor` and `node_modules` fro
 
 ### Project 46
 
-Record ordered development deploy steps for every locked dependency tree: the repository root, `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, `packages/php-sdk`, and `apps/e2e`. Run the Gateway migrations and the builds required by the deployed applications after their installs. Keep these steps required. No step runs a test suite: main CI fills the [main caches](/reference/implementation-loop#main-caches). Preserve Instance-only setup in the setup list. Retry `orbit instance:create 46 9 default --json` to finish the existing SourceResolved Instance 303 without a Route; confirm its identity and active status, then run `orbit instance:deploy 303 --json` and check the final result.
+Record ordered development deploy steps for every locked dependency tree: the repository root, `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, and `packages/php-sdk`. Run the Gateway migrations and the builds required by the deployed applications after their installs. Keep these steps required. No step runs a test suite: main CI fills the [main caches](/reference/implementation-loop#main-caches). Preserve Instance-only setup in the setup list. Retry `orbit instance:create 46 9 default --json` to finish the existing SourceResolved Instance 303 without a Route; confirm its identity and active status, then run `orbit instance:deploy 303 --json` and check the final result.
 
-Add a first setup step that copies present `vendor` and `node_modules` folders at the repository root and under `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, `packages/php-sdk`, and `apps/e2e`. Pint's `vendor/pint.cache` and PHPStan's `vendor/phpstan/cache` travel with `vendor`. Keep locked installs for every dependency tree as the empty-seed fallback. Never copy `.env`, databases, logs, build runtime files or symlinks that point outside the seed.
+Add a first setup step that copies present `vendor` and `node_modules` folders at the repository root and under `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, and `packages/php-sdk`. Pint's `vendor/pint.cache` and PHPStan's `vendor/phpstan/cache` travel with `vendor`. Keep locked installs for every dependency tree as the empty-seed fallback. Never copy `.env`, databases, logs, build runtime files or symlinks that point outside the seed.
 
 ### Cache ownership
 

@@ -26,17 +26,15 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | --- | --- | --- |
 | [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) | Run MySQL servers with a Gateway-held admin password | In progress |
 | [0196](/decisions/0196-derive-application-directory-from-web-root) | Derive the application directory from the web root; serve more web roots through Routes | In progress |
-| [0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) | Build task VM images as chains of small jobs | Retired: the Incus recipe image build is gone ([the base VM and its snapshot](/reference/compute-drivers#the-base-vm-and-its-snapshot)); replaced by [0247](/decisions/0247-keep-fleet-software-current-through-tested-recipe-changes) |
 | [0210](/decisions/0210-give-each-extension-its-own-code-boundary) | Give each extension its own code boundary | In progress |
 | [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) | Turn ProxyCli into the AI router extension | In progress; changes the [task VM model proxy origin](/reference/compute-drivers#limit-fleet-traffic-on-the-hub); its step 4 adds amendments A1 and A3 to [0210](/decisions/0210-give-each-extension-its-own-code-boundary) |
 | [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) | Run CI runners through a ci-runner role | In progress; the host role is built, Gateway-owned runner records and registration remain pending |
 | [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | In progress; builds on [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) and follows its build steps |
 | [0215](/decisions/0215-start-development-processes-from-project-definitions) | Start development Processes from Project definitions | In progress |
 | [0218](/decisions/0218-take-long-commands-off-the-request-path) | Take long commands off the request path | In progress; replaces the deployment history with operations and lowers the request limit; changes the history reads of [automatic deployments](/reference/deployments#automatic-deployments) and amendment A3 of [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) |
-| [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) | Answer Cluster names from a DNS server on the Router | In progress; replaced by [0248](/decisions/0248-render-private-dns-as-desired-state) |
 | [0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users) | Run Valkey Database servers with Orbit-owned ACL users | In progress; adds a driver to [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) |
 | [0223](/decisions/0223-run-one-gate-from-handoff-to-merge) | Run one gate from handoff to merge | In progress; changes [CI main cache imports](/reference/instance-setup#import-ci-main-caches); leaves runner registration with the [operator](/reference/node-provisioning#ci-roles-own-hosts-operators-own-runner-registration) |
-| [0226](/decisions/0226-split-private-dns-on-managed-peers) | Split private DNS on managed peers | In progress; approved on 2026-10-19; its peer-resolver parts stay, the Cluster DNS member step is replaced by [0248](/decisions/0248-render-private-dns-as-desired-state); amends [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) |
+| [0226](/decisions/0226-split-private-dns-on-managed-peers) | Split private DNS on managed peers | In progress; its peer-resolver parts stay; [0248](/decisions/0248-render-private-dns-as-desired-state) replaces the Cluster DNS member step |
 | [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations) | Let an orchestrator drive task work through Gateway operations | In progress; decided on 2026-10-22; amends [0218](/decisions/0218-take-long-commands-off-the-request-path), and [Node commands](/reference/node-agent#commands) |
 | [0240](/decisions/0240-bound-environment-import-private-output) | Bound environment import private output | In progress; one-store proposal only, no runtime change |
 | [0242](/decisions/0242-signed-apt-tool-repositories) | Signed apt repositories for Tools | In progress |
@@ -44,14 +42,14 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0244](/decisions/0244-track-every-action-as-one-task) | Track every action as one task | In progress; open questions resolved on 2026-11-01; changes [0218](/decisions/0218-take-long-commands-off-the-request-path), [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations) and 0238 |
 | [0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source) | Identify firewall rules by port, protocol and source | In progress; supersedes 0241 |
 | [0246](/decisions/0246-show-task-progress-through-one-resumable-read) | Show task progress through one resumable read | In progress; builds on [0244](/decisions/0244-track-every-action-as-one-task) |
-| [0247](/decisions/0247-keep-fleet-software-current-through-tested-recipe-changes) | Keep fleet software current through tested recipe changes | In progress; decided on 2026-11-03 and 2026-11-04; replaces the task VM image build of [0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) |
-| [0248](/decisions/0248-render-private-dns-as-desired-state) | Render private DNS as desired state | In progress; option A chosen on 2026-11-07; replaces [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) |
-| [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) | Run instances and task groups in Incus containers | Proposed; decided on 2026-11-09; replaces the outer task VM and the Project VM |
+| [0247](/decisions/0247-keep-fleet-software-current-through-tested-recipe-changes) | Keep fleet software current through tested recipe changes | In progress; replaces the [retired task VM image build](/reference/old-paths#task-vm-settings) |
+| [0248](/decisions/0248-render-private-dns-as-desired-state) | Render private DNS as desired state | In progress; option A chosen; supersedes 0219's Cluster DNS design, not yet delivered |
+| [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) | Run instances and task groups in Incus containers | In progress; task copies and nested proofs built; universal container admission and production remain pending |
 | [0251](/decisions/0251-reach-the-wireguard-hub-over-the-recorded-lan) | Reach the WireGuard hub over the recorded LAN | In progress; decided on 2026-11-09 |
-| [0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder) | Reach the model router from containers through a Node forwarder | In progress; decided on 2026-11-09; per-container attribution open |
+| [0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder) | Reach the model router from containers through a Node forwarder | In progress; option A chosen: no per-container attribution for now |
 | [0253](/decisions/0253-patch-nodes-and-reboot-them-drained) | Patch Nodes and reboot them drained, one at a time | In progress; decided on 2026-11-09; implements requirement 1 of 0250 |
 | [0257](/decisions/0257-open-a-task-copy-pull-request-by-mode-and-never-merge-it) | Open a task copy's pull request by mode, and never merge it | In progress; decided by the owner; builds on [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) |
-| [0258](/decisions/0258-choose-the-container-server-per-project) | Choose the container server per Project | In progress; decided by the owner on 2026-11-15; the recipe pins Conn Server 0.1.1; a live trial passed; builds on [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) |
+| [0258](/decisions/0258-choose-the-container-server-per-project) | Choose the container server per Project | In progress; per-Project selection built; the [machine recipe](/reference/compute-drivers#machine-software-recipe) owns the current pin; builds on [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) |
 | [0259](/decisions/0259-deliver-per-project-agent-instructions-from-documents) | Deliver a Project's agent instructions from its Documents | In progress; decided by the owner on 2026-11-15; builds on [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) |
 | [0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies) | Share CI places between runners and proof copies | In progress, build step 5 in work; decided by the owner on 2026-11-15; changes the copy places of proof:run; builds on [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) |
 | [0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes) | Restore a sleeping container's memory before it resumes | In progress; extends the fast wake of [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers); a Python engine in place of the specified native one |
@@ -59,9 +57,9 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) | Run production releases in hot, live and old containers | In progress; proposed, design only; specifies step 10 of [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) |
 | [0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov) | Build container PHP on glibc with a CLI-only PCOV | In progress; decided by the owner on 2026-11-15; amends [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) |
 | [0265](/decisions/0265-sleep-idle-production-containers) | Sleep idle production containers | In progress; decided by the owner on 2026-11-16, parts 8-10 by the orchestrator; built with the production containers of [0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers); supersedes "production containers never sleep" in [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) and [0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) |
-| [0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) | Sleep and wake containers through a signed-order executor | In progress; decided by the owner on 2026-11-16, design only; replaces most of [0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes) |
-| [0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor) | Run fast Node actions in a signed-order executor | In progress; decided by the owner on 2026-11-16, design only; generalizes [0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) |
-| [0268](/decisions/0268-one-owner-for-the-workspace) | One owner for the workspace | In progress; decided by the owner on 2026-11-16; amends [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers); amended on 2026-11-16: passwordless sudo for `agent` in every container, and the app user `orbit` and its group `work` renamed `www-data` inside containers |
+| [0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) | Sleep and wake containers through a signed-order executor | In progress; executor slices 1–3 built, command admission and sleep/wake pending; replaces most of [0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes) |
+| [0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor) | Run fast Node actions in a signed-order executor | In progress; shared transport built through [0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor); fast-action callers and clone action pending |
+| [0268](/decisions/0268-one-owner-for-the-workspace) | One owner for the workspace | In progress; decided by the owner on 2026-11-16; amends [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers); amended on 2026-11-16: passwordless sudo for `agent`; normal containers use stock `www-data` 33:33, while nested fleets keep `orbit`/`work` with `www-data` in `work` |
 | [0269](/decisions/0269-run-the-gateway-in-release-containers-with-frankenphp-worker-mode) | Run the Gateway in release containers with FrankenPHP worker mode | In progress; decided by the owner on 2026-11-16, design only; applies [0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) to the Gateway |
 
 ## Retired decisions
@@ -71,11 +69,11 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | Record | Decision | Now in |
 | --- | --- | --- |
 | 0001 | Adopt the closed Tool Management contract | [Tools: Why it works this way](/reference/tools#why-it-works-this-way) |
-| 0002 | Keep proof resources task-owned and production separate | [Incus topologies: Exact ownership](/reference/incus-topologies#exact-ownership) |
+| 0002 | Keep proof resources task-owned and production separate | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0003 | Adopt the singleton Metrics role contract | [Metrics role](/reference/metrics) |
 | 0004 | Define the verify-only Doctor boundary | [doctor: Why it works this way](/cli/doctor#why-it-works-this-way) |
-| 0005 | Adopt a rolling Incus development topology (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
-| 0006 | Separate disposable discovery from immutable proof (superseded in part) | [Incus topologies: A live mount](/reference/incus-topologies#a-live-mount) |
+| 0005 | Adopt a rolling Incus development topology (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
+| 0006 | Separate disposable discovery from immutable proof (superseded in part) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0008 | Define typed app-dev node storage settings | [Node settings](/reference/node-settings) |
 | 0009 | Adopt clustered Instance routing | [Routes: Set up private traffic](/reference/routes#set-up-private-traffic) |
 | 0010 | Record decisions before implementation issues (superseded) | [Contributor guide: Decisions ship with their feature](/contributor-guide#decisions-ship-with-their-feature) |
@@ -87,7 +85,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0016 | Reconcile App identity and source-default updates | [Projects: Update a Project](/reference/projects#update-a-project) |
 | 0017 | Make Cluster placement optional | [cluster: Placement and TLDs](/cli/cluster#placement-and-tlds) |
 | 0018 | Register caller-local development worktrees as Instances | [Applications: Registration takes ownership (superseded by 0027)](/domains/applications#registration-takes-ownership) |
-| 0019 | Run disposable Incus scenario lanes (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
+| 0019 | Run disposable Incus scenario lanes (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0021 | Pin Sury PHP-FPM with OPcache profiles per role | [PHP runtimes: Why it works this way](/reference/php-runtime#why-it-works-this-way) |
 | 0022 | Track the issue workspace and delete it before merge (superseded) | [Contributor guide: Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) |
 | 0023 | Separate hostname selection from Cluster routing | [Routes: Why it works this way](/reference/routes#routes-own-domains-and-cluster-membership-owns-scope) |
@@ -102,12 +100,12 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0032 | Preserve explicit Instance branch selection | [Applications: An explicit branch stays explicit](/domains/applications#an-explicit-branch-stays-explicit) |
 | 0033 | Trust WireGuard members for private Node traffic | [Routes: Private network trust](/reference/routes#private-network-trust) |
 | 0034 | Select Instance PHP from Composer constraints | [PHP runtimes: Select the PHP version](/reference/php-runtime#select-the-php-version) |
-| 0035 | Close out mutating proofs by refreshing the topology snapshot (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
+| 0035 | Close out mutating proofs by refreshing the topology snapshot (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0036 | Support only Instances | [Applications: One application model](/domains/applications#one-application-model) |
-| 0037 | Promote fresh three-node topology snapshots (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
+| 0037 | Promote fresh three-node topology snapshots (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0038 | Cascade Instance removal through processes and schedules | [Instance removal: Processes and Schedules](/reference/instance-removal#processes-and-schedules) |
 | 0039 | Use round-robin for production Route pools | [Routes: Serve a production pool](/reference/routes#serve-a-production-pool) |
-| 0040 | Extend issue proof with one app-prod Node (superseded) | [Incus topologies: Declared Nodes](/reference/incus-topologies#declared-nodes) |
+| 0040 | Extend issue proof with one app-prod Node (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0041 | Delete an empty Route during Instance removal | [Routes: Remove a Route](/reference/routes#remove-a-route) |
 | 0042 | Provision Tool Managers on demand | [Tools: Managers on demand](/reference/tools#managers-on-demand-independent-of-roles) |
 | 0043 | Manage Homebrew Core formulae | [Tools: Homebrew formulae](/reference/tools#homebrew-formulae) |
@@ -181,7 +179,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0111 | Retain completed transfer history through Instance removal | [Instance removal: Keep unfinished transfer history](/reference/instance-removal#keep-unfinished-transfer-history) |
 | 0112 | Isolate agent threads behind drivers | [Tasks: Agent threads](/reference/tasks#agent-threads) |
 | 0113 | Gate task completion on validation and review | [Tasks: Rubric and reminders](/reference/tasks#execution-ownership) |
-| 0114 | Expand the three-node Incus Cluster (superseded) | [Incus topologies: Declared roles only](/reference/incus-topologies#declared-roles-only) |
+| 0114 | Expand the three-node Incus Cluster (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0114 | Judge task completion as separate checks | [Tasks: Rubric and reminders](/reference/tasks#execution-ownership) |
 | 0115 | Run Project setup commands on development Instances | [Instance setup and teardown](/reference/instance-setup) |
 | 0116 | Run task implementers on Pi | [Tasks: Drivers](/reference/tasks#drivers) |
@@ -203,15 +201,15 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0132 | Pause a task only for its acting thread or a real question | [Tasks: Session routing](/reference/tasks#session-routing) |
 | 0133 | Verify typed subtask deliverables at handoff | [Tasks: Deliverables](/reference/tasks#deliverables) |
 | 0134 | Resume Pi agent streams from a cursor | [Tasks: Agent viewer](/reference/tasks#agent-viewer) |
-| 0135 | Run Incus topologies for task workspace clones through a bridge worktree | Deleted with shared mode: [Incus topologies](/reference/incus-topologies) |
-| 0136 | Run long-lived topology processes as transient units | [Incus topologies: Long-lived processes as systemd units](/reference/incus-topologies#long-lived-processes-as-systemd-units) |
+| 0135 | Run Incus topologies for task workspace clones through a bridge worktree (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
+| 0136 | Run long-lived topology processes as transient units (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0137 | Refuse carried Caddy global options | [Caddy configuration: Why it works this way](/reference/caddy-configuration#orbit-owns-the-global-options) |
 | 0138 | Opt public Ingress sites into Caddy certificate automation | [Caddy configuration: Public Ingress certificates](/reference/caddy-configuration#public-ingress-certificates) |
 | 0139 | Collect Caddy HTTP metrics on every Node | [Caddy configuration: Published layout](/reference/caddy-configuration#published-layout) |
 | 0140 | Watch settling pull requests for conflicts and failed checks | [Tasks: Fix a settling pull request](/reference/tasks#execution-ownership) |
 | 0141 | Build each Node's Caddyfile on the Gateway | [Caddy configuration: Node Caddy build](/reference/caddy-configuration#node-caddy-build) |
 | 0142 | Apply Plausible's ClickHouse configuration from the analytics role | [Analytics role: ClickHouse configuration](/reference/analytics#clickhouse-configuration) |
-| 0143 | Record topology evidence and sync without verification | [Incus topologies: Evidence log](/reference/incus-topologies#evidence-log) |
+| 0143 | Record topology evidence and sync without verification (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0144 | Migrate waiting connections when Caddy reloads | [Node provisioning: Caddy reloads](/reference/node-provisioning#caddy-reloads) |
 | 0145 | Publish the proxycli collector on collector.cli-proxy-api.orbit | [ai-router: A reserved name, not a Route](/reference/ai-router#a-reserved-name-not-a-route) |
 | 0146 | Retire the Herdr integration | [extension (Herdr is removed)](/cli/extension) |
@@ -263,15 +261,15 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0193 | Run task agents as a dedicated user | [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop); [GitHub App: The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) |
 | 0193 | Record development branch renames | [Applications: Development branch reconciliation](/domains/applications#development-branch-reconciliation) |
 | 0194 | Respond to GitHub review feedback | [Tasks: Trusted reviews are input, not merge authority](/reference/tasks#execution-ownership) |
-| 0195 | Request topologies for review with an operator container | [Incus topologies: Nested in the task VM](/reference/incus-topologies#nested-in-the-task-vm); [Incus topologies: An isolated operator for web work](/reference/incus-topologies#an-isolated-operator-for-web-work) |
+| 0195 | Request topologies for review with an operator container (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0197 | Native Project Documents with private UpCloud S3 storage | [Project Documents: Why it works this way](/reference/project-documents#why-it-works-this-way) |
 | 0199 | Post direction requests to OpsBot immediately (reversed) | [Tasks: Assistance is recorded in Activity](/reference/tasks#assistance-is-recorded-in-activity) |
-| 0200 | Run each task group in its own sandbox VM | [Compute drivers: Task VMs](/reference/compute-drivers#task-vms); [Compute drivers: Orbit Project](/reference/compute-drivers#orbit-project); [Compute drivers: Why task VMs work this way](/reference/compute-drivers#why-task-vms-work-this-way); [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop); [Tasks: Every task group runs on its own task VM](/reference/tasks#every-task-group-runs-on-its-own-task-vm); [Incus topologies: Nested in the task VM](/reference/incus-topologies#nested-in-the-task-vm) |
+| 0200 | Run each task group in its own sandbox VM | [Compute drivers: Task VMs](/reference/compute-drivers#task-vms); [Compute drivers: Orbit Project](/reference/compute-drivers#orbit-project); [Compute drivers: Why task VMs work this way](/reference/compute-drivers#why-task-vms-work-this-way); [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop); [Tasks: Every task group runs on its own task VM](/reference/tasks#every-task-group-runs-on-its-own-task-vm); [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0201 | Release the Gateway automatically from green main | [Update and recover a Gateway: Automatic releases](/reference/gateway-recovery#automatic-releases); [Update and recover a Gateway: Why it works this way](/reference/gateway-recovery#why-it-works-this-way) |
 | 0202 | The fleet follows the Gateway through orbit self-update | [Update and recover a Gateway: Fleet rollout](/reference/gateway-recovery#fleet-rollout); [Orbit self-update](/reference/self-update); [Node agent: Typed commands over SSH](/reference/node-agent#typed-commands-over-ssh) |
 | 0203 | Review and merge pull requests inside Orbit | [Tasks: Review and merge](/reference/tasks#review-and-merge); [Tasks: Orbit reviews before it pushes](/reference/tasks#execution-ownership); [GitHub App: How Orbit reviews and merges a pull request](/reference/github-app#how-orbit-reviews-and-merges-a-pull-request) |
 | 0205 | Publish database credentials to Vaultwarden | [Vaultwarden](/reference/vaultwarden); [Vaultwarden: Why it works this way](/reference/vaultwarden#why-it-works-this-way) |
-| 0207 | One image recipe, shared package cache, no workspace templates | [Compute drivers: Machine software recipe](/reference/compute-drivers#machine-software-recipe); [Incus topologies: One template Node](/reference/incus-topologies#one-template-node) |
+| 0207 | One image recipe, shared package cache, no workspace templates | [Compute drivers: Machine software recipe](/reference/compute-drivers#machine-software-recipe); [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0208 | Scan monorepo dependencies per sub-project | [Dependency contracts: Separate monorepo dependency sources](/reference/instance-dependency-contracts#separate-monorepo-dependency-sources) |
 | 0208 | Deploy the Gateway with Laravel migrations and explicit database recovery | [Update and recover a Gateway: Laravel owns migrations](/reference/gateway-recovery#laravel-owns-migrations) |
 | 0209 | Run long operations as durable queued operations | Withdrawn; Swamp runs every operation now. [Operations](/reference/operations#how-an-operation-runs) |
@@ -279,7 +277,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0216 | Run one exact PHP build everywhere | [Compute drivers: PHP build](/reference/compute-drivers#php-build); [Compute drivers: One PHP build](/reference/compute-drivers#one-php-build); [PHP runtimes: PHP build](/reference/php-runtime#php-build); [Feature delivery: One PHP build in CI](/reference/implementation-loop#one-php-build-in-ci) |
 | 0217 | Deploy production Instances automatically by polling | [Instance releases: Automatic deployments](/reference/deployments#automatic-deployments); [Instance releases: Poll, do not wait for a webhook](/reference/deployments#poll-do-not-wait-for-a-webhook) |
 | 0220 | Serialize task workspaces with one durable lease | Withdrawn; the lease is gone. The group's Operation lock serializes the work. [Tasks: Execution ownership](/reference/tasks#execution-ownership) |
-| 0222 | Give task VMs a cloned topology seed | [Compute drivers: The topology seed](/reference/compute-drivers#the-topology-seed); [Incus topologies: One template Node](/reference/incus-topologies#one-template-node); [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template); [Incus topologies: Nested in the task VM](/reference/incus-topologies#nested-in-the-task-vm) |
+| 0222 | Give task VMs a cloned topology seed (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0224 | Give each task group one workspace holder and one sender | Withdrawn; the tick it was built around is gone. [Tasks: Execution ownership](/reference/tasks#execution-ownership) |
 | 0225 | Make Node changes through agent commands | [Node agent: Commands](/reference/node-agent#commands); [Typed commands over SSH](/reference/node-agent#typed-commands-over-ssh) |
 | 0227 | Manage PostgreSQL on trusted private networks with explicit bindings and no port firewall | [Database servers: Why it works this way](/reference/database-servers#why-it-works-this-way) |
@@ -294,3 +292,5 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0239 | Let Swamp own dependency maintenance | [Instance dependencies: Why it works this way](/reference/instance-dependencies#why-it-works-this-way) |
 | 0241 | Firewall source allowlists (superseded by 0245) | [ADR 0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source) |
 | 0256 | A clone create is two Operations | [Instance containers: A clone create is two Operations](/reference/development-containers#a-clone-create-is-two-operations) |
+| 0206 | Build task VM images as chains of small jobs (removed) | [Old paths: Task VM settings](/reference/old-paths#task-vm-settings) |
+| 0219 | Answer Cluster names from a DNS on the Router (superseded) | [ADR 0248: Private DNS desired state](/decisions/0248-render-private-dns-as-desired-state) |

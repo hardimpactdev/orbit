@@ -16,8 +16,6 @@ inputs = [
   "swamp/ansible/tasks/gateway-ansible-collections.yml",
   "swamp/ansible/tasks/gateway-swamp-grants.yml",
   "swamp/ansible/tasks/proof-gateway-release.yml",
-  "swamp/ansible/tasks/task-vm-fleet.yml",
-  "swamp/ansible/task-vm-role.yml",
   "swamp/workflows/workflow-task-nested-apply.yaml",
   "swamp/proof/cli-release.json",
 ]

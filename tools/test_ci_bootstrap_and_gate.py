@@ -1,0 +1,612 @@
+"""Exercise bin/bootstrap and the candidate gate (bin/review-check) with real repositories."""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import shutil
+import threading
+import time
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+
+sys.dont_write_bytecode = True
+REPOSITORY = Path(__file__).resolve().parents[1]
+BIN = REPOSITORY / 'bin'
+PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'packages/php-sdk')
+STATE_HOME = tempfile.TemporaryDirectory(prefix='orbit-gate-state-')
+# Git's automatic maintenance must finish before these disposable repositories are removed.
+# A template covers clones too: it applies where command-level Git configuration does not.
+GIT_TEMPLATE = Path(STATE_HOME.name) / 'git-template'
+GIT_TEMPLATE.mkdir()
+(GIT_TEMPLATE / 'config').write_text('[maintenance]\n\tautoDetach = false\n[gc]\n\tautoDetach = false\n')
+os.environ['GIT_TEMPLATE_DIR'] = str(GIT_TEMPLATE)
+
+
+def git(root, *args):
+    return subprocess.run(['git', *args], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+
+
+class RepositoryFixture(unittest.TestCase):
+    """A main repository whose origin is itself, with one commit that origin/main points at."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='orbit gate ')
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name) / 'main'
+        self.root.mkdir()
+        git(self.root, 'init', '-b', 'main')
+        git(self.root, 'config', 'user.name', 'Orbit')
+        git(self.root, 'config', 'user.email', 'orbit@example.test')
+        git(self.root, 'remote', 'add', 'origin', str(self.root))
+        (self.root / 'README.md').write_text('base')
+        self.commit = self.commit_change('initial')
+        git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit)
+        self.common = Path(git(self.root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+
+    def commit_change(self, message):
+        git(self.root, 'add', '.')
+        git(self.root, 'commit', '-m', message)
+        return git(self.root, 'rev-parse', 'HEAD')
+
+
+class BootstrapTest(RepositoryFixture):
+    def test_bootstrap_has_one_composer_cache_writer_and_preserves_authentication(self):
+        root = Path(self.temporary.name) / 'bootstrap-cache-writers'
+        (root / 'bin').mkdir(parents=True)
+        (root / 'bin/bootstrap').write_bytes((BIN / 'bootstrap').read_bytes())
+        git(root, 'init', '-b', 'main')
+        for project in PROJECTS:
+            (root / project).mkdir(parents=True)
+        for name in ('gateway-app-key',):
+            script = root / 'bin' / name
+            script.write_text('#!/bin/sh\nexit 0\n')
+            script.chmod(0o755)
+        composer = root / 'bin/composer'
+        composer.write_text('''#!/usr/bin/env python3
+import fcntl, json, os, sys
+from pathlib import Path
+if sys.argv[1] == 'install':
+    assert os.environ['BOOTSTRAP_LAST_ASYNC_PID'] == '', 'Composer installs must run synchronously'
+    assert json.loads(os.environ['COMPOSER_AUTH']) == {'github-oauth': {'github.com': 'fixture-token'}}
+    cache = Path(os.environ['COMPOSER_CACHE_DIR'])
+    assert cache == Path(os.environ['BOOTSTRAP_TEST_CACHE'])
+    with (cache / 'writer.lock').open('w') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            sys.exit('Concurrent Composer cache writers')
+        with (cache / 'installs').open('a') as calls:
+            calls.write(os.getcwd() + '\\n')
+    Path('vendor').mkdir(exist_ok=True)
+''')
+        composer.chmod(0o755)
+        # Observe Bash's async-job state, including jobs that already exited.
+        # The old background loop leaves a prior PID in every install after the
+        # first, so it fails even if the scheduler runs the jobs one at a time.
+        bash_environment = root / 'bash-env'
+        bash_environment.write_text('set -T\ntrap \'export BOOTSTRAP_LAST_ASYNC_PID="${!:-}"\' DEBUG\n')
+        downloads = root / 'downloads'
+        downloads.mkdir()
+        result = subprocess.run(['bash', str(root / 'bin/bootstrap'), '--skip-checks'],
+                                capture_output=True, text=True, env={
+                                    **os.environ, 'BASH_ENV': str(bash_environment), 'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH'],
+                                    'COMPOSER_CACHE_DIR': str(downloads), 'BOOTSTRAP_TEST_CACHE': str(downloads),
+                                    'COMPOSER_AUTH': json.dumps({'github-oauth': {'github.com': 'fixture-token'}}),
+                                })
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual([str(root / project) for project in PROJECTS],
+                         (downloads / 'installs').read_text().splitlines())
+        self.assertNotIn('fixture-token', result.stdout + result.stderr)
+
+    def bootstrap_fixture(self):
+        """A repository with the real bootstrap and its helpers, and a Composer that records each call."""
+        root = Path(self.temporary.name) / 'bootstrap'
+        (root / 'bin').mkdir(parents=True)
+        for name in ('bootstrap', 'gateway-app-key'):
+            (root / 'bin' / name).write_bytes((BIN / name).read_bytes())
+            (root / 'bin' / name).chmod(0o755)
+        # Keep bootstrap Git reads inside the disposable fixture.
+        git(root, 'init', '-b', 'main')
+        for project in PROJECTS:
+            (root / project).mkdir(parents=True)
+            (root / project / 'composer.json').write_text('{}')
+            (root / project / 'composer.lock').write_text('{}')
+        for name, outputs in {
+            'build-api': ('docs/openapi.json', 'docs/docs.json', 'apps/gateway/resources/mcp/tools.json'),
+            'docs-navigation': ('docs/docs.json',),
+        }.items():
+            path = root / 'bin' / name
+            path.write_text('#!/usr/bin/env python3\nimport os\nfrom pathlib import Path\n'
+                            f'root = Path({str(root)!r})\n'
+                            f'with Path(os.environ["BOOTSTRAP_TEST_CALLS"]).open("a") as calls: calls.write("{name}\\n")\n'
+                            'if os.environ.get("BOOTSTRAP_TEST_FAIL") == "generate": raise SystemExit(7)\n'
+                            f'for name in {outputs!r}:\n'
+                            '    output = root / name\n    output.parent.mkdir(parents=True, exist_ok=True)\n'
+                            '    output.write_text("generated")\n')
+            path.chmod(0o755)
+        (root / 'apps/docs/artisan').write_text('<?php mkdir(__DIR__."/../../docs/generated", 0777, true); file_put_contents(__DIR__."/../../docs/generated/context.json", "generated");')
+        self.calls = root / 'calls'
+        for name, script in {
+            'composer': '''#!/bin/sh
+if [ "$1" = --version ]; then echo fixture-composer; exit; fi
+if [ "$1" = install ]; then test "$COMPOSER_CACHE_DIR" = "$BOOTSTRAP_TEST_COMPOSER_CACHE" || exit 8; fi
+echo "composer $*" >> "$BOOTSTRAP_TEST_CALLS"
+if [ "$1" = "$BOOTSTRAP_TEST_FAIL" ]; then exit 7; fi
+if [ "$1" = install ]; then
+    mkdir -p vendor
+    touch vendor/autoload.php
+    case "$PWD" in
+        */apps/gateway) ../../bin/build-api ;;
+        */apps/docs) ../../bin/docs-navigation && php artisan ;;
+    esac
+fi
+''',
+        }.items():
+            path = root / 'bin' / name
+            path.write_text(script)
+            path.chmod(0o755)
+        self.bootstrap_env = {**os.environ, 'ORBIT_HOME': str(root / 'orbit-home'),
+                              'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH'],
+                              'BOOTSTRAP_TEST_CALLS': str(self.calls), 'BOOTSTRAP_TEST_FAIL': '',
+                              'COMPOSER_CACHE_DIR': str(root / 'downloads'),
+                              'BOOTSTRAP_TEST_COMPOSER_CACHE': str(root / 'downloads')}
+        return root
+
+    def bootstrap(self, root, *arguments, **environment):
+        self.calls.unlink(missing_ok=True)
+        return subprocess.run(['bash', str(root / 'bin/bootstrap'), *arguments], capture_output=True, text=True,
+                              env={**self.bootstrap_env, **environment})
+
+    def test_bootstrap_installs_then_runs_each_projects_full_tests_and_quality_checks(self):
+        root = self.bootstrap_fixture()
+        result = self.bootstrap(root)
+        self.assertEqual(0, result.returncode, result.stderr)
+        driver = subprocess.run(['git', 'config', '--local', '--get', 'merge.orbit-generated.driver'], cwd=root)
+        self.assertEqual(1, driver.returncode)
+        lines = self.calls.read_text().splitlines()
+        composer_calls = [line for line in lines if line.startswith('composer ')]
+        self.assertEqual(['composer install --no-interaction --prefer-dist'] * 4, composer_calls[:4])
+        # Without test impact analysis, the stock full suite is the only test command.
+        self.assertEqual(['composer test', 'composer check'] * 4, composer_calls[4:])
+        # Seed refreshes still check everything when dependencies and generated outputs are current.
+        result = self.bootstrap(root)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(['composer test', 'composer check'] * 4, self.calls.read_text().splitlines())
+
+    def test_bootstrap_reuses_inputs_and_rebuilds_only_changed_or_missing_work(self):
+        root = self.bootstrap_fixture()
+        self.assertEqual(0, self.bootstrap(root, '--skip-checks').returncode)
+        key = (root / 'orbit-home/gateway.app-key').read_bytes()
+        self.assertEqual(0, self.bootstrap(root, '--skip-checks').returncode)
+        self.assertFalse(self.calls.exists(), 'Warm bootstrap should run no installs or generators')
+        self.assertEqual(key, (root / 'orbit-home/gateway.app-key').read_bytes())
+        for name, expected in (
+            ('apps/cli/composer.lock', ['composer install --no-interaction --prefer-dist']),
+            ('apps/gateway/routes/api.php', ['build-api']),
+            ('docs/example.md', ['docs-navigation']),
+            ('apps/gateway/routes/api.php', ['build-api']),
+        ):
+            with self.subTest(input=name):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(path.read_text() + 'changed' if path.exists() else 'changed')
+                result = self.bootstrap(root, '--skip-checks')
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(expected, self.calls.read_text().splitlines())
+        (root / 'apps/gateway/resources/mcp/tools.json').unlink()
+        self.assertEqual(0, self.bootstrap(root, '--skip-checks').returncode)
+        self.assertEqual(['build-api'], self.calls.read_text().splitlines())
+        (root / 'apps/cli/vendor/autoload.php').unlink()
+        self.assertEqual(0, self.bootstrap(root, '--dependencies-only').returncode)
+        self.assertEqual(['composer install --no-interaction --prefer-dist'], self.calls.read_text().splitlines())
+        self.assertEqual('.githooks', git(root, 'config', 'core.hooksPath'))
+
+    def test_bootstrap_retries_failed_generation_even_if_sources_are_restored(self):
+        root = self.bootstrap_fixture()
+        self.assertEqual(0, self.bootstrap(root, '--skip-checks').returncode)
+        path = root / 'apps/gateway/routes/api.php'
+        path.parent.mkdir(parents=True)
+        path.write_text('changed')
+        self.assertNotEqual(0, self.bootstrap(root, '--skip-checks', BOOTSTRAP_TEST_FAIL='generate').returncode)
+        path.unlink()
+        result = self.bootstrap(root, '--skip-checks')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(['build-api'], self.calls.read_text().splitlines())
+
+    def test_bootstrap_with_skipped_checks_installs_dependencies_only(self):
+        root = self.bootstrap_fixture()
+        result = self.bootstrap(root, '--skip-checks')
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn('composer test', self.calls.read_text())
+        self.assertNotIn('composer check', self.calls.read_text())
+        self.assertEqual(2, self.bootstrap(root, '--with-node').returncode)
+
+    def test_bootstrap_with_bun_and_rust_installs_their_locked_dependencies(self):
+        root = self.bootstrap_fixture()
+        for name in ('bun', 'cargo'):
+            fake = root / 'bin' / name
+            fake.write_text(f'#!/bin/sh\nif [ "$1" = --version ]; then echo fixture-{name}; exit; fi\n'
+                            'if [ "$1" = metadata ]; then test -f "$CARGO_HOME/registry/cache/$(basename "$PWD").crate"; exit; fi\n'
+                            f'echo "{name} $(basename "$PWD") $*" >> "$BOOTSTRAP_TEST_CALLS"\n'
+                            'mkdir -p node_modules "$CARGO_HOME/registry/cache"\n'
+                            'touch "$CARGO_HOME/registry/cache/$(basename "$PWD").crate"\n')
+            fake.chmod(0o755)
+        for project in ('apps/web', 'apps/desktop/src-tauri', 'apps/agent'):
+            (root / project).mkdir(parents=True, exist_ok=True)
+        self.bootstrap_env['CARGO_HOME'] = str(root / 'cargo-home')
+        result = self.bootstrap(root, '--skip-checks', '--with-bun', '--with-rust')
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(['bun web install --frozen-lockfile',
+                          'bun desktop install --frozen-lockfile', 'cargo agent fetch --locked',
+                          'cargo src-tauri fetch --locked'],
+                         [line for line in self.calls.read_text().splitlines() if line.startswith(('bun ', 'cargo '))])
+        result = self.bootstrap(root, '--skip-checks', '--with-bun', '--with-rust')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertFalse(self.calls.exists())
+        for name, expected in (('apps/web/bun.lock', 'bun web install --frozen-lockfile'),
+                               ('apps/desktop/bunfig.toml', 'bun desktop install --frozen-lockfile'),
+                               ('apps/agent/Cargo.lock', 'cargo agent fetch --locked'),
+                               ('apps/agent/crates/contract/Cargo.toml', 'cargo agent fetch --locked')):
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text('changed')
+            result = self.bootstrap(root, '--skip-checks', '--with-bun', '--with-rust')
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertEqual([expected], self.calls.read_text().splitlines())
+        (root / 'cargo-home/registry/cache/agent.crate').unlink()
+        result = self.bootstrap(root, '--skip-checks', '--with-bun', '--with-rust')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(['cargo agent fetch --locked'], self.calls.read_text().splitlines())
+
+    def test_bootstrap_fails_when_any_step_fails_and_runs_no_tests_before_install_passes(self):
+        root = self.bootstrap_fixture()
+        for failure in ('install', 'test', 'check'):
+            with self.subTest(failure=failure):
+                result = self.bootstrap(root, BOOTSTRAP_TEST_FAIL=failure)
+                self.assertNotEqual(0, result.returncode)
+                if failure == 'install':
+                    self.assertNotIn('composer test', self.calls.read_text())
+
+
+class ReviewGateTest(RepositoryFixture):
+    def gate_fixture(self):
+        (self.root / 'bin').mkdir()
+        (self.root / 'tools').mkdir()
+        (self.root / 'tools/check_budget.py').write_bytes(REPOSITORY.joinpath('tools/check_budget.py').read_bytes())
+        runner = self.root / 'bin/review-check'
+        runner.write_bytes((BIN / 'review-check').read_bytes())
+        runner.chmod(0o755)
+        processes = self.root / 'bin/check-processes'
+        processes.write_bytes((BIN / 'check-processes').read_bytes())
+        processes.chmod(0o755)
+        (self.root / 'bin/ci-build-plan').write_bytes((BIN / 'ci-build-plan').read_bytes())
+        (self.root / 'bin/ci-registry').write_bytes((BIN / 'ci-registry').read_bytes())
+        shutil.copytree(REPOSITORY / '.github/ci', self.root / '.github/ci')
+        # A root file selects every CI job, Swamp included; its shape gate and workflow validation pass here.
+        (self.root / 'swamp').mkdir(parents=True)
+        (self.root / 'bin/swamp-shape-gate').write_text('')
+        docs_impact = self.root / 'bin/docs-impact'
+        docs_impact.write_text("""#!/bin/sh
+printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_DOCS"
+if [ "$GATE_TEST_MODE" = docs ]; then exit 5; fi
+""")
+        docs_impact.chmod(0o755)
+        for name in ('check-operation-kinds', 'build-api', 'api-fixtures'):
+            check = self.root / 'bin' / name
+            check.write_text('#!/bin/sh\nexit 0\n')
+            check.chmod(0o755)
+        for project in PROJECTS:
+            directory = self.root / project
+            directory.mkdir(parents=True)
+            (directory / '.gitkeep').write_text('')
+            # A gate that runs Pest fails: CI runs the test suites.
+            pest = directory / 'vendor/bin/pest'
+            pest.parent.mkdir(parents=True)
+            pest.write_text('#!/bin/sh\necho "The candidate gate runs no tests."\nexit 1\n')
+            pest.chmod(0o755)
+        self.commit_change('gate fixture')
+        fake_bin = Path(self.temporary.name) / 'fake-bin'
+        fake_bin.mkdir()
+        composer = fake_bin / 'composer'
+        composer.write_text("""#!/bin/sh
+printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_CALLS"
+case "$1" in
+    test) echo "The candidate gate runs no tests."; exit 1 ;;
+esac
+if [ "$1" = check ]; then
+    printf '%s|%s\\n' "${PWD##*/}" "${ORBIT_CHECK_PROCESSES:-}" >> "$GATE_TEST_PROCESSES"
+fi
+if [ "$1" = check ] && [ -n "${GATE_TEST_BARRIER:-}" ]; then
+    case "${PWD##*/}" in
+        cli) mine=cli; other=docs ;;
+        docs) mine=docs; other=cli ;;
+        *) mine= ;;
+    esac
+    if [ -n "$mine" ]; then
+        touch "$GATE_TEST_BARRIER/$mine"
+        waited=0
+        while [ ! -e "$GATE_TEST_BARRIER/$other" ]; do
+            waited=$((waited + 1))
+            [ "$waited" -gt "${GATE_TEST_BARRIER_TICKS:-30}" ] && exit 8
+            sleep 0.1
+        done
+    fi
+fi
+if [ "$1" = check ] && [ "${PWD##*/}" = php-sdk ]; then
+    case "$GATE_TEST_MODE" in
+        fail) exit 7 ;;
+        format) echo formatted > "$GATE_TEST_ROOT/README.md" ;;
+        move) git -C "$GATE_TEST_ROOT" commit -q --allow-empty -m moved ;;
+    esac
+fi
+""")
+        composer.chmod(0o755)
+        self.gate_env = {**os.environ, 'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
+                         'GATE_TEST_CALLS': str(self.common / 'calls'), 'GATE_TEST_ROOT': str(self.root),
+                         'GATE_TEST_DOCS': str(self.common / 'docs'),
+                         'GATE_TEST_PROCESSES': str(self.common / 'processes')}
+        for name in ('ORBIT_CHECK_PROCESSES', 'ORBIT_DOCS_PR_BODY_FILE'):
+            self.gate_env.pop(name, None)
+        return runner
+
+    def test_gate_runs_all_four_projects_and_records_builder_and_exact_candidate(self):
+        runner = self.gate_fixture()
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        self.assertTrue(report['passed'])
+        self.assertEqual('builder', report['role'])
+        self.assertEqual(git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
+        self.assertEqual(self.commit, report['base'])
+        waiver = self.common / 'orbit/proposed-pr-bodies/main.md'
+        expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit, '--waiver-file', str(waiver)])]
+        for project in PROJECTS:
+            expected.extend((project, command) for command in [['composer', 'check']])
+        expected.extend(('repository', [f'bin/{name}']) for name in ('check-operation-kinds', 'build-api'))
+        expected.append(('repository', ['bin/api-fixtures', '--check']))
+        self.assertEqual(expected, [(item['project'], item['command']) for item in report['checks']
+                                    if item['project'] != 'swamp'])
+        self.assertEqual([f'{self.root.resolve()}|--gate --base {self.commit} --waiver-file {waiver}'],
+                         (self.common / 'docs').read_text().splitlines())
+        self.assertEqual(4, len((self.common / 'calls').read_text().splitlines()))
+
+    def test_prepared_api_skips_generation_but_still_rejects_invalid_fixtures(self):
+        runner = self.gate_fixture()
+        (self.root / 'bin/build-api').write_text('#!/bin/sh\necho "API generated twice"\nexit 9\n')
+        (self.root / 'bin/api-fixtures').write_text('#!/bin/sh\necho "Invalid fixture"\nexit 7\n')
+        result = subprocess.run([str(runner), '--prepared-api'], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertNotIn('API generated twice', result.stdout)
+        self.assertIn('Invalid fixture', result.stdout)
+
+    def test_gate_shards_split_every_lane_once_and_only_shard_one_runs_repository_checks(self):
+        runner = self.gate_fixture()
+        ran = []
+        for index in (1, 2, 3):
+            result = subprocess.run([str(runner), '--shard', f'{index}/3'], env=self.gate_env, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+            report = json.loads(max((self.common / 'orbit-checks').glob('*/*/result.json'), key=lambda path: path.stat().st_mtime).read_text())
+            self.assertEqual(f'{index}/3', report['shard'])
+            repository = [item['command'][0] for item in report['checks'] if item['project'] == 'repository' and item['command'][0].startswith('bin/') and '--check' not in item['command']]
+            self.assertEqual(index == 1, bool(repository), repository)
+            ran.extend((item['project'], tuple(item['command'])) for item in report['checks']
+                       if item['project'] not in ('repository', 'swamp'))
+        expected = [(project, ('composer', 'check')) for project in PROJECTS]
+        self.assertEqual(sorted(expected), sorted(ran))
+
+    def test_gate_base_option_compares_with_the_given_commit(self):
+        runner = self.gate_fixture()
+        result = subprocess.run([str(runner), '--base', self.commit], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        self.assertEqual(self.commit, report['base'])
+
+    def gate_module(self, runner):
+        loader = importlib.machinery.SourceFileLoader('review_check_lanes', str(runner))
+        gate = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+        loader.exec_module(gate)
+        return gate
+
+    def test_gate_keeps_every_tool_within_the_process_budget(self):
+        runner = self.gate_fixture()
+        for budget in ('1', '4', '10'):
+            with self.subTest(budget=budget):
+                (self.common / 'processes').unlink(missing_ok=True)
+                result = subprocess.run([str(runner)], env={**self.gate_env, 'ORBIT_CHECK_PROCESSES': budget},
+                                        capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+                lines = (self.common / 'processes').read_text().splitlines()
+                self.assertEqual(sorted(Path(project).name for project in PROJECTS),
+                                 sorted(line.split('|')[0] for line in lines))
+                for line in lines:
+                    self.assertTrue(1 <= int(line.split('|')[1]) <= int(budget), line)
+        gate = self.gate_module(runner)
+        groups = gate.lanes([('apps/gateway', ()), ('apps/cli', ()), ('repository', ()), ('apps/web', ())])
+        # The repository checks share the Gateway lane, because the contract checks boot the Gateway.
+        self.assertEqual([['apps/gateway', 'repository', 'apps/web'], ['apps/cli']],
+                         [[project for _order, project, _commands in group] for group in groups])
+        self.assertEqual([1, 1, 3, 3, 5, 5], [gate.lane_count([[()]] * 5, budget) for budget in (1, 2, 4, 5, 8, 16)])
+
+    def test_a_budget_of_two_or_less_runs_one_lane_to_fit_a_small_task_vm(self):
+        gate = self.gate_module(self.gate_fixture())
+        groups = [[(0, 'apps/gateway', ())], [(1, 'apps/cli', ())], [(2, 'apps/docs', ())]]
+        self.assertEqual([1, 1], [gate.lane_count(groups, budget) for budget in (1, 2)])
+        self.assertEqual(2, gate.lane_count(groups, 3))
+
+    def test_the_heaviest_lane_gets_most_of_the_budget_and_the_processes_that_others_free(self):
+        gate = self.gate_module(self.gate_fixture())
+        weights = {'apps/gateway': 1500, 'apps/cli': 200, 'apps/docs': 20, 'packages/php-sdk': 80}
+        # A budget of 4 runs three lanes at once: the Gateway gets two processes, whichever lane asks first.
+        for first in ('apps/gateway', 'apps/cli'):
+            with self.subTest(first=first):
+                budget = gate.ProcessBudget(4, weights)
+                for lane in ('apps/gateway', 'apps/cli', 'apps/docs'):
+                    budget.start(lane)
+                granted = {lane: budget.acquire(lane) for lane in (first, *(lane for lane in ('apps/gateway', 'apps/cli', 'apps/docs') if lane != first))}
+                self.assertEqual({'apps/gateway': 2, 'apps/cli': 1, 'apps/docs': 1}, granted)
+                self.assertEqual(4, sum(budget.held.values()))
+        # When the other lanes finish, the Gateway's next command gets the processes they freed.
+        budget.release('apps/gateway')
+        budget.finish('apps/cli')
+        budget.finish('apps/docs')
+        self.assertEqual(4, budget.acquire('apps/gateway'))
+        # With every process in use, a command waits until another command releases one.
+        budget = gate.ProcessBudget(2, weights)
+        for lane in ('apps/gateway', 'apps/cli', 'apps/docs'):
+            budget.start(lane)
+        self.assertEqual(1, budget.acquire('apps/gateway'))
+        self.assertEqual(1, budget.acquire('apps/cli'))
+        acquired = []
+        waiter = threading.Thread(target=lambda: acquired.append(budget.acquire('apps/docs')))
+        waiter.start()
+        time.sleep(0.2)
+        self.assertEqual([], acquired)
+        budget.release('apps/cli')
+        waiter.join(5)
+        self.assertEqual([1], acquired)
+
+    def barrier_environment(self):
+        barrier = Path(self.temporary.name) / 'barrier'
+        barrier.mkdir()
+        return {**self.gate_env, 'GATE_TEST_BARRIER': str(barrier), 'ORBIT_CHECK_PROCESSES': '3'}
+
+    def test_gate_runs_projects_at_the_same_time_up_to_the_process_setting(self):
+        runner = self.gate_fixture()
+        environment = self.barrier_environment()
+        result = subprocess.run([str(runner)], env=environment, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        result = subprocess.run([str(runner)], env={**environment, 'ORBIT_CHECK_PROCESSES': 'many'},
+                                capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stderr + result.stdout)
+        self.assertIn("ORBIT_CHECK_PROCESSES must be a positive integer, not 'many'.", result.stderr)
+
+    def assert_one_project_at_a_time(self, budget):
+        # The CLI check waits half a second for the Docs check, which has not started, and gives up.
+        runner = self.gate_fixture()
+        environment = {**self.barrier_environment(), 'ORBIT_CHECK_PROCESSES': budget, 'GATE_TEST_BARRIER_TICKS': '5'}
+        result = subprocess.run([str(runner)], env=environment, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stderr + result.stdout)
+        self.assertIn('[apps/cli] composer check: FAILED', result.stdout)
+
+    def test_a_budget_of_one_runs_one_project_at_a_time(self):
+        self.assert_one_project_at_a_time('1')
+
+    def test_a_budget_of_two_runs_one_project_at_a_time_so_a_2_gb_task_vm_runs_one_phpstan_or_rector(self):
+        self.assert_one_project_at_a_time('2')
+
+    def test_gate_rejects_failed_checks_and_a_moved_head(self):
+        runner = self.gate_fixture()
+        for mode in ['docs', 'fail', 'move']:
+            with self.subTest(mode=mode):
+                result = subprocess.run([str(runner)], env={**self.gate_env, 'GATE_TEST_MODE': mode},
+                                        capture_output=True, text=True)
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        for path in (self.common / 'orbit-checks').glob('*/*/result.json'):
+            self.assertFalse(json.loads(path.read_text())['passed'])
+
+    def test_gate_accepts_formatter_edits_and_records_the_tree_they_leave(self):
+        runner = self.gate_fixture()
+        (self.root / 'README.md').write_text('uncommitted')
+        result = subprocess.run([str(runner)], env={**self.gate_env, 'GATE_TEST_MODE': 'format'},
+                                capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('Formatters changed files', result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        self.assertTrue(report['passed'])
+        self.assertTrue(report['formatted'])
+        self.assertFalse(report['committed'])
+        self.assertEqual('formatted\n', (self.root / 'README.md').read_text())
+        git(self.root, 'add', '--all')
+        self.assertEqual(git(self.root, 'write-tree'), report['tree'])
+
+    def test_gate_checks_uncommitted_input_as_it_is(self):
+        runner = self.gate_fixture()
+        (self.root / 'README.md').write_text('uncommitted')
+        status = git(self.root, 'status', '--porcelain')
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertIn('with uncommitted changes', result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        self.assertTrue(report['passed'])
+        self.assertFalse(report['committed'])
+        self.assertNotEqual(git(self.root, 'rev-parse', 'HEAD^{tree}'), report['tree'])
+        self.assertEqual(4, len((self.common / 'calls').read_text().splitlines()))
+        self.assertEqual(status, git(self.root, 'status', '--porcelain'))
+
+    def test_generated_checks_follow_inputs_and_outputs_without_running_for_unrelated_paths(self):
+        runner = self.gate_fixture()
+        gate_loader = importlib.machinery.SourceFileLoader('review_check', str(runner))
+        gate_spec = importlib.util.spec_from_loader(gate_loader.name, gate_loader)
+        gate = importlib.util.module_from_spec(gate_spec)
+        gate_loader.exec_module(gate)
+        # The rule of CI's Generated contracts job selects them.
+        for path in ('apps/gateway/routes/api.php', 'apps/cli/app/Commands/Example.php',
+                     'packages/php-sdk/src/Requests/Example.php', 'packages/php-sdk/fixtures/example.json',
+                     'apps/web/fixtures/example.json', 'bin/docs-openapi', 'bin/api-fixtures',
+                     'docs/cli/node/add.mmd', 'swamp/config/gateway-workflow-grants.json'):
+            with self.subTest(path=path):
+                self.assertIn(('repository', gate.CONTRACT_COMMANDS), gate.selected_projects([path], self.root))
+        for path in ('docs/reference/example.md', 'apps/web/src/App.tsx', 'apps/pi-server/src/index.ts'):
+            with self.subTest(path=path):
+                self.assertNotIn('repository', dict(gate.selected_projects([path], self.root)))
+        for paths, projects in ((['apps/agent/src/main.rs'], ['apps/agent']),
+                                (['apps/desktop/src/main.ts'], ['apps/desktop/src-tauri'])):
+            profiles = dict(gate.selected_projects(paths, self.root))
+            for project in projects:
+                self.assertEqual((('cargo', 'fmt', '--all', '--', '--check'),), profiles[project])
+
+    def test_gate_records_missing_artifact_tools_and_failed_rust_formatting(self):
+        runner = self.gate_fixture()
+        (self.root / 'bin/build-api').unlink()
+        rust = self.root / 'apps/agent/src/main.rs'
+        rust.parent.mkdir(parents=True)
+        rust.write_text('fn main() {}')
+        cargo = Path(self.gate_env['PATH'].split(os.pathsep)[0]) / 'cargo'
+        cargo.write_text('#!/bin/sh\necho "Rust formatting differs"\nexit 7\n')
+        cargo.chmod(0o755)
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn('bin/build-api: required tool not found', result.stdout)
+        self.assertIn('Rust formatting differs', result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        check = next(item for item in report['checks'] if item['project'] == 'apps/agent')
+        self.assertEqual(['cargo', 'fmt', '--all', '--', '--check'], check['command'])
+        self.assertEqual(7, check['exit_code'])
+        self.assertFalse(report['passed'])
+
+    @unittest.skipUnless(shutil.which('setfacl') and shutil.which('getfacl'), 'needs setfacl and getfacl')
+    def test_review_directory_keeps_named_acl_entries_effective(self):
+        runner = self.gate_fixture()
+        # Like a host where the Git common dir has a default ACL with a named user entry.
+        subprocess.run(['setfacl', '-d', '-m', 'u:nobody:rwX,m::rwx', str(self.common)], check=True)
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        report = next((self.common / 'orbit-checks').glob('*/review-*/result.json'))
+        directory = report.parent
+        self.assertNotEqual('---', acl_entry(directory.parent, 'mask::'))
+        self.assertNotEqual('---', acl_entry(directory, 'mask::'), 'mkdtemp mode 0700 set the ACL mask to ---')
+        self.assertEqual('---', acl_entry(directory, 'other::'))
+        rights = effective_named_rights(directory, 'nobody')
+        self.assertEqual(('r', 'x'), (rights[0], rights[2]), rights)
+        logs = list(directory.glob('*.log'))
+        self.assertTrue(logs)
+        for path in [report, *logs]:
+            self.assertEqual('r', effective_named_rights(path, 'nobody')[0], path.name)
+
+
+def acl_entry(path, prefix):
+    """Return the rights of the first getfacl entry that starts with prefix."""
+    lines = subprocess.run(['getfacl', '-cp', str(path)], capture_output=True, text=True, check=True).stdout.splitlines()
+    return next(line.split()[0][len(prefix):] for line in lines if line.startswith(prefix))
+
+
+def effective_named_rights(path, user):
+    """A named user entry's rights after the ACL mask, such as r-x."""
+    named, mask = acl_entry(path, f'user:{user}:'), acl_entry(path, 'mask::')
+    return ''.join(right if limit != '-' else '-' for right, limit in zip(named, mask))
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
