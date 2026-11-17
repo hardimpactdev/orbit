@@ -264,3 +264,13 @@ The executor wrote its `done` record 3–4 ms after the publish (median of 50 or
 
 **Status.** In the proof plan both cases keep `waits: idmap`, like every `app-dev` converge case: the converge builds the Instance host's stock image, which needs the 2,000,000 ID map. Both also keep `fails_today`, because the pinned agent delivery has no `executor-linux-x86_64` and no observer release with the pass-through yet.
 
+
+## Rust sleep and discard
+
+Slice 4 adds the `power` family on `app-dev`. Signed `sleep` and `discard` orders target an Instance. The proof-only durable `executor.power_proof` Operation exercises them; production `instance.sleep` keeps the Python flow until slices 7/8. The observer still passes bytes only.
+
+The executor records and atomically fsyncs every non-`max` swap limit in the whole container cgroup subtree before opening it. It freezes through the Incus local API, lists every subtree process and scans readable maps and pagemap in parallel. Its plan includes present and swapped pages (bits 63 and 62), process start times, boot id, Incus incarnation and cgroup identity. The plan is atomically published with fsync before reclaim. Reclaim waits for `memory.current` to settle, for at most two seconds. The 32 MiB residual anonymous policy remains: ordinary containers stop when memory stays; nested-fleet containers resume and fail instead. The asleep marker comes last.
+
+A repeat Operation returns its journaled result under the per-target lock. Startup repeats an open sleep and keeps a valid plan already published. `discard` removes the plan and limits record after a stop, destroy or fresh boot. The Rust state lives under `/var/lib/orbit/executor/power`; it does not replace the Python state yet. A container Incus calls running while the kernel holds it frozen refuses with `instance.container_frozen_unmanaged`, preserving its recovery state.
+
+The proof of record remains 30 sleeps of a real clone with T3 and Vite. Measurements of a default Instance with T3/Vite started by hand are development evidence only.

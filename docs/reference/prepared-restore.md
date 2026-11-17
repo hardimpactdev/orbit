@@ -440,3 +440,9 @@ The shape policy allows `fcntl.flock` only on a fixed list of host lock paths, a
 ### One helper for every caller
 
 The fast wake, the run, deploy, start and destroy must agree on identity checks and swap limits. One program keeps one rule.
+
+## Executor sleep (ADR 0266 slice 4)
+
+The Rust `power` family implements whole-container sleep through signed orders on durable proof Operations. Production sleep and wake still use the Python helper until slices 7/8. The executor records every non-`max` swap limit across the cgroup subtree before opening it, freezes through the Incus local API and scans every process, including T3 and Vite, in parallel. The plan records pages present or swapped (pagemap bit 63 or bit 62), so a partial wake cannot shrink the next plan. Both the limits record and plan publish atomically with fsync. After reclaim settles, or two seconds pass, the executor applies the same 32 MiB residual anonymous rule and writes the asleep marker. Nested-fleet containers resume and fail when swap cannot take their memory; other containers stop.
+
+The Rust plan and limits record live separately under `/var/lib/orbit/executor/power` while the production Python flow remains in place. Crash recovery repeats an open sleep and preserves a valid published plan. Discard removes both records after a stop, destroy or a deployment that boots fresh. The executor refuses a running container whose kernel cgroup is frozen, preserving recovery state for the thaw described above.

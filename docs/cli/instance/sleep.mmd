@@ -3,6 +3,8 @@ sequenceDiagram
   %% status: draft
   %% command: instance:sleep
   %% kind: instance.sleep
+  %% ADR 0266 slice 4: the proof-only executor.power_proof Operation signs sleep/discard; production instance.sleep stays below until slices 7/8.
+  %% Executor sleep: record and fsync non-max subtree swap limits, open them, freeze through Incus local API, scan every process in parallel (pagemap bits 63 OR 62), atomically fsync the plan, reclaim until memory.current settles or 2 s, apply the 32 MiB anonymous policy, write the asleep marker. Recovery keeps an existing valid plan. Discard removes plan and limits after stop/destroy/fresh boot.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
