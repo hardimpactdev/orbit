@@ -12,7 +12,7 @@ const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn
 const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, "");
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const ssh = { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } };
-const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", options: [] as { id: string; value: string }[], candidate: null, settle: [] as { operation_id: number; title: string; branch: string | null }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
+const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", options: [] as { id: string; value: string }[], candidate: null, answered: [] as string[], settle: [] as { operation_id: number; title: string; branch: string | null }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
 // What TaskCopyTurn admits; the workflow passes only the runtime, the SSH target and the turn to the phase.
 const intent = { subtask: 4971, role: "implementer", thread: "new", group_id: 4970, instance_id: 2685, node_id: 9, ssh_execution: ssh,
     runtime: { project: "orbit-instances-nested", name: "instance-2685" }, branch: "task-4970", thread_id: 77, turn };
@@ -25,10 +25,10 @@ Deno.test("the workflow writes only the turn's target into the phase input, runs
     assertEquals(evaluate(input.task.inputs.intent), { runtime: intent.runtime, ssh_execution: ssh, turn });
     assertEquals(evaluate(input.task.inputs.path), `/tmp/orbit-ansible-${runId}/intent.json`);
     assert(run.task.inputs.run!.endsWith('"$ORBIT_ANSIBLE/task-copy-turn.yml"'));
-    // The turn and its kill grace, eight T3 or helper calls of up to 60 s (the settle's list and its stops of two earlier runs, the list of
-    // a continued turn, the question's read and stop or a cut run's list and stop, the list and show after it) and sixteen Git commands of
+    // The turn and its kill grace, nine T3 or helper calls of up to 60 s (the settle's list and its stops of two earlier runs, the list and
+    // answered-request resolution of a continued turn, the question's read and stop or a cut run's list and stop, the list and show after it) and sixteen Git commands of
     // up to 20 s (the settle's restore, a reviewer's set-up and restore).
-    assert(Number(/^timeout (\d+) /.exec(run.task.inputs.run!)![1]) > turn.seconds + 30 + 8 * 60 + 16 * 20);
+    assert(Number(/^timeout (\d+) /.exec(run.task.inputs.run!)![1]) > turn.seconds + 30 + 9 * 60 + 16 * 20);
     const env = Object.fromEntries(Object.entries(run.task.inputs.env!).map(([key, value]) => [key, String(evaluate(value))]));
     assertEquals([env.ANSIBLE_CONFIG, env.ORBIT_ANSIBLE, env.ORBIT_RUN], [`${shipped}/ansible.cfg`, shipped, `/tmp/orbit-ansible-${runId}`]);
     assertEquals(String(evaluate(run.task.behaviorName)), "task-copy-turn-9-2685");
@@ -133,6 +133,18 @@ if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node',
         print(json.dumps({'end': {'stopped': True, 'run': run, 'state': 'interrupted'}, 'refuse': {'stopped': False, 'run': run, 'state': 'running'},
                           'idle': {'stopped': False, 'run': None, 'state': None}}[os.environ.get('T3_STOP', 'end')]), end='')
         sys.exit(0)
+    if rest[5] == 'answered':
+        assert rest[6:] == [thread, 'request:1', 'request:2'], rest
+        assert not os.path.exists(os.environ['ORBIT_RUN'] + '/launch.json'), 'resolve before launch'
+        assert not os.path.exists(os.environ['ORBIT_RUN'] + '/detach.json'), 'resolve before reviewer checkout'
+        mode = os.environ.get('T3_ANSWERED', 'resolved')
+        if mode == 'fail':
+            sys.exit(1)
+        if mode == 'garbled':
+            print('not json')
+            sys.exit(0)
+        print(json.dumps({'resolved': mode == 'resolved', 'pending': [] if mode == 'resolved' else ['request:1'], 'error': None if mode == 'resolved' else 'Still pending.'}), end='')
+        sys.exit(0)
     if rest[5] == 'create':
         # T3_CREATE: 'refuse' is a create T3 answers with its refusal, 'fail' a helper that printed nothing.
         assert rest[6:9] == ['Orbit task 4970 thread 77', os.environ.get('T3_INSTANCE', 'claudeMedium'), os.environ.get('T3_MODEL', 'claude-opus-5-5')], rest
@@ -157,7 +169,7 @@ if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node',
     assert rest[5:] == ['interrupt', thread, 'run:1', 'request:1'], rest
     # The question is stored before the run is stopped.
     assert os.path.exists(os.environ['ORBIT_RUN'] + '/ask.json'), 'ask.json before the stop'
-    print(json.dumps({'interrupted': True, 'error': None, 'runs': [], 'pending': 0}), end='')
+    print(json.dumps({'interrupted': True, 'error': None, 'runs': [], 'pending': 1}), end='')
     sys.exit(0)
 if rest == ['/usr/bin/true']:
     sys.exit(1 if os.environ['T3_START'] == 'unreachable' else 0)
@@ -165,6 +177,8 @@ if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
     assert rest[2] == '3600' and rest[3] == os.environ['T3_PROGRAM'], rest
     assert rest[4:] == ['thread', 'send', '--wait', '--json', thread, '-'], rest
     mode = os.environ['T3_START']
+    if os.environ.get('T3_ANSWERED') and not any(json.loads(line)['args'][20:21] == ['answered'] for line in open(os.environ['T3_CALLS'])):
+        mode = 'waiting'  # A stale request cuts the CLI wait before the real work completes.
     if mode == 'garbled':
         mode = 'completed'
     if mode == 'timeout':
@@ -593,4 +607,29 @@ Deno.test({ name: "a refused model while an earlier turn waits to be settled set
     assert(!refused.ok && refused.output.includes("tasks.copy_turn_model_unoffered"), refused.output);
     assertEquals([refused.model!.accepted, refused.settle, refused.launched, refused.start, git(refused.calls)], [false, null, false, null, []]);
     assertEquals(refused.calls.some((call) => call.args.includes("--kill-after=30") || call.args.includes("list")), false);
+} });
+
+Deno.test({ name: "a continued answer resolves its stored requests before the send so a stale question cannot cut the work", ignore: !available, async fn() {
+    const done = await phase("completed", { thread: "continue", provider: null, answered: ["request:1", "request:2"] }, "clean", "questions", "", { T3_ANSWERED: "resolved" });
+    assert(done.ok, done.output + JSON.stringify(done.calls.map(({ args }) => args)));
+    assertEquals([done.result.state, done.launched, done.result.ended], ["done", true, true]);
+    assertEquals(done.calls[2].args.slice(20), ["answered", "mcp:66105c2c", "request:1", "request:2"]);
+    assertEquals(done.calls[3].args.slice(19), ["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"]);
+} });
+
+Deno.test({ name: "an answered request that stays pending refuses the turn before launch or reviewer checkout", ignore: !available, async fn() {
+    const done = await phase("completed", { thread: "continue", provider: null, answered: ["request:1", "request:2"], candidate: "c".repeat(40) }, "clean", "questions", "", { T3_ANSWERED: "pending" });
+    assert(!done.ok, done.output);
+    assert(done.output.includes("tasks.copy_question_unresolved"), done.output);
+    assertEquals([done.result.error_code, done.result.ended, done.launched, done.detached, done.start], ["tasks.copy_question_unresolved", true, false, false, null]);
+    assertEquals(done.calls.length, 3);
+} });
+
+Deno.test({ name: "a failed or unreadable answered resolution launches nothing and names the resolution failure", ignore: !available, async fn() {
+    for (const mode of ["fail", "garbled"]) {
+        const done = await phase("completed", { thread: "continue", provider: null, answered: ["request:1", "request:2"] }, "clean", "questions", "", { T3_ANSWERED: mode });
+        assert(!done.ok, done.output);
+        assertEquals([done.result.error_code, done.result.ended, done.launched, done.start], ["tasks.copy_question_unresolved", true, false, null]);
+        assertEquals(done.calls.length, 3);
+    }
 } });

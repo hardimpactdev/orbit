@@ -14,10 +14,12 @@ class TaskCopyTurnCostTest(unittest.TestCase):
         evidence = json.loads(EVIDENCE.read_text())
         budget, fixtures, defaults = units.configuration()
         fixture = fixtures[FILE]
-        self.assertEqual(set(fixture['cases']), set(evidence['completed_max_seconds']) | set(evidence['estimates']))
+        self.assertEqual(set(fixture['cases']), set(evidence['completed_max_seconds']) | set(evidence['local_completed_seconds']) | set(evidence['estimates']))
         self.assertFalse(fixture.get('self_hosted'))
         self.assertEqual(fixture['cost'], sum(fixture['case_costs'].values()))
         for case, seconds in evidence['completed_max_seconds'].items():
+            self.assertGreaterEqual(fixture['case_costs'][case], math.ceil(seconds * 1.25) + 1, case)
+        for case, seconds in evidence['local_completed_seconds'].items():
             self.assertGreaterEqual(fixture['case_costs'][case], math.ceil(seconds * 1.25) + 1, case)
         for case, cost in evidence['estimates'].items():
             self.assertGreaterEqual(fixture['case_costs'][case], cost, case)
