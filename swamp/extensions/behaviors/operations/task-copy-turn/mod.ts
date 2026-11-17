@@ -14,7 +14,8 @@ const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 // `t3 thread list` (null when it printed no JSON) and how many T3 threads carry its title, `answered.json` with the resolution helper's
 // exit and reply before an answer is sent, for a reviewer turn `review.json` with whether
 // the candidate is checked out, `detach.json` as soon as the reviewer's candidate is checked out, for a new thread `model.json` with the
-// model, the slugs T3's catalog offers (null when it was not read) and whether it offers the model, `launch.json` before the start,
+// model, the slugs T3's catalog offers (null when it was not read), the check decision and any driver or probe failure,
+// `launch.json` before the start,
 // `start.json` with the exit code, stdout and a failed start's stderr tail of `t3 thread start` or `t3 thread send` with `--wait --json`, for a run that waits for an answer `ask.json` with the exit code and stdout of `t3_copy_rpc.mjs
 // read` and `interrupt.json` with those of `t3_copy_rpc.mjs interrupt`, for a wait the bound cut `stop.json` with the exit code and
 // stdout of `t3_copy_rpc.mjs stop`, `read.json` with what `t3 thread list` found and `t3 thread show`
@@ -27,7 +28,8 @@ const Answered = z.object({ resolved: z.boolean(), pending: z.array(z.string()),
 const Review = z.object({ ready: z.boolean(), error_code: z.enum(["tasks.copy_tree_dirty", "tasks.copy_turn_failed"]).nullable() }).strict();
 const Restore = z.object({ restored: z.boolean() }).strict();
 const Start = z.object({ start_exit: z.number().int(), start: z.string(), error: z.string().optional() }).strict();
-const Model = z.object({ model: z.string(), offered: z.array(z.string()).nullable(), accepted: z.boolean() }).strict();
+const Model = z.object({ model: z.string(), offered: z.array(z.string()).nullable(), accepted: z.boolean(),
+    driver_unresolved: z.literal(true).optional(), probe: z.enum(["confirmed", "rejected", "unavailable"]).optional() }).strict();
 const Ask = z.object({ ask_exit: z.number().int(), ask: z.string() }).strict();
 const Interrupt = z.object({ interrupt_exit: z.number().int(), interrupt: z.string() }).strict();
 const Stop = z.object({ stop_exit: z.number().int(), stop: z.string() }).strict();
@@ -204,6 +206,16 @@ function shapeRun(evidence: Evidence): Turn {
         return { ...base, state: "failed", error: `The turn ran longer than its bound. ${stop}`, error_code: "tasks.turn_timeout" };
     }
     if (evidence.model !== null && !evidence.model.accepted) {
+        if (evidence.model.driver_unresolved) {
+            return { ...base, state: "failed", error: `The copy's T3 provider instance could not be resolved for model ${evidence.model.model}.`,
+                error_code: "tasks.copy_turn_model_unverified" };
+        }
+        if (evidence.model.probe === "rejected") {
+            return { ...base, state: "failed", error: `The copy's Codex provider rejected the model ${evidence.model.model}.`, error_code: "tasks.copy_turn_model_unoffered" };
+        }
+        if (evidence.model.probe === "unavailable") {
+            return { ...base, state: "failed", error: `The copy's Codex provider could not verify the model ${evidence.model.model}.`, error_code: "tasks.copy_turn_model_unverified" };
+        }
         const offered = (evidence.model.offered ?? []).join(", ").slice(0, ErrorChars);
         return { ...base, state: "failed", error: `The copy's T3 does not offer the model ${evidence.model.model}; it offers: ${offered}.`, error_code: "tasks.copy_turn_model_unoffered" };
     }
