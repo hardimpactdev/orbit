@@ -79,7 +79,7 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 3227
+cost = 3262
 slices = 77
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
