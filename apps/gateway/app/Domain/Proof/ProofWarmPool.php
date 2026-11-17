@@ -180,14 +180,20 @@ final readonly class ProofWarmPool
     private function drop(array $ids): array
     {
         $groups = [];
-        foreach (ProofWarmCopy::query()->whereKey($ids)->orderBy('id')->get() as $warm) {
-            $warm->update(['dropped_at' => $warm->dropped_at ?? now()]);
-            $group = Task::topLevel()->find($warm->task_id);
-            $groups[] = $warm->task_id;
+        foreach ($ids as $id) {
+            // Read again under the row lock: a proof that took the copy meanwhile deleted its row, and its group is the run's now.
+            $group = DB::transaction(static function () use ($id): ?Task {
+                $warm = ProofWarmCopy::query()->lockForUpdate()->find($id);
+                $warm?->update(['dropped_at' => $warm->dropped_at ?? now()]);
+
+                return $warm === null ? null : Task::topLevel()->find($warm->task_id);
+            });
+            if ($group === null) {
+                continue;
+            }
+            $groups[] = $group->id;
             try {
-                if ($group !== null) {
-                    app(ProofGroup::class)->discard($group, self::Trigger);
-                }
+                app(ProofGroup::class)->discard($group, self::Trigger);
             } catch (ResourceOperationException $exception) {
                 if ($exception->errorCode !== 'operation.target_busy') {
                     report($exception);
