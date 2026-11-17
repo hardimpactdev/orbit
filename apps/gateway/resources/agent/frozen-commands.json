@@ -34,34 +34,6 @@
   ],
   "commands": [
     {
-      "name": "task-vm.start-topology",
-      "summary": "Start one bounded topology preparation as the managed account.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.topology_input_invalid",
-        "task_vm.topology_failed"
-      ]
-    },
-    {
-      "name": "task-vm.topology-status",
-      "summary": "Read a topology result, boot identity, or conservative systemd state.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.topology_input_invalid",
-        "task_vm.topology_failed"
-      ]
-    },
-    {
       "name": "agent.status",
       "summary": "Report the running agent binary and its observer.",
       "mutates": false,
@@ -331,11 +303,7 @@
       "errors": [
         "incus.input_invalid",
         "task_vm.invalid_host_output",
-        "task_vm.host_command_failed",
-        "task_vm.vm_missing",
-        "task_vm.image_mismatch",
-        "task_vm.base_image_missing",
-        "task_vm.topology_seed_missing"
+        "task_vm.host_command_failed"
       ]
     },
     {
@@ -350,11 +318,7 @@
       "errors": [
         "incus.input_invalid",
         "task_vm.invalid_host_output",
-        "task_vm.host_command_failed",
-        "task_vm.vm_missing",
-        "task_vm.image_mismatch",
-        "task_vm.base_image_missing",
-        "task_vm.topology_seed_missing"
+        "task_vm.host_command_failed"
       ]
     },
     {
@@ -369,11 +333,7 @@
       "errors": [
         "incus.input_invalid",
         "task_vm.invalid_host_output",
-        "task_vm.host_command_failed",
-        "task_vm.vm_missing",
-        "task_vm.image_mismatch",
-        "task_vm.base_image_missing",
-        "task_vm.topology_seed_missing"
+        "task_vm.host_command_failed"
       ]
     },
     {
@@ -388,49 +348,7 @@
       "errors": [
         "incus.input_invalid",
         "task_vm.invalid_host_output",
-        "task_vm.host_command_failed",
-        "task_vm.vm_missing",
-        "task_vm.image_mismatch",
-        "task_vm.base_image_missing",
-        "task_vm.topology_seed_missing"
-      ]
-    },
-    {
-      "name": "incus.vm-state",
-      "summary": "Read the exact VM state, guest bridge address, and original image.",
-      "mutates": false,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "incus.input_invalid",
-        "task_vm.invalid_host_output",
-        "task_vm.host_command_failed",
-        "task_vm.vm_missing",
-        "task_vm.image_mismatch",
-        "task_vm.base_image_missing",
-        "task_vm.topology_seed_missing"
-      ]
-    },
-    {
-      "name": "incus.vm",
-      "summary": "Create, start, stop, or remove a task or image VM and its selected seed clone.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "incus.input_invalid",
-        "task_vm.invalid_host_output",
-        "task_vm.host_command_failed",
-        "task_vm.vm_missing",
-        "task_vm.image_mismatch",
-        "task_vm.base_image_missing",
-        "task_vm.topology_seed_missing"
+        "task_vm.host_command_failed"
       ]
     },
     {
@@ -475,25 +393,7 @@
       "errors": [
         "incus.input_invalid",
         "task_vm.invalid_host_output",
-        "task_vm.host_command_failed",
-        "task_vm.vm_missing",
-        "task_vm.image_mismatch",
-        "task_vm.base_image_missing",
-        "task_vm.topology_seed_missing"
-      ]
-    },
-    {
-      "name": "package-cache.host",
-      "summary": "Initialize or fill the owned host cache with verified public archives.",
-      "mutates": true,
-      "timeout_seconds": 1600,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.package_cache_invalid_limit",
-        "task_vm.package_cache_failed"
+        "task_vm.host_command_failed"
       ]
     },
     {
@@ -727,22 +627,6 @@
       "errors": [
         "instance.path_mismatch",
         "instance.laravel_routes_unreadable"
-      ]
-    },
-    {
-      "name": "instance.activate-release",
-      "summary": "Check a production release, grant Caddy its web roots, and select it as current.",
-      "mutates": true,
-      "timeout_seconds": 300,
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "errors": [
-        "instance.release_invalid",
-        "instance.commit_not_on_branch",
-        "instance.release_step_failed",
-        "instance.release_missing"
       ]
     },
     {
@@ -1000,20 +884,6 @@
       ]
     },
     {
-      "name": "task-vm.read-topology-evidence",
-      "summary": "Read the newest MiB of a task VM checkout's topology evidence.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.evidence_input_invalid",
-        "task_vm.evidence_unreadable"
-      ]
-    },
-    {
       "name": "task-vm.read-git-refs",
       "summary": "Read checkout refs and its worktree-private CI baseline for pack transfer.",
       "mutates": false,
@@ -1132,26 +1002,6 @@
         "caddy.package_invalid",
         "caddy.package_unsafe",
         "caddy.package_failed"
-      ]
-    },
-    {
-      "name": "metrics.publication-firewall",
-      "summary": "Converge or remove Grafana's ordered Gateway-only firewall boundary.",
-      "mutates": true,
-      "timeout_seconds": 300,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "metrics.publication_firewall_inspection_failed",
-        "metrics.publication_firewall_inactive",
-        "metrics.publication_firewall_ownership_drift",
-        "metrics.publication_firewall_apply_failed",
-        "metrics.publication_firewall_verify_failed",
-        "metrics.publication_firewall_remove_failed",
-        "metrics.publication_firewall_remove_verify_failed",
-        "metrics.remote_command_timed_out"
       ]
     },
     {
@@ -1694,12 +1544,7 @@
         "macos": null
       },
       "errors": [
-        "php.runtime_invalid",
-        "php.cache_socket_unavailable",
-        "php.cache_association_invalid",
-        "php.cache_reset_rejected",
-        "php.cache_reset_pending",
-        "php.cache_protocol_failed"
+        "php.runtime_invalid"
       ]
     },
     {
@@ -1712,30 +1557,7 @@
         "macos": null
       },
       "errors": [
-        "php.runtime_invalid",
-        "php.cache_socket_unavailable",
-        "php.cache_association_invalid",
-        "php.cache_reset_rejected",
-        "php.cache_reset_pending",
-        "php.cache_protocol_failed"
-      ]
-    },
-    {
-      "name": "php.refresh-production-cache",
-      "summary": "Reset OPcache in a production Instance's own PHP-FPM workers and confirm it.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "php.runtime_invalid",
-        "php.cache_socket_unavailable",
-        "php.cache_association_invalid",
-        "php.cache_reset_rejected",
-        "php.cache_reset_pending",
-        "php.cache_protocol_failed"
+        "php.runtime_invalid"
       ]
     },
     {

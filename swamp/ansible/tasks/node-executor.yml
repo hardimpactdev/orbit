@@ -13,10 +13,11 @@
 - name: Install the executor
   when: intent.executor.skip == None
   block:
+    # Ansible 2.20 validates fail_msg as a string even when the assertion holds, so a null plan_error must render as text.
     - name: Require a planned executor release and pinned keys
       ansible.builtin.assert:
         that: [intent.executor.plan_error == None]
-        fail_msg: "{{ intent.executor.plan_error }}"
+        fail_msg: "{{ intent.executor.plan_error | string }}"
         quiet: true
     - name: Ensure the relay user
       ansible.builtin.user:
