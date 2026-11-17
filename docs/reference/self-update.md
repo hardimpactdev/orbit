@@ -174,11 +174,13 @@ The CLI step decides from the running binary, the release status, and the versio
 | The CLI release is `unavailable` | `skipped`, with the Gateway's reason |
 | No release binary exists for this platform | `skipped`, reason `platform_unsupported` |
 | The binary already has the release's SHA-256 | `unchanged` |
-| This `orbit` is a pre-release build that reports its full 40-character commit instead of `0.N.0` | Updated like an older release. The old file is kept as `orbit.orbit-previous` |
-| The release is older than this `orbit`, or this `orbit` is another build that is not a release | Refused with `self_update.downgrade_refused` or `self_update.version_unknown`, unless `--allow-downgrade` is passed, or `--allow-downgrade-to` names the release's exact version |
+| This `orbit` is not a release build | Refused with `self_update.version_unknown`. Reinstall a published CLI release. Downgrade consent does not bypass this check. |
+| The release is older than this `orbit` | Refused with `self_update.downgrade_refused`, unless `--allow-downgrade` is passed, or `--allow-downgrade-to` names the release's exact version |
 | Otherwise | The release is installed: `updated` |
 
 Versions compare by `N`, the commit count. A binary with the release's version but another SHA-256 is replaced, so a damaged binary is repaired.
+
+If your CLI reports a 40-character commit instead of `0.N.0`, reinstall it using [Install a release](/reference/cli-binaries#install-a-release). SHA-era builds cannot self-update.
 
 Releases live side by side. `orbit` is a link to a versioned file in the same directory:
 

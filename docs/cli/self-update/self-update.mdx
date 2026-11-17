@@ -9,7 +9,7 @@ orbit self-update [--allow-downgrade] [--allow-downgrade-to=<version>] [--json]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--allow-downgrade` | off | Install the Gateway's CLI release even when it is older than this `orbit`, or when this `orbit` is not a release build. |
+| `--allow-downgrade` | off | Install the Gateway's CLI release even when it is older than this `orbit`. Both versions must be release builds. |
 | `--allow-downgrade-to=<version>` | none | Allow that downgrade only when the Gateway's CLI release is exactly this version, such as `0.4681.0`. The [fleet rollout](/reference/gateway-recovery#one-node) passes it after a Gateway rollback. |
 
 ```bash
@@ -59,7 +59,7 @@ A failure before the steps start, such as `gateway.profile_missing`, `gateway.un
 | Error code | Meaning |
 | --- | --- |
 | `self_update.downgrade_refused` | The Gateway's CLI release is older than this `orbit`. Pass `--allow-downgrade` to install it. |
-| `self_update.version_unknown` | This `orbit` is not a release build, so it cannot be compared. Pass `--allow-downgrade` to replace it. |
+| `self_update.version_unknown` | This `orbit` is not a release build. Reinstall a published CLI release; downgrade consent does not bypass this check. See [Update the CLI](/reference/self-update#update-the-cli). |
 | `self_update.checksum_mismatch` | The download or the release `SHA256SUMS` does not match the Gateway's checksum. Nothing changed. |
 | `self_update.candidate_invalid` | The downloaded binary does not start here or reports another version. Nothing changed. |
 | `self_update.download_failed` | `curl` could not download an asset. Nothing changed. |
