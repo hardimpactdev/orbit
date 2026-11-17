@@ -156,3 +156,5 @@ When a subsystem fixture repeats a whole host converge, scope it through the shi
 Bound shared fixture concurrency by physical-core topology as well as logical CPU count. Avoid placing both workers on sibling threads of one core. A retry-budget fixture can assert the shipped task's rendered retry count and exercise pending-to-terminal reads without replaying hundreds of subprocesses; use a shorter-budget negative control.
 
 Validate the complete CI fixture placement immediately after planning in a copy, even when local test parts are filtered or out of time. Keep policy regression tests required while running them beside selection, rather than delaying every fixture behind them.
+
+Rank fixture work by completed case names, since new cases move slice indices. Preserve full order and saved-boundary producer proofs; narrow subsystem cases through shipped callers and result expressions. Measure local Ansible pipelining before pruning an integration path, and keep missing-caller and bypassed-check negative controls.

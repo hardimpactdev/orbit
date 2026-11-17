@@ -917,6 +917,12 @@ class PopulationTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         file = 'swamp/tests/ansible_instance_fleet_test.ts'
         evidence = json.loads((ROOT / 'tools/tests/ci-fleet-cost-evidence.json').read_text())
+        speed = json.loads((ROOT / 'tools/tests/ci-fleet-speed-evidence.json').read_text())
+        self.assertEqual(len(speed['cases']), 10)
+        for row in speed['cases']:
+            self.assertIn(row['name'], fixtures[file]['cases'])
+            self.assertEqual(fixtures[file]['case_costs'][row['name']], math.ceil(row['after_seconds'] * speed['estimate_factor']) + 1)
+            evidence['case_seconds'][row['name']] = row['after_seconds']
         result = units.plan([file], budget, fixtures, defaults)
         for name in evidence['single_refresh_cases']:
             self.assertIn(name, fixtures[file]['cases'])
