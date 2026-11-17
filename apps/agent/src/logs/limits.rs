@@ -89,10 +89,11 @@ pub type AgentBucket = Arc<Mutex<TokenBucket>>;
 pub fn agent_bucket() -> AgentBucket {
     Arc::new(Mutex::new(TokenBucket::new(AGENT_BURST, AGENT_RATE)))
 }
+/// A poisoned lock is fatal: the observer panics and systemd restarts it.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .expect("a stream queue or token bucket lock is never held across a panic: holders only do arithmetic and queue updates")
 }
 
 #[derive(Debug)]

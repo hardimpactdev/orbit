@@ -395,7 +395,10 @@ pub fn previous(
     for name in names {
         let version = packages[name].clone();
         for cached in glob(&files.path(CACHE).join(format!("{name}_*.deb")))? {
-            if cached.file_stem().unwrap().to_string_lossy()
+            if cached
+                .file_stem()
+                .expect("a glob match names a file")
+                .to_string_lossy()
                 == format!("{name}_{}", digest(&cached)?)
                 && previous_metadata(host, &cached, name, &version, architecture)?
             {

@@ -5,6 +5,8 @@ use super::{
     types::Input,
     Failure, Files, Host, Invocation,
 };
+use regex::Regex;
+use std::sync::LazyLock;
 use std::{
     fs,
     path::{Component, Path, PathBuf},
@@ -18,7 +20,8 @@ pub struct RetiredFile {
 }
 pub fn node_config(files: &Files, changes: &[Change]) -> Result<Vec<RetiredFile>, Failure> {
     let mut retired = vec![];
-    let priority = regex::Regex::new(r"\A-?[0-9]+\z").unwrap();
+    static PRIORITY: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\A-?[0-9]+\z").expect("literal pattern"));
     for name in ["nodejs", "nsolid"] {
         let path = files.apt().join("preferences.d").join(name);
         if !path.exists() && !path.is_symlink() {
@@ -40,7 +43,7 @@ pub fn node_config(files: &Files, changes: &[Change]) -> Result<Vec<RetiredFile>
             || fields.get("pin").map(String::as_str) != Some("origin deb.nodesource.com")
             || !fields
                 .get("pin-priority")
-                .is_some_and(|s| priority.is_match(s))
+                .is_some_and(|s| PRIORITY.is_match(s))
         {
             return Err(Failure::io(
                 "node-ownership",

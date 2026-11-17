@@ -1,3 +1,5 @@
+// No unwrap() outside tests (ADR 0267 P9): an expect() states why the value is always there.
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 pub use orbit_agent_contract::command_errors;
 use rand::Rng;
 use serde::{Deserialize, Serialize};

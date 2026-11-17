@@ -57,10 +57,11 @@ impl LogHub {
         )
     }
 
+    /// Locks the registry. A poisoned lock is fatal: the observer panics and systemd restarts it.
     fn registry(&self) -> MutexGuard<'_, Registry> {
         self.registry
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .expect("the log registry lock is never held across a panic: holders only update its maps and queues")
     }
 
     /// Asks the controller to fetch the stream list. Prompts coalesce.
@@ -598,5 +599,18 @@ mod tests {
         let frames = hub.flush("presence-node-logs.1", Instant::now()).unwrap();
         assert_eq!(frames[0].data["reason"], "list_unavailable");
         assert_eq!(hub.running(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "the log registry lock is never held across a panic")]
+    fn a_poisoned_registry_lock_is_fatal() {
+        let (hub, _prompts) = LogHub::new();
+        let holder = hub.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = holder.registry();
+            panic!("poison the registry lock");
+        })
+        .join();
+        hub.running();
     }
 }

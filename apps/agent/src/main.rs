@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{

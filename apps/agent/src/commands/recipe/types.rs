@@ -1,6 +1,8 @@
 use super::Failure;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 
 #[derive(schemars::JsonSchema, Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -64,14 +66,14 @@ pub struct Input {
     pub vp_lock: Option<String>,
 }
 pub fn valid_package(value: &str) -> bool {
-    regex::Regex::new(r"\A[a-z0-9][a-z0-9+.-]*\z")
-        .unwrap()
-        .is_match(value)
+    static PACKAGE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\A[a-z0-9][a-z0-9+.-]*\z").expect("literal pattern"));
+    PACKAGE.is_match(value)
 }
 pub fn valid_version(value: &str) -> bool {
-    regex::Regex::new(r"\A[0-9][0-9A-Za-z.+:~_-]*\z")
-        .unwrap()
-        .is_match(value)
+    static VERSION: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\A[0-9][0-9A-Za-z.+:~_-]*\z").expect("literal pattern"));
+    VERSION.is_match(value)
 }
 pub fn valid_digest(value: &str, length: usize) -> bool {
     value.len() == length
@@ -90,14 +92,14 @@ pub fn https(value: &str) -> bool {
 }
 impl Input {
     pub fn validate(&self) -> Result<(), Failure> {
+        static USER: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"\A[a-z_][a-z0-9_-]*\z").expect("literal pattern"));
+        static SNAPSHOT: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"\A[0-9]{8}T[0-9]{6}Z\z").expect("literal pattern"));
         let invalid = || Failure::new("input", "The recipe pin or architecture is invalid");
-        if !regex::Regex::new(r"\A[a-z_][a-z0-9_-]*\z")
-            .unwrap()
-            .is_match(&self.user)
+        if !USER.is_match(&self.user)
             || self.user == "root"
-            || !regex::Regex::new(r"\A[0-9]{8}T[0-9]{6}Z\z")
-                .unwrap()
-                .is_match(&self.snapshot)
+            || !SNAPSHOT.is_match(&self.snapshot)
             || (!self.artifact_mirror.is_empty() && !https(&self.artifact_mirror))
             || self.git_packages.iter().any(|name| !valid_package(name))
         {

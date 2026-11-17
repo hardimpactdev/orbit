@@ -1,7 +1,9 @@
 //! Publish the shared FPM runtime module after installing the recipe build.
 use super::{php_build as build, recipe};
 use crate::command::{Command, Context, Platform, Privilege};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use std::{collections::BTreeMap, fs, os::unix::fs::symlink, path::PathBuf, time::Duration};
 
 crate::command_errors! {
@@ -42,10 +44,10 @@ fn size_bytes(value: &str) -> Option<u64> {
         .filter(|bytes| *bytes > 0 && *bytes <= 1024_u64.pow(3))
 }
 fn settings(input: &Input) -> Result<BTreeMap<String, String>, Error> {
+    static VERSION: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\A[0-9]+\.[0-9]+\z").expect("literal pattern"));
     let bad = || Error::InputInvalid {};
-    if !regex::Regex::new(r"\A[0-9]+\.[0-9]+\z")
-        .unwrap()
-        .is_match(&input.version)
+    if !VERSION.is_match(&input.version)
         || input.runtime_ini.len() > 8192
         || !recipe::types::valid_package(&input.release.id)
         || input.release.codenames.is_empty()

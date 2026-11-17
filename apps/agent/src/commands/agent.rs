@@ -352,7 +352,10 @@ fn replace(
         .parent()
         .ok_or_else(|| failed("target directory", "no parent"))?;
     std::fs::create_dir_all(directory).map_err(|error| failed("target directory", error))?;
-    let name = target.file_name().unwrap().to_string_lossy();
+    let name = target
+        .file_name()
+        .ok_or_else(|| failed("target directory", "no file name"))?
+        .to_string_lossy();
     let staged = directory.join(format!("{name}.orbit-candidate"));
     let kept = directory.join(format!("{name}.previous"));
     if let Err(error) = copy_executable(candidate, &staged) {

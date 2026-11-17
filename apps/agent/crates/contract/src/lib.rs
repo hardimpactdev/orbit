@@ -1,4 +1,5 @@
 //! Stable Rust contracts shared by the command runner and compiled extension crates.
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 pub mod identity;
 
 use serde::de::DeserializeOwned;

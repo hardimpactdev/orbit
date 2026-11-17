@@ -155,7 +155,12 @@ fn install(
         }
         let expected = &input.amd64_sha512;
         let name = format!("caddy_{}_linux_{architecture}.deb", input.release);
-        let path = work.0.join(&name);
+        let path = work
+            .0
+            .join(&name)
+            .into_os_string()
+            .into_string()
+            .map_err(|_| failed("The temporary directory is not a UTF-8 path."))?;
         let url = format!(
             "https://github.com/caddyserver/caddy/releases/download/v{}/{name}",
             input.release
@@ -176,7 +181,7 @@ fn install(
                 "--max-filesize",
                 "536870912",
                 "--output",
-                path.to_str().unwrap(),
+                &path,
                 &url,
             ],
         )?;
@@ -187,7 +192,7 @@ fn install(
             filename: None,
             version: None,
         };
-        super::recipe::artifacts::verify(&path, &artifact).map_err(|_| {
+        super::recipe::artifacts::verify(std::path::Path::new(&path), &artifact).map_err(|_| {
             failed(format!(
                 "The Caddy {} package does not match the Orbit pin.",
                 input.release
@@ -235,7 +240,7 @@ fn install(
                 "--no-install-recommends",
                 "--no-remove",
                 "--",
-                path.to_str().unwrap(),
+                &path,
             ])
             .env("DEBIAN_FRONTEND", "noninteractive"),
             true,

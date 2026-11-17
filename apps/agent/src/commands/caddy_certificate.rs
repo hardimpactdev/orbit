@@ -95,7 +95,10 @@ struct Files {
 }
 impl Files {
     fn path(&self, path: &Path) -> PathBuf {
-        self.root.join(path.strip_prefix("/").unwrap())
+        self.root.join(
+            path.strip_prefix("/")
+                .expect("callers pass fixed paths or a directory that scope() proved absolute"),
+        )
     }
     fn parents(&self) -> Result<bool, Error> {
         for path in ["/etc", "/etc/caddy"] {
@@ -238,7 +241,10 @@ fn install(
     }
     let candidate = current.with_file_name(format!(
         "{}.candidate.{:016x}",
-        current.file_name().unwrap().to_str().unwrap(),
+        current
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("scope() proved the directory ends in a UTF-8 name"),
         rand::random::<u64>()
     ));
     fs::DirBuilder::new()
