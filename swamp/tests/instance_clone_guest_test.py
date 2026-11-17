@@ -272,6 +272,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.exclude_users = []
         self.git_calls = []
         self.owner_calls = []
+        self.node_store_runs = []
 
     def git(self, cwd, *args):
         return subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", *args], cwd=cwd,
@@ -304,6 +305,9 @@ class WorkspaceCheckoutTest(unittest.TestCase):
 
         def command(argv, **_kwargs):
             actual = argv[4:] if argv[0] == "runuser" else argv
+            if "clone-fetch" in actual:
+                # The Node store step: who runs it, and with which home.
+                self.node_store_runs.append((argv[2] if argv[0] == "runuser" else "root", _kwargs.get("env", {}).get("HOME")))
             if actual[:4] == ["python3", "-I", "-c", OWNER_SOURCE]:
                 # Root's workspace pass: recorded with its arguments, and with `walk` run for real over the fixture's workspace. No
                 # fixture file has the uid it gives away, so the real pass changes modes only.
@@ -710,6 +714,8 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         second = self.phase("services", self.full_container(), self.full_private(), part_commands)
         second["changes"] = self.changed(second)
         self.assertEqual(self.state(), whole_state)
+        # The app user `web` runs the Node store step of the services part, with its own home (ADR 0268, second amendment).
+        self.assertEqual(self.node_store_runs, [("web", "/home/web")])
         # The same units start, the same Node store call runs, in the same order.
         self.assertEqual(self.named(part_commands), whole_commands)
         self.assertIn(["systemctl", "start", "orbit-process-19.service"], whole_commands)

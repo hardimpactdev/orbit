@@ -239,11 +239,11 @@ def phase_main(phase, raw):
     root = pathlib.Path
     private = sys.stdin.read()
 
-    def run(argv, check=True, agent=False, orbit=False, owner=False, timeout=40, private_input=None, isolated=False):
-        # `owner`: as `agent`, the workspace's owner, in the workspace (ADR 0268); `agent`: as `agent` in its home; `orbit`: the app user.
+    def run(argv, check=True, agent=False, web=False, owner=False, timeout=40, private_input=None, isolated=False):
+        # `owner`: as `agent`, the workspace's owner, in the workspace (ADR 0268); `agent`: as `agent` in its home; `web`: the app user.
         command = argv
-        if agent or orbit or owner:
-            argv = ["runuser", "-u", "orbit" if orbit else "agent", "--"] + argv
+        if agent or web or owner:
+            argv = ["runuser", "-u", "web" if web else "agent", "--"] + argv
         r = subprocess.run(
             argv,
             check=False,
@@ -254,11 +254,11 @@ def phase_main(phase, raw):
             errors="surrogateescape" if isolated else "strict",
             env=dict(
                 os.environ,
-                HOME="/home/agent" if agent or owner else "/home/orbit" if orbit else "/root",
+                HOME="/home/agent" if agent or owner else "/home/web" if web else "/root",
                 # The task check's own Git environment: no global or system configuration, so no ignore rule of a user's own.
                 **({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "LC_ALL": "C"} if isolated else {}),
             ),
-            cwd=ws if orbit or owner else "/home/agent" if agent else "/",
+            cwd=ws if web or owner else "/home/agent" if agent else "/",
             timeout=timeout,
         )
         if check and r.returncode:
@@ -471,7 +471,7 @@ def phase_main(phase, raw):
         # No Process starts on a branch this Instance did not check out.
         assert json.loads(root(CHECKOUT_MARK).read_text())["instance_id"] == c["instance_id"]
         inputs = json.loads(private)
-        # The shipped Node runtime helper, outside the app-owned store; the Node store step below runs it as orbit.
+        # The shipped Node runtime helper, outside the app-owned store; the Node store step below runs it as web.
         write(NODE_RUNTIME, c["node_runtime"], 0, 0, "0755")
         php_settings = len(changes)
         if c["php"] is not None:
@@ -497,7 +497,7 @@ def phase_main(phase, raw):
         # A running unit read the old settings at its start.
         php_settings_changed = len(changes) > php_settings
         # Root's workspace pass, the one program a deployment runs too (instance_workspace_owner.py, ADR 0268): the group gets back what
-        # the owner has, and `agent` gets each entry that `orbit` owns, so a copy of an older seed gets its one owner here.
+        # the owner has, and `agent` gets each entry that `web` owns, so a copy of an older seed gets its one owner here.
         # A copy of an older seed gives every entry away, `vendor` and `node_modules` too: it has the processes phase's whole time.
         if run(["python3", "-I", "-c", c["workspace_owner"], ws, "1000", "2750"], timeout=120).stdout.strip():
             changes.append("workspace-rights")
@@ -532,7 +532,7 @@ def phase_main(phase, raw):
         if web_config is not None:
             write(web_config["path"], web_config["content"])
         web_config_changed = len(changes) > before_web_config
-        node = run(["python3", NODE_RUNTIME, "clone-fetch", json.dumps({k: v for k, v in c.items() if k != "node_runtime"})], orbit=True, timeout=75, private_input=json.dumps(inputs.get("processes", {})))
+        node = run(["python3", NODE_RUNTIME, "clone-fetch", json.dumps({k: v for k, v in c.items() if k != "node_runtime"})], web=True, timeout=75, private_input=json.dumps(inputs.get("processes", {})))
         if json.loads(node.stdout)["status"] == "converted":
             changes.append("node-runtime")
         desired = c["units"] + c["processes"]

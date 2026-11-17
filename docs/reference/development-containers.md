@@ -539,7 +539,9 @@ The app user is `web`, uid 1000, and its primary group is `web`, gid 2760, with 
 
 Only the names change: every uid and gid other than 1000 stays, and so does `agent`. So the model route rule, which matches uid 2750, and the nested firewall rule, which matches uid 1000, stay as they are. The nested fleet's `raw.idmap` maps by number too.
 
-Root renames an older container in the `start` phase, which every start, wake and deployment runs. The rename comes as soon as the container runs, before any other step that runs a command in it. A default gets it at its next deployment or start. A copy gets it from its seed; a copy of an older seed gets it at its first start, in its clone, which runs the same steps. A running copy keeps the old names until its next start. No converge is needed.
+Root renames an older container in the `start` phase, which every start, wake and deployment runs. The rename comes as soon as the container runs, before any other step that runs a command in it. A default gets it at its next deployment or start.
+
+A copy takes the names of its seed. A clone does not run the `start` phase: the Node's clone script starts the copy. So a copy of a seed taken before the rename keeps the old names until its first start through Orbit, and its units, which name `web`, do not run until then. A running copy keeps the old names until its next start. No converge is needed.
 
 The tasks are `swamp/ansible/tasks/instance-app-user.yml`. They first read three facts in the container: the users `orbit` and `web` (`getent passwd`), the groups `orbit`, `work`, `web` and gid 1000 (`getent group`), and the unit files that name the old account (`grep -rl` in `/etc/systemd/system`). A container that has the user `web`, no group `work` or 1000 and no such unit file changes nothing. Otherwise root runs these steps:
 
