@@ -1,7 +1,7 @@
 """Regression cases for the installed phpdotenv parser's literal syntax."""
 import importlib.util
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 MODULE = Path(__file__).resolve().parents[1] / 'ansible/library/orbit_migrate_env.py'
 SPEC = importlib.util.spec_from_file_location('orbit_migrate_dotenv', MODULE)
