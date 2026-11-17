@@ -298,7 +298,9 @@ Incus reads a container's state only from its liblxc monitor. On 17 November 202
 - After its own `incus resume`, `restore` checks the kernel too. liblxc marks the container running before it writes the thaw.
 - A thaw that does not come within 5 s fails `instance.container_frozen_unmanaged`. The sleep's files stay for the next wake.
 - `prepare` never freezes such a container again.
-- Every `incus exec` that a wake runs has a bound from the Node, so a container that does not answer ends that step, not the run. The read of the boot units, the library-cache check and the CA check have 10 s. Each read of a running unit and each T3 try have 5 s. A nested fleet's Club key read has 10 s and its write 30 s.
+- Every `incus exec` that a wake runs has a bound from the Node, so a container that does not answer ends that step, not the run.
+
+The read of the boot units, the library-cache check and the CA check have 10 s each. Each read of a running unit and each T3 try have 5 s. A nested fleet's Club key read has 10 s, and its write has 30 s.
 
 A copy of a sleeping default needs no wake: the clone reads only the default's snapshot list and copies one seed snapshot. It never reads the live container's state, execs into it or changes it.
 
