@@ -1,0 +1,15 @@
+order = 1451
+cases = [
+  "the Conn launch workflow stages private input only on the dispatch and recovery paths",
+  "the Conn Ansible phase preserves private stdin and refuses a repeat of the same send",
+]
+file = "swamp/tests/ansible_conn_launch_test.ts"
+cost = 12
+requires = ["ansible"]
+inputs = [
+  "swamp/ansible/conn-launch.yml",
+  "swamp/ansible/t3_copy_rpc.mjs",
+  "swamp/extensions/behaviors/operations/ansible-input/write.ts",
+  "swamp/workflows/workflow-operation-conn-launch.yaml",
+]
+
