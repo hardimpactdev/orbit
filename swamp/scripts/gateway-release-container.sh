@@ -173,7 +173,7 @@ case "$action" in
     if retained; then exit 0; fi
     [[ $1 =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail 'invalid release repository'
     printf 'https://github.com/%s\n' "$1" | user "$prep" tee "$checkout/GATEWAY_ORIGIN" >/dev/null
-    enter "$prep" install -d -m 0750 -o orbit -g orbit /home/orbit/web
+    enter "$prep" install -d -m 0750 -o orbit -g orbit /home/orbit/web </dev/null
     # Run the same bounded extraction and digest validation used by host releases.
     enter "$prep" env ORBIT_GATEWAY_WEB_GROUP=orbit ORBIT_GATEWAY_WEB_ARCHIVE_STDIN="${ORBIT_GATEWAY_WEB_ARCHIVE_STDIN:-0}" bash "$checkout/swamp/scripts/gateway-release-web.sh" "$id" "$@"
     user "$prep" ln -sfnT "releases/$id" /home/orbit/web/current

@@ -40,15 +40,15 @@ inputs:
     # Names only: one scoped GitHub token (contents and actions read) the Gateway minted at run start.
     execution_secrets:
       type: object
-      properties:
-        github_token:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^gateway-release-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
-      additionalProperties: false
+      propertyNames: {enum: [github_token]}
+      maxProperties: 1
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^gateway-release-[1-9][0-9]*$'}
+        required: [vault, key]
+        additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:

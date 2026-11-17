@@ -3,6 +3,8 @@ cases = [
   "no release step admits a task VM image refresh: the VM refresh triggers are gone",
   "Swamp load requires the bounded DB busy guard, including forced releases",
   "the nested-fleet refresh is admitted after successful verify and the new Horizon start, best effort, once per release",
+  "the sealed web build precedes clone; sleep can start in parallel with candidate preparation",
+  "only a verified public switch retires the former live container; pruning follows the handover",
 ]
 file = "swamp/tests/gateway_release_order_test.ts"
 cost = 1
