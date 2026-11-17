@@ -394,7 +394,7 @@ class SwapTest(Fixture):
     def test_the_incus_read_takes_the_swap_from_the_expanded_config(self):
         incus = power.Incus()
         for config, expected in (({"limits.memory.swap": "12GiB"}, str(12 << 30)), ({}, "0")):
-            incus._request = lambda *args, **kwargs: (200, {"metadata": {
+            incus._request = lambda *args, config=config, **kwargs: (200, {"metadata": {
                 "status": "Running", "config": {"volatile.uuid": "uuid-1", "limits.memory.swap": "1GiB"}, "expanded_config": config,
                 "state": {"pid": 42}}})
             self.assertEqual(incus.instance("orbit-instances-nested", "instance-7"),
