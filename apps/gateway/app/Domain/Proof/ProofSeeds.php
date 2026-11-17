@@ -21,6 +21,7 @@ use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\ProofSeed;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -56,6 +57,15 @@ final readonly class ProofSeeds
     public const string Holder = 'proof-seed';
 
     public const string HolderVolume = self::Holder.'-inner';
+
+    /** The one hold of the default's seed (docs/reference/development-containers.md#the-seed-hold): a seed copy's Operation lock. */
+    public const string HoldKind = 'instance_seed';
+
+    /** A deployment of the default that holds the seed records it in its Operation state until it ends. */
+    public const string HeldState = 'seed_held';
+
+    /** The admission's refusal while a deployment of the default holds the seed; the deployment's end admits the copy again. */
+    public const string Held = 'instance.seed_held';
 
     /** The client remote of root on the default's Node that names a CI Node's listener. */
     public const string RemotePrefix = 'proof-node-';
@@ -123,6 +133,16 @@ final readonly class ProofSeeds
         $runtime = $default?->runtime;
 
         return $default?->status === InstanceState::Active && $this->seededDefault($default, $runtime) ? $runtime : null;
+    }
+
+    /**
+     * Whether a seed copy sends this Instance's seed: the proof Project's default in the nested project. Its deployment holds the seed
+     * before it retakes it (docs/reference/development-containers.md#the-seed-hold). Read from the loaded models, with no query.
+     */
+    public function sends(Instance $instance, ?InstanceRuntime $runtime): bool
+    {
+        return $instance->project_id === $this->settings->projectId() && $instance->name === DefaultInstanceName::Name
+            && $runtime?->incus_project === InstancePlacement::NestedProject;
     }
 
     /** Whether the Instance is the proof Project's default in the nested project with a seed: read from the loaded models, with no query. */
@@ -239,8 +259,16 @@ final readonly class ProofSeeds
                 'targets' => array_map(static fn (Node $node): int => $node->id, $targets), 'release_base' => count($targets) === count($behind),
                 'run_budget_seconds' => self::budgetSeconds(count($targets))];
 
-            return app(StartOperationAction::class)->execute(self::Kind, 'instance', $source->instance_id, $source->node_id, $input,
-                $trigger, null, lockKey: OperationStore::lockKey('instance_seed_copy', $source->instance_id));
+            // The default's row orders this admission with a deployment's hold of the seed ({@see self::hold()}).
+            return DB::transaction(static function () use ($source, $input, $trigger): Operation {
+                Instance::query()->whereKey($source->instance_id)->lockForUpdate()->firstOrFail();
+                if (self::heldByDeployment($source->instance_id)) {
+                    throw new ResourceOperationException(self::Held, 'A deployment of the default holds its seed.', 409);
+                }
+
+                return app(StartOperationAction::class)->execute(self::Kind, 'instance', $source->instance_id, $source->node_id, $input,
+                    $trigger, null, lockKey: self::holdKey($source->instance_id));
+            });
         } catch (ResourceOperationException $refused) {
             Log::info('Proof seed copy not admitted.', ['trigger' => $trigger, 'code' => $refused->errorCode]);
         } catch (Throwable $failed) {
@@ -248,6 +276,42 @@ final readonly class ProofSeeds
         }
 
         return null;
+    }
+
+    /** The hold key of the default's seed, which an open seed copy holds as its Operation lock. */
+    public static function holdKey(int $defaultId): string
+    {
+        return OperationStore::lockKey(self::HoldKind, $defaultId);
+    }
+
+    /**
+     * A deployment of the default takes the seed before its first `seed` phase (docs/cli/instance/container/deploy-default.mmd): true
+     * when it holds it now or held it already, false while a seed copy holds it. Once taken, the deployment holds the seed until it ends,
+     * and no seed copy is admitted meanwhile; its end admits one again.
+     */
+    public function hold(Operation $deployment): bool
+    {
+        return DB::transaction(static function () use ($deployment): bool {
+            Instance::query()->whereKey($deployment->target_id)->lockForUpdate()->firstOrFail();
+            $locked = Operation::query()->lockForUpdate()->findOrFail($deployment->id);
+            if (($locked->state[self::HeldState] ?? false) === true) {
+                return true;
+            }
+            if (Operation::query()->where('lock_key', self::holdKey($locked->target_id))->exists()) {
+                return false;
+            }
+            $locked->forceFill(['state' => [...($locked->state ?? []), self::HeldState => true]])->save();
+
+            return true;
+        });
+    }
+
+    /** Whether an open deployment of the default holds its seed. */
+    private static function heldByDeployment(int $defaultId): bool
+    {
+        // An open deployment of a container holds the Instance lock; the terminal status frees it, and the seed with it.
+        return Operation::query()->where('lock_key', OperationStore::lockKey('instance', $defaultId))->where('kind', 'instance.deploy')
+            ->where('state->'.self::HeldState, true)->exists();
     }
 
     /**

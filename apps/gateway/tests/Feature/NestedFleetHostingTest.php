@@ -11,6 +11,7 @@ use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceContainer;
@@ -640,7 +641,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and($desired->has('orbit:wireguard-members'))->toBeTrue();
     });
 
-    it('admits one seed copy to the Nodes behind the seed, under the default\'s seed-copy lock, with the push intent', function (): void {
+    it('admits one seed copy to the Nodes behind the seed, under the default\'s seed hold, with the push intent', function (): void {
         $default = proofSeedDefault();
         $runtime = $default->runtime()->firstOrFail();
         $runtime->update(['inner_volume' => 'inner-'.$default->id]);
@@ -653,7 +654,7 @@ describe('the seed of the proof default on each Node that offers proof places', 
         expect($operation?->kind)->toBe('instance.seed_copy')
             ->and($operation->target_id)->toBe($default->id)
             ->and($operation->node_id)->toBe($default->node_id)
-            ->and($operation->lock_key)->toBe('instance_seed_copy:'.$default->id)
+            ->and($operation->lock_key)->toBe('instance_seed:'.$default->id)
             ->and($operation->input)->toBe(['default_instance_id' => $default->id, 'commit' => str_repeat('a', 40),
                 'taken_at' => $runtime->refresh()->seed_taken_at?->toIso8601String(), 'targets' => [$node->id], 'release_base' => true,
                 'run_budget_seconds' => 900 + 2500])
@@ -840,6 +841,70 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and($copy->input['targets'])->toBe([$node->id])
             ->and($copy->triggered_by)->toBe('seed');
     });
+
+    it('makes a deployment of the proof default wait for the seed while a seed copy pushes it, then hold it (seed copy first)', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($node);
+        $copy = app(ProofSeeds::class)->admit('seed') ?? throw new LogicException('The copy was not admitted.');
+        $deploy = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id,
+            'node_id' => $default->node_id, 'status' => 'running', 'triggered_by' => 'release', 'lock_key' => 'instance:'.$default->id,
+            'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($default)], 'state' => ['swamp_run_id' => '0b6f2a52-0000-4000-8000-000000000001']]);
+
+        // The deployment's intent asks for the hold; the seed copy holds it, so the step waits and asks again.
+        expect(app(InstanceContainer::class)->intent($default->refresh(), $default->runtime()->firstOrFail())['seed_hold'] ?? null)->toBeTrue()
+            ->and(app(ProofSeeds::class)->hold($deploy))->toBeFalse()
+            ->and($deploy->refresh()->state[ProofSeeds::HeldState] ?? null)->toBeNull();
+        config(['operations.seed_hold_wait_seconds' => 0]);
+        // The run's call is from the Swamp Node, as a WireGuard peer.
+        app()->forgetInstance(RequireActiveWireGuardPeer::class);
+        $this->withServerVariables(['REMOTE_ADDR' => Node::query()->findOrFail(SwampNode::id())->wireguard_ip])
+            ->postJson('/api/v1/direct-operations/'.$deploy->id.'/seed-hold', ['run_id' => '0b6f2a52-0000-4000-8000-000000000001'])
+            ->assertStatus(423)->assertJsonPath('error.code', 'instance.seed_busy');
+
+        // The copy ends with every snapshot it pushed; then the deployment holds the seed, and a retry of the call keeps it.
+        $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-copy']])->save();
+        app(ProofSeedCopyProjection::class)->apply($copy, ['status' => 'succeeded', 'run_id' => 'run-copy', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['targets' => [['node_id' => $node->id, 'status' => 'succeeded']]]]);
+        expect($copy->refresh()->status->terminal())->toBeTrue()
+            ->and(ProofSeed::query()->where('node_id', $node->id)->sole()->commit)->toBe(str_repeat('a', 40))
+            ->and(app(ProofSeeds::class)->hold($deploy))->toBeTrue()
+            ->and(app(ProofSeeds::class)->hold($deploy))->toBeTrue()
+            ->and($deploy->refresh()->state[ProofSeeds::HeldState])->toBeTrue();
+        $this->withServerVariables(['REMOTE_ADDR' => Node::query()->findOrFail(SwampNode::id())->wireguard_ip])
+            ->postJson('/api/v1/direct-operations/'.$deploy->id.'/seed-hold', ['run_id' => '0b6f2a52-0000-4000-8000-000000000001'])
+            ->assertOk()->assertJsonPath('data.held', true);
+    });
+
+    it('refuses a seed copy while a deployment holds the default\'s seed, and admits it when the deployment ends (deployment first)', function (string $status): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($node);
+        $deploy = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id,
+            'node_id' => $default->node_id, 'status' => 'running', 'triggered_by' => 'release', 'lock_key' => 'instance:'.$default->id,
+            'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($default)], 'state' => ['swamp_run_id' => 'run-1']]);
+        expect(app(ProofSeeds::class)->hold($deploy))->toBeTrue();
+
+        // A Node's own converge asks for a copy while the retake runs: it is not admitted.
+        expect(app(ProofSeeds::class)->admit('node_role', node: $node->id))->toBeNull()
+            ->and(Operation::query()->where('kind', ProofSeeds::Kind)->count())->toBe(0);
+
+        $commit = str_repeat('b', 40);
+        app(InstanceDeployProjection::class)->apply($deploy, ['status' => $status, 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode(
+                $status === 'succeeded' ? ['commit' => $commit] : ['error_code' => 'instance.container_seed_failed'], JSON_THROW_ON_ERROR)]],
+                'summary' => ['failed_steps' => $status === 'succeeded' ? [] : ['Finish the container']]]]);
+
+        // The end gives the seed back and admits the copy, for the new seed or for the old one that the Node still lacks.
+        $copy = Operation::query()->where('kind', ProofSeeds::Kind)->sole();
+        expect($copy->input['targets'])->toBe([$node->id])
+            ->and($copy->input['commit'])->toBe($status === 'succeeded' ? $commit : str_repeat('a', 40))
+            ->and($copy->lock_key)->toBe('instance_seed:'.$default->id);
+    })->with(['passed' => 'succeeded', 'failed' => 'failed']);
 
     it('admits the seed copy when a ci-runner add of a Node that offers proof places passes', function (): void {
         proofSeedDefault();
