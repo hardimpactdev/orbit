@@ -1,0 +1,30 @@
+sequenceDiagram
+  %% status: draft
+  %% command: POST /api/v1/conn/launches
+  %% kind: conn.launch
+  autonumber
+  participant C as API caller
+  participant G as Gateway
+  participant S as Swamp
+  C->>G: Admit the launch
+  %%> Validate the expected device and its locked profile binding on first admission and replay.
+  %%> Store the encrypted request with the parent Operation.
+  G-->>C: 202 · launch snapshot
+  G->>S: Prepare the Instance
+  %%> Use the exact owned create or admitted wake. Record application completion separately.
+  %%> Read the registered stock T3 project and model defaults.
+  alt Cancel wins the Operation lock
+    %% path: cancel
+    G->>S: Remove owned work
+    %%> Verified cleanup ends the launch. A failed or unproven cleanup remains Cancelling.
+    S-->>G: Cleanup proof
+  else Dispatch wins the Operation lock
+    %% path: handoff
+    G->>S: Send the first message
+    %%> After an ambiguous reply, read the exact message on the original T3 state.
+    S-->>G: Verified acceptance
+    Note over G: Publish the thread
+    %%> Retry only publication after acceptance. Leave a deleted workspace absent.
+  end
+  C->>G: Follow or control
+  G-->>C: Recorded snapshot
