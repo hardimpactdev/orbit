@@ -36,11 +36,9 @@ final readonly class InstanceImage
 
     /**
      * OS packages beyond the stock image: the firewall, ACLs on the workspace, Git for the workspace repository, and sudo for
-     * `agent`'s grant (self::SudoGrant), plus the libraries Conn's Chrome headless shell links. The stock image ships sudo too,
-     * so a container of an older image has it.
+     * `agent`'s grant (self::SudoGrant). The stock image ships sudo too, so a container of an older image has it.
      */
-    public const array Packages = ['acl', 'git', 'nftables', 'sudo', 'libnss3', 'libatk-bridge2.0-0t64',
-        'libxcomposite1', 'libxdamage1', 'libxfixes3', 'libxrandr2', 'libgbm1', 'libxkbcommon0', 'libasound2t64'];
+    public const array Packages = ['acl', 'git', 'nftables', 'sudo'];
 
     /**
      * `agent`'s passwordless sudo in every container, normal and nested (ADR 0268, amendment): the only sudo path an image keeps.

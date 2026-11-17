@@ -12,7 +12,7 @@ A Project chooses the server that runs in its Instance containers: `t3`, the T3 
 
 In progress.
 
-The recipe pins Conn Server 0.2.0 as the agent folder's part `conn-server`, with Chrome headless shell 157.0.8103.78 as `chrome-headless-shell`, so Orbit accepts the `conn` choice and supplies its preview browser.
+The owner decided on 2026-11-15. The recipe pins Conn Server 0.2.0 as the agent folder's part `conn-server`, with Chrome headless shell 157.0.8103.78 as `chrome-headless-shell`, so Orbit accepts the `conn` choice and supplies its preview browser. On 2026-11-16 a clone of the first Project that chose `conn` ran the Conn Server on Beast, and one agent turn through `thread start --wait` completed.
 
 Principle: [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles).
 
@@ -43,7 +43,7 @@ The agent folder is shared by every container on a Node, so the choice cannot li
 - A Project switches to the Conn Server for its new containers only. Its existing containers keep T3; to move a container to the other server, a person destroys it and creates it again.
 - An agent folder update restarts both servers the same way, with `systemctl try-restart t3.service`.
 - `conn:environment-restart` treats the Conn Server's SDK host as it treats a provider. The host, the providers under it and what stays in the `claude` session may go, as under T3; any other process under it keeps the container busy ([the rule](/reference/development-containers#existing-instances)).
-- The recipe pins the Conn Server as the agent folder's part `conn-server`. `nckrtl/conn` publishes each release with the tag `conn-server-v<version>` and the asset `conn-server-<version>-linux-x64.tar.gz`, with its digest in the asset `conn-server-<version>-linux-x64.tar.gz.sha256`. The part's `bin` is `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`. A bump changes the part's version, URL and digest. The `chrome-headless-shell` pin comes from `nckrtl/conn`'s `apps/conn-server/crates/conn-preview/chrome.json`. Its ZIP stays intact when unpacked, including `.pak`, `.so` and locale files. The container image supplies Chrome's system libraries. With the browser path configured, Conn never downloads Chrome; it refuses preview tools with a typed error if the executable is missing or has the wrong version.
+- The recipe pins the Conn Server as the agent folder's part `conn-server`. `nckrtl/conn` publishes each release with the tag `conn-server-v<version>` and the asset `conn-server-<version>-linux-x64.tar.gz`, with its digest in the asset `conn-server-<version>-linux-x64.tar.gz.sha256`. The part's `bin` is `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`. A bump changes the part's version, URL and digest. The `chrome-headless-shell` pin comes from `nckrtl/conn`'s `apps/conn-server/crates/conn-preview/chrome.json`. Its ZIP stays intact when unpacked, including `.pak`, `.so` and locale files. The runtime folder's `browser-<package>` parts supply Chrome's system libraries, as for any headless browser. With the browser path configured, Conn never downloads Chrome; it refuses preview tools with a typed error if the executable is missing or has the wrong version.
 
 ## Affects
 

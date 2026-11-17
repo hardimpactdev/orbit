@@ -311,8 +311,7 @@ describe('the Instance image', function (): void {
             "find /etc/sudoers.d -mindepth 1 ! -name README -delete\n", 'install -d -o agent -g work -m 2770 /srv/workspace',
             'd:u::rwX,d:g::rwX,d:g:work:rwX,d:o::---', 'hidepid=invisible',
         )
-            ->and($image['packages'])->toBe(['acl', 'git', 'nftables', 'sudo', 'libnss3', 'libatk-bridge2.0-0t64',
-                'libxcomposite1', 'libxdamage1', 'libxfixes3', 'libxrandr2', 'libgbm1', 'libxkbcommon0', 'libasound2t64'])
+            ->and($image['packages'])->toBe(['acl', 'git', 'nftables', 'sudo'])
             // ADR 0268, amendment: the stock grants go, and `agent`'s one grant is the only sudo path; `orbit` has none.
             ->and($files[InstanceImage::SudoGrant])->toBe(['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440', 'existing' => true])
             ->and(array_values(array_filter(array_keys($files), static fn (string $path): bool => str_starts_with($path, '/etc/sudoers'))))->toBe([InstanceImage::SudoGrant])

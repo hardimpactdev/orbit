@@ -361,7 +361,7 @@ For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/
 
 The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins Conn Server 0.2.0 as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, so every agent folder holds both programs. Its releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host.
 
-The part `chrome-headless-shell` pins Chrome 157.0.8103.78 from `nckrtl/conn`'s `apps/conn-server/crates/conn-preview/chrome.json`. Its ZIP unpacks with its `.pak`, `.so` and locale files beside the executable. The image supplies its system libraries. With this path configured, Conn never downloads Chrome; it refuses preview tools with a typed error if the executable is missing or has the wrong version.
+The part `chrome-headless-shell` pins Chrome 157.0.8103.78 from `nckrtl/conn`'s `apps/conn-server/crates/conn-preview/chrome.json`. Its ZIP unpacks with its `.pak`, `.so` and locale files beside the executable. The runtime folder's [browser libraries](#browser-libraries-and-fonts) supply its system libraries. With this path configured, Conn never downloads Chrome; it refuses preview tools with a typed error if the executable is missing or has the wrong version.
 
 ## Workspace volumes (draft)
 
@@ -489,9 +489,9 @@ Failure to preserve ownership blocks this design. It does not authorize weaker i
 
 ### Browser libraries and fonts
 
-A headless browser, such as the Chromium that a Project's own Playwright downloads, starts in every container. The image supplies the system libraries for the Conn Server's pinned Chrome headless shell. The runtime folder adds libraries that other browsers need and fonts, once per Node.
+A headless browser, such as the Chromium that a Project's own Playwright downloads, starts in every container. The image has none of the libraries it links, and no fonts. So the runtime folder holds them, once per Node.
 
-The recipe pins each runtime library and font as a Debian package of its Ubuntu snapshot. Each is a runtime part named `browser-<package>`. The packages hold what Chromium links and the image lacks, with their own dependencies. GPU drivers stay out of the runtime folder: `libgbm` loads them only on demand, and a container has no GPU. DejaVu gives sans, serif and mono. Liberation stands in for Arial, Times New Roman and Courier New. Noto Color Emoji gives the emoji.
+The recipe pins each library and font as a Debian package of its Ubuntu snapshot. Each is a runtime part named `browser-<package>`. The packages hold what Chromium links and the image lacks, with their own dependencies. GPU drivers stay out: `libgbm` loads them only on demand, and a container has no GPU. DejaVu gives sans, serif and mono. Liberation stands in for Arial, Times New Roman and Courier New. Noto Color Emoji gives the emoji.
 
 - **Folders.** The converge unpacks each package in its part and links its libraries into the version's `lib` and its fonts into `fonts`. Two packages that give the same name fail the build.
 - **Linker.** `/etc/ld.so.conf.d/zz-orbit-browser.conf` names `/opt/orbit-runtime/current/lib`. The name sorts after the stock `x86_64-linux-gnu.conf`, so a system library of the same name always wins: the folder only adds what the image lacks.
