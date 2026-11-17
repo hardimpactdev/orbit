@@ -212,7 +212,7 @@ The rule covers the Cluster TLD and every exact Cluster-scoped Route domain, als
 | A Node-scoped Route | The workload Node's WireGuard address |
 | A custom proxy Route | The serving Node's WireGuard address |
 | A name under an `app-dev` Node's TLD | That Node's WireGuard address, unless the TLD is also a Cluster TLD |
-| A name under the TLD of an `app-prod` Node outside every Cluster | That Node's WireGuard address. No Router answers such a TLD, so a [production clone's](/reference/instance-cloning#destination-checks) preview Route under it needs no record, as the clone requires. An `app-prod` Node in a Cluster gets no TLD rule |
+| A name under the TLD of an `app-prod` Node outside every Cluster | That Node's WireGuard address, so a [production clone's](/reference/instance-cloning#destination-checks) preview Route needs no record. A Node in a Cluster gets no such rule |
 | `gateway.orbit` | The WireGuard address of the Node with the `gateway` role, active or converging |
 | `metrics.orbit` | The same address as `gateway.orbit`, and only while a Node holds the `metrics` role |
 | `reverb.orbit` | The Node that holds `websocket` |
