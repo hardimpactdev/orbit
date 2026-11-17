@@ -127,6 +127,16 @@ it('sends each order of the Operation as executor-order on its Node, with a new 
         && $event->broadcastWith() === ['operation' => (string) $operation->id, 'order' => $first->wire]);
 });
 
+it('refuses a non-string stored action before signing or publishing an order', function (): void {
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
+    $operation->update(['input' => ['action' => ['sleep']]]);
+
+    expect(fn () => $this->proof->send($operation, ExecutorOrderSigner::fromConfig()))
+        ->toThrow(InvalidArgumentException::class, 'An executor proof Operation needs a string action.');
+
+    Event::assertNotDispatched(ExecutorOrderBroadcast::class);
+});
+
 it('hands the result the listener records to the waiting request and closes the Operation', function (): void {
     $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
     $done = proofDone($operation, repeat: false, clock: 1);

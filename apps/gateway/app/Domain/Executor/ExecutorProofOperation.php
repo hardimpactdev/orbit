@@ -76,7 +76,7 @@ final readonly class ExecutorProofOperation
     /** Records a running proof Operation on its Node or Instance target. Only {@see self::run} calls it. */
     private function start(Node $node, ?Instance $instance, string $action): Operation
     {
-        $operation = $this->operations->create($instance === null ? OperationKinds::ExecutorProof : OperationKinds::ExecutorPowerProof, $instance === null ? 'node' : 'instance', $instance?->id ?? $node->id, $node->id,
+        $operation = $this->operations->create($instance === null ? OperationKinds::ExecutorProof : OperationKinds::ExecutorPowerProof, $instance === null ? 'node' : 'instance', $instance === null ? $node->id : $instance->id, $node->id,
             ['action' => $instance === null ? self::Action : $action], self::TriggeredBy, (string) Str::uuid());
         $this->operations->change($operation, ['status' => OperationStatus::Running, 'started_at' => now()]);
 
@@ -94,7 +94,11 @@ final readonly class ExecutorProofOperation
         if (! in_array($operation->kind, [OperationKinds::ExecutorProof, OperationKinds::ExecutorPowerProof], true) || $operation->status->terminal()) {
             throw new InvalidArgumentException('Only an open executor proof Operation sends a proof order.');
         }
-        $order = $signer->sign($operation, (string) ($operation->input['action'] ?? self::Action), (string) $operation->target_id);
+        $action = $operation->input['action'] ?? self::Action;
+        if (! is_string($action)) {
+            throw new InvalidArgumentException('An executor proof Operation needs a string action.');
+        }
+        $order = $signer->sign($operation, $action, (string) $operation->target_id);
         $this->publisher->publish($operation, $order);
 
         return $order;
