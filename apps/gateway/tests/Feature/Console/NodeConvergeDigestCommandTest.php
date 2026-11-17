@@ -14,6 +14,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
@@ -203,4 +204,16 @@ it('reads the default digest of a build-list Node with no Instance bridge yet as
         ->and(app(NodeDesiredConvergeInput::class)->defaultDigest($this->node))->toBe($first)
         // The bridge the read allocates rolls back with the rest of the capture.
         ->and(Node::query()->whereKey($this->node->id)->value('instance_bridge'))->toBeNull();
+});
+
+it('names the error of a Node whose intent cannot be built and still prints the digests of the others', function (): void {
+    // docs/reference/development-containers.md#what-a-refresh-skips: the refresh reports that Node alone as digest_unreadable.
+    // The agent pin has no artifact for this architecture, so the intent of app-dev cannot be built.
+    Node::withoutEvents(fn () => $this->node->forceFill(['architecture' => 'aarch64'])->save());
+    $gateway = app(NodeDesiredConvergeInput::class)->baseDigest(Node::query()->where('name', 'gateway')->sole());
+    $code = Artisan::call('orbit:node-converge-digest', ['nodes' => ['gateway', 'app-dev'], '--base' => true]);
+    $read = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($code)->toBe(0)->and($read['gateway'])->toBe($gateway)->and($read['app-dev'])->toHaveKey('error')
+        ->and($read['app-dev']['error'])->toBeString()->not->toBe('');
 });

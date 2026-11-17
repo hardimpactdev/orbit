@@ -128,10 +128,43 @@ final readonly class ContainerDeployOutcome
     }
 
     /**
+     * One reason for each of the three nested Nodes: `digest_unreadable` with its `error`, `no_record`, `digest_changed`, `stale` or
+     * `unchanged`. A Node the refresh converged may name the skippable `phases` its converge ran; an unchanged Node converged nothing.
+     *
+     * @param  list<string>  $converged
+     * @return array<string,array{reason:string,error?:string,phases?:list<string>}>|null
+     */
+    private static function convergeReasons(mixed $raw, array $converged): ?array
+    {
+        if (! is_array($raw) || array_keys($raw) !== ['gateway', 'app-dev', 'app-prod']) {
+            return null;
+        }
+        $reasons = [];
+        foreach ($raw as $node => $entry) {
+            $reason = is_array($entry) ? ($entry['reason'] ?? null) : null;
+            if (! is_array($entry) || ! in_array($reason, ['digest_unreadable', 'no_record', 'digest_changed', 'stale', 'unchanged'], true)
+                || array_diff(array_keys($entry), ['reason', 'error', 'phases']) !== []
+                || ($reason === 'digest_unreadable') !== (is_string($entry['error'] ?? null) && $entry['error'] !== '' && mb_strlen($entry['error']) <= 300)
+                || ($reason !== 'digest_unreadable' && array_key_exists('error', $entry))) {
+                return null;
+            }
+            $phases = $entry['phases'] ?? null;
+            if (array_key_exists('phases', $entry) && (! in_array($node, $converged, true) || ! is_array($phases) || ! array_is_list($phases)
+                || array_diff($phases, ['agent', 'software', 'roles', 'tools', 'network']) !== [])) {
+                return null;
+            }
+            $reasons[$node] = ['reason' => $reason, ...(isset($entry['error']) ? ['error' => $entry['error']] : []),
+                ...(is_array($phases) ? ['phases' => array_values(array_map(ValidatedData::string(...), $phases))] : [])];
+        }
+
+        return $reasons;
+    }
+
+    /**
      * The refresh's own words for each part (docs/reference/development-containers.md#what-a-refresh-skips), or null when the run
      * has no refresh or its words are not these.
      *
-     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,converge_nodes:list<string>,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,shrink:string,shrink_reason:string,swamp:string,swamp_reason:string,swamp_version:?string,host?:'converged'|'kept'|'skipped_idmap_small',seconds:array<string,int>}|null
+     * @return array{migrate:string,restart:string,converge:string,converge_reasons:array<string,array{reason:string,error?:string,phases?:list<string>}>,converge_nodes:list<string>,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,shrink:string,shrink_reason:string,swamp:string,swamp_reason:string,swamp_version:?string,host?:'converged'|'kept'|'skipped_idmap_small',seconds:array<string,int>}|null
      */
     private static function fleetRefresh(mixed $raw): ?array
     {
@@ -139,7 +172,6 @@ final readonly class ContainerDeployOutcome
             return null;
         }
         $words = ['migrate' => ['applied', 'nothing', 'skipped'], 'restart' => ['yes', 'no'], 'converge' => ['ran', 'skipped'],
-            'converge_reason' => ['changed', 'record', 'digest_unreadable', 'stale', 'unchanged'],
             'tokens' => ['reminted', 'young', 'skipped'], 'tokens_reason' => ['age', 'incomplete', 'unreadable', 'young', 'recorded', 'no_key'], 'base' => ['retaken', 'kept'],
             'record' => ['present', 'missing', 'unreadable'], 'tools' => ['present', 'built', 'failed'],
             'tools_reason' => ['current', 'missing', 'names', 'package', 'venv', 'collections', 'cleanup', 'timeout', 'unreadable'],
@@ -160,6 +192,12 @@ final readonly class ContainerDeployOutcome
             || count(array_unique($nodes)) !== count($nodes) || ($refresh['converge'] === 'skipped') !== ($nodes === [])) {
             return null;
         }
+        // Each nested Node's own reason, and for a converged Node the phases its converge ran
+        // (docs/reference/development-containers.md#what-a-refresh-skips).
+        $reasons = self::convergeReasons($raw['converge_reasons'] ?? null, $nodes);
+        if ($reasons === null) {
+            return null;
+        }
         // The recipe's Swamp release as the refresh read it; none when it read nothing.
         $swampVersion = $raw['swamp_version'] ?? null;
         if (! array_key_exists('swamp_version', $raw) || ($swampVersion !== null && (! is_string($swampVersion)
@@ -172,7 +210,7 @@ final readonly class ContainerDeployOutcome
             return null;
         }
         $refresh = ['migrate' => $refresh['migrate'], 'restart' => $refresh['restart'], 'converge' => $refresh['converge'],
-            'converge_reason' => $refresh['converge_reason'], 'converge_nodes' => $nodes, 'changed' => $raw['changed'], 'tokens' => $refresh['tokens'], 'tokens_reason' => $refresh['tokens_reason'],
+            'converge_reasons' => $reasons, 'converge_nodes' => $nodes, 'changed' => $raw['changed'], 'tokens' => $refresh['tokens'], 'tokens_reason' => $refresh['tokens_reason'],
             'base' => $refresh['base'], 'base_containers' => $containers, 'record' => $refresh['record'], 'tools' => $refresh['tools'],
             'tools_reason' => $refresh['tools_reason'], 'shrink' => $refresh['shrink'], 'shrink_reason' => $refresh['shrink_reason'],
             'swamp' => $refresh['swamp'], 'swamp_reason' => $refresh['swamp_reason'], 'swamp_version' => $swampVersion];

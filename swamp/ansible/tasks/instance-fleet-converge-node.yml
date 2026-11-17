@@ -59,7 +59,13 @@
 - name: Count the tasks the converges changed
   vars:
     fleet_operation_changed: "{{ (item.data.result | default({}, true)).changed | default(none) }}"
+    fleet_operation_phases: "{{ (item.data.result | default({}, true)).phases | default(none) }}"
   ansible.builtin.set_fact:
+    # The skippable phases the converge ran: those whose phase digest moved, by the Node's one skip rule. `input` and `check` always run.
+    fleet_converge_phases: >-
+      {{ fleet_converge_phases | default({}) | combine({item.name: fleet_operation_phases | rejectattr('status', 'eq', 'unchanged')
+         | map(attribute='name') | reject('in', ['input', 'check']) | list} if fleet_operation_phases is iterable and fleet_operation_phases is not string
+         and fleet_operation_phases is not mapping else {}) }}
     fleet_converge_changed: "{{ fleet_converge_changed | int + (fleet_operation_changed | int if fleet_operation_changed is number else 1) }}"
     # The Nodes whose disk the converge changed: their `base` is retaken, with the nested Gateway's.
     fleet_converge_changed_roles: >-

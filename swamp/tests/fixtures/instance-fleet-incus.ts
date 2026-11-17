@@ -365,15 +365,16 @@ if (command[0] === "incus") {
     // A checkout that moved under the running nested Gateway (`schemaBehind`): Doctor is unhealthy until the migrate and a restart after it.
     // `pendingMigration`: the migrate applies one (Laravel prints each migration); otherwise it prints that nothing was due.
     // The nested Gateway's digest of each named Node's default converge intent (`orbit:node-converge-digest`): `intentDigests` names a
-    // Node's digest, `intentDigestFail` makes the command fail.
+    // Node's digest, `intentDigestErrors` the error of a Node whose intent cannot be built, `intentDigestFail` makes the command fail.
     if (rest[0] === "php" && rest.includes("orbit:node-converge-digest")) {
       if (rest.includes("--base")) fail("A refresh reads the default intent digest");
-      if (state.intentDigestFail) fail("The converge intent of app-dev cannot be built: RuntimeException");
+      if (state.intentDigestFail) fail("The Node app-dev is unknown.");
       const own: Record<string, string> = { gateway: "1", "app-dev": "2", "app-prod": "3" };
       const nodes = rest.slice(rest.indexOf("--host") + 2);
       // `--host app-dev`: nested-app-dev's Instance host intent digest (`hostIntentDigest`), or empty before it has its bridge.
       const host = rest.includes("--host") ? { host: state.hostIntentDigest ?? "4".repeat(64) } : {};
-      done(JSON.stringify({ ...Object.fromEntries(nodes.map((node) => [node, state.intentDigests?.[node] ?? own[node].repeat(64)])), ...host }));
+      done(JSON.stringify({ ...Object.fromEntries(nodes.map((node) => [node, state.intentDigestErrors?.[node] !== undefined
+        ? { error: state.intentDigestErrors[node] } : state.intentDigests?.[node] ?? own[node].repeat(64)])), ...host }));
     }
     if (rest[0] === "php" && rest.includes("migrate")) {
       state.migrated = true;
@@ -518,9 +519,10 @@ if (command[0] === "curl") {
     }
     found.ended = true;
     // `convergeChanged`: the tasks each Node's base converge changed, as the Operation's `result.changed`; 0 by default.
-    // `convergeNoCount`: a result without a count.
+    // `convergeNoCount`: a result without a count. `convergePhases`: each Node's phases and their status, as the Operation's `result.phases`.
+    const phases = state.convergePhases?.[found.node] ? { phases: state.convergePhases[found.node] } : {};
     done({ data: { id: Number(operation[1]), status: found.status, error_code: found.status === "failed" ? "node.converge_failed" : null,
-      result: found.status !== "succeeded" ? null : state.convergeNoCount ? {} : { changed: state.convergeChanged?.[found.node] ?? 0 } } });
+      result: found.status !== "succeeded" ? null : state.convergeNoCount ? {} : { changed: state.convergeChanged?.[found.node] ?? 0, ...phases } } });
   }
   fail(`Unexpected API call: ${method} ${path}`);
 }

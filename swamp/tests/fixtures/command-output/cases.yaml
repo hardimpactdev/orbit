@@ -1051,6 +1051,28 @@ contexts:
     fleet_recorded: {}
     fleet_token_names: [serve-driver]
     fleet_tokens_read: {skipped: true}
+  # One Node's intent cannot be built: only that Node is unreadable, with the error the nested Gateway printed for it.
+  fleet-intents-node-error:
+    fleet_roles: [gateway, app-dev]
+    fleet_record_state: present
+    fleet_swamp_ids: [c3]
+    intent: {fleet: {}}
+    fleet_intents_read:
+      rc: 0
+      stdout_lines:
+      - '{"gateway":"1111111111111111111111111111111111111111111111111111111111111111","app-dev":{"error":"RuntimeException: The Node has no Instance bridge yet."}}'
+    fleet_recorded: {code: 4f1c2a6b}
+  # The read itself failed: every Node is unreadable, with the read's last error line.
+  fleet-intents-read-failed:
+    fleet_roles: [gateway, app-dev]
+    fleet_record_state: present
+    fleet_swamp_ids: [c3]
+    intent: {fleet: {}}
+    fleet_intents_read:
+      rc: 1
+      stdout_lines: []
+      stderr: "\n  The Node app-dev is unknown.  \n"
+    fleet_recorded: {code: 4f1c2a6b}
   # A record of the refresh before per-Node digests (`converge`, `converged`): every Node is due once.
   fleet-converged-old-record:
     fleet_roles: [gateway, app-dev]
@@ -2055,7 +2077,7 @@ cases:
   expected: false
 - file: tasks/instance-fleet-refresh.yml
   task: Work out which nested Nodes the converge is due for
-  field: vars.fleet_intents
+  field: vars.fleet_intents_all
   context: fleet-intents-read
   expected:
     gateway: '1111111111111111111111111111111111111111111111111111111111111111'
@@ -2063,17 +2085,20 @@ cases:
     app-prod: '3333333333333333333333333333333333333333333333333333333333333333'
 - file: tasks/instance-fleet-refresh.yml
   task: Work out which nested Nodes the converge is due for
-  field: vars.fleet_intents
+  field: vars.fleet_intents_all
   context: fleet-intents-short
-  expected: {}
+  expected:
+    gateway: '1111111111111111111111111111111111111111111111111111111111111111'
+    app-dev: '2222222222222222222222222222222222222222222222222222222222222222'
 - file: tasks/instance-fleet-refresh.yml
   task: Work out which nested Nodes the converge is due for
-  field: vars.fleet_intents
+  field: vars.fleet_intents_all
   context: fleet-intents-host
   expected:
     gateway: '1111111111111111111111111111111111111111111111111111111111111111'
     app-dev: '2222222222222222222222222222222222222222222222222222222222222222'
     app-prod: '3333333333333333333333333333333333333333333333333333333333333333'
+    host: '4444444444444444444444444444444444444444444444444444444444444444'
 - file: tasks/instance-fleet-refresh.yml
   task: Name the due Instance host
   field: vars.fleet_host_read
@@ -2096,7 +2121,7 @@ cases:
   expected: ''
 - file: tasks/instance-fleet-refresh.yml
   task: Work out which nested Nodes the converge is due for
-  field: vars.fleet_intents
+  field: vars.fleet_intents_all
   context: fleet-intents-failed
   expected: {}
 - file: tasks/instance-fleet-refresh.yml
@@ -2104,15 +2129,35 @@ cases:
   field: vars.fleet_converge_reasons
   context: fleet-converged-malformed
   expected:
-    gateway: stale
-    app-dev: changed
+    gateway: {reason: stale}
+    app-dev: {reason: no_record}
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out which nested Nodes the converge is due for
+  field: vars.fleet_converge_now
+  context: fleet-intents-node-error
+  expected:
+    converge_gateway: 01e408728ddddc7666da81bd31db5c37e0faaa722158a9dfa9ea60d1759e6aeb
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out which nested Nodes the converge is due for
+  field: vars.fleet_converge_reasons
+  context: fleet-intents-node-error
+  expected:
+    gateway: {reason: no_record}
+    app-dev: {reason: digest_unreadable, error: 'RuntimeException: The Node has no Instance bridge yet.'}
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out which nested Nodes the converge is due for
+  field: vars.fleet_converge_reasons
+  context: fleet-intents-read-failed
+  expected:
+    gateway: {reason: digest_unreadable, error: 'the digest read failed: The Node app-dev is unknown.'}
+    app-dev: {reason: digest_unreadable, error: 'the digest read failed: The Node app-dev is unknown.'}
 - file: tasks/instance-fleet-refresh.yml
   task: Work out which nested Nodes the converge is due for
   field: vars.fleet_converge_reasons
   context: fleet-converged-old-record
   expected:
-    gateway: changed
-    app-dev: changed
+    gateway: {reason: no_record}
+    app-dev: {reason: no_record}
 - file: tasks/instance-fleet-refresh.yml
   task: Work out whether the tokens are due
   field: vars.fleet_token_list
