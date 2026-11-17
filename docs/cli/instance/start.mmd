@@ -37,7 +37,7 @@ sequenceDiagram
   SW->>N: Start the container<br/>Ansible · tags start
   %%> What it does:
   %%> - a nested-fleet default's root disk grows to the intent's size first; it never shrinks
-  %%> - the start guard: `boot.autostart=false`, the egress gates of every bridge NIC
+  %%> - the start guard: a nested-fleet container made before the keys first gets `boot.autostart=false` and `limits.memory.swap` equal to its memory (Incus gives no swap without a size), then the egress gates of every bridge NIC
   %%> - the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
   %%> - `incus start`, then the Club key into the container's /run (tmpfs) on stdin, the same script as the create's `clone-club-key`
   %%> - waits until each desired-running unit is active; T3 starts with the container, and the start does not wait for it
