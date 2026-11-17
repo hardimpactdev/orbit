@@ -79,7 +79,7 @@ sequenceDiagram
     %%> - a check preserves its admitted subtask base as the start commit; the candidate HEAD is never a new base for a retry
     %%> - a passed handoff check records the group's pull request mode in effect at that moment (`pr_mode`); only a check that recorded `pr_when_done` lets the `task:pr-when-done` tick publish by itself. Recording it starts nothing (docs/reference/tasks.md#where-the-mode-comes-from)
   else a step fails
-    N--xSW: exit ≠ 0 or no reply
+    I--xSW: exit ≠ 0 or no reply
     SW--xGW: Run failed<br/>error_code, failed step
     Note over GW: Record the failed check<br/>group lifecycle stays external
   end
