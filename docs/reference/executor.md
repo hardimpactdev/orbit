@@ -277,7 +277,7 @@ A repeat Operation returns its journaled result under the per-target lock. Start
 
 The kind chart is [`docs/cli/proof/executor-power-proof.mmd`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/proof/executor-power-proof.mmd). The executor logs the complete action time, including receipt and asleep-marker fsync, with reclaim measured separately. The private receipt timer ends before its own publication.
 
-The proof of 30 sleeps of a real clone with swap remains open. The clone and copy-swap fixes are merged, but the running proof copy still has an outer `memory.swap.max` of 0; enabling it from inside the copy fails with `Permission denied`. The host must apply the copy’s byte-size swap limit before the proof can run.
+The proof of 30 sleeps of a real clone with swap remains open. Subtask 5768 confirms swap in the running copy (`memory.swap.max=12884901888`) and in `nested-app-dev` after setting its byte-size limit (`5368709120`); both expose swap in `/proc/swaps`. The default Instance still has `memory.swap.max=0`. Setting its limit to its 8 GiB memory size fails: `Error: Failed checking if instance update allowed: Use of low-level config "limits.memory.swap" on container "instance-2" of project "orbit-instances" is forbidden`. The restricted Incus project blocks the setting. The prerequisite check stopped before creating a clone, so no real-clone measurements ran.
 
 | Error or result | Meaning |
 | --- | --- |
@@ -331,4 +331,6 @@ A container that already runs gets only the limits and readiness steps, and repo
 | `failed`, `instance.container_frozen_unmanaged` | The kernel cgroup stayed frozen. |
 | `failed`, `instance.web_unready` | The app gave no answer below 500 within 1.5 s. The marker stays. |
 
-The Rust tests cover the identity checks, pool order, the cut at the bound, resident pages, exact limits, the marker, readiness and crash recovery after the unfreeze; the restore tests read a real buffer of the test process. A SIGKILL in the middle of a real wake has not been run. The real-clone, swap-backed proof of slice 5 (30 wakes and a burst of 3) remains open with [slice 4’s proof](#rust-sleep-and-discard), blocked by the running copy’s outer swap limit. No real-clone sleep, Python comparison, wake, burst or SIGKILL measurement ran in subtask 5768; the prerequisite check stopped before clone creation.
+The Rust tests cover the identity checks, pool order, the cut at the bound, resident pages, exact limits, the marker, readiness and crash recovery after the unfreeze; the restore tests read a real buffer of the test process.
+
+A SIGKILL in the middle of a real wake has not been run. The real-clone, swap-backed proof of slice 5 (30 wakes and a burst of 3) remains open with [slice 4’s proof](#rust-sleep-and-discard), blocked by the nested Incus project’s refusal to set the Instance’s swap limit. No real-clone sleep, Python comparison, wake, burst or SIGKILL measurement ran in subtask 5768; the prerequisite check stopped before clone creation.

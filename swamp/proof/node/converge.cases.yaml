@@ -26,7 +26,7 @@ uncovered:
   "admission:recorded-only": "Need request-time contact tracing to prove admission uses recorded state and never contacts the Node before starting the Operation, including with missing or stale agent facts. A missing agent report is not an additional eligibility refusal."
 
 waits:
-  clone_sleep: "Clone and copy-swap fixes are merged at a956b04. Subtask 5768 stopped before clone creation: the running outer copy has memory.swap.max=0, and enabling 12 GiB fails with Permission denied. The host must enable its byte-size swap limit; nested-app-dev also needs a byte-size limit. No sleep/wake samples ran; CI still lacks the real T3/Vite clone fixture."
+  clone_sleep: "Subtask 5768 confirms swap in the copy (12884901888 bytes) and nested-app-dev (5368709120 bytes). The default Instance still has memory.swap.max=0; the restricted orbit-instances Incus project forbids its limits.memory.swap setting. Stopped before clone creation; no sleep/wake samples ran. CI still lacks the real T3/Vite clone fixture."
 
 cases:
   - id: default-scope
@@ -183,12 +183,13 @@ cases:
     exclusive: true
     covers: []
     summary: A signed sleep of the real executor-sleep-clone with T3 and Vite records a durable power proof Operation, a complete whole-container plan, swap limits and the asleep marker.
-    # Prerequisite evidence: .orbit-artifacts/5753/live-proof-5768/prerequisite.json.
-    # /proc/swaps has only its header (lxcfs view); the physical host’s swap was not established.
-    # sudo write: sh: 1: cannot create /sys/fs/cgroup/memory.swap.max: Permission denied
+    # Prerequisite evidence: .orbit-artifacts/5753/live-proof-5768/prerequisite-swap-enabled.json.
+    # Copy and nested-app-dev expose swap in /proc/swaps; the default Instance does not.
+    # Incus exit 1: Error: Failed checking if instance update allowed: Use of low-level config
+    # "limits.memory.swap" on container "instance-2" of project "orbit-instances" is forbidden
     # Unrun: T3/Vite clone checks, 30 Rust sleeps, 30 Python sleeps, 30 Rust wakes,
     # three-target wake burst and executor SIGKILL/recovery. No timing or RAM/swap samples.
-    fails_today: The running copy’s outer swap limit is 0 and cannot be changed inside it; the real-clone fixture is unverified. This smoke case does not replace ADR rows 4 and 5’s live measurements. CI proof remains disabled.
+    fails_today: The restricted nested Incus project forbids the default Instance’s swap setting; the real-clone fixture is unverified. This smoke case does not replace ADR rows 4 and 5’s live measurements. CI proof remains disabled.
     setup:
       - executor_key: {}
     act:

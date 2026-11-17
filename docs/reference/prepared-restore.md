@@ -449,7 +449,7 @@ The plan records pages present or swapped (pagemap bit 63 or bit 62), so a parti
 
 The Rust plan and limits record live separately under `/var/lib/orbit/executor/power` while the production Python flow remains in place. Crash recovery repeats an open sleep and preserves a valid published plan. Discard removes both records after a stop, destroy or a deployment that boots fresh. The executor refuses a running container whose kernel cgroup is frozen, preserving recovery state for the thaw described above.
 
-The real-clone proof of the executor’s sleep and wake remains blocked by the running task copy’s outer swap limit, despite the merged clone and copy-swap fixes. No measurements ran. See [Executor: Rust sleep and discard](/reference/executor#rust-sleep-and-discard).
+The real-clone proof of the executor’s sleep and wake remains blocked: the copy and nested app-dev Node now have swap, but the restricted Incus project refuses the default Instance’s byte-size swap setting. The prerequisite check stopped before clone creation. No measurements ran. See [Executor: Rust sleep and discard](/reference/executor#rust-sleep-and-discard).
 
 ## Executor wake (ADR 0266 slice 5)
 
