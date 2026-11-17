@@ -1025,7 +1025,8 @@ Deno.test({
       // The nested-fleet image's AppArmor marker (InstanceImage::nestedFiles).
       Deno.mkdirSync(`${root}/etc/orbit`, { recursive: true });
       Deno.writeTextFileSync(`${root}/etc/orbit/apparmor-off`, "N\n");
-      Deno.writeTextFileSync(`${root}/etc/nftables.conf`, "destroy table inet orbit_agent_guard\ntable inet orbit_agent_guard {\n chain output {\n  type filter hook output priority 0; policy accept;\n  ip daddr { 10.45.0.0/24, 10.232.2.0/24 } meta skuid 1000 drop\n }\n}\n");
+      // The pre-2142 nested image used a global flush. Start must migrate it before loading the guard.
+      Deno.writeTextFileSync(`${root}/etc/nftables.conf`, "flush ruleset\ntable inet orbit_agent_guard {\n chain output {\n  type filter hook output priority 0; policy accept;\n  ip daddr { 10.45.0.0/24, 10.232.2.0/24 } meta skuid 1000 drop\n }\n}\n");
       const before = f.state();
       before.nft_guard = Deno.readTextFileSync(`${root}/etc/nftables.conf`);
       before.nft_inner = "table ip incus { chain nat { counter; } }";
@@ -1042,6 +1043,7 @@ Deno.test({
       assertEquals(Deno.readTextFileSync(`${root}/etc/systemd/system/orbit-frankenphp.service`), OLDER_UNIT);
       assert(Deno.statSync(`${root}/home/orbit`).isDirectory);
       assertStringIncludes(f.state().nft_guard, "meta skuid { 33, 1000 } drop");
+      assertStringIncludes(f.state().nft_guard, "destroy table inet orbit_agent_guard");
       assertEquals(f.state().nft_inner, before.nft_inner);
       const processes = f.run("processes");
       assert(processes.ok, processes.output);
@@ -1064,6 +1066,33 @@ Deno.test({
       assertEquals(f.state().nft_reloads, 2);
       assertEquals(f.state().nft_inner, before.nft_inner);
 
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a failed start retains its task and bounded stderr and hides private task output",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      // Run the real phase rescue for the start inside Prepare, before fetch can run.
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-container-phase.yml`,
+        `- name: Move the app account to www-data\n  tags: [start]\n  ansible.builtin.command:\n    argv: [sh, -c, "printf '%05000d nested firewall is not an Orbit guard\\\\n' 0 >&2; exit 1"]\n`);
+      assert(!f.phases(["start", "fetch"]).ok);
+      const result = f.result();
+      assertEquals(result.error_code, "instance.container_start_failed");
+      assertEquals(result.failed_phase, "start");
+      assertEquals(result.phases_passed, []);
+      assertStringIncludes(result.detail, "Move the app account to www-data: non-zero return code: ");
+      assert(result.detail.endsWith("nested firewall is not an Orbit guard"), result.detail);
+      assertEquals(result.detail.length, 4096);
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-container-phase.yml`,
+        `- name: A private start command\n  tags: [start]\n  no_log: true\n  ansible.builtin.command: { argv: [sh, -c, "echo private-fixture-value >&2; exit 1"] }\n`);
+      assert(!f.phases(["start", "fetch"]).ok);
+      assertEquals(f.result(), {error_code: "instance.container_start_failed", failed_phase: "start", phases_passed: []});
     } finally {
       f.cleanup();
     }
@@ -1509,7 +1538,10 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
       const bundles = (f.state().bundles ?? []).length;
       assert(!f.phases(["start", "fetch"]).ok);
-      assertEquals(f.result(), { error_code: "instance.container_start_failed", failed_phase: "start", phases_passed: [] });
+      assertEquals(f.result().error_code, "instance.container_start_failed");
+      assertEquals(f.result().failed_phase, "start");
+      assertEquals(f.result().phases_passed, []);
+      assertStringIncludes(f.result().detail, "Read the container's effective devices: non-zero return code");
       assertEquals((f.state().bundles ?? []).length, bundles, "a failed phase stops the play: no fetch after a failed start");
     } finally {
       f.cleanup();

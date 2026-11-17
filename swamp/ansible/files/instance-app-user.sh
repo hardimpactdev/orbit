@@ -43,6 +43,11 @@ if [ -e /etc/orbit/apparmor-off ]; then
   if ! grep -Fq "$guard" "$firewall"; then
     sed -i -E "s@^([[:space:]]*)ip daddr .* meta skuid 1000 drop[[:space:]]*\$@\1$guard@" "$firewall"
   fi
+  # Older nested images used a global flush. Convert that reset before loading the updated guard; never flush the inner Incus
+  # tables. Also repair a run that wrote the guard before it refused the old reset.
+  if grep -Fq "$guard" "$firewall" && grep -Eq '^[[:space:]]*flush[[:space:]]+ruleset[[:space:]]*$' "$firewall"; then
+    sed -i -E 's/^[[:space:]]*flush[[:space:]]+ruleset[[:space:]]*$/destroy table inet orbit_agent_guard/' "$firewall"
+  fi
   # A nested reload must replace Orbit's table only; a global flush would erase the inner Incus NAT and ACLs.
   if ! grep -Fq "$guard" "$firewall" || grep -Eq '^[[:space:]]*flush[[:space:]]+ruleset' "$firewall"; then
     echo "orbit-app-user: nested firewall is not an Orbit guard" >&2; exit 1
