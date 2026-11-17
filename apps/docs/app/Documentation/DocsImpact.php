@@ -350,6 +350,12 @@ final readonly class DocsImpact
                     $findings[] = ['page' => $page, 'pattern' => $pattern, 'message' => 'covers: pattern does not match a tracked path.'];
                 } else {
                     $patterns[] = $pattern;
+                    foreach ($this->expandBraces($pattern) as $alternative) {
+                        // Wildcard alternatives may deliberately cover either a file or a directory.
+                        if (! str_contains($alternative, '*') && ! isset($trackedSet[$alternative]) && ! is_dir($this->root.'/'.$alternative)) {
+                            $findings[] = ['page' => $page, 'pattern' => $alternative, 'message' => 'covers: explicit alternative does not exist.'];
+                        }
+                    }
                 }
             }
             if ($patterns === []) {

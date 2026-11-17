@@ -708,6 +708,15 @@ it('docs impact docs-lint accepts brace alternatives in coverage globs', functio
     expect(new DocsImpact($root, [])->coverageFindings())->toBe([]);
 });
 
+it('docs impact docs-lint checks explicit alternatives without rejecting file or directory globs', function (): void {
+    $root = docsImpactFixture();
+    file_put_contents($root.'/docs/reference/tasks.md', "---\ntitle: Tasks\ncovers:\n  - apps/gateway/app/{Models/{Widget,Deleted}.php,Domain/Tasks}\n  - apps/gateway/app/Models/Widget{.php,/**}\n---\nTasks\n");
+
+    expect(new DocsImpact($root, [])->coverageFindings())->toBe([
+        ['page' => 'docs/reference/tasks.md', 'pattern' => 'apps/gateway/app/Models/Deleted.php', 'message' => 'covers: explicit alternative does not exist.'],
+    ]);
+});
+
 it('docs impact docs-lint rejects covers globs with no tracked match', function (): void {
     $root = docsImpactFixture();
     file_put_contents($root.'/docs/reference/tasks.md', "---\ntitle: Tasks\ncovers:\n  - \"does/not/exist/**\"\n---\nTasks\n");
