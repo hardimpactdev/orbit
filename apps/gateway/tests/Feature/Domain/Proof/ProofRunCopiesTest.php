@@ -940,10 +940,11 @@ describe('proof:run in copies: the warm pool', function (): void {
         expect(app(ProofWarmPool::class)->drained())->toBeFalse();
     });
 
-    it('makes none with proof.warm_copies at 0', function (): void {
-        config(['proof.warm_copies' => 0]);
+    it('ships with the pool off: at the default proof.warm_copies of 0 a release makes no warm copy', function (): void {
+        config(['proof.warm_copies' => (require base_path('config/proof.php'))['warm_copies']]);
 
-        expect(app(ProofWarmPool::class)->keep())->toBe([])->and(ProofWarmCopy::query()->count())->toBe(0);
+        expect(config('proof.warm_copies'))->toBe(0)
+            ->and(app(ProofWarmPool::class)->keep())->toBe([])->and(ProofWarmCopy::query()->count())->toBe(0);
     });
 
     it('counts a warm copy against the task copy cap of its Node', function (): void {

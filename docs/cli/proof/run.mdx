@@ -157,7 +157,7 @@ A child whose turn has not come is cancelled without submission if its proof was
 
 ### Warm copies
 
-Each CI Node keeps a small pool of warm proof copies ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies#warm-proof-copies)): copies of the proof Project's default whose create has ended, made from the Node's current seed. A proof that takes one skips the copy create. The Gateway setting `proof.warm_copies` is the number of warm copies across all CI Nodes; 0 turns the pool off. The pool places its copies on the Nodes in turns.
+Each CI Node can keep a small pool of warm proof copies ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies#warm-proof-copies)): copies of the proof Project's default whose create has ended, made from the Node's current seed. A proof that takes one skips the copy create. The Gateway setting `proof.warm_copies` is the number of warm copies across all CI Nodes. 0 turns the pool off, and 0 is the default: the pool makes no warm copy until an owner sets a small number. The pool places its copies on the Nodes in turns.
 
 A warm copy is a proof copy while it waits. It holds one of its Node's `ci_places`, one slot of the Node's task copy cap and one copy's memory peak. Its create holds its place and stops idle runners, as for any proof copy.
 
