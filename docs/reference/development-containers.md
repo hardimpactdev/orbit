@@ -563,9 +563,11 @@ When a drop-in in a container holds other text, the converge rewrites it through
 | Running | Writes the file and runs `systemctl daemon-reload`. The agent folder's step then restarts T3 once, after the reload. |
 | Stopped | Writes the file only. systemd reads it at the next boot |
 | Frozen | Writes the file only: `incus exec` refuses a frozen container. The first converge that finds it running sees that systemd has not reloaded the unit (`NeedDaemonReload`), so it reloads and restarts T3 then |
-| Same text | Nothing. A second converge writes nothing and restarts nothing |
+| Same text | No rewrite. A retained restart or `NeedDaemonReload` still gets its catch-up; otherwise a second converge writes nothing and restarts nothing |
 
-The restart is `systemctl try-restart t3.service`. When the agent folder changed in the same converge, its restart covers the container, so T3 does not restart twice. The Node lists each reloaded container in `/var/lib/orbit/instance-t3-restart.json` until its T3 restarted. So a converge that fails between the reload and the restart leaves the list, and the next converge restarts that T3.
+The restart is `systemctl try-restart t3.service`. When the agent folder changed in the same converge, its restart covers the container, so T3 does not restart twice. The Node lists each reloaded container in `/var/lib/orbit/instance-t3-restart.json` until its T3 restarted. So a converge that fails between the reload and the restart leaves the list.
+
+Each successful restart removes only its own entry, even if another restart fails. A frozen or stopped container keeps its entry until a converge finds it running and successfully restarts T3; a deleted container leaves the list. A stopped container may already have read the new drop-in at boot, but the entry still requires that explicit restart rather than inferring completion from its power state.
 
 The converge writes only these root-owned drop-ins. T3's settings, `.claude.json` and Codex's `config.toml` belong to `agent`: T3 and the agents change them, and root never writes through `agent`'s paths. `/etc/orbit/instance` keeps the text of its create.
 

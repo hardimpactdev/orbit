@@ -27,8 +27,9 @@ Nothing restarts: every later process reads the files by itself.
 `t3` mode, its own step before the shared folders: each container with a T3 gets the root-owned drop-ins of its unit
 (InstanceContainer::t3DropIns) through the file API, uid 0, gid 0, only where the text differs, running, stopped or frozen. A running
 container with a new drop-in runs `systemctl daemon-reload` and joins the Node's restart list, `state`; `reload` names the whole list.
-The agent folder's step then restarts each T3 there once, with the folder's own restart if one is due, and empties the list
-(instance-folder.yml). A run that fails between the reload and the restart leaves the list, so the next converge restarts them.
+The agent folder's step then restarts each running T3 there once, with the folder's own restart if one is due, and removes only
+completed entries (instance-folder.yml). A frozen or stopped container stays on the list; a vanished container leaves it. A run
+that fails between the reload and the restart leaves outstanding entries, so a later converge restarts them.
 A stopped container reads the drop-in at its next boot, and a
 frozen one, which refuses `incus exec`, at the first converge that finds it running and its unit not reloaded (NeedDaemonReload). The agent-owned files of a create (T3's settings, `.claude.json`,
 Codex's configuration) are T3's and the agents' to change, so this mode never writes them.
@@ -290,7 +291,14 @@ def t3_files(entries, state):
     pending = json.loads(state_file.read_text()) if state_file.is_file() else []
     summary = {"written": [], "reload": [], "frozen": [], "skipped": [], "failed": []}
     rows = {(row.get("project"), row["name"]): row["status"]
-            for row in json.loads(incus("query", "/1.0/instances?all-projects=true&recursion=1").stdout)} if entries else {}
+            for row in json.loads(incus("query", "/1.0/instances?all-projects=true&recursion=1").stdout)} if entries or pending else {}
+    existing = [entry for entry in pending if (entry["project"], entry["name"]) in rows]
+    if existing != pending:
+        pending = existing
+        if pending:
+            state_file.write_text(json.dumps(pending) + "\n")
+        else:
+            state_file.unlink()
     for entry in sorted(entries, key=lambda entry: (entry["project"], entry["container"])):
         project, name = entry["project"], entry["container"]
         label, status = f"{project}/{name}", rows.get((project, name))

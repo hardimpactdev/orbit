@@ -209,21 +209,41 @@
             {%- endif -%}
           {%- endfor -%}
           {{ running }}
-    - name: Restart them one after another
-      ansible.builtin.command:
-        argv: >-
-          {{ ['incus', 'exec', '--project', item.project, item.name, '--', 'systemctl', 'try-restart']
-             + (['t3.service'] if folder_name == 'agent' else ['orbit-*.service']) }}
-      loop: "{{ folder_targets }}"
-      loop_control: { label: "{{ item.project }}/{{ item.name }}" }
-      changed_when: true
+    - name: Restart the targets and retain unfinished T3 restarts
+      block:
+        - name: Restart them one after another
+          ansible.builtin.command:
+            argv: >-
+              {{ ['incus', 'exec', '--project', item.project, item.name, '--', 'systemctl', 'try-restart']
+                 + (['t3.service'] if folder_name == 'agent' else ['orbit-*.service']) }}
+          loop: "{{ folder_targets }}"
+          loop_control: { label: "{{ item.project }}/{{ item.name }}" }
+          register: folder_restarted
+          changed_when: true
+      always:
+        # A later target may fail. Acknowledge successes even then, and keep frozen, stopped and failed targets for another run.
+        - name: Keep only outstanding T3 restarts
+          when: folder_name == 'agent' and instance_t3_reload | length > 0
+          block:
+            - name: Name the outstanding T3 restarts
+              ansible.builtin.set_fact:
+                instance_t3_pending: >-
+                  {{ instance_t3_reload | difference(folder_restarted.results | default([])
+                     | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | map(attribute='item') | list) }}
+            - name: Store the outstanding T3 restart list
+              when: instance_t3_pending | length > 0 and instance_t3_pending != instance_t3_reload
+              ansible.builtin.copy:
+                dest: /var/lib/orbit/instance-t3-restart.json
+                content: "{{ instance_t3_pending | to_json }}\n"
+                owner: root
+                group: root
+                mode: "0644"
+            - name: Clear the completed T3 restart list
+              when: instance_t3_pending | length == 0
+              ansible.builtin.file: { path: /var/lib/orbit/instance-t3-restart.json, state: absent }
     - name: Clear the restart mark
       when: folder_restart.stat.exists
       ansible.builtin.file: { path: "{{ folder.path }}/.restart", state: absent }
-    # Their T3 now runs the new drop-ins (the T3 drop-in step of instance-host.yml).
-    - name: Clear the T3 restart list
-      when: folder_name == 'agent'
-      ansible.builtin.file: { path: /var/lib/orbit/instance-t3-restart.json, state: absent }
 
 # A process maps the files it runs, by their path inside its container, which is the path on the Node: a version that no process
 # names in its maps is unused.

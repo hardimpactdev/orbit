@@ -6,7 +6,7 @@
  * - `systemctl show -p NeedDaemonReload --value t3.service` prints `yes` for a container in the state's `need_reload`.
  * - `systemctl daemon-reload` takes the container out of `need_reload`.
  * - `systemctl try-restart t3.service` without the agent folder's `.restart` mark, the restart for a new drop-in alone, is recorded in
- *   `folder_restarts` as the shared fake records the folder's own restarts.
+ *   `folder_restarts` as the shared fake records the folder's own restarts. A name in `fail_restarts` refuses the call instead.
  */
 const folder = Deno.env.get("HOST_FIXTURE")!;
 const args = [...Deno.args];
@@ -41,6 +41,10 @@ if (command[1] === "show") {
 } else if (command[1] === "daemon-reload") {
     state.need_reload = (state.need_reload ?? []).filter((held: string) => held !== name);
 } else {
+    if ((state.fail_restarts ?? []).includes(name)) {
+        console.error("injected T3 restart failure");
+        Deno.exit(1);
+    }
     state.folder_restarts ??= [];
     state.folder_restarts.push({ project, name, unit: "t3.service", marked: false });
 }

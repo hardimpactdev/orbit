@@ -283,6 +283,74 @@ Deno.test({
     },
 });
 
+Deno.test({
+    name: "a failed T3 converge retains frozen and stopped restarts, removes vanished and completed entries, and restarts each recovered container once",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders"]);
+            Deno.writeTextFileSync(`${f.folder}/bin/incus`,
+                `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-host-t3-incus.ts", import.meta.url).pathname}' "$@"\n`);
+            const ready = await f.run();
+            assert(ready.ok, ready.output);
+            const names = ["app-done", "app-frozen", "app-stopped", "app-gone"];
+            const file = { path: "/etc/systemd/system/t3.service.d/20-orbit-server.conf", content: "[Service]\nEnvironment=CONN_SERVER_BROWSER_PATH=/new/browser\n", mode: "0644" };
+            const state = f.state();
+            state.instances.push(...names.map((name) => ({ project: "orbit-instances", name, status: "Running" })));
+            state.files = Object.fromEntries(names.map((name) => [name + file.path, { content: "# stale\n", mode: "0644", uid: "0", gid: "0" }]));
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+            f.write({ ...f.instances, t3_files: names.map((container) => ({ project: "orbit-instances", container, files: [file] })) });
+            const entry = (name: string) => ({ project: "orbit-instances", name });
+            const pending = () => f.has("t3-restart.json") ? JSON.parse(Deno.readTextFileSync(`${f.folder}/t3-restart.json`)) : [];
+            const host = `${f.folder}/tasks/instance-host.yml`;
+            const shipped = Deno.readTextFileSync(host);
+            const tasks = JSON.parse(shipped);
+            tasks.splice(1, 0, { name: "Injected failure after reload", "ansible.builtin.fail": { msg: "injected failure after reload" } });
+            Deno.writeTextFileSync(host, JSON.stringify(tasks));
+            const failed = await f.run();
+            assert(!failed.ok && failed.output.includes("injected failure after reload"), failed.output);
+            assertEquals(pending(), [...names].sort().map(entry));
+            assertEquals(f.state().folder_restarts ?? [], []);
+            Deno.writeTextFileSync(host, shipped);
+
+            const sleeping = f.state();
+            sleeping.instances = sleeping.instances.filter((row: { name: string }) => row.name !== "app-gone");
+            for (const row of sleeping.instances) {
+                if (row.name === "app-frozen") row.status = "Frozen";
+                if (row.name === "app-stopped") row.status = "Stopped";
+            }
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(sleeping));
+            const pass = async () => {
+                const before = f.calls().length;
+                const result = await f.run();
+                assert(result.ok, result.output);
+                return f.calls().slice(before).filter((call) => call[0] === "exec" && call.includes("try-restart"));
+            };
+            assertEquals((await pass()).map((call) => call[3]), ["app-done"]);
+            assertEquals(pending(), [entry("app-frozen"), entry("app-stopped")]);
+            // Both sleeping containers return. One restart succeeds and the other fails; retain only the failed one.
+            const resumed = f.state();
+            for (const row of resumed.instances) row.status = "Running";
+            resumed.fail_restarts = ["app-stopped"];
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(resumed));
+            const restartFailed = await f.run();
+            assert(!restartFailed.ok && restartFailed.output.includes("injected T3 restart failure"), restartFailed.output);
+            assertEquals(pending(), [entry("app-stopped")]);
+            assertEquals(f.state().folder_restarts.map((row: { name: string }) => row.name), ["app-done", "app-frozen"]);
+            const recovered = f.state();
+            recovered.fail_restarts = [];
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(recovered));
+            assertEquals((await pass()).map((call) => call[3]), ["app-stopped"]);
+            assert(!f.has("t3-restart.json"));
+            assertEquals(await pass(), []);
+            assertEquals(f.state().folder_restarts.map((row: { name: string }) => row.name), ["app-done", "app-frozen", "app-stopped"]);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
 /** The restart rule's own script: whether the new folder version keeps everything the version in use holds. */
 function same(old: string, next: string) {
     const out = new Deno.Command("python3", { args: ["-I", new URL("../ansible/instance_folder_same.py", import.meta.url).pathname, old, next] }).outputSync();
