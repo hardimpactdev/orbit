@@ -49,12 +49,19 @@ final readonly class InstancePlacement
         }
     }
 
-    /** A writer whose result is always a host checkout: registration and the production clone. */
+    /** Existing checkout operations, including registration repair and migration; this grants no new checkout admission. */
     public static function checkout(Project $project): void
     {
         if ($project->nested_fleet) {
             throw self::unavailable();
         }
+    }
+
+    /** The sole new host-checkout exception until production container cloning ships. */
+    public static function productionClone(Instance $candidate): void
+    {
+        self::checkout($candidate->project);
+        InstanceContainer::assertCheckout($candidate);
     }
 
     /**
@@ -84,10 +91,9 @@ final readonly class InstancePlacement
             return $container ? InstanceHostIntent::Project : null;
         }
         self::assertHostsNestedFleets($node);
-        // A CI-only Node hosts containers without the build list: assert() let only a proof copy through to it.
-        if (! $container || ! (app(ContainerNodes::class)->includes($node) || ProofCopyHosts::ciOnly($node))) {
+        if (! $container) {
             throw new ResourceOperationException('instance.nested_fleet_container_required',
-                'An Instance of a nested-fleet Project must be a container: the Node must be on the build list and the default must be a container.', 409);
+                'An Instance of a nested-fleet Project must be a container.', 409);
         }
 
         return self::NestedProject;

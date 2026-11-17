@@ -11,7 +11,6 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Instances\Environment\CloneEnvironmentWarnings;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
-use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
@@ -48,8 +47,7 @@ final readonly class StartInstanceCloneAction
         if (($replay = $this->idempotency->replay('instance.clone')) !== null) {
             return $replay;
         }
-        InstancePlacement::checkout($candidate->project);
-        InstanceContainer::assertCheckout($candidate);
+        InstancePlacement::productionClone($candidate);
 
         return DB::transaction(function () use ($candidate, $data, $caller, $requestId): Operation {
             $candidate->refresh()->loadMissing(['project', 'node']);

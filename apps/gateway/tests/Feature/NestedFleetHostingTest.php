@@ -130,15 +130,15 @@ describe('the one placement rule', function (): void {
     it('places a normal Project as before and a nested-fleet Project only in a container of the nested project on a switched-on Node', function (): void {
         $listed = nestedSwitch(containerDefaultNode(), true);
         $off = containerDefaultNode('off', '10.44.0.8');
-        $unlisted = nestedSwitch(containerDefaultNode('unlisted', '10.44.0.9', false), true);
+        $unprepared = nestedSwitch(containerDefaultNode('unprepared', '10.44.0.9', false), true);
         $normal = containerDefaultProject();
         $nested = otherProject('nested', true);
 
         expect(InstancePlacement::place($normal, $listed, true))->toBe('orbit-instances')
             ->and(InstancePlacement::place($normal, $off, true))->toBe('orbit-instances')
-            ->and(InstancePlacement::place($normal, $unlisted, false))->toBeNull()
+            ->and(InstancePlacement::place($normal, $unprepared, false))->toBeNull()
             ->and(placementRefusal(fn () => InstancePlacement::place($nested, $off, true)))->toBe('instance.nested_fleet_host_unavailable 409')
-            ->and(placementRefusal(fn () => InstancePlacement::place($nested, $unlisted, true)))->toBe('instance.nested_fleet_container_required 409')
+            ->and(InstancePlacement::place($nested, $unprepared, true))->toBe('orbit-instances-nested')
             ->and(placementRefusal(fn () => InstancePlacement::place($nested, $listed, false)))->toBe('instance.nested_fleet_container_required 409')
             ->and(InstancePlacement::place($nested, $listed, true))->toBe('orbit-instances-nested');
     });
@@ -299,7 +299,6 @@ describe('a CI Node that hosts proof copies', function (): void {
         $before = ciRunnerRuntime($none);
         $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
         $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
-        config(['instances.container_nodes' => [$both->id]]);
         app(NodeRoleRuntimeInput::class)->prepare($none, $none->roles()->sole());
 
         expect($before)->not->toHaveKey('instances')

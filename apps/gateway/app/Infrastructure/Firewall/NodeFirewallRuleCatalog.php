@@ -39,7 +39,7 @@ final readonly class NodeFirewallRuleCatalog
     public const array TaskContainerInputComments = ['orbit:task-containers-dhcp', 'orbit:task-containers-dns-tcp', 'orbit:task-containers-dns-udp'];
 
     /**
-     * DHCP, the egress proxy and a container's own site for the Instance bridge of a Node on the build list, and no DNS: the proxy
+     * DHCP, the egress proxy and a container's own site for the Instance bridge of every app-dev Node, and no DNS: the proxy
      * resolves every name (docs/reference/development-containers.md#egress-and-dns, #the-own-site-from-inside). A CI Node that hosts
      * proof copies gets DHCP and the proxy only: it runs no Caddy, so a container there has no own site.
      */
