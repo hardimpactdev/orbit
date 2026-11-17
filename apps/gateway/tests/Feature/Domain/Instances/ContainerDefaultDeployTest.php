@@ -1034,7 +1034,7 @@ it('gives only a nested-fleet default on a switched-on Node the fleet of its dep
             'layout' => ['gateway' => ['address' => '10.232.2.11', 'memory' => '4GiB'], 'app-dev' => ['address' => '10.232.2.12', 'memory' => '5GiB'],
                 'app-prod' => ['address' => '10.232.2.13', 'memory' => '2GiB']],
             'host' => true,
-            'operator' => ['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24'],
+            'operator' => ['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24', 'domains' => ['nested-dev', 'nested-prod']],
             'checkout' => ['path' => '/home/orbit/orbit'],
             'proxy' => ['HTTP_PROXY' => 'http://10.253.0.1:3128', 'HTTPS_PROXY' => 'http://10.253.0.1:3128', 'http_proxy' => 'http://10.253.0.1:3128',
                 'https_proxy' => 'http://10.253.0.1:3128', 'NO_PROXY' => 'localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24',

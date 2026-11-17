@@ -171,12 +171,15 @@ class EvidenceTest(unittest.TestCase):
                                    delivery.REPORT: JOB | dict(status='completed', conclusion='failure')})
         self.assertEqual(delivery.delivery_evidence(github, SHA, '42')[0], RUN)
         source = (ROOT / '.github/workflows/orbit-cli-release.yml').read_text()
-        condition = source.split('    if: >-\n', 1)[1].split('    runs-on:', 1)[0]
+        resolve = yaml.safe_load(source)['jobs']['resolve']
+        condition = resolve['if']
         self.assertNotIn('.conclusion', condition)
-        self.assertIn("head_branch == 'main'", condition)
-        self.assertIn("head_repository.full_name == github.repository", condition)
-        self.assertIn('SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}', source)
-        self.assertIn('python3 bin/ci-delivery verify --sha "$COMMIT"', source)
+        self.assertIn("github.ref == 'refs/heads/main'", condition)
+        verify = next(step for step in resolve['steps']
+                      if step.get('run') == 'python3 bin/ci-delivery verify --sha "$COMMIT"')
+        self.assertEqual(verify['env']['COMMIT'], '${{ steps.release.outputs.commit }}')
+        self.assertNotIn('SOURCE_RUN_ID', verify['env'])  # Resolve the latest trusted main CI for this SHA.
+        self.assertNotIn('if', verify)  # Delivery evidence is required for automatic and manual dispatches.
         self.assertNotIn('check_name=Required', source)
 
     def test_wrong_sha_branch_workflow_event_or_repository_cannot_imitate_delivery(self):

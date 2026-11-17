@@ -153,8 +153,9 @@ swamp behavior create aws/ec2/vpc my-vpc \
 ```
 
 Use `${{ vault.get() }}` expressions for secrets — never resolve a secret and
-pass the literal value (see **swamp-vault** skill for details). Arguments can be
-literal or CEL expressions (bare tokens with `.` are CEL-evaluated):
+pass the literal value (see the [vault guide](../vault/guide.md) for details).
+Arguments can be literal or CEL expressions (bare tokens with `.` are
+CEL-evaluated):
 
 ```bash
 swamp behavior create @user/my-api api-client \
@@ -499,6 +500,17 @@ reference, "Trust Boundary: Which Inputs Are Evaluated".
 swamp behavior run github-pr update-body --literal-inputs --input-file body.json
 ```
 
+To make one input data rather than all of them, read it from a file with
+`--input-data key=<path>`: the content reaches the method verbatim while other
+`--input` values are still evaluated. It cannot share a key with `--input`,
+`--input-file` or a `--stdin` item. An argument the type marks
+`.meta({ data: true })` is data whatever the route, with no flag
+(`swamp behavior type describe` tags it `data`).
+
+```bash
+swamp behavior run artifacts record --input name=plan --input-data payload=result.md
+```
+
 **`--last-evaluated` and sensitive arguments.** An argument the type marks
 `sensitive` whose resolved value did not come from a vault — an input or a data
 field not marked sensitive — is written to the evaluated cache as `***`, so that
@@ -514,8 +526,9 @@ run, including replay; its value is never cached.
 **Data versioning:** Running a method multiple times creates new data versions
 (v1, v2, ...), never overwrites. Each run's artifacts are preserved. Use
 `swamp data query 'modelName == "<model>" && name == "<data>" && version == <N>' --select content`
-to access a specific version, or see the **swamp-data** skill for version
-history and cleanup.
+to access a specific version, or see the data reference for
+[version history](../data/reference.md#view-version-history) and
+[cleanup](../data/reference.md#garbage-collection).
 
 Pre-flight checks run automatically before every method except read and list
 methods (`get`, `read`, `describe`, `show`, `list`, `search`, `find`, or a
@@ -564,7 +577,7 @@ Use `swamp behavior output search`, `output get`, `output logs`, and
 ### Inspecting Factory Method Results
 
 When a factory method produces multiple data artifacts, use `swamp data query`
-(from the **swamp-data** skill) to explore them:
+(see the [data guide](../data/guide.md)) to explore them:
 
 ```bash
 # List all artifacts from a behavior
@@ -647,25 +660,25 @@ validation.
 
 ## Choosing the Right Approach
 
-| Task                                                  | Approach                               |
-| ----------------------------------------------------- | -------------------------------------- |
-| New API/service integration                           | Extension behavior (`swamp-extension`) |
-| Existing behavior missing a method                    | Extend it (`swamp-extension`)          |
-| Reusable data pipeline (reports, analysis, summaries) | Report extension (`swamp-report`)      |
-| Ad-hoc debugging or one-off data inspection           | Inline processing is fine              |
+| Task                                                  | Approach                                                |
+| ----------------------------------------------------- | ------------------------------------------------------- |
+| New API/service integration                           | Extension behavior ([extension](../extension/guide.md)) |
+| Existing behavior missing a method                    | Extend it ([extension](../extension/guide.md))          |
+| Reusable data pipeline (reports, analysis, summaries) | Report extension ([report](../report/guide.md))         |
+| Ad-hoc debugging or one-off data inspection           | Inline processing is fine                               |
 
-## When to Use Other Skills
+## Related Guides
 
-| Need                               | Use Skill               |
-| ---------------------------------- | ----------------------- |
-| Create/run workflows               | `swamp-workflow`        |
-| Manage secrets                     | `swamp-vault`           |
-| Repository structure               | `swamp-repo`            |
-| Manage data lifecycle              | `swamp-data`            |
-| Explore/query method results       | `swamp-data`            |
-| Create custom TypeScript behaviors | `swamp-extension`       |
-| Create reports for behaviors       | `swamp-report`          |
-| Understand swamp internals         | `swamp-troubleshooting` |
+| Need                               | Guide                                          |
+| ---------------------------------- | ---------------------------------------------- |
+| Create/run workflows               | [workflow](../workflow/guide.md)               |
+| Manage secrets                     | [vault](../vault/guide.md)                     |
+| Repository structure               | [repo](../repo/guide.md)                       |
+| Manage data lifecycle              | [data](../data/guide.md)                       |
+| Explore/query method results       | [data](../data/guide.md)                       |
+| Create custom TypeScript behaviors | [extension](../extension/guide.md)             |
+| Create reports for behaviors       | [report](../report/guide.md)                   |
+| Understand swamp internals         | [troubleshooting](../troubleshooting/guide.md) |
 
 ## References
 

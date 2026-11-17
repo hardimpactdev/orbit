@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
@@ -140,4 +141,43 @@ it('sends the vpn Node no task VM rule to keep or to remove: its hub converge de
         || $rule->shape->source === WireGuardAddressAllocator::ReservedRange))->toBe([])
         ->and(array_filter($commands['desired'], $taskVm))->toBe([])
         ->and(array_filter($commands['remove'], $taskVm))->toBe([]);
+});
+
+// docs/cli/firewall/index.mdx#vpn-peer-forwarding: production's hub holds this rule by hand, exactly as `ufw show added` prints it.
+it('gives the vpn hub the peer forwarding rule as production\'s hand rule and changes nothing else in its converge', function (): void {
+    $hub = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'node-1', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '94.237.124.160',
+        'user' => 'orbit',
+    ]));
+    $hub->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    $added = "ufw route allow in on orbit out on orbit from 10.44.0.0/24 to 10.44.0.0/24 comment 'orbit:vpn-peer-forwarding'";
+
+    $commands = app(NodeRoleFirewallInput::class)->convergeCommands($hub, RoleName::Vpn);
+    $rule = app(NodeFirewallRuleCatalog::class)->vpnPeerForwarding();
+
+    expect($commands)->toBe([
+        'desired' => [
+            ['ufw', 'allow', 'in', 'on', 'orbit', 'to', '10.44.0.1', 'comment', 'orbit:wireguard-members'],
+            ['ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'from', '10.44.0.0/24', 'to', '10.44.0.0/24', 'comment', 'orbit:vpn-peer-forwarding'],
+        ],
+        'remove' => [
+            ['ufw', '--force', 'delete', 'allow', 'in', 'proto', 'tcp', 'to', 'any', 'port', '22', 'comment', 'orbit:public-ssh-recovery'],
+            ['ufw', '--force', 'delete', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'to', '10.44.0.1', 'port', '22', 'comment', 'orbit:vpn-ssh'],
+        ],
+    ])
+        ->and(implode(' ', $commands['desired'][1]))->toBe(str_replace("'", '', $added))
+        // The shape the firewall inspection reads from `ufw status` for that rule, so Doctor and `firewall:list` find it exact.
+        ->and($rule->shape->toAgentInput())->toBe(['comment' => 'orbit:vpn-peer-forwarding', 'action' => 'allow', 'direction' => 'fwd',
+            'source' => '10.44.0.0/24', 'destination' => '10.44.0.0/24', 'port' => 'any', 'protocol' => 'any', 'in_interface' => 'orbit',
+            'out_interface' => 'orbit', 'family' => 'v4'])
+        ->and($rule->removalArguments())->toBe(['ufw', '--force', 'route', 'delete', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'from',
+            '10.44.0.0/24', 'to', '10.44.0.0/24', 'comment', 'orbit:vpn-peer-forwarding'])
+        ->and(app(NodeFirewallRuleCatalog::class)->forRole(new Node(['wireguard_ip' => '10.44.0.2']), RoleName::AppDev))->toBe([]);
+});
+
+it('forwards within the Gateway\'s own VPN subnet, as a nested fleet\'s hub has it', function (): void {
+    app(VpnSettings::class)->configure('10.45.0.0/24');
+
+    expect(app(NodeFirewallRuleCatalog::class)->vpnPeerForwarding()->arguments)->toBe(['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out',
+        'on', 'orbit', 'from', '10.45.0.0/24', 'to', '10.45.0.0/24', 'comment', 'orbit:vpn-peer-forwarding']);
 });

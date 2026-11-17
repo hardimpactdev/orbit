@@ -61,13 +61,15 @@ final class TaskVmNestedFleet
     }
 
     /**
-     * The operator end of the fleet's private network: the task VM's address, the hub (the nested Gateway) and the subnet.
+     * The operator end of the fleet's private network: the task VM's address, the hub (the nested Gateway), the subnet, and the TLDs of
+     * the fleet's app Nodes, which the hub's resolver answers.
      *
-     * @return array{address:string,hub:string,network:string}
+     * @return array{address:string,hub:string,network:string,domains:list<string>}
      */
     public static function operator(): array
     {
-        return ['address' => self::OperatorAddress, 'hub' => self::Layout['gateway']['wireguard'], 'network' => self::WireGuardSubnet];
+        return ['address' => self::OperatorAddress, 'hub' => self::Layout['gateway']['wireguard'], 'network' => self::WireGuardSubnet,
+            'domains' => array_values(array_filter(array_column(self::Layout, 'tld')))];
     }
 
     /**

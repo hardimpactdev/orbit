@@ -23,6 +23,13 @@
   loop: "{{ hub_lan_ssh_argv }}"
   register: hub_lan_ssh
   changed_when: hub_lan_ssh.stdout is not search('Skipping')
+# `hub_peer_forwarding_argv` lets one WireGuard member reach another through the hub (docs/cli/firewall/index.mdx#vpn-peer-forwarding).
+# UFW skips a rule it holds already, such as the same rule added by hand, so nothing is deleted or added again.
+- name: Forward traffic between WireGuard members
+  ansible.builtin.command: { argv: "{{ item }}" }
+  loop: "{{ hub_peer_forwarding_argv }}"
+  register: hub_peer_forwarding
+  changed_when: hub_peer_forwarding.stdout is not search('Skipping')
 - name: Send public WireGuard packets from the endpoint address
   when: hub_source is not none
   block:

@@ -48,7 +48,7 @@ final readonly class NodeWireGuardHubInput
      * snapshot: Node ids only grow, and a Node created after the snapshot, such as a task VM that joins meanwhile, has a higher one.
      * A gone Node above every remaining one keeps its leftover file until a later converge, after a newer Node exists.
      *
-     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,interface:string,source:array{address:string,mark:int,priorities:list<int>,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string,networkd_path:string,networkd:string}|null,source_owner:array{unit_name:string,unit_path:string,script_path:string,networkd_path:string,priorities:list<int>,table:int},lan_ssh_argv:list<list<string>>,peers:list<array{node_id:int,file:string,content:string}>,prune:array{directory:string,keep:list<int>,newest:int},peer_keys:list<string>}
+     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,interface:string,source:array{address:string,mark:int,priorities:list<int>,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string,networkd_path:string,networkd:string}|null,source_owner:array{unit_name:string,unit_path:string,script_path:string,networkd_path:string,priorities:list<int>,table:int},lan_ssh_argv:list<list<string>>,peer_forwarding_argv:list<list<string>>,peers:list<array{node_id:int,file:string,content:string}>,prune:array{directory:string,keep:list<int>,newest:int},peer_keys:list<string>}
      */
     public static function intent(Node $hub): array
     {
@@ -64,6 +64,7 @@ final readonly class NodeWireGuardHubInput
             'source_owner' => self::sourceOwner($hub),
             'lan_ssh_argv' => array_map(static fn (UfwManagedRule $rule): array => array_slice($rule->arguments, 1),
                 app(NodeFirewallRuleCatalog::class)->vpnLanSsh($hub)),
+            'peer_forwarding_argv' => [array_slice(app(NodeFirewallRuleCatalog::class)->vpnPeerForwarding()->arguments, 1)],
             'peers' => array_values($peers->map(static fn (Node $peer): array => ['node_id' => $peer->id, 'file' => self::peerFile($peer->id),
                 'content' => self::section($peer->name, (string) $peer->wireguard_public_key, "{$peer->wireguard_ip}/32")])->values()->all()),
             'prune' => ['directory' => self::PeerDirectory, 'keep' => $keep, 'newest' => ValidatedData::integer(Node::query()->max('id'))],

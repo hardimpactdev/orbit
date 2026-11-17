@@ -7,7 +7,9 @@
 # public host, at 198.51.100.1, and a private one, at 10.99.0.1. A dummy interface named `orbit` stands in for WireGuard, with a public
 # range behind it, and a fourth namespace for a LAN host with a global IPv6 address, at 2001:db8:7::1. A listener on BRIDGE_ADDRESS stands
 # in for the proxy. After the table, the container reaches the proxy and root does not; PROXY_USER reaches the public host and the stub
-# resolver, and is refused at once by the private host, the Node's own addresses, WireGuard and IPv6. A refusal must be a reject (curl exit 7), not a timeout. Every name this script makes carries `oechk` and goes again.
+# resolver, and is refused at once by the private host, the Node's own addresses, WireGuard and IPv6. A refusal must be a reject (curl exit 7), not a timeout.
+# A packet of a kernel socket, which has no socket user, reaches the private host: a VXLAN link sends from the kernel's own UDP socket, as
+# WireGuard does, and a counter in the private host's namespace sees it arrive. Every name this script makes carries `oechk` and goes again.
 set -euo pipefail
 
 ruleset=$1 user=$2 bridge=$3 address=$4 port=$5
@@ -29,7 +31,7 @@ cleanup() {
     for server in "${servers[@]}"; do kill "$server" 2>/dev/null; done
     nft delete table inet "$table" 2>/dev/null
     for name in oechkc oechkp oechkv oechk6; do ip netns del "$name" 2>/dev/null; done
-    for name in oechkc0 oechkp0 oechkv0 oechk60 orbit "$bridge"; do ip link del "$name" 2>/dev/null; done
+    for name in oechkc0 oechkp0 oechkv0 oechk60 oechkx orbit "$bridge"; do ip link del "$name" 2>/dev/null; done
     [[ $made_user == 1 ]] && userdel "$user" 2>/dev/null
 }
 servers=()
@@ -139,6 +141,23 @@ expect refused 'the proxy user to loopback' proxy http://127.0.0.1/
 expect refused 'the proxy user to WireGuard' proxy http://203.0.113.9/
 expect refused 'the proxy user to a global IPv6 host' proxy 'http://[2001:db8:7::1]/'
 expect reached 'root to a private host' get http://10.99.0.1/
+
+# The kernel socket: the private host counts VXLAN packets, and an ARP lookup over the link floods one to it.
+inns oechkv nft add table ip oechk
+inns oechkv nft add chain ip oechk input '{ type filter hook input priority 0; policy accept; }'
+inns oechkv nft add rule ip oechk input udp dport 4789 counter
+ip link add oechkx type vxlan id 42 remote 10.99.0.1 dstport 4789
+ip addr add 192.0.2.1/30 dev oechkx
+ip link set oechkx up
+kernel() {
+    for _ in $(seq 20); do
+        (echo > /dev/udp/192.0.2.2/9) 2>/dev/null || true
+        inns oechkv nft list chain ip oechk input | grep -q 'counter packets [1-9]' && return 0
+        sleep 0.05
+    done
+    return 7
+}
+expect reached 'a kernel socket without a user to a private host' kernel
 nft --file "$ruleset"
 expect refused 'the proxy user to a private host, after loading the table again' proxy http://10.99.0.1/
 expect reached 'the proxy user to a public host, after loading the table again' proxy http://198.51.100.1/

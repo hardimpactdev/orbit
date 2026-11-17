@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 import unittest
 
+import yaml
+
 loader = importlib.machinery.SourceFileLoader('release_inputs', str(Path(__file__).resolve().parents[1] / 'bin/ci-release-inputs'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 inputs = importlib.util.module_from_spec(spec)
@@ -20,6 +22,22 @@ def run(conclusion='success', **overrides):
 
 
 class ReleaseInputsTest(unittest.TestCase):
+    def test_release_accepts_only_dispatch_with_a_required_commit_for_ci_and_backfill(self):
+        root = Path(__file__).resolve().parents[1]
+        # BaseLoader preserves Actions' "on" key instead of treating it as a YAML 1.1 boolean.
+        workflow = yaml.load((root / '.github/workflows/orbit-cli-release.yml').read_text(), Loader=yaml.BaseLoader)
+        self.assertEqual(set(workflow['on']), {'workflow_dispatch'},
+                         'CI already dispatches the release; workflow_run would start it twice')
+        commit = workflow['on']['workflow_dispatch']['inputs']['commit']
+        self.assertEqual(commit['required'], 'true')
+        self.assertEqual(commit['type'], 'string')
+        self.assertEqual(workflow['concurrency']['group'], 'orbit-cli-release-${{ inputs.commit }}')
+        self.assertEqual(workflow['concurrency']['cancel-in-progress'], 'false')
+        resolve = workflow['jobs']['resolve']
+        self.assertEqual(resolve['if'], "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'")
+        release = next(step for step in resolve['steps'] if step.get('id') == 'release')
+        self.assertEqual(release['env']['REQUESTED_COMMIT'], '${{ inputs.commit }}')
+
     def test_successful_ci_decision_publishes_even_when_last_commit_is_swamp_only(self):
         # CI classified the whole push, including a preceding Gateway commit.
         self.assertTrue(inputs.selected([{'check_runs': [run()]}], SHA))

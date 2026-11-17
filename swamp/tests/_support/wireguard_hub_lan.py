@@ -70,6 +70,8 @@ OLD = json.dumps([{'priority': 31820, 'src': 'all', 'fwmark': '0xca6c', 'table':
                   {'priority': 32766, 'src': 'all', 'table': 'main'}])
 WRONG = '192.0.2.1 via 85.9.216.1 dev eth0 src 85.9.218.89 mark 0xca6c uid 0 \\    cache\n'
 RIGHT = '192.0.2.1 via 85.9.216.1 dev eth0 table 51820 src 94.237.124.160 mark 0xca6c uid 0 \\    cache\n'
+FORWARDING = [['ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'from', '10.44.0.0/24', 'to', '10.44.0.0/24', 'comment',
+               'orbit:vpn-peer-forwarding']]
 LAN_SSH = [['ufw', 'allow', 'in', 'proto', 'tcp', 'from', '10.0.0.0/24', 'to', '10.0.0.2', 'port', '22', 'comment', 'orbit:vpn-lan-ssh']]
 
 
@@ -139,7 +141,8 @@ class HubLanHarness(unittest.TestCase):
                       'unit': '[Unit]\n', 'networkd_path': '@DIR@/etc/networkd/orbit-hub-source.conf', 'networkd': '[Network]\n',
                       'script_path': '@DIR@/etc/hub-source', 'unit_path': '@DIR@/etc/orbit-hub-source.service',
                       'unit_name': 'orbit-hub-source.service'}
-        return self.run_tasks('node-hub-source.yml', {'hub_source': hub_source, 'hub_source_owner': OWNER, 'hub_lan_ssh_argv': LAN_SSH}, {
+        return self.run_tasks('node-hub-source.yml', {'hub_source': hub_source, 'hub_source_owner': OWNER, 'hub_lan_ssh_argv': LAN_SSH,
+                                                      'hub_peer_forwarding_argv': FORWARDING}, {
             'local.txt': local, 'rules.json': rules, 'rules.applied.json': LIVE, 'source.txt': source, 'source.applied.txt': RIGHT,
             **(installed or {})})
 
