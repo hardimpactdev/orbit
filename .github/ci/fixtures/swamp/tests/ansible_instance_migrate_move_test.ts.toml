@@ -78,6 +78,7 @@ inputs = [
   "swamp/ansible/instance_node_services.py",
   "swamp/ansible/tasks/instance-private-names.yml",
   "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/instance_app_user.py",
   "swamp/ansible/instance_workspace_owner.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",

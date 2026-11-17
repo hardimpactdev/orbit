@@ -100,6 +100,7 @@ function fixture() {
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
   Deno.copyFileSync(new URL("instance_workspace_owner.py", root), `${folder}/instance_workspace_owner.py`);
+  Deno.copyFileSync(new URL("instance_app_user.py", root), `${folder}/instance_app_user.py`);
   // The power helper that resumes a Frozen container and discards a Stopped one's plan (_support/power_helper.ts).
   installPowerHelper(folder, folder);
   // The composed proxy environment goes into the container through instance_node_services.py `proxy`; the fake keeps its value.
@@ -762,6 +763,8 @@ Deno.test({
       let result = f.run("start");
       assert(result.ok, result.output);
       assertEquals(Deno.readLinkSync(link), "/opt/orbit-runtime/current/php/8.4/bin/php");
+      // The create and each start rename an older container's app user first (instance_app_user.py, ADR 0268 second amendment).
+      assertEquals(f.state().app_user_runs, ["instance-7", "instance-7"]);
       f.container.php = null;
       f.write();
       result = f.run("start");

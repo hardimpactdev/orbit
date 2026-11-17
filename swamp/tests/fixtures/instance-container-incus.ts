@@ -630,6 +630,15 @@ if (family === "list") {
     state.workspace_owner_runs.push(command.slice(-3));
     command = [...command.slice(0, -2), "4294967294", command.at(-1)!];
   }
+  // Root's rename of the app user (instance_app_user.py) changes the container's accounts and units, which a fixture container does not
+  // have: swamp/tests/instance_app_user_test.py runs the program itself. The stand-in records the run and finds a renamed container.
+  if (command[0] === "python3" && command.includes("-c") && command[command.indexOf("-c") + 1].startsWith(`"""Root's rename of the app user`)) {
+    state.app_user_runs ??= [];
+    state.app_user_runs.push(name);
+    save();
+    console.log(JSON.stringify({ changed: false, steps: [] }));
+    Deno.exit(0);
+  }
   const done = new Deno.Command(command[0], {
     args: command.slice(1).map((value) => command[0] === "git" && command[1] === "config" ? value : inside(name, value)),
     cwd: cwd === null ? undefined : inside(name, cwd),
