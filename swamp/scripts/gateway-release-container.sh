@@ -102,18 +102,24 @@ stop_background() {
 }
 restore_switch() {
   [[ -f $journal/operation && $(cat "$journal/operation") == "$operation" ]] || fail 'there is no matching switch to reverse'
-  local previous
+  local previous previous_sha address
   previous=$(cat "$journal/machine")
-  if [[ $previous != host ]]; then
-    ctl resume gateway "${previous#gateway-}" "$operation" >&2
-    run_on "$previous" systemctl start orbit-gateway-web.service
-  fi
   if [[ -f $journal/inventory ]]; then
+    previous_sha=$(jq -er '.live | select(test("^[0-9a-f]{40}$"))' "$journal/inventory")
+    [[ $previous == "gateway-${previous_sha:0:12}" && $(owned_sha "$previous") == "$previous_sha" ]] || fail 'saved previous release identity changed'
+    ctl resume gateway "${previous#gateway-}" "$operation" >&2
+    /usr/local/libexec/orbit-gateway-release-phase ready "$previous_sha" "$operation" >&2
+    address=$(ctl address gateway "${previous#gateway-}")
+    bash <(src bin/gateway-release-check) "$previous_sha" "$address"
+    cp -- "$upstream" "$journal/recovery-source-upstream"
+    set_upstream "$address"
+    if ! /usr/local/libexec/orbit-gateway-site container >&2; then
+      install -m 0644 "$journal/recovery-source-upstream" "$upstream.restore"
+      mv -fT "$upstream.restore" "$upstream"
+      fail 'Caddy could not restore the verified previous release'
+    fi
     install -o orbit -g orbit -m 0600 "$journal/inventory" "$inventory.restore"
     mv -fT "$inventory.restore" "$inventory"
-    install -m 0644 "$journal/upstream" "$upstream.restore"
-    mv -fT "$upstream.restore" "$upstream"
-    /usr/local/libexec/orbit-gateway-site container >&2
   else
     /usr/local/libexec/orbit-gateway-site host >&2
     rm -f -- "$inventory" "$upstream"
