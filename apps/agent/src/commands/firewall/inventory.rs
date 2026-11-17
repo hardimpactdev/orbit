@@ -194,10 +194,11 @@ fn endpoint_interface(value: &str) -> (&str, Option<String>) {
 
 static LINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?:\[\s*(\d+)\]\s*)?(.+?)\s+(ALLOW|DENY)\s+(IN|OUT|FWD)\s+(.+?)(?:\s+#\s*(.*))?$")
-        .unwrap()
+        .expect("literal pattern")
 });
-static TARGET: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?:(.+?)\s+)?(\d{1,5}(?::\d{1,5})?)(?:/(tcp|udp))?$").unwrap());
+static TARGET: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:(.+?)\s+)?(\d{1,5}(?::\d{1,5})?)(?:/(tcp|udp))?$").expect("literal pattern")
+});
 
 pub fn live_row(line: &str) -> Row {
     let line = line.trim();

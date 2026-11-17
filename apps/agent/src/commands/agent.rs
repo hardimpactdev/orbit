@@ -352,7 +352,10 @@ fn replace(
         .parent()
         .ok_or_else(|| failed("target directory", "no parent"))?;
     std::fs::create_dir_all(directory).map_err(|error| failed("target directory", error))?;
-    let name = target.file_name().unwrap().to_string_lossy();
+    let name = target
+        .file_name()
+        .ok_or_else(|| failed("target directory", "no file name"))?
+        .to_string_lossy();
     let staged = directory.join(format!("{name}.orbit-candidate"));
     let kept = directory.join(format!("{name}.previous"));
     if let Err(error) = copy_executable(candidate, &staged) {
@@ -630,6 +633,38 @@ mod tests {
             Err(InstallError::InstallFailed { step: "stage", .. })
         ));
         assert_eq!(std::fs::read_to_string(fixture.target()).unwrap(), "old");
+    }
+
+    #[test]
+    fn a_target_without_a_file_name_fails_and_removes_the_candidate() {
+        let fixture = Fixture::new();
+        let candidate = fixture.write("candidate-8", "new");
+        let target = fixture.directory.join("bin/..");
+        let error = install(
+            &fixture.input(&candidate),
+            &target,
+            &fixture.lock(),
+            Instant::now() + Duration::from_secs(2),
+            Instant::now() + Duration::from_secs(60),
+            Observer::Fake(true),
+        )
+        .unwrap_err();
+        assert_eq!(
+            crate::command::CommandError::code(&error),
+            "agent.replace_failed"
+        );
+        assert!(
+            matches!(&error, InstallError::InstallFailed { step: "target directory", reason } if reason == "no file name"),
+            "{error:?}"
+        );
+        assert!(!candidate.exists(), "the candidate is removed");
+        assert_eq!(
+            std::fs::read_dir(fixture.directory.join("bin"))
+                .unwrap()
+                .count(),
+            0,
+            "nothing is staged"
+        );
     }
 
     #[test]

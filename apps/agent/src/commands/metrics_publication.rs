@@ -236,7 +236,7 @@ fn execute(host: &mut impl Host, input: Input) -> Result<Output> {
         }
         return Ok(Output { changed: true });
     }
-    let gateway = gateway.unwrap();
+    let gateway = gateway.expect("only Converge reaches here, and Converge names a gateway");
     if let (Some(allow), Some(deny)) = (allow, deny) {
         if allow < deny && before_trust(&rules, deny) {
             return Ok(Output { changed: false });

@@ -78,7 +78,10 @@ pub fn service(arguments: &[String]) -> i32 {
     let files = Files::system();
     let path = files.path(&format!("{DIRECTORY}/{}.json", hook.name));
     let input = (|| {
-        check_directory(&files, path.parent().unwrap())?;
+        check_directory(
+            &files,
+            path.parent().expect("the hook path lies in DIRECTORY"),
+        )?;
         let (bytes, meta) = read(&files, &path)?.ok_or(Unsafe)?;
         if meta.mode() & 0o7777 != 0o600 {
             return Err(Unsafe);

@@ -4,8 +4,10 @@ use super::{
     tool_output::{json_depth, safe_text},
 };
 use crate::command::{identity, Command, Context, Platform, Privilege};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use std::sync::LazyLock;
 use std::time::Duration;
 crate::command_errors! {
     pub enum Error {
@@ -59,10 +61,10 @@ fn run(host: &mut impl Host, args: &[&str]) -> Result<incus::Output> {
     Ok(output)
 }
 fn valid_package(name: &str) -> bool {
-    name.len() <= 255
-        && regex::Regex::new(&format!(r"\A{PACKAGE}\z"))
-            .unwrap()
-            .is_match(name)
+    static NAME: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(&format!(r"\A{PACKAGE}\z")).expect("PACKAGE is a literal pattern")
+    });
+    name.len() <= 255 && NAME.is_match(name)
 }
 fn safe_version(value: &str) -> bool {
     safe_text(value) && !value.chars().any(char::is_whitespace)

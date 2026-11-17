@@ -5,7 +5,9 @@ use crate::{
     command::{Command, Context, Platform, Privilege},
     command_errors,
 };
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs, io,
@@ -65,10 +67,10 @@ impl Configuration {
         if text.len() > 1024 * 1024 || text.contains('\0') {
             return Err(Error::Invalid {});
         }
-        let pool_name = regex::Regex::new(
-            r"^orbit-(?:instance|workspace|app-instance)-[1-9][0-9]*(?:-[0-9a-f]{8})?$",
-        )
-        .unwrap();
+        static POOL_NAME: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"^orbit-(?:instance|workspace|app-instance)-[1-9][0-9]*(?:-[0-9a-f]{8})?$")
+                .expect("literal pattern")
+        });
         let mut result = Self::default();
         let mut names = BTreeSet::new();
         for line in text.split_inclusive('\n') {
@@ -78,7 +80,7 @@ impl Configuration {
                     .strip_prefix('[')
                     .and_then(|s| s.strip_suffix(']'))
                     .ok_or(Error::Invalid {})?;
-                if !pool_name.is_match(name) || !names.insert(name.to_owned()) {
+                if !POOL_NAME.is_match(name) || !names.insert(name.to_owned()) {
                     return Err(Error::Invalid {});
                 }
                 result.pools.push(Pool {
