@@ -510,10 +510,10 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
   instance(named).status = family === "start" ? "Running" : "Stopped";
   if (family === "start" && instance(named).machine_id === undefined) {
     // The first boot of the stock image: systemd writes the machine-id, and cloud-init makes its default user. The user's group
-    // `lxd` comes first and takes gid 1000, so `ubuntu` gets uid 1000 with gid 1001. The stock `www-data` (33) is there from the start.
+    // `lxd` comes first and takes gid 1000, so `ubuntu` gets uid 1000 with gid 1001.
     instance(named).machine_id = crypto.randomUUID().replaceAll("-", "");
-    instance(named).users = { "www-data": 33, ubuntu: 1000 };
-    instance(named).groups = { "www-data": 33, lxd: 1000, ubuntu: 1001 };
+    instance(named).users = { ubuntu: 1000 };
+    instance(named).groups = { lxd: 1000, ubuntu: 1001 };
   }
 } else if (family === "delete") {
   const named = args.at(-1)!;

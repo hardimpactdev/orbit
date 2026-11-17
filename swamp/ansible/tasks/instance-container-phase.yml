@@ -489,17 +489,19 @@
   ansible.builtin.command: { argv: "{{ incus_project + ['start', container.name] }}" }
   changed_when: true
 
-# An older container's app user is `orbit` (uid 1000) with the group `orbit` (gid 1000), and its group `work` (gid 2760); now both are
-# named `www-data` (ADR 0268 second amendment). Root runs the one swap file (files/instance-app-user.sh) as soon as the container runs, before
-# any command as `www-data` and before the steps below write or start a unit as `www-data`; a processes phase on a running container and a seed
-# run it too (docs/reference/development-containers.md#the-app-users-name). A renamed container only reads. The playbook's copy runs,
-# so a container that the Node's converge has not given the file yet renames too. A wake that boots nothing renames nothing.
-- name: Name the app user web
+# An older container's app account is `orbit` (uid 1000) with the groups `orbit` (gid 1000) and `work` (gid 2760); now it is the stock
+# `www-data` (uid and gid 33), and `agent` is in its group (ADR 0268 second amendment). Root runs the one swap file
+# (files/instance-app-user.sh) as soon as the container runs, before any command as `www-data` and before the steps below write or start
+# a unit as `www-data`; a processes phase on a running container and a seed run it too
+# (docs/reference/development-containers.md#the-app-users-name). A moved container only reads, and a nested-fleet container keeps
+# `orbit` for its inner fleet. The playbook's copy runs, so a container that the Node's converge has not given the file yet moves
+# too. A wake that boots nothing moves nothing.
+- name: Move the app account to www-data
   tags: [container, clone, start, processes, seed]
   when: phase in ['container', 'clone', 'start', 'processes', 'seed'] and not start_skips_boot | default(false) | bool
   ansible.builtin.command: { argv: "{{ as_root + ['sh', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/files/instance-app-user.sh'), 'orbit-app-user'] }}" }
   register: app_user_name
-  changed_when: app_user_name.stdout == 'renamed'
+  changed_when: "'moved to www-data' in app_user_name.stdout"
 
 # The inner Incus's pool on the inner volume, once. The inner Incus may still be starting with the container.
 - name: Create the inner pool

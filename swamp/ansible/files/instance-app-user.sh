@@ -1,81 +1,85 @@
 #!/bin/sh
-# The app user's name in an Instance container (docs/reference/development-containers.md#the-app-users-name, ADR 0268 second
-# amendment). An older image made `orbit` (uid 1000) in its group `orbit` (gid 1000), and the group `work` (gid 2760); now both are
-# named `web`: uid 1000 with the primary group `web`, gid 2760, which `agent` is in. Every container holds this file at
-# /usr/local/libexec/orbit-app-user (InstanceImage::shared), and root runs it before any command as `web`: the container phase after
-# the container starts, a Process write, each `config:clear`, and the native clone's guest before its Node store step.
-#
-# It reads the state first and does only what is left, so a renamed container changes nothing and a run that stopped half way
-# finishes. It never touches `agent`. It prints `unchanged` or `renamed`. Exit 3: a process outside the units that name the old
-# account still runs as uid 1000, so `usermod` would refuse; it is named on stderr and nothing has changed. Any other failure exits
-# with the failed tool's status.
-# Unit and file names hold no space or wildcard, so the lists below are words: no globbing, and SC2086 does not apply.
-# shellcheck disable=SC2086
-set -euf
-units=/etc/systemd/system
-workspace=/srv/workspace
-# A unit file or drop-in that names the old user, the old groups or a path below the old home. `grep -r` follows no link, so the
-# boot links in `*.wants` are not read twice.
-pattern='^(User=orbit|Group=(orbit|work))[[:space:]]*$|/home/orbit([/[:space:]"'\'']|$)'
+# orbit-app-user: move an Instance container's app user from `orbit` (uid 1000) and `work` (gid 2760) to the stock
+# `www-data` (uid/gid 33). Idempotent; a half-done run finishes. Runs as root before the first command as the app user.
+# Never touches `agent` (2750) except adding it to group www-data.
+set -eu
+WS=${ORBIT_WORKSPACE:-/srv/workspace}
+SYS=/etc/systemd/system
+OLD='^(User=orbit|Group=(orbit|work))$|/home/orbit'
 
-old_user=$(getent passwd orbit | cut -d: -f3)
-old_group=$(getent group work | cut -d: -f3)
-web_gid=$(getent passwd web | cut -d: -f4)
-gid_1000=$(getent group 1000 | cut -d: -f1)
-files=$(grep -rlE -- "$pattern" "$units") || [ $? -eq 1 ]
+has_user() { getent passwd "$1" >/dev/null; }
+has_group() { getent group "$1" >/dev/null; }
+old_units() {
+  grep -rlE "$OLD" "$SYS" 2>/dev/null | while read -r f; do
+    case "$f" in
+      */*.d/*) u=$(basename "$(dirname "$f")"); echo "${u%.d}" ;;
+      *) basename "$f" ;;
+    esac
+  done | sort -u
+}
 
-if [ "$old_user" != 1000 ] && [ "$old_group" != 2760 ] && { [ -z "$web_gid" ] || [ "$web_gid" = 2760 ]; } \
-  && [ -z "$gid_1000" ] && [ -z "$files" ]; then
-  echo unchanged
-  exit 0
+# A nested-fleet container (the image's AppArmor marker, InstanceImage::nestedFiles) keeps `orbit` (1000) and `work` (2760) with
+# their files and ACLs: its inner guests are Nodes whose `orbit` the ID map puts on those numbers over the shared checkout. Only
+# `agent` joins www-data there.
+if [ -e /etc/orbit/apparmor-off ]; then
+  id -nG agent | tr ' ' '\n' | grep -qx www-data || usermod -a -G www-data agent
+  echo "orbit-app-user: nested-fleet container keeps orbit"; exit 0
 fi
 
-# Each unit that a file names, a drop-in by its unit, and a Schedule's timer beside its service: one that fires during the rename
-# would start a run under the old name.
-named=
-if [ -n "$files" ]; then
-  named=$(printf '%s\n' "$files" | sed -E 's#[.]d/[^/]+$##; s#.*/##' | sed -E 'p; s/[.]service$/.timer/' | sort -u)
+units=$(old_units)
+if ! has_user orbit && ! has_group work && ! getent group 1000 >/dev/null && [ -z "$units" ] \
+   && id -nG agent | tr ' ' '\n' | grep -qx www-data; then
+  echo "orbit-app-user: already www-data"; exit 0
 fi
 
-if [ "$old_user" = 1000 ]; then
-  words=" $(printf '%s ' $named)"
-  others=$(ps -u 1000 -o unit=,pid=,args= | while read -r unit pid args; do
-    case $words in *" $unit "*) ;; *) printf '%s %s %s\n' "$pid" "$unit" "$args" ;; esac
-  done)
-  if [ -n "$others" ]; then
-    printf 'orbit-app-user: uid 1000 runs processes outside the units that name orbit, so orbit cannot be renamed web. Stop them and run it again:\n%s\n' "$others" >&2
-    exit 3
-  fi
-fi
-
-# The boot started them under the old name; `usermod` refuses a user that still runs a process.
-running=''
-enabled=''
-for unit in $named; do
-  state=$(systemctl show --property=LoadState --property=ActiveState --property=UnitFileState -- "$unit")
-  if printf '%s\n' "$state" | grep -qxE 'ActiveState=(active|activating|reloading)'; then running="$running $unit"; fi
-  if printf '%s\n' "$state" | grep -qx 'UnitFileState=enabled'; then enabled="$enabled $unit"; fi
+# 1. Stop the units that run as the old account (and their timers).
+stopped=""
+for u in $units; do
+  t="${u%.*}.timer"
+  systemctl is-active --quiet "$t" 2>/dev/null && { systemctl stop "$t"; stopped="$stopped $t"; }
+  systemctl is-active --quiet "$u" 2>/dev/null && { systemctl stop "$u"; stopped="$stopped $u"; }
 done
-if [ -n "$running" ]; then systemctl stop -- $running; fi
 
-if [ "$old_user" = 1000 ]; then usermod --login web --home /home/web --move-home orbit; fi
-if [ "$old_group" = 2760 ]; then groupmod --new-name web work; fi
-web_gid=$(getent passwd web | cut -d: -f4)
-if [ -n "$web_gid" ] && [ "$web_gid" != 2760 ]; then usermod --gid web web; fi
-# `chown -R` follows no link, and `--no-dereference` changes a link itself, never its target. The group goes after its files, so a
-# run that stops between the two regroups again.
-if [ -n "$gid_1000" ]; then
-  chown --recursive --no-dereference --from=:1000 :2760 -- "$workspace" /home/web
-  groupdel "$gid_1000"
+# 2. Nothing else may still run as uid 1000. A refusal starts the stopped units again, so the app keeps serving as before.
+if pgrep -u 1000 >/dev/null 2>&1; then
+  for u in $stopped; do systemctl start "$u"; done
+  echo "orbit-app-user: processes still run as uid 1000: $(pgrep -u 1000 -d, )" >&2; exit 3
 fi
 
-if [ -n "$files" ]; then
-  sed --in-place --regexp-extended -e 's/^User=orbit[[:space:]]*$/User=web/' -e 's/^Group=(orbit|work)[[:space:]]*$/Group=web/' \
-    -e 's#/home/orbit([/[:space:]"'\'']|$)#/home/web\1#g' -- $files
-  systemctl daemon-reload
+# 3. Hand files over: uid 1000 -> 33, gid 1000/2760 -> 33, on the container's own file system.
+find / -xdev \( -uid 1000 -o -gid 1000 -o -gid 2760 \) -print0 2>/dev/null \
+  | xargs -0 -r chown -h --from=1000 33 2>/dev/null || true
+find / -xdev \( -gid 1000 -o -gid 2760 \) -print0 2>/dev/null | xargs -0 -r chgrp -h 33
+# The workspace ACLs name gid 2760: give them to www-data.
+if [ -d "$WS" ] && getfacl -pn "$WS" 2>/dev/null | grep -q ':2760:'; then
+  setfacl -R -m g:33:rwX -m d:g:33:rwX "$WS"
+  setfacl -R -x g:2760 -x d:g:2760 "$WS" 2>/dev/null || true
 fi
-# The units this run stopped, and each enabled one, which an earlier run may have left stopped or which failed under a name that
-# was gone.
-start=$(printf '%s\n' $running $enabled | sort -u)
-if [ -n "$start" ]; then systemctl start -- $start; fi
-echo renamed
+
+# 4. Home: www-data keeps its stock home /var/www; carry the old home's files over.
+if [ -d /home/orbit ]; then
+  mkdir -p /var/www
+  cp -a /home/orbit/. /var/www/
+  chown -h 33:33 /var/www
+  rm -rf /home/orbit
+fi
+
+# 5. Accounts.
+usermod -a -G www-data agent
+has_user orbit && userdel orbit
+has_group work && groupdel work
+g=$(getent group 1000 | cut -d: -f1 || true); [ -n "$g" ] && groupdel "$g"
+
+# 6. Units: rewrite, reload, start what was stopped and every enabled unit that is not running.
+grep -rlE "$OLD" "$SYS" 2>/dev/null | while read -r f; do
+  sed -i -E 's/^User=orbit$/User=www-data/; s/^Group=(orbit|work)$/Group=www-data/; s#/home/orbit#/var/www#g' "$f"
+done
+systemctl daemon-reload
+for u in $stopped; do systemctl start "$u"; done
+# A unit that failed under a name a half-done run had already removed is enabled but not running.
+for u in $units; do
+  if systemctl is-enabled --quiet "$u" 2>/dev/null && ! systemctl is-active --quiet "$u" 2>/dev/null; then
+    systemctl start "$u"; stopped="$stopped $u"
+  fi
+done
+echo "orbit-app-user: moved to www-data (restarted:${stopped:- none})"

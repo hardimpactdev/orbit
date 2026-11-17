@@ -40,7 +40,7 @@ const exists = (path: string) => {
 };
 /** A container path inside its folder; other arguments stay as they are. */
 const inside = (name: string, value: string) =>
-  /^\/(srv|tmp|etc|home|usr\/local)\//.test(value) ? rootfs(name) + value : value;
+  /^\/(srv|tmp|etc|home|usr\/local)\/|^\/var\/www(\/|$)/.test(value) ? rootfs(name) + value : value;
 /** A container's /run: a tmpfs, so it lives beside its root file system, and a stop, snapshot or copy never holds it. */
 const tmpfs = (name: string) => `${folder}/tmpfs/${name}`;
 /**
@@ -147,13 +147,14 @@ if (family === "list") {
   Deno.mkdirSync(`${rootfs(name)}/srv/workspace`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/etc/tmpfiles.d`, { recursive: true });
-  for (const home of ["agent/.codex", "agent/.config/orbit", "web"]) {
+  for (const home of ["agent/.codex", "agent/.config/orbit"]) {
     Deno.mkdirSync(`${rootfs(name)}/home/${home}`, { recursive: true });
   }
-  // The image's accounts (InstanceImage::prepare): `web` (uid 1000) in its primary group `web` (gid 2760), with `agent` in it too.
+  Deno.mkdirSync(`${rootfs(name)}/var/www`, { recursive: true });
+  // The image's accounts (InstanceImage::prepare): the stock `www-data` (33) as the app account, with `agent` in its group.
   Deno.writeTextFileSync(`${rootfs(name)}/etc/passwd`,
-    "root:x:0:0:root:/root:/bin/bash\nagent:x:2750:2750::/home/agent:/bin/bash\nweb:x:1000:2760::/home/web:/bin/bash\n");
-  Deno.writeTextFileSync(`${rootfs(name)}/etc/group`, "root:x:0:\nagent:x:2750:\nweb:x:2760:agent\n");
+    "root:x:0:0:root:/root:/bin/bash\nwww-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\nagent:x:2750:2750::/home/agent:/bin/bash\n");
+  Deno.writeTextFileSync(`${rootfs(name)}/etc/group`, "root:x:0:\nwww-data:x:33:agent\nagent:x:2750:\n");
   Deno.mkdirSync(`${rootfs(name)}/tmp`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/usr/local/bin`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/usr/local/libexec`, { recursive: true });
@@ -399,43 +400,62 @@ if (family === "list") {
     save();
     Deno.exit(0);
   }
-  // Root's swap file (ansible/files/instance-app-user.sh) runs here as in the container: its account, unit and unit-file calls come
-  // back to this stand-in through `incus exec`, and every other tool it uses runs as it is.
+  // Root's swap file (ansible/files/instance-app-user.sh) runs here as in the container: its account, unit, process and file calls come
+  // back to this stand-in through `incus exec`, and the text filters it runs on its own output run as they are.
   if (command[0] === "sh" && command[1] === "-c" && command[3] === "orbit-app-user") {
     const bin = `${folder}/app-user-bin`;
-    // The stand-in runs its own `grep` and `sed` from the plain PATH, so a routed call never finds these shims again.
+    // The stand-in runs its own tools from the plain PATH, so a routed call never finds these shims again.
     const back = 'PATH=$APP_USER_PATH exec incus --project "$APP_USER_PROJECT" exec "$APP_USER_NAME" --';
     Deno.mkdirSync(bin, { recursive: true });
-    for (const tool of ["getent", "usermod", "groupmod", "groupdel", "chown", "systemctl", "ps"]) {
-      Deno.writeTextFileSync(`${bin}/${tool}`, `#!/bin/sh\n${back} ${tool} "$@"\n`, { mode: 0o755 });
+    for (const tool of ["getent", "id", "usermod", "userdel", "groupdel", "systemctl", "pgrep", "find", "chown", "chgrp", "getfacl", "setfacl", "cp", "mkdir", "rm"]) {
+      Deno.writeTextFileSync(`${bin}/${tool}`, `#!/bin/sh\n${back} orbit-app-user-tool ${tool} "$@"\n`, { mode: 0o755 });
     }
-    // Only the search of the unit files and their rewrite act on the container; the text filters on the script's own output do not.
-    for (const [tool, flag] of [["grep", "-rlE"], ["sed", "--in-place"]]) {
-      Deno.writeTextFileSync(`${bin}/${tool}`, `#!/bin/sh\n[ "$1" = ${flag} ] && ${back} ${tool} "$@"\nPATH=$APP_USER_PATH exec ${tool} "$@"\n`, { mode: 0o755 });
+    // Only the search of the unit files and their rewrite act on the container; a filter of the script's own output does not.
+    for (const [tool, flag] of [["grep", "-rlE"], ["sed", "-i"]]) {
+      Deno.writeTextFileSync(`${bin}/${tool}`, `#!/bin/sh\n[ "$1" = ${flag} ] && ${back} orbit-app-user-tool ${tool} "$@"\nPATH=$APP_USER_PATH exec ${tool} "$@"\n`, { mode: 0o755 });
     }
     save();
+    // The file's own path tests (`[ -e … ]`, `[ -d … ]`) are shell builtins: they read the container's folder here, not this machine.
+    const script = command[2].replace(/\[ -([def]) "?(\/[^" \]]*|\$WS)"? \]/g, (_, flag, path) => `[ -${flag} "${rootfs(name)}${path}" ]`);
     const done = new Deno.Command("sh", {
-      args: command.slice(1),
+      args: [command[1], script, ...command.slice(3)],
       env: { PATH: `${bin}:${Deno.env.get("PATH")}`, APP_USER_PATH: Deno.env.get("PATH")!, APP_USER_PROJECT: project ?? "default", APP_USER_NAME: name },
     }).outputSync();
     Deno.stdout.writeSync(done.stdout);
     Deno.stderr.writeSync(done.stderr);
     Deno.exit(done.code);
   }
-  // The processes of uid 1000 by unit, as `ps -u 1000 -o unit=,pid=,args=` lists them: a test names those outside a unit in
-  // `app_processes`.
-  if (command[0] === "ps") {
-    for (const line of state.app_processes ?? []) console.log(line);
+  // A call of the swap file's tools (its shims above): the stand-ins below answer the ones that act on accounts, processes, the old
+  // ids' files and ACLs; every other tool runs as any call does.
+  const swapTool = command[0] === "orbit-app-user-tool";
+  if (swapTool) command = command.slice(1);
+  // The processes of uid 1000 that a test names in `app_processes` (pids), as `pgrep -u 1000` lists them.
+  if (swapTool && command[0] === "pgrep") {
+    const pids: string[] = state.app_processes ?? [];
+    console.log(pids.join(command.includes("-d") ? command[command.indexOf("-d") + 1] : "\n"));
+    Deno.exit(pids.length > 0 ? 0 : 1);
+  }
+  // The hand-over of the old ids' files (`find / -xdev` piped to `chown` and `chgrp`) and the workspace ACLs: recorded, never run on
+  // this machine. `acl_2760` holds a workspace whose ACL still names gid 2760; a `setfacl -x g:2760` takes it out.
+  if (swapTool && ["find", "chown", "chgrp", "setfacl"].includes(command[0])) {
+    state.handover ??= [];
+    state.handover.push(command);
+    if (command[0] === "setfacl" && command.includes("g:2760")) delete state.acl_2760;
+    save();
+    Deno.exit(0);
+  }
+  if (swapTool && command[0] === "getfacl") {
+    console.log(state.acl_2760 ? "user::rwx\ngroup::rwx\ngroup:2760:rwx\ndefault:group:2760:rwx" : "user::rwx\ngroup::rwx\ngroup:33:rwx");
     Deno.exit(0);
   }
   // The container's accounts are its own /etc/passwd and /etc/group, which these stand-ins read and change as the shadow tools do; a
-  // test writes an older container's. `chown --from` regroups files that the test user may not give away: it is recorded, never run.
-  if (["getent", "usermod", "groupmod", "groupdel"].includes(command[0]) || (command[0] === "chown" && command.some((word) => word.startsWith("--from=")))) {
+  // test writes an older container's.
+  if (swapTool && ["getent", "id", "usermod", "userdel", "groupdel"].includes(command[0])) {
     const table = (part: string) => Deno.readTextFileSync(`${rootfs(name)}/etc/${part}`).split("\n").filter(Boolean).map((line) => line.split(":"));
     const write = (part: string, rows: string[][]) => Deno.writeTextFileSync(`${rootfs(name)}/etc/${part}`, rows.map((row) => row.join(":") + "\n").join(""));
     const users = table("passwd"), groups = table("group");
     const must = (row: string[] | undefined, message: string): string[] => row ?? (fail(message) as never);
-    if (command[0] !== "getent") {
+    if (!["getent", "id"].includes(command[0])) {
       state.accounts ??= [];
       state.accounts.push(command);
     }
@@ -449,17 +469,22 @@ if (family === "list") {
       }
       Deno.exit(missing ? 2 : 0);
     }
-    if (command[0] === "usermod" && command[1] === "--login") {
-      const [, , login, , home, , old] = command;
-      const user = must(users.find((row) => row[0] === old), `usermod: user '${old}' does not exist`);
-      Deno.renameSync(rootfs(name) + user[5], rootfs(name) + home);
-      [user[0], user[5]] = [login, home];
-      for (const group of groups) group[3] = group[3].split(",").filter(Boolean).map((member) => member === old ? login : member).join(",");
-    } else if (command[0] === "usermod" && command[1] === "--gid") {
-      const group = must(groups.find((row) => row[0] === command[2]), `usermod: group '${command[2]}' does not exist`);
-      users.find((row) => row[0] === command[3])![3] = group[2];
-    } else if (command[0] === "groupmod") {
-      (must(groups.find((row) => row[0] === command[3]), `groupmod: group '${command[3]}' does not exist`))[0] = command[2];
+    if (command[0] === "id") {
+      const user = must(users.find((row) => row[0] === command.at(-1)), `id: '${command.at(-1)}': no such user`);
+      const named = groups.filter((row) => row[2] === user[3] || row[3].split(",").includes(user[0])).map((row) => row[0]);
+      console.log(named.join(" "));
+      Deno.exit(0);
+    }
+    if (command[0] === "usermod" && command[1] === "-a" && command[2] === "-G") {
+      const group = must(groups.find((row) => row[0] === command[3]), `usermod: group '${command[3]}' does not exist`);
+      group[3] = [...new Set([...group[3].split(",").filter(Boolean), command[4]])].join(",");
+    } else if (command[0] === "userdel") {
+      const user = must(users.find((row) => row[0] === command[1]), `userdel: user '${command[1]}' does not exist`);
+      users.splice(users.indexOf(user), 1);
+      // Its own group goes with it, as USERGROUPS_ENAB does; it leaves every member list.
+      const own = groups.find((row) => row[0] === user[0] && row[2] === user[3]);
+      if (own) groups.splice(groups.indexOf(own), 1);
+      for (const group of groups) group[3] = group[3].split(",").filter((member) => member && member !== user[0]).join(",");
     } else if (command[0] === "groupdel") {
       const group = must(groups.find((row) => row[0] === command[1]), `groupdel: group '${command[1]}' does not exist`);
       if (users.some((row) => row[3] === group[2])) fail(`groupdel: cannot remove the primary group of a user`);
@@ -539,8 +564,10 @@ if (family === "list") {
         await new Promise((resolve) => setTimeout(resolve, Math.min(seconds, commandTimeout ?? seconds) * 1000));
         if (commandTimeout !== null && seconds > commandTimeout) Deno.exit(124);
       }
-      const inactive = command.slice(3).filter((unit) => (state.inactive ?? []).includes(unit));
-      for (const unit of command.slice(3)) console.log(inactive.includes(unit) ? "inactive" : "active");
+      // A timer whose file is not installed does not exist for systemd, so it is never active.
+      const inactive = command.slice(3).filter((unit) => (state.inactive ?? []).includes(unit)
+        || (unit.endsWith(".timer") && !exists(`${rootfs(name)}/etc/systemd/system/${unit}`)));
+      if (command[2] !== "--quiet") for (const unit of command.slice(3)) console.log(inactive.includes(unit) ? "inactive" : "active");
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
     Deno.exit(0);
