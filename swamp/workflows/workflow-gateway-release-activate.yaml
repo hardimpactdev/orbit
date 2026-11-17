@@ -116,6 +116,7 @@ jobs:
       globalArgs: *ssh
       inputs:
         hosts: name:target
+        sudo: true
         timeoutSec: 180
         argv:
         - /usr/bin/timeout
@@ -124,12 +125,16 @@ jobs:
         - -c
         - |
           set -eu
+          if test -f /home/orbit/.orbit/gateway-containers.json; then
+            exec /usr/local/libexec/orbit-gateway-release-phase public-ready "$1" "$2"
+          fi
           get() { curl -fsS --cacert /etc/caddy/orbit-cert-current/root-ca.pem --max-time 15 --retry 5 --retry-delay 4 --retry-all-errors "https://gateway.orbit$1"; }
           get /up >/dev/null || { echo "gateway.release_verify_failed: /up does not answer" >&2; exit 1; }
           get /api/v1/gateway/status | jq -e --arg sha "$1" '(.data // .) | .status == "ok" and (.version == $sha or .version == $sha[0:12])' >/dev/null \
             || { echo "gateway.release_verify_failed: status is not ok on $1" >&2; exit 1; }
         - sh
         - ${{ inputs.intent.sha }}
+        - '${{ string(inputs.operation_id) }}'
     # After a failed check, the same script from the new release puts the previous release back: links, PHP-FPM and
     # running services. It then fails the run with its marker; a switch-back that fails reports its own error instead.
   - name: Switch back
@@ -265,7 +270,7 @@ jobs:
         - '--no-interaction'
         - '${{ "--before=" + steps["Switch the release"].outputs.stdout }}'
     # Best effort: keep the newest sealed releases, the current and the previous one; a later release retries.
-  - name: Retire the previous Gateway
+  - name: Retire the previous live
     labels: {role: swamp}
     writes: true
     dependsOn:
@@ -294,7 +299,7 @@ jobs:
     labels: {role: swamp}
     writes: true
     allowFailure: true
-    dependsOn: [{step: Retire the previous Gateway, condition: {type: succeeded}}]
+    dependsOn: [{step: Retire the previous live, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

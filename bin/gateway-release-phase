@@ -6,5 +6,47 @@ shift 3
 [[ $sha =~ ^[a-f0-9]{40}$ && $operation =~ ^[1-9][0-9]*$ ]] || exit 64
 repo=/home/orbit/shared/orbit.git
 script=swamp/scripts/gateway-release-container.sh
+# Manual moves and offline recovery already hold the same lock.
+case "$phase" in
+  switch|restore|switch-back|start-horizon|retire|release-unused)
+    if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 ]]; then
+      exec 9<>/home/orbit/.orbit/gateway-release.lock
+      flock -w 130 9 || { echo 'Gateway release lock is busy' >&2; exit 1; }
+    fi
+    ;;
+esac
+if [[ $phase == retire ]]; then
+  # Avoid handing the scheduler over at the first or last two seconds of a minute.
+  second=$((10#$(date -u +%S)))
+  if (( second < 2 )); then sleep "$((2-second))"; elif (( second >= 58 )); then sleep "$((62-second))"; fi
+fi
+# Cleanup belongs to the current host controller, including a rollback to an older
+# sealed release whose script predates this phase. A failed fetch can have no object.
+if [[ $phase == park-preparation || $phase == release-unused ]]; then
+  inventory=/home/orbit/.orbit/gateway-containers.json
+  journal=/var/lib/orbit/gateway-release-switch
+  candidate=gateway-${sha:0:12}
+  incus_cli=(incus --force-local --project orbit-releases)
+  ctl() { python3 <(git -c safe.directory="$repo" -C "$repo" show "$sha:swamp/scripts/release-container.py") "$@"; }
+  if [[ $phase == park-preparation ]]; then
+    if [[ $("${incus_cli[@]}" config get prepare-gateway user.orbit.release.operation) == "$operation" ]]; then ctl sleep gateway "$operation"; fi
+    exit
+  fi
+  # A failed run may have woken the rollback container or left its new clone private.
+  # The operation that created the clone and the serving inventory fence deletion.
+  if [[ ! -f $inventory && ${ORBIT_GATEWAY_INITIAL_MOVE:-0} != 1 ]]; then exit 0; fi
+  [[ ! -e $journal/operation ]] || { echo 'Unfinished traffic switch needs recovery' >&2; exit 1; }
+  if [[ -f $inventory && $(jq -er '.live' "$inventory") == "$sha" ]]; then exit 0; fi
+  if [[ -f $inventory && $(jq -r '.old // ""' "$inventory") == "$sha" ]]; then
+    ctl retire gateway "${sha:0:12}" "$operation"
+    exit
+  fi
+  existing=$("${incus_cli[@]}" list "$candidate" --format json | jq -ce --arg name "$candidate" 'map(select(.name==$name))|first // {}')
+  [[ $(jq -r '.config["user.orbit.release.operation"] // ""' <<< "$existing") == "$operation" ]] || exit 0
+  jq -e --arg sha "$sha" '.config | .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.commit"]==$sha and .["user.orbit.release.role"]=="candidate" and .["boot.autostart"]=="false"' <<< "$existing" >/dev/null
+  "${incus_cli[@]}" delete "$candidate" --force
+  ctl forget gateway "${sha:0:12}"
+  exit
+fi
 git -c safe.directory="$repo" -C "$repo" cat-file -e "$sha:$script"
 exec bash <(git -c safe.directory="$repo" -C "$repo" show "$sha:$script") "$phase" "$sha" "$operation" "$@"

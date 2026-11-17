@@ -120,13 +120,14 @@ jobs:
         - '2400'
         - '/bin/bash'
         - '-c'
-        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:5}"; fi; shift 5; exec "$@"'
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:6}"; fi; shift 6; exec "$@"'
         - 'bash'
         - 'build'
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
         - '${{ string(inputs.intent.force) }}'
         - '${{ has(inputs.intent.manifest) ? inputs.intent.manifest : "" }}'
+        - '${{ string(has(inputs.intent.retained) && inputs.intent.retained) }}'
         - '/bin/bash'
         - '-c'
         - 'git -C "$1" cat-file -e "$2:swamp/scripts/gateway-release-build.sh" || { echo "gateway.release_script_missing: $2 has no release build script; roll back to it with bin/gateway-rollback" >&2; exit 1; }; bash <(git -C "$1" show "$2:swamp/scripts/gateway-release-build.sh") "$2" "$3" "$4"'
@@ -163,16 +164,16 @@ jobs:
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
         - '${{ inputs.intent.repository }}'
-        - '${{ string(inputs.intent.web.artifact_id) }}'
-        - '${{ string(inputs.intent.web.size) }}'
-        - '${{ inputs.intent.web.digest }}'
+        - '${{ has(inputs.intent.web) ? string(inputs.intent.web.artifact_id) : "" }}'
+        - '${{ has(inputs.intent.web) ? string(inputs.intent.web.size) : "" }}'
+        - '${{ has(inputs.intent.web) ? inputs.intent.web.digest : "" }}'
         - '/bin/bash'
         - '/home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-web.sh'
         - '${{ inputs.intent.id }}'
         - '${{ inputs.intent.repository }}'
-        - '${{ string(inputs.intent.web.artifact_id) }}'
-        - '${{ string(inputs.intent.web.size) }}'
-        - '${{ inputs.intent.web.digest }}'
+        - '${{ has(inputs.intent.web) ? string(inputs.intent.web.artifact_id) : "" }}'
+        - '${{ has(inputs.intent.web) ? string(inputs.intent.web.size) : "" }}'
+        - '${{ has(inputs.intent.web) ? inputs.intent.web.digest : "" }}'
     # VACUUM INTO a private copy before any migration above the disk floor; the newest two stay, and the one a pause names.
   - name: Clone the prepared release
     guard: '${{ has(inputs.intent.retained) && inputs.intent.retained }}'
@@ -198,7 +199,7 @@ jobs:
         - clone
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
-        - '${{ inputs.intent.web.digest }}'
+        - '${{ has(inputs.intent.web) ? inputs.intent.web.digest : "" }}'
   - name: Snapshot the database
     labels: {role: swamp}
     writes: true
@@ -226,10 +227,10 @@ jobs:
         - '/home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-snapshot.sh'
         - '${{ inputs.intent.id }}'
     # Always runs, as the legacy runner; from here a failure pauses automatic releases with the old release live.
-  - name: Park the preparation container
+  - name: Sleep preparation
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Clone the prepared release, condition: {type: succeeded}}]
+    dependsOn: [{step: Clone the prepared release, condition: {type: always}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -309,7 +310,7 @@ jobs:
         - '/home/orbit/releases/${{ inputs.intent.id }}/apps/gateway/artisan'
         - 'gateway:release:wait-idle'
         - '--no-interaction'
-  - name: Check the release candidate
+  - name: Check the candidate
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Wait for active Operations, condition: {type: succeeded}}]
@@ -335,7 +336,7 @@ jobs:
   - name: Load Swamp on Node 209
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Check the release candidate, condition: {type: succeeded}}]
+    dependsOn: [{step: Check the candidate, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: operation-gateway-swamp-load
@@ -371,3 +372,26 @@ jobs:
           horizon_drain_seconds: ${{ inputs.intent.horizon_drain_seconds }}
           keep: ${{ inputs.intent.keep }}
           ssh: ${{ inputs.intent.ssh }}
+  - name: Release unused candidate
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Hand over the release, condition: {type: always}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-release-unused-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 180
+        argv:
+        - /usr/bin/timeout
+        - '165'
+        - /bin/bash
+        - -c
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "$@"; fi'
+        - bash
+        - release-unused
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'

@@ -34,10 +34,10 @@ Deno.test("Swamp load requires the bounded DB busy guard, including forced relea
   const argv = guard.task.inputs?.argv!;
   assertEquals(argv.slice(0, 2), ["/usr/bin/timeout", "630"]);
   assert(argv.join(" ").includes("gateway:release:wait-idle"));
-  assertEquals(release.find((step) => step.name === "Check the release candidate")?.dependsOn,
+  assertEquals(release.find((step) => step.name === "Check the candidate")?.dependsOn,
     [{ step: "Wait for active Operations", condition: { type: "succeeded" } }]);
   assertEquals(release.find((step) => step.name === "Load Swamp on Node 209")?.dependsOn,
-    [{ step: "Check the release candidate", condition: { type: "succeeded" } }]);
+    [{ step: "Check the candidate", condition: { type: "succeeded" } }]);
 });
 
 Deno.test("the nested-fleet refresh is admitted after successful verify and the new Horizon start, best effort, once per release", () => {
@@ -61,13 +61,13 @@ Deno.test("the nested-fleet refresh is admitted after successful verify and the 
 Deno.test("the sealed web build precedes clone; sleep can start in parallel with candidate preparation", () => {
   const clone = release.find((step) => step.name === "Clone the prepared release")!;
   assertEquals(clone.dependsOn, [{ step: "Install the web build", condition: { type: "succeeded" } }]);
-  assertEquals(release.find((step) => step.name === "Park the preparation container")?.dependsOn,
-    [{ step: clone.name, condition: { type: "succeeded" } }]);
+  assertEquals(release.find((step) => step.name === "Sleep preparation")?.dependsOn,
+    [{ step: clone.name, condition: { type: "always" } }]);
   assert(release.find((step) => step.name === "Snapshot the database")?.dependsOn?.some((edge) => edge.step === clone.name));
 });
 
 Deno.test("only a verified public switch retires the former live container; pruning follows the handover", () => {
-  const retire = activate.find((step) => step.name === "Retire the previous Gateway")!;
+  const retire = activate.find((step) => step.name === "Retire the previous live")!;
   assertEquals(retire.allowFailure, undefined);
   assertEquals(retire.dependsOn, [
     { step: "Verify the Gateway", condition: { type: "succeeded" } },
@@ -75,4 +75,9 @@ Deno.test("only a verified public switch retires the former live container; prun
   ]);
   assertEquals(activate.find((step) => step.name === "Prune old releases")?.dependsOn,
     [{ step: retire.name, condition: { type: "succeeded" } }]);
+});
+
+Deno.test("failure cleanup runs after every handover outcome", () => {
+  assertEquals(release.find((step) => step.name === "Release unused candidate")?.dependsOn,
+    [{ step: "Hand over the release", condition: { type: "always" } }]);
 });
