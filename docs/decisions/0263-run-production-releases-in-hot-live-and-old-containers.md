@@ -1,16 +1,16 @@
 ---
 title: "ADR 0263: Run production releases in hot, live and old containers"
 sidebarTitle: "0263 Production containers"
-description: "In progress, proposed. A production Instance keeps one record; each release is an Incus container on its app-prod Node. Hot is a ZFS clone of the live release's snapshot that builds and migrates the next commit; when it is ready, Caddy switches the Route to it and it becomes live. The previous live stays stopped as old for rollback, and the next deploy removes it. A release container has no memory limit unless its Instance sets one."
+description: "Planned app-prod integration. Each Instance has a permanent off-traffic preparation container. Deploy there, clone the completed build, switch to the ready clone, and retain the drained previous live in swap for rollback."
 ---
 
 # ADR 0263: Run production releases in hot, live and old containers
 
 A production Instance keeps one stable record: its id, Routes, environment, deploy steps, attachments, Processes and Schedules. Each release of it is an Incus container on its `app-prod` Node. Each container has one of three release states:
 
-- **Hot** builds the next commit. It is a ZFS clone of the live release's snapshot. Orbit fetches the commit into it, runs the deploy steps and migrates the shared database, while live still serves.
+- **Hot** is a fresh filesystem clone of the completed build in this Instance’s preparation container. It starts its web server and passes readiness before it receives traffic.
 - **Live** serves the Instance's Routes and runs its workers and Schedules.
-- **Old** is the release before live. It stays stopped for rollback, and the next deploy's retire removes it.
+- **Old** is the release before live. It freezes to swap for rollback after its requests and jobs drain. The next verified deploy can retire it.
 
 When hot is ready, Caddy points the Routes at it in one reload, and hot becomes live. The [production containers](/reference/production-containers) page is the contract and holds every number and path.
 
@@ -18,19 +18,13 @@ When hot is ready, Caddy points the Routes at it in one reload, and hot becomes 
 
 In progress.
 
-Proposed: a design for review, with no part built. It specifies the production work of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance). The [container spikes](/solutions/development-container-runtime#a-release-switch-is-not-a-data-rollback) inform this design but do not deliver it.
+Production Instance integration is planned. The Gateway work implements the shared clone and swap-backed power operations. The app-prod role, Instance commands, persistence and Route integration below still need their own implementation and proof. See [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance) and the [earlier container trials](/solutions/development-container-runtime#a-release-switch-is-not-a-data-rollback).
 
 Principle: [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles). Production uses the container machinery of development: images, ZFS clones, snapshots, the runtime folder, the bridge and the egress proxy. Each old production path below goes when its replacement is built.
 
-### Why old stays stopped
+### Why old stays frozen
 
-The owner decided that the previous live stays stopped as old, and that the next deploy's retire removes it:
-
-- A rollback starts old, checks it as ready and switches to it, in seconds, with no build.
-- A stopped old holds no memory. Between deploys only live runs; during a deploy, hot and live run.
-- Live is a ZFS clone of old's snapshot, so the two share most blocks on disk.
-
-Without old, the only way back after the handover is a new build. An Incus snapshot is deleted with its container, and an image published from a snapshot copies files.
+<a id="why-old-stays-stopped"></a>The previous live finishes requests and hands over workers and timers before it freezes. The kernel reclaims its memory to swap. A rollback normally resumes the same processes. A reboot loses those processes but preserves the release filesystem, so rollback can cold-start the exact release.
 
 ## Context
 
@@ -38,7 +32,7 @@ Today a production Instance is a checkout home on an `app-prod` Node ([Instance 
 
 ADR 0250 moves every Instance into an Incus container. [Instance containers](/reference/development-containers#production-instances) holds the decided basics for production: the `app-prod` role installs the container setup and the runtime folder, not PHP-FPM; a production container has only the user `orbit`; FrankenPHP serves it after the [production gate](#production-gate); existing checkouts are migrated. [ADR 0265](/decisions/0265-sleep-idle-production-containers) lets an idle live sleep and wake fully ready.
 
-The development side proved the machinery: a ZFS clone of a snapshot takes about a second and copies no file, and a default Instance's [seed](/reference/development-containers#the-default-instance) carries warm dependencies to its clones. An earlier production spike proved a warm deploy in containers with a clone, a candidate and a Route switch. Its proposal had a separate preparation container that stayed between deploys.
+Development uses a [default Instance seed](/reference/development-containers#the-default-instance) to share warm dependencies. The preparation container brings that pattern to production. It can change without disturbing the serving release.
 
 Production differs from development in four ways that drive this decision:
 
@@ -53,16 +47,16 @@ The numbered parts below settle the mapping onto today, the source of hot, the d
 
 ### 1. One record, release containers under it
 
-The production Instance stays the one record that users and Routes name. Its release containers are runtime rows in `instance_runtimes`, one per container, with a `release_state` of `hot`, `live` or `old`. An Instance has at most one row in each state. The deployment history keeps its rows; a row's `release` names the release container that the deploy built.
+The production Instance stays the one record that users and Routes name. Its release containers are runtime rows in `instance_runtimes`, one per container, with a `release_state` of `hot`, `live` or `old`. An Instance has at most one row in each state. The persistent preparation container belongs to the Instance and has no release state. The deployment history keeps its rows; a row's `release` names the release container that the deploy built.
 
 Release containers and the storage volume use the Incus name of the Instance, [`instance-<id>`](/reference/development-containers#the-machine-name), with a suffix.
 
 | Today | Replaced by | Old path that goes |
 | --- | --- | --- |
-| `releases/<name>/` in the production home | One release container, `instance-<id>-<release>`, with the same release name | The release directories and the release layout marker |
+| `releases/<name>/` in the production home | One release container, `instance-<id>-<release>`, with the commit’s 12-character prefix in its name | The release directories and the release layout marker |
 | The `current` link | The Node's live link of the Instance and its Caddy upstream file, which the switch replaces | `current`, `current.next` and the swap steps |
-| Three retained releases | Live and old. Hot exists only during a deploy | The cleanup step and its process scan |
-| `<home>/.env` and its links | `.env` written into each release container after its clone | The home `.env`, `env/<directory>/.env` and their links |
+| Three retained releases | Live and old, plus a persistent off-traffic preparation container. A hot candidate adds a fourth container briefly | The checkout cleanup step and its process scan |
+| `<home>/.env` and its links | The Instance environment is applied to the preparation container before the build. On rollback the old release receives the current environment before readiness | The home environment links |
 | `<home>/<shared path>` | The Instance's storage volume, mounted in every release container | Shared directories in the home |
 | `<home>/database.sqlite` | The same file in the storage volume | The home file |
 | The dedicated PHP-FPM pool | FrankenPHP in the container, from the runtime folder version that the release pins | The pool, its unit and the PHP refresh steps |
@@ -75,44 +69,42 @@ Release containers and the storage volume use the Incus name of the Instance, [`
 | Node timers of per-minute production schedulers | Container timers in the release containers, enabled only in live | Production Node timers |
 | `restart_on_deploy` on production Processes | Every release container starts its own Processes when it becomes live | The field for production Instances |
 
-The first release of an Instance has no live snapshot, so its hot launches from the image: a cold hot. The same flow moves an existing checkout production Instance with [`instance:migrate`](/cli/instance/migrate). It copies the home's shared paths into the storage volume first, then builds a cold hot at the commit that `current` selects, switches the Routes from PHP-FPM to the container and stops the host Processes, timers and pool. Each native Schedule keeps firing in the home until the migration ends; then the Gateway rewrites its workflow for the live link, as an Instance transfer does. The home stays, unserved, until the next successful deploy removes it with the production account. There is no other way to move, and a checkout production Instance can no longer deploy after its move.
+The first deploy creates the preparation container, builds in it, takes the release clone and switches to that clone. A checkout migration uses the same flow at the commit selected by `current`. Copy the home’s shared paths to the persistent volume first. After verification, move the Processes and Schedules and stop the host pool. Keep the unserved home until the next verified deploy completes its final copy and removes it. See [first release and migration](/reference/production-containers#first-release-and-migration).
 
 The planned charts are `docs/cli/instance/container/deploy-production.mmd`, `docs/cli/instance/container/rollback-production.mmd`, `docs/cli/instance/container/create-production.mmd` (a clone, whose first deploy builds the first release container) and `docs/cli/instance/container/migrate-production.mmd` (a checkout), and a change of `docs/cli/instance/auto-deploy.mmd`.
 
-### 2. Hot is a clone of live's release snapshot
+### 2. Clone the finished build
 
-Each release container takes one snapshot, `release`, after its deploy steps passed and before any request reaches it. The next hot is a ZFS clone of live's `release` snapshot. It starts with the dependencies, the build output and the Composer and npm caches of the live release, so a deploy without a dependency change installs nothing. The clone copies no file and takes about a second.
+<a id="2-hot-is-a-clone-of-lives-release-snapshot"></a>The permanent preparation container belongs to this Instance alone. It receives no traffic and runs no application workers, Schedules or timers. The first deploy creates it from the pinned production image. Subsequent deploys wake the same container and reuse its dependency cache.
 
-After the clone, and before the first step, Orbit attaches the storage volume, sets the Instance's memory limit when it has one, and mounts the runtime folder version that the Node pins now. Hot applies the Node's pending package upgrades, so a [patch run](/decisions/0253-patch-nodes-and-reboot-them-drained) that upgraded live reaches the next release too. The Node's mirror fetches the commit and Orbit pushes it into hot, which checks it out with the cleanup rules of a [development deploy](/reference/deployments#development-defaults). Then Orbit writes the rendered `.env`.
+Deploy the admitted revision, render its environment, run its build steps and verify the finished artifact. A failed update leaves live serving. Before a retry, remove incomplete build output. Seal the full commit, artifact digest, Instance and Operation, take a filesystem snapshot, and clone that snapshot as hot. Only the candidate undergoes serving readiness. It starts its own FrankenPHP processes. After a successful clone the preparation container can freeze to swap while hot finishes readiness.
 
-A release snapshot holds that release's `.env`, because the deploy steps need it before the snapshot. So a warm hot carries live's `.env` from its clone until Orbit writes the new one. Secrets never come from the image or the mirror, and the snapshot stays on the Node, inside the same boundary as live.
+The Gateway uses the same release operations for its own target. Each production Instance has its own preparation, release names, power records, storage and upstream. Both share clone, freeze, thaw and cold-start operations. Each applies its own health check, traffic switch and application-service handover. [Production containers](/reference/production-containers#build-hot) owns the build steps.
 
-Live's changes after its snapshot never reach the next hot: logs, caches and files that requests wrote stay in live. Old's snapshot stays because live is a ZFS clone of it; a rollback starts old's container itself, not its snapshot.
+### 3. Run migrations against the shared database before the switch
 
-Hot launches from the image instead (a cold hot) when there is no live release, when the Node's image is newer than the image that live came from, or for a migration. A cold hot also starts a new ZFS clone chain.
+<a id="3-one-shared-database-migrations-run-in-hot-before-the-switch"></a>
 
-### 3. One shared database; migrations run in hot before the switch
-
-Every release container uses the Instance's shared production database. The `migrate` deploy step runs in hot, as a `before_activation` step, while live still serves. So every migration follows expand and contract:
+Every release uses the Instance’s shared production database. Its `migrate` step runs once in the preparation container before activation while live still serves. Every migration follows expand and contract.
 
 - The code of live must work on the schema after the migration. A change that live cannot read is split over two deploys: the first expands, and the second contracts once no live or old release uses the old shape.
 - A migration changes only the schema, or changes data with raw queries. It never loads application models or domain code, because those belong to the new code and the data still belongs to the old. A migration is tested against the schema of the last released commit.
 
-A migration that fails before the switch leaves live serving. Orbit removes hot, and the commit counts as a failed commit under the [automatic deploy rules](/reference/deployments#failures-of-automatic-deployments): a failure in a deploy step blocks it. What a failed migration already changed stays; Orbit undoes no data change. A rollback never undoes a migration.
+A failed migration leaves live serving. Discard partial build output before retrying, and record the failed commit under the [automatic deploy rules](/reference/deployments#failures-of-automatic-deployments). Schema changes that already completed remain in place. A rollback selects code only.
 
 ### 4. Ready, switch and rollback
 
-Hot must be [ready](/reference/production-containers#ready) before any traffic reaches it: its steps passed, its snapshot exists, FrankenPHP is up, the health path answers through hot's bridge address with a Route's domain as `Host`, and its PHP loads no development extension. Otherwise the deploy fails with `deployment.not_ready`, with the outcome of a failed migration above.
+Before the switch, check the clone’s full commit and artifact digest. Verify FrankenPHP, the health path through the clone’s private address with the Route domain, and the absence of development extensions. A failure refuses promotion with `deployment.not_ready` and leaves live serving. See [Ready](/reference/production-containers#ready).
 
 **Switch.** The Node's Caddy site of each Route of the Instance imports one upstream file of the Instance. The [switch](/reference/production-containers#switch) replaces that file and the live link together and reloads Caddy once. Caddy's graceful reload lets each request in progress on the previous live finish. A failed reload puts the previous files back, so live serves unchanged. A Cluster Route needs no Router change.
 
-**Handover.** The [handover](/reference/production-containers#handover) moves timers, then Processes, from the previous live to the new live, with a bounded graceful stop. Then the `after_activation` steps run in the new live, and [retire](/reference/production-containers#retire) stops the previous live as old and removes the earlier old.
+**Handover.** After the new Route is verified, move timers and Processes and run the new live’s after-activation steps. Wait for the previous live’s in-flight work, disable its autostart and freeze it as old. Remove the earlier old only after its replacement is retained. See [Handover](/reference/production-containers#handover).
 
-**Rollback.** `instance:rollback` returns to old: Orbit writes the Instance's current `.env` into old, starts it, checks it as ready, switches the Routes to it and hands over. The rolled-away live becomes old, so a second rollback goes forward again. A rollback runs no deploy step, fetches nothing and changes no data: it selects code only. It pauses automatic deploys and blocks the rolled-away commit, as today. Without an old release, rollback refuses with `rollback.release_not_retained`. To go back further, deploy the earlier commit with `instance:deploy --commit`.
+**Rollback.** Wake old, or cold-start it after a Node reboot. Apply the current environment, verify its private health and switch traffic. Drain and freeze the rolled-away live; a second rollback goes forward again. The preparation container stays asleep. Rollback fetches no code, runs no deployment steps, pauses automatic deploys and blocks the rolled-away commit. Without a retained release it refuses with `rollback.release_not_retained`. A deeper rollback is a deploy of the selected revision.
 
 ### 5. Workers, Schedules and Reverb run only in live
 
-One rule decides where work runs: a release container's Process units and container timers are enabled only while it is live, and only live starts with its Node. The handover disables and stops them in the previous live, then enables and starts them in the new live. Hot installs them disabled, so its snapshot holds them disabled too. So a Node reboot restores live with its work, and a start of old or hot runs none of it.
+Only live has autostart, application workers, Processes and timers enabled. Preparation installs disabled units, so a new clone starts with these disabled. The handover drains and disables them on the former live before enabling them in the new live.
 
 - **Processes.** Each Process record of the Instance has a unit in every release container. Only live runs it. `process:*` commands act on live.
 - **Per-minute schedulers.** A Schedule with a systemd calendar, such as the Laravel scheduler, is a [container timer](/reference/schedules#container-timers) in each release container, enabled only in live.
@@ -122,9 +114,9 @@ One rule decides where work runs: a release container's Process units and contai
 
 ### 6. Persistent storage is one custom volume per Instance
 
-Data that must survive a release never lives on a release container's root disk. Each production Instance has one Incus filesystem custom volume, `instance-<id>-shared`, on the Node's pool. Orbit attaches it in every release container: hot, live and old share it, as Incus permits for a filesystem volume on one Node. Each [shared path](/reference/deployments#shared-paths) of the Instance, `storage` by default, is a link from the application directory into the volume. Uploads, Passport keys, logs and a SQLite database live there.
+Data that must survive a release never lives on a release container's root disk. Each production Instance has one Incus filesystem custom volume, `instance-<id>-shared`, on the Node's pool. Orbit attaches it in every release container: the preparation container and its release clones share it, as Incus permits for a filesystem volume on one Node. Each [shared path](/reference/deployments#shared-paths) of the Instance, `storage` by default, is a link from the application directory into the volume. Uploads, Passport keys, logs and a SQLite database live there.
 
-`instance:clone` creates the volume, and writes a seeded SQLite database into it. A migration copies each shared path of the home into it before hot's steps run, so a step that makes keys only when they are missing finds the existing keys. After the switch it copies the changes again, and never deletes a file in the volume. Instance removal removes the volume with the Instance. A Project may move uploads to object storage such as S3 as its own choice; the volume stays for the rest.
+`instance:clone` creates the volume, and writes a seeded SQLite database into it. A migration copies each shared path of the home into it before the preparation container’s build steps run, so a step that makes keys only when they are missing finds the existing keys. After the switch it copies the changes again, and never deletes a file in the volume. Instance removal removes the volume with the Instance. A Project may move uploads to object storage such as S3 as its own choice; the volume stays for the rest.
 
 ### 7. PowerSync stays outside every deploy
 
@@ -137,9 +129,9 @@ PowerSync runs on the Services Node as Node Processes and replicates from the sh
 
 ### 8. Capacity: an optional limit and an admission check
 
-A release container has no memory limit by default. The owner decided this: a busy release may use the Node's memory. The production Instance's memory limit is optional, and `instance:update` sets it. When it is set, every release container of the Instance gets it. During a deploy, live and hot run, and old is stopped. The three root disks of a deploy use little space, because a clone holds only its changed blocks.
+Each production Instance can set a memory limit; the default permits a busy release to use the Node’s available memory. Three containers persist between releases: the preparation container, live, and old when one exists. During deployment hot briefly adds a fourth. Reserve disk, RAM and swap across all deploying Instances, taking account of the time between starting hot and reclaiming preparation memory. See [capacity](/reference/production-containers#capacity).
 
-The deploy's first step on the Node runs the [capacity check](/reference/production-containers#capacity) before the hot clone. When the Node lacks memory or pool space, the deploy fails with `deployment.node_capacity` and changes nothing. Nothing waits on the Node. The automatic tick retries it, and it never counts toward blocking the commit, because the cause is the Node, not the commit.
+Check capacity before waking preparation. Refuse insufficient RAM, swap or pool space with `deployment.node_capacity`. Automatic deployment retries capacity refusals without counting them against the commit.
 
 ### 9. PHP: the static glibc build, pinned per release
 
@@ -159,7 +151,7 @@ Operational acceptance must exercise the managed path, not the spike scripts: ch
 
 Each subtask is one PR of a task group that follows this one, in this order. Each one adds its errors, Pest tests and documentation, and moves its chart from planned to built.
 
-1. **Production Node and image.** The container branch of the `app-prod` role: Incus, the pool, `orbit-instances`, the bridge and the runtime folder with the static glibc PHP. The production image has the user `orbit` only, no agent and no model route.
+1. **Production Node and image.** The container branch of the `app-prod` role: Incus, the pool, `orbit-releases`, the bridge and the runtime folder with the static glibc PHP. The production image has the user `orbit` only, no agent and no model route.
    - Removes: nothing yet. PHP-FPM stays for checkouts until subtask 10.
    - Proof: converge a fixture `app-prod` Node twice, with no change the second time. Launch the image and check its users, and that PHP loads no PCOV.
 2. **Records.** `release_state` with at most one row per state, `runtime_version`, the storage volume of an Instance, and the Caddy site of a production Route that imports the upstream file.
@@ -168,13 +160,13 @@ Each subtask is one PR of a task group that follows this one, in this order. Eac
 3. **Clone.** `instance:clone` records the Instance, creates the storage volume with the `503` upstream file, publishes the preview Route and accepts a container candidate.
    - Removes: the home preparation of a clone, the checkout candidate rule and the Node timers that a clone installs.
    - Proof: Pest tests and the cases of `create-production`; a clone of the fixture Project.
-4. **Build hot.** The capacity check, a warm or cold hot, the source and `.env`, the before steps, the release snapshot, and the removal of hot on every failure, with `deployment.node_capacity`, `deployment.selection_invalid` and `deployment.step_failed`. It documents the [storage rule](/reference/production-containers#storage) for each Project's steps.
+4. **Build and clone.** Check capacity, wake preparation, select the exact source and environment, and execute the Instance’s before steps. Verify the build and artifact digest, seal and clone hot, then freeze preparation. Expose `deployment.node_capacity`, `deployment.selection_invalid` and `deployment.step_failed`. Document the [storage rule](/reference/production-containers#storage) for Project steps.
    - Removes: nothing yet. The home branch of the deploy workflow stays for checkouts until subtask 10, listed in [old paths](/reference/old-paths).
-   - Proof: Pest tests and the build cases of `deploy-production`; on the fixture, hot builds and is removed on a failed step while live serves.
+   - Proof: The fixture fails preparation before cloning, retries with a clean build, and produces a candidate of the exact target revision and artifact. Live continues serving.
 5. **Ready, switch and retire.** Readiness, the switch with its previous files, the after steps, retire and the read-back, with `deployment.not_ready` and `deployment.switch_failed`.
    - Removes: nothing yet.
    - Proof: Pest tests and the switch cases of `deploy-production`; the first and second deploys of a fixture with no Process or Schedule.
-6. **Work on live.** The one rule for units and timers: hot installs them disabled, and only live has them enabled and `boot.autostart` on. The handover in its order with the bounded graceful stop. A native Schedule fire reads the live link; `process:*` acts on live.
+6. **Work on live.** Preparation installs disabled units and timers. Only live enables its application units, timers and autostart. Native Schedule fires and Process commands resolve the live link.
    - Removes: production Node timers, and `restart_on_deploy` for container Instances.
    - Proof: Pest tests of the handover, the Schedule workflow and the Process commands; a fixture deploy in which each Schedule fires once a minute and each worker runs in live only.
 7. **Automatic tick.** The tick's deployed commit is live's commit, and its deploy is the hot deploy. `deployment.node_capacity` gets a retry time and never counts toward a block.
@@ -208,22 +200,22 @@ During every case except the sleep case, a load loop sends a request to the heal
 
 | Case | What it does | What it measures | Passes when |
 | --- | --- | --- | --- |
-| First release | The first deploy after the clone: a cold hot | The deploy time | The Route serves the commit; the Schedules get their triggers |
+| First release | Deploy into a new preparation container and clone the finished build | Admission to first healthy response | The candidate serves the expected commit; Schedules get their triggers |
 | Warm deploy | A deploy of a commit with no dependency change | Clone time, time to the first new response, failed requests | No failed request; the 10-second request ends `200` on the previous live; the new commit serves after the switch |
-| Dependency change | A commit that changes `composer.lock` and the npm lock file | The deploy time, and the files that hot's before steps wrote in the storage volume | Live serves its old dependencies until the switch; hot's steps wrote no compiled view or cache into the volume |
+| Dependency change | Change the Composer and npm lock files | Build and clone times; writes into shared storage | Live serves its old dependencies until the switch; the preparation build changes no shared view or cache |
 | Expand migration | A commit that adds a nullable column and code that uses it | Failed requests during the migration | Live serves through the migration with no failed request |
-| Failed migration | A commit whose migration fails | The outcome | `deployment.step_failed`; hot is removed; live serves with no failed request; the tick blocks the commit |
+| Failed migration | Fail a migration before activation | Serving revision and recorded failure | Live serves through the failure; the tick blocks the commit; partial build output cannot be promoted |
 | Failed readiness | A commit whose health path answers `500` | The outcome | `deployment.not_ready`; hot is removed; live serves unchanged |
 | Capacity refusal | A memory limit set above the Node's free memory, then removed | The tick's results | `deployment.node_capacity` with nothing made; the commit is not blocked; the tick deploys it after the limit is removed |
 | Rollback and forward | `instance:rollback`, then `instance:rollback` again | Time to the first response of each release, failed requests | Each switch has no failed request; the workers and timers run only in the new live; automatic deploys are paused and the commit is blocked |
-| Node reboot | A reboot of the Node between deploys | The containers and units after the boot | Only live starts, with its Processes and timers; old stays stopped |
+| Node reboot | Reboot between deploys | First visit, cold rollback and next preparation wake | Only live boots automatically; rollback and the next build work from their retained filesystems |
 | One fire | Every case above, read from the fire records | Fires per Schedule per minute | Each Schedule fired once each minute: no minute twice and none skipped, except while the Node rebooted, and for a container timer while live slept ([ADR 0265](/decisions/0265-sleep-idle-production-containers)) |
 | Sleep and wake | The sleep-and-wake checks of [ADR 0265 part 11](/decisions/0265-sleep-idle-production-containers#11-rollout), with the load loop paused | Hold time; fire, job and release records | Every check of ADR 0265 part 11 passes |
 | Jobs across the switch | Jobs dispatched without pause through a deploy and a rollback | Jobs run, and the drain time | Every job ran once; the drain ended within 120 s |
 | Uploads survive | An upload before a deploy, one in hot's time and one after a rollback | The files in the volume | Every upload reads back from live after each deploy and rollback; the Passport keys did not change |
 | WebSocket | The page stays open through a deploy | Reconnect time, and the event after the switch | The client reconnects by itself and gets the event |
 | Checkout migration | A second fixture Instance runs as a checkout with uploads and both Schedules. `instance:migrate` moves it; then it deploys once | Failed requests, the volume, the fires | No failed request; every upload is in the volume; a file that live changed keeps live's version; one fire a minute; the deploy removes the home |
-| Disk | The pool's used space after five warm deploys and a cold hot | Used space per release | A removed release frees its dataset once no clone depends on it |
+| Disk | Deploy five revisions using one preparation container | Peak pool use, swap and retained releases | Old and preparation retain only their measured swap; retired containers and transient snapshot names are pruned |
 
 The proof passes when every case passes in one run, in this order, on one build. A failed case is fixed in its subtask, and the whole run repeats. No case waits for a soak window or an approval.
 
@@ -239,7 +231,7 @@ mealou moves after hauzer's first container deploy passed. Neither waits for a w
 
 ## Rejected alternatives
 
-- **A separate preparation container, kept between deploys.** It was the earlier proposal. It is a fourth container per Instance with its own drift, and its build is never the build that served. A clone of live's `release` snapshot gives the same warm start, and that snapshot is exactly what passed readiness.
+- **Build in a clone of live’s snapshot.** Each Instance instead retains one warm build environment. This keeps the preparation lifecycle independent of application traffic and supports the same build-then-clone path as the Gateway.
 - **A clone of live as it runs now.** It would carry every runtime change of live, such as caches and files that requests wrote, into the next release.
 - **A cold build from the image for every deploy.** Every deploy would install all dependencies again. Orbit uses it only when there is no warm source or the image changed.
 - **Deploy in place in live, as today.** No release would be isolated, a failed build would touch the serving container, and a rollback would need retained directories again.
@@ -248,7 +240,7 @@ mealou moves after hauzer's first container deploy passed. Neither waits for a w
 - **Undo a migration on rollback.** Older code can need a data recovery that only the application knows. Rollback selects code only.
 - **Remove the previous live after the handover.** A rollback after the drain would need a new build, and the disk gain is small: Incus keeps a removed container's dataset while a clone still depends on it.
 - **A default memory limit per release container.** The owner wants a busy release to use the Node's memory. An Instance can still set a limit.
-- **Keep old running.** It would hold memory for a rollback that a start of a stopped container serves in seconds.
+- **Keep old running with its working set resident.** Freezing after the drain preserves its processes for normal rollback and returns most working memory to the Node.
 - **Keep more releases or snapshots.** Each kept release holds a ZFS chain and disk. A pinned deploy of an earlier commit covers the rare deeper rollback.
 - **Publish an image of each release for rollback.** Publishing an image copies files.
 - **Units enabled in every release container.** A start of old for a rollback would start its workers and timers while live still runs its own.
@@ -257,7 +249,7 @@ mealou moves after hauzer's first container deploy passed. Neither waits for a w
 - **Bind-mount the home's storage into the containers.** It would keep the home alive as a second production layout.
 - **Wait for capacity on the Node.** A waiting run holds the Instance and hides the cause. A refused deploy with a retry is visible and lets a manual action in.
 - **Check readiness through the public Route.** The Route still serves live until the switch; only a request to hot's bridge address tests hot.
-- **A separate Incus project or bridge for production.** An `app-prod` Node runs no development container, so `orbit-instances` and `orbitinst0` serve it with one setup.
+- **One shared preparation container on an app-prod Node.** Each production Instance owns its builds and rollback state. Two Instances may deploy the same commit with different environment and storage.
 
 ## Consequences
 
@@ -266,8 +258,8 @@ mealou moves after hauzer's first container deploy passed. Neither waits for a w
 - A failed build, migration or readiness check never touches live. Hot is removed.
 - Every migration must be expand and contract, and every queued job payload must stay readable by the release before it. This is a rule for each Project, not something Orbit can check.
 - A rollback goes back one release in seconds, as long as old exists. A deeper rollback is a deploy of an earlier commit.
-- Each deploy holds two running containers and three root disks on the Node for its duration.
-- ZFS clone chains grow by one release per warm deploy until the next cold hot resets them. The live proof measures whether Incus frees the removed releases' datasets once no clone depends on them.
+- Between deploys each Instance retains preparation, live and previous live once one exists. Preparation and previous live sleep; a deploy briefly adds the candidate as a fourth root disk.
+- The operation removes the transient build snapshot after the independent clone exists. Incus retains underlying storage blocks while any release still references them.
 - A Project that caches its configuration in a deploy step serves that cache after a rollback, with the values it cached.
 
 ## Affects
