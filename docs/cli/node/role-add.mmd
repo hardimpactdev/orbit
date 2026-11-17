@@ -166,6 +166,7 @@ sequenceDiagram
       SW->>N: Install Swamp<br/>Ansible phase: swamp
       %%> Why:
       %%> - Publish beside the running binary and drain workers one at a time so active work can finish.
+      %%> - Keep the selected and previous binary plus mapped versions, install hourly journal, apt and Git maintenance, and clear downloaded bundles only at a drained worker start.
     end
     opt role needs certificates
       %% path: certificates

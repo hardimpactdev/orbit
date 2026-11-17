@@ -151,6 +151,8 @@ additionalFiles:
   - ansible/tasks/role-tool-manager.yml
   - ansible/tasks/role-analytics.yml
   - ansible/tasks/role-swamp.yml
+  - ansible/tasks/swamp-binary-retention.yml
+  - ansible/tasks/swamp-housekeeping.yml
   - ansible/tasks/role-publication-read.yml
   - ansible/tasks/role-publication-php.yml
   - ansible/tasks/role-publication-dns.yml
