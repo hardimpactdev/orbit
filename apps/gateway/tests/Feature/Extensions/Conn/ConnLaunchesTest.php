@@ -406,12 +406,16 @@ describe('launch admission', function (): void {
             'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
         ], str_replace('"fixture-number"', $number, $json));
 
-        $post('9223372036854775808')->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection']]]);
+        $unrepresentable = ['9223372036854775808', '9223372036854775809', '1e400', '9007199254740991.1', '1e-400'];
+        foreach ($unrepresentable as $number) {
+            $post($number)->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['body']]]);
+        }
         expect(launchRecords())->toBe($baseline);
-        $post('9007199254740991')->assertAccepted();
+        $accepted = $post('9007199254740991.0')->assertAccepted();
+        $post('90071992547409910e-1')->assertAccepted()->assertJsonPath('data.id', $accepted->json('data.id'));
         $admitted = launchRecords();
-        foreach (['9223372036854775808', '9223372036854775809', '1e400'] as $number) {
-            $post($number)->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection']]]);
+        foreach ($unrepresentable as $number) {
+            $post($number)->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['body']]]);
         }
         expect(launchRecords())->toBe($admitted);
     });

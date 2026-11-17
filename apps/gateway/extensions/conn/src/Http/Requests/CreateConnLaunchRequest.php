@@ -27,7 +27,7 @@ final class CreateConnLaunchRequest extends FormRequest
     {
         $content = $this->getContent();
         try {
-            $body = StrictJson::decode($content, strlen($content));
+            $body = StrictJson::decode($content, strlen($content), checkNumber: self::checkNumber(...));
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages(['body' => ['The request must be a valid JSON object without duplicate keys.']]);
         }
@@ -105,23 +105,49 @@ final class CreateConnLaunchRequest extends FormRequest
                     }
                 }
             }
-            if (property_exists($this->body, 'model_selection')) {
-                if (! $this->body->model_selection instanceof stdClass) {
-                    $validator->errors()->add('model_selection', 'The model selection must be an object.');
-                } elseif (! self::supportsModelNumbers($this->body->model_selection)) {
-                    $validator->errors()->add('model_selection', 'Model option numbers must be finite and within the JavaScript safe integer range.');
-                }
+            if (property_exists($this->body, 'model_selection') && ! $this->body->model_selection instanceof stdClass) {
+                $validator->errors()->add('model_selection', 'The model selection must be an object.');
             }
         }];
     }
 
-    private static function supportsModelNumbers(mixed $value): bool
+    private static function checkNumber(string $token): void
     {
-        if ($value instanceof stdClass || is_array($value)) {
-            return array_all((array) $value, self::supportsModelNumbers(...));
+        $value = json_decode($token, flags: JSON_THROW_ON_ERROR);
+        if ((! is_int($value) && ! is_float($value)) || ! is_finite($value) || abs($value) > 9_007_199_254_740_991) {
+            self::refuseNumber();
         }
+        $original = self::decimalValue($token);
+        if ($original === null || $original !== self::decimalValue(json_encode($value, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION))) {
+            self::refuseNumber();
+        }
+    }
 
-        return (! is_int($value) && ! is_float($value)) || abs($value) <= 9_007_199_254_740_991;
+    /** @return array{string, int}|null */
+    private static function decimalValue(string $token): ?array
+    {
+        if (preg_match('/\A(-?)([0-9]+)(?:\.([0-9]+))?(?:[eE]([+-]?[0-9]+))?\z/D', $token, $parts) !== 1) {
+            return null;
+        }
+        $fraction = $parts[3] ?? '';
+        $digits = ltrim($parts[2].$fraction, '0');
+        if ($digits === '') {
+            return ['0', 0];
+        }
+        $significand = rtrim($digits, '0');
+        $encodedExponent = $parts[4] ?? '0';
+        $magnitude = ltrim($encodedExponent, '+-0');
+        if (strlen($magnitude) >= strlen((string) PHP_INT_MAX)) {
+            return null;
+        }
+        $exponent = (int) $magnitude * (str_starts_with($encodedExponent, '-') ? -1 : 1);
+
+        return [$parts[1].$significand, $exponent - strlen($fraction) + strlen($digits) - strlen($significand)];
+    }
+
+    private static function refuseNumber(): never
+    {
+        throw ValidationException::withMessages(['body' => ['Request numbers must be finite, within the JavaScript safe integer range, and preserve their value.']]);
     }
 
     public function payload(): ConnLaunchRequestData
