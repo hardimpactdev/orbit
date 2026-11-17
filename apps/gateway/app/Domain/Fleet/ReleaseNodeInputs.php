@@ -54,7 +54,7 @@ final readonly class ReleaseNodeInputs
     }
 
     /**
-     * @param list<string>|null $selected
+     * @param  list<string>|null  $selected
      * @return array<int, array{role:string,digest:string}> Assignment IDs keep a recreated role from inheriting an apply.
      */
     public function roles(Node $node, bool $release = true, ?array $selected = null): array
@@ -86,7 +86,7 @@ final readonly class ReleaseNodeInputs
     }
 
     /**
-     * @param array<int,string> $names
+     * @param  array<int,string>  $names
      * @return array<string,ToolPin>
      */
     private function pins(MachineRecipe $recipe, array $names): array
@@ -95,7 +95,7 @@ final readonly class ReleaseNodeInputs
     }
 
     /**
-     * @param list<string> $patterns
+     * @param  list<string>  $patterns
      * @return array<string,string>
      */
     private function files(string $root, array $patterns): array

@@ -5,11 +5,10 @@ covers:
   - apps/gateway/app/{Domain,Infrastructure}/Releases/**
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/{Infrastructure/Logging/**,Infrastructure/Database/**,Providers/Domains/DatabaseServiceProvider.php}
-  - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
+  - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/*add_release_inputs_to_nodes.php,resources/sigstore/trusted_root.json}
   - "{apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php,apps/gateway/app/Actions/Fleet/ContinueReleaseFleetAction.php}"
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
-  - apps/gateway/database/migrations/*add_release_inputs_to_nodes.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Data/Fleet/**,config/fleet.php}
 ---
 
@@ -595,7 +594,9 @@ The body serves two kinds of receivers. A receiver that verifies the signature r
 
 A release is **fleet current** when the `phases.fleet.status` field in `gateway:release:show` is `current`. The release first reports `verified` when the Gateway switch passes its health check. The fleet phase can then be `pending`, `deferred`, `failed`, or `disabled`. It lists each Node's status, delivery and converge Operation IDs, and role results. A fleet failure leaves the verified Gateway serving.
 
-The existing fleet admission job runs after verification and at 03:05 Europe/Amsterdam. It visits eligible Nodes in order, with the serving Gateway last. For each Node it checks the agent pin and the declared inputs of each active workload role against the Node's applied record. A missing record needs a first apply. Agent delivery uses `fleet.rollout` and checks the executable of the running service. Any required CLI publication happens through the same Operation. Once delivery succeeds, `node.converge` applies only the roles with changed inputs. The next Node starts after the previous visit finishes. The Operation results show the checks. An unconfirmed delivery or converge reports `fleet.agent_delivery_failed` or `fleet.role_converge_failed` when the Operation supplied no more specific code. A verified release never creates another scheduler.
+The existing fleet admission job runs after verification and at 03:05 Europe/Amsterdam. It visits eligible Nodes in order, with the serving Gateway last. For each Node it checks the agent pin and the declared inputs of each active workload role against the Node's applied record. A missing record needs a first apply.
+
+Agent delivery uses `fleet.rollout` and checks the executable of the running service. Any required CLI publication happens through the same Operation. Once delivery succeeds, `node.converge` applies only the roles with changed inputs. The next Node starts after the previous visit finishes. The Operation results show the checks. An unconfirmed delivery or converge reports `fleet.agent_delivery_failed` or `fleet.role_converge_failed` when the Operation supplied no more specific code. A verified release never creates another scheduler.
 
 The automatic converge can write the selected roles' software, files and services. For example, `app-dev` owns its shared Instance folders and the executor for its action families, and `swamp` owns its worker template. The converge defers T3 restarts for containers with open turns. A change to host-wide inputs, such as the base recipe, kernel policy or network policy, fails with `fleet.host_inputs_changed`. Unreadable inputs fail with `fleet.inputs_unavailable`. An invalid assignment scope fails with `fleet.role_scope_invalid`. Apply a reviewed host change with an explicit Node converge. The pass retries on the next existing fleet window or follows a newer verified release.
 

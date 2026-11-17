@@ -20,7 +20,7 @@ use App\Models\NodeRole;
 final readonly class NodeRoleUnits
 {
     /**
-     * @param list<string>|null $selected
+     * @param  list<string>|null  $selected
      * @return list<array{name:string,content:string}>
      */
     public static function for(Node $node, ?array $selected = null): array
