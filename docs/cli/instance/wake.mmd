@@ -41,6 +41,7 @@ sequenceDiagram
     GW->>N: Sign and publish wake<br/>executor-order · WebSocket
     %%> What it does:
     %%> - record or join instance.wake under the Instance lock before signing; only a new Operation publishes an order
+    %%> - hand Operation notices to operations-prompt after commit; no Reverb delivery remains in the request's termination callbacks
     %%> - the observer passes the order unread to the executor; no SSH, Python or marker/times command runs on this path
     GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
     %%> Result:
@@ -50,6 +51,7 @@ sequenceDiagram
       %%> Result:
       %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
       %%> - the Operation succeeds and records the runtime running
+      %%> - queue the lifecycle follow-up after success; its Operation receipt prevents a repeated job from running the hooks again
     else no successful result in time
       %% path: executor-pending
       GW-->>CL: 401 progress page<br/>activation state pending

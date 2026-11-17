@@ -35,7 +35,7 @@ Laravel Horizon runs seven queues on the connection with five supervisors. The `
 | `builds` | 2 | Admission for [base snapshot refreshes](/reference/compute-drivers#refresh-the-base-snapshot) |
 | `operations` | 1 | The jobs that record a Swamp run in its [Operation](/reference/operations): the minute pass, schedule fires, Route promotions, registry closes. One at a time, in order |
 | `operation-starts` | 4 | Native run starts ([Direct Swamp starts](/reference/operations#direct-swamp-starts)), side by side. Job timeout 150 seconds, memory cap 256 MB |
-| `operations-prompt` | 1 | The projection of one Operation whose root run just ended ([How an operation runs](/reference/operations#how-an-operation-runs)). Job timeout 150 seconds, memory cap 256 MB |
+| `operations-prompt` | 1 | The projection of one Operation whose root run just ended ([How an operation runs](/reference/operations#how-an-operation-runs)), and [executor wake](/reference/executor#the-wake-inside-the-request) completion, notices and successful lifecycle follow-up. Job timeout 150 seconds, memory cap 256 MB |
 
 A pass on `operations` neither drops nor holds back a job on `operations-prompt`.
 

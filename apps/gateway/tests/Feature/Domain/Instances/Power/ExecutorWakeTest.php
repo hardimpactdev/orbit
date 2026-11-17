@@ -2,24 +2,33 @@
 
 declare(strict_types=1);
 
+use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Executor\ExecutorOrderBroadcast;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceLifecycleContribution;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Instances\Power\InstanceWake;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Executor\ExecutorReply;
 use App\Infrastructure\Executor\ExecutorResultQueue;
 use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Swamp\SwampConnection;
+use App\Jobs\Operations\BroadcastOperationNotice;
 use App\Jobs\Operations\CompleteExecutorWake;
+use App\Jobs\Operations\ProjectExecutorWake;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -30,7 +39,10 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Testing\Fakes\EventFake;
 use Illuminate\Testing\TestResponse;
+use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Orbit\Extensions\Conn\Models\ConnPairing;
 use Psr\Log\NullLogger;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 require_once dirname(__DIR__).'/ContainerInstanceHelpers.php';
@@ -175,6 +187,7 @@ it('returns 401 pending for an unsuccessful result and retains it for the queued
     $this->travel(7)->seconds();
     (new CompleteExecutorWake($operation->id))->handle(app(ExecutorWake::class));
     expect($operation->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe($code)->lock_key->toBeNull();
+    Queue::assertNotPushed(ProjectExecutorWake::class);
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
 })->with([
     'refused' => ['refused', ['reason' => 'expired'], 'executor.wake_refused'],
@@ -227,6 +240,7 @@ it('projects a late successful result without another request and keeps a termin
     $sequence = $operation->sequence;
     (new CompleteExecutorWake($operation->id))->handle(app(ExecutorWake::class));
     expect($operation->refresh()->sequence)->toBe($sequence);
+    Queue::assertPushed(ProjectExecutorWake::class, 1);
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
 });
 
@@ -250,6 +264,8 @@ it('keeps the existing wake when the setting is off and requires no signing key'
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->state)->not->toHaveKey(ExecutorWake::State);
     Event::assertNotDispatched(ExecutorOrderBroadcast::class);
     Queue::assertNotPushed(CompleteExecutorWake::class);
+    Queue::assertNotPushed(BroadcastOperationNotice::class);
+    Queue::assertNotPushed(ProjectExecutorWake::class);
     Queue::assertPushed(StartAdmittedSwampRun::class, 1);
 });
 
@@ -302,6 +318,7 @@ it('does not overwrite a cancelled wake with a late successful result', function
 
     expect($operation->refresh())->status->toBe(OperationStatus::Cancelled);
     expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
+    Queue::assertNotPushed(ProjectExecutorWake::class);
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
 });
 
@@ -320,4 +337,155 @@ it('serves a joined request when another waiter consumes and completes the resul
     expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
     Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, 1);
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
+});
+
+it('returns within 500 ms and queues the slow Conn wake hooks once after success', function (): void {
+    $instance = executorWakeInstance();
+    app(ExtensionStore::class)->set('conn', true);
+    SwampNodeFixture::ensure()->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $environment = ConnEnvironment::query()->create([
+        'environment_id' => 'wake-environment', 'label' => 'wake', 'url' => 'http://10.253.1.2:3800',
+        'node_id' => $instance->node_id, 'admin_session' => 'fixture',
+        'admin_session_expires_at' => now()->addDays(20), 'registered_at' => now(),
+    ]);
+    $environment->forceFill(['instance_id' => $instance->id])->save();
+    ConnPairing::query()->create([
+        'node_id' => SwampNodeFixture::Id, 'conn_environment_id' => $environment->id, 'held' => true,
+        'client_label' => 'wake', 'session' => 'fixture', 'session_expires_at' => now()->addDay(),
+    ]);
+    $contribution = $this->mock(InstanceLifecycleContribution::class);
+    $contribution->shouldReceive('projectWake')->once()->withArgs(fn (Instance $woken): bool => $woken->is($instance));
+    app()->tag([InstanceLifecycleContribution::class], InstanceLifecycleContribution::class);
+    $socket = new class(swampVaultStandIn()) implements WebSocketClient
+    {
+        public int $puts = 0;
+
+        public function __construct(private WebSocketClient $inner) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->inner->connect($endpoint, $timeoutSeconds);
+        }
+
+        public function send(array $message): void
+        {
+            if ($message['type'] === 'vault.put') {
+                $this->puts++;
+                usleep(700000);
+            }
+            $this->inner->send($message);
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            return $this->inner->receive($timeoutSeconds);
+        }
+
+        public function close(): void
+        {
+            $this->inner->close();
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->inner->isConnected();
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), ['status' => 'done']);
+
+    $started = hrtime(true);
+    $response = executorWakeVisit($instance);
+    $elapsedMs = (hrtime(true) - $started) / 1e6;
+
+    $response->assertOk();
+    expect($elapsedMs)->toBeLessThan(500);
+    expect($socket->puts)->toBe(0);
+    $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    Queue::assertPushed(ProjectExecutorWake::class, fn (ProjectExecutorWake $job): bool => $job->operationId === $operation->id && $job->queue === 'operations-prompt');
+    app('request')->setRouteResolver(static fn () => null);
+    try {
+        $job = Queue::pushed(ProjectExecutorWake::class)->sole();
+        app()->call([$job, 'handle']);
+        app()->call([$job, 'handle']);
+        app(ExecutorWake::class)->complete($operation);
+    } finally {
+        app(SwampConnection::class)->release();
+    }
+    expect($socket->puts)->toBe(1);
+    Queue::assertPushed(ProjectExecutorWake::class, 1);
+});
+
+it('releases the activation worker within 500 ms and delivers its slow notices from the queue', function (bool $done): void {
+    $instance = executorWakeInstance();
+    if ($done) {
+        $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), ['status' => 'done']);
+    }
+    $events = new class($this->publisher, [RecordBroadcast::class]) extends EventFake
+    {
+        /** @var list<array{type: string, channel: string, data: array<string, mixed>}> */
+        public array $notices = [];
+
+        public function dispatch($event, $payload = [], $halt = false)
+        {
+            if ($event instanceof RecordBroadcast) {
+                $this->notices[] = ['type' => $event->type->value, 'channel' => $event->channel, 'data' => $event->data];
+                usleep(200000);
+            }
+
+            return parent::dispatch($event, $payload, $halt);
+        }
+    };
+    Event::swap($events);
+
+    $started = hrtime(true);
+    $response = executorWakeVisit($instance);
+    $elapsedMs = (hrtime(true) - $started) / 1e6;
+
+    $response->assertStatus($done ? 200 : 401);
+    expect($elapsedMs)->toBeLessThan(500);
+    expect($events->notices)->toBe([]);
+    $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    Queue::assertPushed(BroadcastOperationNotice::class, $done ? 5 : 3);
+    app('request')->setRouteResolver(static fn () => null);
+    foreach (Queue::pushed(BroadcastOperationNotice::class) as $job) {
+        app()->call([$job, 'handle']);
+    }
+    $expected = [
+        ['type' => 'operation.created', 'channel' => 'orbit', 'status' => 'queued', 'sequence' => 1],
+        ['type' => 'operation.updated', 'channel' => 'operation.'.$operation->id, 'status' => 'running', 'sequence' => 2],
+        ['type' => 'operation.updated', 'channel' => 'orbit', 'status' => 'running', 'sequence' => 2],
+    ];
+    if ($done) {
+        $expected[] = ['type' => 'operation.updated', 'channel' => 'operation.'.$operation->id, 'status' => 'succeeded', 'sequence' => 3];
+        $expected[] = ['type' => 'operation.updated', 'channel' => 'orbit', 'status' => 'succeeded', 'sequence' => 3];
+    }
+    expect(array_map(static fn (array $notice): array => ['type' => $notice['type'], 'channel' => $notice['channel'],
+        'status' => $notice['data']['status'], 'sequence' => $notice['data']['sequence']], $events->notices))->toBe($expected);
+    foreach ($events->notices as $notice) {
+        expect($notice['data'])->not->toHaveKeys(['input', 'result', 'executor_result']);
+    }
+})->with(['success' => true, 'timeout' => false]);
+
+it('retries a failed queued wake hook and skips it after successful delivery', function (): void {
+    $instance = executorWakeInstance();
+    $calls = 0;
+    $contribution = $this->mock(InstanceLifecycleContribution::class);
+    $contribution->shouldReceive('projectWake')->twice()->andReturnUsing(function () use (&$calls): void {
+        if (++$calls === 1) {
+            throw new RuntimeException('Follow-up unavailable.');
+        }
+    });
+    app()->tag([InstanceLifecycleContribution::class], InstanceLifecycleContribution::class);
+    $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), ['status' => 'done']);
+
+    executorWakeVisit($instance)->assertOk();
+
+    Queue::assertPushed(ProjectExecutorWake::class, 1);
+    $job = Queue::pushed(ProjectExecutorWake::class)->sole();
+    expect(fn () => app()->call([$job, 'handle']))->toThrow(RuntimeException::class, 'Follow-up unavailable.');
+    app()->call([$job, 'handle']);
+    app()->call([$job, 'handle']);
+    expect($calls)->toBe(2);
+    expect(Operation::query()->where('kind', InstanceWake::Kind)->sole())->status->toBe(OperationStatus::Succeeded);
 });

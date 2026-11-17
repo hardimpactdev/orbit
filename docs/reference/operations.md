@@ -20,6 +20,8 @@ A long operation, such as an [Instance deploy or rollback](/reference/deployment
 
 A container wake with `ORBIT_EXECUTOR_WAKE_ENABLED=true` keeps its durable `instance.wake` Operation and target hold, but runs through a signed order to the [executor](/reference/executor#the-wake-inside-the-request). The activation request waits within its short bound, and a queued completion on `operations-prompt` reads the durable result at 6 seconds. This path starts no Swamp run until ADR 0266 slice 7 adds fallback.
 
+Executor wake notices and successful lifecycle follow-up go to `operations-prompt` after commit. Neither runs in request termination callbacks. Each notice keeps its recorded sequence, and the follow-up records a receipt under the Operation lock so repeated delivery skips successful hooks.
+
 Container Process journal tails and unit state reads create no Operation. They use the narrow [direct transport exception](/reference/node-agent#commands); Process actions still run as Operations.
 
 Not every recorded result is an operation. The Gateway records an automatic deploy's Activity entries and release alerts from the terminal result of its scheduled run, with no Operation; see [Instance releases](/reference/deployments).

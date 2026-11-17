@@ -7,13 +7,13 @@ namespace App\Domain\Instances\Power;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Executor\ExecutorOrderPublisher;
 use App\Domain\Executor\ExecutorOrderSigner;
-use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Infrastructure\Executor\ExecutorWaitStatus;
 use App\Jobs\Operations\CompleteExecutorWake;
+use App\Jobs\Operations\ProjectExecutorWake;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
@@ -115,15 +115,15 @@ final readonly class ExecutorWake
      */
     public function complete(Operation $operation, bool $expire = false): void
     {
-        $succeeded = DB::transaction(function () use ($operation, $expire): bool {
+        DB::transaction(function () use ($operation, $expire): void {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             if (! self::owns($operation) || $operation->status->terminal()) {
-                return false;
+                return;
             }
             $line = $operation->executor_result;
             $success = in_array($line['status'] ?? null, ['done', 'partial'], true);
             if (! $success && ! $expire) {
-                return false;
+                return;
             }
             $code = match ($line['status'] ?? null) {
                 'refused' => 'executor.wake_refused',
@@ -135,12 +135,8 @@ final readonly class ExecutorWake
                 'result' => [...($success ? ['power_state' => InstanceRuntimePowerState::Running->value] : []), 'executor' => $line]]);
             if ($success) {
                 InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => InstanceRuntimePowerState::Running]);
+                DB::afterCommit(static fn () => Bus::dispatch(new ProjectExecutorWake($operation->id)));
             }
-
-            return $success;
         });
-        if ($succeeded && ($instance = Instance::query()->find($operation->target_id)) !== null) {
-            app(InstanceLifecycleContributions::class)->projectWake($instance);
-        }
     }
 }
