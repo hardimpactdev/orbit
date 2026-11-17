@@ -26,7 +26,7 @@ Native `node.add` fetches the pinned Linux binary and writes the observer config
 
 Fixed **service entry points** run under their own Linux systemd units. `service schedules-run <uuid>` reads the protected Schedule command file and executes its project command as the service user. `service schedules-complete <uuid>` runs as root, reads only the pinned CA, and reports completion. It runs no project code and reads no agent secret. [Schedules](/reference/schedules#node-timers) owns their units and execution context.
 
-> **Partly built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) a separate Rust binary from this workspace, the **executor**, sleeps and wakes app containers on `app-dev` Nodes. Slice 1 built the [executor](/reference/executor) and its install. Slice 2 built the observer's pass-through of `executor-order` ([How it connects](#how-it-connects)), with only the no-op `proof` action behind it. Sleep and wake still run as this page says until later slices land; they then become the one Node change that is not a typed command over SSH.
+> **Partly built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) a separate Rust binary from this workspace, the **executor**, sleeps and wakes app containers on `app-dev` Nodes. Slice 1 built the [executor](/reference/executor) and its install. Slice 2 built the observer's pass-through of `executor-order` ([How it connects](#how-it-connects)), and slice 3 the Gateway's side of the reply: the [agent view subscriber](#result-listener) takes `client-executor-result`. Only the no-op `proof` action stands behind it. Sleep and wake still run as this page says until later slices land; they then become the one Node change that is not a typed command over SSH.
 
 The observer listens on no port. Nothing reaches command mode over the network: only a process that SSH or the Gateway starts runs it. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
@@ -654,9 +654,13 @@ A task read uses a workspace only when its `base` and `start` equal the values t
 
 ### Publish runs
 
-For agent observations, the subscriber never reads Prometheus, writes the database, or broadcasts in its socket loop. Native terminal results use the [shared synchronous projection path](/reference/swamp-command-steps#event-connection), which runs independently of Horizon. It starts `php artisan orbit:agent-view-publish` as a child process with the queued work and does not wait for it. Task workspaces, Process usage, and log lines each have their own lane, with one run at a time. A run that takes longer than 12 seconds is stopped.
+For agent observations, the subscriber never reads Prometheus, writes the database, or broadcasts in its socket loop. The executor's results are the one exception: see [Result listener](#result-listener). Native terminal results use the [shared synchronous projection path](/reference/swamp-command-steps#event-connection), which runs independently of Horizon. It starts `php artisan orbit:agent-view-publish` as a child process with the queued work and does not wait for it. Task workspaces, Process usage, and log lines each have their own lane, with one run at a time. A run that takes longer than 12 seconds is stopped.
 
 When a workspace of an unfinished task reports a new `head` or new diff counts, a run stores the task's line counts when the diff is complete and broadcasts [`task_group.updated`](/reference/events#tasks). A failed run retries after 15 seconds. After five failures in a row, the workspace is dropped until the agent reports a new change.
+
+### Result listener
+
+The subscriber is also the listener for the [executor](/reference/executor#the-listener-and-the-hand-off)'s results ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor)). It accepts `client-executor-result` only from `agent.{id}` on that Node's `presence-node.{id}` channel. It records a result on its Operation with one conditional write, then pushes it to the Valkey key `executor:op:<operation>` for the waiting request. An `accepted` line goes only to Valkey. Both steps run in the socket loop, because a child process would add its start-up time to every wake: together they take about 0.2 ms.
 
 ### Process usage
 
