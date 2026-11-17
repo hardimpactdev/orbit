@@ -429,3 +429,89 @@ fn a_refused_incus_freeze_restores_all_original_swap_limits() {
     );
     assert!(!power.state.join("2/limits.json").exists());
 }
+
+/// Answers each request on a stand-in Incus socket and returns the request lines and bodies it saw.
+fn incus_requests(action: &str) -> Vec<String> {
+    use std::io::{BufRead as _, BufReader, Read as _, Write as _};
+    use std::os::unix::net::UnixListener;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let socket = dir.path().join("incus.socket");
+    let listener = UnixListener::bind(&socket).expect("bind the stand-in socket");
+    let server = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        for answer in [
+            r#"{"operation":"/1.0/operations/1"}"#,
+            r#"{"metadata":{"status_code":200}}"#,
+        ] {
+            let (stream, _) = listener.accept().expect("accept");
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("request line");
+            seen.push(line.trim_end().to_owned());
+            let mut length = 0;
+            loop {
+                let mut header = String::new();
+                reader.read_line(&mut header).expect("header");
+                if header == "\r\n" {
+                    break;
+                }
+                if let Some(value) = header.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse().expect("length");
+                }
+            }
+            let mut body = vec![0; length];
+            reader.read_exact(&mut body).expect("body");
+            if length > 0 {
+                seen.push(String::from_utf8(body).expect("utf-8 body"));
+            }
+            write!(
+                reader.get_mut(),
+                "HTTP/1.1 202 Accepted\r\nContent-Length: {}\r\n\r\n{answer}",
+                answer.len()
+            )
+            .expect("answer");
+        }
+        seen
+    });
+    let instance = Instance {
+        project: "orbit-instances".to_owned(),
+        name: "instance-2".to_owned(),
+        status: "running".to_owned(),
+        incarnation: "u".to_owned(),
+        pid: 1,
+    };
+    let _ = incus::Incus(socket).change(&instance, action);
+    server.join().expect("stand-in socket")
+}
+
+#[test]
+fn a_stop_keeps_the_thirty_second_clean_stop_allowance() {
+    assert_eq!(
+        incus::bounds("stop"),
+        incus::Bounds {
+            action: 30,
+            wait: 35,
+            read: 40
+        }
+    );
+    let seen = incus_requests("stop");
+    assert!(seen[1].contains(r#""timeout":30"#), "{seen:?}");
+    assert_eq!(seen[2], "GET /1.0/operations/1/wait?timeout=35 HTTP/1.1");
+}
+
+#[test]
+fn freeze_and_unfreeze_stay_short() {
+    for action in ["freeze", "unfreeze"] {
+        assert_eq!(
+            incus::bounds(action),
+            incus::Bounds {
+                action: 5,
+                wait: 5,
+                read: 6
+            }
+        );
+        let seen = incus_requests(action);
+        assert!(seen[1].contains(r#""timeout":5"#), "{seen:?}");
+        assert_eq!(seen[2], "GET /1.0/operations/1/wait?timeout=5 HTTP/1.1");
+    }
+}

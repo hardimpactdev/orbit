@@ -19,12 +19,43 @@ pub(crate) trait Api: Send + Sync {
     fn change(&self, instance: &Instance, action: &str) -> io::Result<()>;
 }
 
+/// The seconds one state change may take: Incus's own `timeout`, the operation wait, and the socket read around both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Bounds {
+    pub action: u64,
+    pub wait: u64,
+    pub read: u64,
+}
+
+/// A stop keeps Prepared restore's clean-stop allowance (`incus stop --timeout 30`); freeze and unfreeze stay short.
+pub(crate) fn bounds(action: &str) -> Bounds {
+    if action == "stop" {
+        Bounds {
+            action: 30,
+            wait: 35,
+            read: 40,
+        }
+    } else {
+        Bounds {
+            action: 5,
+            wait: 5,
+            read: 6,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Incus(pub PathBuf);
 impl Incus {
-    fn request(&self, method: &str, url: &str, body: Option<&Value>) -> io::Result<(u16, Value)> {
+    fn request(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&Value>,
+        read: u64,
+    ) -> io::Result<(u16, Value)> {
         let mut stream = UnixStream::connect(&self.0)?;
-        stream.set_read_timeout(Some(Duration::from_secs(6)))?;
+        stream.set_read_timeout(Some(Duration::from_secs(read)))?;
         stream.set_write_timeout(Some(Duration::from_secs(6)))?;
         let body = body.map(ToString::to_string).unwrap_or_default();
         write!(stream, "{method} {url} HTTP/1.1\r\nHost: incus\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len())?;
@@ -102,6 +133,7 @@ impl Api for Incus {
                 "GET",
                 &format!("/1.0/instances/{name}?project={project}&recursion=1"),
                 None,
+                6,
             )?;
             if status == 404 {
                 continue;
@@ -129,13 +161,15 @@ impl Api for Incus {
         Ok(None)
     }
     fn change(&self, instance: &Instance, action: &str) -> io::Result<()> {
+        let bounds = bounds(action);
         let (status, result) = self.request(
             "PUT",
             &format!(
                 "/1.0/instances/{}/state?project={}",
                 instance.name, instance.project
             ),
-            Some(&json!({"action": action, "timeout": 5})),
+            Some(&json!({"action": action, "timeout": bounds.action})),
+            bounds.read,
         )?;
         if ![200, 202].contains(&status) {
             return Err(io::Error::other("Incus state change refused"));
@@ -144,7 +178,12 @@ impl Api for Incus {
             .as_str()
             .filter(|path| path.starts_with("/1.0/operations/"))
             .ok_or_else(|| io::Error::other("missing Incus operation"))?;
-        let (status, result) = self.request("GET", &format!("{operation}/wait?timeout=5"), None)?;
+        let (status, result) = self.request(
+            "GET",
+            &format!("{operation}/wait?timeout={}", bounds.wait),
+            None,
+            bounds.read,
+        )?;
         if status != 200 || result["metadata"]["status_code"] != 200 {
             return Err(io::Error::other("Incus state change failed"));
         }

@@ -23,23 +23,8 @@ use Illuminate\Contracts\Console\Kernel;
 // `executor.proof` Operation on the Node (docs/reference/executor.md#the-proof-operation): this script is the only caller of
 // ExecutorProofOperation. No key is ever committed, printed or leaves this Gateway.
 
-require __DIR__.'/../../apps/gateway/vendor/autoload.php';
-$app = require __DIR__.'/../../apps/gateway/bootstrap/app.php';
-$app->make(Kernel::class)->bootstrap();
-
-$input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
-$secretPath = storage_path('app/private/executor-proof.key');
-
-$result = match ($input['mode'] ?? null) {
-    'key' => proofKey($secretPath, base_path('.env')),
-    'order' => proofOrder($secretPath, $input),
-    'publish' => proofPublish($secretPath, $input),
-    'round_trip' => proofRoundTrip($input),
-    'power' => proofPower($input),
-    'lost_result' => proofLostResult($input),
-    default => throw new InvalidArgumentException('Unknown executor proof mode.'),
-};
-echo json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+/** An action no executor knows: no row of the order table (docs/reference/executor.md), so `unknown_action` can never run. */
+const PROOF_UNKNOWN_ACTION = 'proof.unknown';
 
 /** @return array{public_key: string, changed: bool} */
 function proofKey(string $secretPath, string $envPath): array
@@ -93,7 +78,7 @@ function proofOrder(string $secretPath, array $input): array
     $nonce = is_string($input['nonce'] ?? null) ? $input['nonce'] : bin2hex(random_bytes(16));
     $now = (int) floor(microtime(true) * 1000);
     $fields = [
-        'action' => $tamper === 'unknown_action' ? 'sleep' : 'proof.noop',
+        'action' => $tamper === 'unknown_action' ? PROOF_UNKNOWN_ACTION : 'proof.noop',
         'node' => $tamper === 'wrong_node' ? (string) ((int) $input['node'] + 1000) : (string) $input['node'],
         'target' => (string) ($input['target'] ?? $input['node']),
         'operation' => (string) $input['operation'],
@@ -269,4 +254,24 @@ function proofPower(array $input): array
         return ['operation' => (string) $operation->id, 'instance' => $instance->id, 'instance_name' => $instance->name, 'latency_ms' => $latency] + waited($result)
             + ['recorded' => $operation->refresh()->executor_result, 'operation_status' => $operation->status->value];
     }, $instance, $action);
+}
+
+if (realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
+    require __DIR__.'/../../apps/gateway/vendor/autoload.php';
+    $app = require __DIR__.'/../../apps/gateway/bootstrap/app.php';
+    $app->make(Kernel::class)->bootstrap();
+
+    $input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
+    $secretPath = storage_path('app/private/executor-proof.key');
+
+    $result = match ($input['mode'] ?? null) {
+        'key' => proofKey($secretPath, base_path('.env')),
+        'order' => proofOrder($secretPath, $input),
+        'publish' => proofPublish($secretPath, $input),
+        'round_trip' => proofRoundTrip($input),
+        'power' => proofPower($input),
+        'lost_result' => proofLostResult($input),
+        default => throw new InvalidArgumentException('Unknown executor proof mode.'),
+    };
+    echo json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
 }

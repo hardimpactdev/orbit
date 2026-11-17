@@ -166,6 +166,8 @@ mod tests {
         assert_eq!("proof.noop".parse(), Ok(Action::ProofNoop));
         assert_eq!("sleep".parse::<Action>(), Ok(Action::Sleep));
         assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
+        // The proof's `unknown_action` order (tools/swamp-proof-guest/executor-order.php) relies on this name staying unknown.
+        assert_eq!("proof.unknown".parse::<Action>(), Err(UnknownActionError));
     }
 
     #[test]
