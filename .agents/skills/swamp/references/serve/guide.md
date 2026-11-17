@@ -3,6 +3,9 @@
 Expose a swamp repo over the network with authentication, authorization, and
 grant-based access control.
 
+For a team writing one v3 datastore through serve (team mode), see
+[team-mode.md](team-mode.md).
+
 ## Auth Modes
 
 | Mode    | Flag                | Use case                                       |
@@ -12,7 +15,13 @@ grant-based access control.
 | `oauth` | `--auth-mode oauth` | Users authenticate via swamp-club              |
 
 OAuth mode requires `--allowed-collectives` or `--allowed-users` to control
-admission. Use `--admins` to grant admin access to specific principals.
+admission. Use `--admins` to grant admin access to specific principals. Removing
+someone from either list and running `swamp serve reload` refuses their login
+tokens, integration links and open sessions on the next request or within 30 s.
+Adding them back restores the same credentials. Reload applies a new
+allowed-user once the name resolves (needs `SWAMP_API_KEY` for a name serve has
+not seen) and reports a name that waits; changing `--admins` needs a restart.
+Tokens minted with `swamp access token create` are not subject to admission.
 
 At startup, serve skips any `admins` or `allowed-users` username the provider
 does not know and logs an ERROR for it. A name that resolved before keeps its
@@ -45,7 +54,7 @@ means denied.
 | Effects    | `allow`, `deny` (deny wins)                                                                                  |
 | Actions    | `run`, `read`, `write`, `approve`, `signal`, `tag`, `admin`                                                  |
 | Resources  | `workflow:@acme/*`, `behavior:hello`, `data:*`, `vault:prod-*`, `access:*`                                   |
-| Conditions | CEL expressions via `--when 'tags.env == "staging"'`                                                         |
+| Conditions | CEL expressions via `--when 'tags.env == "staging"'`, including `client` and, for `approve`, `run`           |
 
 Admin on `access:*` implies all actions (superuser).
 
@@ -115,6 +124,40 @@ curl -X POST https://<host>/api/v1/signal \
   -d '{"workflow":"<name>","key":"<key>","payload":{"verdict":"ship"}}'
 ```
 
+### Acting over HTTP
+
+`POST /api/v1/action` runs workflow actions for an integration: bearer token
+only (a person's delegated `swda1.` access token, see Integrations), per-person
+rate limit, one JSON reply with a stable `code` on failure.
+
+```bash
+curl -X POST https://<host>/api/v1/action \
+  -H "Authorization: Bearer <name>.<secret>" -H "Content-Type: application/json" \
+  -d '{"type":"workflow.run","payload":{"workflowIdOrName":"<name>","idempotencyKey":"button-812"}}'
+# 202 {"data":{"runId":"...","replayed":false}}; a retry with the same key returns
+# the same run with replayed true, and other inputs get idempotency_conflict
+
+curl ... -d '{"type":"workflow.history.get","payload":{"runId":"<full id>"}}'
+curl ... -d '{"type":"workflow.approvals"}'   # each row's suspendedAt names the attempt
+curl ... -d '{"type":"workflow.approve","payload":{"workflowIdOrName":"<name>","runId":"<id>","stepName":"<gate>","suspendedAt":"<from the row>"}}'
+```
+
+A success is `{requestId, type, data}`, with the action's result in `data`; a
+failure is `{code, message}`, plus `requestId` once the action was dispatched.
+`workflow.reject`, `workflow.resume` (runId required, suspended runs only) and
+`workflow.signal` work the same way. Resuming someone else's run holds its steps
+to your own vault access as well as theirs, and only the person who started the
+run or an admin may add `inputs` (otherwise `403 resume_inputs_refused`). A run
+still waiting at a gate answers `409 awaiting_approval` with its `gate` (`job`,
+`step`): decide that gate instead of resuming. Fields not listed for a type are
+refused. A repeated decision gets `already_decided`, a decision for an attempt
+since re-opened `gate_reopened`, and a step name in several jobs
+`ambiguous_gate` until `jobName` picks one (read the job from status). A paused
+run reads `suspended` in status. An approved run continues with `--auto-resume`,
+or `autoResume: true` when it has inputs, or a `workflow.resume`; the reply's
+`autoResumed` says which. A repeated start is safe only on one node or a team
+leader.
+
 `swamp workflow run --server` prints the wait ID and the signal command with
 `--server` when the run suspends on a wait, its own or a nested run's, and for a
 keyed wait the by-key command too. A nested run's wait is named only to a caller
@@ -146,15 +189,59 @@ the workflow. The receipt's `submittedBy` is the token's principal. Once a run's
 last wait is settled, serve resumes it by itself when the workflow's auto-resume
 policy allows (see "Auto-Resume"); otherwise resume it with
 `swamp workflow resume`. A 200 means the wait took the signal, not that the run
-will use it: a cancel at the same moment still ends the run. Many signals at
-once on one token can be answered 429; retry. A step's `key` changed while its
-wait is open strands that wait for a key-only sender (old key 404, new key 409
-with no `lastWait`); someone who may read the workflow signals it by wait ID.
+will use it: a cancel at the same moment still ends the run. More than 50
+signals a minute from one address are answered 429; retry. A step's `key`
+changed while its wait is open strands that wait for a key-only sender (old key
+404, new key 409 with no `lastWait`); someone who may read the workflow signals
+it by wait ID.
 
 Upgrade every host on the datastore before creating a grant that names `signal`
 or `tag`: an older build drops such a grant whole, with every other action in
 it, so a deny on `write,tag` stops denying `write` there. Until every host is
 upgraded, keep `signal` and `tag` in grants of their own.
+
+## Webhook Route Files
+
+A webhook route can come from a reviewed repo change instead of host config: one
+YAML file per route in `webhook-routes/` (`--webhook-routes-dir` to move it),
+with the same fields as a `webhooks[]` entry in `.swamp/serve.yaml`.
+
+```yaml
+# webhook-routes/github-push.yaml
+route: /hooks/github-push
+workflow: deploy
+secret: "@vault=webhooks:github-push"
+scheme: github
+```
+
+- The route must sit under `/hooks/`, with segments of letters, digits and
+  `-._~` only; the secret must be `@vault=<vault>:<key>`.
+- YAML aliases that repeat a mapping, a list or a large string are refused in
+  route files; write each value out.
+- `swamp serve reload` makes a new or changed file live; deleting the file
+  removes the route on the next reload.
+- With `webhook-routes-poll: 30s` in `.swamp/serve.yaml` (or
+  `--webhook-routes-poll`, `SWAMP_WEBHOOK_ROUTES_POLL`), serve polls the
+  directory and a deploy alone makes the change live, once two polls agree (one
+  to two intervals). It needs no `--hot-reload`; every serve node polls its own
+  checkout.
+- A bad file is refused on its own (named in the startup log or reload errors);
+  two files claiming one route are both refused. A `serve.yaml` or `--webhook`
+  route on the same path wins, and the file route is reported as shadowed.
+- On a reload or poll, a file that loaded before keeps its last good route when
+  an edit breaks it (bad YAML, a clash, a refused edit) or the directory cannot
+  be read; the error lists it as kept. An unchanged file whose vault key is gone
+  or whose scheme is no longer trusted is dropped, and so is a deleted file or a
+  last good route whose key was revoked. If a vault or scheme lookup is down, an
+  unchanged file keeps its live route and a polled file is retried each poll
+  until it loads; at startup there is nothing to keep, so it is refused.
+- Each reload or poll that changes routes writes a `webhook.routes.applied`
+  audit event with `file:<name>` sources; admin health shows refused and kept
+  files and the poll state under `webhookRouteFiles`.
+- Run `swamp serve check-config` in CI on the PR to catch a bad file before it
+  reaches serve. It does not look up vault keys or resolve extension schemes.
+- Health and the dashboard show such a route with source `file` and its file
+  name. Extensions never contribute routes.
 
 ## CLI Grant Management
 
@@ -176,6 +263,50 @@ swamp access reload [--server wss://...]
 ```
 
 `swamp access policy` is an alias for `swamp access grant`.
+
+## Integrations
+
+An integration is an app an admin registers. A person's rights through it are
+their grants intersected with its ceiling, which covers only `workflow:`
+resources and allows only `run`, `read`, `approve` and `signal`. Actions match
+literally, and `run` includes cancelling any run of that workflow.
+
+```bash
+# Prints the credential once; only its hash is kept
+swamp access integration register slack-bot --name 'Slack bot' \
+  --ceiling 'run,read,approve=workflow:@acme/deploy' [--server wss://...]
+swamp access integration list [--server wss://...]
+swamp access integration show slack-bot [--server wss://...]
+swamp access integration ceiling slack-bot --ceiling 'read=workflow:@acme/*'
+swamp access integration revoke slack-bot
+```
+
+Changes apply with no `swamp access reload`. Revoking is final, and the id can't
+be used again. Upgrade every serve instance before registering one.
+`--require-email-match` lets only the swamp-club account whose email the app
+names approve a link.
+
+An app acts as a person only after they link: the app calls
+`POST /api/v1/delegations/links` with its credential as the bearer token, shows
+the person swamp-club's consent URL, then redeems
+`POST
+/api/v1/delegations/redeem` for a 1-hour access token and a refresh token
+(`/refresh` mints a new access token and keeps the refresh token, so racing
+refreshes are harmless; swamp-lib's `SwampIntegrationClient`, `DelegatedTokens`
+and `SwampActionClient` wrap these routes). Rights are the person's grants
+within the integration's ceiling and what they consented to. A link lasts 30
+days. Links need an oauth-mode serve registered with swamp-club, and every serve
+node upgraded.
+
+```bash
+swamp access delegation list [--integration slack-bot] [--state issued]
+swamp access delegation show <id>
+swamp access delegation end <id>   # swamp-club is told by the leader
+```
+
+`swamp access check --client integration:<id>` judges a request against the
+registered ceiling as well as the grants, so it reports a refusal for an id that
+isn't registered.
 
 ## Declarative Grants
 
@@ -220,6 +351,53 @@ first — rejects the entire reload if any file is invalid. The reconciler only
 touches `source: file:*` grants; CLI-created grants are independent. Both
 `.yaml` and `.yml` are accepted; flat directory only.
 
+## Separation of Duties
+
+Forbid self-approval with a deny, once per subject holding `run`, `approve` or
+`admin`. An allow alone is not enough: `run` implies `approve`, and admins fall
+back to allowed. There is no wildcard subject. `reject` is decided as `approve`.
+
+```bash
+swamp access grant create --subject idp-group:approvers --deny approve \
+  --on 'workflow:@acme/*' --when 'principal.sub == run.initiator.sub'
+```
+
+`run` is available only on workflow grants with exactly the `approve` action. A
+run with no usable initiator fails closed, so finish or cancel such runs first.
+A service run has an empty `run.initiator.sub`, so people can approve it.
+
+Refuse an integration with a condition on `client`, written `<kind>:<id>`:
+
+```bash
+swamp access grant create --subject group:ops --deny run \
+  --on 'workflow:@acme/*' --when 'client == "integration:slack"'
+```
+
+- A token with no client reads as `direct:`.
+- This refuses tokens issued to that integration, not the person, who can still
+  use the CLI. A `direct:` id is not a boundary: a copied token keeps it.
+- Client conditions never narrow a run. A vault deny on `client` stops direct
+  requests; deny `run` on the workflow to keep an integration out of it.
+- Upgrade every serve instance before writing these grants: an older one does
+  not enforce the deny.
+
+A condition whose types cannot evaluate is refused when written. A deny whose
+condition errors at decision time refuses, and an allow does not match. That
+includes reading a tag the resource lacks, so guard a deny meant only for tagged
+resources: `"env" in tags && tags.env == "prod"`.
+
+Check a condition locally, since a server reads the client from the caller's own
+session:
+
+```bash
+swamp access check --subject user:alice --action run \
+  --on 'workflow:@acme/deploy' --client integration:slack
+```
+
+Add `--field run.initiator.sub=alice` to check a condition on the run.
+Self-approval's limits for member-driven runs are in
+`design/enablers/access-control.md`.
+
 ## Vault Access
 
 Grant vault access on `vault:<name>` (exact or trailing `*`). Conditions can use
@@ -255,6 +433,11 @@ approver):
   every vault a principal needs in the same change.
 - `data` grants play no part at run time. Reserved `_` vaults are refused to
   every serve run except principals with `admin` on `access:*`.
+- A step dispatched to a worker is never given `_token-secrets` or serve's own
+  credential keys (`server-token-*`, `worker-token-*`, `oauth-*`), in any vault
+  and for any principal, admins included. The step fails with `reserved_secret`
+  (HTTP 403). Steps that run on serve's own host are held only to the vault
+  rules above.
 - `service:scheduler` / `service:webhook` grants scope every scheduled or
   webhook run server-wide; bound one workflow with its `vaults:` list instead.
 
@@ -413,6 +596,12 @@ Swamp has two token families — picking the wrong one is a common mistake.
 | **Scopes**    | `serve:*`, `oauth:manage`, …                            | principal-based (no scopes)         |
 | **Used by**   | `swamp serve` → swamp-club (features, OAuth client reg) | Clients → a specific serve instance |
 
+A collective token holding `tokens:mint` can create expiring tokens for its own
+collective with `swamp auth token create --ttl 30d` (swamp-club caps the expiry
+at 90 days), and revoke the tokens it minted with `swamp auth token revoke`.
+`revoke` disables a token and keeps it listed; `swamp auth token delete` removes
+it and needs a personal login.
+
 To keep the collective API token out of the process env, put it in a file and
 pass `swamp serve --club-api-key-file <path>` (also accepted by
 `serve check-config` and forwarded by `serve daemon enable`) or set
@@ -547,13 +736,21 @@ separate process on the serve host (e.g. `kubectl exec`): with a remote
 datastore, a running serve does not pull out-of-process token definitions, so
 the token fails until serve restarts.
 
-The mint output does not include the credential, and `reveal` has no `--server`.
-Run `swamp access token reveal <name> --yes` where the serve's repo or datastore
-is reachable.
+The mint output does not include the credential. Reveal it through the same
+serve (admin only; answered by the leader and audited):
+
+```bash
+swamp access token reveal <name> --yes --server wss://swamp.example.com
+```
+
+A login token (`oauth-…`, minted by an OAuth or device login) is not revealable
+through serve, even by an admin (`token_not_revealable`); revoke it instead.
 
 `swamp worker token create <name> --duration <d> --server <url>` also stores the
 secret in `_token-secrets` unless `--vault <name>` names another vault on the
-server.
+server. `--vault` is for operators and provisioning outside workflows to read
+the secret: its key (`worker-token-<name>`) stays reserved, so a dispatched step
+cannot read it and a workflow cannot deliver a successor token to a worker.
 
 ## OAuth Login
 
@@ -628,6 +825,19 @@ runs signalled by a local command. Things to know:
 - A run reset by `swamp workflow recover` is never resumed by serve, with no
   event: run `swamp workflow resume` as recover says. A run recovered before the
   upgrade is not protected this way.
+- A run a restart, crash or dead peer interrupted is continued by serve itself
+  when every cut-off step has a guard and the workflow does not set
+  `autoContinue: false` (audit `workflow.auto_continue`). Otherwise it stays
+  `interrupted`: the boot log and `workflow.auto_continue_refused` name the
+  reason and step, and `swamp workflow recover` decides it. A continued webhook
+  run does not count against its route's `maxConcurrentRuns`; a continued cron
+  run makes the next fire of its workflow skip as an overlap, also after a
+  `serve reload`. A run waiting on an open nested run, or whose record was still
+  syncing, is judged again on each `--continuation-sweep-interval`. A run
+  someone cancelled is never continued, even if serve crashed before the cancel
+  took effect (`cancel_requested`). `swamp workflow recover` refuses while a
+  serve with a current heartbeat is continuing the same run, and takes over any
+  other holder's claim once it is older than five minutes.
 - A run that cannot be resumed stays suspended; the audit log has one
   `workflow.auto_resume_skipped` or `workflow.auto_resume_failed` event with the
   reason (`global_cap`, ...). A run whose auto-resume policy is off is left

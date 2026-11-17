@@ -62,6 +62,8 @@ interface WebhookResponse {
   body and the **redacted** headers only; the result must be JSON-serializable.
 - `respond` receives the final payload. Return `undefined` for the default
   `200 {"status":"queued"}`.
+- Every response that queues a run, yours included when `enqueue` is true,
+  carries the run's id in an `X-Swamp-Run-Id` header.
 
 ## Request order and failure handling
 
@@ -132,6 +134,16 @@ CLI equivalent (no `config`):
 `swamp serve --webhook '/hooks/my-provider:handle-event:@env=MY_PROVIDER_TOKEN:@myorg/static-token'`.
 Serve fails at startup if the type is not installed (trusted collectives are
 auto-pulled) or the config is invalid.
+
+A route file in the repo's `webhook-routes/` directory can name the same scheme
+and `config`; it takes only an `@vault=` secret and a route under `/hooks/`, and
+a missing type refuses only that file. An extension never declares a route:
+routes come only from `serve.yaml`, `--webhook` flags and route files.
+
+A pulled type also needs its collective trusted, however it was installed; local
+types (repo extension dirs, source mounts) are always trusted. Serve refuses an
+untrusted one at startup and on reload, and answers its deliveries with `500`.
+Fix: `swamp extension trust add <collective>`, then `swamp serve reload`.
 
 ## Testing
 

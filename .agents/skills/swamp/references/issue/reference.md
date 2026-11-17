@@ -34,6 +34,8 @@ With `--close`: adds `"statusChanged": "closed"`. With `--reopen`: adds
 2. **Not logged in** → prompts: log in now, or send via email
 3. **`--email` flag** → opens email client with pre-filled subject/body to
    `support@swamp-club.com`
+4. **`--source platform`** → files against the platform source. Requires being
+   logged in: there is no email fallback, because email cannot carry a source
 
 **Output shape** (Lab submission with `--json`):
 
@@ -211,11 +213,11 @@ Map the failure to the right fix rather than retrying blindly:
 See [references/formatting.md](references/formatting.md) for bug report and
 feature request formatting guidelines with examples.
 
-## Related Skills
+## Related Guides
 
-| Need                                  | Use Skill               |
-| ------------------------------------- | ----------------------- |
-| Debug swamp issues                    | swamp-troubleshooting   |
-| View swamp source code                | swamp-troubleshooting   |
-| Pull an extension before reporting    | swamp-repo              |
-| Publish an extension with a repo link | swamp-extension-publish |
+| Need                                  | Guide                                              |
+| ------------------------------------- | -------------------------------------------------- |
+| Debug swamp issues                    | [troubleshooting](../troubleshooting/guide.md)     |
+| View swamp source code                | [troubleshooting](../troubleshooting/guide.md)     |
+| Pull an extension before reporting    | [repo](../repo/guide.md)                           |
+| Publish an extension with a repo link | [extension-publish](../extension-publish/guide.md) |

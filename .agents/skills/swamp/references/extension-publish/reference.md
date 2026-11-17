@@ -183,12 +183,15 @@ precedence and registry requirements.
 Optional `--visibility public` selects the registry default and overrides a
 private manifest. Keep the same choice in State 8; it preserves existing
 extension visibility rather than converting an already-private extension to
-public.
+public. To make an already-private extension public, use
+`swamp extension visibility <name> --set public` (see
+[changing visibility](references/publishing.md#changing-visibility-after-publication)).
 
 **On Failure:** If the dry-run reports a missing or incomplete adversarial
-review report, the review gate is unsatisfied. Complete the **Adversarial Review
-Gate** in the `swamp-extension` skill (write the content-hash-bound review
-report at the path the dry-run prints), then re-run. For other failures see
+review report, the review gate is unsatisfied. Complete the
+[Adversarial Review Gate](../extension/reference.md#adversarial-review-gate)
+(write the content-hash-bound review report at the path the dry-run prints),
+then re-run. For other failures see
 [references/publishing.md](references/publishing.md#safety-rules).
 
 ## State 8: pushed
@@ -209,12 +212,12 @@ swamp extension push manifest.yaml --yes --json
 
 **Verify:** The command exits successfully and reports the published version.
 
-Check the completed summary for a `Registry warnings:` block
-(`warnings.registry` in JSON, one `{ "message": ... }` per warning;
-`registryWarningsOmitted` counts any beyond the first 20). The push succeeded,
-but the registry discarded something the client sent — typically
-`contentMetadata` over a registry limit, so the listing was extracted from the
-archive instead. Relay each warning to the user.
+Check the end of the completed summary for a
+`Pushed, but the registry reported N warnings:` block (`warnings.registry` in
+JSON, one `{ "message": ... }` per warning; `registryWarningsOmitted` counts any
+beyond the first 20). The push succeeded, but the registry discarded something
+the client sent — typically `contentMetadata` over a registry limit, so the
+listing was extracted from the archive instead. Relay each warning to the user.
 
 `--yes` also waives safety and review warnings; the completed summary records
 them under `acceptedWarnings` so the user can see what was waived, and its

@@ -143,8 +143,15 @@ Use `swamp agent list` to see the current mode for each custom tool.
 Run `swamp doctor audit` after `init --tool <name>` and after upgrading the
 external AI tool. Exits 1 on any check fail — safe to gate in CI. For the full
 diagnostic flow (preflight checks, output shapes, common failures, escalation to
-other tiers), see the `swamp-troubleshooting` skill's
-`references/health-checks.md`.
+other tiers), see
+[troubleshooting health checks](../troubleshooting/references/health-checks.md).
+
+Claude Code reads project hooks only from the folder a session starts in (the
+git root, for `.claude/settings.local.json`). For a swamp repo nested below its
+git root, or sessions started above the repo, run `swamp audit install --user`
+to add the audit hook to `~/.claude/settings.json`; it records calls whose
+working directory is inside any swamp repo. `swamp audit uninstall --user`
+removes it.
 
 ## Upgrade a Repository
 
@@ -156,14 +163,15 @@ swamp repo upgrade --json
 swamp repo upgrade ./my-automation --json
 ```
 
-**Output shape:**
+**Output shape** (abridged):
 
 ```json
 {
   "path": "/home/user/my-automation",
   "previousVersion": "0.0.9",
   "newVersion": "0.1.0",
-  "updated": [".claude/skills/swamp-model/", "CLAUDE.md"]
+  "skillsUpdated": ["swamp", "swamp-getting-started"],
+  "instructionsUpdated": true
 }
 ```
 
@@ -190,9 +198,28 @@ swamp repo upgrade --tool none
 ```
 
 Dropping a tool from the list does **not** delete its on-disk files (`.kiro/`,
-etc.) — remove them by hand if desired. Adding a tool that didn't share a skills
-directory with the previous primary surfaces an `extensionsToReinstall` warning
-naming pulled extensions that need to be re-installed for the new tool.
+etc.) — remove them by hand if desired. When swamp's own settings for the
+dropped tool remain (audit hooks that still run swamp on every tool call,
+swamp's plugin files, the Kiro `swamp` agent), the upgrade names those files in
+`prunableSettings` and suggests `swamp repo prune`, which removes them:
+
+```bash
+swamp repo prune --dry-run --json  # list what would be removed
+swamp repo prune --yes             # remove without a prompt (--json never prompts)
+```
+
+When `enrolledTools` is empty and `claude` is listed, the repo may only have
+picked up `tools: []` from an older upgrade and still use claude: ask before
+pruning, and if it does, run `swamp repo upgrade --tool claude` instead.
+
+Prune touches only built-in tools that are not enrolled, and only entries and
+files swamp owns: user hooks, `permissions.allow`, skills and instructions files
+stay, a file is deleted only when nothing else is left in it, and symlinked or
+out-of-repo files are skipped and listed under `skipped`. A file prune tried to
+change but could not (a permission error, for example) is listed under `failed`,
+and the command exits 1. Adding a tool that didn't share a skills directory with
+the previous primary surfaces an `extensionsToReinstall` warning naming pulled
+extensions that need to be re-installed for the new tool.
 
 Legacy extension layouts are automatically migrated during upgrade. See
 [references/troubleshooting.md](references/troubleshooting.md) for details on
@@ -440,7 +467,8 @@ export SWAMP_DATASTORE=filesystem:/tmp/swamp-data
 export SWAMP_DATASTORE='@myorg/my-store:{"key":"val"}'
 ```
 
-For custom datastore implementations, see the `swamp-extension` skill.
+For custom datastore implementations, see the
+[datastore extension API](../extension/references/datastore/api.md).
 
 ### Config Value Interpolation
 
@@ -481,6 +509,14 @@ work (native `local_encryption` and extension providers like `@swamp/aws-sm`).
 - Vault expressions are not supported when `managedConfig: true` — managed
   config stores vault configurations in the datastore tier, creating a circular
   dependency. Use environment variable expressions instead.
+
+**In setup** — `swamp datastore setup extension --config` accepts the same
+expressions. Setup resolves them to validate, verify and migrate, and writes the
+unresolved expressions to `.swamp.yaml`, so pass a secret as
+`${{ vault.get(...) }}` or `${{ env.VAR }}` rather than as a literal. An unset
+variable or unknown vault fails setup before anything changes. Setup through
+serve (`--server`) refuses a config holding expressions; run it locally on the
+repo's host instead.
 
 ### Namespaces (Multi-Repo Datastores)
 
@@ -583,17 +619,17 @@ Load order is unchanged. Sources override pulled extensions of the same type.
 This means you can pull `@swamp/aws/ec2` from the registry, then add a source
 pointing at your local development copy — your local version loads instead.
 
-## When to Use Other Skills
+## Related Guides
 
-| Need                               | Use Skill               |
-| ---------------------------------- | ----------------------- |
-| Create/run behaviors               | `swamp-model`           |
-| Create/run workflows               | `swamp-workflow`        |
-| Manage secrets                     | `swamp-vault`           |
-| Manage behavior data               | `swamp-data`            |
-| Create custom TypeScript behaviors | `swamp-extension`       |
-| Create custom datastores           | `swamp-extension`       |
-| Understand swamp internals         | `swamp-troubleshooting` |
+| Need                               | Guide                                          |
+| ---------------------------------- | ---------------------------------------------- |
+| Create/run behaviors               | [behavior](../behavior/guide.md)               |
+| Create/run workflows               | [workflow](../workflow/guide.md)               |
+| Manage secrets                     | [vault](../vault/guide.md)                     |
+| Manage behavior data               | [data](../data/guide.md)                       |
+| Create custom TypeScript behaviors | [extension](../extension/guide.md)             |
+| Create custom datastores           | [extension](../extension/guide.md)             |
+| Understand swamp internals         | [troubleshooting](../troubleshooting/guide.md) |
 
 ## References
 
