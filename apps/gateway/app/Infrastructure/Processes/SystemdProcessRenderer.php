@@ -8,6 +8,7 @@ use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\AppDev\SsrEndpoint;
 use App\Domain\Instances\ContainerProcessCommands;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -100,12 +101,12 @@ final readonly class SystemdProcessRenderer
             '[Service]',
             'Type=simple',
             "User={$user}",
-            // In an Instance container, as FrankenPHP: group `orbit`, files shared with the group, and the runtime folder's programs.
-            ...($target->container === null ? [] : ['Group=orbit', 'UMask=0007']),
+            // In an Instance container, as FrankenPHP: group `www-data`, files shared with the group, and the runtime folder's programs.
+            ...($target->container === null ? [] : ['Group='.InstanceHostIntent::AppUser, 'UMask=0007']),
             'WorkingDirectory='.$this->escapeDirectivePath($process->working_directory ?? throw new InvalidArgumentException('Systemd requires a working directory.')),
             ...($target->container === null || $target->instance === null
                 ? ['Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin']
-                : ['Environment=HOME=/home/orbit', 'Environment=PATH='.InstanceContainer::path($target->instance->project)]),
+                : ['Environment=HOME='.InstanceHostIntent::AppHome, 'Environment=PATH='.InstanceContainer::path($target->instance->project)]),
             'Environment=NODE_USE_SYSTEM_CA=1',
             ...$environmentFileLine,
             ...($this->managedEnvironment($process, $target) === [] ? [] : ['EnvironmentFile='.$this->environmentPath($process, $target)]),

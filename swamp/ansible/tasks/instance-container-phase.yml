@@ -1,7 +1,7 @@
 ---
 # One phase of instance-container.yml, `phase`, on the Node. Containers live in `container.project`; `incus` gets no stray input.
 # Work in the container runs through `incus exec` from the Node: root for units and snapshots, `agent`, the workspace's owner, for the
-# workspace (ADR 0268), and `orbit`, the app user, for the app's own files such as the Node store.
+# workspace (ADR 0268), and `www-data`, the app user, for the app's own files such as the Node store.
 - name: Name the container commands
   tags: [always]
   when: phase != 'node-service'
@@ -22,9 +22,9 @@
       {{ (['--config'] | product(container.config.items() | map('join', '=')) | list | flatten)
          + ['--device', 'root,type=disk', '--device', 'root,path=/',
             '--device', 'root,pool=' ~ container.root_disk_pool, '--device', 'root,size=' ~ container.root_disk_size] }}
-    as_orbit: >-
-      {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
-          '--', 'runuser', '-u', 'orbit', '--'] }}
+    as_app: >-
+      {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/var/www', container.name,
+          '--', 'runuser', '-u', 'www-data', '--'] }}
     # The workspace's owner (ADR 0268): Orbit's Git calls and its other work in the workspace, as the deploy steps run.
     as_owner: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/agent', container.name,
@@ -516,6 +516,25 @@
   ansible.builtin.command: { argv: "{{ incus_project + ['start', container.name] }}" }
   changed_when: true
 
+# An older container's app account is `orbit` (uid 1000) with the groups `orbit` (gid 1000) and `work` (gid 2760); now it is the stock
+# `www-data` (uid and gid 33), and `agent` is in its group (ADR 0268 second amendment). Root runs the one swap file
+# (/usr/local/libexec/orbit-app-user) as soon as the container runs, before any command as `www-data` and before the steps below write or start
+# a unit as `www-data`; a processes phase on a running container and a seed run it too
+# (docs/reference/development-containers.md#the-app-users-name). A moved container only reads, and a nested-fleet container keeps
+# `orbit` for its inner fleet. The intent carries the file, so a container that lacks it, or holds an older one, gets it here and no
+# path waits for a Node converge. A wake that boots nothing moves nothing.
+- name: Move the app account to www-data
+  tags: [container, clone, start, processes, seed]
+  when: phase in ['container', 'clone', 'start', 'processes', 'seed'] and not start_skips_boot | default(false) | bool
+  # The file from the intent, root's and 0755, written only when it is missing or differs; then it runs (InstanceImage::appAccount).
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['sh', '-c', 'set -e; t=$(mktemp); cat >"$t"; cmp -s "$t" "$0" || install -D -o 0 -g 0 -m 0755 "$t" "$0"; rm -f "$t"; exec "$0"', container.app_account.path] }}
+    stdin: "{{ container.app_account.content }}"
+    stdin_add_newline: false
+  register: app_user_name
+  changed_when: "'moved to www-data' in app_user_name.stdout"
+
 # The inner Incus's pool on the inner volume, once. The inner Incus may still be starting with the container.
 - name: Create the inner pool
   tags: [container]
@@ -547,7 +566,7 @@
     apply: {tags: [always]}
 
 # `php` on every PATH in the container is the Project's static build from the runtime folder: `/usr/local/bin` is on the PATH of
-# units, login shells and `incus exec` sessions, so `composer` runs for `agent` and `orbit` alike. A Project without one has none.
+# units, login shells and `incus exec` sessions, so `composer` runs for `agent` and `www-data` alike. A Project without one has none.
 - name: Link the Project's php
   tags: [container, start]
   when: phase in ['container', 'start'] and not start_skips_boot | default(false) | bool
@@ -836,13 +855,13 @@
       changed_when: true
     - name: Push the bundle into the container
       ansible.builtin.command:
-        argv: "{{ incus_project + ['file', 'push', '--uid', '2750', '--gid', '2760', '--mode', '0640', node_bundle, container.name ~ container_bundle] }}"
+        argv: "{{ incus_project + ['file', 'push', '--uid', '2750', '--gid', container.workspace_ids.group | string, '--mode', '0640', node_bundle, container.name ~ container_bundle] }}"
       changed_when: true
   always:
     - name: Remove the bundle on the Node
       ansible.builtin.file: { path: "{{ node_bundle }}", state: absent }
 
-# The workspace is a repository that `agent` owns and shares with `orbit` through the group `work`.
+# The workspace is a repository that `agent` owns and shares with `www-data` through the group `www-data`.
 - name: Check out the branch in the workspace
   tags: [workspace]
   when: phase == 'workspace' and workspace_behind | bool
@@ -870,7 +889,7 @@
       ansible.builtin.set_fact:
         container_commit: "{{ workspace_head.stdout | trim }}"
 
-# The .env goes in as `agent`, the workspace's owner, with group `work`, 0640, so the app reads it as `orbit` through the group. It
+# The .env goes in as `agent`, the workspace's owner, with group `www-data`, 0640, so the app reads it as `www-data` through the group. It
 # goes through a 0600 file on the Node that is removed at once. It is compared by digest first, so a rerun with the same .env changes
 # nothing.
 - name: Read the digest of .env in the container
@@ -898,7 +917,7 @@
     - name: Push the .env into the container
       ansible.builtin.command:
         argv: >-
-          {{ incus_project + ['file', 'push', '--uid', '2750', '--gid', '2760', '--mode', '0640', environment_path,
+          {{ incus_project + ['file', 'push', '--uid', '2750', '--gid', container.workspace_ids.group | string, '--mode', '0640', environment_path,
           container.name ~ container.environment_file] }}
       changed_when: true
   always:
@@ -1113,8 +1132,8 @@
         ansible_connection: local
         ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
-# `agent` owns the workspace and shares it with `orbit` through the group `work` (ADR 0268). Before the deploy steps (`checkout`,
-# `proof_checkout`) and after them (`processes`) root gives the group back what the owner has, and gives `agent` each entry that `orbit`
+# `agent` owns the workspace and shares it with `www-data` through the group `www-data` (ADR 0268). Before the deploy steps (`checkout`,
+# `proof_checkout`) and after them (`processes`) root gives the group back what the owner has, and gives `agent` each entry that `www-data`
 # owns, such as a file the running app wrote. The program is instance_workspace_owner.py, which a clone's `services` part runs too: it
 # never follows a link, skips an entry that is gone, and prints only a count when it changed many entries.
 - name: Keep the workspace writable for its group
@@ -1123,7 +1142,7 @@
   ansible.builtin.command:
     argv: >-
       {{ as_root + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_workspace_owner.py'),
-                    container.workspace, '1000', '2750'] }}
+                    container.workspace, container.workspace_ids.writer | string, '2750'] }}
   register: workspace_modes
   changed_when: workspace_modes.stdout != ''
 
@@ -1214,7 +1233,7 @@
       sys.exit(0 if not h.is_symlink() and h.is_dir() and not (h/"node").is_symlink()
       and (h/"node").is_dir() and Path("/usr/local/libexec/orbit-instance-node-runtime.py").is_file() else 1)
   ansible.builtin.command:
-    argv: "{{ as_orbit + ['python3', '-c', node_private_layout] }}"
+    argv: "{{ as_app + ['python3', '-c', node_private_layout] }}"
   register: node_private_bootstrap
   changed_when: false
   failed_when: node_private_bootstrap.rc not in [0, 1]
@@ -1898,7 +1917,7 @@
       when: intent.migrate is not defined and (node_runtime_result | default({})).get('seed_refresh_required', false)
       ansible.builtin.command:
         argv: >-
-          {{ as_orbit + ['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_runtime.py'),
+          {{ as_app + ['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_runtime.py'),
               'seed-complete', container | to_json] }}
       changed_when: true
     # A clone made from an older seed does not need it: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them. A

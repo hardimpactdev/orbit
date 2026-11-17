@@ -69,7 +69,8 @@ final readonly class ContainerConnectionEnvironment implements DirectOperationPr
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id, [
                 'container' => ['instance_id' => $instance->id, 'project' => $container['project'], 'name' => $container['name'],
                     'acl' => $container['acl'], 'network' => $container['network'], 'bridge_cidr' => $container['bridge_cidr'],
-                    'bridge_admitted_at' => $container['bridge_admitted_at'], 'environment_file' => $container['environment_file']],
+                    'bridge_admitted_at' => $container['bridge_admitted_at'], 'environment_file' => $container['environment_file'],
+                    'app_account' => $container['app_account']],
                 'connection_environment' => ['keys' => $keys, ...$paths,
                     // The one composed NO_PROXY value when it is not the base, for the one guest writer; null leaves the container's files alone.
                     'proxy_environment' => $container['proxy_environment'] ?? null,
