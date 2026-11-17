@@ -29,7 +29,7 @@ The repository's machine software recipe is [`apps/gateway/resources/machine-sof
 
 The recipe pins both the Vite+ runtime (`vp`) and CLI (`vp-cli`) to `1.4.0`. Project lockfiles stay independent: [deployment admission](/reference/tools#project-environments-in-the-vite-store) accepts a manager at least as new as the Project's locked Vite+ release, including Projects on `1.2.x`. A recipe update does not update those lockfiles.
 
-The loader and validator define the recipe contract. The [base snapshot refresh](#refresh-the-base-snapshot) converges the base VM to that document. Claims [copy the base snapshot](#claims-copy-the-base-snapshot), and a topology that a contributor acquires by hand [copies its Nodes from its topology seed](/reference/incus-topologies#one-template-node).
+The loader and validator define the recipe contract. Development uses a [task copy and its nested fleet](/reference/tasks#build-a-feature-in-one-copy), not a manually acquired VM topology or a topology seed disk.
 
 ### Recipe schema
 
@@ -470,13 +470,7 @@ The first phase of every base refresh prepared its host through Ansible; the ref
 
 `incus.volumes` reads the custom volumes in the configured project and pool. Swamp owns volume changes through keyed Operation children; the Gateway keeps volume ownership and inventory reads.
 
-`incus.vm-state` returns one VM's running state, explicit `settled: true`, guest bridge address, and original image fingerprint. It refuses a VM unless Incus reports `Running` or `Stopped`.
-
-`incus.vm` creates, starts, stops, or deletes that VM under one target lock. The agent owns exact-name matching, Incus output validation, clean shutdown followed by forced stop, and the observation after a failed mutation. Create intent supplies the Gateway public key, image claim, resource limits, and topology requirement. The agent renders the fixed cloud-init account and QEMU configuration, clones a required seed before launch, and refuses an existing VM with a different claimed image. Delete removes the VM before releasing its seed clone. The Gateway keeps placement and resource-size policy.
-
-Image builders and smoke VMs use the same `incus.vm` boundary. Their `create_image` intent selects the source image, account key, resource limits, and builder account mode. Rust renders cloud-init, attaches an Incus cloud-init configuration disk, and initializes the VM with NIC isolation. Before its first start, Rust removes the source image’s NoCloud seed templates. The disk supplies the account configuration at power-on, so cloud-init cannot run with an empty datasource while the Incus agent copies seed files and requests a reboot. This applies to stock builders, smoke VMs, and task VMs.
-
-A stopped VM receives the same metadata preparation before it starts. A repeat preserves a VM from the requested image and refuses a different image. `remove_instance` removes an exact VM without changing storage volumes; the Gateway's existing image and orphan sweep decides which names it may remove. An absent VM counts as removed.
+The agent has no VM lifecycle commands. Its Incus inventory and container primitives stay; nothing calls a VM create, start, stop or delete through the agent.
 
 No agent command reaches a guest before enrollment. Nothing built an agent guest, so S10d removed the guest command runner and its `incus exec` transport, with that transport's refusal `task_vm.git_credential_refused` ([old paths](/reference/old-paths#the-guest-agent-chain)). The command runner reaches only a Node, through the [Node transports](/reference/node-agent#transports).
 
@@ -597,16 +591,7 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 
 #### Send branches to the VM
 
-1. The Gateway fetches the operation's branches into the mirror. Only `task-<id>` may be missing on GitHub.
-2. It calls `task-vm.read-git-refs` through the agent runner as the checkout account. The Gateway keeps IDs that the mirror holds as commits.
-3. It packs the objects of the branches that are not in the history of those commits.
-4. It calls `task-vm.import-git-pack` through the agent runner and workspace executor. The command sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
-5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. The [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) setup step reads the default branch there.
-6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
-
-The imported pack follows the JSON envelope as bounded binary input, without a token, staging call, or script. The command validates the pack and approved ref names, then updates the refs in one Git transaction.
-
-The ref command returns at most 1,000 distinct ref object IDs, the worktree's recorded cache baseline, its branch, and its `HEAD`.
+The VM branch transfer is removed. No caller sends `task-vm.read-git-refs` or `task-vm.import-git-pack`, and Swamp's command inventory lists neither. Task copies use the [Instance workspace](/reference/task-instance-workspace).
 
 [New task workspace selection](/reference/implementation-loop#ci-cache-refs) separates the starting code commit from the cache baseline. A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. Another branch with no recorded baseline whose `HEAD` is a main commit, such as a fresh agent branch, uses that `HEAD` commit, not a newer main commit. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
 
@@ -620,7 +605,7 @@ A new workspace starts from `git init`, with the Project repository URL as `orig
 
 #### Publish from the VM
 
-Swamp publishes the [checked task candidate](/reference/tasks#publish-an-external-group) from Node 209, which receives the commit from the task VM as a bundle. Handoff CI uses the same native Git transport for `task-{group}-handoff`. The publish step asks the Gateway for a repository installation token when it starts, and the Gateway writes it to the vault. The Gateway projects the result; it runs no push job or mirror import. The VM never receives the token.
+Swamp publishes the [checked task candidate](/reference/tasks#publish-an-external-group) from Node 209, which receives the commit from the task copy as a bundle. The publish step asks the Gateway for a repository installation token when it starts, and the Gateway writes it to the vault. The Gateway projects the result; it runs no push job or mirror import. The VM never receives the token.
 
 The native action uses an empty temporary bare Git repository with the workspace object store as an alternate. Credentials reach only Git in that trusted directory. The action ignores repository hooks and user/system Git configuration, permits HTTPS only and refuses redirects. It pushes the exact admitted commit without force and reads the remote tip before repeating a mutation. No repository command receives the credential. Native locking, cancellation and replay follow the [Tasks contract](/reference/tasks#publish-an-external-group).
 
@@ -638,29 +623,7 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Converge a running task VM
 
-The common converge brings a task VM to the pins of the release. A [base snapshot refresh](#refresh-the-base-snapshot) runs it on the base VM, and a task start ran it on the new VM until the task VM start was deleted. It has no kind or command of its own. Swamp runs the phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH, so a base and a started VM end in the same state. These are the `software`, `tools` and `check` phases.
-
-The Gateway puts these in the intent:
-
-- The `recipe.json` of the release and the Vite+ lock.
-- The VM's SSH target with its recorded host key.
-
-No task file names a version.
-
-The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` and `jq` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust and the Swamp binary follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
-
-The `tools` phase installs the shape gate linters and prepares the Incus client config for the SSH user `orbit` with one serial read. Existing client configs stay in place. Task copies inherit the config, so later parallel Incus calls, including proof restores, cannot race on its first-use write. Incus creates or truncates that file before writing its YAML. The nested fleet is Incus system containers that take the checkout as a disk device, so the VM serves nothing to them.
-
-- The intent names the nested subnet and the interface `nested` (`TaskVmNestedFleet`), so the VM leads the nested network of that subnet.
-- UFW then allows DHCP, DNS and the package cache from the nested bridge, and routes it out.
-- The linters build into `/opt/orbit-shape-gate`. The venv name covers the pins and the interpreter that builds it, by the rule of [the shape gate](/reference/implementation-loop#run-the-swamp-shape-gate-before-you-push).
-- `bin/swamp-shape-gate` finds the folder by that name. The handoff check then runs offline.
-
-The `check` phase is the one end check. It asserts every package at its pin, every runtime and tool at its version, and the package cache active.
-
-The `check` phase also asserts that `orbit` has UID and GID 1000.
-
-A failed phase leaves finished work in place. A rerun skips each phase whose digest matches.
+The task VM role and its base-build graph are removed because nothing calls them. Normal Node convergence keeps its package and runtime helpers under `node-converge-*` names. The [proof replay chain](/reference/old-paths#the-unreachable-swamp-vm-paths) stays until replay is ported.
 
 ### Park and resume
 
@@ -1123,53 +1086,13 @@ The host part that logged task VM egress is removed with the base snapshot refre
 
 #### Refresh the base snapshot
 
-No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`, its intent and projection, and the artisan command `task-vms:image-builds` are removed; its triggers went before them. It is replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates the default Instance of each nested-fleet Project. A recorded base snapshot stays the base of a task start until the rest of the task VM path leaves.
+No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`, its intent and projection, and the artisan command `task-vms:image-builds` are removed; its triggers went before them. It is replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates the default Instance of each nested-fleet Project. No task start copies a VM base snapshot. Replaying proof on the merge base remains separate and is not ported by this removal.
 
-The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`, and later its task start and release parts `start` and `delete`. The parts `host-prepare` and `base-*` stay while tests of shared files load them; nothing runs them. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
+The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`, and later its task start and release parts `start` and `delete`. The remaining `host-prepare` and `base-*` parts and the uncalled role graph are removed too; shared container tests call their live helpers directly. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
 
 ##### Build the nested fleet in the converge
 
-The `fleet` phase of the common converge (`swamp/ansible/tasks/task-vm-fleet.yml`) reads the containers of the VM first. A fleet is complete when its three containers exist and the operator stamp is recorded. The operator join writes that stamp as its last task, after the build, and every promoted base has it.
-
-The phase builds the fleet (`task-vm-fleet-build.yml`) only when it is not complete. That is a base VM that never held a fleet, or one whose build stopped half way, also after all three containers existed. A converge on a complete fleet, and every task start, skip the build and create, delete or restart no container. No other kind builds a fleet.
-
-The values came from the converge intent of the Gateway, `TaskVmConvergeInput` (removed with the claim), which took them from `TaskVmNestedFleet`:
-
-- the names of the containers and of the network;
-- the address, MAC, memory and TLD of each container;
-- the operator end and the subnet that a proof admits;
-- the mount units of the state;
-- the part of the `gateway-bootstrap` input that the Gateway knows.
-
-That part names the package cache of the VM, the address of the nested Gateway, the operator and the agent delivery. The nested network `oe-nested` and the pool `topology-seed` come from the tools phase, which runs on a new base VM because no digest is recorded. The build runs one Ansible task per step, each with its own `timeout`. First it makes the containers:
-
-1. It removes the operator stamp and every container of a half-made fleet, so a build that stops leaves the fleet incomplete and the next one builds it whole.
-2. It makes a missing operator SSH key on the VM. It forgets an earlier Gateway host key.
-3. It creates the three system containers one at a time from `images:ubuntu/resolute/cloud`.
-4. Each container has nesting, a memory limit, a start with the VM, and the address and MAC of the layout.
-5. Cloud-init makes the `orbit` account with the operator key. The build turns cloud-init off after the first boot.
-
-Then it makes the nested Gateway and its Nodes:
-
-1. It attaches the proof Swamp Club key of the base VM to the Gateway container.
-2. It runs `gateway-bootstrap` once with a local `swamp workflow run`. The run adds the Swamp pin, the pinned host key and the release.
-3. Through its own Orbit, the nested Gateway converges its Node and its `gateway` and `websocket` roles. It then adds app-dev and app-prod.
-4. Each of those is an Operation of the nested Gateway. `task-vm-nested-wait.yml` waits for its end.
-5. Each container admits the proof subnet. The Gateway moves its state off its own checkout.
-6. The checkout of the VM becomes the disk device `checkout` of the Gateway and app-dev, and the state is mounted over it.
-7. It waits until Doctor of the nested Gateway is healthy.
-
-The bootstrap input names the operator address of the VM, 10.45.0.10, so the nested Gateway records the `operator` Node that the operator join gives its key. Cloud-init disables the `wg` and `wg-quick` AppArmor profiles at boot, because the profile of Ubuntu 26.04 kills `wg-quick` in a nested container. The containers live in the pool `topology-seed` of the seed disk. The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM, and the daily refresh replaces the seed long before any of these runs out.
-
-The rest of the phase then runs as on any converge: the operator join, token renewal when due, grant reconciliation and the code of the commit. Grant reconciliation renders the checkout’s scoped manifests and reloads them with the existing serve-driver credential, even when the code and token stamps are current.
-
-The `base` snapshots are taken last, including when only grant files changed. A digest records the grants in the last successful set of three snapshots. A failed reload or snapshot leaves that digest unchanged, so a later refresh still takes the required snapshots.
-
-The earlier standalone fleet build took 1,840 s (Operation 11816), so a new host's first refresh takes about 30 minutes more than the build of the outer VM.
-
-##### Not built
-
-- The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
+The uncalled VM fleet builder, `task-vm-fleet.yml` and `task-vm-fleet-build.yml`, is removed with the base-build graph. A task copy gets its nested fleet from the Project's default Instance; [the fleet step](/reference/development-containers#the-fleet-step) owns its build and refresh. The separate restore and apply children below stay for proof replay.
 
 ##### Apply and check the nested fleet
 
@@ -1286,21 +1209,19 @@ These alternatives were also rejected:
 
 ## Orbit Project
 
-A group of the `orbit` Project runs on a task VM. It is the proof Project, and the only Project a task VM serves: the base carries only its checkout. Its workspace is the Instance `task-<group id>` without a Route, and every claim clones from the Gateway mirror and installs the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`.
+A group of the `orbit` Project runs in a [task copy](/reference/tasks#task-copy). Build and prove its feature in that copy and its [nested fleet](/reference/tasks#build-a-feature-in-one-copy). Install the dependencies of the four Composer projects and the web app. Its scoped check is `bin/task-check`; root `composer check` runs the full candidate gate.
 
 Configure the Project like this:
 
 - Add the setup step [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) after the install steps.
 
-Without the `@orbit/ci-caches` step, Pint and PHPStan start cold in every task VM workspace. With it, a fresh workspace gets the Pint and PHPStan caches that main CI published for its baseline.
-
-The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the install steps build fresh dependency trees using private caches.
+Without the `@orbit/ci-caches` step, Pint and PHPStan start cold. With it, a fresh workspace can import the retained caches for its baseline. [Instance setup](/reference/instance-setup) owns dependency seeding and setup and teardown execution.
 
 ### Declare a topology
 
 A subtask declares no topology. The API ignores an empty `topology` list and refuses any other list with `422 tasks.orchestration_unsupported`. A value that is not a list, such as a string or `null`, fails validation with `422 validation.failed`. This holds when a request creates a group, creates a subtask, or updates a subtask. Task responses have no `topology` field, and the CLI has no `--topology` option.
 
-Nothing reads a declaration that a group saved before this rule. The column `tasks.topology` is dropped ([old paths](/reference/old-paths#task-vm-settings)). The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` went with the table `task_vms` ([old paths](/reference/old-paths#the-task-vm-tables)). A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
+Nothing reads a declaration that a group saved before this rule. The column `tasks.topology` is dropped ([old paths](/reference/old-paths#task-vm-settings)). The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` went with the table `task_vms` ([old paths](/reference/old-paths#the-task-vm-tables)). The manual VM topology harness is removed. Build and prove features in the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy), the environment of [stage 2](/reference/command-development-pipeline#2-development-environment).
 
 ## VM power
 

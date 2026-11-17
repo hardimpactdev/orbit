@@ -53,12 +53,10 @@ directly). Every `swamp model …` spelling remains supported.
 
 # Orbit operations in Swamp
 
-The flow of a command is the [command development pipeline](../docs/reference/command-development-pipeline.mdx) and its stage charts. Read the binding [Swamp shape guide](docs/swamp-shape.md) and its linked [Swamp manual](https://swamp-club.com/manual) pages before you write, port or review an operation. They override older repository guidance and conflicting Recall atoms. Build and review flows with the [swamp-flow skill](../.agents/skills/swamp-flow/SKILL.md) and its [porting reference](../docs/swamp/porting.md).
+The block above is upstream-generated CLI guidance, not Orbit's execution policy. `swamp repo upgrade` replaces it through `RepoService.generateInstructionsBody` and `ensureInstructionsSection` in the [pinned Swamp source](https://github.com/swamp-club/swamp/blob/v20261114.210101.0-sha.537e03d1/src/domain/repo/repo_service.ts); it has no repository template override. Keep local policy outside its markers.
 
-The guide owns the execution contract and the per-PR checks. Before you push, run `bin/swamp-shape-gate` at the repository root: it is the one script that CI runs for the shape gate and the validation. Do not copy grandfathered implementations as templates.
+Read the binding [Swamp shape guide](docs/swamp-shape.md) before writing or reviewing an operation. It alone owns machine execution, secrets, callbacks, placement and result transport, overriding the managed block's generic integration restrictions. In particular, use its Ansible carrier contract rather than treating the generic `command/shell` prohibition as an Orbit rule.
 
-Use native workflows, placed one-action steps and Swamp defaults. Use existing types when they fit. Keep reusable data in Swamp and connect steps through typed inputs and outputs. Pin extension dependencies. Inspect native reports after a failure before deciding how to resume.
-
-The Gateway records intent, admits requests and projects the terminal result. It supplies the full non-secret intent and vault key names. Steps do not read intent or report progress over Gateway HTTP. The agent only observes and stays frozen.
+The [pipeline](../docs/reference/command-development-pipeline.mdx) owns delivery; the [chart README](../docs/cli/README.md) owns chart design. Use [swamp-flow](../.agents/skills/swamp-flow/SKILL.md) and [ansible-phase](../.agents/skills/ansible-phase/SKILL.md) to route implementation and checks. Before pushing, run `bin/swamp-shape-gate` from the repository root; report credential-dependent skips.
 
 No local documentation grants authority for credentials, DNS, production data moves or deleting production resources. Follow the current execution plan for ownership and approval.

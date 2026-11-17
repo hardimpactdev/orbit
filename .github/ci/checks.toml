@@ -174,14 +174,6 @@ inputs = [
 cost = 60
 ceiling = 120
 
-[check.e2e-static]
-inputs = [
-  "apps/e2e/**",
-  "tools/phpstan/**",
-]
-cost = 11
-ceiling = 120
-
 [check.docs]
 inputs = [
   "docs/**",
@@ -398,9 +390,10 @@ default = []
 inputs = ["apps/docs/**"]
 default = ["docs"]
 
+# Recognize deleted harness paths while plans still diff across its removal; run no check for them.
 [roots."apps/e2e"]
 inputs = ["apps/e2e/**"]
-default = ["e2e-static"]
+default = []
 
 [roots."apps/gateway"]
 inputs = ["apps/gateway/**"]

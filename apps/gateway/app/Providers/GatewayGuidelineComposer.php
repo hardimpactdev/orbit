@@ -20,26 +20,29 @@ final class GatewayGuidelineComposer extends GuidelineComposer
     public function compose(): string
     {
         $guidelines = parent::compose();
-        $optionalLocation = 'in `.ai/rules` when that directory exists';
-        $permissiveFallback = 'If `.ai/rules` does not exist, continue without it.';
+        $boostSectionPattern = '/=== boost rules ===\R\R.*?(?=\R\R=== [^\r\n]+ rules ===|\z)/s';
 
-        if (
-            substr_count($guidelines, $optionalLocation) !== 1
-            || substr_count($guidelines, $permissiveFallback) !== 1
-        ) {
+        if (preg_match_all($boostSectionPattern, $guidelines) !== 1) {
             throw new RuntimeException(
-                'Boost project-rule guidance changed. Update the Gateway hard-stop transformation before regenerating.',
+                'Boost section changed. Update the Gateway guidance transformation before regenerating.',
             );
         }
 
-        $guidelines = str_replace(
-            [$optionalLocation, $permissiveFallback],
-            [
-                'in `.ai/rules` as required repository state',
-                'If guidance is missing or incomplete, follow Required Guidance Bootstrap above.',
-            ],
-            $guidelines,
-        );
+        $boostGuidance = <<<'MARKDOWN'
+            === boost rules ===
+
+            # Laravel Boost
+
+            - Before editing, open `.ai/rules/index.md`, read rules matching the paths in scope, and search `.ai/rules` for relevant terms. Required Guidance Bootstrap above owns missing-guidance recovery.
+            - Activate the relevant installed skill for the domain. Use MCP tools only when the active client exposes them; otherwise use repository commands and files.
+            - Confirm installed package versions before relying on their APIs. Use `search-docs` for version-specific Laravel APIs when available; copy-only edits need no package lookup.
+            - Run `composer guidance:update` after changing guidance sources or Boost configuration. Keep durable rules in their existing owner, with matching path coverage in the index.
+            MARKDOWN;
+        $guidelines = preg_replace($boostSectionPattern, $boostGuidance, $guidelines);
+
+        if (! is_string($guidelines)) {
+            throw new RuntimeException('Unable to compose the Gateway Boost guidance.');
+        }
 
         return GuidelineSections::withoutRemoved($guidelines);
     }

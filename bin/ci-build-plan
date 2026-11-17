@@ -12,7 +12,7 @@ import sys
 import tomllib
 from functools import lru_cache
 
-JOBS = ('php', 'gateway-static', 'gateway-tests', 'cli', 'cli-static', 'cli-tests', 'sdk-static', 'sdk-tests', 'e2e-static', 'docs', 'api-reference', 'web', 'agent', 'swamp', 'proof')
+JOBS = ('php', 'gateway-static', 'gateway-tests', 'cli', 'cli-static', 'cli-tests', 'sdk-static', 'sdk-tests', 'docs', 'api-reference', 'web', 'agent', 'swamp', 'proof')
 ROOT = Path(__file__).resolve().parent.parent
 registry = SimpleNamespace(**runpy.run_path(str(ROOT / 'bin/ci-registry')))
 SELECTION = 'swamp/proof/selection.txt'
