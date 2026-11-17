@@ -208,9 +208,20 @@ The Valkey host prerequisite is `hz 100`, applied by the orchestrator, as [the h
 
 ### Slice 6 proof case
 
-`executor-wake-visits` in `swamp/proof/instance/wake.cases.yaml` specifies 50 visits to a real sleeping clone with T3 and Vite. It carries `waits: executor-wake-ready` and `fails_today` until slice 5's real wake is installed and the nested fleet and visit timing support can run it.
+Subtask 5775 ran `executor-wake-visits` on the nested fleet of copy 3602. Clone 3 ran T3 0.1.7 and Vite 7.2.2. Only the nested Gateway enabled executor wakes, with the 500 ms bound and Valkey `hz 100`. Each signed sleep froze the clone and left 404,697,088–418,557,952 bytes in swap. The client timed real HTTPS through the clone's Caddy Route, from request start to the first body byte carrying the app's own response. A progress-first visit includes the wait for the first successful 250 ms poll; it does not count the progress page's bytes. Percentiles use nearest rank.
 
-For each visit, sleep the clone, request its Route, and measure request start to the app's first byte, preserving the original request. Save all 50 timings and p50, p95 and max against today's 1.5 s warm / 2.4 s cold. Assert the app's own status/body, one wake Operation per sleep, a recorded `done` or `partial`, and readiness with the marker gone. Exercise an over-bound wake separately: the first response is the unchanged progress page and the poll eventually loads the app. Pest tests with a fake publisher prove the Gateway contract here; they provide no real-wake latency evidence.
+| Visitor path | Visits | App first | Progress first | Errors | p50 | p95 | Max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Signed executor wake | 50 | 21 | 29 | 0 | 953.989 ms | 2,431.347 ms | 3,380.199 ms |
+| Existing Python path, same clone | 50 | 0 | 50 | 0 | 781.802 ms | 1,834.957 ms | 2,126.676 ms |
+
+Each visit on both paths produced one successful `instance.wake` Operation. The executor returned 49 `done` results and one `partial` (`instance.restore_stalled`). Every signed wake ended running, removed the marker and closed the swap limit. The 500 ms bound applies to publication and result waiting, not to full client latency.
+
+The earlier ADR 0266 reference was 1.5 s warm and 2.4 s cold. On this clone the executor bypassed the page for 21 visits, but Python had lower overall first-byte latencies. The Python sleeps froze into swap and skipped restore-plan capture as `placement_unproven` in all 50 visits. Both rows measure what visitors received; they do not compare equivalent restore work or reproduce the earlier warm and cold runs.
+
+A separate in-bound POST returned the app's own 202 in 396.736 ms, preserving the method, encoded path, query and body in one exchange (Operation 283). With the executor paused until after the first response, Caddy returned `401 pending` in 686.749 ms; the unmodified poll reached the app at 1,007.345 ms (Operation 285). Dropping the Valkey result after the listener recorded it did not stop Operation 287 from succeeding. A signed repeat returned its first result in 10.272 ms, with one journal completion. An admission left without publication recovered on the first sweep without a new visit; a second sweep did no work, and Operation 289 recorded the successful follow-up receipt.
+
+The case evidence is in `swamp/proof/node/converge.cases.yaml`. Raw timings, Operation records, journal matches and recovery receipts are under `.orbit-artifacts/5775/visitor-wake/` in the copy. The 108 signed Operations across the timed visits and four extra checks each match one Node journal completion. The shared runner did not run: it cannot yet prepare this clone and measure the visitor Route and poll. Both case files keep only that runner prerequisite.
 
 ## Checks
 

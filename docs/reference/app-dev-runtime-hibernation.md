@@ -109,6 +109,8 @@ Planned: a production live gets no progress page. The Gateway still answers at o
 
 The restore makes the app's first answer faster. The progress page keeps its 250 ms poll on both wake paths. The page polls the visitor's own path and query: control characters are dropped, and a path that starts with `//` or `/\` becomes `/`.
 
+On the swap-backed T3/Vite clone in the [50-visit proof](/reference/executor#slice-6-proof-case), the executor path served 21 visits in the original request; 29 saw the progress page first and then reached the app. The measurements include Caddy and the poll, not just the Gateway's 500 ms wait.
+
 The wake runs in this order:
 
 1. When the cold marker exists, restore dependencies with `composer install --no-interaction --prefer-dist` and `vp install --frozen-lockfile`. This uses the cold wake timeout.

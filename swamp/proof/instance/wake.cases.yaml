@@ -15,7 +15,7 @@ uncovered:
   # Crash injection delayed the first restore read by 1 s. One open/done/seen record; repeat=true.
   failed: "A wake that fails before the app answers keeps power_state; one whose T3 stays silent records running; Pest covers both projections."
 waits:
-  executor-wake-ready: "ADR 0266 slice 5 must provide the real Rust wake (Incus unfreeze, restored swap limits, marker removal and readiness), installed on a nested app-dev Node hosting a real clone with T3 and Vite (group 5513). The shared runner also needs clone sleep/HTTP first-byte measurement support; enable the Gateway setting only with that install and Valkey hz 100. Slice 7 is required before rollout beyond this isolated proof."
+  executor-visitor-runner: "The fleet-reset runner does not yet prepare a swap-backed T3/Vite clone and time the visitor Route and its poll. The live manual proof is recorded in node/converge.cases.yaml."
 cases:
   - id: invalid-id
     batch: fresh-fleet
@@ -32,14 +32,6 @@ cases:
     batch: fresh-fleet
     covers: [executor, executor-pending]
     summary: Measure 50 sleeping-clone visits to the app's first byte against 1.5 s warm and 2.4 s cold, with the original request served in place on an in-bound wake.
-    waits: executor-wake-ready
-    fails_today: The Rust wake action is slice 5; the shared runner cannot yet sleep a real clone and measure 50 Route visits. The Gateway contract is covered with fakes, not real-wake latency evidence.
-    # Required later proof: sleep a real T3/Vite clone before each of 50 visits;
-    # preserve method, URI, query and body and record the app's own status/body.
-    # Save all timings, p50/p95/max, one wake Operation per sleep and its durable
-    # done/partial reply; assert running, readiness and marker removal. Separately
-    # force an over-bound wake and assert 401 pending, then the poll loads the app.
-    # Empty steps deliberately keep the unsupported measurement uncovered;
-    # the later proof group adds shared runner support before removing waits.
+    waits: executor-visitor-runner
     act: []
     expect: []
