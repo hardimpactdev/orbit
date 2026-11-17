@@ -348,6 +348,12 @@ final readonly class InstanceContainer
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
             'branch' => $branch !== '' ? $branch : ValidatedData::string($project->default_branch), 'commit' => null,
             'workspace' => $workspace, 'environment_file' => self::environmentFile($instance),
+            // The workspace's group, and the uid whose entries root's workspace pass gives to `agent` (ADR 0268, second amendment): the
+            // stock `www-data` in a normal container; `work` and `orbit` in a nested-fleet one, whose inner fleet writes the checkout as them.
+            'workspace_ids' => $nestedFleet ? ['group' => InstanceHostIntent::WorkGid, 'writer' => InstanceHostIntent::OrbitUid]
+                : ['group' => InstanceHostIntent::AppGid, 'writer' => InstanceHostIntent::AppUid],
+            // Root's swap file of the app account, which each path writes when missing or different and runs first (InstanceImage::appAccount).
+            'app_account' => InstanceImage::appAccount(),
             // The deploy commands' whole environment: the home of `agent`, the workspace's owner who runs them (ADR 0268), the runtime
             // folder with the Project's PHP first, the Vite+ home and the egress proxy (docs/reference/development-containers.md#egress-and-dns),
             // and the Playwright browser folder.
@@ -929,6 +935,8 @@ final readonly class InstanceContainer
         $path = self::path($project);
         $php = InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin';
         $config = self::FrankenPhpConfig;
+        $user = InstanceHostIntent::AppUser;
+        $home = InstanceHostIntent::AppHome;
         $hotUrl = $devServerPort !== null && $instance->placementEnvironment() === 'development'
             ? "\nEnvironment=INERTIA_SSR_HOT_URL=http://127.0.0.1:{$devServerPort}" : '';
 
@@ -940,11 +948,11 @@ final readonly class InstanceContainer
 
             [Service]
             Type=simple
-            User=orbit
-            Group=orbit
+            User={$user}
+            Group={$user}
             UMask=0007
             WorkingDirectory={$application}
-            Environment=HOME=/home/orbit
+            Environment=HOME={$home}
             Environment=PATH={$path}{$hotUrl}
             ExecStart={$php}/frankenphp run --config {$config} --adapter caddyfile
             Restart=always

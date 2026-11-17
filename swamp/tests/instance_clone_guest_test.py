@@ -272,6 +272,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.exclude_users = []
         self.git_calls = []
         self.owner_calls = []
+        self.node_store_runs = []
 
     def git(self, cwd, *args):
         return subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", *args], cwd=cwd,
@@ -295,8 +296,10 @@ class WorkspaceCheckoutTest(unittest.TestCase):
 
     def phase(self, phase, container=None, private=None, commands=None, walk=False):
         container = container or {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
-                     "bundle": "/tmp/proof.bundle", "php": None, "php_cli_ini": None, "environment_file": "/srv/workspace/.env",
+                     "bundle": "/tmp/proof.bundle", "php": None, "php_cli_ini": None, "workspace_ids": {"group": 33, "writer": 33}, "environment_file": "/srv/workspace/.env",
                      "units": [], "processes": [], "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
+        # A normal container's workspace ids (InstanceContainer::intent): the stock `www-data`.
+        container = {"workspace_ids": {"group": 33, "writer": 33}, **container}
         if phase in {"workspace", "checkout"}:
             # The Node pushes the mirror's branch in as a bundle before each workspace phase.
             (self.base / "tmp").mkdir(exist_ok=True)
@@ -304,6 +307,9 @@ class WorkspaceCheckoutTest(unittest.TestCase):
 
         def command(argv, **_kwargs):
             actual = argv[4:] if argv[0] == "runuser" else argv
+            if "clone-fetch" in actual:
+                # The Node store step: who runs it, and with which home.
+                self.node_store_runs.append((argv[2] if argv[0] == "runuser" else "root", _kwargs.get("env", {}).get("HOME")))
             if actual[:4] == ["python3", "-I", "-c", OWNER_SOURCE]:
                 # Root's workspace pass: recorded with its arguments, and with `walk` run for real over the fixture's workspace. No
                 # fixture file has the uid it gives away, so the real pass changes modes only.
@@ -401,7 +407,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         exclude = self.workspace / ".git/info/exclude"
         exclude.unlink(missing_ok=True)
         container = {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
-                     "bundle": "/tmp/proof.bundle", "php": None, "php_cli_ini": None, "environment_file": "/srv/workspace/apps/web/.env",
+                     "bundle": "/tmp/proof.bundle", "php": None, "php_cli_ini": None, "workspace_ids": {"group": 33, "writer": 33}, "environment_file": "/srv/workspace/apps/web/.env",
                      "units": [], "processes": [], "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
         (self.workspace / "apps/web").mkdir(parents=True)
         self.phase("checkout", container)
@@ -438,7 +444,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
     def seed_branch(self, task=False):
         """A clone of a new branch at the seed's commit: the Node pushes no bundle, so the container names none."""
         container = self.task_copy() if task else {"instance_id": 9, "workspace": "/srv/workspace", "branch": "fix-login",
-                                                   "expected_commit": self.expected, "php": None, "php_cli_ini": None, "environment_file": "/srv/workspace/.env",
+                                                   "expected_commit": self.expected, "php": None, "php_cli_ini": None, "workspace_ids": {"group": 33, "writer": 33}, "environment_file": "/srv/workspace/.env",
                                                    "units": [], "processes": [], "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
         container.pop("bundle", None)
         container["branch"] = "fix-login"
@@ -466,7 +472,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
 
     def task_copy(self):
         return {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
-                "bundle": "/tmp/proof.bundle", "php": None, "php_cli_ini": None, "environment_file": "/srv/workspace/.env", "units": [], "processes": [],
+                "bundle": "/tmp/proof.bundle", "php": None, "php_cli_ini": None, "workspace_ids": {"group": 33, "writer": 33}, "environment_file": "/srv/workspace/.env", "units": [], "processes": [],
                 "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}, "clean_workspace": True}}
 
     def default_tree(self):
@@ -654,7 +660,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
     def full_container(self):
         return {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
                 "bundle": "/tmp/proof.bundle", "php": "/opt/runtime/php/8.5/bin/php",
-                "php_cli_ini": "extension=/opt/runtime/php/8.5/modules/pcov.so\n", "environment_file": "/srv/workspace/.env",
+                "php_cli_ini": "extension=/opt/runtime/php/8.5/modules/pcov.so\n", "workspace_ids": {"group": 33, "writer": 33}, "environment_file": "/srv/workspace/.env",
                 "web_config": {"path": "/etc/frankenphp/Caddyfile", "content": "site\n"},
                 "units": [{"name": "orbit-frankenphp.service", "content": "[Service]\n"}],
                 "processes": [{"name": "orbit-process-19.service", "id": 19, "content": "[Service]\n",
@@ -710,6 +716,14 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         second = self.phase("services", self.full_container(), self.full_private(), part_commands)
         second["changes"] = self.changed(second)
         self.assertEqual(self.state(), whole_state)
+        # The app account `www-data` runs the Node store step of the services part, with its own home (ADR 0268, second amendment).
+        self.assertEqual(self.node_store_runs, [("www-data", "/var/www")])
+        # Root's swap file from the boot files runs once, first: a copy of a seed taken before the rename names its `orbit` web before
+        # the Node store step runs as web.
+        swap = [n for n, call in enumerate(part_commands) if call == [GUEST.APP_USER_SWAP]]
+        store = [n for n, call in enumerate(part_commands) if "clone-fetch" in call]
+        self.assertEqual((len(swap), swap[:1]), (1, [0]))
+        self.assertLess(swap[0], store[0])
         # The same units start, the same Node store call runs, in the same order.
         self.assertEqual(self.named(part_commands), whole_commands)
         self.assertIn(["systemctl", "start", "orbit-process-19.service"], whole_commands)
@@ -755,7 +769,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, before)
         # Root's workspace pass ran, the program a deployment runs (ADR 0268), as root over the workspace, giving `orbit`'s entries
         # (uid 1000) to `agent` (uid 2750): it adds group bits and never an exec bit Git tracks.
-        self.assertEqual(self.owner_calls, [("python3", ["/srv/workspace", "1000", "2750"])])
+        self.assertEqual(self.owner_calls, [("python3", ["/srv/workspace", "33", "2750"])])
         self.assertEqual(script.stat().st_mode & 0o777, 0o775)
         self.assertEqual((self.workspace / "plain").stat().st_mode & 0o777, 0o664)
 
@@ -902,6 +916,7 @@ class CloneGuestTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             container = {
                 "name": "instance-8",
+                "workspace_ids": {"group": 33, "writer": 33},
                 "project": "fixture",
                 "instance_id": 8,
                 "mirror": folder,
@@ -1271,7 +1286,7 @@ class CloneGuestTest(unittest.TestCase):
                 "bundle": "/tmp/proof.bundle",
                 "php": None,
                 "php_cli_ini": None,
-                "environment_file": "/srv/workspace/.env",
+                "workspace_ids": {"group": 33, "writer": 33}, "environment_file": "/srv/workspace/.env",
                 "units": [],
                 "processes": [],
             }
@@ -1328,7 +1343,7 @@ class CloneGuestTest(unittest.TestCase):
                 "bundle": "/tmp/proof.bundle",
                 "php": None,
                 "php_cli_ini": None,
-                "environment_file": "/srv/workspace/.env",
+                "workspace_ids": {"group": 33, "writer": 33}, "environment_file": "/srv/workspace/.env",
                 "units": [],
                 "processes": [],
             }
@@ -1434,7 +1449,7 @@ class CloneGuestTest(unittest.TestCase):
                 "bundle": "/tmp/proof.bundle",
                 "php": "/opt/orbit-runtime/current/php/8.5/bin/php",
                 "php_cli_ini": "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n",
-                "environment_file": "/srv/workspace/.env",
+                "workspace_ids": {"group": 33, "writer": 33}, "environment_file": "/srv/workspace/.env",
                 "units": [unit],
                 "web_config": {"path": "/etc/orbit/frankenphp.Caddyfile", "content": ":8080 {\n    php_server\n}\n"},
                 "processes": [],

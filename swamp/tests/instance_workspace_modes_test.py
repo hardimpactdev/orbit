@@ -96,11 +96,13 @@ class WorkspaceModesTest(unittest.TestCase):
         return subprocess.run([sys.executable, '-I', '-c', INJECT + PROGRAM, str(self.workspace), str(from_uid), '2750'], check=False,
                               capture_output=True, text=True, env={**os.environ, 'VANISH': '', 'LOCKED': '', 'CHOWN_LOG': '', **environment})
 
-    def test_the_phase_runs_the_shipped_program_as_root_giving_orbit_entries_to_agent(self):
+    def test_the_phase_runs_the_shipped_program_as_root_giving_the_app_accounts_entries_to_agent(self):
         self.assertEqual(PASS['when'], "phase in ['checkout', 'processes', 'proof_checkout']")
+        # The intent names whose entries go to `agent` (InstanceContainer::intent `workspace_ids`): `www-data` (33) in a normal container,
+        # the inner fleet's `orbit` (1000) in a nested-fleet one.
         self.assertEqual(re.sub(r'\s+', ' ', PASS['ansible.builtin.command']['argv']),
                          "{{ as_root + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_workspace_owner.py'),"
-                         " container.workspace, '1000', '2750'] }}")
+                         " container.workspace, container.workspace_ids.writer | string, '2750'] }}")
 
     def test_entries_of_the_other_user_become_agents_and_a_link_is_changed_itself_never_its_target(self):
         # The test user stands for `orbit`: it owns every fixture entry. Outside the workspace, a file and a folder that links point at.
