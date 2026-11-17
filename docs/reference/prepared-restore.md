@@ -61,8 +61,8 @@ A field that is missing, unknown or out of range makes the helper refuse with `i
 | `schema_version` | all | `1` |
 | `command`, `instance_id`, `operation_id` | all | Echo of the call; `operation_id` is `null` for `discard` and `capabilities` |
 | `outcome` | all | One closed value per command; see the list below the table |
-| `error_code` | all | `null`, or `instance.container_freeze_failed` (`prepare`), `instance.container_start_failed` (`restore` could not resume) or `instance.power_helper_failed`. A missing container or another incarnation is `outcome: missing`, which the caller maps to its existing error |
-| `state_before`, `state_after` | `prepare`, `restore`, `residual` | `running`, `frozen`, `stopped` or `missing`, as Incus reported them |
+| `error_code` | all | `null`, or `instance.container_freeze_failed` (`prepare`), `instance.container_start_failed` (`restore` could not resume), `instance.container_frozen_unmanaged` (see [A freeze that Incus lost](#a-freeze-that-incus-lost)) or `instance.power_helper_failed`. A missing container or another incarnation is `outcome: missing`, which the caller maps to its existing error |
+| `state_before`, `state_after` | `prepare`, `restore`, `residual` | `running`, `frozen`, `stopped` or `missing`. Incus's word, except where the helper read the kernel: a container that the kernel holds frozen is `frozen`, whatever Incus says |
 | `swap_subtree` | `prepare`, `restore` | Inner cgroups that this sleep opened, or that this resume closed |
 | `prepared_restore` | `prepare`, `restore`, `residual` | The [result object](#results). `prepare` returns it without the residual fields when it froze the container, and with them when it found the container frozen; `residual` returns it with them |
 | `seconds` | `prepare`, `restore` | `{pause, capture, publish, reclaim}` or `{load, restore, resume, close}`, each in seconds; a step that did not run is absent |
@@ -203,6 +203,8 @@ These are global safety bounds, not settings per app. Hitting one abandons the h
 | Counter settle after the reclaim | 20 `residual` calls, 0.1 s apart (Ansible) |
 | Fast wake request age | 1 s |
 | `incus resume` in `restore` | 1 s |
+| The helper's own thaw of a container that the kernel holds frozen | 5 s |
+| Each `incus exec` of a wake from the Node | 10 s; 5 s for each T3 try; 30 s to write a nested fleet's Club key |
 | Fast worker's readiness request | 1.5 s |
 | Gateway observation of the fast wake | every 25 ms, at most 6 s |
 
@@ -218,9 +220,10 @@ The 2 s bound limits the work the helper submits and how long it waits. Linux ca
 2. Frozen: it changes nothing and keeps the plan for the next wake. It returns `already_frozen` with the earlier result from `sleep.json`.
 3. Frozen without `sleep.json`: it returns `already_frozen`, `skipped`, reason `no_plan`.
 4. Stopped: it discards a plan left from before and returns `stopped`, `not_applicable`.
-5. Running: it removes the earlier plan and `sleep.json`, writes `limits.json`, opens swap and pauses the container.
-6. It captures and publishes the plan.
-7. It writes `memory.reclaim` once; `EAGAIN` is normal. Then it writes `sleep.json` and returns `frozen`.
+5. Running, but frozen in the kernel ([a freeze that Incus lost](#a-freeze-that-incus-lost)): it changes nothing and fails `instance.container_frozen_unmanaged`. The marker stays.
+6. Running: it removes the earlier plan and `sleep.json`, writes `limits.json`, opens swap and pauses the container.
+7. It captures and publishes the plan.
+8. It writes `memory.reclaim` once; `EAGAIN` is normal. Then it writes `sleep.json` and returns `frozen`.
 
 Ansible then runs `residual` through the lock until anonymous and file memory are both 0, at most 20 times, 0.1 s apart. Each call reads the counters once and stores them in `sleep.json`, so the last call is the residual memory, and a repeated sleep of the frozen container returns the same values. Only the helper reads the counters; the wait is Ansible's.
 
@@ -237,6 +240,7 @@ A capture that is unsupported, too large or too slow leaves no plan. The sleep c
 | Frozen, valid plan | Restores the pages, still frozen; then rechecks the incarnation, unfreezes once and closes the recorded limits | `complete`, `partial` or `timed_out`; `skipped` when no page came back |
 | Frozen; plan missing (also after `discard --plan-only`), invalid, stale or unsupported | No memory syscall; unfreezes and closes the limits | `skipped` with a reason |
 | Running | No restore and no resume; closes any recorded limits | `not_applicable` |
+| Running, but the kernel holds it frozen | The helper thaws the cgroup itself within 5 s, then closes the limits ([a freeze that Incus lost](#a-freeze-that-incus-lost)) | `skipped`, `plan_stale` |
 | Stopped | Discards the plan and the limits record; the caller's existing start path and nested-fleet rule decide | `not_applicable` |
 | Missing, or a different incarnation | Touches nothing; the existing not-found or lifecycle error, except for a recreated container (below) | none |
 | Any other state, such as `error` or `freezing` | Touches nothing; `outcome: failed`, `instance.container_start_failed`, with the state it found | none |
@@ -282,6 +286,28 @@ The receipt counts each process's outcome (`complete`, `partial`, `skipped`, `fa
 **Readiness.** After `restore`, the caller checks readiness with the existing rule: an answer below 500 from the container's web port. The check is one request from the Node straight to the container's recorded address and web port, bounded to 1.5 s, not `incus exec` and `curl`. The fast worker reads the address and port from the target descriptor; the run reads them from its intent, as the play's `web_probe`.
 
 A container without a web unit gets no HTTP check. The fast worker sends one bounded request. The run keeps its retries and its stop-and-boot fallback, which a nested-fleet Instance never takes. Only after the check passes does the caller remove the asleep marker. `ready_at` is that moment.
+
+### A freeze that Incus lost
+
+Incus reads a container's state only from its liblxc monitor. On 17 November 2026 the monitor of Instance 2454 said running while the kernel still held the container's cgroup frozen (`cgroup.freeze` 1). The wake then skipped the resume, and its first `incus exec` hung until the run's 240 s bound ended it with exit code 124. So the helper and the run also read the kernel's own state:
+
+- Before any exec, the `start` of a wake or a deployment reads `cgroup.freeze` and `cgroup.events` of a container that Incus calls `Running`.
+- A frozen one goes to the helper's `restore`, as a `Frozen` one does.
+- `restore` writes 0 to `cgroup.freeze` and waits for `frozen 0` in `cgroup.events`, at most 5 s. It makes no memory syscall and no Incus call: Incus refuses to unfreeze a container that it thinks runs.
+- The result then has `kernel_frozen: true`, and the plan counts as stale.
+- After its own `incus resume`, `restore` checks the kernel too. liblxc marks the container running before it writes the thaw.
+
+A thaw can fail to come. The helper then fails clearly and keeps what the next wake needs:
+
+- A thaw that does not come within 5 s fails `instance.container_frozen_unmanaged`, with `state_after: frozen`.
+- A thaw without an Incus call that fails keeps the plan, `sleep.json` and `limits.json` for the next wake.
+- After its own resume, the helper has already removed the plan. A failed thaw then keeps only `sleep.json` and `limits.json`.
+- `prepare` never freezes such a container again: it fails `instance.container_frozen_unmanaged`.
+- Every `incus exec` that a wake runs has a bound from the Node, so a container that does not answer ends that step, not the run.
+
+The read of the boot units, the library-cache check and the CA check have 10 s each. Each read of a running unit and each T3 try have 5 s. A nested fleet's Club key read has 10 s, and its write has 30 s. Every other exec as root in the `start` phase, on each path of a wake (the resume, a container already running, the boot of a `Stopped` one, the stop and boot after a silent resume), has 60 s: twice the slowest of them. That includes the hosts-file read of the private names and the restart after changed PHP settings.
+
+A copy of a sleeping default needs no wake: the clone reads only the default's snapshot list and copies one seed snapshot. It never reads the live container's state, execs into it or changes it.
 
 ## The fast wake
 
@@ -386,12 +412,14 @@ These gates measure the Python engine. If one misses and the helper's own time c
 
 ## Errors
 
-The helper adds two error codes to the sleep and the wake.
+The helper adds three error codes to the sleep and the wake, and the wake one more of its own.
 
 | Code | Meaning |
 | --- | --- |
 | `instance.power_helper_busy` | Another helper call of this Instance stayed active past the run's wait, for example a restore stuck in disk I/O. Nothing changed; the asleep marker stays. |
 | `instance.power_helper_failed` | The helper refused its input or crashed. The asleep marker stays; the run's output has the helper's error. |
+| `instance.container_frozen_unmanaged` | The kernel holds the container frozen while Incus calls it running, and the thaw did not end within 5 s. The marker stays. See [a freeze that Incus lost](#a-freeze-that-incus-lost). |
+| `instance.container_exec_timeout` | A nested fleet's start could not read the container's `/run` within 10 s. |
 
 ## Why it works this way
 

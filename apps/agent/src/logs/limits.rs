@@ -89,10 +89,12 @@ pub type AgentBucket = Arc<Mutex<TokenBucket>>;
 pub fn agent_bucket() -> AgentBucket {
     Arc::new(Mutex::new(TokenBucket::new(AGENT_BURST, AGENT_RATE)))
 }
+/// A poisoned lock is fatal: the holder panics, `crate::supervise` ends the observer with exit code 1, and
+/// systemd restarts it. Holders only do arithmetic and queue updates, so no panic happens while one is held.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .expect("a stream queue or token bucket lock is never held across a panic: holders only do arithmetic and queue updates")
 }
 
 #[derive(Debug)]
@@ -164,17 +166,22 @@ impl StreamQueue {
     }
 
     /// Whether a line of about `size` bytes would pass the rates and the queue bound now.
+    /// It takes the queue lock and the agent bucket lock one after the other, never both at once.
     pub fn would_accept(&self, size: usize) -> bool {
         let now = Instant::now();
-        let mut state = lock(&self.state);
         let size = size.max(1);
-        if state.bytes + size > QUEUE_BYTES || state.bucket.available(now) < size as f64 {
-            return false;
-        }
-        lock(&self.agent).available(now) >= size as f64
+        let fits = {
+            let mut state = lock(&self.state);
+            state.bytes + size <= QUEUE_BYTES && state.bucket.available(now) >= size as f64
+        };
+        fits && lock(&self.agent).available(now) >= size as f64
     }
 
     /// Queues one line when both rates and the queue bound allow it; otherwise counts it as dropped.
+    ///
+    /// It takes the agent bucket lock inside the queue lock, so the check and the take of both buckets are one
+    /// step. That follows the one lock order of the log locks: [`super::controller::LogHub`]'s registry, then a
+    /// queue, then the agent bucket. No code takes them in another order.
     pub fn push(&self, line: String) -> bool {
         let now = Instant::now();
         let size = cost(&line);
@@ -549,5 +556,34 @@ mod tests {
         let later = queue.flush("c", now + BATCH_INTERVAL * 2).unwrap();
         assert_eq!(later.frames.len(), 1);
         assert!(later.frames[0].data.get("first_done").is_none());
+    }
+
+    fn poison<T: Send + 'static>(mutex: Arc<Mutex<T>>) {
+        let _ = std::thread::spawn(move || {
+            let _guard = mutex.lock();
+            panic!("poison the lock");
+        })
+        .join();
+    }
+
+    #[test]
+    #[should_panic(expected = "a stream queue or token bucket lock is never held across a panic")]
+    fn a_poisoned_queue_lock_is_fatal() {
+        let queue = Arc::new(StreamQueue::new("1".into(), agent_bucket()));
+        let holder = Arc::clone(&queue);
+        let _ = std::thread::spawn(move || {
+            let _guard = holder.state.lock();
+            panic!("poison the queue lock");
+        })
+        .join();
+        queue.push("a line".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "a stream queue or token bucket lock is never held across a panic")]
+    fn a_poisoned_token_bucket_lock_is_fatal() {
+        let agent = agent_bucket();
+        poison(Arc::clone(&agent));
+        StreamQueue::new("1".into(), agent).push("a line".into());
     }
 }

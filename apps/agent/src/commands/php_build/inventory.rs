@@ -1,4 +1,6 @@
 use super::*;
+use regex::Regex;
+use std::sync::LazyLock;
 
 pub fn installed(host: &mut impl RecipeHost) -> Result<Installed> {
     let result = invoke(
@@ -64,10 +66,10 @@ pub fn selected(input: &Input, architecture: &str) -> Result<Builds> {
     Ok(versions)
 }
 pub fn sources(files: &Files) -> Result<Vec<PathBuf>> {
-    let pattern = regex::Regex::new(
-        r"(?i)ppa\.launchpadcontent\.net/ondrej/php|packages\.sury\.org/php|ondrej/php",
-    )
-    .unwrap();
+    static PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)ppa\.launchpadcontent\.net/ondrej/php|packages\.sury\.org/php|ondrej/php")
+            .expect("literal pattern")
+    });
     let mut found = vec![];
     let mut candidates = vec![files.path("/etc/apt/sources.list")];
     candidates.extend(paths(&files.path("/etc/apt/sources.list.d"))?);
@@ -81,7 +83,7 @@ pub fn sources(files: &Files) -> Result<Vec<PathBuf>> {
         {
             continue;
         }
-        if pattern.is_match(&String::from_utf8_lossy(
+        if PATTERN.is_match(&String::from_utf8_lossy(
             &fs::read(&path).map_err(Failure::io)?,
         )) {
             found.push(path);
@@ -161,7 +163,9 @@ pub fn unowned(
     version: &str,
     extensions: &BTreeSet<String>,
 ) -> Result<Vec<Unowned>> {
-    let pattern = regex::Regex::new(r#"(?m)^\s*(?:zend_)?extension\s*=\s*"?([^"\s;]+)"#).unwrap();
+    static PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?m)^\s*(?:zend_)?extension\s*=\s*"?([^"\s;]+)"#).expect("literal pattern")
+    });
     let mut loading = BTreeMap::new();
     let mut all = vec![];
     for ini in paths(&files.path(&format!("/etc/php/{version}/mods-available")))? {
@@ -170,7 +174,7 @@ pub fn unowned(
         }
         let content = fs::read(&ini).map_err(Failure::io)?;
         let mut libraries = vec![];
-        for entry in pattern.captures_iter(&String::from_utf8_lossy(&content)) {
+        for entry in PATTERN.captures_iter(&String::from_utf8_lossy(&content)) {
             let library = PathBuf::from(&entry[1]);
             let stem = library
                 .file_stem()

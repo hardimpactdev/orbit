@@ -1,3 +1,5 @@
+// No unwrap() outside tests (ADR 0267 P9): an expect() states why the value is always there.
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 pub use orbit_agent_contract::command_errors;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -431,6 +433,37 @@ pub fn next_attempt(attempt: u32, joined_for: Option<std::time::Duration>) -> u3
 /// The systemd unit the Gateway installs. The agent runs only inside it.
 pub const SERVICE_UNIT: &str = "orbit-agent.service";
 
+/// Waits until one of the observer's tasks panics, and returns the panic as an error.
+///
+/// Tokio catches a panic inside a spawned task, so without this a poisoned lock would end only the task that
+/// found it. The observer races this against its session, so a panic ends the run with an error; the
+/// process then exits 1 and systemd restarts it. A task that ends without a panic stays ended, as before.
+pub async fn supervise(
+    tasks: &mut tokio::task::JoinSet<()>,
+) -> Box<dyn std::error::Error + Send + Sync> {
+    loop {
+        match tasks.join_next().await {
+            Some(Err(error)) if error.is_panic() => {
+                return format!(
+                    "an observer task panicked: {}",
+                    panic_text(&*error.into_panic())
+                )
+                .into();
+            }
+            Some(_) => {}
+            None => std::future::pending().await,
+        }
+    }
+}
+
+pub(crate) fn panic_text(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("no message")
+}
+
 /// Whether `/proc/self/cgroup` places this process in the managed `orbit-agent.service` unit.
 ///
 /// A copy started by hand, for example a test build run in a shell on a fleet Node, would join
@@ -548,6 +581,45 @@ impl Liveness {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_poisoned_workspace_lock_ends_the_observer_run() {
+        let shared = workspace::SharedWorkspaces::default();
+        let holder = std::sync::Arc::clone(&shared);
+        let _ = std::thread::spawn(move || {
+            let _guard = holder.lock();
+            panic!("poison the workspace lock");
+        })
+        .join();
+        let mut supervised = tokio::task::JoinSet::new();
+        supervised.spawn(async move {
+            let _guard = workspace::lock_workspaces(&shared);
+        });
+        supervised.spawn(std::future::pending());
+        let error = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            supervise(&mut supervised),
+        )
+        .await
+        .expect("the panic ends the run");
+        assert!(
+            error
+                .to_string()
+                .contains("the workspace lock is never held across a panic"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_task_that_ends_without_a_panic_does_not_end_the_observer_run() {
+        let mut supervised = tokio::task::JoinSet::new();
+        supervised.spawn(async {});
+        let supervision = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            supervise(&mut supervised),
+        );
+        assert!(supervision.await.is_err());
+    }
 
     #[test]
     fn fixture_executable_replaces_an_inode_with_an_open_write_descriptor() {

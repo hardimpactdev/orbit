@@ -68,7 +68,7 @@ enum_glob_use = "allow"                  # use Enum::* inside a function that ma
 name = "orbit-agent"
 version = "0.15.0"
 edition = "2021"
-rust-version = "1.81"
+rust-version = "1.89"
 
 [lib]
 name = "orbit_agent"
@@ -100,7 +100,7 @@ libc = "0.2"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 sha2 = "0.10"
 time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
-tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "time", "sync", "test-util"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "time", "sync", "test-util"] }
 tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "handshake", "rustls-tls-native-roots"] }
 toml = "0.8"
 zbus = { version = "5", features = ["tokio"] }

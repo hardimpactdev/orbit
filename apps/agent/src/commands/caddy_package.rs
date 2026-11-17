@@ -137,6 +137,15 @@ fn install(
     files: &Files,
     host: &mut impl Host,
 ) -> Result<Package, PackageError> {
+    install_in(input, files, host, &std::env::temp_dir())
+}
+/// Installs with its work directory under `temporary`, which comes from `TMPDIR` and may not be UTF-8.
+fn install_in(
+    input: &PackageInput,
+    files: &Files,
+    host: &mut impl Host,
+    temporary: &std::path::Path,
+) -> Result<Package, PackageError> {
     validate(input)?;
     preflight(files)?;
     let mut current = installed(host)?;
@@ -144,7 +153,7 @@ fn install(
         Some(v) => !at_least(host, v, &input.minimum_version)?,
         None => true,
     };
-    let work = WorkDir::new().map_err(|e| failed(e.reason))?;
+    let work = WorkDir::within(temporary).map_err(|e| failed(e.reason))?;
     let package = if needs_package {
         let architecture = run(host, &["dpkg", "--print-architecture"])?;
         let architecture = architecture.trim();
@@ -155,7 +164,12 @@ fn install(
         }
         let expected = &input.amd64_sha512;
         let name = format!("caddy_{}_linux_{architecture}.deb", input.release);
-        let path = work.0.join(&name);
+        let path = work
+            .0
+            .join(&name)
+            .into_os_string()
+            .into_string()
+            .map_err(|_| failed("The temporary directory is not a UTF-8 path."))?;
         let url = format!(
             "https://github.com/caddyserver/caddy/releases/download/v{}/{name}",
             input.release
@@ -176,7 +190,7 @@ fn install(
                 "--max-filesize",
                 "536870912",
                 "--output",
-                path.to_str().unwrap(),
+                &path,
                 &url,
             ],
         )?;
@@ -187,7 +201,7 @@ fn install(
             filename: None,
             version: None,
         };
-        super::recipe::artifacts::verify(&path, &artifact).map_err(|_| {
+        super::recipe::artifacts::verify(std::path::Path::new(&path), &artifact).map_err(|_| {
             failed(format!(
                 "The Caddy {} package does not match the Orbit pin.",
                 input.release
@@ -235,7 +249,7 @@ fn install(
                 "--no-install-recommends",
                 "--no-remove",
                 "--",
-                path.to_str().unwrap(),
+                &path,
             ])
             .env("DEBIAN_FRONTEND", "noninteractive"),
             true,

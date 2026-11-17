@@ -3,9 +3,10 @@ use super::{
     Project,
 };
 use crate::command::{Command, Context, Platform, Privilege};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{net::Ipv4Addr, time::Duration};
+use std::{net::Ipv4Addr, sync::LazyLock, time::Duration};
 
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -170,11 +171,21 @@ fn observe(host: &mut impl Host, input: &Location) -> Result<Option<Observation>
         image_fingerprint: fingerprint,
     }))
 }
-fn pattern(value: &str, expression: &str) -> bool {
-    regex::Regex::new(expression).unwrap().is_match(value)
-}
+static POOL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\A[A-Za-z0-9][A-Za-z0-9_.-]{0,62}\z").expect("literal pattern"));
+static IMAGE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\A[A-Za-z0-9][A-Za-z0-9._/-]{0,253}\z").expect("literal pattern")
+});
+static SIZE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\A[1-9][0-9]{0,5}(?:MiB|GiB)\z").expect("literal pattern"));
+static PUBLIC_KEY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\A(?:ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/]+={0,3}(?: [!-~][ -~]*)?\z",
+    )
+    .expect("literal pattern")
+});
 fn pool(value: &str) -> bool {
-    pattern(value, r"\A[A-Za-z0-9][A-Za-z0-9_.-]{0,62}\z")
+    POOL.is_match(value)
 }
 fn validate(input: &Input) -> Result<(), Error> {
     subnet(&input.vm)?;
@@ -192,7 +203,7 @@ fn validate(input: &Input) -> Result<(), Error> {
             ..
         } => {
             validate_launch(image, gateway_public_key, *cpus, memory, disk, network)?;
-            if !pattern(base_alias, r"\A[A-Za-z0-9][A-Za-z0-9._/-]{0,253}\z")
+            if !IMAGE.is_match(base_alias)
                 || !pool(storage)
                 || expected_fingerprint
                     .as_ref()
@@ -225,16 +236,13 @@ fn validate_launch(
     disk: &str,
     network: &str,
 ) -> Result<(), Error> {
-    let size = |s: &str| pattern(s, r"\A[1-9][0-9]{0,5}(?:MiB|GiB)\z");
-    if !pattern(image, r"\A[A-Za-z0-9][A-Za-z0-9._/-]{0,253}\z")
+    let size = |s: &str| SIZE.is_match(s);
+    if !IMAGE.is_match(image)
         || !(1..=64).contains(&cpus)
         || !size(memory)
         || !size(disk)
         || !valid_name(network)
-        || !pattern(
-            key,
-            r"\A(?:ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/]+={0,3}(?: [!-~][ -~]*)?\z",
-        )
+        || !PUBLIC_KEY.is_match(key)
     {
         return Err(Error::Invalid {});
     }
@@ -247,7 +255,7 @@ fn cloud_init(key: &str, builder: bool) -> Value {
         user["no_user_group"] = json!(false);
     }
     let cloud = json!({"users":[user]});
-    json!({"config":{"cloud-init.user-data":format!("#cloud-config\n{}\n", serde_json::to_string_pretty(&cloud).unwrap())},"devices":{"cloud-init":{"type":"disk","source":"cloud-init:config"}}})
+    json!({"config":{"cloud-init.user-data":format!("#cloud-config\n{}\n", serde_json::to_string_pretty(&cloud).expect("a JSON value always serializes"))},"devices":{"cloud-init":{"type":"disk","source":"cloud-init:config"}}})
 }
 struct Launch<'a> {
     image: &'a str,

@@ -2,11 +2,9 @@
 title: "Executor"
 description: "How orbit-executor checks callers and signed orders, keeps its journal, serves the relay command, how the Gateway hands its results to a waiting request, and how the role converge installs it."
 covers:
-  - apps/agent/crates/executor-core/**
-  - apps/agent/crates/executor/**
-  - apps/agent/clippy.toml
-  - apps/gateway/app/Domain/Nodes/NodeExecutorInput.php
-  - apps/gateway/app/Infrastructure/Executor/**
+  - apps/agent/{crates/executor-core/**,crates/executor/**,clippy.toml,contract/fixtures/executor-order.json}
+  - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**}
+  - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
 ---
 
@@ -14,7 +12,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Slices 1 and 3 are built.** The executor, its install and its one action, the no-op `proof.noop`, exist, and so does the Gateway's [result listener](#the-listener-and-the-hand-off). The Gateway signer and the observer's pass-through arrive in slice 2, so today only the relay command reaches the executor, and no result reaches the listener yet. Sleep, wake and the create's Node part arrive in later slices.
+> **Slices 1 to 3 are built.** The executor, its install and its one action, the no-op `proof.noop`, exist. So do the Gateway signer and publisher, the observer's pass-through and the Gateway's [result listener](#the-listener-and-the-hand-off). An order goes out over the WebSocket, and its result comes back to its Operation. No Gateway command sends an order yet. Sleep, wake and the create's Node part arrive in later slices.
 
 ## Where it runs
 
@@ -43,8 +41,17 @@ Nothing uses the executor yet, so a converge skips its install until the Gateway
 Roll out in this order:
 
 1. Publish a release whose agent delivery carries `orbit-executor-linux-x86_64`, and move the Gateway's agent pin to it. The release check accepts the executor beside the agents and checks its digest like theirs.
-2. Set `ORBIT_EXECUTOR_PUBLIC_KEYS` on the Gateway.
+2. Set the Gateway's key pair: `ORBIT_EXECUTOR_SIGNING_KEY` and `ORBIT_EXECUTOR_PUBLIC_KEYS` (below).
 3. Converge each `app-dev` Node.
+
+The Gateway holds two settings in `config/orbit.php` under `orbit.executor`:
+
+| Setting | Environment | Content |
+| --- | --- | --- |
+| `public_keys` | `ORBIT_EXECUTOR_PUBLIC_KEYS` | One or two base64 Ed25519 public keys, comma-separated. Each executor Node pins them |
+| `signing_key` | `ORBIT_EXECUTOR_SIGNING_KEY` | The base64 64-byte libsodium secret key that signs every order. Its public half must be one of `public_keys` |
+
+The signing key lives in the Gateway's own environment, readable by `orbit` and by no one else ([ADR 0266: Key custody](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#the-order)). Never print, log or commit it. Make a pair with libsodium's `sodium_crypto_sign_keypair()` as `orbit`, and write both halves, base64, straight into the Gateway's environment file, so neither reaches a terminal or a log. For a rotation, pin the new public key beside the old one, converge every executor Node, then switch the signing key and drop the old public key.
 
 From then on the install is required, and a wrong pin fails the converge:
 
@@ -77,9 +84,42 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 6. The nonce has never been seen, across restarts too (`replayed_nonce`). The refusal carries the first order's result once it exists.
 7. The Operation: a done record with the same Operation, action and target returns the first result, marked `"repeat": true`, and does not act.
 
+The log line of a `replayed_nonce` refusal ends in `first=<status>`, the status of the first result it carried, or `first=none` before that result exists.
+
 A refusal line holds `"status":"refused"`, the `reason` and the Node's clock as `node_clock_ms`.
 
 Orders for one target run one at a time under that target's lock; different targets run in parallel. The nonce and done maps are held only for one lookup or insert, with no I/O under them.
+
+## The Gateway signer and the event
+
+`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds exactly the six fields above, in that order, as compact JSON. The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. It also refuses an action outside the allowlist (today only `proof.noop`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+
+`App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
+
+```json
+{ "operation": "<the Operation id, a numeric string>", "order": "<base64(payload).base64(signature)>" }
+```
+
+The observer copies `operation` unread into every reply line, so a reply that carries no Operation (the `accepted` line, or a refusal before the payload is read) still finds its Operation. The [listener](#the-listener-and-the-hand-off) records a result only when that Operation's `node_id` is the Node that sent it. During a `websocket` move the event also goes to the old Node's Reverb, because an agent that connected before DNS moved still listens there. The agent holds one connection, so at most one copy reaches the executor. A failure on the serving Reverb throws, so the caller can take the fallback of slice 7 at once.
+
+## The observer pass-through
+
+The observer (`orbit-agent.service`) handles `executor-order` only on its own `presence-node.{id}`. It reads the event's `operation` and `order` and nothing inside either: it does not parse, verify or sign it. Then it:
+
+1. drops an order over 4 KB, an event without an `operation` of 1 to 64 bytes and an `order`, and an order past 64 in flight, and logs why;
+2. connects to `/run/orbit-executor.sock`, writes the order's bytes unchanged and closes its write side;
+3. reads the reply for at most 10 s and 64 KB;
+4. sends each complete line as the client event `client-executor-result` on the same channel.
+
+The data of `client-executor-result` is exactly:
+
+```json
+{ "operation": "<the event's operation, copied unread>", "line": "<the reply line, unchanged, without the newline>" }
+```
+
+A line that does not fit one Pusher client frame (9,900 bytes) is dropped and logged; the session goes on. Lines sent before a bound passes stay sent. A missing socket sends nothing, and the Gateway's fallback covers it. Orders that arrive while the observer reconnects are lost; replies that finish then go out on the next session.
+
+Each order runs in its own task outside the observer's supervised tasks, because it holds no shared lock: a panic there loses that one order, and the observer goes on. The executor admits the observer by its cgroup, so the order needs no other proof of where it came from: the signature is the boundary.
 
 ## Journal and recovery
 
@@ -97,13 +137,7 @@ At start-up the executor reads the journal, keeps the same live records and rewr
 
 ## The listener and the hand-off
 
-The observer sends each reply line back as the client event `client-executor-result` on `presence-node.{id}` ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), "The path", steps 4 and 5). The event's data is:
-
-```json
-{"operation": "42", "line": "{\"status\":\"accepted\"}"}
-```
-
-The data holds exactly these two keys. `line` is the reply line, unchanged, at most 64 KB. `operation` is the Operation id as a numeric string. The Gateway puts it beside the order in the `executor-order` event, `{"operation": "42", "order": "<wire>"}`. The observer copies it without reading the order. It is needed because the `accepted` line and the refusals of the first five order checks do not name the Operation.
+The observer sends each reply line back as the client event `client-executor-result` on `presence-node.{id}` ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), "The path", steps 4 and 5). Its data holds exactly `operation` and `line`, as [the pass-through](#the-observer-pass-through) sends them: the Operation id that the [publisher](#the-gateway-signer-and-the-event) put beside the order, and the reply line, unchanged, at most 64 KB. The `accepted` line and the refusals of the first five order checks do not name the Operation, so `operation` is how their reply finds it.
 
 The [agent view subscriber](/reference/node-agent#gateway-view) is the listener. No other service and no second connection per Node takes part. For each event it:
 
@@ -150,6 +184,21 @@ cargo test --locked -p orbit-executor-core -p orbit-executor
 
 The unit tests cover every order check and refusal, the caller policy, the journal and its compaction, the replay across a restart and the recovery of an open order. `crates/executor/tests/socket.rs` runs the core's relay entry point against a real socket; the shipped binary takes only `relay`, with the fixed socket.
 
+The Gateway and the executor share one fixture, `apps/agent/contract/fixtures/executor-order.json`. A throwaway key signed it and was discarded, so it holds only the public key and the signed order. `crates/executor-core/tests/gateway_order.rs` verifies it with `order::check`, and the Pest test `tests/Feature/Domain/Executor/ExecutorOrderSignerTest.php` checks that the signer builds the same payload bytes. Pest tests also cover expiry, nonce uniqueness, the size cap and the publisher (`tests/Feature/Domain/Executor`). The observer's tests in `apps/agent/src/realtime.rs` run the pass-through against a fake socket: bytes unchanged, the 4 KB cap, 64 in flight, the 10 s and 64 KB reply bounds and a missing socket.
+
 ## Proof key
 
-The Swamp proof of `node:converge` (`swamp/proof/node/converge.cases.yaml`) sends a signed `proof.noop` through the relay on the nested `app-dev` Node. Its runner step `executor_key` runs `tools/swamp-proof-guest/executor-order.php` on the nested Gateway as its managed user. It makes one Ed25519 key that only the proof uses: the secret half stays in that Gateway's own `storage/app/private/executor-proof.key`, mode `0600`, and the public half goes into that Gateway's own `.env` as `ORBIT_EXECUTOR_PUBLIC_KEYS`. The step then clears the Gateway's config and restarts Horizon. `executor_order` signs each order with the same script. No key is committed, and the secret half never leaves the nested Gateway.
+The Swamp proof of `node:converge` (`swamp/proof/node/converge.cases.yaml`) sends a signed `proof.noop` through the relay on the nested `app-dev` Node. Its runner step `executor_key` runs `tools/swamp-proof-guest/executor-order.php` on the nested Gateway as its managed user. It makes one Ed25519 key that only the proof uses: the secret half stays in that Gateway's own `storage/app/private/executor-proof.key`, mode `0600`, and becomes that Gateway's `ORBIT_EXECUTOR_SIGNING_KEY`; the public half goes into that Gateway's own `.env` as `ORBIT_EXECUTOR_PUBLIC_KEYS`. The step then clears the Gateway's config and restarts Horizon.
+
+`executor_order` signs each order with the same script and hands it to the relay. `executor_publish` sends orders over the WebSocket through the Gateway's own signer and publisher, so they reach the executor only through the observer. The proof records no Operation: each order gets an in-memory Operation with an unused numeric id in a high range and the Node as its `node_id`. It reads the result from the executor's journal and its refusal from the executor's log. The listener drops these results and logs them, because no Operation holds their ids.
+
+### Orders over the WebSocket
+
+The step `executor_publish` has two options for the order security tests:
+
+- `tamper` makes the order of each order security test: `bad_signature`, `changed_action`, `changed_target`, `expired`, `unknown_action` and `wrong_node`.
+- `replay` publishes each order twice, the exact same wire for the same Operation, before the step's one wait.
+
+The copy therefore arrives inside the first one's 5 s expiry. The case expects the copy refused with `replayed_nonce` and the action run exactly once for that Operation. The two copies race through the observer, so the refusal may carry the first result (`first=done`) or not yet (`first=none`); both are correct. The executor's unit tests prove that a replay after the original completed carries the stored first result.
+
+The cases `executor-order-security` and `executor-websocket-burst` (50 orders, with the latency from the Gateway's publish to the executor's result saved as evidence) use it. No key is committed, and the secret half never leaves the nested Gateway.

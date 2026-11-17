@@ -373,16 +373,24 @@ mod tests {
     #[test]
     fn a_replayed_nonce_refuses_with_the_first_result() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let (executor, _) =
-            Executor::start(&dir.path().join("j"), Counting::default(), || NOW, |_| {})
-                .expect("start");
+        let runs = Arc::new(AtomicUsize::new(0));
+        let (executor, _) = Executor::start(
+            &dir.path().join("j"),
+            Counting(Arc::clone(&runs)),
+            || NOW,
+            |_| {},
+        )
+        .expect("start");
         executor.handle(&order(N1, "op-1"), NOW).expect("runs");
+        // A replay after the original completed carries the stored first result; the action does not run again.
         let Err(StateRefusal::ReplayedNonce { first: Some(first) }) =
             executor.handle(&order(N1, "op-1"), NOW)
         else {
             panic!("replay must refuse with the first result");
         };
         assert_eq!(first.operation.as_str(), "op-1");
+        assert_eq!(first.outcome, Outcome::Done);
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
     }
 
     #[test]

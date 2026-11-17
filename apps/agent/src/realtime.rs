@@ -239,3 +239,381 @@ pub async fn join(
         .await
         .map_err(|_| "joining the Reverb channel timed out")?
 }
+
+// The executor pass-through (ADR 0266 D6, docs/reference/executor.md#the-observer-pass-through). The observer reads only the
+// Pusher envelope of `executor-order`: the Operation id the Gateway sets, which it copies unread, and the order's wire form. It
+// never parses, verifies or signs the order. It writes the bytes unchanged to the executor's socket and sends each reply line
+// back as `client-executor-result`, with the same Operation id, on the same channel.
+
+/// The executor's socket on a Node.
+pub const EXECUTOR_SOCKET: &str = "/run/orbit-executor.sock";
+/// The server event that carries a signed order.
+pub const EXECUTOR_ORDER_EVENT: &str = "executor-order";
+/// The client event that carries one reply line of the executor.
+pub const EXECUTOR_RESULT_EVENT: &str = "client-executor-result";
+/// The largest order the observer forwards, in bytes.
+pub const MAX_EXECUTOR_ORDER_BYTES: usize = 4096;
+/// The longest Operation id the observer copies back, in bytes.
+pub const MAX_EXECUTOR_OPERATION_BYTES: usize = 64;
+/// How many orders may wait for their reply at once.
+pub const MAX_EXECUTOR_IN_FLIGHT: usize = 64;
+/// How long the observer reads one order's reply.
+pub const EXECUTOR_REPLY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// The most reply bytes the observer reads for one order.
+pub const MAX_EXECUTOR_REPLY_BYTES: u64 = 64 * 1024;
+
+/// One `executor-order` as it arrived: the Operation id and the order's wire form, both unread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutorOrder {
+    pub operation: String,
+    pub wire: String,
+}
+
+impl ExecutorOrder {
+    /// Reads the event's envelope. Pusher sends a server event's data as a JSON string; an object is accepted too.
+    pub fn from_event(value: &Value) -> Option<Self> {
+        let data = match &value["data"] {
+            Value::String(text) => serde_json::from_str::<Value>(text).ok()?,
+            data => data.clone(),
+        };
+        let operation = data["operation"].as_str()?;
+        if operation.is_empty() || operation.len() > MAX_EXECUTOR_OPERATION_BYTES {
+            return None;
+        }
+        Some(Self {
+            operation: operation.to_owned(),
+            wire: data["order"].as_str()?.to_owned(),
+        })
+    }
+}
+
+/// One reply line of the executor, unread and without its newline, with the Operation id of its order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutorReply {
+    pub operation: String,
+    pub line: String,
+}
+
+impl ExecutorReply {
+    /// The `client-executor-result` frame for this line, or `None` when it does not fit one Pusher frame.
+    pub fn frame(&self, channel: &str) -> Option<crate::ClientFrame> {
+        let frame = crate::frame(
+            channel,
+            EXECUTOR_RESULT_EVENT,
+            json!({"operation": self.operation, "line": self.line}),
+        );
+        let size = serde_json::to_vec(&frame).ok()?.len();
+        (size <= crate::PUSHER_FRAME_LIMIT).then_some(frame)
+    }
+}
+
+/// What became of an order the observer received.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dispatch {
+    Forwarded,
+    TooLarge,
+    Busy,
+}
+
+/// Forwards orders to the executor's socket and hands each reply line to the session that is joined when it arrives.
+#[derive(Debug, Clone)]
+pub struct ExecutorRelay {
+    socket: std::path::PathBuf,
+    in_flight: std::sync::Arc<tokio::sync::Semaphore>,
+    replies: tokio::sync::mpsc::UnboundedSender<ExecutorReply>,
+}
+
+impl ExecutorRelay {
+    pub fn new(
+        socket: impl Into<std::path::PathBuf>,
+    ) -> (Self, tokio::sync::mpsc::UnboundedReceiver<ExecutorReply>) {
+        let (replies, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let relay = Self {
+            socket: socket.into(),
+            in_flight: std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_EXECUTOR_IN_FLIGHT)),
+            replies,
+        };
+        (relay, receiver)
+    }
+
+    /// How many orders wait for their reply now.
+    pub fn in_flight(&self) -> usize {
+        MAX_EXECUTOR_IN_FLIGHT - self.in_flight.available_permits()
+    }
+
+    /// Starts forwarding one order. An order over 4 KB, or one past the 64 in flight, is dropped: the Gateway's fallback
+    /// covers it.
+    pub fn dispatch(&self, order: ExecutorOrder) -> Dispatch {
+        if order.wire.len() > MAX_EXECUTOR_ORDER_BYTES {
+            return Dispatch::TooLarge;
+        }
+        let Ok(permit) = std::sync::Arc::clone(&self.in_flight).try_acquire_owned() else {
+            return Dispatch::Busy;
+        };
+        let (socket, replies) = (self.socket.clone(), self.replies.clone());
+        // Outside the observer's supervised set on purpose: an order task holds no shared lock, only its permit, which a
+        // panic's unwind releases, and a sender. A panic loses this one order, which the Gateway's fallback covers, instead
+        // of ending the run and every other order in flight.
+        tokio::spawn(async move {
+            let _permit = permit;
+            let operation = order.operation.clone();
+            if let Err(error) = forward(&socket, order, &replies).await {
+                eprintln!("orbit-agent: executor order of Operation {operation} not relayed in full: {error}");
+            }
+        });
+        Dispatch::Forwarded
+    }
+}
+
+/// Writes the order to the socket and relays every complete reply line, within 10 s and 64 KB in total. Lines relayed
+/// before a bound passes stay relayed.
+async fn forward(
+    socket: &std::path::Path,
+    order: ExecutorOrder,
+    replies: &tokio::sync::mpsc::UnboundedSender<ExecutorReply>,
+) -> std::io::Result<()> {
+    use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _};
+    let exchange = async {
+        let mut stream = tokio::net::UnixStream::connect(socket).await?;
+        stream.write_all(order.wire.as_bytes()).await?;
+        stream.shutdown().await?;
+        let mut reader = tokio::io::BufReader::new(stream.take(MAX_EXECUTOR_REPLY_BYTES));
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            if reader.read_until(b'\n', &mut line).await? == 0 {
+                return Ok(());
+            }
+            if line.pop() != Some(b'\n') {
+                return Err(std::io::Error::other(
+                    "the reply ended inside a line or passed 64 KB",
+                ));
+            }
+            let line = String::from_utf8(line.clone())
+                .map_err(|_| std::io::Error::other("a reply line is not UTF-8"))?;
+            // The receiver lives as long as the observer; a send fails only while it shuts down.
+            let _ = replies.send(ExecutorReply {
+                operation: order.operation.clone(),
+                line,
+            });
+        }
+    };
+    tokio::time::timeout(EXECUTOR_REPLY_TIMEOUT, exchange)
+        .await
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "no reply within 10 s"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::UnixListener;
+
+    fn socket_path(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "orbit-executor-relay-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        dir.join("executor.sock")
+    }
+
+    fn order(operation: &str, wire: &str) -> ExecutorOrder {
+        ExecutorOrder {
+            operation: operation.into(),
+            wire: wire.into(),
+        }
+    }
+
+    async fn settle(relay: &ExecutorRelay) {
+        while relay.in_flight() > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }
+
+    #[test]
+    fn the_envelope_is_read_and_the_order_left_unread() {
+        let as_string = json!({"event": "executor-order", "data": json!({"operation": "42", "order": "e30=.c2ln"}).to_string()});
+        assert_eq!(
+            ExecutorOrder::from_event(&as_string),
+            Some(order("42", "e30=.c2ln"))
+        );
+        let as_object = json!({"event": "executor-order", "data": {"operation": "42", "order": "not even base64"}});
+        assert_eq!(
+            ExecutorOrder::from_event(&as_object),
+            Some(order("42", "not even base64"))
+        );
+        assert_eq!(
+            ExecutorOrder::from_event(&json!({"data": {"order": "x"}})),
+            None
+        );
+        assert_eq!(
+            ExecutorOrder::from_event(&json!({"data": {"operation": "", "order": "x"}})),
+            None
+        );
+        let long = "r".repeat(MAX_EXECUTOR_OPERATION_BYTES + 1);
+        assert_eq!(
+            ExecutorOrder::from_event(&json!({"data": {"operation": long, "order": "x"}})),
+            None
+        );
+    }
+
+    #[test]
+    fn a_reply_line_that_does_not_fit_a_frame_has_none() {
+        let small = ExecutorReply {
+            operation: "42".into(),
+            line: r#"{"status":"accepted"}"#.into(),
+        };
+        let frame = small.frame("presence-node.7").expect("fits");
+        assert_eq!(frame.event, EXECUTOR_RESULT_EVENT);
+        assert_eq!(frame.channel, "presence-node.7");
+        assert_eq!(
+            frame.data,
+            json!({"operation": "42", "line": r#"{"status":"accepted"}"#})
+        );
+        let large = ExecutorReply {
+            operation: "42".into(),
+            line: "x".repeat(crate::PUSHER_FRAME_LIMIT),
+        };
+        assert!(large.frame("presence-node.7").is_none());
+    }
+
+    #[tokio::test]
+    async fn the_order_reaches_the_socket_unchanged_and_every_reply_line_comes_back() {
+        let path = socket_path("unchanged");
+        let listener = UnixListener::bind(&path).expect("bind");
+        let wire = format!("{}.{}", "A".repeat(3000), "B+/=".repeat(10));
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut got = Vec::new();
+            stream.read_to_end(&mut got).await.expect("read");
+            stream
+                .write_all(b"{\"status\":\"accepted\"}\n{\"status\":\"done\"}\n")
+                .await
+                .expect("write");
+            got
+        });
+        let (relay, mut replies) = ExecutorRelay::new(&path);
+        assert_eq!(relay.dispatch(order("42", &wire)), Dispatch::Forwarded);
+        assert_eq!(server.await.expect("server"), wire.as_bytes());
+        let first = replies.recv().await.expect("accepted line");
+        assert_eq!(
+            first,
+            ExecutorReply {
+                operation: "42".into(),
+                line: r#"{"status":"accepted"}"#.into()
+            }
+        );
+        assert_eq!(
+            replies.recv().await.expect("result line").line,
+            r#"{"status":"done"}"#
+        );
+        settle(&relay).await;
+        assert!(replies.try_recv().is_err(), "two lines, two replies");
+    }
+
+    #[tokio::test]
+    async fn an_order_over_4_kb_is_dropped_and_4_kb_is_forwarded() {
+        let path = socket_path("cap");
+        let listener = UnixListener::bind(&path).expect("bind");
+        let (relay, _replies) = ExecutorRelay::new(&path);
+        assert_eq!(
+            relay.dispatch(order("42", &"a".repeat(MAX_EXECUTOR_ORDER_BYTES + 1))),
+            Dispatch::TooLarge
+        );
+        assert_eq!(relay.in_flight(), 0);
+        assert_eq!(
+            relay.dispatch(order("n2", &"a".repeat(MAX_EXECUTOR_ORDER_BYTES))),
+            Dispatch::Forwarded
+        );
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        let mut got = Vec::new();
+        stream.read_to_end(&mut got).await.expect("read");
+        assert_eq!(got.len(), MAX_EXECUTOR_ORDER_BYTES);
+    }
+
+    #[tokio::test]
+    async fn at_most_64_orders_are_in_flight() {
+        let path = socket_path("in-flight");
+        let listener = UnixListener::bind(&path).expect("bind");
+        let (relay, _replies) = ExecutorRelay::new(&path);
+        for index in 0..MAX_EXECUTOR_IN_FLIGHT {
+            assert_eq!(
+                relay.dispatch(order(&format!("n{index}"), "x")),
+                Dispatch::Forwarded
+            );
+        }
+        assert_eq!(relay.dispatch(order("over", "x")), Dispatch::Busy);
+        let mut held = Vec::new();
+        for _ in 0..MAX_EXECUTOR_IN_FLIGHT {
+            held.push(listener.accept().await.expect("accept").0);
+        }
+        drop(held);
+        settle(&relay).await;
+        assert_eq!(relay.dispatch(order("again", "x")), Dispatch::Forwarded);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_reply_is_read_for_10_s_and_lines_before_that_stay_relayed() {
+        let path = socket_path("timeout");
+        let listener = UnixListener::bind(&path).expect("bind");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            stream
+                .write_all(b"{\"status\":\"accepted\"}\n")
+                .await
+                .expect("write");
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            drop(stream);
+        });
+        let (relay, mut replies) = ExecutorRelay::new(&path);
+        let started = tokio::time::Instant::now();
+        assert_eq!(relay.dispatch(order("42", "x")), Dispatch::Forwarded);
+        assert_eq!(
+            replies.recv().await.expect("accepted line").line,
+            r#"{"status":"accepted"}"#
+        );
+        settle(&relay).await;
+        let waited = started.elapsed();
+        assert!(
+            waited >= EXECUTOR_REPLY_TIMEOUT
+                && waited < EXECUTOR_REPLY_TIMEOUT + std::time::Duration::from_secs(1),
+            "waited {waited:?}"
+        );
+        assert!(replies.try_recv().is_err());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_reply_is_read_up_to_64_kb() {
+        let path = socket_path("reply-cap");
+        let listener = UnixListener::bind(&path).expect("bind");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut big = vec![b'x'; 70 * 1024];
+            big.push(b'\n');
+            let _ = stream.write_all(b"first\n").await;
+            let _ = stream.write_all(&big).await;
+        });
+        let (relay, mut replies) = ExecutorRelay::new(&path);
+        assert_eq!(relay.dispatch(order("42", "x")), Dispatch::Forwarded);
+        assert_eq!(replies.recv().await.expect("first line").line, "first");
+        settle(&relay).await;
+        assert!(
+            replies.try_recv().is_err(),
+            "a line past 64 KB is not relayed"
+        );
+        server.await.expect("server");
+    }
+
+    #[tokio::test]
+    async fn a_missing_socket_relays_nothing_and_frees_the_slot() {
+        let path = socket_path("missing");
+        let (relay, mut replies) = ExecutorRelay::new(&path);
+        assert_eq!(relay.dispatch(order("42", "x")), Dispatch::Forwarded);
+        settle(&relay).await;
+        assert_eq!(relay.in_flight(), 0);
+        assert!(replies.try_recv().is_err());
+    }
+}

@@ -23,14 +23,22 @@
         fail_msg: instance.nested_club_key_unsafe_transfer
         quiet: true
 
+    # Bounded from the Node: a container that does not answer an exec fails this start with its own code, not after the run's bound.
     - name: Read the file system of the container's /run
-      ansible.builtin.command: { argv: "{{ as_root + ['findmnt', '--noheadings', '--output', 'FSTYPE', '--target', '/run'] }}" }
+      ansible.builtin.command: { argv: "{{ ['timeout', '10'] + as_root + ['findmnt', '--noheadings', '--output', 'FSTYPE', '--target', '/run'] }}" }
       register: club_run
       changed_when: false
+      failed_when: false
+
+    - name: Refuse a container that did not answer
+      ansible.builtin.assert:
+        that: club_run.rc != 124
+        fail_msg: instance.container_exec_timeout
+        quiet: true
 
     - name: Refuse a /run that a snapshot would hold
       ansible.builtin.assert:
-        that: club_run.stdout | trim == 'tmpfs'
+        that: club_run.rc == 0 and club_run.stdout | trim == 'tmpfs'
         fail_msg: instance.nested_club_key_not_tmpfs
         quiet: true
 
@@ -39,7 +47,7 @@
       no_log: true
       ansible.builtin.command:
         argv: >-
-          {{ as_root + ['sh', '-c', lookup('ansible.builtin.file', 'instance_nested_club_key.sh'), 'sh', club.directory, club.file,
+          {{ ['timeout', '30'] + as_root + ['sh', '-c', lookup('ansible.builtin.file', 'instance_nested_club_key.sh'), 'sh', club.directory, club.file,
              club.owner | string, club.group | string, club.tmpfiles, club.gateway, club.serve_unit] }}
         stdin: "{{ lookup('ansible.builtin.env', 'ORBIT_CLUB_KEY') }}"
         stdin_add_newline: false

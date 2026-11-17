@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{
@@ -39,7 +40,8 @@ const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 use orbit_agent::realtime::{
     channel_auth, discover, send_client, send_control, send_raw_frame, socket_write, Discovery,
-    Socket,
+    Dispatch, ExecutorOrder, ExecutorRelay, ExecutorReply, Socket, EXECUTOR_ORDER_EVENT,
+    EXECUTOR_SOCKET,
 };
 
 #[derive(Debug)]
@@ -133,7 +135,9 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let workspaces = SharedWorkspaces::default();
     let (workspace_tx, mut workspace_rx) = mpsc::unbounded_channel();
     let (watch_facts_tx, watch_facts_rx) = watch::channel(WatchFacts::default());
-    tokio::spawn(watch_workspaces(
+    // The tasks that hold the workspace and log locks: a panic in one ends the run (`supervise`).
+    let mut supervised = tokio::task::JoinSet::new();
+    supervised.spawn(watch_workspaces(
         client.clone(),
         config.gateway_url.clone(),
         workspaces.clone(),
@@ -152,7 +156,7 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         watch_facts_rx,
     ));
     let (log_hub, log_prompts) = LogHub::new();
-    tokio::spawn(run_controller(
+    supervised.spawn(run_controller(
         log_hub.clone(),
         log_prompts,
         GatewayList {
@@ -172,53 +176,59 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut systemd = systemd_snapshot(&manager).await?;
     let mut heartbeat = tokio::time::interval(Duration::from_secs(5));
     let mut systemd_poll = tokio::time::interval(Duration::from_secs(30));
-    reconnect_loop(&mut shutdown_rx, async |shutdown_rx, joined_at| {
-        loop {
-            let discovery = tokio::select! {
-                _ = shutdown_rx.changed() => return Ok(()),
-                result = discover(&client, &config.gateway_url) => result?,
-            };
-            if discovery
-                .member
-                .strip_prefix("agent.")
-                .is_none_or(|id| discovery.channel != format!("presence-node.{id}"))
-            {
-                return Err("Gateway returned an invalid agent channel identity".into());
-            }
-            let log_channel = accepted_log_channel(&discovery);
-            let (Some(url), Some(address), Some(key)) =
-                (discovery.url, discovery.address, discovery.key)
-            else {
-                tokio::select! {_=shutdown_rx.changed()=>return Ok(()),_=tokio::time::sleep(Duration::from_secs(60))=>{}}
-                continue;
-            };
-            return connected_session(
-                &client,
-                &config.gateway_url,
-                &url,
-                &address,
-                &key,
-                &discovery.channel,
-                log_channel.as_deref(),
-                &log_hub,
-                tls.clone(),
-                &manager,
-                &mut sequence,
-                &mut systemd,
-                &mut docker_units,
-                &mut docker_available,
-                &mut docker_rx,
-                &mut systemd_rx,
-                &workspaces,
-                &mut workspace_rx,
-                &mut heartbeat,
-                &mut systemd_poll,
-                shutdown_rx,
-                joined_at,
-            )
-            .await;
+    // Replies that arrive after a reconnect go out on the next session; orders that arrive while it reconnects are lost.
+    let (executor, mut executor_rx) = ExecutorRelay::new(EXECUTOR_SOCKET);
+    let session = reconnect_loop(&mut shutdown_rx, async |shutdown_rx, joined_at| loop {
+        let discovery = tokio::select! {
+            _ = shutdown_rx.changed() => return Ok(()),
+            result = discover(&client, &config.gateway_url) => result?,
+        };
+        if discovery
+            .member
+            .strip_prefix("agent.")
+            .is_none_or(|id| discovery.channel != format!("presence-node.{id}"))
+        {
+            return Err("Gateway returned an invalid agent channel identity".into());
         }
-    }).await
+        let log_channel = accepted_log_channel(&discovery);
+        let (Some(url), Some(address), Some(key)) =
+            (discovery.url, discovery.address, discovery.key)
+        else {
+            tokio::select! {_=shutdown_rx.changed()=>return Ok(()),_=tokio::time::sleep(Duration::from_secs(60))=>{}}
+            continue;
+        };
+        return connected_session(
+            &client,
+            &config.gateway_url,
+            &url,
+            &address,
+            &key,
+            &discovery.channel,
+            log_channel.as_deref(),
+            &log_hub,
+            tls.clone(),
+            &manager,
+            &mut sequence,
+            &mut systemd,
+            &mut docker_units,
+            &mut docker_available,
+            &mut docker_rx,
+            &mut systemd_rx,
+            &workspaces,
+            &mut workspace_rx,
+            &mut heartbeat,
+            &mut systemd_poll,
+            &executor,
+            &mut executor_rx,
+            shutdown_rx,
+            joined_at,
+        )
+        .await;
+    });
+    tokio::select! {
+        result = session => result,
+        error = orbit_agent::supervise(&mut supervised) => Err(error),
+    }
 }
 
 /// Owns every retry, so a reset, close, failed join, or ping timeout takes the same path.
@@ -298,6 +308,8 @@ async fn connected_session(
     workspace_rx: &mut mpsc::UnboundedReceiver<WorkspaceUpdate>,
     heartbeat: &mut Interval,
     systemd_poll: &mut Interval,
+    executor: &ExecutorRelay,
+    executor_rx: &mut mpsc::UnboundedReceiver<ExecutorReply>,
     shutdown: &mut watch::Receiver<bool>,
     joined_at: &mut Option<Instant>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -397,6 +409,10 @@ async fn connected_session(
             now=log_flush.tick(),if log_subscribed=>{
                 if let Some(log_channel)=log_channel{for event in log_hub.flush(log_channel,now)?{send_raw_frame(&mut socket,event).await?;}}
             },
+            Some(reply)=executor_rx.recv()=>match reply.frame(channel){
+                Some(frame)=>send_raw_frame(&mut socket,frame).await?,
+                None=>eprintln!("orbit-agent: executor reply for Operation {} does not fit one Pusher frame; dropped",reply.operation),
+            },
             _=&mut debounce,if !pending.is_empty()=>{if pending.due(Instant::now()){for unit in pending.take(){let event=orbit_agent::process_frame(channel,sequence.advance(),unit)?;send_raw_frame(&mut socket,event).await?;}}},
             message=receive(&mut socket, &mut liveness)=>match message{
                 Ok(Message::Text(text))=>{let value:Value=serde_json::from_str(&text)?;match route(&value,channel,log_channel,log_pending){
@@ -406,6 +422,12 @@ async fn connected_session(
                     Route::LogSubscribed=>{log_subscribed=true;log_pending=false;log_hub.prompt();},
                     Route::LogRefused=>{log_subscribed=false;log_pending=false;eprintln!("orbit-agent: log channel subscription refused; live log tails are off for this connection");},
                     Route::FetchLogStreams=>log_hub.prompt(),
+                    Route::ExecutorOrder(order)=>{let operation=order.operation.clone();match executor.dispatch(order){
+                        Dispatch::Forwarded=>{},
+                        Dispatch::TooLarge=>eprintln!("orbit-agent: executor order of Operation {operation} is larger than 4 KB; dropped"),
+                        Dispatch::Busy=>eprintln!("orbit-agent: executor order of Operation {operation} dropped: 64 orders in flight"),
+                    }},
+                    Route::ExecutorOrderMalformed=>eprintln!("orbit-agent: executor-order event without an operation and an order; dropped"),
                     Route::Ignore=>{}
                 }},
                 Ok(Message::Ping(data))=>{socket_write(socket.send(Message::Pong(data))).await?},
@@ -453,6 +475,8 @@ enum Route {
     LogSubscribed,
     LogRefused,
     FetchLogStreams,
+    ExecutorOrder(ExecutorOrder),
+    ExecutorOrderMalformed,
     Ignore,
 }
 /// Reverb's `pusher:error` code for a subscription whose signature it refuses.
@@ -474,6 +498,8 @@ fn route(value: &Value, channel: &str, log_channel: Option<&str>, log_pending: b
         "pusher_internal:subscription_succeeded" if on_logs => Route::LogSubscribed,
         "pusher_internal:member_added" if on_node => Route::Snapshot,
         "log-streams.changed" if on_logs => Route::FetchLogStreams,
+        EXECUTOR_ORDER_EVENT if on_node => ExecutorOrder::from_event(value)
+            .map_or(Route::ExecutorOrderMalformed, Route::ExecutorOrder),
         _ => Route::Ignore,
     }
 }
@@ -1272,6 +1298,34 @@ mod protocol_tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             "Reverb WebSocket write timed out"
+        );
+    }
+
+    #[test]
+    fn an_executor_order_routes_only_on_the_node_channel() {
+        let data = json!({"operation": "42", "order": "e30=.c2ln"}).to_string();
+        let on = |channel: &str| {
+            route(
+                &json!({"event": "executor-order", "channel": channel, "data": data}),
+                "presence-node.12",
+                Some("presence-node-logs.12"),
+                false,
+            )
+        };
+        assert_eq!(
+            on("presence-node.12"),
+            Route::ExecutorOrder(ExecutorOrder {
+                operation: "42".into(),
+                wire: "e30=.c2ln".into()
+            })
+        );
+        assert_eq!(on("presence-node-logs.12"), Route::Ignore);
+        assert_eq!(on("presence-node.13"), Route::Ignore);
+        let malformed =
+            json!({"event": "executor-order", "channel": "presence-node.12", "data": "{}"});
+        assert_eq!(
+            route(&malformed, "presence-node.12", None, false),
+            Route::ExecutorOrderMalformed
         );
     }
 

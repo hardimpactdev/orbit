@@ -4,8 +4,10 @@ use crate::{
     command::{Command, Context, Platform, Privilege},
     command_errors,
 };
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::LazyLock;
 use std::time::Duration;
 command_errors! {
     pub enum Error {
@@ -48,7 +50,7 @@ fn readiness(output: Output) -> Result<Ready, Error> {
     if status == "error" || (status == "done" && !errors.is_empty()) {
         return Err(Error::Bootstrap {
             errors: serde_json::to_string(errors)
-                .unwrap()
+                .expect("a JSON value always serializes")
                 .chars()
                 .take(2000)
                 .collect(),
@@ -66,12 +68,14 @@ pub(super) fn fingerprint(output: Output) -> Result<Fingerprint, Error> {
             stderr: output.stderr.chars().take(2000).collect(),
         });
     }
-    let pattern =
-        regex::Regex::new(r"\A256 (SHA256:[A-Za-z0-9+/]{43}) [^\n]* \(ED25519\)\n?\z").unwrap();
+    static PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\A256 (SHA256:[A-Za-z0-9+/]{43}) [^\n]* \(ED25519\)\n?\z")
+            .expect("literal pattern")
+    });
     let value = if output.truncated {
         None
     } else {
-        pattern.captures(&output.stdout)
+        PATTERN.captures(&output.stdout)
     }
     .ok_or_else(|| invalid("the host key fingerprint is not an ed25519 SHA256 fingerprint"))?;
     Ok(Fingerprint {

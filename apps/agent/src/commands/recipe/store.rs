@@ -1,6 +1,8 @@
 //! The recipe's immutable Node runtime shares the deployment store and its existing lock.
 use super::{artifacts, types, Failure, Files, Invocation};
+use regex::Regex;
 use serde_json::Value;
+use std::sync::LazyLock;
 use std::{
     fs, io,
     os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
@@ -52,9 +54,10 @@ fn bad(reason: impl ToString) -> Failure {
     Failure::new("tools", reason)
 }
 pub fn version(value: &str) -> bool {
-    regex::Regex::new(r"\A[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\z")
-        .unwrap()
-        .is_match(value)
+    static VERSION: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\A[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\z").expect("literal pattern")
+    });
+    VERSION.is_match(value)
 }
 pub fn scope(files: &Files, account: &Account) -> Result<PathBuf, Failure> {
     let candidates = [
@@ -163,11 +166,11 @@ pub fn old_links(home: &Path, account: &Account) -> Result<Vec<(PathBuf, PathBuf
             .ok()
             .and_then(|v| v.to_str())
             .unwrap_or_default();
-        let pattern = regex::Regex::new(&format!(
+        let pattern = Regex::new(&format!(
             r"\Arecipe/node-[a-f0-9]{{64}}/node-v{}-(?:linux|darwin)-(?:x64|arm64)\z",
             regex::escape(name)
         ))
-        .unwrap();
+        .expect("an escaped name keeps the pattern valid");
         if !version(name) || meta.uid() != account.uid || !pattern.is_match(relative) {
             return Err(bad("Refusing unrelated Node runtime link"));
         }
@@ -374,7 +377,8 @@ pub fn publish_node(
         }
         files.publish(
             &home.join(REFERENCE),
-            &serde_json::to_vec(&serde_json::json!({"version":version})).unwrap(),
+            &serde_json::to_vec(&serde_json::json!({"version":version}))
+                .expect("a JSON value always serializes"),
             0o644,
             account.uid,
             account.gid,

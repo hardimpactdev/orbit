@@ -440,6 +440,17 @@ class CloneTest(unittest.TestCase):
         self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-abc")
         self.assertIsNone(self.seed_commit)
 
+    def test_the_copy_reaches_the_default_only_through_its_snapshots_so_a_sleeping_default_needs_no_wake(self):
+        # A default sleeps frozen, and Incus may even report a lost freeze as Running (Instance 2454 on 2026-11-17). The copy never
+        # reads the default's state, never execs into it and never starts, stops, freezes or unfreezes it: every call that names it
+        # names its snapshot list or one snapshot.
+        calls, _, error = self.clone()
+        self.assertEqual(error, "")
+        named = [arg for call in calls for arg in call if "instance-1" in arg]
+        self.assertTrue(named)
+        for arg in named:
+            self.assertTrue("/instances/instance-1/snapshots?" in arg or arg.startswith("instance-1/seed-"), arg)
+
     def test_a_replaced_seed_copies_the_newest_seed(self):
         calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "seed-old", "created_at": "2026-11-16T03:00:00Z"},
                                                                       {"name": "seed-def", "created_at": "2026-11-17T03:00:00Z"}]})
