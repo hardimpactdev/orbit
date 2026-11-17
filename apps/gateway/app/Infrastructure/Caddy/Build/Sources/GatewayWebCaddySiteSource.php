@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build\Sources;
 
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\WireGuard\VpnSettings;
@@ -49,7 +50,8 @@ final readonly class GatewayWebCaddySiteSource implements NodeCaddySiteSource
         $checkout = $this->checkoutPath ?? rtrim(StoredValue::string(config('orbit.gateway_checkout')), '/');
         $webRoot = $this->webRoot ?? StoredValue::string(config('orbit.gateway_web'));
 
-        $prepared = is_file(rtrim(StoredValue::string(config('orbit.home')), '/').'/gateway-site-prepared');
+        $prepared = is_file(rtrim(StoredValue::string(config('orbit.home')), '/').'/gateway-site-prepared')
+            && GatewayReleaseHost::owns($node);
 
         return [new CaddySite(
             source: 'gateway',

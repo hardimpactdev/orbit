@@ -20,7 +20,7 @@ On an established target, live, preparation and rollback are three distinct cont
 
 In progress.
 
-The release implementation and disposable Gateway tests are in progress. Production adoption and the matched PHP-FPM and worker-mode performance measurements remain open.
+The release implementation and disposable Gateway tests are in progress. Production adoption remains open. The timing comparison between PHP-FPM and FrankenPHP also remains open.
 
 Principle: [One way, one name](/mission#principles). The Gateway uses the release states and traffic switch of ADR 0263. Its clone source is a permanent preparation container. It also serves [No exceptions and no legacy](/mission#principles): the worktree releases, the PHP-FPM pool and `bin/gateway-rollback` go when their replacements are built.
 
