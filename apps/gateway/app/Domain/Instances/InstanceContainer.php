@@ -94,8 +94,11 @@ final readonly class InstanceContainer
     /** The Claude Code efforts of a task copy's T3: one provider instance each (docs/reference/development-containers.md#turn-model-and-effort). */
     public const array ClaudeEfforts = ['low', 'medium', 'high', 'xhigh', 'max'];
 
+    /** The Codex efforts of a task copy's T3, as gpt-6.1-sol advertises them: one provider instance each (docs/reference/development-containers.md#turn-model-and-effort). */
+    public const array CodexEfforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+
     /** What a task copy's T3 offers: the efforts of each provider, one provider instance per pair, as the copy's T3 settings hold them. */
-    public const array CopyProviders = ['claude' => self::ClaudeEfforts];
+    public const array CopyProviders = ['claude' => self::ClaudeEfforts, 'codex' => self::CodexEfforts];
 
     /**
      * Playwright keeps its browsers beside its own package, in `node_modules/playwright-core/.local-browsers`
@@ -510,7 +513,7 @@ final readonly class InstanceContainer
                 ['path' => '/home/agent/.claude.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]],
                 // A task copy's turns pick their effort through these instances: stock T3's CLI takes none.
                 ['path' => '/home/agent/.t3/userdata/settings.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
-                    ...($instance->task_workspace_owner_id === null ? [] : ['providerInstances' => self::claudeInstances()])]],
+                    ...($instance->task_workspace_owner_id === null ? [] : ['providerInstances' => [...self::claudeInstances(), ...self::codexInstances()]])]],
                 // No default dependencies: T3 waits for nftables, the local file systems, the journal and sysctl, not for `sysinit.target`.
                 ['path' => self::T3BootDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
                     'content' => "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"],
@@ -533,6 +536,18 @@ final readonly class InstanceContainer
     }
 
     /**
+     * The model options a new thread of the provider and effort starts with. T3 0.1.7 sends Codex the effort of the thread's
+     * `reasoningEffort` option on every turn and none otherwise, whatever Codex's own configuration says, so a Codex thread carries it.
+     * A Claude thread carries none: its instance's `CLAUDE_CODE_EFFORT_LEVEL` sets its effort.
+     *
+     * @return list<array{id: string, value: string}>
+     */
+    public static function providerOptions(string $provider, string $effort): array
+    {
+        return $provider === 'codex' ? [['id' => 'reasoningEffort', 'value' => $effort]] : [];
+    }
+
+    /**
      * One `claudeAgent` provider instance per effort, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment. Claude Code takes that
      * variable over the `--effort` T3 passes from its model catalog, so a thread runs at the effort of the instance it starts on.
      *
@@ -543,6 +558,18 @@ final readonly class InstanceContainer
         return array_combine(array_map(static fn (string $effort): string => self::providerInstance('claude', $effort), self::ClaudeEfforts), array_map(static fn (string $effort): array => [
             'driver' => 'claudeAgent', 'displayName' => 'Claude, '.$effort.' effort', 'environment' => [['name' => 'CLAUDE_CODE_EFFORT_LEVEL', 'value' => $effort]],
         ], self::ClaudeEfforts));
+    }
+
+    /**
+     * One `codex` provider instance per effort. The instance names the thread's effort; the effort reaches Codex through the thread's
+     * model options (self::providerOptions).
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private static function codexInstances(): array
+    {
+        return array_combine(array_map(static fn (string $effort): string => self::providerInstance('codex', $effort), self::CodexEfforts),
+            array_map(static fn (string $effort): array => ['driver' => 'codex', 'displayName' => 'Codex, '.$effort.' effort'], self::CodexEfforts));
     }
 
     /**

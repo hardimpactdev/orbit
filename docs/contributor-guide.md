@@ -203,6 +203,10 @@ The composition proof uses the real renderer at 50 ms with at least seven outer 
 
 CLI and Docs tests have a stock PHPUnit limit of two seconds per test, for every test size and without exceptions. Unsized Gateway tests have a two-second local limit and a five-second CI limit. The retained CI test tooling supports PHPUnit's standard `--default-time-limit=5` through Pest for a shared runner. An over-limit test fails the suite. Investigate failures at the applicable limit rather than adding retries, sleeps, skips, or per-test budgets. There is no whole-suite or CI-step duration gate.
 
+A task check in a copy also runs on a shared host. So `bin/task-check` passes each Pest run the limit of its project's CI job, which it reads from `.github/workflows/ci.yml`.
+
+A Swamp fixture unit, such as a Python or Deno test file or one slice of it, declares at most the 150 seconds of CI's lane, `shard_seconds` in `.github/ci/checks.toml`; CI stops it at `unit_ceiling_seconds`. `bin/task-check` prints both caps at its start, and runs CI's budget tests on every change.
+
 Gateway permits a reviewed exception only when real elapsed time is the behaviour under test and a controllable clock or transport would lose that proof. Put only the approved cases in a dedicated native PHPUnit class with class-level `#[Large]` and a one-line justification beside the attribute. Use stock `timeoutForLargeTests`, not custom timeout or sizing machinery; keep unrelated tests unsized. The [Gateway test time-limit reference](/reference/implementation-loop#gateway-test-time-limits) lists the approved exceptions and enforcement settings.
 
 CLI feature tests build fresh applications, configuration, containers, and command objects. Isolation regressions check that mutations do not survive a refresh and compare the complete command registry, including aliases, visibility and input definitions, with an independent subprocess. Use real subprocesses for proofs that depend on a cold boot or the process environment. CI does not add a private bytecode cache.

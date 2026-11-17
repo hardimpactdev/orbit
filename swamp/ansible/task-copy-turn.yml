@@ -48,6 +48,10 @@
           - intent.turn.thread | default('') in ['new', 'continue']
           - intent.turn.thread != 'new' or intent.turn.provider | default('', true) is match('^[A-Za-z][A-Za-z0-9]{0,63}$')
           - intent.turn.thread != 'new' or intent.turn.model | default('', true) is match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
+          # A new thread's model options (InstanceContainer::providerOptions): T3 runs its every turn with them.
+          - intent.turn.thread != 'new' or (intent.turn.options is defined and intent.turn.options is sequence and intent.turn.options is not string)
+          - intent.turn.thread != 'new' or intent.turn.options | rejectattr('id', 'match', '^[A-Za-z][A-Za-z0-9]{0,63}$') | list | length == 0
+          - intent.turn.thread != 'new' or intent.turn.options | rejectattr('value', 'match', '^[a-z][a-z0-9_-]{0,31}$') | list | length == 0
           - intent.turn.candidate | default(none) is none or intent.turn.candidate is match('^[0-9a-f]{40}$')
           - intent.turn.title | default('') is match('^Orbit task [1-9][0-9]* thread [1-9][0-9]*$')
           - intent.turn.seconds | default(0) | int >= 60 and intent.turn.seconds | int <= 3600
@@ -408,17 +412,49 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
-        - name: Start or continue the thread and wait for its run
+        # A new thread is made first, through T3's own RPC, with its title, provider instance, model and model options: stock T3's
+        # `thread start` takes no model options. Its first turn is then a send, as a continued thread's turn is.
+        - name: Create the new thread
+          when: intent.turn.thread == 'new'
           ansible.builtin.command:
             argv: >-
-              {{ copy_exec + ['/usr/bin/timeout', '--kill-after=30', intent.turn.seconds | string, intent.turn.t3, 'thread']
-                 + (['start', '--provider', intent.turn.provider, '--model', intent.turn.model, '--title', intent.turn.title, '--wait', '--json',
-                     '/srv/workspace', '-'] if intent.turn.thread == 'new' else ['send', '--wait', '--json', turn_resumed | first, '-']) }}
-            stdin: "{{ intent.turn.prompt }}"
-            stdin_add_newline: false
-          register: turn_start
+              {{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'create', intent.turn.title, intent.turn.provider,
+                 intent.turn.model, intent.turn.options | to_json] }}
+            stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
+          register: turn_create
           failed_when: false
           changed_when: true
+          no_log: true
+        # The helper prints one JSON object whenever it exits 0; any other exit made no thread, and its stderr says why.
+        - name: Name the thread of the run
+          ansible.builtin.set_fact:
+            turn_created: "{{ (turn_create.stdout | from_json) if intent.turn.thread == 'new' and turn_create.rc == 0 else {} }}"
+          no_log: true
+        - name: Name the thread of the run and why a create made none
+          ansible.builtin.set_fact:
+            turn_target: "{{ (turn_created.thread_id | default(none)) if intent.turn.thread == 'new' else turn_resumed | first }}"
+            turn_create_error: >-
+              {{ (turn_created.error | default(none) or (turn_create.stderr | default(''))[-4096:] or 'The thread create printed nothing.')
+                 if intent.turn.thread == 'new' else '' }}
+          no_log: true
+        - name: Run the thread's turn and wait for its run
+          when: turn_target | default(none, true) is not none
+          ansible.builtin.command:
+            argv: >-
+              {{ copy_exec + ['/usr/bin/timeout', '--kill-after=30', intent.turn.seconds | string, intent.turn.t3, 'thread', 'send', '--wait', '--json',
+                 turn_target, '-'] }}
+            stdin: "{{ intent.turn.prompt }}"
+            stdin_add_newline: false
+          register: turn_send
+          failed_when: false
+          changed_when: true
+          no_log: true
+        # A create that made no thread is a start T3 refused: nothing ran, and the start evidence carries T3's own message.
+        - name: Take the run's start
+          ansible.builtin.set_fact:
+            turn_start: >-
+              {{ turn_send if turn_target | default(none, true) is not none
+                 else {'rc': 1, 'stdout': '', 'stderr': 'T3 could not create the thread: ' ~ turn_create_error} }}
           no_log: true
         - name: Write the start evidence
           ansible.builtin.copy:

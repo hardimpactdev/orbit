@@ -248,6 +248,7 @@ The copy rules are one fixed text, the same for the implementer and the reviewer
 
 - Run every command in the foreground. Leave none running when the turn ends.
 - The Project's long gates and full test sets are the work of the task check and CI (`task:check`). Run single test files by path.
+- Keep each new or changed test unit within the per-unit time cap of the Project's CI, which the task check prints.
 - Commit your work before the turn ends.
 - Never print an environment file, a token, a key or a session value.
 
@@ -1120,13 +1121,15 @@ The thread stores the resolved model and effort and the T3 provider instance it 
 
 A role's own values on the task change with `task:update` until the role has a thread; after that, `task:update` refuses them with `tasks.agent_settings_locked` (409). The lock covers only the task's own values. The Project's default and the Gateway's settings can still change, and a later new thread of the role, such as the implementer of the next subtask or a turn with `--thread=new`, resolves again and takes them.
 
-Stock T3 0.1.7 takes no effort on its command line. The copy's T3 settings therefore hold one provider instance per provider and effort, such as `claudeMedium`, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment, and a new thread starts on the instance of its provider and effort. Claude Code takes that variable over the `--effort` T3 passes: verified with Claude Code 2.1.311 and T3 0.1.7. See [Swamp drives T3](/reference/development-containers#swamp-drives-t3).
+Stock T3 0.1.7 takes no effort on its command line. The copy's T3 settings therefore hold one provider instance per provider and effort, such as `claudeMedium` or `codexHigh`, and a new thread starts on the instance of its provider and effort.
+
+A Claude instance sets the effort with `CLAUDE_CODE_EFFORT_LEVEL` in its environment. A Codex thread carries its effort as its `reasoningEffort` model option, because T3 0.1.7 sends Codex no other effort. Orbit therefore creates each new thread through T3's own RPC and runs its first turn with `t3 thread send`. This was verified with Claude Code 2.1.311, Codex 0.167.0 and T3 0.1.7. See [turn model and effort](/reference/development-containers#turn-model-and-effort). A copy made before the Codex instances cannot run a Codex thread: start the task on a new copy.
 
 A new thread's values are checked against what the copy's T3 offers, in two places:
 
 | Value | Where | Against | Refusal |
 | --- | --- | --- | --- |
-| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
+| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max`; `codex` at `low`, `medium`, `high`, `xhigh`, `max` or `ultra` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
 | Model | First in the turn, before any checkout or start | The slugs and aliases that T3's cached `model-manifest.json` lists for the instance's driver | The turn fails with `tasks.copy_turn_model_unoffered` and the offered slugs; nothing is launched |
 
 Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy.
@@ -1224,7 +1227,7 @@ Swamp requests a baseline before implementation when its workflow calls for one.
 
 ### Scoped task check
 
-The Orbit Project whose default Instance is a container uses `bin/task-check` as its check. The candidate gate, `bin/review-check`, checks all five Composer projects and does not fit a handoff in a copy. `bin/task-check` checks only what the task changed since its start commit, and stays under five minutes.
+The Orbit Project whose default Instance is a container uses `bin/task-check` as its check. The candidate gate, `bin/review-check`, checks all five Composer projects and does not fit a handoff in a copy. `bin/task-check` checks what the task changed since its start commit, as CI checks it, and stays under five minutes.
 
 A person sets it on the Project once, after the release that ships the command. `orbit project:update` takes the numeric Project id; the Orbit container Project is 78:
 
@@ -1232,7 +1235,7 @@ A person sets it on the Project once, after the release that ships the command. 
 orbit project:update 78 --task-check=bin/task-check
 ```
 
-Orbit runs every task check with `ORBIT_CHECK_PROCESSES=1`, whatever the copy's CPU count, so the check runs PHPStan and Pest in one process. Its five-minute budget holds at that value.
+Orbit runs every task check with `ORBIT_CHECK_PROCESSES=1`, whatever the copy's CPU count, so the check runs PHPStan, Pest and the fixture units in one process. Its five-minute budget holds at that value; fixture units it does not reach are deferred to CI and named.
 
 Another Project that develops Orbit sets the same setting on its own id. Its copy must hold what the parts run: the vendor folders of the Composer projects, Deno for the Swamp parts and Node for the flow charts. A seeded copy holds them; the command installs nothing. Project 46 keeps `composer check` as its task check, as [its task policy](/reference/instance-setup#configure-orbits-task-policy) states.
 
@@ -1265,7 +1268,7 @@ When a page is neither changed nor waived, the part's output names the file and 
 
 #### Parts
 
-[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. The `ci-policy` part runs the CI policy tests, `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, when the change touches what those tests read: the CI registry and its fixture tomls, the workflows, the CI scripts or a Swamp test file. It runs before Pest and the fixtures and prints the same summary line as every part.
+[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. The `ci-policy` part runs the CI policy and budget tests on every change, as CI's "Select build inputs" job runs them. It runs before Pest and the fixtures and prints the same summary line as every part. The `fixtures` part runs the units of CI's fixture plan that the change touches directly first, then those that fit the budget; it names the rest as deferred to CI.
 
 Within a selected Pest job, the check runs the project's changed test files and its pin test files: the Gateway and CLI tests that pin a whole intent, digest or command surface, such as `GatewayRuntimeFilesTest` and `CommandSurfaceTest`. A change far from such a test can break it, so the check runs them whenever CI selects their project's Pest job, and a handoff check finds what CI's full suite finds on them. The `PIN_TESTS` table in `bin/task-check` lists them.
 
@@ -1286,6 +1289,22 @@ Swamp can request a reviewer turn through `task:turn`. The Gateway records the t
 ### Reviewer outcomes
 
 The workflow that requested a reviewer owns review policy. The Gateway records its receipt as evidence. The operator or Swamp changes board status explicitly.
+
+### The reviewer rule
+
+Every reviewer turn in a task copy gets a fixed rule after the caller's prompt and the line that names the checked commit, whatever the reviewer's provider. The rule bounds the review by the task's scope, not by a number of findings:
+
+The scope is the brief, its deliverables, the diff of the checked commit against the task's base, and what that diff directly affects. The reviewer judges only that scope and reports every finding inside it.
+
+A blocking finding is a defect. It is wrong behaviour, a missed or unproven deliverable, a broken or missing test the brief asks for, or a security hole the diff adds. The reviewer gives its file, its line and the failing case.
+
+A finding inside the scope that is not a defect is non-blocking. A misleading name in the new code is one. The reviewer marks it so.
+
+The reviewer reports nothing outside the scope. It offers no ideas, refactors or redesigns beyond the task. It asks for no change outside the files the task touches, unless a defect forces one. Then it names that defect.
+
+With no blocking finding, the reviewer approves.
+
+The [pull request text](#the-reviewers-pull-request-text) rule follows it: a reviewer that approves sends the text, one that does not sends nothing. An implementer turn gets neither rule.
 
 ## Task group modes
 
