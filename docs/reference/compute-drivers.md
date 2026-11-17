@@ -1227,7 +1227,7 @@ No task workspace command runs over SSH. The SSH task workspace path and its ref
 
 There is nothing to configure. `config/task_vms.php`, `TaskVmSettings` and every `ORBIT_TASK_VMS_*` variable are removed, with `ORBIT_PI_PORT` and `ORBIT_SWAMP_PROOF_CLUB_API_KEY`. The `gateway` role's convergence removes them from the Gateway's environment file ([Gateway environment](/reference/gateway-environment)).
 
-Containers reach models through the Node model forwarder and the router guard. Core uses `App\Domain\TaskVms\TaskVmModelRoute`: `assertReady()`, `origin()` and `key()`. The [ai-router extension](/reference/ai-router) binds it. The key exists before setup. Creating a clone or migrating a non-default Instance reports readiness instead of refusing an unavailable route. Conn device threads still require it. See [Model access](/reference/development-containers#model-access).
+Containers reach models through the Node model forwarder and the router guard. Core uses `App\Domain\TaskVms\TaskVmModelRoute`: `assertReady()`, `origin()` and `key()`. The [ai-router extension](/reference/ai-router) binds it. The key exists before setup. Core records readiness when creating a clone or migrating an Instance that runs T3. An unavailable route does not refuse either operation. Conn device threads still require it. See [Model access](/reference/development-containers#model-access).
 
 The `tasks` extension depends on `ai-router`, and enabling `tasks` calls `assertReady()`, which refuses with `ai_router.disabled` (409) until the ai-router is set up and has its Node. `ai-router:destroy` refuses only while `tasks` is enabled. See [Teardown](/reference/ai-router#teardown).
 
