@@ -231,7 +231,7 @@ export function fixture(instance: "default" | "feature" = "default", dirty = fal
     commit: null,
     workspace: "/srv/workspace",
     environment_file: "/srv/workspace/.env",
-    units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
+    units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=web\n" }],
     php: null as string | null,
     processes: [] as { id: number; name: string; content: string; environment: string | null; desired: string }[],
     clone,
@@ -369,8 +369,8 @@ export function migrationProcesses(f: ReturnType<typeof fixture>, presetDesired:
     f.migrate.processes.push({ name, path, environment_directory: directory, desired, executables: ["/opt/orbit-runtime/current/bin/node"] });
     const environment = `/etc/orbit/processes/${id}/vars.env`;
     const content = preset
-      ? `[Service]\nUser=orbit\nWorkingDirectory=/srv/workspace\nEnvironmentFile=-/srv/workspace/.env\nEnvironmentFile=${environment}\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nExecStart=/opt/orbit-runtime/current/bin/vp dev --host=0.0.0.0 --port=5195 --strictPort --base=/__orbit/vite/\n`
-      : "[Service]\nUser=orbit\n";
+      ? `[Service]\nUser=web\nWorkingDirectory=/srv/workspace\nEnvironmentFile=-/srv/workspace/.env\nEnvironmentFile=${environment}\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nExecStart=/opt/orbit-runtime/current/bin/vp dev --host=0.0.0.0 --port=5195 --strictPort --base=/__orbit/vite/\n`
+      : "[Service]\nUser=web\n";
     f.container.processes.push({ id, name, content, environment, desired });
     environments[environment] = `QUEUE_TOKEN=process-secret-${id}\n`;
     states[name] = { state: desired === "running" ? "started" : "stopped", enabled: desired === "running" };
@@ -410,8 +410,8 @@ export function migrationSchedules(f: ReturnType<typeof fixture>, desired: "enab
     calendar: "*-*-* *:*:00",
     timeout_seconds: 600,
     desired,
-    container_user: "orbit",
-    container_home: "/home/orbit",
+    container_user: "web",
+    container_home: "/home/web",
     container_shell: "/bin/bash",
     path: "/usr/bin:/bin",
     environment_file: "/srv/workspace/.env",

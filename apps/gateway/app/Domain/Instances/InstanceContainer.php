@@ -901,6 +901,8 @@ final readonly class InstanceContainer
         $path = self::path($project);
         $php = InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin';
         $config = self::FrankenPhpConfig;
+        $user = InstanceHostIntent::WebUser;
+        $home = InstanceHostIntent::WebHome;
         $hotUrl = $devServerPort !== null && $instance->placementEnvironment() === 'development'
             ? "\nEnvironment=INERTIA_SSR_HOT_URL=http://127.0.0.1:{$devServerPort}" : '';
 
@@ -912,11 +914,11 @@ final readonly class InstanceContainer
 
             [Service]
             Type=simple
-            User=orbit
-            Group=orbit
+            User={$user}
+            Group={$user}
             UMask=0007
             WorkingDirectory={$application}
-            Environment=HOME=/home/orbit
+            Environment=HOME={$home}
             Environment=PATH={$path}{$hotUrl}
             ExecStart={$php}/frankenphp run --config {$config} --adapter caddyfile
             Restart=always

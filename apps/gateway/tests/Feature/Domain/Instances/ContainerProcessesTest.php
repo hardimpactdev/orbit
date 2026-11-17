@@ -108,7 +108,7 @@ function processContainerError(Closure $call): string
 }
 
 describe('a container default with development Process definitions', function (): void {
-    it('records each Process as an orbit unit in the container, its values kept out of the intent', function (): void {
+    it('records each Process as a web unit in the container, its values kept out of the intent', function (): void {
         $operation = processContainerCreate(processContainerProject(), processContainerNode());
         $process = Process::query()->where('owner_id', $operation->target_id)->sole();
         $units = processContainerUnits($operation);
@@ -119,8 +119,8 @@ describe('a container default with development Process definitions', function ()
             ->and($units)->toHaveCount(1)
             ->and($units[0])->toMatchArray(['id' => $process->id, 'name' => "orbit-process-{$process->id}-worker.service",
                 'environment' => $environment, 'desired' => 'running'])
-            ->and($units[0]['content'])->toContain("User=orbit\nGroup=orbit\nUMask=0007\nWorkingDirectory=/srv/workspace\n")
-            ->toContain("Environment=HOME=/home/orbit\nEnvironment=PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin\n")
+            ->and($units[0]['content'])->toContain("User=web\nGroup=web\nUMask=0007\nWorkingDirectory=/srv/workspace\n")
+            ->toContain("Environment=HOME=/home/web\nEnvironment=PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin\n")
             ->toContain("EnvironmentFile=-/srv/workspace/.env\nEnvironmentFile={$environment}\n")
             ->and(str_contains(json_encode($operation->input, JSON_THROW_ON_ERROR), 'secret-value-41'))->toBeFalse()
             ->and($operation->input['members'])->toBe([]);
@@ -180,7 +180,7 @@ describe('the Process target of a container Instance', function (): void {
             'node_id' => $this->instance->node_id, 'input' => $input]);
         $container = ['instance_id' => $this->instance->id, 'project' => 'orbit-instances', 'name' => 'instance-'.$this->instance->id];
 
-        expect($target->user)->toBe('orbit')
+        expect($target->user)->toBe('web')
             ->and($target->container)->toBe($container)
             ->and($input['container'])->toBe($container)
             ->and(app(ProcessLifecycleInput::class)->forOperation($view)['intent']['container'])->toBe($container);

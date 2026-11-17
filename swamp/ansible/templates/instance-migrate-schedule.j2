@@ -22,11 +22,11 @@ After=network.target
 
 [Service]
 Type=oneshot
-User=orbit
-Group=orbit
+User={{ schedule.container_user }}
+Group={{ schedule.container_user }}
 UMask=0007
 WorkingDirectory={{ directive_path(schedule.directory) }}
-Environment=HOME=/home/orbit
+Environment=HOME={{ schedule.container_home }}
 Environment=PATH={{ schedule.path | default('') | replace('%', '%%') }}
 EnvironmentFile=-{{ directive_path(schedule.environment_file | default('')) }}
 ExecStart=/bin/bash /etc/orbit/schedules/{{ schedule.id }}.sh

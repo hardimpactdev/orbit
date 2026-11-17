@@ -223,7 +223,7 @@ Deno.test({name: "container Schedule inspection reads guest state and journal, a
 Deno.test({name: "carried Schedule installs disabled and post-cutover activation failure stays advisory", ignore: !hasAnsible, async fn() {
   const folder = Deno.makeTempDirSync(), play = folder + "/play", guest = folder + "/guest";
   const schedule = {id, name: "laravel-scheduler", service: "orbit-schedule-" + id + ".service", timer: "orbit-schedule-" + id + ".timer",
-    user: "nick", group: "work", home: "/home/nick", shell: "/bin/bash", login_shell: true, directory: "/srv/workspace/apps/my app",
+    user: "nick", group: "work", home: "/home/nick", shell: "/bin/bash", login_shell: true, container_user: "web", container_home: "/home/web", directory: "/srv/workspace/apps/my app",
     source_directory: "/host/workspace", command_hash: "a".repeat(64), mapped_command_hash: "a".repeat(64),
     calendar: "*-*-* *:*:00", timeout_seconds: 7, desired: "enabled", path: "/usr/bin:/bin", environment_file: "/srv/workspace/apps/my app/.env"};
   for (const dir of [play + "/tasks", play + "/templates", guest]) Deno.mkdirSync(dir, {recursive: true});
@@ -284,7 +284,8 @@ Deno.test({name: "carried Schedule installs disabled and post-cutover activation
     assertFalse(output.includes("private-schedule-output"));
     const service = Deno.readTextFileSync(guest + "/etc/systemd/system/" + schedule.service);
     const timer = Deno.readTextFileSync(guest + "/etc/systemd/system/" + schedule.timer);
-    assert(service.includes("User=orbit\n"));
+    // The plan names the container's app user and its home (ADR 0268, second amendment); the template renders what the Gateway sends.
+    assert(service.includes("User=web\nGroup=web\nUMask=0007\n") && service.includes("Environment=HOME=/home/web\n"));
     assert(service.includes("EnvironmentFile=-/srv/workspace/apps/my\\x20app/.env\n"));
     assert(service.includes("TimeoutStartSec=7\n"));
     assert(timer.includes("OnCalendar=" + schedule.calendar + " Europe/Amsterdam\nPersistent=false\nDeferReactivation=true\n"));

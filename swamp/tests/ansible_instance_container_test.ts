@@ -146,7 +146,7 @@ function fixture() {
     commit: null as string | null,
     workspace: "/srv/workspace",
     environment_file: "/srv/workspace/.env",
-    units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
+    units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=web\n" }],
     web_config: { path: "/etc/orbit/frankenphp.Caddyfile", content: ":8080 {\n    php_server\n}\n" },
     web_port: 8080,
     php: "/opt/orbit-runtime/current/php/8.5/bin/php" as string | null,
@@ -809,7 +809,7 @@ Deno.test({
       const route = { route: "yes", interface_in: "orbit", interface_out: "orbitinst0", to_ip: "10.253.0.3", to_port: "3773", proto: "tcp" };
       Object.assign(f.container, {
         instance_id: 8, name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`,
-        branch: "feature", units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\nExecStart=frankenphp --listen 10.253.0.3:8080\n" }],
+        branch: "feature", units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=web\nExecStart=frankenphp --listen 10.253.0.3:8080\n" }],
         acl_rules: { description: "Orbit Instance 8", egress: [], ingress: [{ action: "allow", protocol: "tcp", destination_port: "3773", state: "enabled" }] },
         firewall: [
           { ...route, rule: "deny", from_ip: "10.44.0.128/25", comment: "orbit:instance-8-t3-task-vms" },
@@ -1005,14 +1005,14 @@ Deno.test({
 const worker = {
   id: 41,
   name: "orbit-process-41-worker.service",
-  content: "[Service]\nUser=orbit\nEnvironmentFile=/etc/orbit/processes/41/abc.env\nExecStart=php artisan queue:work\n",
+  content: "[Service]\nUser=web\nEnvironmentFile=/etc/orbit/processes/41/abc.env\nExecStart=php artisan queue:work\n",
   environment: "/etc/orbit/processes/41/abc.env",
   desired: "running",
 };
 const paused = {
   id: 42,
   name: "orbit-process-42-scheduler.service",
-  content: "[Service]\nUser=orbit\nExecStart=php artisan schedule:work\n",
+  content: "[Service]\nUser=web\nExecStart=php artisan schedule:work\n",
   environment: null,
   desired: "stopped",
 };
@@ -1126,7 +1126,7 @@ Deno.test({
       }
       // The Project gained a definition: its record is in the intent, but no unit file is in the container yet. The scheduler was
       // stopped and is now set to run: its unit file is there, but disabled and inactive.
-      const fresh = { id: 43, name: "orbit-process-43-fresh.service", content: "[Service]\nUser=orbit\nExecStart=sleep infinity\n", environment: null, desired: "running" };
+      const fresh = { id: 43, name: "orbit-process-43-fresh.service", content: "[Service]\nUser=web\nExecStart=sleep infinity\n", environment: null, desired: "running" };
       const resumed = { ...paused, desired: "running" };
       assert(Deno.statSync(`${f.folder}/containers/instance-7/etc/systemd/system/${paused.name}`).isFile);
       const stopped = f.state();
@@ -1166,7 +1166,7 @@ Deno.test({
         const result = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments });
         assert(result.ok, `${phase}: ${result.output}`);
       }
-      const broken = { id: 44, name: "orbit-process-44-broken.service", content: "[Service]\nUser=orbit\nExecStart=/bin/false\n", environment: null, desired: "running" };
+      const broken = { id: 44, name: "orbit-process-44-broken.service", content: "[Service]\nUser=web\nExecStart=/bin/false\n", environment: null, desired: "running" };
       f.container.processes = [worker, broken];
       f.write();
       const state = f.state();
