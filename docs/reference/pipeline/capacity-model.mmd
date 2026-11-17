@@ -1,28 +1,42 @@
 sequenceDiagram
+  %% Current capacity flow: task copies take no CI place. proof:run shares CI places with runner jobs and uses copies of the proof default, including available warm copies. The capacity and cleanup contract belongs to docs/cli/proof/run.mdx.
   %% status: draft
+  %% command: development pipeline · copy capacity
   %% kind: pipeline.capacity
   autonumber
-  participant T as Task<br/>prep · build
-  participant TP as Task pool<br/>beast 2 · shark 2
-  participant PR as Pull request
-  participant Q as CI queue<br/>FIFO
-  participant CP as CI pool<br/>2 per host
-  participant VM as Proof VMs
-  T->>TP: Claim a task place<br/>wait when full
-  TP-->>T: Fresh task VM<br/>from the base
-  opt no Operation on the group for 30 minutes
-    T->>PR: Save the workspace<br/>task-<id>-idle branch
-    T->>TP: Delete the idle task VM<br/>after the save passed
+  %% lane T icon=server pill=task tone=gray
+  %% lane PR icon=server pill=PR tone=purple
+  %% lane Q icon=gateway pill=intent tone=blue
+  %% lane CP icon=server pill=capacity tone=amber
+  %% lane PC icon=workflow pill=executes tone=green
+  participant T as Task copy<br/>own nested fleet
+  participant PR as Pull request<br/>proven feature
+  participant Q as Proof queue<br/>Operation order
+  participant CP as CI Nodes<br/>jobs and copies
+  participant PC as Proof copies<br/>assigned batches
+  Note over T: Build and prove first<br/>no CI place held
+  T->>PR: Publish the feature<br/>after local proof passes
+  opt CI proof enabled and selected
+    PR->>Q: Confirm the PR head<br/>proof:run COMMIT
+    %%> When:
+    %%> - ORBIT_PROOF_ENABLED is deliberately off until commands have been checked systematically
+    Q->>CP: Read free CI places<br/>runner state · memory · seed
+    %%> What it does:
+    %%> - takes no busy runner's place; available warm copies already hold their place and memory
+    alt capacity is available
+      CP-->>Q: Available copies<br/>warm or new from seed
+      Q->>PC: Assign the batches<br/>balance by measured time
+      %%> What it does:
+      %%> - prepares the tested commit; each copy has its own nested fleet
+      PC->>PC: Reset and run cases<br/>per assigned batch
+      PC-->>Q: Verdict per case<br/>complete reports
+      Q->>CP: Destroy the copies<br/>release holds on success
+      %%> Result:
+      %%> - every run end requests cleanup, including failures and cancellation; failed destruction keeps its hold until recovery succeeds
+      Q-->>PR: One merged result<br/>all selected cases required
+    else no free place
+      Note over Q: Wait within the allowance<br/>120 minutes from creation
+      %%> Result:
+      %%> - capacity timeout fails; waiting or running no selected case never counts as proof
+    end
   end
-  T->>PR: Publish the PR
-  T->>TP: Delete the task VM
-  Note over T,TP: Later work claims again<br/>base + task branch or save
-  PR->>Q: Prove the PR head
-  Q->>CP: Take every free place<br/>at least 1 · up to parts
-  CP-->>VM: Fresh VMs<br/>from the base
-  Q->>VM: Split batches by case<br/>balance by measured time
-  VM->>VM: Restore each fleet<br/>run its cases
-  VM-->>Q: Verdict per case
-  Q->>CP: Delete the proof VMs
-  Q-->>PR: One merged report
-  Note over Q,PR: Full pools wait<br/>two-hour budget

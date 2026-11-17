@@ -1087,11 +1087,11 @@ One group never runs two of these at once, because the Gateway admits one task O
 
 ### Build a feature in one copy
 
-Build and prove a feature end to end inside one task copy before any pull request opens. When the feature touches the fleet, use the copy's nested fleet.
+Build and prove a feature end to end inside one task copy before any pull request opens, draft or ready. Design the proofs before implementation; for a command, the spec (chart, page and cases) is the first commit on the feature branch. When the feature touches the fleet, use the copy's nested fleet. CI confirms the already-passing proof; it is not the first end-to-end test.
 
 1. Work live in the copy. Change it, run it and fix the next layer until the real end result works there.
 2. Log each change you make by hand.
-3. Codify all of it in one pull request and prove it once. Only a reviewer's request splits it.
+3. Codify all of it on the same branch, pass the end-to-end proof, then open one complete pull request. Only a reviewer's request splits it.
 
 The end result is the real one: an app container serves a page, or a create, deploy or wake succeeds.
 

@@ -1,133 +1,116 @@
 ---
 title: "Command development pipeline"
-description: "The stages every Orbit command goes through during development, from preparation to a refreshed fleet, with the status of each stage and links to its charts, pages, skill and files."
+description: "Prepare the spec, build and prove a feature in one task copy, then open one complete PR for CI and review."
 ---
 
 # Command development pipeline
 
-The command development pipeline is the stages every command goes through during development, from prep to a per-host refresh after release. A command goes through them one at a time. Stages 1 to 4 happen in one PR per command change: the spec, the code and the runnable proof cases land together. Each stage below shows its status on `main`, its flow chart, and links to its pages, skill and key files. The stage charts are drafts of the target design; they live in `docs/reference/pipeline/`. The [feature flow](/reference/feature-flow) holds the proof CI job and the case selection list.
+Design the proof, build the feature and pass its end-to-end proof before opening a pull request, draft or ready. Work in one task copy of a container Instance and use its nested fleet for fleet behavior. The spec (chart, page and cases) stays the first commit on the feature branch. Implementation follows on that branch, and one complete PR delivers them together. CI confirms an already-passing result; it is not the first place to find out whether the feature works.
 
-Task VMs, the VM image refresh, proof CI in a VM and automatic Gateway releases are off in the live fleet today. [Off in the live fleet](/reference/old-paths#off-in-the-live-fleet) lists them and what each comes back as.
+The stage charts in `docs/reference/pipeline/` own the flow and take precedence over other text. Their draft marker means the chart awaits owner review, not that removed execution paths remain supported. The [contributor guide](/contributor-guide) owns contribution checks; [Build a feature in one copy](/reference/tasks#build-a-feature-in-one-copy) owns the development loop.
 
-| Stage | Status |
+| Stage | Current state |
 | --- | --- |
-| [1. Prep](#1-prep) | Partly built |
-| [2. Development environment](#2-development-environment) | Built, place pool not built |
-| [3. Proof](#3-proof) | Partly built, one case so far |
-| [4. PR and CI](#4-pr-and-ci) | Partly built |
-| [5. Automatic Swamp release](#5-automatic-swamp-release) | Built |
-| [6. Per-Node seed refresh](#6-per-node-seed-refresh) | Task VM refresh in the code with no trigger; container refresh built and on |
+| [1. Prep](#1-prep) | Contributor workflow; no automated prep operation |
+| [2. Development environment](#2-development-environment) | Task copies of container Instances with a nested fleet |
+| [3. Proof](#3-proof) | Author proof in the task copy; merge-base replay unavailable |
+| [4. PR and CI](#4-pr-and-ci) | Complete PR after proof; CI proof deliberately disabled for now |
+| [5. Automatic Swamp release](#5-automatic-swamp-release) | Built; runs only when enabled and unpaused |
+| [6. Per-Node seed refresh](#6-per-node-seed-refresh) | Container default and nested-fleet refresh, when enabled |
 
 ## When each flow runs
 
-Each flow has its own trigger. The first three run for a task. The others keep a host ready.
-
-- **Task start (deleted).** A `task:start` makes a task copy now; its task VM start and release workflows are deleted ([old paths](/reference/old-paths#the-pi-task-loop)). The old start took a free place in the host's task pool, mints a new identity for its VM, copies the host's base VM snapshot with that identity and adds its hub peer, runs the release's converge (a no-op on a current image) and starts the task branch. The containers start with the VM.
-- **`base` restore.** It runs for each proof batch, and when the author wants a clean fleet.
-- **Release (deleted).** Publication of the PR, or the end of a group, deleted its VM, seed clone and identity volume, removed its hub peer and deleted its Node.
-- **Refresh (stage 6).** A verified release admits it after Horizon starts; admission is best effort and does not wait. A daily schedule also admits it, and it converges the host's base VM, snapshots it and proves the snapshot with one task start. The target refreshes the nested-fleet default Instance on each switched-on Node and takes its seed snapshot, with the volume's snapshot of the same name when the default has an inner volume.
-- **Image build from the recipe.** It runs only for a new host or a new base OS.
+- **Task start.** [`task:start`](/cli/task/start) creates a copy of the Project's default container Instance. Completion prepares its database, Processes and nested fleet before the copy becomes active.
+- **Proof.** The author runs [`orbit proof COMMAND --group=GROUP`](/cli/proof/proof) on the copy where the feature was built. Each batch resets its inner fleet to `base`, applies the checkout and checks readiness before cases run.
+- **PR and CI.** Only a built and proven feature opens a PR. Selected checks confirm it. When enabled, CI proof uses separate copies of the proof Project's default and the same cases and runner.
+- **Cleanup.** Task-copy publication and removal follow [Tasks](/reference/tasks#task-copy). Every CI proof run end requests destruction of its proof copy, including failure and cancellation.
+- **Refresh.** A verified Gateway release admits [stage 6](#6-per-node-seed-refresh) after Horizon starts, when refresh is enabled. Admission is best effort and does not wait for completion. There is no daily seed refresh.
 
 ## 1. Prep
 
-**Partly built.** A command has one PR, and prep starts it. The chart, docs page and verification cases (the spec) are the first commit of a draft PR. A merged docs PR does not make a command ready. The spec is approved in the draft, and the PR stays one PR through code, proof and merge. Prep changes no code. Swamp owns the flow and its state and the Gateway only authorizes it: an author agent drafts the spec in a task VM, a separate review agent checks it, and Swamp opens the draft PR as the Orbit App. One of two modes, set per flow, decides what happens next. In manual mode there is an optional spec checkpoint: Nick reviews the chart, docs and cases in the draft before code is written, and may check out a development Instance on the PR branch and review there with an agent. In automatic mode there is no checkpoint. The code and the runnable proof cases then follow in the same PR ([stage 4](#4-pr-and-ci)). Not built: `task:prep` and `task:prep-fix` ran this stage on a task VM. They are removed with the [Pi task loop](/reference/old-paths#the-pi-task-loop) and come back on task copies.
+Prepare the intended behavior before implementation. Write the chart, then the page and runnable proof cases from that contract. Keep these three files as the branch's first commit, without implementation code. Existing charts and pages from earlier documentation changes are starting points, not a substitute for checking the current scope and cases.
 
-About 74 commands have a chart and a page from earlier docs-only PRs. Their old case tables are deleted. When a command's turn comes, its PR reviews and updates the chart and page, and writes the cases file from them.
+Validate the spec and have an independent agent review it before building. A runner plan checks definitions; it does not prove behavior. Record unsupported assertions as `uncovered` rather than inventing runner steps. Resolve those gaps during development before claiming the feature is proven. Owner review of the spec can happen before code without opening a PR.
 
 <div className="flow-at" data-chart="reference/pipeline/1-prep"></div>
 
-- Skill: [preparing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/preparing-commands/SKILL.md), with [flow-tighten](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/flow-tighten/SKILL.md) for the chart.
-- Chart: `docs/cli/<family>/<command>.mmd`. Rules: [CLI pages and flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md).
-- Docs page: `docs/cli/<family>/<command>.mdx`.
-- Cases: `swamp/proof/<family>/<command>.cases.yaml`, for example [`firewall/allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml).
+- Skill: [preparing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/preparing-commands/SKILL.md).
+- Chart and page: `docs/cli/<family>/<command>.mmd` and `.mdx`, following [CLI pages and flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md).
+- Cases: `swamp/proof/<family>/<command>.cases.yaml`; syntax and coverage rules are in [Verification cases](/reference/verification-cases).
 
 ## 2. Development environment
 
-A task claims one place in the host's task pool and gets a fresh VM and Node identity. The start copies the host's base snapshot and seed, writes the identity and Pi credentials, converges the VM and checks out the task branch. The base holds the agent, Pi, tools, Swamp, a warm checkout of main with its dependencies, and a nested fleet of three Incus containers: Gateway, app-dev and app-prod. Fleet reconciliation and nested apply render and reload the checkout’s scoped Swamp grants with the existing serve-driver credential before candidate operations. Reconciliation waits up to 60 seconds for the local Swamp listener before its single authenticated reload; an unavailable listener fails setup before any case runs. A grant-file change retakes the base snapshots during refresh. Token renewal is separate. Before running cases, the shared proof runner installs the checkout's pinned Ansible collections, renders its Swamp grants and reloads them, so new callbacks and vault key patterns do not depend on the base image's age. Its proof-only Ansible play also records the tested Gateway revision and configures the existing static CLI release catalog from `swamp/proof/cli-release.json`. This checksum-pinned published binary supplies the installable release a real Gateway has; a PR commit has no published release. The CLI under test still runs from the candidate checkout. The static catalog is never configured on a real Gateway. Publication releases the VM, workspace, Node, keys and hub peer. A later build, fix or review round claims again from the base at the published task head. [Capacity ideal state](#capacity-ideal-state) defines the separate CI pool and proof queue.
+A task runs in a copy of its Project's default container Instance. Orbit command development uses a Project with a nested fleet: a Gateway, an app-dev Node and an app-prod Node, each an Incus system container inside the task copy. The copy owns its workspace and fleet. Task copies take no CI place and do not receive a separate Node identity.
 
-Proof base refresh does not yet reconverge nested Node OS state; the snapshot can retain enrollment-era policy.
-
-The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so the author's changes reach them at once. A restore of `base` is a reboot of the containers.
+Build the whole feature there. The nested Nodes mount the copy's checkout, so edits reach the candidate code directly. Apply migrations and service changes before reading the nested Gateway API. Test the real end result and codify manual changes on the same branch; do not use a sequence of releases to discover the next missing layer.
 
 <div className="flow-at" data-chart="reference/pipeline/2-development-environment"></div>
 
-- Charts: the stage chart above, [`task:start`](/cli/task/start#how-it-works) and [`task:cancel`](/cli/task/cancel#how-it-works).
-- Docs: [Provision an external group](/reference/tasks#provision-an-external-group), [Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot).
-- Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
-- Files: [`swamp/proof/README.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md).
+- Commands: [`task:start`](/cli/task/start), [`task:sync`](/cli/task/sync) and [`task:cancel`](/cli/task/cancel).
+- Contracts: [Task copy](/reference/tasks#task-copy), [Build a feature in one copy](/reference/tasks#build-a-feature-in-one-copy) and [Nested fleet](/reference/development-containers#nested-fleet).
+- Skill: [developing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/developing-commands/SKILL.md).
 
 ## 3. Proof
 
-**Partly built, with one case so far.** The cases of a command run on that topology. The target: Orbit's own Swamp runs the proof directly and reaches into the task VM over SSH, like every other step. A run restores `base`, starts the containers, waits for cloud-init and systemd boot, applies the checkout and checks readiness. Each batch restores `base` once, then runs several cases at a time without undo, each on its own resources. Readers may share one Node; a writer holds its Node through setup and cleanup, and shared fleet changes run alone. A case that does not pass leaves its resources until the next batch restores `base`. Each case calls the real CLI, checks the real effect and prints a verdict. The first case is the `firewall:allow` traffic case. Built: [`orbit proof COMMAND`](/cli/proof/proof) runs the cases of one command in the author's task copy, and resets the copy's inner fleet to `base` before every batch. Not built: the converge of the nested Nodes.
+Run the designed proof end to end in the same task copy and nested fleet before any PR opens. From a Node with Gateway access, call `orbit proof COMMAND --group=GROUP`. The group is required; the proof runs the copy's current checkout, committed or not, and creates no new copy. Save the tested checkout, cases and verdicts as evidence for the eventual PR. Rerun affected proofs after changes.
 
-The checkout is already mounted when the containers boot, but the restored database has the base schema. Apply the checkout's migrations and restart its services before any nested Gateway API check, including the Doctor wait and the nodes read. Apply needs running containers, settled systemd boot and active state mounts. Cloud-init is disabled after the first fleet build. Before apply, a local wait inside each container gives systemd up to 120 seconds to reach running or degraded, then checks each required state mount on Gateway and app-dev. The whole exec has a 135-second bound and fails before apply if boot or a required mount is not ready. The first fleet build migrates in Gateway bootstrap before its Doctor check. Batch and replay restores share this order.
+Swamp reaches the runner through the copy's Node and runs it as `agent` in the copy. The proof plans the cases before changing the fleet, resets `base` before every batch, applies the candidate checkout and checks readiness. Migrations and service preparation precede nested API checks. The shared runner prepares candidate grants, pinned Ansible collections, observers and CLI callers, then runs the batch setup and cases. Cases check real CLI results and effects; each uses its own resources and undoes nothing. Shared-state cases run alone under the runner's locks.
+
+Every required case must pass. Failed, unrun or missing cases and infrastructure failures block publication. No reset follows the final batch, so the author can inspect its state and case receipts in the copy. The next proof resets first.
+
+**Merge-base replay is unavailable in copies.** `fails_on_base` remains case metadata, not an executed check. [ProofMergeBaseReplay](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Proof/ProofMergeBaseReplay.php) and [old paths](/reference/old-paths#the-task-vm-proof-run) track the retained replay code until it is ported. Neither author proof nor CI copy proof currently establishes that flagged cases fail on the merge base.
 
 <div className="flow-at" data-chart="reference/pipeline/3-proof"></div>
 
-- Charts: the stage chart above, and [`orbit proof`](/cli/proof/proof#how-it-works) for the author's own command. A command's own chart, such as [`firewall:allow`](/cli/firewall/allow#how-it-works), shows the command, not the proof run.
-- Design draft: [Verification cases](/reference/verification-cases) describes how cases are written as short specifications, covered against the command chart, and run by one shared runner (chart [3-proof-runner](/reference/verification-cases#the-run)).
+- Command contract: [`orbit proof`](/cli/proof/proof).
+- Runner and case contract: [Verification cases](/reference/verification-cases), including the [runner chart](/reference/verification-cases#the-run).
 - Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
-- Files: the drafts [`allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml) and [`batches.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/batches.yaml).
 
 ## 4. PR and CI
 
-**Partly built.** This stage continues the same PR that stage 1 opened as a draft. The author pushes the command code and the runnable proof cases to its branch, so a reviewer can check that the chart, docs, cases, code and proof cases match. There is one CI: the fast checks (about 2 minutes) plus, for command code, the proof CI (`proof:run` for the affected commands). It runs on every push. The proof CI starts only when a changed path selects a command in `swamp/proof/selection.txt`. Docs, charts and case descriptions never start it. A new push cancels the proof run of the previous push on that PR. When everything is green, the PR leaves draft. In manual mode, Swamp also requests Nick's review, so GitHub notifies him. Then comes the gate: in manual mode, Nick's approving review on the exact head; in automatic mode, a final self-review by a fresh review agent, with at most 3 rounds before the PR switches to manual mode. After the gate, Swamp merges the PR straight into `main` with a squash merge, using a Gateway-minted App token. There is no merge queue and no GitHub auto-merge. CI then runs on `main`. A red `main` is fixed forward and never released. The proof runs only on the PR head, never again before or after the merge. Two PRs for the same command normally conflict, because each edits the command's chart, page and cases file. The second PR rebases, which reruns CI and the proof. Built for manual mode: the ready step ([`task:pr-ready`](/cli/task/pr-ready)), the merge step with the manual gate ([`task:pr-merge`](/cli/task/pr-merge)), and the gate check that calls them. The gate check is the Gateway command `task:pr-gate`. Every minute, it reads with read-only App tokens the open external Task groups of review-and-merge Projects that have a published PR. A draft PR with a green CI result on its head and a passed handoff check on that commit gets the ready step; a spec-only draft stays a draft. A PR out of draft whose head Nick approved gets the merge step. Each admission is keyed by group and head, so a repeat tick is a no-op, and each starts its own Swamp run. Not built: automatic mode. Its review rounds ran on a task VM and are removed with the [Pi task loop](/reference/old-paths#the-pi-task-loop); the gate check switches an automatic group to manual mode when its PR leaves draft. Built: selected same-repository PRs run the proof CI job on the PR head. When it runs, it blocks `Required checks`, as [CI](/reference/implementation-loop#the-proof-run-job) describes. A PR that is not in a Task group is outside this flow: the author opens it as `nckrtl` and squash-merges it with `gh pr merge <n> -R hardimpactdev/orbit --squash` when CI is green on the head (the interim).
+After the feature works and its proof passes, run an independent review in a fresh subagent on the complete diff and the applicable [plug-in point checklist](/reference/extensions#add-a-plug-in-point). Fix the findings, repeat affected checks and proofs, then push and open one complete PR against `main`. State in its body that the review ran and include the proof evidence and limits. A draft may hold back already-proven work; it is not a place to build an unproven feature. Task agents hand off to Orbit's reviewer and publisher rather than opening their own PR.
+
+CI scopes checks by changed inputs and aggregates selected required results in `Required checks`. CI proof is deliberately disabled until commands have been checked systematically: both same-repository and outside proof jobs require the repository variable `ORBIT_PROOF_ENABLED=true`. Unset or `false` starts no CI proof. A green CI result while this switch is off is not evidence that selected command proofs ran. This pause does not waive the author's pre-PR proof.
+
+When enabled and selected by `swamp/proof/selection.txt`, the proof job calls [`proof:run COMMIT`](/cli/proof/run) through `bin/ci-proof-run`. It uses copies of the proof Project's default container Instance, including available warm copies, brings in the exact commit and checks the workspace. Each copy runs assigned batches on its nested fleet using the same cases and runner as the author. The first batch resets the fleet; a later batch can skip reset only after a read-only batch. Every selected case must pass; missing, failed, unrun or interrupted coverage fails the result. There is no report-only CI proof mode and no merge-base replay. A new push cancels the previous PR proof. Outside PRs additionally require maintainer approval of the exact head and the `run-proofs` label.
+
+Keep the CI admission switch separate from the Gateway's [execution switch](/cli/proof/run#the-execution-switch). `proof.execution` is on by default; disabling it does not make a selected but unexecuted proof pass.
+
+Green CI is followed by the Project's review and merge gate on the exact head. Task-copy publication does not automatically merge, and the older [`task:pr-merge`](/cli/task/pr-merge) gate is unavailable for task copies. [Task-group modes](/reference/tasks#task-group-modes) and [copy merge limits](/reference/tasks#no-merge) own those boundaries. Use the authorized merge path only after the gate; there is no merge queue or GitHub auto-merge. A new head needs affected local checks and proofs, CI and the gate again.
+
+Main CI checks delivery evidence against the actual merged tree and reuses matching PR evidence or runs the selected checks. Main runs no proof. A red `main` is fixed forward and never released.
 
 <div className="flow-at" data-chart="reference/pipeline/4-pr-and-ci"></div>
 
-- Built: the fast checks, including required hosted Gateway and CLI Pest suites when their inputs change, and for the proof CI the trust check, the case selection and the execution as a Gateway-started chain. Execution is on by default (`proof.execution`). It moves to one Swamp flow next.
-- CI proof admission is paused while proofs move to containers. Both same-repository and outside proof jobs require the repository variable `ORBIT_PROOF_ENABLED=true`; unset or `false` starts no proof. Enable it only when container proofs are ready. It is the only proof switch: while it is on, a selected proof always blocks Required.
-- Built: the CI job calls `proof:run` through `bin/ci-proof-run`, on the labels in `ORBIT_PROOF_RUNNER` (default `self-hosted`, `hardimpact`, `orbit-shard`). A new push cancels the previous proof on that PR. A selected proof blocks `Required checks`. Outside pull requests require review plus the `run-proofs` label.
-- Charts: the stage chart above covers the PR, CI, the label gate, the gate and the merge. [`task:pr-ready`](/cli/task/pr-ready#how-it-works) and [`task:pr-merge`](/cli/task/pr-merge#how-it-works) show the ready step and the merge step. [`proof:run`](/cli/proof/run#how-it-works) shows the proof CI run, as one Swamp flow (reviewed).
-- Docs: [CI](/reference/implementation-loop#ci), [The proof CI](/reference/feature-flow#the-proof-ci), [`orbit proof:run`](/cli/proof/run), [Choose the cases](/reference/feature-flow#choose-the-cases).
-- Skills: [developing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/developing-commands/SKILL.md), [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
-- Files: [`.github/workflows/ci.yml`](https://github.com/hardimpactdev/orbit/blob/main/.github/workflows/ci.yml), [`bin/ci-build-plan`](https://github.com/hardimpactdev/orbit/blob/main/bin/ci-build-plan), [`swamp/proof/selection.txt`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/selection.txt), [`apps/gateway/app/Domain/Proof`](https://github.com/hardimpactdev/orbit/tree/main/apps/gateway/app/Domain/Proof).
+- CI contracts: [Implementation loop](/reference/implementation-loop#ci), [The proof CI](/reference/feature-flow#the-proof-ci) and [`proof:run`](/cli/proof/run).
+- Skill: [developing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/developing-commands/SKILL.md).
+- Files: [CI workflow](https://github.com/hardimpactdev/orbit/blob/main/.github/workflows/ci.yml) and [proof selection](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/selection.txt).
 
 ## 5. Automatic Swamp release
 
-**Built, and off today** ([Off in the live fleet](/reference/old-paths#off-in-the-live-fleet)). When automatic releases are enabled and unpaused, the Gateway checks every five minutes for the newest green commit on `main` and starts one Swamp run: build, snapshot and migrate, check the migration, wait for active Operations, and load Swamp. The loaded activation child drains Horizon, switches the release and checks health and version. Horizon starts again after the activation paths, including failures. A delivery-ready commit has `Main delivery checks`, its main `Required checks` result and `Gateway release inputs` green in its CI run on `main`. Selected fixtures gate normal main delivery; a verified receipt reuses the passed PR tree. Main runs no proof, and no check runs after the merge outside main's own CI; [delivery dependencies](/reference/implementation-loop#ci) lists the gates. There is no merge queue. A failed check switches back.
+When automatic releases are enabled and unpaused, the Gateway checks every five minutes for the newest delivery-ready green commit on `main`. One Swamp run builds the release, snapshots and migrates, waits for active Operations, loads Swamp, drains Horizon and switches the release. It checks health and version, switches back on failed verification and starts Horizon after activation paths, including failures. A verified release admits refresh only after Horizon starts. A release confirms a working feature; it is not the first end-to-end test.
 
 <div className="flow-at" data-chart="reference/pipeline/5-automatic-release"></div>
 
-- Charts: the stage chart above covers the automatic trigger. [`gateway:release:deploy`](/cli/gateway/release-deploy#how-it-works) shows the run.
-- Docs: [Release as a Swamp run](/reference/gateway-recovery#release-as-a-swamp-run), [Automatic releases](/reference/gateway-recovery#automatic-releases).
-- Files: [`swamp/workflows/workflow-operation-gateway-release.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-gateway-release.yaml), [`bin/gateway-rollback`](https://github.com/hardimpactdev/orbit/blob/main/bin/gateway-rollback).
+- Owners: [Automatic releases](/reference/gateway-recovery#automatic-releases) and [`gateway:release:deploy`](/cli/gateway/release-deploy).
 
 ## 6. Per-Node seed refresh
 
-When `ORBIT_INSTANCES_NESTED_FLEET_REFRESH` is on, after each verified Gateway release Orbit deploys each nested-fleet default Instance on a Node with the nested-fleet switch to the release commit. The run refreshes the inner fleet, retakes `base` and takes the seed snapshot that a task or a new Instance of the Project clones. A default with an [inner volume](/reference/development-containers#the-seed-pair) has a seed of two snapshots of one name, the container's and the volume's, and each copy clones both. [Refresh after a release](/reference/development-containers#refresh-after-a-release) owns the rules.
-
-The task VM refresh is removed ([Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot)). Per host it converged the base VM, snapshotted it and proved the snapshot with one task start.
+When `ORBIT_INSTANCES_NESTED_FLEET_REFRESH` is on, a verified Gateway release admits deployment of each switched-on nested-fleet default Instance to the release commit. The run refreshes the inner fleet, retakes `base` where needed and takes the seed that new copies clone. A default with an inner volume has a seed pair: container and volume snapshots with the same name. Existing task copies keep their own fleet.
 
 <div className="flow-at" data-chart="reference/pipeline/6-task-image-seed-refresh"></div>
 
-- Charts: the stage chart above, the per-Node run [container/fleet-refresh.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd).
-- Docs: [Nested fleet](/reference/development-containers#nested-fleet); for the old path, [Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot).
-- Files: [`swamp/workflows/workflow-operation-instance-deploy-direct.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-instance-deploy-direct.yaml) and its fleet tags in `swamp/ansible/instance-container.yml`.
+- Owner: [Refresh after a release](/reference/development-containers#refresh-after-a-release).
+- Run: [container fleet refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd).
 
 ## Capacity: ideal state
 
-Task work and CI proofs use separate fixed pools on every host. Beast and Shark each have two task places and two CI places. Sabre has zero task places and two CI places. A place holds one VM; VM size does not change the place count. The request kind chooses the pool. Only `proof.run` from an authenticated active `ci-runner` Node and base refresh proofs use the CI pool. Other work uses the task pool.
+Task copies do not use CI places. `proof:run` shares CI places with runner jobs and takes available warm copies or starts new copies from the current seed. Busy runners keep their jobs. Seed freshness, runner state and available memory determine capacity; no fixed per-host counts are part of this pipeline contract.
 
-The pool migration converts the existing Beast and Shark hosts to two task and two CI places each, and Sabre to zero task and two CI places. It removes the replaced host capacity keys. No manual settings change is required.
-
-A task waits for a task place, starts from the base, and deletes its VM after it publishes its PR. A published PR holds no VM, identity, workspace or place through review. Between two steps the VM stays for the next one, until the [idle release](/reference/tasks#release-an-idle-task-vm) saves the workspace to origin and takes it.
-
-Only one proof run works at a time. Operator and CI parents wait in Operation id order under the [proof admission policy](/cli/proof/run#the-run), with a 120-minute allowance from creation. The place stays held until the children have ended; the 60-minute stale-hold release bounds an unproven end. A proof runs in copies of the proof Project's default: one in each free CI place across the CI Nodes.
-
-Each copy starts from the default's seed and brings in the commit. Whole batches are balanced across copies by measured case times. Each copy resets its inner fleet before each batch and runs its share. Orbit merges every case verdict into one report, and every end of a run destroys its copy.
-
-Each copy's share has a run budget from its batches, at most two hours. A plan that gives one copy more batches than that budget fits waits for another copy place, while one is taken. The Gateway records the verdicts of each batch as it ends, so a share that reaches its budget keeps them; only the cases of the batches that did not end are `unrun`.
-
-Full pools cause a wait, never a capacity refusal. A two-hour total admission budget ends a wait with a clear timeout. The proof job belongs to `Required checks`: every selected command needs case verdicts, and every case must pass. No switch makes it report-only; `ORBIT_PROOF_ENABLED` only decides whether CI runs proof at all. On pull requests, the single `Required checks` job waits for the selected Swamp checks and the selected proof. Main runs no proof. Every other selected check remains required. A PR that selects no command passes without starting a VM. There is no shared reserve, task VM cap layered over resource units, or CI preemption path.
+Proof parents wait in Operation order within a 120-minute allowance from creation. A proof balances batches by measured case time across available copies. Every run end requests copy destruction; failed cleanup retains the hold until recovery succeeds. The [proof run contract](/cli/proof/run#the-run) owns admission, budgets, reset optimization, verdict accounting and cleanup. Waiting for capacity or running no selected case is not a passing proof.
 
 <div className="flow-at" data-chart="reference/pipeline/capacity-model"></div>
 
 ## Change the development pipeline
 
-Change a stage in the place that owns it, and update this page in the same PR.
-
-- **This page:** the stages, their order, their status and their links. Edit `docs/reference/command-development-pipeline.mdx`. A stage that gets built changes its status here.
-- **The charts:** edit the `.mmd` file next to the command page, chart first. The stage charts are `docs/reference/pipeline/<n>-<stage>.mmd`, placed on this page with a `flow-at` placement, as the CLI pages rules describe. Run `bin/check-flows`. The rules are in [CLI pages and flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md).
-- **The skills:** `preparing-commands` for stage 1, `verifying-commands` for stages 2 and 3, and `developing-commands` for stage 4 and the code. They link here and to the charts and keep only what an agent must do at its own step.
-- **The proof CI job and the selection list:** [Feature flow](/reference/feature-flow).
+Update the owning stage chart first, then this page in the same PR. Follow the [chart rules](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md). From the repository root, run `node bin/check-flows`, `composer docs-lint` and `composer docs-build`. From `docs/`, run `npx --yes mint validate`. Skills link to the owners and contain only the instructions needed at their entry point. The [feature flow](/reference/feature-flow) owns proof selection, and the [proof commands](/cli/proof/run) own execution contracts.
