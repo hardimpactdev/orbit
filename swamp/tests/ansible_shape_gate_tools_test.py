@@ -86,45 +86,6 @@ class ShapeGateToolsTest(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), '')
         self.assertIn('Installing the pinned shape tools', stderr.getvalue())
 
-    @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
-    def test_the_playbook_names_the_tools_as_the_gate_does(self):
-        # Run the playbook's own naming task on copies of the pin files, so the Jinja is the one that ships.
-        recipe = yaml.safe_load((ANSIBLE / 'tasks/task-vm-recipe.yml').read_text())
-        naming = [task for task in recipe if task['name'] in ('Name the shape gate venv', 'Name the shape gate tools')]
-        self.assertEqual(len(naming), 2)
-        with tempfile.TemporaryDirectory() as folder:
-            folder = Path(folder)
-            for name in ('shape-gate-requirements.txt', 'requirements.txt', 'requirements.yml', 'shape_tool_names.py'):
-                shutil.copy(ANSIBLE / name, folder / name)
-            # The playbook's python3 is this test's interpreter, so the gate here and the playbook name the same venv.
-            (folder / 'bin').mkdir()
-            (folder / 'bin/python3').symlink_to(sys.executable)
-            report = folder / 'names'
-            play = [{'hosts': 'localhost', 'gather_facts': False, 'tasks': [*naming, {
-                'ansible.builtin.copy': {'dest': str(report), 'content': '{{ shape_venv }}\n{{ shape_collections }}\n'}}]}]
-            (folder / 'names.yml').write_text(yaml.safe_dump(play))
-            environment = {**os.environ, 'ANSIBLE_HOME': str(folder / 'home'), 'ANSIBLE_LOCAL_TEMP': str(folder / 'tmp'),
-                           'PATH': f'{folder / "bin"}{os.pathsep}{os.environ["PATH"]}'}
-            subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(folder / 'names.yml')],
-                           check=True, capture_output=True, env=environment)
-            venv, collections = report.read_text().split()
-        self.assertEqual(venv, f'/opt/orbit-shape-gate/{self.gate.venv_name()}')
-        self.assertEqual(collections, f'/opt/orbit-shape-gate/{self.gate.collections_path(self.gate.SYSTEM_TOOLS).name}')
-
-    def test_the_playbook_builds_the_tools_where_the_gate_looks(self):
-        tasks = yaml.safe_load((ANSIBLE / 'tasks/task-vm-shape-gate.yml').read_text())
-        pip = next(task for task in tasks if task['name'] == 'Build the shape gate venv')['ansible.builtin.pip']
-        self.assertEqual(pip['virtualenv'], '{{ shape_venv }}')
-        # The python3 that builds the venv is the one that names it.
-        self.assertEqual(pip['virtualenv_command'], 'python3 -m venv')
-        recipe = yaml.safe_load((ANSIBLE / 'tasks/task-vm-recipe.yml').read_text())
-        naming = next(task for task in recipe if task['name'] == 'Name the shape gate venv')['ansible.builtin.command']
-        self.assertEqual(naming['argv'][:3], ['python3', '-I', '-c'])
-        self.assertNotRegex((ANSIBLE / 'tasks/task-vm-recipe.yml').read_text(), r"venv-\{\{", 'the playbook keeps no naming rule of its own')
-        self.assertEqual(pip['requirements'], '/opt/orbit-shape-gate/shape-gate-requirements.txt')
-        self.assertEqual(str(self.gate.SYSTEM_TOOLS), '/opt/orbit-shape-gate')
-        self.assertNotRegex((ANSIBLE / 'tasks/task-vm-shape-gate.yml').read_text(), r'\w==\d', 'the playbook names no pin')
-
     def test_deno_ansible_fixtures_receive_the_installed_pinned_collections(self):
         collections = self.system / 'collections'
         steps = self.gate.plan('HEAD', self.system, self.system, collections)

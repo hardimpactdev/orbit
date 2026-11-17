@@ -42,29 +42,16 @@ function syncOperation(): Operation
         'input' => ['group_id' => 1, 'workspace' => ['repository' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'branch' => 'task-1']]]);
 }
 
-it('records the two commits that the fetch stored', function (): void {
-    $main = str_repeat('a', 40);
-    $task = str_repeat('b', 40);
-
-    $projected = app(TaskSyncProjection::class)->apply(syncOperation(), [
-        'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['steps' => ['Read the refs' => ['status' => 'succeeded']], 'summary' => ['status' => 'succeeded', 'failed_steps' => []], 'refs' => "{$main}\n{$task}\n"],
-    ]);
-
-    expect($projected->status)->toBe(OperationStatus::Succeeded)
-        ->and($projected->result)->toBe(['default_branch' => 'main', 'default_commit' => $main, 'branch' => 'task-1', 'branch_commit' => $task]);
-});
-
 it('fails with the step that failed and leaves the commits out', function (): void {
     $projected = app(TaskSyncProjection::class)->apply(syncOperation(), [
         'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['steps' => ['Clone the refs' => ['status' => 'failed']], 'summary' => ['status' => 'failed', 'failed_steps' => ['Clone the refs']]],
-        'failure' => ['failed_step' => 'Clone the refs', 'detail' => 'exec failed', 'stderr_recorded' => true],
+        'result' => ['steps' => ['Bring in the base' => ['status' => 'failed']], 'summary' => ['status' => 'failed', 'failed_steps' => ['Bring in the base']]],
+        'failure' => ['failed_step' => 'Bring in the base', 'detail' => 'exec failed', 'stderr_recorded' => true],
     ]);
 
     expect($projected->status)->toBe(OperationStatus::Failed)
         ->and($projected->error_code)->toBe('tasks.sync_failed')
-        ->and($projected->result)->toBe(['error_code' => 'tasks.sync_failed', 'failed_step' => 'Clone the refs']);
+        ->and($projected->result)->toBe(['error_code' => 'tasks.sync_failed', 'failed_step' => 'Bring in the base']);
 });
 
 /**

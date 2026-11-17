@@ -190,6 +190,14 @@ S10d removed the last VM-era code that nothing called. Nothing built an agent gu
 
 `AgentDelivery`, `SshAgentTransport` and `NativeAgentCommandRunner` take a Node only. What stays: the Node agent transports (local, SSH, a workspace, and the connection of a Node that is being admitted), `TaskDeliverableVerifier::matches()` and `unconfirmed()`, `TaskCheckOutputBuilder`, and `TaskVmAptCache`, `TaskVmModelRoute` and `TaskVmNestedFleet`. `GitReadScript` still marks its input as one that carries a credential. No API, agent or Swamp field changes.
 
+### The unreachable Swamp VM paths
+
+Task check, publish and sync require a task copy. Their Swamp execution has no VM branch: check always calls `task-instance-check`, publish always exports and scans the copy, and sync always calls `operation-task-sync-copy`. The uncalled `operation-task-sync` workflow, the eight `task-check-*` VM children and their VM argv builders are removed.
+
+The uncalled base-build graph is removed too: `task-vm-host.yml`, `task-vm-role.yml`, the boot tasks, and their exclusive setup, software, fleet-build and snapshot tasks. Their tests and fixture registrations go with them. Normal Node convergence keeps the package and runtime tasks as `node-converge-apt.yml`, `node-converge-apt-config.yml`, `node-converge-javascript.yml` and `node-converge-deno.yml`.
+
+The chain that replays proof on the merge base stays until replay is ported: the replay steps of `proof-fleet-verify`, the restore of `proof-fleet-verify-batch`, `proof-fleet-restore`, `task-nested-apply` and `task-nested-ready`. Its `task-vm-fleet-wait.yml` and `task-vm-nested-wait.yml` helpers stay too. Removing the base builder does not port replay or permit removing these files.
+
 ### What stays
 
 Old Operations of all these kinds stay as history, as for every [kind that left the registry](/reference/operations#kinds-that-left-the-registry).

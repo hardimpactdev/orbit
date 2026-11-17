@@ -9,8 +9,7 @@
 # retaken, with those containers stopped and started again, only for the containers whose disks changed: the grants, a remint or a Swamp
 # install changed the nested Gateway, a converge changed a task, a rule or file differed, a `base` is missing, or the record was. A migration
 # does not: a reset migrates after its restore (instance-fleet-migrate.yml). The record is removed before the
-# first write to a nested disk and written again last, so a run that stops in the middle leaves none. Input: instance-fleet.yml. The model
-# is the task VM refresh (task-vm-fleet.yml), from the Node through the Instance container.
+# first write to a nested disk and written again last, so a run that stops in the middle leaves none. Input: instance-fleet.yml.
 # The nested Gateway's Swamp runs only with the Club key file. Without it, the grants are not reloaded and the Swamp units are not checked.
 - { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
 - name: Look for the Club key

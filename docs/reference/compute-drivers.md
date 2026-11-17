@@ -620,7 +620,7 @@ A new workspace starts from `git init`, with the Project repository URL as `orig
 
 #### Publish from the VM
 
-Swamp publishes the [checked task candidate](/reference/tasks#publish-an-external-group) from Node 209, which receives the commit from the task VM as a bundle. Handoff CI uses the same native Git transport for `task-{group}-handoff`. The publish step asks the Gateway for a repository installation token when it starts, and the Gateway writes it to the vault. The Gateway projects the result; it runs no push job or mirror import. The VM never receives the token.
+Swamp publishes the [checked task candidate](/reference/tasks#publish-an-external-group) from Node 209, which receives the commit from the task copy as a bundle. The publish step asks the Gateway for a repository installation token when it starts, and the Gateway writes it to the vault. The Gateway projects the result; it runs no push job or mirror import. The VM never receives the token.
 
 The native action uses an empty temporary bare Git repository with the workspace object store as an alternate. Credentials reach only Git in that trusted directory. The action ignores repository hooks and user/system Git configuration, permits HTTPS only and refuses redirects. It pushes the exact admitted commit without force and reads the remote tip before repeating a mutation. No repository command receives the credential. Native locking, cancellation and replay follow the [Tasks contract](/reference/tasks#publish-an-external-group).
 
@@ -638,29 +638,7 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Converge a running task VM
 
-The common converge brings a task VM to the pins of the release. A [base snapshot refresh](#refresh-the-base-snapshot) runs it on the base VM, and a task start ran it on the new VM until the task VM start was deleted. It has no kind or command of its own. Swamp runs the phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH, so a base and a started VM end in the same state. These are the `software`, `tools` and `check` phases.
-
-The Gateway puts these in the intent:
-
-- The `recipe.json` of the release and the Vite+ lock.
-- The VM's SSH target with its recorded host key.
-
-No task file names a version.
-
-The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` and `jq` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust and the Swamp binary follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
-
-The `tools` phase installs the shape gate linters and prepares the Incus client config for the SSH user `orbit` with one serial read. Existing client configs stay in place. Task copies inherit the config, so later parallel Incus calls, including proof restores, cannot race on its first-use write. Incus creates or truncates that file before writing its YAML. The nested fleet is Incus system containers that take the checkout as a disk device, so the VM serves nothing to them.
-
-- The intent names the nested subnet and the interface `nested` (`TaskVmNestedFleet`), so the VM leads the nested network of that subnet.
-- UFW then allows DHCP, DNS and the package cache from the nested bridge, and routes it out.
-- The linters build into `/opt/orbit-shape-gate`. The venv name covers the pins and the interpreter that builds it, by the rule of [the shape gate](/reference/implementation-loop#run-the-swamp-shape-gate-before-you-push).
-- `bin/swamp-shape-gate` finds the folder by that name. The handoff check then runs offline.
-
-The `check` phase is the one end check. It asserts every package at its pin, every runtime and tool at its version, and the package cache active.
-
-The `check` phase also asserts that `orbit` has UID and GID 1000.
-
-A failed phase leaves finished work in place. A rerun skips each phase whose digest matches.
+The task VM role and its base-build graph are removed because nothing calls them. Normal Node convergence keeps its package and runtime helpers under `node-converge-*` names. The [proof replay chain](/reference/old-paths#the-unreachable-swamp-vm-paths) stays until replay is ported.
 
 ### Park and resume
 
@@ -1123,53 +1101,13 @@ The host part that logged task VM egress is removed with the base snapshot refre
 
 #### Refresh the base snapshot
 
-No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`, its intent and projection, and the artisan command `task-vms:image-builds` are removed; its triggers went before them. It is replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates the default Instance of each nested-fleet Project. A recorded base snapshot stays the base of a task start until the rest of the task VM path leaves.
+No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`, its intent and projection, and the artisan command `task-vms:image-builds` are removed; its triggers went before them. It is replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates the default Instance of each nested-fleet Project. No task start copies a VM base snapshot. Replaying proof on the merge base remains separate and is not ported by this removal.
 
-The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`, and later its task start and release parts `start` and `delete`. The parts `host-prepare` and `base-*` stay while tests of shared files load them; nothing runs them. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
+The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`, and later its task start and release parts `start` and `delete`. The remaining `host-prepare` and `base-*` parts and the uncalled role graph are removed too; shared container tests call their live helpers directly. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
 
 ##### Build the nested fleet in the converge
 
-The `fleet` phase of the common converge (`swamp/ansible/tasks/task-vm-fleet.yml`) reads the containers of the VM first. A fleet is complete when its three containers exist and the operator stamp is recorded. The operator join writes that stamp as its last task, after the build, and every promoted base has it.
-
-The phase builds the fleet (`task-vm-fleet-build.yml`) only when it is not complete. That is a base VM that never held a fleet, or one whose build stopped half way, also after all three containers existed. A converge on a complete fleet, and every task start, skip the build and create, delete or restart no container. No other kind builds a fleet.
-
-The values came from the converge intent of the Gateway, `TaskVmConvergeInput` (removed with the claim), which took them from `TaskVmNestedFleet`:
-
-- the names of the containers and of the network;
-- the address, MAC, memory and TLD of each container;
-- the operator end and the subnet that a proof admits;
-- the mount units of the state;
-- the part of the `gateway-bootstrap` input that the Gateway knows.
-
-That part names the package cache of the VM, the address of the nested Gateway, the operator and the agent delivery. The nested network `oe-nested` and the pool `topology-seed` come from the tools phase, which runs on a new base VM because no digest is recorded. The build runs one Ansible task per step, each with its own `timeout`. First it makes the containers:
-
-1. It removes the operator stamp and every container of a half-made fleet, so a build that stops leaves the fleet incomplete and the next one builds it whole.
-2. It makes a missing operator SSH key on the VM. It forgets an earlier Gateway host key.
-3. It creates the three system containers one at a time from `images:ubuntu/resolute/cloud`.
-4. Each container has nesting, a memory limit, a start with the VM, and the address and MAC of the layout.
-5. Cloud-init makes the `orbit` account with the operator key. The build turns cloud-init off after the first boot.
-
-Then it makes the nested Gateway and its Nodes:
-
-1. It attaches the proof Swamp Club key of the base VM to the Gateway container.
-2. It runs `gateway-bootstrap` once with a local `swamp workflow run`. The run adds the Swamp pin, the pinned host key and the release.
-3. Through its own Orbit, the nested Gateway converges its Node and its `gateway` and `websocket` roles. It then adds app-dev and app-prod.
-4. Each of those is an Operation of the nested Gateway. `task-vm-nested-wait.yml` waits for its end.
-5. Each container admits the proof subnet. The Gateway moves its state off its own checkout.
-6. The checkout of the VM becomes the disk device `checkout` of the Gateway and app-dev, and the state is mounted over it.
-7. It waits until Doctor of the nested Gateway is healthy.
-
-The bootstrap input names the operator address of the VM, 10.45.0.10, so the nested Gateway records the `operator` Node that the operator join gives its key. Cloud-init disables the `wg` and `wg-quick` AppArmor profiles at boot, because the profile of Ubuntu 26.04 kills `wg-quick` in a nested container. The containers live in the pool `topology-seed` of the seed disk. The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM, and the daily refresh replaces the seed long before any of these runs out.
-
-The rest of the phase then runs as on any converge: the operator join, token renewal when due, grant reconciliation and the code of the commit. Grant reconciliation renders the checkout’s scoped manifests and reloads them with the existing serve-driver credential, even when the code and token stamps are current.
-
-The `base` snapshots are taken last, including when only grant files changed. A digest records the grants in the last successful set of three snapshots. A failed reload or snapshot leaves that digest unchanged, so a later refresh still takes the required snapshots.
-
-The earlier standalone fleet build took 1,840 s (Operation 11816), so a new host's first refresh takes about 30 minutes more than the build of the outer VM.
-
-##### Not built
-
-- The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
+The uncalled VM fleet builder, `task-vm-fleet.yml` and `task-vm-fleet-build.yml`, is removed with the base-build graph. A task copy gets its nested fleet from the Project's default Instance; [the fleet step](/reference/development-containers#the-fleet-step) owns its build and refresh. The separate restore and apply children below stay for proof replay.
 
 ##### Apply and check the nested fleet
 

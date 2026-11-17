@@ -171,17 +171,9 @@ Scripts and checks keep 16 KiB of output. Provision setup and teardown keep 4 Ki
 
 #### Check an external group
 
-`task:check <task> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/tasks/{task}/check` with `{ phase }`. The Gateway admits the open group, current child and owned VM, records one check row and supplies the full public intent and named vault descriptors to `operation-task-check`. Same-key replay returns that Operation before mutable admission.
+`task:check <task> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/tasks/{task}/check` with `{ phase }`. The Gateway admits the open group, current child and task copy, records one check row and supplies the full public intent and named vault descriptors to `operation-task-check`. Same-key replay returns that Operation before mutable admission.
 
-The run follows its chart: `Build every argv`, `Run setup in order`, `Run the Project check`, `Snapshot the workspace`, `Run each deliverable`, `Snapshot the checked tree`, `Commit the candidate` and `Push the candidate` are child workflows. `Read the result` exposes the complete receipt as a direct behavior output, and `Check the result` fails the run on its execution error code. Swamp propagates only one level of child behavior outputs, so a reader takes the direct receipt rather than reaching through the push child.
-
-A failed step stops the chain, but `Push the candidate` still runs: it shapes the result, which is then `tasks.repository_execution_unknown`, and removes the scratch files. A failed step keeps no stdout, so on a failed run the Gateway reads the result from the push step and keeps its error code. A pending handoff record is kept under one name per group, so the scheduled CI observation replaces it when it settles.
-
-A task copy is required: a group without one returns `409 tasks.no_workspace` ("The group requires its task copy."), because task VM workspaces are removed. The check takes the [container check path](/reference/task-instance-workspace#check-phases); the task VM steps below stay in the workflow only until it is cut. A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. Every step runs on Node 209. Official SSH reaches the admitted VM over WireGuard with the existing identity and stored host key. Plain task VMs need no Swamp binary or worker.
-
-Every step on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. TypeScript on Node 209 builds each argv from the intent and shapes every output. It refuses a deliverable directory that is absolute or has a `..` segment, an overlay path that is not a canonical repository-relative file, and a `fails_on_base` command without a base commit, as `tasks.deliverable_invalid`, before any command runs.
-
-The steps record the start HEAD (`original`), run baseline setup in order (`setup-0`, `setup-1`, …), run the Project check (`project`), snapshot the workspace (`snapshot-before-*`), read the subtask diff from its base with `git diff-tree -r --no-renames --name-status -z` (`diff`), run each command deliverable (`deliverable-0`, …), and snapshot the checked tree again (`snapshot-after-*`, `changed`).
+A task copy is required: a group without one returns `409 tasks.no_workspace` ("The group requires its task copy."). The run always calls `task-instance-check`, whose [Instance phases](/reference/task-instance-workspace#check-phases) validate deliverable paths, check the workspace and commit the candidate. The root reads the child's typed receipt and checks its execution result. There is no SSH VM alternative.
 
 The result preserves the admitted subtask base as its start commit, including after a failed check. It uses `original` only when no base was admitted. A retry must not replace its base with the candidate it just checked.
 
@@ -195,15 +187,9 @@ A changed checked tree returns `changed`; a failed command, an unmet deliverable
 
 A command deliverable stored without `fails_on_base` is admitted with `false`; the subtask keeps it as stored. The check workflows read the value of each command deliverable and never default it.
 
-A passing handoff creates its candidate commit in the VM with `git add --all` and one `git commit` as `Orbit <orbit@users.noreply.github.com>`, with hooks off and the admitted message. TypeScript on Node 209 reads `HEAD`, its tree and its parent back: they must be the checked tree on the checked HEAD, or the check is `changed` and records no candidate. `git update-ref` then records the candidate under `refs/orbit/check-operations/{operation}`. Native history owns successful step reuse. The workspace path is run intent; checks add no lease, ownership token or cross-step lock. Cancellation uses native Swamp cancel and official SSH session teardown. Leftover remote descendants are accepted until normal group cleanup or VM destruction.
+A passing handoff creates its candidate commit in the copy with `git add --all` and one `git commit` as `Orbit <orbit@users.noreply.github.com>`, with hooks off and the admitted message. TypeScript on Node 209 reads `HEAD`, its tree and its parent back: they must be the checked tree on the checked HEAD, or the check is `changed` and records no candidate. `git update-ref` then records the candidate under `refs/orbit/check-operations/{operation}`. Native history owns successful step reuse. The workspace path is run intent; checks add no lease, ownership token or cross-step lock. Cancellation uses native Swamp cancel and official SSH session teardown. Leftover remote descendants are accepted until normal group cleanup or VM destruction.
 
-For Projects with a handoff check name, separate export, copy, import and push steps publish that exact candidate without force to `task-{group}-handoff`, as [publish](#publish-an-external-group) does. After the candidate is ready, a placed mint step posts to the existing scoped Gateway token primitive with `curl`.
-
-The Gateway captures no token at check admission. It mints the existing repository credentials and writes them through the shared execution-copy helper, with the push token also written in Git extra-header form; the response contains vault descriptors only. The push reads that header whole from the vault, as publish does, so the token never appears in a command. Only trusted Git/GitHub actions on 209 resolve those vault copies. The same Gateway class, `TaskGitHubTokens`, mints these credentials as it mints the clone, publish, pull request and dependency merge tokens: a `tasks.check` handoff asks with no purpose.
-
-The VM and repository commands receive none. The push token is revoked after use. The mint steps (the installation token of every clone, dependency read and push) declare `writes: true`, so a lost dispatch fails the step and does not mint a second token. The revokes stay re-runnable: a second `DELETE installation/token` answers 401, and a revoke that a lost worker never finished is better run again. The Checks token is revoked when CI settles or admission fails, with `gh api --method DELETE installation/token`. No pull request opens on the handoff branch.
-
-The check run ends after local execution and CI admission. A native `trigger.schedule` runs about once a minute and performs one bounded status observation per pending check: one `gh api` read of the latest check runs for the exact SHA, at most 100, without paging. TypeScript on 209 keeps only the public run fields.
+Hosted CI is refused for task copies at admission. The old scheduled CI observation remains for recorded checks. A native `trigger.schedule` runs about once a minute and performs one bounded status observation per pending check: one `gh api` read of the latest check runs for the exact SHA, at most 100, without paging. TypeScript on 209 keeps only the public run fields.
 
 A queued or running GitHub Actions job on that candidate keeps CI pending while the aggregate Required check has not appeared. Another head or App cannot extend this wait. Without active jobs, a missing Required check fails after ten minutes; active CI keeps the existing 55-minute limit. Only the named Required check can supply passing evidence.
 
@@ -215,7 +201,7 @@ If SSH preparation fails, native dependencies skip the checks and result steps t
 
 The scheduled result identifies the admitted repository, check name and exact SHA; passed CI or a code failure records terminal check evidence through the shared projection. Unreadable or misconfigured CI records an infrastructure failure. Cancellation preserves the pushed candidate and does not cancel GitHub workflows. No webhook or new GitHub access is required.
 
-The native `Check the result` assert fails on an execution error in the push producer receipt. The Gateway captures that receipt in its terminal history read. Scheduled CI reads take their rows directly from `collect`. Neither workflow prints its result through another shell step.
+The native `Check the result` assert fails on an execution error in the Instance check receipt. The Gateway captures that receipt in its terminal history read. Scheduled CI reads take their rows directly from `collect`. Neither workflow prints its result through another shell step.
 
 The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tree`, redacted `output` and `ci`. Each deliverable has an `id`, an `outcome` and its `failures`, one line each. Its outcome is one of these:
 
@@ -371,7 +357,7 @@ The body stays within its 65,536-character limit: when the path list does not fi
 
 A copy's handoff check already [merged the head it judged against](#the-handoff-check-merges-main-first). So when the default branch did not move since that check, the publish reads `behind_by` 0 and pushes the checked merge commit itself. A conflict that a busy main brings shows up at the check, before review, not at publish.
 
-A task VM publish states no base. A run that started on the workflow before this step has none of the fields and no `## Base` section.
+A run that started on the workflow before this step has none of the fields and no `## Base` section.
 
 The base read also judges workflow changes. It lists the copy's own: the paths under `.github/workflows/` that the checked commit changed since the merge base, `git diff --name-only <base> <commit>`, which is `git diff <default>...<commit>`. A commit that the default branch already holds is never a change of the copy, whether [`task:sync`](#bring-main-into-a-copy) brought it, even from a main newer than the last release, or it was carried in by hand. A workflow change of the copy that a later commit undoes is no change either. A merge that keeps the copy's own version of a workflow that the default branch changed is a change of the copy.
 
@@ -946,13 +932,9 @@ A resolution clears group assistance only when its kind, question, and reason ma
 
 ### Behavior names
 
-The local and data steps of `tasks.check` on a task VM were named by the task VM: the name ends in the address of the VM (its WireGuard address). Addresses come from a bounded pool and are reused, so the set of names stays fixed. Swamp keeps one data lock per behavior name. A fixed name would make runs on different VMs wait for each other, and a long step such as the `observe` step of a turn would hold the lock for the whole stream.
+The long [Instance check phases](/reference/task-instance-workspace#check-phases) name their behavior by Node and group, so another group's check on the Node does not wait for the same lock. Their short steps keep Node names. The VM-only `task-check-*` children and their behavior names are removed.
 
-The SSH steps keep their node id. An SSH definition holds the host keys and the identity of one VM, and the address returns to the pool for the next VM, so a name on the address would rewrite that definition. The Node id of a task VM is never reused.
-
-Other steps keep fixed names. The steps of `tasks.pr_ready` and `tasks.pr_merge` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. A few short check steps (`task-check-prepare`, `task-check-candidate` and the other `task-check-` preparation steps) are short too, and the `collect` step of the scheduled check observation is one step for every VM.
-
-The VM provision child (`tp-clone`, `tp-bundle` and the other `tp-` names) and the per-group `task-check-pending` record still use their earlier names.
+The steps of `tasks.pr_ready` and `tasks.pr_merge` keep fixed names: they make short GitHub calls, and a name per group would grow without bound. The `collect` step of the scheduled check observation is shared; the per-group `task-check-pending` record keeps its earlier name.
 
 ## Credentials in task VMs
 
@@ -1314,7 +1296,7 @@ Use the comment API, CLI or MCP to post a resolution. This changes assistance on
 
 ### Bring the workspace up to date
 
-`task:sync` starts `tasks.sync` through `POST /api/v1/tasks/{task}/sync` with a required `Idempotency-Key` and no body. It brings the Project's default branch into the group's task copy: [bring main into a copy](#bring-main-into-a-copy). A group without a task copy returns HTTP 409 `tasks.no_workspace`: the task VM sync (`operation-task-sync`) is removed with the task VMs, and the Gateway starts it no more.
+`task:sync` starts `tasks.sync` through `POST /api/v1/tasks/{task}/sync` with a required `Idempotency-Key` and no body. It brings the Project's default branch into the group's task copy: [bring main into a copy](#bring-main-into-a-copy). A group without a task copy returns HTTP 409 `tasks.no_workspace`: the uncalled task VM sync workflow is deleted, and the Gateway always starts `operation-task-sync-copy`.
 
 ## Project check
 
