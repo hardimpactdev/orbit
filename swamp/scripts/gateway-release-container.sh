@@ -21,7 +21,7 @@ incus_cli=(incus --force-local --project "$project")
 fail() { echo "gateway.release_container_failed: $*" >&2; exit 1; }
 src() { git -c safe.directory="$mirror" -C "$mirror" show "$sha:$1"; }
 ctl() { python3 <(src swamp/scripts/release-container.py) "$@"; }
-enter() { local machine=$1; shift; "${incus_cli[@]}" exec "$machine" -- "$@"; }
+enter() { local machine=$1; shift; "${incus_cli[@]}" exec "$machine" --cwd /home/orbit -- "$@"; }
 user() { local machine=$1; shift; enter "$machine" runuser -u orbit -- env HOME=/home/orbit "PATH=$runtime/bin:$runtime/php/8.5/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" ORBIT_GATEWAY_SSH_MUX=/run/orbit/ssh-mux "$@"; }
 php() { local machine=$1; shift; user "$machine" "$runtime/php/8.5/bin/php" "$@"; }
 artisan() { local machine=$1; shift; php "$machine" "$app/artisan" "$@"; }
@@ -45,6 +45,29 @@ cache_config() {
 private_ready() { bash <(src bin/gateway-release-check) "$sha" "$(ctl address gateway "$id")"; }
 
 journal=/var/lib/orbit/gateway-release-switch
+# A delete may fail after promotion. Keep its exact SHA across journal rotation.
+prune_previous() {
+  local discarded other matches live old
+  [[ -f $journal/pending-prune ]] || return 0
+  [[ ! -f $journal/operation ]] || fail 'recover or finish the interrupted switch before pruning'
+  discarded=$(cat "$journal/pending-prune")
+  [[ $discarded =~ ^[a-f0-9]{40}$ ]] || fail 'invalid pending rollback identity'
+  live=$(field '.live')
+  old=$(jq -er '.old // ""' "$inventory")
+  [[ $live =~ ^[a-f0-9]{40}$ && ( -z $old || $old =~ ^[a-f0-9]{40}$ ) ]] || fail 'invalid live container inventory'
+  if [[ $discarded != "$live" && $discarded != "$old" ]]; then
+    other=gateway-${discarded:0:12}
+    matches=$("${incus_cli[@]}" list "$other" --format json | jq -er --arg name "$other" '[.[] | select(.name==$name)] | length')
+    if [[ $matches != 0 ]]; then
+      [[ $matches == 1 && $(owned_sha "$other") == "$discarded" ]] || fail 'previous rollback identity changed'
+      [[ $("${incus_cli[@]}" config get "$other" user.orbit.release.target) == gateway ]] || fail 'not a Gateway release'
+      [[ $("${incus_cli[@]}" config get "$other" user.orbit.release.role) == candidate ]] || fail 'not a release clone'
+      "${incus_cli[@]}" delete "$other" --force
+    fi
+    ctl forget gateway "${discarded:0:12}"
+  fi
+  rm -- "$journal/pending-prune"
+}
 set_inventory() {
   local live=$1 old=$2 tmp
   tmp=$(mktemp "$home/.gateway-containers.XXXXXXXX")
@@ -142,6 +165,13 @@ restore_switch() {
 case "$action" in
   build)
     force=$1 manifest=$2 rollback=${3:-false}
+    if [[ -f $journal/pending-prune ]]; then
+      if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} == 1 ]]; then
+        prune_previous
+      else
+        (flock -w 130 9 && prune_previous) 9<>"$home/gateway-release.lock"
+      fi
+    fi
     if [[ $rollback == true ]]; then
       [[ $(field '.old') == "$sha" ]] || fail 'retained rollback changed after admission'
     fi
@@ -287,6 +317,7 @@ case "$action" in
       /usr/local/libexec/orbit-gateway-unit apply-candidate "$operation" "$sha" >&2
       private_ready
       install -d -m 0700 "$journal"
+      if [[ ! -e $journal/operation ]]; then prune_previous; fi
       if [[ -e $journal/operation && $(cat "$journal/operation") != "$operation" ]]; then fail 'another switch needs recovery'; fi
       if [[ $previous ]]; then
         cp -- "$inventory" "$journal/inventory"
@@ -378,23 +409,21 @@ case "$action" in
       bash <(src bin/gateway-release-check) "$previous_sha" "$(ctl address gateway "${prev#gateway-}")"
       ctl retire gateway "${prev#gateway-}" "$operation"
     fi
+    if [[ -f $journal/inventory ]]; then
+      discarded=$(jq -er '.old // ""' "$journal/inventory")
+      if [[ -n $discarded && $discarded != "$sha" && gateway-${discarded:0:12} != "$prev" ]]; then
+        [[ $discarded =~ ^[a-f0-9]{40}$ ]] || fail 'invalid former rollback identity'
+        printf '%s\n' "$discarded" > "$journal/pending-prune.next"
+        mv -T "$journal/pending-prune.next" "$journal/pending-prune"
+      fi
+    fi
     cp "$journal/operation" "$journal/last-operation"
     rm -f -- "$journal/operation"
     ;;
   prune)
     [[ $(field '.live') == "$sha" ]] || fail 'candidate is no longer live'
     [[ -f $journal/last-operation && $(cat "$journal/last-operation") == "$operation" ]] || exit 0
-    prev=$(cat "$journal/machine")
-    if [[ -e $journal/inventory ]]; then
-      discarded=$(jq -r '.old // ""' "$journal/inventory")
-      if [[ $discarded && $discarded != "$sha" && gateway-${discarded:0:12} != "$prev" ]]; then
-        other=gateway-${discarded:0:12}
-        [[ $(owned_sha "$other") == "$discarded" ]] || fail 'retired release identity changed'
-        [[ $("${incus_cli[@]}" config get "$other" user.orbit.release.target) == gateway ]] || fail 'not a Gateway release'
-        "${incus_cli[@]}" delete "$other" --force
-        ctl forget gateway "${discarded:0:12}"
-      fi
-    fi
+    prune_previous
     ;;
   *)
     fail "unknown phase $action"
