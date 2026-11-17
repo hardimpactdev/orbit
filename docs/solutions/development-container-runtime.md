@@ -29,7 +29,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Repeated sends | Swamp relies on T3's idempotent `clientRequestId`, keyed per session, and renews the Swamp session only between turn operations. PR 8 proves it across a T3 restart |
 | Pause | An explicit pause and resume on the group. A paused group admits no Swamp turn, and the user drives from Conn |
 | Task capacity | Each Node has task and CI place counts, with the queue and two-hour wait of task places. The parity gate's peak memory sets the counts |
-| Inner Incus | `agent` joins the inner Incus admin group and has passwordless sudo: root inside its own container. `web` gets no access |
+| Inner Incus | `agent` joins the inner Incus admin group and has passwordless sudo: root inside its own container. `www-data` gets no access |
 | Proof runner tools | The refresh of a nested-fleet default builds the pinned Ansible tools before its seed, so every copy holds them. See [The pinned shape tools](/reference/development-containers#the-pinned-shape-tools) |
 | Container egress | Changed by Nick, 2026-11-10. Every container and the nested test Nodes get full public internet access through the Node's [egress proxy](/reference/development-containers#egress-and-dns). Rollout step 2c built it |
 | Task Nodes before the switch | Task clones and container CI proofs run on Beast and Shark, as `app-dev` Nodes on the build list, beside their task VMs |
@@ -189,7 +189,8 @@ The host side reuses the container host tasks of the task containers (#3279):
 
 The image and the folders:
 
-- The image: Ubuntu 26.04, `agent` 2750, `web` uid 1000 with its primary group `web` 2760, `agent` in `web`, passwordless sudo for `agent` alone, `nftables` with the two uid rules, `hidepid`, `acl`, and the T3 unit.
+- The image: Ubuntu 26.04 with `agent` (2750) in the stock app group `www-data` (33).
+- Passwordless sudo for `agent` alone, `nftables` with the two uid rules, `hidepid`, `acl`, and the T3 unit.
 - The T3 unit has its condition on `/etc/orbit/instance`.
 - The image's alias is a digest of its definition. The stable alias `orbit-instance` names the newest.
 - The build container takes the bridge's last address. Since step 2c it reaches the internet through the egress proxy, as every container does.
@@ -202,13 +203,13 @@ A folder update installs the new version beside the old one and flips `current`.
 Tests: the Ansible fixture tests for the Instance host phase and the task container host phase, which share their tasks; Pest for the recipe pins, the intent, the image files, the notes, the firewall catalog and the bridge transactions. Live on Beast:
 
 1. The converge runs twice; the second changes nothing.
-2. In a test container, `web` cannot run `t3`, `claude` or `codex`, and cannot read `/home/agent`.
-3. As `web`, the forwarder port and T3's port reset, `ps` shows no agent process, and `sudo -n true` fails.
+2. In a test container, `www-data` cannot run `t3`, `claude` or `codex`, and cannot read `/home/agent`.
+3. As `www-data`, the forwarder port and T3's port reset, `ps` shows no agent process, and `sudo -n true` fails.
 4. As `agent`, the three binaries run at the pinned versions.
 
 The isolation and update checks follow.
 
-5. A second container with another isolated ID map shows the same: `agent` runs `t3`, `web` cannot.
+5. A second container with another isolated ID map shows the same: `agent` runs `t3`, `www-data` cannot.
 6. From the second container, the first container's bridge address is unreachable.
 7. An agent folder update during a `sleep 40` tool call restarts T3, and the turn completes.
 8. A nested `app-dev` Node of the proof fleet runs a container on its directory pool, where a copy is a full copy.
@@ -216,11 +217,11 @@ The isolation and update checks follow.
 
 No fixture can prove these claims; only real Incus on the first test Node can.
 
-10. As `web` in a test container, `ps -u agent` lists nothing: `hidepid=invisible` holds after a container restart.
+10. As `www-data` in a test container, `ps -u agent` lists nothing: `hidepid=invisible` holds after a container restart.
 11. The restricted project accepts the two folder disks, read-only and shifted. It sets no `restricted.devices.disk.paths`: Incus refuses `shift` on any disk under that list.
 12. The build container reaches the internet through the egress proxy. A test container on the bridge reaches only the forwarder and the proxy.
-13. As `web`, `10.253.x.1:8319` and T3's port 3773 answer with a reset; as `agent`, both answer.
-14. The published image has no `ubuntu` user and no sudo grant but `agent`'s; sudo fails for `web`.
+13. As `www-data`, `10.253.x.1:8319` and T3's port 3773 answer with a reset; as `agent`, both answer.
+14. The published image has no `ubuntu` user and no sudo grant but `agent`'s; sudo fails for `www-data`.
 15. Cloud-init stays off in a new container.
 
 Three points of the first plan moved, because the code showed they belong elsewhere:
@@ -256,7 +257,7 @@ Tests: Pest for the pins, the folder parts, the Vite+ home and the image files; 
 3. Composer installs the Gateway with its scripts, and Artisan and `php -d memory_limit=1G vendor/bin/pest` run.
 4. `frankenphp php-server` serves the Gateway's `/up`.
 
-Live on Beast, after the pin PR: `php -i`, a `composer install` with scripts and `vp --version` as `web` in a test container, and the folder install's extension check.
+Live on Beast, after the pin PR: `php -i`, a `composer install` with scripts and `vp --version` as `www-data` in a test container, and the folder install's extension check.
 
 ### PR 4: the first default Instance and its deployments
 
@@ -271,9 +272,9 @@ The container:
 
 Its work:
 
-- Orbit writes `.env` for `web` with group `web`. There are no setup steps.
+- Orbit writes `.env` for `www-data` with group `www-data`. There are no setup steps.
 - The development deploy steps run as `agent`, the workspace's owner, each from its own vault copy ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)).
-- FrankenPHP runs as the `web` unit `orbit-frankenphp.service` on port 8080 of the bridge address.
+- FrankenPHP runs as the `www-data` unit `orbit-frankenphp.service` on port 8080 of the bridge address.
 - The container's own ACL lets only the Node's Caddy reach that port, and the Route proxies to it.
 - After the first build and each deployment, Orbit stops the units and takes the snapshot `seed-<commit>`. It deletes older seeds and records the commit on the runtime row.
 - The container-default deployment path runs in the default container as the variant `container`. It starts a stopped container first.
@@ -294,7 +295,7 @@ Tests: Pest for the admission, the runtime row, the intent, the Route site, both
 
 `instance:create` and `instance:deploy` have no cases file yet. Their container cases need a proof Node with the Instance pool and image, which the proof fleet does not build yet. Live on Beast, once PR 3b's pin has landed:
 
-1. The default Instance answers on its Route, served by FrankenPHP as `web`, with the PHP Data Bridge toolbar.
+1. The default Instance answers on its Route, served by FrankenPHP as `www-data`, with the PHP Data Bridge toolbar.
 2. A merge to the default branch deploys, and the Instance serves the new commit.
 3. A merge that changes `composer.lock` installs the change through the deploy steps.
 4. T3 does not run in the default container.
@@ -321,7 +322,7 @@ The code changed these points of this plan:
 | One vault copy | The run's intent holds each unit and its environment file's path. The values go in one vault copy, from path to content. |
 | A changed record refuses | The run makes that copy only while the records still render the admitted units. |
 | `ContainerProcessDefinitions` is not needed | The create and deploy runs install the units, and the Process records complete with the run. |
-| `ContainerProcessTarget` is a branch | The Process target of a container Instance names `web` and the workspace's application directory. |
+| `ContainerProcessTarget` is a branch | The Process target of a container Instance names `www-data` and the workspace's application directory. |
 | Commands that change a record | `process:create`, `process:update` and `process:destroy` refuse a container Instance's Process with `operation.kind_unavailable`. The Project's definitions and a deployment change it. |
 | Docker and presets | A Docker definition or a preset refuses with `process.target_unsupported`. |
 | `--follow` | `process:logs --follow` refuses a container Process with `process.target_unsupported`: the Node agent follows only its own Node's journals. The one-shot read works. |
@@ -492,7 +493,7 @@ Live on Beast, the refresh and the clone:
 Live on Beast, the fleet rules:
 
 5. In a clone, `docker run` works in both nested Nodes, no unit has `LoadCredential`, and the nested Swamp units are active.
-6. As `agent`, a reset restores `base` and Doctor is healthy; as `web`, the inner Incus and the fleet's subnets are refused.
+6. As `agent`, a reset restores `base` and Doctor is healthy; as `www-data`, the inner Incus and the fleet's subnets are refused.
 7. A nested Node fetches a public package through the proxy, and the proxy logs it with the Instance's bridge address.
 8. A container of another Project has no nesting and `user.max_user_namespaces=0`.
 9. The PR records each value that the reference marks "not measured".
@@ -670,7 +671,7 @@ The release flow in containers of [ADR 0263](/decisions/0263-run-production-rele
 This PR prepares a Node; it moves no Instance.
 
 - A container branch of the `app-prod` role converge, with the runtime folder and no agent folder.
-- The production container image: the user `web` only, no T3 unit.
+- The production container image: the user `www-data` only, no T3 unit.
 
 Tests: Molecule `unit` cases and `ansible-lint`. Live on a test `app-prod` Node: the converge runs twice without change; a test container has no `agent` user and no agent folder.
 
@@ -680,7 +681,7 @@ This PR serves one production Instance from a container.
 
 - `instance:clone` makes a production Instance's container from its candidate.
 - FrankenPHP serves it. An idle live sleeps as [ADR 0265](/decisions/0265-sleep-idle-production-containers) decides.
-- Schedules stay native Swamp schedules that run their command in the container as `web`; the per-minute Laravel scheduler runs inside it.
+- Schedules stay native Swamp schedules that run their command in the container as `www-data`; the per-minute Laravel scheduler runs inside it.
 
 Tests: Pest for the intent and projection; the cases. Live: a test Laravel Project serves in production from a container, a Schedule runs on time, and the hibernation sweep puts live to sleep after an idle hour and a visit wakes it.
 
@@ -790,10 +791,10 @@ Each PR moves its part into these pages. The specification stays on [Instance co
 | [Instance releases](/reference/deployments) | Development deployment in the default container; later production releases in containers | 4, 21 |
 | [`instance:create`](/cli/instance/create) | The clone path, the first default, the new errors | 4, 5 |
 | [Conn layer](/reference/conn) | Registration by the create flow's result, the Swamp session, the environment's Instance, the asleep state, `conn.environment_asleep` | 5, 13 |
-| [Processes and Schedules](/reference/processes-and-schedules) | Processes as `web` units in a container; production Schedules inside | 4b, 20 |
+| [Processes and Schedules](/reference/processes-and-schedules) | Processes as `www-data` units in a container; production Schedules inside | 4b, 20 |
 | [PHP runtime](/reference/php-runtime) | FrankenPHP and the PHP CLI in containers | 4 |
 | [Routes](/reference/routes) | An upstream at a container's bridge address | 4 |
-| [Environment variables](/reference/environment-variables) | `.env` in a container, owned by `web` with group `web` | 4 |
+| [Environment variables](/reference/environment-variables) | `.env` in a container, owned by `www-data` with group `www-data` | 4 |
 | [`instance:destroy`](/cli/instance/destroy) | The turn check, clones of a default, the loss of thread history | 6 |
 | [Tasks](/reference/tasks) | Tasks in a clone or an attached Instance; the `t3` driver and Claude for task agents; later the `pi` driver goes | 7, 8, 9, 17 |
 | [Node agent](/reference/node-agent) | The egress observer on the Instance bridge | 7 |

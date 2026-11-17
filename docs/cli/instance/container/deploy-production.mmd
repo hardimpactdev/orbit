@@ -68,7 +68,7 @@ sequenceDiagram
   %%> - links each shared path into the volume, then writes the rendered `.env`
   %%> Why .env after the clone:
   %%> - a warm hot carries live's `.env` from the snapshot until this step; secrets never come from the image or the mirror
-  SW->>C: Run before steps<br/>incus exec · as web
+  SW->>C: Run before steps<br/>incus exec · as www-data
   %%> What it does:
   %%> - each `before_activation` step in order, at the repository root; `migrate` changes the shared database here while live serves
   %%> Requirements on the Project's steps:
@@ -107,7 +107,7 @@ sequenceDiagram
   %%> - enables and starts each Process whose desired state is `running` in the new live; moves `boot.autostart` to it
   %%> Why this order:
   %%> - no timer, Process or job runs in two release containers
-  SW->>C: Run after steps<br/>incus exec · as web
+  SW->>C: Run after steps<br/>incus exec · as www-data
   %%> What it does:
   %%> - each `after_activation` step in order, in the new live
   SW->>N: Retire, read back<br/>Ansible · tags retire · check
