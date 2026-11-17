@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Actions syntax, types and context availability with verified actionlint."""
+"""Validate Actions syntax, types and contexts; default to all tracked workflows."""
 import hashlib
 import os
 from pathlib import Path
@@ -42,4 +42,7 @@ def check(files):
 
 
 if __name__ == '__main__':
-    sys.exit(check(sys.argv[1:] or [ROOT / '.github/workflows/ci.yml']))
+    files = sys.argv[1:] or subprocess.check_output(
+        ['git', 'ls-files', '-z', '--', '.github/workflows'], cwd=ROOT, text=True,
+    ).rstrip('\0').split('\0')
+    sys.exit(check(files))

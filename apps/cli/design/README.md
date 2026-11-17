@@ -24,15 +24,16 @@ ORBIT_GATEWAY_FIXTURES=instances/instance-create/candidate-required apps/cli/orb
 
 ## Flows
 
-A flow file under `flows/` is the agreed way through a sketch: the sketch, its arguments, the keys to send at each prompt, and the text each step must show. It is the file to look up before a demo, the script a cheaper model replays, and the record of what was agreed.
+A flow file under `Flows/` is the agreed way through a sketch: the sketch, its arguments, the keys to send at each prompt, and the text each step must show. It is the file to look up before a demo, the script a cheaper model replays, and the record of what was agreed.
 
 ```bash
 bin/cli-flow --list
+bin/cli-flow --all
 bin/cli-flow node-add
 bin/cli-flow node-add --keep /tmp/node-add-recording
 ```
 
-`bin/cli-flow` replays the flow in a recorded terminal and prints one line per step and the final screen. To demo the same flow live, an agent opens a Solo terminal, runs the sketch, and sends each step's keys as separate inputs, reading the screen after each. The `send` tokens are `<enter>`, `<space>`, `<tab>`, `<backspace>`, `<esc>`, `<up>`, `<down>`, `<left>`, and `<right>`; text prompts accept whole strings, selection prompts need one key per step.
+`bin/cli-flow` replays the flow in a recorded terminal and prints one line per step and the final screen. `--all` replays every flow and fails if any replay fails or no flows are found. To demo the same flow live, an agent opens a Solo terminal, runs the sketch, and sends each step's keys as separate inputs, reading the screen after each. The `send` tokens are `<enter>`, `<space>`, `<tab>`, `<backspace>`, `<esc>`, `<up>`, `<down>`, `<left>`, and `<right>`; text prompts accept whole strings, selection prompts need one key per step.
 
 | Flow | Shows |
 | --- | --- |
