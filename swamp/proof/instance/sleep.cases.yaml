@@ -5,7 +5,11 @@ sources: [gateway]
 baseline: [operations]
 uncovered:
   main: "The proof fleet lacks Instance containers. Pest covers admission, the projection of power_state, prepared_restore and the Caddy rule; real-Ansible fixtures cover the one sleep phase with the power helper fixture; the helper's own tests cover its engine; the live proof runs on a fixture clone."
-  "executor:swap-backed-proof": "Subtask 5768 confirms swap in the copy (12884901888 bytes) and nested-app-dev (5368709120 bytes), but stopped before clone creation: the default Instance has memory.swap.max=0 and the restricted orbit-instances Incus project forbids its limits.memory.swap setting. No real-clone Rust/Python sleeps, Rust wakes, three-target burst or executor SIGKILL/recovery ran. The signed executor.power_proof path remains separate from this production Python command; CI lacks the real T3/Vite clone fixture."
+  "executor:swap-backed-proof": "Subtask 5768 ran 30 signed Rust sleeps and 30 current Python helper sleeps of real clone 4 with T3/Vite. Rust p50/p95/max ms: 428.664/507.154/1249.831, reclaim 372.334/435.810/437.837; Python: 545.736/4974.081/5149.529, reclaim 267/288/346. Every sleep used swap; its limit opened 0 -> max and wake restored 0. Python skipped capture as placement_unproven. Evidence: .orbit-artifacts/5753/live-proof-5768/samples.csv and summary.json. The proof-only executor.power_proof path remains separate from this production command; CI lacks the clone fixture and the fleet-reset runner was not rerun."
+  # Per-sleep RAM/swap bytes are in samples.csv and the two raw sample JSONL files.
+  # Rust RAM: 14323712..16748544; swap: 366612480..371224576. All 15 subtree processes were planned.
+  # Python RAM: 14360576..14876672; swap: 371388416..372674560. Plan capture was skipped on this nested host.
+  # Node totals include publication and the respective residual policy, excluding Ansible startup and transport.
   failed: "A failed sleep keeps power_state; Pest covers the projection of a failed run."
 cases:
   - id: invalid-id

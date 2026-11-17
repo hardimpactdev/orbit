@@ -25,9 +25,6 @@ uncovered:
   "path:cleanup": "Need private-run-file existence checks and cleanup/interruption fault injection to prove run-owned files are removed after work stops, completed changes remain and incomplete cleanup preserves the original failure. Current convergence has no private Ansible run directory or cleanup step."
   "admission:recorded-only": "Need request-time contact tracing to prove admission uses recorded state and never contacts the Node before starting the Operation, including with missing or stale agent facts. A missing agent report is not an additional eligibility refusal."
 
-waits:
-  clone_sleep: "Subtask 5768 confirms swap in the copy (12884901888 bytes) and nested-app-dev (5368709120 bytes). The default Instance still has memory.swap.max=0; the restricted orbit-instances Incus project forbids its limits.memory.swap setting. Stopped before clone creation; no sleep/wake samples ran. CI still lacks the real T3/Vite clone fixture."
-
 cases:
   - id: default-scope
     batch: fresh-fleet
@@ -179,17 +176,28 @@ cases:
 
   - id: executor-whole-container-sleep
     batch: fresh-fleet
-    waits: clone_sleep
     exclusive: true
     covers: []
     summary: A signed sleep of the real executor-sleep-clone with T3 and Vite records a durable power proof Operation, a complete whole-container plan, swap limits and the asleep marker.
-    # Prerequisite evidence: .orbit-artifacts/5753/live-proof-5768/prerequisite-swap-enabled.json.
-    # Copy and nested-app-dev expose swap in /proc/swaps; the default Instance does not.
-    # Incus exit 1: Error: Failed checking if instance update allowed: Use of low-level config
-    # "limits.memory.swap" on container "instance-2" of project "orbit-instances" is forbidden
-    # Unrun: T3/Vite clone checks, 30 Rust sleeps, 30 Python sleeps, 30 Rust wakes,
-    # three-target wake burst and executor SIGKILL/recovery. No timing or RAM/swap samples.
-    fails_today: The restricted nested Incus project forbids the default Instance’s swap setting; the real-clone fixture is unverified. This smoke case does not replace ADR rows 4 and 5’s live measurements. CI proof remains disabled.
+    # Live evidence, subtask 5768 at f45b784f9: .orbit-artifacts/5753/live-proof-5768/summary.json,
+    # samples.csv, rust-samples.jsonl, python-samples.jsonl, durable-operations.json and journal-audit.json.
+    # Real clone 4, create/completion Operations 237/238: T3 0.1.7 + Vite 7.2.2 on port 8080.
+    # 30 signed sleep/wake pairs, Operations 245..304: all 15 subtree processes in every complete plan;
+    # each durable Operation succeeded and has one done journal record. Swap opened 0 -> max -> 0.
+    # Node sleep p50/p95/max ms: 428.664/507.154/1249.831, including reclaim 372.334/435.810/437.837.
+    # Rust RAM after sleep: 14323712..16748544 bytes; swap: 366612480..371224576 bytes, nonzero every time.
+    # Same-clone Python sleep p50/p95/max ms: 545.736/4974.081/5149.529; reclaim 267/288/346.
+    # Python RAM: 14360576..14876672 bytes; swap: 371388416..372674560 bytes.
+    # Python used the current transient-unit prepare/residual path, excluding Ansible and transport;
+    # its plans were skipped/placement_unproven on this nested host. Each sample followed a Rust wake.
+    # Rust wakes to HTTP 200 p50/p95/max ms: 417.586/458.040/599.969; restore 384.604/424.331/567.185.
+    # Incus PUT/unfreeze + operation wait: 5.944/11.747/12.300 ms (strace connect-to-close; overhead included).
+    # All wakes were partial/instance.restore_read_failed, not complete restores. Diagnostic: short reads, madvise EPERM.
+    # Three real T3/Vite clones woke at 737.429/1335.262/1702.093 ms; burst.json records the timing scopes.
+    # SIGKILL during a delayed first restore read: Operation 377 recovered, HTTP 200 at 2444.060 ms;
+    # signed repeat returned partial/repeat=true, one open/done/seen journal record. No code changed.
+    # Manual case-equivalent assertions ran through the existing proof helper; fleet-reset runner/converge not rerun.
+    fails_today: CI proof remains disabled; its fresh fleet does not create the real T3/Vite clone fixture. Live swap-backed measurements ran manually; complete restoration remains unproven because every measured wake was partial.
     setup:
       - executor_key: {}
     act:

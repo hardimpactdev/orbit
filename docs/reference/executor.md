@@ -12,7 +12,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Slices 1 to 3 are proven; slices 4 and 5 await their clone proof.** The executor, its install and its proof action, the no-op `proof.noop`, exist. So do the Gateway signer and publisher, the observer's pass-through and the Gateway's [result listener](#the-listener-and-the-hand-off). An order goes out over the WebSocket, and its result comes back to its Operation. The proof-only [`executor.proof` Operation](#the-proof-operation) sends no-ops; `executor.power_proof` sends sleep, wake and discard orders. Production commands keep their existing paths until the later cutover slices.
+> **Slices 4 and 5 have swap-backed clone measurements.** Thirty Rust sleeps, thirty Python sleeps, thirty Rust wakes, a three-clone wake burst and SIGKILL recovery ran on the nested fleet. Every measured Rust wake answered with `partial`; Python skipped plan capture on this nested host. The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) evidence records these limits. Production commands keep their existing paths until the later cutover slices.
 
 ## Where it runs
 
@@ -277,7 +277,23 @@ A repeat Operation returns its journaled result under the per-target lock. Start
 
 The kind chart is [`docs/cli/proof/executor-power-proof.mmd`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/proof/executor-power-proof.mmd). The executor logs the complete action time, including receipt and asleep-marker fsync, with reclaim measured separately. The private receipt timer ends before its own publication.
 
-The proof of 30 sleeps of a real clone with swap remains open. Subtask 5768 confirms swap in the running copy (`memory.swap.max=12884901888`) and in `nested-app-dev` after setting its byte-size limit (`5368709120`); both expose swap in `/proc/swaps`. The default Instance still has `memory.swap.max=0`. Setting its limit to its 8 GiB memory size fails: `Error: Failed checking if instance update allowed: Use of low-level config "limits.memory.swap" on container "instance-2" of project "orbit-instances" is forbidden`. The restricted Incus project blocks the setting. The prerequisite check stopped before creating a clone, so no real-clone measurements ran.
+**Measured on a real clone.** Subtask 5768 ran the approved binary from `f45b784f9` on `nested-app-dev`. Clone creation and completion Operations 237/238 made `executor-sleep-clone` (Instance 4) active, with T3 0.1.7 and Vite 7.2.2 running. Vite used port 8080 for the executor's readiness check. All 30 signed sleeps had durable `executor.power_proof` Operations, complete plans containing all 15 subtree processes, T3 and Vite included, and a committed asleep marker. The plan held 624,406,528–629,018,624 bytes, including pages still swapped after earlier partial wakes.
+
+The copy and Node had swap allowances of 12,884,901,888 and 5,368,709,120 bytes. The clone's own `memory.swap.max` was `0` before every sleep, `max` while asleep and `0` after every wake; sleep also recorded its inner 32 MiB polkit limit. No Incus swap setting was applied to the clone. Every sleep used swap: Rust left 13.66–15.97 MiB in RAM and 349.63–354.03 MiB in swap; Python left 13.70–14.19 MiB in RAM and 354.18–355.41 MiB in swap.
+
+| Node sleep measurement, 30 samples | p50 | p95 | max |
+| --- | --- | --- | --- |
+| Rust action, including receipt and marker fsync | 428.664 ms | 507.154 ms | 1,249.831 ms |
+| Rust reclaim and counter settling, included above | 372.334 ms | 435.810 ms | 437.837 ms |
+| Python marker, prepare and residual calls | 545.736 ms | 4,974.081 ms | 5,149.529 ms |
+| Python reclaim call, included above | 267 ms | 288 ms | 346 ms |
+| Python residual calls and settling, included above | 123.317 ms | 4,561.989 ms | 4,685.659 ms |
+
+Percentiles use nearest rank. Both totals cover the Node's sleep work through its final publication and counter policy, excluding Gateway boot, transport and Ansible startup. Python ran the current helper through its production transient-unit path and residual retry rule, with a Rust sleep/wake before each sample to restore a comparable starting footprint.
+
+Python's plan was `skipped / placement_unproven` in every sample: today's helper skips capture on a nested Instance host. Its separate capability probe also reported `process_madvise` unavailable. These are measurements of the current paths here, not a comparison of two complete-plan captures. Two Python samples took all 20 residual calls; Rust used its `memory.current` settling rule.
+
+Raw samples, per-sleep RAM and swap, syscall timing, durable Operation records and the journal audit are under `.orbit-artifacts/5753/live-proof-5768/`, principally `rust-samples.jsonl`, `python-samples.jsonl`, `samples.csv` and `summary.json`. The 60 measured Rust sleep/wake Operations each have one done journal record. This was manual live proof through the existing proof helper; the shared fleet-reset runner and converge install were not rerun. CI proof remains disabled and its fresh fleet has no real T3/Vite clone fixture.
 
 | Error or result | Meaning |
 | --- | --- |
@@ -333,4 +349,27 @@ A container that already runs gets only the limits and readiness steps, and repo
 
 The Rust tests cover the identity checks, pool order, the cut at the bound, resident pages, exact limits, the marker, readiness and crash recovery after the unfreeze; the restore tests read a real buffer of the test process.
 
-A SIGKILL in the middle of a real wake has not been run. The real-clone, swap-backed proof of slice 5 (30 wakes and a burst of 3) remains open with [slice 4’s proof](#rust-sleep-and-discard), blocked by the nested Incus project’s refusal to set the Instance’s swap limit. No real-clone sleep, Python comparison, wake, burst or SIGKILL measurement ran in subtask 5768; the prerequisite check stopped before clone creation.
+**Measured on the same clone.** All 30 signed wakes reached an HTTP 200 answer and closed their durable Operations successfully, with the result `partial / instance.restore_read_failed`. A separate syscall diagnostic observed short `process_vm_readv` reads and `process_madvise` returning `EPERM`; complete restoration is not established by this run. Every wake restored the clone's swap limit to `0` and removed its marker.
+
+| Wake measurement, 30 samples | p50 | p95 | max |
+| --- | --- | --- | --- |
+| Node action through the app answering and marker removal | 417.586 ms | 458.040 ms | 599.969 ms |
+| Restore, included above | 384.604 ms | 424.331 ms | 567.185 ms |
+| Incus unfreeze API, included above | 5.944 ms | 11.747 ms | 12.300 ms |
+| Gateway publish through the waiting result | 433.813 ms | 472.584 ms | 613.803 ms |
+
+The unfreeze measurement sums the local API's state-change request and operation wait, from socket connect to close. It excludes the surrounding identity/state reads and kernel-thaw polling. Wake samples used `strace` on connect, send and close calls; their totals include its overhead. The app check is the executor's direct Node-to-container request, not a visit through Caddy or the future Gateway fast path.
+
+Instances 5 and 6 were also real clones with T3 and Vite. One simultaneous three-clone burst used the same 32-thread pool:
+
+| Instance | Node wake to app answer | Restore, included | Incus unfreeze API, included | Gateway publish to result |
+| --- | --- | --- | --- | --- |
+| 5 | 737.429 ms | 525.197 ms | 25.173 ms | 820.775 ms |
+| 6 | 1,335.262 ms | 1,206.700 ms | 24.836 ms | 1,384.006 ms |
+| 4 | 1,702.093 ms | 1,661.800 ms | 8.066 ms | 1,735.952 ms |
+
+All three answered HTTP 200 and reported `partial / instance.restore_read_failed`. Restore time includes waiting behind an earlier target. The last result arrived 1,972.415 ms after launching the three Gateway helper processes; that scope includes their boot time.
+
+**SIGKILL recovery passed.** The first restore syscall was delayed by 1 s for fault injection. The executor was killed while Instance 4 was frozen, with its plan intact and swap open. systemd restarted it, and startup replayed open Operation 377. The app answered HTTP 200 after 2,444.060 ms from the kill; its cgroup thawed, swap returned to `0`, and the plan and marker were removed.
+
+The first waiter timed out. A fresh signed order for the same Operation returned `partial` with `repeat: true` in 7.514 ms, and the Operation succeeded. Its journal has one open, one done and one seen record. Raw evidence is in `burst.json`, `crash-node.jsonl`, `crash-gateway.jsonl` and `crash-recovery-journal.txt` beside the sleep samples. No executor code changed during this proof.
