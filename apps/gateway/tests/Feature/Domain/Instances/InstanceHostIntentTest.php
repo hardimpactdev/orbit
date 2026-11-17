@@ -329,7 +329,7 @@ describe('the Instance image', function (): void {
         $image = InstanceImage::for('10.253.0.1');
         $shared = array_column(array_filter($image['files'], static fn (array $file): bool => ($file['existing'] ?? false) === true), null, 'path');
 
-        expect(array_keys($shared))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/sudoers.d/orbit-agent'])
+        expect(array_keys($shared))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/sudoers.d/orbit-agent', InstanceImage::AppUserSwap])
             ->and($shared)->toBe(array_column(InstanceImage::shared(), null, 'path'))
             ->and($shared['/etc/ld.so.conf.d/zz-orbit-browser.conf']['content'])->toBe("# Managed by Orbit.\n/opt/orbit-runtime/current/lib\n")
             // ldconfig reads the configuration files in name order, and a system library of the same name wins only when its folder
@@ -338,7 +338,9 @@ describe('the Instance image', function (): void {
             ->and($shared['/etc/fonts/fonts.conf']['content'])->toContain('<dir>/opt/orbit-runtime/current/fonts</dir>', '<cachedir prefix="xdg">fontconfig</cachedir>',
                 '<family>sans-serif</family>', '<family>serif</family>', '<family>monospace</family>', 'Noto Color Emoji')
             // sudo reads only a grant that is not writable by others; the converge and the clone push it with this mode, root-owned.
-            ->and(array_column($shared, 'mode', 'path'))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf' => '0644', '/etc/fonts/fonts.conf' => '0644', '/etc/gitconfig' => '0644', '/etc/sudoers.d/orbit-agent' => '0440'])
+            ->and(array_column($shared, 'mode', 'path'))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf' => '0644', '/etc/fonts/fonts.conf' => '0644', '/etc/gitconfig' => '0644', '/etc/sudoers.d/orbit-agent' => '0440', InstanceImage::AppUserSwap => '0755'])
+            // Root runs the app user's swap file; its content is the one shipped file (swamp/ansible/files/instance-app-user.sh).
+            ->and($shared[InstanceImage::AppUserSwap]['content'])->toBe(file_get_contents(base_path('../../swamp/ansible/files/instance-app-user.sh')))
             ->and($image['finish'])->toContain(['rm', '-f', '/etc/ld.so.cache'])
             ->and(array_key_last($image['finish']))->toBe(array_search(['rm', '-f', '/etc/ld.so.cache'], $image['finish'], true))
             ->and(InstanceImage::for('10.253.0.1', app(RecipeImageBuilds::class)->currentRecipe()->incus('amd64'))['files'])->toContain(...InstanceImage::shared());

@@ -37,9 +37,9 @@ it('keeps the normal image definition byte-identical to the one before the neste
     // (`browser_trust`, with the module's version), again when it gained `sudo` and `agent`'s grant (ADR 0268, amendment), which
     // moved it from orbit-instance-bb2dec7d7d42, and again when the app user and its group became `web` (ADR 0268, second amendment),
     // which moved it from orbit-instance-e7621201a4f3. The alias is a digest of the rest of the definition, and the second value of the whole of it.
-    expect($normal['alias'])->toBe('orbit-instance-15755f0286b5')
+    expect($normal['alias'])->toBe('orbit-instance-affd4cbd424c')
         ->and(hash('sha256', json_encode($normal, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)))
-        ->toBe('a76837a7832f9d6e9c1e8b300f59c48304a8026fd96572ef736aa1e828502dbc');
+        ->toBe('a4c1dae649dd357d17260152374fe1eff88e5c810d674e25ea6ae316128e99d7');
 });
 
 it('names the runtime folder\'s trust module in agent\'s NSS store of both images, so Chromium trusts the Orbit root CA', function (): void {
@@ -69,7 +69,7 @@ it('keeps the nested image definition of the image built on Beast, so no converg
     // The alias of the nested image since the app user and its group became `web` (ADR 0268, second amendment); Beast held
     // orbit-instance-nested-27a0fc94aee0 before, and orbit-instance-nested-6388773554e6 before `agent`'s grant. A change of the
     // definition gives a new alias, which only a converge builds; change this value only with a planned converge.
-    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-63af2706f4ce');
+    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-2c104d2619ca');
 });
 
 it('gives a Node without the switch the same host intent members as before, and a switched-on Node only the nested image more', function (): void {

@@ -47,6 +47,12 @@ final readonly class InstanceImage
     public const string SudoGrant = '/etc/sudoers.d/orbit-agent';
 
     /**
+     * Root's one swap file that names an older container's app user `web` (ADR 0268 second amendment,
+     * docs/reference/development-containers.md#the-app-users-name). Every path runs it before its first command as `web`.
+     */
+    public const string AppUserSwap = '/usr/local/libexec/orbit-app-user';
+
+    /**
      * The environment of every program from the runtime folder: Vite+ links the prepared runtime from its writable home,
      * where it can install the Project's package manager without changing the pinned runtime.
      */
@@ -152,6 +158,8 @@ final readonly class InstanceImage
      * - Git trusts the workspace for every user, `agent` and `web` alike, and only that path: both users share it by design.
      * - `agent`'s sudo grant (self::SudoGrant), root-only readable as sudo requires. A container of an older image, and a copy of an
      *   older seed, get it here; sudo reads it at each call.
+     * - Root's swap file of the app user's name (self::AppUserSwap, swamp/ansible/files/instance-app-user.sh). A copy of an older seed
+     *   gets it with its boot files, and its clone guest runs it before its Node store step.
      *
      * @return list<array{path: string, content: string, uid: int, gid: int, mode: string, existing: true}>
      */
@@ -166,6 +174,7 @@ final readonly class InstanceImage
             $file('/etc/fonts/fonts.conf', self::fonts("{$runtime}/fonts")),
             $file('/etc/gitconfig', "# Managed by Orbit.\n[safe]\n\tdirectory = ".InstanceHostIntent::Workspace."\n"),
             ['path' => self::SudoGrant, 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440', 'existing' => true],
+            ['path' => self::AppUserSwap, 'content' => self::appUserSwap(), 'uid' => 0, 'gid' => 0, 'mode' => '0755', 'existing' => true],
         ];
     }
 
@@ -191,6 +200,13 @@ final readonly class InstanceImage
             'entry' => 'library='.InstanceHostIntent::RuntimeFolder.'/current/'.InstanceHostIntent::TrustModule."\nname=Orbit system trust\n\n",
             'uid' => InstanceHostIntent::AgentUid, 'gid' => InstanceHostIntent::AgentUid, 'mode' => '0600', 'directory_mode' => '0700',
             'library' => $library, 'version' => $module->version];
+    }
+
+    private static function appUserSwap(): string
+    {
+        $content = file_get_contents(base_path('../../swamp/ansible/files/instance-app-user.sh'));
+
+        return $content === false ? throw new \LogicException('The app user swap file is missing.') : $content;
     }
 
     private static function fonts(string $folder): string
