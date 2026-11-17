@@ -970,13 +970,14 @@ The nftables table `orbit_instance_egress` keeps the proxy on the public interne
 - **No IPv6.** A LAN often uses global IPv6 addresses, which no fixed range tells from the internet. So the proxy uses IPv4 only.
 - **Admitted.** Only the stub resolver, on port 53. On an Instance fleet Node also the parent proxy: exactly its address and port.
 - **Only `proxy`.** The output chain holds one rule: a packet whose socket belongs to `proxy` jumps to the chain `squid_out`, which holds the rules above. Every other packet leaves the table at once.
-- **Kernel sockets.** A packet of a kernel socket has no socket user, so it matches neither `proxy` nor any other user, and it passes. A WireGuard handshake is such a packet. An earlier chain began with `meta skuid != "proxy" return`, which does not match a packet without a user either. So the handshake fell to the private address reject: on `nested-app-dev`, after a restart, the tunnel to its hub at `10.232.2.11` got no answer.
+- **Kernel sockets.** A packet of a kernel socket, such as a WireGuard handshake, has no socket user. It matches no `meta skuid` rule, so it passes.
+- **Why.** The earlier chain began with `meta skuid != "proxy" return`. A packet without a user does not match it either. So on `nested-app-dev` the handshake fell to the private address reject after a restart.
 What that means:
 
 - **Effect.** The rule holds whatever a name resolves to. The proxy answers 503.
 - **Out of reach.** The Gateway, WireGuard peers, other Nodes' private services and the Node's LAN.
 - **Order.** The table's unit, `orbit-instance-egress-table.service`, loads early at boot.
-- **Changed table.** The converge loads a changed table in place with `nft --file`. The file replaces the table atomically, so no packet passes without it, and Squid keeps running.
+- **Changed table.** The converge loads a changed table in place with `nft --file`. The file replaces the table atomically. Squid keeps running.
 - **Bound.** The proxy's unit binds to the table's unit (`BindsTo`). Each start first checks that the table is loaded.
 
 ### Proxy settings in a container
@@ -2426,7 +2427,7 @@ Its egress proxy goes out through the fleet's proxy (see below).
 Three rules let the operator reach a site on it, also after a restart:
 
 - **Its tunnel.** `nested-app-dev`'s WireGuard handshakes to the hub are packets of a kernel socket. The proxy's table lets them pass, as on every Node ([The proxy's table](#the-proxys-table)).
-- **Through the hub.** The operator's tunnel `wg-nested` ends at the nested Gateway, the fleet's hub. The hub forwards traffic between two members of its WireGuard subnet by the Vpn role's rule `orbit:vpn-peer-forwarding` ([firewall](/cli/firewall#vpn-peer-forwarding)), so the operator reaches `10.45.0.2` over TCP.
+- **Through the hub.** The operator's tunnel `wg-nested` ends at the nested Gateway, the fleet's hub. Its rule `orbit:vpn-peer-forwarding` forwards traffic between two members ([firewall](/cli/firewall#vpn-peer-forwarding)). So the operator reaches `10.45.0.2` over TCP.
 - **By name.** The [fleet start](#the-fleet-step) gives `wg-nested` the hub's resolver for `nested-dev` and `nested-prod`.
 
 The [shared folders](#shared-folders) are the one other difference. An idmapped (`shift=true`) disk fails a third level below the host: the first window at 2,000,000 stopped at the start of the image's build container, and the journal showed the shifted mount of `orbit-agent` torn down at once.
