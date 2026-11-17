@@ -1232,7 +1232,8 @@ Deno.test({
         assertEquals(f.state().containers[name].snapshots.base, before[name].snapshots.base);
       }
       const result = f.refreshed()!;
-      assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped", converge_reason: "unchanged",
+      assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped",
+        converge_reasons: { gateway: { reason: "unchanged" }, "app-dev": { reason: "unchanged" }, "app-prod": { reason: "unchanged" } },
         converge_nodes: [], host: "kept", changed: 0, tokens: "young", tokens_reason: "recorded", base: "kept", base_containers: [], record: "present", tools: "present",
         tools_reason: "current", shrink: "skipped", shrink_reason: "current", swamp: "pinned", swamp_reason: "pinned",
         swamp_version: "20261114.210101.0-sha.537e03d1", seconds: undefined });
@@ -1700,7 +1701,13 @@ Deno.test({
     const before = nowSeconds();
     const f = seeded(before - 60);
     try {
-      f.change((state) => state.intentDigests = { "app-dev": "9".repeat(64) });
+      f.change((state) => {
+        state.intentDigests = { "app-dev": "9".repeat(64) };
+        // Its converge skips the phases whose phase digest did not move, and names the others.
+        state.convergePhases = { 2: [{ name: "input", status: "succeeded" }, { name: "agent", status: "unchanged" },
+          { name: "software", status: "succeeded" }, { name: "roles", status: "succeeded" }, { name: "tools", status: "unchanged" },
+          { name: "network", status: "unchanged" }, { name: "check", status: "succeeded" }] };
+      });
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
@@ -1710,7 +1717,9 @@ Deno.test({
       // The digest is read after the migrate decision and before the agents are awaited.
       assert(calls.indexOf(intentRead) < calls.findIndex((call) => call.endsWith("--fail https://10.45.0.1/api/v1/nodes")), calls.join("\n"));
       const result = f.refreshed()!;
-      assertEquals([result.converge, result.converge_reason, result.converge_nodes, result.restart, result.base], ["ran", "changed", ["app-dev"], "no", "kept"]);
+      assertEquals([result.converge, result.converge_nodes, result.restart, result.base], ["ran", ["app-dev"], "no", "kept"]);
+      assertEquals(result.converge_reasons, { gateway: { reason: "unchanged" }, "app-dev": { reason: "digest_changed", phases: ["software", "roles"] },
+        "app-prod": { reason: "unchanged" } });
       const written = JSON.parse(f.state().outer.files[record]);
       const seededOne = seededRecord(before - 60);
       // app-dev's digest and time move; the other two keep theirs.
@@ -1734,7 +1743,7 @@ Deno.test({
       assert(refreshed.ok, refreshed.output);
       assertEquals(f.calls().filter(convergeApi), convergeCallsFor([3]));
       const result = f.refreshed()!;
-      assertEquals([result.converge, result.converge_reason, result.converge_nodes], ["ran", "stale", ["app-prod"]]);
+      assertEquals([result.converge, (result.converge_reasons as Record<string, unknown>)["app-prod"], result.converge_nodes], ["ran", { reason: "stale" }, ["app-prod"]]);
       const written = JSON.parse(f.state().outer.files[record]);
       assertEquals(written.converge_app_prod, seededRecord(0).converge_app_prod);
       assert(Number(written.converged_app_prod) >= before, JSON.stringify(written));
@@ -1757,9 +1766,34 @@ Deno.test({
       // The same read carries the Instance host intent: unreadable, the host is due too, after the two bases.
       assertEquals(f.calls().filter(convergeApi), convergeCallsFor([1, 2, 3], true));
       const result = f.refreshed()!;
-      assertEquals([result.converge, result.converge_reason, result.record], ["ran", "digest_unreadable", "present"]);
+      assertEquals([result.converge, result.record], ["ran", "present"]);
+      for (const role of ["gateway", "app-dev", "app-prod"]) {
+        assertEquals((result.converge_reasons as Record<string, unknown>)[role], { reason: "digest_unreadable", error: "the digest read failed: Error: The Node app-dev is unknown." });
+      }
       // Without its digest the next refresh converges again.
       assertEquals(Object.keys(JSON.parse(f.state().outer.files[record])), ["code", ...convergedKeys.toSorted(), "grants", "rules", "tokens"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "one Node whose intent cannot be built converges alone and is named unreadable with its error; the others stay unchanged",
+  ignore: !hasAnsible,
+  fn() {
+    const f = seeded(nowSeconds() - 60);
+    try {
+      f.change((state) => state.intentDigestErrors = { "app-dev": "RuntimeException: The Node has no Instance bridge yet." });
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      assertEquals(f.calls().filter(convergeApi), convergeCallsFor([2]));
+      const result = f.refreshed()!;
+      assertEquals(result.converge_reasons, { gateway: { reason: "unchanged" },
+        "app-dev": { reason: "digest_unreadable", error: "RuntimeException: The Node has no Instance bridge yet." }, "app-prod": { reason: "unchanged" } });
+      // Without its digest app-dev is due again at the next refresh; the other two keep theirs.
+      const written = JSON.parse(f.state().outer.files[record]);
+      assert(!("converge_app_dev" in written) && "converge_gateway" in written && "converge_app_prod" in written, JSON.stringify(written));
     } finally {
       f.cleanup();
     }
@@ -1825,6 +1859,8 @@ Deno.test({
       assertEquals(f.calls().filter((call) => call.includes("/converge ")), [convergeAdmit(2, true)]);
       const result = f.refreshed()!;
       assertEquals([result.host, result.converge_nodes, f.state().roleConverges], ["converged", ["app-dev"], [2]]);
+      // app-dev's base digest did not move: it converges because the host part is due, and the result says so.
+      assertEquals(result.converge_reasons, { gateway: { reason: "unchanged" }, "app-dev": { reason: "host_due" }, "app-prod": { reason: "unchanged" } });
       assert(JSON.parse(f.state().outer.files[record]).host !== "0".repeat(64));
     } finally {
       f.cleanup();

@@ -19,7 +19,7 @@ uncovered:
   "guard:singleton-and-cluster": "Need role-holder and Cluster fixtures to distinguish singleton refusal, ingress without a Cluster, a second Cluster ingress, and a repeated active ingress assignment. CLI status alone cannot distinguish these refusals from an unrelated role precondition."
   "record:role-lifecycle": "Need role-record assertions for active, provisioning, failed and removing with role, status, failed_step and error_code, including retained active status after a failed convergence and unchanged assignments after refusals. Compare node:list, node:show and node:role:list using recorded Gateway state only and named related records."
   "effect:role-state": "Database checks its Docker service/package and active assignment; other roles need role-specific host-state assertions and safe negative mutations to prove packages, units, storage ownership, protected-path safety, ordered owned firewall rules and preservation of unrelated rules. The partial-failure case checks execution and recovery, not these host effects or a rollback."
-  "repeat:no-changes": "Database and app-dev repeats read full native Ansible recaps. Other role repeats still need role-specific effects and zero-change proof."
+  "repeat:no-changes": "The database convergence after the install reads full native Ansible recaps, and the app-dev repeat skips its unchanged phases. Other role repeats still need role-specific effects and zero-change proof."
   "failure:role.os_unsupported": "Need an isolated managed non-Ubuntu target to prove role.os_unsupported before host changes while preserving the CLI control path."
   "flow:phase-contract": "Need run/phase and private-file assertions to prove one run, Ansible ownership of idempotent role phases, terminal-only projection and cleanup after either result."
   "path:tools": "Need Tool Manager version and executable assertions on a target receiving an application role to prove conditional tool setup rather than only Operation success."
@@ -36,7 +36,7 @@ cases:
   - id: required-only
     batch: fresh-fleet
     covers: [main, add, succeeded, role-refused, converge-requested, converge-mode, converge, converge-succeeded]
-    summary: Repair a stopped Docker service when adding database, verify its package and active assignment, refuse an ordinary repeat, then prove that a convergence after the install succeeds and changes nothing.
+    summary: Repair a stopped Docker service when adding database, verify its package and active assignment, refuse an ordinary repeat, prove that a convergence after the install succeeds and changes nothing.
     timeout: 1200
     setup:
       - service: {on: app-dev, name: docker.socket, state: stop}
@@ -53,7 +53,8 @@ cases:
         expect:
           - unchanged: {since: act, what: [ufw, operations]}
       # The install converged the role, so the first --converge is already the repeat that must change nothing (measured in a copy:
-      # both converges after the install changed 0 in every phase). One Operation checks both.
+      # both converges after the install changed 0 in every phase). One Operation checks both. It runs every phase: the kind is part of
+      # the phase digest, so a role addition's record never skips it (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
       - act:
           - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], save: {id: database-repeat}, expect: {exit: 0, status: succeeded}}
         expect:
@@ -65,18 +66,19 @@ cases:
     batch: fresh-fleet
     waits: idmap
     covers: [main, tools, converge-requested, converge-mode, converge, converge-succeeded]
-    summary: Converge app-dev and its Tool Managers, then prove an unchanged repeat changes no role resources or manager installation.
+    summary: Converge app-dev and its Tool Managers, then prove an unchanged repeat skips its unchanged phases and its check finds no change.
     timeout: 1800
     stages:
       - act:
           - cli: {run: [node:role:add, "${app-dev.id}", app-dev, --converge], expect: {exit: 0, status: succeeded}}
       - act:
-          - cli: {run: [node:role:add, "${app-dev.id}", app-dev, --converge], save: {id: application-repeat}, expect: {exit: 0, status: succeeded}}
+          - cli: {run: [node:role:add, "${app-dev.id}", app-dev, --converge], save: {id: application-repeat}, expect: {exit: 0, status: succeeded, steps: {name: Set up Tool Managers, count: 0}}}
           - cli: {run: [node:role:list, "${app-dev.id}"], expect: {exit: 0, json: [{path: "assignments[role=app-dev].status", equals: active}]}}
         expect:
           - service: {on: app-dev, name: docker.service, state: active}
           - service: {on: app-dev, name: caddy.service, state: active}
-          - ansible_changes: {operation: "${application-repeat}", phases: [Apply role prerequisites, Set up Tool Managers, Apply the role on the Node, Open the firewall, Check the role], changed: 0}
+          # The repeat skips the unchanged phases (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change); the check still runs.
+          - ansible_changes: {operation: "${application-repeat}", phases: [Check the role], changed: 0}
 
   - id: invalid-node-id
     batch: fresh-fleet

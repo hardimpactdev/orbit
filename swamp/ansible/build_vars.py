@@ -110,6 +110,8 @@ def build(folder, kind):
         return build_task_vm(folder, kind)
     folder = Path(folder)
     intent = json.loads((folder / 'intent.json').read_text())
+    # The Node's phase digests are the input of the skip only; Ansible reads none, and a digest must not read its own record.
+    intent.pop('recorded_digests', None)
     hosts, known = {}, set()
 
     def host(node_id, ssh, keys=None):

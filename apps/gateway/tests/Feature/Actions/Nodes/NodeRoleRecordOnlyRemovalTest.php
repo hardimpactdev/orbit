@@ -220,3 +220,18 @@ it('refuses --offline on a role that never touched the Node and keeps the row', 
     expect(NodeRole::query()->whereKey($assignment->id)->exists())->toBeTrue()
         ->and(Operation::query()->count())->toBe(0);
 });
+
+it('clears the Node phase digest record on both removal paths', function (bool $untouched): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: both removal paths take the Node's admission lock,
+    // and the store clears the record under it.
+    Http::preventStrayRequests();
+    recordOnlyDispatch();
+    $node = recordOnlyNode();
+    $node->roles()->create(['role' => RoleName::Database, 'status' => 'failed',
+        'failed_step' => 'converge:Require supported Ubuntu', 'error_code' => 'role.os_unsupported', 'node_untouched' => $untouched]);
+    Node::query()->whereKey($node->id)->update(['converge_digests' => json_encode(['node' => str_repeat('a', 64)])]);
+
+    app(AdmitNodeRoleOperationAction::class)->remove($node, RoleName::Database, force: true);
+
+    expect($node->refresh()->converge_digests)->toBeNull();
+})->with(['record-only' => [true], 'native withdrawal' => [false]]);

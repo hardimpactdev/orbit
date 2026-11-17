@@ -7,7 +7,7 @@ description: "Add one role to a Node, or converge an existing role again."
 Add a role's packages, files, services, ports and Metrics membership to a Node. Use `--converge` to repair an existing assignment without removing it first.
 
 ```bash
-orbit node:role:add <node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--idempotency-key=KEY] [--json]
+orbit node:role:add <node> <role> [--converge [--full]] [--postgres-process=ID] [--clickhouse-process=ID] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -18,6 +18,7 @@ orbit node:role:add <node> <role> [--converge] [--postgres-process=ID] [--clickh
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--converge` | off | Repair an assignment that is `active`, `failed` at a `converge:` step, or `provisioning` for at least 11 minutes with no Operation holding the Node. |
+| `--full` | off | With `--converge` only: compare with no phase digest record, so every phase runs. Use it to repair drift that the end check does not read. |
 | `--postgres-process=ID` | none | For `analytics`, including convergence: the storage Process for PostgreSQL 16 or managed PostgreSQL 18. See [Analytics storage requirements](/reference/analytics#prepare-the-database-processes). |
 | `--clickhouse-process=ID` | none | For `analytics`, including convergence: the ClickHouse storage Process. See [Analytics storage requirements](/reference/analytics#prepare-the-database-processes). |
 | `--idempotency-key=KEY` | generated | [Shared request replay rules](/reference/operations#retry-a-start-with-a-key). |
@@ -31,7 +32,7 @@ orbit node:role:add 9 analytics --postgres-process=41 --clickhouse-process=42
 
 [Shared input rules](/reference/cli-ux#input-and-output-modes) govern omitted arguments and Analytics storage options. Access follows the [Node family's shared authority rule](/cli/node#authority). [Role compatibility](/reference/node-provisioning#role-compatibility) owns conflicts, singleton roles and ingress Cluster requirements; the [CI runner reference](/reference/node-provisioning#ci-runner-role) describes that role's host boundary.
 
-A repeat without `--converge` is refused with `validation.failed`, except for an `active` `ingress` assignment, which reapplies its configuration. A successful second convergence reports no changes when the Node already matches. To move `gateway`, `websocket` or `metrics`, use [`node:role:relocate`](/cli/node/role-relocate).
+A repeat without `--converge` is refused with `validation.failed`, except for an `active` `ingress` assignment: that repeat is a new `node.role_add` Operation for the same role. A convergence skips the phases whose input did not change since the last succeeded add or convergence on the Node, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change): `prerequisites`, Tool Managers, `node` and `firewall`. Every other step runs, Publish role sites included, because it can change other Nodes. The end check also runs. A first add runs every phase, because the new role changes the input. A repeated `ingress` add skips its unchanged phases as a convergence does. The first convergence after an add runs every phase, because the Operation kind is part of the input. Any other Operation on the Node, a role removal included, clears the record. To move `gateway`, `websocket` or `metrics`, use [`node:role:relocate`](/cli/node/role-relocate).
 
 ## How it works
 

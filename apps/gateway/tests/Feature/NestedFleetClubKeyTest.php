@@ -287,7 +287,10 @@ describe('the result of a start', function (): void {
         SwampNodeFixture::ensure();
         placeClubKey($this->clubEnvironment, FakeNestedClubKey);
         $instance = Instance::query()->findOrFail(containerCreate(clubProject('trial', true), clubSwitchedOnNode())->target_id);
-        $refresh = ['migrate' => 'nothing', 'restart' => 'yes', 'converge' => 'ran', 'converge_reason' => 'stale', 'converge_nodes' => ['app-prod'], 'changed' => 0, 'tokens' => 'reminted', 'tokens_reason' => 'incomplete',
+        $refresh = ['migrate' => 'nothing', 'restart' => 'yes', 'converge' => 'ran',
+            'converge_reasons' => ['gateway' => ['reason' => 'unchanged'], 'app-dev' => ['reason' => 'digest_unreadable', 'error' => 'RuntimeException: The Node has no Instance bridge yet.'],
+                'app-prod' => ['reason' => 'digest_changed', 'phases' => ['software', 'roles']]],
+            'converge_nodes' => ['app-dev', 'app-prod'], 'changed' => 0, 'tokens' => 'reminted', 'tokens_reason' => 'incomplete',
             'base' => 'kept', 'base_containers' => [], 'record' => 'present', 'tools' => 'built', 'tools_reason' => 'missing',
             'shrink' => 'ran', 'shrink_reason' => 'packages', 'swamp' => 'installed', 'swamp_reason' => 'changed', 'swamp_version' => '20261114.210101.0-sha.537e03d1',
             'seconds' => ['gateway' => 14, 'converge' => 70, 'ready' => 3, 'base' => 1, 'tools' => 34]];
@@ -307,8 +310,19 @@ describe('the result of a start', function (): void {
             ->and($deploy(['commit' => $commit, 'club_key' => 'unchanged'])->result)->not->toHaveKey('fleet_refresh')
             // Words the refresh does not use, or a count that is no count, are not recorded.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'base' => 'maybe']])->result)->not->toHaveKey('fleet_refresh')
-            // Why the converge ran or was skipped is one of the refresh's own words.
-            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reason' => 'because']])->result)->not->toHaveKey('fleet_refresh')
+            // Why each Node converged or not is one of the refresh's own words; only an unreadable digest names an error, and only a
+            // converged Node names the phases its converge ran (docs/reference/development-containers.md#what-a-refresh-skips).
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'gateway' => ['reason' => 'because']]]])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'app-dev' => ['reason' => 'digest_unreadable']]]])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'gateway' => ['reason' => 'unchanged', 'phases' => ['roles']]]]])->result)->not->toHaveKey('fleet_refresh')
+            // `unchanged` means the Node did not converge: a converged Node never says it, and a Node that did not converge says nothing else.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'app-prod' => ['reason' => 'unchanged']]]])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'gateway' => ['reason' => 'stale']]]])->result)->not->toHaveKey('fleet_refresh')
+            // Only nested-app-dev converges for its Instance host part.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'app-dev' => ['reason' => 'host_due', 'phases' => ['roles']]]]])->result['fleet_refresh']['converge_reasons']['app-dev'])->toBe(['reason' => 'host_due', 'phases' => ['roles']])
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_nodes' => ['gateway', 'app-dev', 'app-prod'], 'converge_reasons' => [...$refresh['converge_reasons'], 'gateway' => ['reason' => 'host_due']]]])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'app-prod' => ['reason' => 'digest_changed', 'phases' => ['check']]]]])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => array_diff_key($refresh, ['converge_reasons' => true])])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'changed' => '3']])->result)->not->toHaveKey('fleet_refresh')
             // The converged Nodes are the inner fleet's own role names, each once; a refresh that does not name them is not recorded.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_nodes' => ['app-dev', 'app-dev']]])->result)->not->toHaveKey('fleet_refresh')

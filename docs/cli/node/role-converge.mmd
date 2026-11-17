@@ -14,10 +14,11 @@ sequenceDiagram
   participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>has the role
   participant M as Metrics Node<br/>Prometheus
-  CLI->>GW: node:role:add NODE ROLE<br/>--converge
+  CLI->>GW: node:role:add NODE ROLE<br/>--converge [--full]
   %%> Command:
   %%> - `orbit node:role:add NODE ROLE --converge`
-  %%> - syntax: `<node> <role> --converge [--json]`
+  %%> - syntax: `<node> <role> --converge [--full] [--json]`
+  %%> - `--full`: compare with no digest record, so every phase runs
   %%> Input:
   %%> - the Node and a role it already has; without `--converge` the same call is refused (`validation.failed`), except an `active` `ingress` role, which runs `node.role_add`
   %%> What it does:
@@ -31,11 +32,17 @@ sequenceDiagram
   %%> - Node convergence, role addition or convergence, enrollment and agent rekey share one Node admission lock (`operation.target_busy`)
   %%> Result:
   %%> - an `active` role keeps its status; a `failed` or stale role is marked `provisioning` for the run
-  %%> - a task is recorded with the full intent
+  %%> - a task is recorded with the full intent and the Node's phase digest record, read before the admission clears it (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change)
+  %%> - with `--full`, or while the Node records a failed agent pin, the task holds no record
   GW->>SW: Start run, full intent<br/>operation-node-role-add
   GW-->>CLI: 202 Accepted<br/>task ID
   %%> What you get:
   %%> - the task ID, at once
+  Note over SW: Write input<br/>compare phase digests
+  %%> What it does:
+  %%> - after it writes every file the phases read, it computes each phase digest by the one rule of node:converge and compares it with the recorded digest
+  %%> - `prerequisites`, `tools`, `node` and `firewall` skip when their digest is equal: they do not connect to the Node
+  %%> - every other step and the end check always run, so the check still reads drift; Publish role sites always runs, because it can change other Nodes
   SW->>N: Require supported Ubuntu<br/>SSH argv · native assert
   opt swamp role
     SW->>N: Install Ansible<br/>native bootstrap
@@ -107,9 +114,10 @@ sequenceDiagram
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record the role active
+    Note over GW: Record the role active<br/>and the phase digests
     %%> Result:
-    %%> - the assignment is `active` and an earlier failed step is cleared; a second convergence reports no changes
+    %%> - the assignment is `active` and an earlier failed step is cleared; a second convergence skips its unchanged phases
+    %%> - the Node's digest record is the digests of this run; a failed or interrupted run leaves no record
     opt Node offers proof places
       Note over GW: Admit the seed copy<br/>instance.seed_copy
       %%> When:

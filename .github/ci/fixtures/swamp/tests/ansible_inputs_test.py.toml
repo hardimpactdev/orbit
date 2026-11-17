@@ -1,6 +1,7 @@
 order = 340
 cases = [
   "test_admitted_identity_and_secret_file_custody",
+  "test_role_variables_keep_out_the_recorded_phase_digests",
   "test_seed_listener_addresses_the_default_node_only_while_the_seed_has_a_sender",
   "test_metrics_container_plan_preserves_the_admitted_state",
   "test_every_ansible_step_sends_its_failed_task_to_stderr",

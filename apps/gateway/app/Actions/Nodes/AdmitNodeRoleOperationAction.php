@@ -17,6 +17,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
 use App\Domain\Nodes\NativeNodeRoleRelocateInput;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
+use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleMetricsInput;
@@ -57,14 +58,14 @@ final readonly class AdmitNodeRoleOperationAction
         private RouteRemovalGuard $routes,
     ) {}
 
-    public function add(Node $node, RoleName $role, bool $converge = false, ?AnalyticsRoleSettings $analytics = null, ?string $requestId = null, bool $duringProvisioning = false): Operation
+    public function add(Node $node, RoleName $role, bool $converge = false, ?AnalyticsRoleSettings $analytics = null, ?string $requestId = null, bool $duringProvisioning = false, bool $full = false): Operation
     {
         $kind = $converge ? 'node.role_converge' : 'node.role_add';
         if (($existing = $this->idempotency->replay($kind)) !== null) {
             return $existing;
         }
 
-        return DB::transaction(function () use ($node, $role, $converge, $analytics, $requestId, $duringProvisioning, $kind): Operation {
+        return DB::transaction(function () use ($node, $role, $converge, $analytics, $requestId, $duringProvisioning, $kind, $full): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
             if ($role === RoleName::Database && (! is_string($node->wireguard_ip) || $node->wireguard_ip === '')) {
                 throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
@@ -96,6 +97,8 @@ final readonly class AdmitNodeRoleOperationAction
                 $this->analytics->store($node, $analytics);
             }
             $beforePublications = app(NativeNodeRoleRemovalInput::class)->publications($node, $role);
+            // Read before the admission clears the record; the Node row lock keeps every other admission out in between.
+            $recorded = app(NodeConvergePhaseDigest::class)->recorded($node, $full);
             $operation = $this->operations->execute($kind, 'node', $node->id, $node->id,
                 ['node_id' => $node->id, 'role' => $role->value, 'converge' => $converge], 'operator', $requestId,
                 lockKey: OperationStore::lockKey('node', $node->id));
@@ -117,6 +120,7 @@ final readonly class AdmitNodeRoleOperationAction
             $runtime = ValidatedData::object($snapshot['runtime'] ?? []);
             $clickhouse = ValidatedData::object($runtime['clickhouse'] ?? []);
             $nativeInput = app(NativeNodeRoleAddInput::class)->capture($node, $assignment, $snapshot, $beforePublications, $operation);
+            $nativeInput['intent'] = app(NodeConvergePhaseDigest::class)->stamp($nativeInput['intent'], $recorded);
             $this->store->change($operation, ['input' => [...$operation->input, '_role' => $snapshot,
                 'native_role' => $nativeInput['intent'], 'execution_secrets' => $nativeInput['execution_secrets'],
                 'participant_node_ids' => array_values(array_unique([$node->id,

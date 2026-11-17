@@ -39,6 +39,8 @@ Only one add, converge or remove runs on a Node at a time, and a removal from th
 
 The CLI follows the Operation and prints the final result with the request ID.
 
+A removal clears the Node's phase digest record when it is admitted, so the next converge or role Operation on the Node runs every phase ([the skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change)).
+
 ## A stale Router assignment
 
 A failed `cluster:router:set` can leave a `router` assignment on a Node that is not its Cluster's Router. This command removes that assignment when all of these hold:

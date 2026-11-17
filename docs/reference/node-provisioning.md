@@ -607,33 +607,46 @@ A failed phase stops later phases and fails the Operation with its failed step a
 
 ### Skip a phase whose input did not change
 
-This is the one rule for a skipped converge phase. The phases `agent`, `software`, `roles`, `tools` and `network` can skip. `input` and `check` always run.
+This is the one rule for a skipped phase. It applies to `node:converge` and to the role Operations of [`node:role:add`](/cli/node/role-add), with and without `--converge`. They share one digest, one comparison and one record.
+
+| Operation | Phases that can skip | Phases that always run |
+| --- | --- | --- |
+| `node.converge` | `agent`, `software`, `roles`, `tools`, `network` | `input`, `check` |
+| `node.role_add`, `node.role_converge` | `prerequisites`, `tools`, `node`, `firewall` | the input, the OS check, Ansible, Analytics storage and runtime, Swamp, certificates, PHP pools, `publication` (Publish role sites), private DNS, Metrics, `check` |
+
+A role phase that always runs can change another Node, signs with the Gateway, or starts a runtime. `publication` (Publish role sites) is one of them, because it can change other Nodes. PHP pools and private DNS are native delta publications: they change nothing when nothing changed.
 
 A phase digest is the SHA-256 of the phase name and of what the phases read. Swamp computes it when it prepares the input, after it writes every file for the phases. What the phases read is:
 
 - the files written for the phases: the converge variables, `plans.json`, the inventory, the known hosts and each role's variables;
+- for a role Operation, its variables: the Operation kind, the role intent and its execution secrets;
 - the Ansible bundle, which also builds each role's variables;
 - the Tool helper and the shipped Tool files that it imports.
 
-The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies. Swamp replaces the attempt's Operation ID with a fixed mark before it hashes a file, so two attempts with the same recorded state have the same digest. The digests the Node records are not in the variables, so a digest does not read its own record.
+The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies.
+
+Swamp replaces the values of the attempt with fixed marks before it hashes a file: its Operation ID, the version that the admission gives each role certificate leaf, and the admission time of the Instance bridge. So two attempts with the same recorded state have the same digest. A leaf version names only the leaf's folder on the Node, and the admission time only orders bridge writes. The digests the Node records are not in the variables, so a digest does not read its own record.
 
 Every phase reads the same variables, so all phase digests move together. A change of any recorded input, secret value, plan or shipped converge code runs every phase again.
 
 Swamp compares each digest with the digest that the Node records for that phase, and skips the phase only when they are equal. A skipped phase does not connect to the Node and does not read its state.
 
-A succeeded `node:converge` records the digest of each phase on the Node (`nodes.converge_digests`), whether the phase ran or skipped. Nothing else writes the record. The admission of any Operation that takes the Node's Operation admission lock clears it: a converge, a role addition, convergence or removal, an enrollment or an agent rekey. So these run a phase in full:
+A succeeded `node:converge`, role addition or role convergence records the digest of each of its phases on the Node (`nodes.converge_digests`), whether the phase ran or skipped. It replaces the whole record. Nothing else writes the record. The admission of any Operation that takes the Node's Operation admission lock clears it after it reads it: a converge, a role addition, convergence or removal, an enrollment or an agent rekey. So these run a phase in full:
 
 - a changed digest: a changed intent, secret value or release;
 - no record: the first converge, or a converge after a failed or interrupted converge;
 - no record: a converge after any other Operation on the Node;
+- a digest of another kind: the variables hold the Operation kind, so a converge never matches a role Operation's record;
+- the first `--converge` after a role add: a role convergence never matches a role addition's record, but its repeat can skip;
+- no record: any Operation after a role removal;
 - no record: a converge while the Node records a failed agent pin;
-- `--full`, which compares with no record.
+- `--full` of `node:converge` or of `node:role:add --converge`, which compares with no record.
 
 An agent command can record a failed agent pin outside any Operation, so admission does not clear the record for it. The converge must install the agent again, so it compares with no record.
 
-Drift is not an input. A skipped phase does not see a change that someone made on the Node by hand. The `check` phase always reads the selected software, units, role configuration and tunnel. When it finds drift, the converge fails, the record stays clear, and the next converge runs every phase. Run `node:converge --full` to repair drift that the check does not read.
+Drift is not an input. A skipped phase does not see a change that someone made on the Node by hand. The `check` phase always reads the selected software, units, role configuration and tunnel; the role `check` always reads the role's services, ports, sites and rules. When it finds drift, the Operation fails, the record stays clear, and the next one runs every phase. Run `node:converge --full` or `node:role:add NODE ROLE --converge --full` to repair drift that the check does not read.
 
-The Operation steps show a skipped phase as a skipped step. The Operation's `result.phases` and the `node:converge` output show it as `unchanged`, with no changes and no time.
+The Operation steps show a skipped phase as a skipped step. The Operation's `result.phases` and the `node:converge` output show it as `unchanged`, with no changes and no time. A role Operation shows them only as skipped steps.
 
 The Tool helper is the TypeScript policy that judges each Tool. It runs on the Swamp Node, with the Deno at `/usr/local/bin/deno`; on its first run for a worker, Deno downloads the helper's two pinned npm imports. A helper that cannot run is not a Tool failure: the `tools` phase fails before it judges a Tool, and no Tool is marked failed. Converge the Swamp Node to install its Deno, then converge the Node again.
 
@@ -795,7 +808,7 @@ The hub step marks the `vpn` role active. After serve and both workers run, the 
 
 `orbit:node-converge NODE` admits `node.converge` from the Gateway itself. The Gateway converges its own Node this way, which installs the agent and removes the packaged CLI from its machine.
 
-`orbit:node-converge-digest --base NODE...` prints one JSON object with the SHA-256 digest of each named Node's base converge intent. It builds the intent as `node.converge` with `base: true` does, but it admits no Operation, makes no execution copy and writes nothing. An unknown Node, or an intent it cannot build, fails the command with no digest. The nested-fleet refresh compares these digests to decide whether the inner Nodes need a converge ([what a refresh skips](/reference/development-containers#what-a-refresh-skips)).
+`orbit:node-converge-digest --base NODE...` prints one JSON object with the SHA-256 digest of each named Node's base converge intent. It builds the intent as `node.converge` with `base: true` does, but it admits no Operation, makes no execution copy and writes nothing. An unknown Node fails the command with no digest. For a Node whose intent it cannot build, it prints `{"error": "..."}` in place of that Node's digest and still prints the others. The nested-fleet refresh compares these digests to decide whether the inner Nodes need a converge ([what a refresh skips](/reference/development-containers#what-a-refresh-skips)).
 
 The Swamp role's own steps are workflow steps bound to worker labels, so a Gateway without a worker cannot run them; once its own Swamp serves, `node:role:add` converges the roles through it.
 

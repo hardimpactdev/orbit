@@ -39,6 +39,7 @@ it('registers the exact node role add command signature surface', function (): v
         ->and(node_role_add_command_options($command))
         ->toBe([
             'converge' => false,
+            'full' => false,
             'idempotency-key' => null,
             'postgres-process' => null,
             'clickhouse-process' => null,
@@ -136,6 +137,20 @@ it('renders gateway-owned node role add failures through the shared boundary', f
         ->artisan('node:role:add', ['node' => '7', 'role' => 'gateway', '--json' => true])
         ->expectsOutput($expected)
         ->assertExitCode(1);
+});
+
+it('refuses --full without --converge without sending a request', function (): void {
+    $mockClient = MockClient::global();
+
+    $this->artisan('node:role:add', ['node' => '7', 'role' => 'app-dev', '--full' => true, '--json' => true])
+        ->expectsOutput(json_encode(['error' => [
+            'code' => 'validation.failed',
+            'message' => '--full is only valid with --converge.',
+            'details' => ['field' => '--full'],
+            'request_id' => null,
+        ]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))->assertExitCode(1);
+
+    expect($mockClient->getLastPendingRequest())->toBeNull();
 });
 
 describe('the analytics role', function (): void {

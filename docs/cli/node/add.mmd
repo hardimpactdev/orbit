@@ -114,6 +114,8 @@ sequenceDiagram
     SW->>N: Converge each role<br/>native child workflow
     %%> Root boundary:
     %%> - roles are frozen child-workflow inputs in this run, with no child tasks
+    %%> Phase digests:
+    %%> - each role run compares its phase digests with no record, so every role phase runs; it records none (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change)
     %%> The first role:
     %%> - closes public recovery SSH, so the Node is reachable over WireGuard only afterwards
     %%> - the `vpn` role also enables forwarding on the hub

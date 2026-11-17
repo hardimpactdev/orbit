@@ -238,6 +238,10 @@ it('plans the worst node selection at its floor, balances the other copies and n
  * One command alone from the push: admission, the copy creates and the commit, then on each copy one reset and setup and its cases.
  * Case seconds measured in a copy after the converged seed and the phase skip: base-scope 43 (79 without a digest record). The other
  * seconds are from proof 25268. required-only of role-add is an estimate: 149 less its dropped repeat converge (49 in a copy).
+ * A role Operation skips unchanged phases by the same rule since: an unchanged role convergence took 23 s in a copy (107 before). No planned
+ * role-add case repeats a role Operation of the same kind on an unchanged Node, so none gets shorter: required-only adds the role and then
+ * converges it once (another kind, so every phase runs), and failure-after-partial-change converges after a failed add (no record). The
+ * repeat that skips is application-repeat, which waits for the ID map window.
  */
 it('fits node:converge alone into five minutes from the push and names what keeps node:role:add over', function (): void {
     $before = 57 + 75 + 9;
@@ -267,7 +271,8 @@ it('fits node:converge alone into five minutes from the push and names what keep
 
     expect(max($ends(ProofBatchPlan::split($converge, 10))))->toBeLessThanOrEqual(300.0)
         ->and(max($ends(ProofBatchPlan::split($converge, 10))))->toBe(280.0)
-        // Role-add needs its two role Operations shorter: 237 s of fixed time leaves 63 s for the cases of a copy.
+        // Role-add needs its two role Operations shorter: 237 s of fixed time leaves 63 s for the cases of a copy. The phase skip does not
+        // shorten them, since each case runs its role Operations with no record of the same kind.
         ->and(max($ends(ProofBatchPlan::split($roleAdd, 10))))->toBe(337.0)
         ->and($over($roleAdd))->toBe(['fresh-fleet required-only', 'ufw-fault failure-after-partial-change']);
 });

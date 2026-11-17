@@ -18,6 +18,8 @@ export const toolRuntime = "/usr/local/bin/deno";
 
 /** The phases that skip when their digest is unchanged (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
 export const skippable = ["agent", "software", "roles", "tools", "network"] as const;
+/** The same for a role addition or convergence: the phases that change only the role's Node. */
+export const roleSkippable = ["prerequisites", "tools", "node", "firewall"] as const;
 
 async function sha256(text: string | Uint8Array): Promise<string> {
     const bytes = typeof text === "string" ? new TextEncoder().encode(text) : text;
@@ -48,12 +50,26 @@ export async function codeDigest(paths: string[]): Promise<string> {
     return sha256(rows.join("\n"));
 }
 
+/** The values the Gateway mints for the Operation at each capture, so they are of the Operation, as its ID is, and not inputs: the version of
+ * each certificate leaf (NodeRoleCertificateInput) and the admission time of the Instance bridge (InstanceHostIntent). */
+export function admissionValues(intent: unknown): string[] {
+    if (Array.isArray(intent)) return intent.flatMap(admissionValues);
+    if (intent === null || typeof intent !== "object") return [];
+    const record = intent as Record<string, unknown>;
+    const leaves = (record.certificates as { leaves?: unknown } | undefined)?.leaves;
+    const versions = Array.isArray(leaves) ? leaves.map((leaf) => leaf?.version).filter((version) => typeof version === "string" && /^[a-f0-9]{16}$/.test(version)) : [];
+    const admitted = Number.isSafeInteger(record.bridge_admitted_at) && (record.bridge_admitted_at as number) > 0 ? [String(record.bridge_admitted_at)] : [];
+    return [...versions, ...admitted, ...Object.values(record).flatMap(admissionValues)];
+}
+
 /**
  * What the phases read (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change): every file written for them, that is
- * the run folder without the Gateway's intent files and the digests, with this Operation's ID replaced by a fixed mark, and their code.
+ * the run folder without the Gateway's intent files and the digests, with the values of this Operation (its ID, the versions of its
+ * certificate leaves and the admission time of its Instance bridge) replaced by fixed marks, and their code.
  */
 export async function readDigest(folder: string, operationId: number, code: string[]): Promise<string> {
     const mark = new RegExp(`operation-${operationId}(?![0-9])`, "g");
+    const own = [...new Set(admissionValues(JSON.parse(await Deno.readTextFile(`${folder}/intent.json`))))];
     const rows: string[] = [];
     const walk = async (path: string): Promise<void> => {
         const entries = [];
@@ -61,7 +77,8 @@ export async function readDigest(folder: string, operationId: number, code: stri
         for (const entry of entries.sort((a, b) => a.name < b.name ? -1 : 1)) {
             if (entry.isDirectory) await walk(`${path}/${entry.name}`);
             else if (entry.isFile && entry.name !== "intent.json" && entry.name !== "digests.json") {
-                const text = (await Deno.readTextFile(`${path}/${entry.name}`)).replace(mark, "operation-#");
+                const text = own.reduce((read, value) => read.replaceAll(value, "admitted-#"),
+                    (await Deno.readTextFile(`${path}/${entry.name}`)).replace(mark, "operation-#"));
                 rows.push(`${path.slice(folder.length)}/${entry.name}\0${await sha256(text)}`);
             }
         }
@@ -70,16 +87,30 @@ export async function readDigest(folder: string, operationId: number, code: stri
     return sha256([...rows, await codeDigest(code)].join("\n"));
 }
 
-/** Each skippable phase's digest, and the phases whose digest equals the one the Node records. */
+/** Each skippable phase's digest, and the phases whose digest equals the one the Node records. The record holds the phases of the last
+ * Operation that wrote it, a converge or a role Operation, so it may name phases of the other kind: they never match. */
 const Hex = z.string().regex(/^[0-9a-f]{64}$/);
 const DigestIntent = z.object({ // PHP sends an empty map as an empty list.
-    recorded_digests: z.preprocess((value) => Array.isArray(value) && value.length === 0 ? {} : value, z.partialRecord(z.enum(skippable), Hex)) });
+    recorded_digests: z.preprocess((value) => Array.isArray(value) && value.length === 0 ? {} : value, z.partialRecord(z.enum([...skippable, ...roleSkippable]), Hex)) });
 
-export async function phaseDigests(raw: unknown, read: string) {
+export async function phaseDigests<Phase extends typeof skippable[number] | typeof roleSkippable[number]>(raw: unknown, read: string, phases: readonly Phase[]) {
     const intent = DigestIntent.parse(raw);
-    const digests: Record<string, string> = {};
-    for (const phase of skippable) digests[phase] = await sha256(`${phase}\0${read}`);
-    return { digests, unchanged: skippable.filter((phase) => intent.recorded_digests[phase] === digests[phase]) };
+    const digests = {} as Record<Phase, string>;
+    for (const phase of phases) digests[phase] = await sha256(`${phase}\0${read}`);
+    return { digests, unchanged: phases.filter((phase) => intent.recorded_digests[phase] === digests[phase]) };
+}
+
+/** A role Operation's code: the converge's, and the plan of its Tool Managers beside the Tool helper, which runs after the digest. */
+export function rolePhaseCode(builder: string, toolHelper: string): string[] {
+    return [...phaseCode(builder, toolHelper), `${toolHelper.slice(0, toolHelper.lastIndexOf("/"))}/role_add_plans.ts`];
+}
+
+/** A role Operation's digests, after its playbook input is written; the Gateway records them after a succeeded run. */
+export async function roleDigests(folder: string, operationId: number, code: string[]) {
+    const intent = JSON.parse(await Deno.readTextFile(`${folder}/intent.json`));
+    const phases = await phaseDigests(intent, await readDigest(folder, operationId, code), roleSkippable);
+    await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify(phases), { mode: 0o600 });
+    return phases;
 }
 
 export async function convergeInput(folder: string, operationId: number, builder: string, toolHelper: string, code: string[]) {
@@ -129,7 +160,7 @@ export async function convergeInput(folder: string, operationId: number, builder
         await Deno.chmod(`${path}/vars.yml`, 0o600);
     }
     // After every file the phases read is written.
-    const phases = await phaseDigests(intent, await readDigest(folder, operationId, code));
+    const phases = await phaseDigests(intent, await readDigest(folder, operationId, code), skippable);
     await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify(phases), { mode: 0o600 });
     return phases;
 }

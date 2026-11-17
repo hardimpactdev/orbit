@@ -122,6 +122,8 @@ sequenceDiagram
     Note over GW: Claim the role and Node
     %%> Why:
     %%> - Freeze public intent and vault references under the Node lock before dispatch.
+    %%> Digests:
+    %%> - the run carries the Node's phase digest record and compares by the one rule (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change); a new role changes the input, so a first add runs every phase; a repeated add of an `active` `ingress` role skips its unchanged phases as a convergence does
     GW->>SW: Start run, full intent<br/>operation-node-role-add
     GW-->>CLI: 202 Accepted<br/>Operation ID
     SW->>N: Apply prerequisites<br/>Ansible phase: prerequisites
@@ -200,6 +202,8 @@ sequenceDiagram
       SW-->>GW: Run succeeded<br/>terminal event
       %%> When:
       %%> - Clear earlier failure details only after the terminal result proves the role is ready.
+      %%> Digests:
+      %%> - record this run's phase digests on the Node; the first `--converge` after the add has another kind, so it runs every phase, and its repeat can skip
       opt Node offers proof places
         Note over GW: Admit the seed copy<br/>instance.seed_copy
         %%> When:

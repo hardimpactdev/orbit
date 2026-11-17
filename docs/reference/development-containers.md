@@ -2413,6 +2413,8 @@ The fleet's egress proxy lies in the Instance container's own bridge, in `10.253
 
 **Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has the part `host`. It digests what the container branch reads: the `swamp/ansible` tree, the machine-software recipe, and `nested-app-dev`'s branch intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, the folders, Incus, without the admission time). When it differs from the record, `nested-app-dev` joins the due converges, and its converge takes `{"roles":["app-dev"]}` instead of the base only. That is the nested Gateway's own `node.converge`, through its Swamp. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
 
+When only the host part is due, the base digest of `nested-app-dev` did not change, and its converge reason is `host_due`.
+
 A refresh with no change keeps the host and adds no time. The host is built only when the default's recorded ID map size is 2,000,000 or more: the fleet intent's `host` says so. Below that no isolated Instance fits on `nested-app-dev`, so the refresh changes nothing there. The result names `host` as `converged`, `kept` or `skipped_idmap_small`; the Operation's `fleet_refresh` keeps it, and leaves it out when the run names none ([What a refresh skips](#what-a-refresh-skips)).
 
 **Time bounds.** The first host build installs Incus, downloads the shared folders, and builds the stock image and the Instance image. On a task copy at 1,165,536 the converge took 325 s for the base packages and 428 s for the roles phase up to the stock image (2026-11-16). The images could not be built there. So the roles phase of a fleet Node's `app-dev` converge has 1,800 s, from `roles_seconds` in its intent.
@@ -2645,7 +2647,7 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 | --- | --- | --- |
 | Migrate the nested Gateway, restart its services | Git object IDs of `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
 | Wait for the three agents | | The converges run |
-| Default converge of each nested Node | One digest per Node: the `swamp` files a default converge reads, the nested Gateway's digest of that Node's default intent, and the fleet intent | For that Node: its digest differs, or its last converge is more than 7 days old. For all three: a digest cannot be read |
+| Default converge of each nested Node | One digest per Node: the `swamp` files a default converge reads, the nested Gateway's digest of that Node's default intent, and the fleet intent | For that Node: its digest cannot be read, the record holds none, its digest differs, or its last converge is more than 7 days old |
 | Agent delivery | `code` | The code digest differs. The delivery writes into the checkout, from `apps/gateway` |
 | Reload the grants | Git object IDs of `apps/gateway` and `swamp`, from which the nested Gateway renders them; recorded only with the Club key | With the Club key: the digest differs. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken (a partly stopped fleet only compares) |
@@ -2681,9 +2683,26 @@ The cover test fails, with the file and line, on what it cannot follow:
 - a role or `include_vars`;
 - a copy of a folder or of a templated source onto a Node.
 
-After the migrate, the refresh runs `php artisan orbit:node-converge-digest gateway app-dev app-prod` in the nested Gateway. The command builds each intent as a default `node.converge` does. It admits no Operation, makes no execution copy and writes nothing.
+After the migrate, the refresh runs `php artisan orbit:node-converge-digest gateway app-dev app-prod` in the nested Gateway. The command builds each intent as a default `node.converge` does. It admits no Operation, makes no execution copy and writes nothing. When the intent of one Node cannot be built, the command prints that Node's error in place of its digest and still prints the digests of the others.
 
-A file list cannot follow the Gateway code that builds an intent: through its models, that code reaches much of the Gateway. So the nested Gateway hashes the intent itself. The intent holds no time, token, signed URL or random id. The Operation id and the agent verifier live in the execution copies, which are not part of it.
+Each Node has its own reason in the result, `converge_reasons`. The refresh only reports what its comparison found:
+
+| Reason | When | The Node converges |
+| --- | --- | --- |
+| `digest_unreadable` | Its digest cannot be read. `error` names why. No digest is recorded for it | Yes |
+| `no_record` | The record is missing or unreadable, or holds no digest for the Node | Yes |
+| `digest_changed` | Its digest differs from the record | Yes |
+| `stale` | Its last converge is more than 7 days old | Yes |
+| `host_due` | `nested-app-dev` only: its base digest did not change, but the [Instance host](#instance-host-in-the-fleet) part is due | Yes |
+| `unchanged` | None of these. The Node does not converge | No |
+
+A digest cannot be read when the Node's intent cannot be built, when the read failed, or when the checkout gives no tree ID of the `swamp` files.
+
+`unchanged` is the only reason of a Node that does not converge. For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change). The `swamp/ansible` tree is in every phase digest, so a changed Ansible task file runs every phase.
+
+A file list cannot follow the Gateway code that builds an intent: through its models, that code reaches much of the Gateway. So the nested Gateway hashes the intent itself.
+
+The intent holds no token or signed URL. Two values are new at each capture. They belong to the Operation and are not inputs, so the hash leaves them out: the version of a role's certificate leaf, which names the leaf's folder, and the admission time of the Instance bridge. Like an admission, the read first gives a build-list Node its Instance bridge when it has none yet, and then rolls it back. So a healthy Node always has a digest. The Operation id and the agent verifier live in the execution copies, which are not part of it.
 
 The list holds the four include groups of the playbook: roles, software, Tools and the network. A default intent selects each of them that the Node records.
 
@@ -2848,7 +2867,7 @@ A default whose tools step has not yet installed `duperemove` gets `shrink: reli
 The Operation's result has `fleet_refresh`. It holds these fields:
 
 - `migrate`: `applied`, `nothing` or `skipped`. `restart`: `yes` or `no`.
-- `converge`: `ran` or `skipped`. `converge_reason`: `changed`, `record`, `digest_unreadable`, `stale` or `unchanged`. `converge_nodes`: the Nodes the converge ran for. `changed`: the tasks the converges changed.
+- `converge`: `ran` or `skipped`. `converge_reasons`: each nested Node's reason, as [above](#what-a-refresh-skips). `converge_nodes`: the Nodes the converge ran for. `changed`: the tasks the converges changed.
 - `tokens`: `reminted`, `young` or `skipped`. `tokens_reason`: `age`, `incomplete`, `unreadable`, `young`, `recorded` or `no_key`.
 - `tools`: `present`, `built` or `failed`. `tools_reason`: see [The pinned shape tools](#the-pinned-shape-tools).
 - `shrink`: `ran`, `relinked`, `failed` or `skipped`. `shrink_reason`: `record`, `packages`, `current` or `unreadable`. See [The inner machines stay small](#the-inner-machines-stay-small).

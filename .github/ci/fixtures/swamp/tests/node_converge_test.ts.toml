@@ -58,7 +58,13 @@ cases = [
   "a phase whose digest is unchanged reports unchanged with no work, and the result carries every digest",
   "each skippable phase is guarded by the unchanged list of the input preparation; input and check always run",
   "a changed plan or secret value moves the roles digest, and the Operation's own ID does not",
+  "the version a capture mints for a certificate leaf does not move a digest; the leaf's domain does",
+  "the admission time of the Instance bridge does not move a digest; the bridge does",
   "a changed shipped Tool file that the Tool helper imports moves the tools digest",
+  "a record of the other kind's phases never matches and never refuses the run",
+  "a role Operation's digests skip every role phase only when its written input, kind and code did not move",
+  "a node:add role run compares with the empty record its enrollment intent carries, and an intent with no record is refused",
+  "each skippable role phase is guarded by the role digests; every other role step runs as before",
 ]
 file = "swamp/tests/node_converge_test.ts"
 cost = 4

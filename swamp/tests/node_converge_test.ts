@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { convergeResult, phases } from "../extensions/behaviors/operations/ansible-input/converge_result.ts";
-import { codeDigest, convergeInput, phaseCode, phaseDigests, skippable, unsafeYaml } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
+import { codeDigest, convergeInput, phaseCode, phaseDigests, roleDigests, rolePhaseCode, roleSkippable, skippable, unsafeYaml } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
 import { toolState } from "../extensions/behaviors/operations/ansible-input/converge_tool.ts";
 import { behavior as extension } from "../extensions/behaviors/operations/ansible-input/write.ts";
 
@@ -414,15 +414,15 @@ Deno.test("the roles phase takes the intent's roles_seconds, 900 to 1800, as its
 
 // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change
 Deno.test("a phase digest moves with what the phases read, and equals the record only when that did not move", async () => {
-    const first = await phaseDigests({ recorded_digests: [] }, "1".repeat(64));
+    const first = await phaseDigests({ recorded_digests: [] }, "1".repeat(64), skippable);
     assertEquals(Object.keys(first.digests), [...skippable]);
     assertEquals(first.unchanged, []);
     assertEquals(new Set(Object.values(first.digests)).size, skippable.length);
-    const same = await phaseDigests({ recorded_digests: { agent: first.digests.agent, roles: first.digests.roles } }, "1".repeat(64));
+    const same = await phaseDigests({ recorded_digests: { agent: first.digests.agent, roles: first.digests.roles } }, "1".repeat(64), skippable);
     assertEquals(same.unchanged, ["agent", "roles"]);
-    assertEquals((await phaseDigests({ recorded_digests: first.digests }, "2".repeat(64))).unchanged, []);
-    await assertRejects(() => phaseDigests({ recorded_digests: { input: "1".repeat(64) } }, "1".repeat(64)));
-    await assertRejects(() => phaseDigests({ recorded_digests: { agent: "short" } }, "1".repeat(64)));
+    assertEquals((await phaseDigests({ recorded_digests: first.digests }, "2".repeat(64), skippable)).unchanged, []);
+    await assertRejects(() => phaseDigests({ recorded_digests: { input: "1".repeat(64) } }, "1".repeat(64), skippable));
+    await assertRejects(() => phaseDigests({ recorded_digests: { agent: "short" } }, "1".repeat(64), skippable));
 });
 
 Deno.test("the code digest moves with a file's content and name", async () => {
@@ -441,13 +441,15 @@ Deno.test("the code digest moves with a file's content and name", async () => {
 });
 
 /** Input preparation in a fresh run folder, as one Operation of the given ID; the intent names that Operation, as a role's runtime does. */
-async function prepared(recorded: Record<string, string>, change: { operationId?: number; plans?: string; secret?: string; code?: string[] } = {}) {
+async function prepared(recorded: Record<string, string>, change: { operationId?: number; plans?: string; secret?: string; code?: string[]; leaf?: string; admitted?: number } = {}) {
     const folder = await Deno.makeTempDir();
     try {
         const operationId = change.operationId ?? 41;
         const ssh = { identity_file: "/test/identity", target: { host: "10.44.0.7", port: 22, user: "orbit", host_keys: ["ssh-ed25519 pinned"] } };
+        const certificates = change.leaf === undefined ? {} : { certificates: { leaves: [{ node_id: 7, scope: "role-websocket", domain: "reverb.orbit", version: change.leaf }] } };
+        const instances = change.admitted === undefined ? {} : { instances: { cidr: "10.46.0.0/24", bridge_admitted_at: change.admitted } };
         await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [], container: `orbit-analytics-operation-${operationId}-createdb`,
-            recorded_digests: recorded }));
+            ...certificates, ...instances, recorded_digests: recorded }));
         await Deno.writeTextFile(`${folder}/plans.json`, change.plans ?? JSON.stringify({ ci: { runner: "one" } }));
         await Deno.writeTextFile(`${folder}/secret-agent_verifier`, change.secret ?? "v");
         const phases = await convergeInput(folder, operationId, "/unused", "/shipped/helper.ts", change.code ?? []);
@@ -501,6 +503,19 @@ Deno.test("a changed plan or secret value moves the roles digest, and the Operat
     assertEquals((await prepared(first.phases.digests, { secret: "w" })).phases.unchanged.includes("roles"), false);
 });
 
+Deno.test("the version a capture mints for a certificate leaf does not move a digest; the leaf's domain does", async () => {
+    const first = await prepared({}, { leaf: "0123456789abcdef" });
+    assertEquals((await prepared(first.phases.digests, { leaf: "fedcba9876543210", operationId: 42 })).phases.unchanged, [...skippable]);
+    assertEquals((await prepared(first.phases.digests, { leaf: "fedcba9876543210" })).phases.unchanged, [...skippable]);
+    assertEquals((await prepared({}, { leaf: "0123456789abcdef" })).phases.digests.roles === (await prepared({})).phases.digests.roles, false);
+});
+
+Deno.test("the admission time of the Instance bridge does not move a digest; the bridge does", async () => {
+    const first = await prepared({}, { admitted: 1763330000123456 });
+    assertEquals((await prepared(first.phases.digests, { admitted: 1763330099654321 })).phases.unchanged, [...skippable]);
+    assertEquals((await prepared({}, { admitted: 1763330000123456 })).phases.digests.roles === (await prepared({})).phases.digests.roles, false);
+});
+
 Deno.test("a changed shipped Tool file that the Tool helper imports moves the tools digest", async () => {
     const tree = await Deno.makeTempDir();
     try {
@@ -516,4 +531,72 @@ Deno.test("a changed shipped Tool file that the Tool helper imports moves the to
         await Deno.writeTextFile(`${operations}/tools/native.ts`, "two");
         assertEquals((await prepared(first.phases.digests, { code })).phases.unchanged.includes("tools"), false);
     } finally { await Deno.remove(tree, { recursive: true }); }
+});
+
+// docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: one record for converge and role Operations.
+Deno.test("a record of the other kind's phases never matches and never refuses the run", async () => {
+    const role = await phaseDigests({ recorded_digests: [] }, "1".repeat(64), roleSkippable);
+    assertEquals(Object.keys(role.digests), [...roleSkippable]);
+    // A converge after a role Operation reads the role's record, and the reverse; "tools" is in both, but the kinds read different input.
+    assertEquals((await phaseDigests({ recorded_digests: role.digests }, "2".repeat(64), skippable)).unchanged, []);
+    const converge = await phaseDigests({ recorded_digests: [] }, "2".repeat(64), skippable);
+    assertEquals((await phaseDigests({ recorded_digests: converge.digests }, "1".repeat(64), roleSkippable)).unchanged, []);
+    await assertRejects(() => phaseDigests({ recorded_digests: { check: "1".repeat(64) } }, "1".repeat(64), roleSkippable));
+});
+
+Deno.test("a role Operation's digests skip every role phase only when its written input, kind and code did not move", async () => {
+    const code = await Deno.makeTempDir();
+    const role = async (recorded: Record<string, string>, { operationId = 7, vars = "kind: node.role_converge\nnote: operation-7\n" } = {}) => {
+        const folder = await Deno.makeTempDir();
+        try {
+            await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ role: "app-prod", recorded_digests: recorded }));
+            await Deno.writeTextFile(`${folder}/vars.yml`, vars.replaceAll("operation-7", `operation-${operationId}`));
+            await Deno.writeTextFile(`${folder}/inventory.yml`, "{}");
+            const phases = await roleDigests(folder, operationId, [code]);
+            assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/digests.json`)), phases);
+            return phases;
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    };
+    try {
+        await Deno.writeTextFile(`${code}/build_vars.py`, "one");
+        const first = await role({});
+        assertEquals(first.unchanged, []);
+        assertEquals((await role(first.digests, { operationId: 8 })).unchanged, [...roleSkippable]);
+        // The kind is an input: a role addition's record does not skip the first convergence.
+        assertEquals((await role(first.digests, { vars: "kind: node.role_add\nnote: operation-7\n" })).unchanged, []);
+        await Deno.writeTextFile(`${code}/build_vars.py`, "two");
+        assertEquals((await role(first.digests)).unchanged, []);
+    } finally { await Deno.remove(code, { recursive: true }); }
+    // The plan of the Tool Managers runs after the digest, so its code is part of it.
+    assertEquals(rolePhaseCode("/x/ansible/build_vars.py", "/x/ext/ansible-input/converge_tool.ts"),
+        ["/x/ansible", "/x/ext/ansible-input/converge_tool.ts", "/x/ext/tools", "/x/ext/ansible-input/role_add_plans.ts"]);
+});
+
+Deno.test("a node:add role run compares with the empty record its enrollment intent carries, and an intent with no record is refused", async () => {
+    const role = async (intent: Record<string, unknown>) => {
+        const folder = await Deno.makeTempDir();
+        try {
+            await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify(intent));
+            await Deno.writeTextFile(`${folder}/vars.yml`, "kind: node.role_add\n");
+            return await roleDigests(folder, 9, []);
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    };
+    // PHP sends the enrollment's empty record (NativeNodeRoleAddInput) as an empty list.
+    assertEquals((await role({ role: "app-prod", recorded_digests: [] })).unchanged, []);
+    await assertRejects(() => role({ role: "app-prod" }));
+});
+
+Deno.test("each skippable role phase is guarded by the role digests; every other role step runs as before", () => {
+    const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-node-role-add.yaml", import.meta.url))) as {
+        jobs: { name: string; steps: { name: string; guard?: string }[] }[];
+    };
+    const owner: Record<string, string> = { prerequisites: "prerequisites", tools_read: "tools", tools_plan: "tools", phase_13: "tools", node: "node", firewall: "firewall" };
+    const skip = (phase: string) => `"${phase}" in steps["Compare phase digests"].outputs.unchanged`;
+    for (const job of workflow.jobs) {
+        for (const step of job.steps) {
+            const phase = owner[job.name];
+            if (phase === undefined) assertEquals(step.guard?.includes("Compare phase digests") ?? false, false, step.name);
+            else assertEquals(step.guard?.includes(skip(phase)), true, step.name);
+        }
+    }
 });

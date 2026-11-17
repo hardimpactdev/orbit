@@ -123,8 +123,10 @@ final readonly class NativeNodeEnrollmentInput
                 }
                 $snapshot = app(NodeRoleDirectInput::class)->capture($node->refresh(), $assignment, $created);
                 $native = app(NativeNodeRoleAddInput::class)->capture($node, $assignment, $snapshot, $before, $operation, ! $created);
+                // Each role run compares phase digests. An enrollment holds the Node lock and compares with no record
+                // (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
                 $intent['roles'][] = ['kind' => $created ? 'node.role_add' : 'node.role_converge',
-                    'intent' => $native['intent'], 'execution_secrets' => $native['execution_secrets']];
+                    'intent' => app(NodeConvergePhaseDigest::class)->stamp($native['intent'], []), 'execution_secrets' => $native['execution_secrets']];
                 $roleSnapshots[] = $snapshot;
                 $participants = [...$participants, ...$native['participant_node_ids'],
                     ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),

@@ -11,7 +11,8 @@ use App\Support\ValidatedData;
 use Illuminate\Console\Command;
 
 /**
- * Prints the digest of each named Node's converge intent as one JSON object, `{"<name>": "<sha256>"}`. Without `--base` it is the digest of
+ * Prints the digest of each named Node's converge intent as one JSON object, `{"<name>": "<sha256>"}`, or `{"<name>": {"error": "..."}}` for
+ * a Node whose intent cannot be built. Without `--base` it is the digest of
  * the default converge intent (NodeDesiredConvergeInput::defaultDigest); with `--base`, the digest of the base intent. It makes no
  * execution copy, admits no Operation and writes nothing. The nested-fleet refresh runs it in the nested Gateway: an unchanged digest is
  * one input of its skipped converge
@@ -39,12 +40,12 @@ final class NodeConvergeDigestCommand extends Command
 
                 return self::FAILURE;
             }
+            // One Node's intent that cannot be built does not hide the digests of the others: its value names the error, and the refresh
+            // reports that Node as `digest_unreadable` with it (docs/reference/development-containers.md#what-a-refresh-skips).
             try {
                 $digests[$name] = $this->option('base') ? $input->baseDigest($node) : $input->defaultDigest($node);
             } catch (\Throwable $exception) {
-                $this->error("The converge intent of {$name} cannot be built: ".$exception::class);
-
-                return self::FAILURE;
+                $digests[$name] = ['error' => mb_strimwidth($exception::class.': '.$exception->getMessage(), 0, 300, '...')];
             }
         }
         $host = $this->option('host');

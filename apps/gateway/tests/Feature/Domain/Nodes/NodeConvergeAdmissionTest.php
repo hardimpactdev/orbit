@@ -508,3 +508,26 @@ it('clears the recorded phase digests when another Operation takes the Node admi
 
     expect($this->node->refresh()->converge_digests)->toBeNull();
 });
+
+it('sends the recorded phase digests to a role convergence, none with full, and clears the record', function (bool $full): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: one record for converge and role Operations.
+    $this->node->update(['tld' => 'target.test']);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $recorded = ['prerequisites' => str_repeat('a', 64), 'node' => str_repeat('b', 64)];
+    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode($recorded)]);
+
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::AppDev, true, full: $full);
+
+    expect($operation->input['native_role']['recorded_digests'])->toBe($full ? [] : $recorded)
+        ->and($this->node->refresh()->converge_digests)->toBeNull();
+})->with(['recorded' => false, 'full' => true]);
+
+it('takes full from the role convergence request', function (): void {
+    $this->node->update(['tld' => 'target.test']);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode(['node' => str_repeat('a', 64)])]);
+
+    $this->postJson('/api/v1/nodes/'.$this->node->id.'/roles', ['role' => 'app-dev', 'converge_existing' => true, 'full' => true])->assertAccepted();
+
+    expect(Operation::query()->sole()->input['native_role']['recorded_digests'])->toBe([]);
+});

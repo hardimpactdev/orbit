@@ -21,6 +21,8 @@ final class AddNodeRoleRequest extends FormRequest
         return [
             'role' => ['required', 'string', Rule::enum(RoleName::class)],
             'converge_existing' => ['sometimes', 'boolean', $this->strictBoolean(...)],
+            // A role convergence compares with no phase digest record (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+            'full' => ['sometimes', 'boolean', 'prohibited_unless:converge_existing,true', $this->strictBoolean(...)],
             // Written out, not shared through a method, so the API reference reads the integer type.
             'postgres_process_id' => ['required_if:role,analytics', 'prohibited_unless:role,analytics', 'integer', 'min:1', $this->strictPositiveInteger(...)],
             'clickhouse_process_id' => ['required_if:role,analytics', 'prohibited_unless:role,analytics', 'integer', 'min:1', $this->strictPositiveInteger(...)],
@@ -33,7 +35,7 @@ final class AddNodeRoleRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['role', 'converge_existing', 'postgres_process_id', 'clickhouse_process_id'],
+                ['role', 'converge_existing', 'full', 'postgres_process_id', 'clickhouse_process_id'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -54,6 +56,11 @@ final class AddNodeRoleRequest extends FormRequest
     public function convergeExisting(): bool
     {
         return $this->validated('converge_existing', false) === true;
+    }
+
+    public function full(): bool
+    {
+        return $this->validated('full', false) === true;
     }
 
     /** The storage Processes of the analytics role, or null for every other role. */

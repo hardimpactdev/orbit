@@ -272,49 +272,66 @@
       {{ fleet_due | combine({'host': intent.fleet.host | default(false) | bool
          and ('host' not in fleet_host_now or fleet_recorded.host | default('') != fleet_host_now.host)}) }}
 # Each nested Node has its own converge digest: the listed `swamp` files, that Node's base intent digest and the fleet intent; the record
-# holds it as `converge_<role>` and the time of that Node's last converge as `converged_<role>` (`-` in a role is `_`). A Node is due
-# when the record is missing or unreadable, a digest cannot be read (all three are then due), its digest differs from the record, or its
-# last converge is older than `fleet_converge_max_age` seconds (7 days): a safety net for an input no digest covers.
+# holds it as `converge_<role>` and the time of that Node's last converge as `converged_<role>` (`-` in a role is `_`). Each Node has its
+# own reason, and the refresh only reports what this comparison found
+# (docs/reference/development-containers.md#what-a-refresh-skips):
+# - `digest_unreadable`, with `error`: its digest cannot be read (its intent cannot be built, the read failed, or the checkout gives no
+#   tree id of the `swamp` files). It is due, and no digest is recorded for it.
+# - `no_record`: the record is missing or unreadable, or holds no digest for it.
+# - `digest_changed`: its digest differs from the record.
+# - `stale`: its last converge is older than `fleet_converge_max_age` seconds (7 days): a safety net for an input no digest covers.
+# - `host_due`: nested-app-dev only: its base digest is unchanged, but the Instance host part is due, so its `app-dev` role converges.
+# - `unchanged`: none of these; it does not converge.
 - name: Work out which nested Nodes the converge is due for
   vars:
-    fleet_intents: >-
-      {%- set read = (fleet_intents_read.stdout_lines | default([]) | last | default('')) -%}
-      {%- set all = read | from_json if fleet_intents_read.rc == 0 and read is match('^\{.*\}$') else {} -%}
-      {%- set out = all | dict2items | rejectattr('key', 'eq', 'host') | items2dict if all is mapping else {} -%}
-      {{ out if out is mapping and out.keys() | sort == fleet_roles | sort
-              and out.values() | select('match', '^[0-9a-f]{64}$') | list | length == fleet_roles | length else {} }}
+    fleet_intents_line: "{{ fleet_intents_read.stdout_lines | default([]) | last | default('') }}"
+    fleet_intents_all: >-
+      {%- set all = fleet_intents_line | from_json if fleet_intents_read.rc == 0 and fleet_intents_line is match('^\{.*\}$') else {} -%}
+      {{ all if all is mapping else {} }}
+    fleet_intents_failure: >-
+      {{ '' if fleet_intents_all | length > 0
+         else 'the digest read failed: ' ~ ((fleet_intents_read.stderr | default('') | trim).split('\n') | last | default('') | truncate(300)) }}
     fleet_converge_now: >-
       {%- set digests = {} -%}
-      {%- if fleet_swamp_ids | length > 0 and fleet_intents | length > 0 -%}
       {%- for role in fleet_roles -%}
-      {%- set _ = digests.update({'converge_' ~ (role | replace('-', '_')): (fleet_swamp_ids | join(' ') ~ ' ' ~ fleet_intents[role] ~ ' '
+      {%- set read = fleet_intents_all[role] | default('') -%}
+      {%- if fleet_swamp_ids | length > 0 and read is string and read is match('^[0-9a-f]{64}$') -%}
+      {%- set _ = digests.update({'converge_' ~ (role | replace('-', '_')): (fleet_swamp_ids | join(' ') ~ ' ' ~ read ~ ' '
              ~ (intent.fleet | to_json(sort_keys=true))) | hash('sha256')}) -%}
-      {%- endfor -%}
       {%- endif -%}
+      {%- endfor -%}
       {{ digests }}
     fleet_now_seconds: "{{ now().timestamp() | int }}"
     fleet_converge_reasons: >-
       {%- set reasons = {} -%}
       {%- for role in fleet_roles -%}
       {%- set key = role | replace('-', '_') -%}
+      {%- set read = fleet_intents_all[role] | default('') -%}
       {%- set at = fleet_recorded['converged_' ~ key] | default('') -%}
       {%- set age = (fleet_now_seconds | int) - (at | int) if at is match('^[0-9]+$') else -1 -%}
-      {%- set _ = reasons.update({role: 'record' if fleet_record_state != 'present'
-            else 'digest_unreadable' if fleet_converge_now | length == 0
-            else 'changed' if fleet_recorded['converge_' ~ key] | default('') != fleet_converge_now['converge_' ~ key]
+      {%- if ('converge_' ~ key) not in fleet_converge_now -%}
+      {%- set error = fleet_intents_failure if fleet_intents_failure | length > 0
+            else 'the checkout gives no tree id of the converge inputs' if fleet_swamp_ids | length == 0
+            else (read.error | default('') | string | truncate(300)) if read is mapping
+            else 'no digest was printed for ' ~ role -%}
+      {%- set _ = reasons.update({role: {'reason': 'digest_unreadable', 'error': error}}) -%}
+      {%- else -%}
+      {%- set _ = reasons.update({role: {'reason': 'no_record' if fleet_record_state != 'present' or ('converge_' ~ key) not in fleet_recorded
+            else 'digest_changed' if fleet_recorded['converge_' ~ key] != fleet_converge_now['converge_' ~ key]
             else 'stale' if age < 0 or age > fleet_converge_max_age | default(604800) | int
-            else 'unchanged'}) -%}
+            else 'host_due' if role == 'app-dev' and fleet_due.host | default(false) | bool
+            else 'unchanged'}}) -%}
+      {%- endif -%}
       {%- endfor -%}
       {{ reasons }}
   ansible.builtin.set_fact:
     fleet_now: "{{ fleet_now | combine(fleet_converge_now) }}"
+    fleet_converge_reasons: "{{ fleet_converge_reasons }}"
     # The due Nodes, in converge order.
     fleet_converge_roles: >-
-      {{ fleet_roles | select('in', fleet_converge_reasons | dict2items | rejectattr('value', 'eq', 'unchanged') | map(attribute='key') | list
-         + (['app-dev'] if fleet_due.host | bool else [])) | list }}
-    # The refresh's one word: the first of `record`, `digest_unreadable`, `changed`, `stale` that holds for a Node, else `unchanged`.
-    fleet_converge_reason: >-
-      {{ (['record', 'digest_unreadable', 'changed', 'stale'] | select('in', fleet_converge_reasons.values() | list) | list + ['unchanged']) | first }}
+      {{ fleet_roles | select('in', fleet_converge_reasons | dict2items | rejectattr('value.reason', 'eq', 'unchanged') | map(attribute='key') | list) | list }}
+    # The phases each converged Node ran, from its Operation's result (instance-fleet-converge-node.yml).
+    fleet_converge_phases: {}
 - name: Name the due converge
   ansible.builtin.set_fact:
     fleet_due: "{{ fleet_due | combine({'converge': fleet_converge_roles | length > 0}) }}"
@@ -617,8 +634,14 @@
       migrate: "{{ 'skipped' if fleet_migrate is skipped else 'applied' if fleet_migrate is changed else 'nothing' }}"
       restart: "{{ 'yes' if fleet_due.code or fleet_tokens is changed else 'no' }}"
       converge: "{{ 'ran' if fleet_due.converge else 'skipped' }}"
-      # Why: `changed` (a digest differs), `record` (the record is missing or unreadable), `digest_unreadable`, `stale` (7 days), `unchanged`.
-      converge_reason: "{{ fleet_converge_reason }}"
+      # Why, for each Node: `reason` (`digest_unreadable` with `error`, `no_record`, `digest_changed`, `stale`, `unchanged`), and for a
+      # converged Node the `phases` its converge ran: those whose phase digest moved, or every phase without a phase record.
+      converge_reasons: >-
+        {%- set out = {} -%}
+        {%- for role in fleet_roles -%}
+        {%- set _ = out.update({role: fleet_converge_reasons[role] | combine({'phases': fleet_converge_phases[role]} if role in fleet_converge_phases else {})}) -%}
+        {%- endfor -%}
+        {{ out }}
       # The nested Nodes the converge ran for, in converge order.
       converge_nodes: "{{ fleet_converge_roles }}"
       # `converged`: nested-app-dev's `app-dev` role converge ran the Instance host's container branch; `kept`: the seed's host stayed.

@@ -153,3 +153,28 @@ it('keeps the untouched fact only when a failed run stopped before its first cha
     'role check' => ['Check the role', 'failed', false],
     'interrupted at the OS check' => ['Require supported Ubuntu', 'interrupted', false],
 ]);
+
+it('records the phase digests of a proven role run and leaves no record after a failed one', function (string $terminal): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change
+    Http::preventStrayRequests();
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'digests', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.4',
+        'wireguard_ip' => '10.44.0.4', 'user' => 'orbit',
+    ]));
+    $assignment = $node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $operation = Operation::query()->create(['kind' => 'node.role_converge', 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => 'running', 'sequence' => 1, 'attempts' => 1,
+        'input' => ['_role' => ['assignment_id' => $assignment->id, 'role' => 'app-prod', 'created' => false,
+            'certificates' => ['leaves' => [], 'withdrawals' => []]],
+            'native_role' => ['publications' => [], 'artifact_digests' => []]],
+        'state' => ['swamp_run_id' => 'fixture-native-role']]);
+    $digests = ['prerequisites' => str_repeat('a', 64), 'tools' => str_repeat('b', 64), 'node' => str_repeat('c', 64), 'firewall' => str_repeat('d', 64)];
+
+    app(NodeRoleDirectProjection::class)->apply($operation, ['run_id' => 'fixture-native-role', 'status' => $terminal,
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => [NodeRoleDirectProjection::DigestStep => ['status' => 'succeeded', 'stdout' => json_encode(['digests' => $digests])],
+            'Check the role' => ['status' => $terminal]],
+            'summary' => ['failed_steps' => $terminal === 'failed' ? ['Check the role'] : []]]]);
+
+    expect($node->refresh()->converge_digests)->toBe($terminal === 'succeeded' ? $digests : null);
+})->with(['proven' => ['succeeded'], 'failed check' => ['failed']]);

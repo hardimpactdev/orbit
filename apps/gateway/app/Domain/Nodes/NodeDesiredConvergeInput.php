@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Instances\ContainerNodes;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolPackageProtection;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -93,9 +94,38 @@ final readonly class NodeDesiredConvergeInput
         $operation->id = 0;
         DB::beginTransaction();
         try {
-            $intent = $this->capture($node, NodeConvergeScope::roles($node, false, null), true, $operation, NodeNetworkReservation::hub())['intent'];
+            // As StartNodeConvergeAction admits it: the role that runs the Instance container branch gets its bridge before the capture.
+            $node = Node::query()->findOrFail($node->id);
+            $selected = NodeConvergeScope::roles($node, false, null);
+            $host = app(InstanceHostIntent::class)->role($node);
+            if ($host !== null && in_array($host->value, $selected, true)) {
+                app(InstanceHostIntent::class)->prepare($node);
+            }
+            $intent = $this->capture($node, $selected, true, $operation, NodeNetworkReservation::hub())['intent'];
         } finally {
             DB::rollBack();
+        }
+        // Each capture mints a new certificate leaf version (NodeRoleCertificateInput) and stamps the Instance bridge with its admission
+        // time (InstanceHostIntent): values of the Operation, not inputs, as the converge's own phase digests read them
+        // (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
+        if (is_array($intent['roles'] ?? null)) {
+            $intent['roles'] = array_map(function (mixed $role): mixed {
+                if (! is_array($role)) {
+                    return $role;
+                }
+                $certificates = is_array($role['certificates'] ?? null) ? $role['certificates'] : [];
+                if (is_array($certificates['leaves'] ?? null)) {
+                    $certificates['leaves'] = array_map(fn (mixed $leaf): array => array_diff_key(ValidatedData::object($leaf), ['version' => true]), $certificates['leaves']);
+                    $role['certificates'] = $certificates;
+                }
+                $runtime = is_array($role['runtime'] ?? null) ? $role['runtime'] : [];
+                if (is_array($runtime['instances'] ?? null)) {
+                    $runtime['instances'] = array_diff_key($runtime['instances'], ['bridge_admitted_at' => true]);
+                    $role['runtime'] = $runtime;
+                }
+
+                return $role;
+            }, $intent['roles']);
         }
 
         return hash('sha256', json_encode($intent, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
