@@ -1,7 +1,7 @@
 order = 30
 cases = [
-  "a fleet start restores the nested Gateway pins as orbit, reports a no-op on rerun and fails if the store cannot be repaired",
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
+  "a fleet start restores the nested Gateway pins as orbit, reports a no-op on rerun and fails if the store cannot be repaired",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
   "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check",
   "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts",

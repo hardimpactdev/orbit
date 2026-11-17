@@ -56,12 +56,17 @@ Deno.test({
     async fn() {
         const f = await rawFixture(options("dir"));
         try {
-            const run = stages(f);
-            const first = await run("system"); assert(first.ok, first.output);
+            // Exercise the shipped account task alone; the saved system boundaries prove its place in the full role.
+            const path = `${f.folder}/tasks/instance-host.yml`;
+            const tasks = JSON.parse(Deno.readTextFileSync(path)).filter((task: { name: string }) =>
+                task.name === "Give the managed user access to the Instance host socket");
+            assertEquals(tasks.length, 1);
+            Deno.writeTextFileSync(path, JSON.stringify(tasks));
+            const first = await f.run(); assert(first.ok, first.output);
             const groups = () => JSON.parse(Deno.readTextFileSync(`${f.folder}/users.json`));
             assertEquals(groups(), { name: "node-reader", groups: ["work", "operators", "incus-admin"] });
             const inode = Deno.statSync(`${f.folder}/users.json`).ino;
-            const again = await run("system"); assert(again.ok, again.output);
+            const again = await f.run(); assert(again.ok, again.output);
             assertEquals(groups(), { name: "node-reader", groups: ["work", "operators", "incus-admin"] });
             assertEquals(Deno.statSync(`${f.folder}/users.json`).ino, inode);
             assertStringIncludes(again.output, "changed=0");
