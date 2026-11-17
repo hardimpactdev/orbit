@@ -311,7 +311,8 @@ describe('the Instance image', function (): void {
             "find /etc/sudoers.d -mindepth 1 ! -name README -delete\n", 'install -d -o agent -g work -m 2770 /srv/workspace',
             'd:u::rwX,d:g::rwX,d:g:work:rwX,d:o::---', 'hidepid=invisible',
         )
-            ->and($image['packages'])->toBe(['acl', 'git', 'nftables', 'sudo'])
+            ->and($image['packages'])->toBe(['acl', 'git', 'nftables', 'sudo', 'libnss3', 'libatk-bridge2.0-0t64',
+                'libxcomposite1', 'libxdamage1', 'libxfixes3', 'libxrandr2', 'libgbm1', 'libxkbcommon0', 'libasound2t64'])
             // ADR 0268, amendment: the stock grants go, and `agent`'s one grant is the only sudo path; `orbit` has none.
             ->and($files[InstanceImage::SudoGrant])->toBe(['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440', 'existing' => true])
             ->and(array_values(array_filter(array_keys($files), static fn (string $path): bool => str_starts_with($path, '/etc/sudoers'))))->toBe([InstanceImage::SudoGrant])
@@ -424,10 +425,10 @@ describe('the shared folders', function (): void {
         // `bunx` is Bun itself, which acts as `bunx` by the name it runs under. The browser's Debian packages give no program either.
         expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'bunx', 'deno', 'composer', 'rg'])
             ->and($programs($plan['runtime'])['bunx'])->toBe($programs($plan['runtime'])['bun'])
-            ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex', 'conn-server'])
+            ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex', 'conn-server', 'chrome-headless-shell'])
             ->and(array_diff_key($archives, $browser))->toBe(['node' => 'tar', 'bun' => 'zip', 'deno' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar', 'php-data-bridge' => 'tar', 'vite-plus' => 'tar', 'php/8.5' => 'tar'])
             ->and(array_unique(array_values($browser)))->toBe(['deb'])
-            ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar', 'conn-server' => 'tar'])
+            ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar', 'conn-server' => 'tar', 'chrome-headless-shell' => 'zip'])
             ->and(array_column($plan['runtime']['parts'], 'bin', 'name')['php-data-bridge'])->toBe([]);
     });
 

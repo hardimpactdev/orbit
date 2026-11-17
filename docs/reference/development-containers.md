@@ -320,11 +320,11 @@ The software that the app and the agents run lives once per Node, in two version
 | `/opt/orbit-runtime/<version>/{lib,fonts}` | The [browser libraries and fonts](#browser-libraries-and-fonts) | Everyone |
 | `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |
 | `/opt/orbit-runtime/vite-plus/<digest>` | The [Vite+ home](/reference/compute-drivers#the-vite-home) that `vp` runs from, linked as `<version>/vite-plus-home` | Everyone |
-| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex` and `conn-server` ([Container server](#container-server)) | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
-| `/opt/orbit-agent/<version>/agent/{t3,conn-server,claude-code,codex}` | The releases | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
+| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex`, `conn-server` and `chrome-headless-shell` ([Container server](#container-server)) | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
+| `/opt/orbit-agent/<version>/agent/{t3,conn-server,chrome-headless-shell,claude-code,codex}` | The releases | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
 
-The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, Claude Code and Codex. The runtime folder holds Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
+The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, its Chrome headless shell, Claude Code and Codex. The runtime folder holds Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
 
 A folder's version is the first 12 hex digits of a digest of everything in it, the notes included, so any change is a new version. Each program in `bin` links to its path in its part.
 
@@ -346,7 +346,7 @@ The OS packages of the image change rarely. The Node's patch run of ADR 0250 upg
 
 ## Container server
 
-A Project chooses the server that runs in its containers, in its [`container_server`](/reference/projects#container-server) field: `t3`, the T3 server and the default, or `conn`, the [Conn Server](https://github.com/nckrtl/conn). The Conn Server serves the same client contract: `/mcp`, `/.well-known/t3/environment`, the HTTP and WebSocket API, and the `t3` CLI subcommands that Orbit calls. Only the program differs. Credentials stay the same: `model.env` and Codex's `config.toml` ([Model access](#model-access)). ADR 0258 records the decision.
+A Project chooses the server that runs in its containers, in its [`container_server`](/reference/projects#container-server) field: `t3`, the T3 server and the default, or `conn`, the [Conn Server](https://github.com/nckrtl/conn). The Conn Server serves the same client contract: `/mcp`, `/.well-known/t3/environment`, the HTTP and WebSocket API, and the `t3` CLI subcommands that Orbit calls. Credentials stay the same: `model.env` and Codex's `config.toml` ([Model access](#model-access)). ADR 0258 records the decision.
 
 | Choice | Program in the agent folder |
 | --- | --- |
@@ -357,9 +357,11 @@ When Orbit reserves the runtime of a container with a server, a clone or a [migr
 
 The record names the program that every call inside the container runs: the create's sessions and `project add`, and a task turn's `thread` commands and its RPC helper. The drop-in `/etc/systemd/system/t3.service.d/20-orbit-server.conf` sets the unit's `ExecStart` to the same program, with the image's arguments: `serve --host=0.0.0.0 --port=3773 --no-browser`. A clone gets it before its first start, with [T3's other files](#t3-starts-with-the-copy). A migrated checkout gets it with the agent's files, and its T3 phase reloads systemd before it starts the unit.
 
-The image and its unit do not change. The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
+For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`. This is the unpacked executable in the current agent folder version, beside its support files, rather than its `bin` link. It also sets `T3CODE_SERVER_BROWSER_SANDBOX=0` because the container has no user namespaces. T3 gets neither override. The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
 
-The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins the Conn Server as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, so every agent folder holds both programs. Its releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host. A folder version that only adds the part adds files, so no running server restarts.
+The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins Conn Server 0.2.0 as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, so every agent folder holds both programs. Its releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host.
+
+The part `chrome-headless-shell` pins Chrome 157.0.8103.78 from `nckrtl/conn`'s `apps/conn-server/crates/conn-preview/chrome.json`. Its ZIP unpacks with its `.pak`, `.so` and locale files beside the executable. The image supplies its system libraries. With this path configured, Conn never downloads Chrome; it refuses preview tools with a typed error if the executable is missing or has the wrong version.
 
 ## Workspace volumes (draft)
 
@@ -487,9 +489,9 @@ Failure to preserve ownership blocks this design. It does not authorize weaker i
 
 ### Browser libraries and fonts
 
-A headless browser, such as the Chromium that a Project's own Playwright downloads, starts in every container. The image has none of the libraries it links, and no fonts. So the runtime folder holds them, once per Node.
+A headless browser, such as the Chromium that a Project's own Playwright downloads, starts in every container. The image supplies the system libraries for the Conn Server's pinned Chrome headless shell. The runtime folder adds libraries that other browsers need and fonts, once per Node.
 
-The recipe pins each library and font as a Debian package of its Ubuntu snapshot. Each is a runtime part named `browser-<package>`. The packages hold what Chromium links and the image lacks, with their own dependencies. GPU drivers stay out: `libgbm` loads them only on demand, and a container has no GPU. DejaVu gives sans, serif and mono. Liberation stands in for Arial, Times New Roman and Courier New. Noto Color Emoji gives the emoji.
+The recipe pins each runtime library and font as a Debian package of its Ubuntu snapshot. Each is a runtime part named `browser-<package>`. The packages hold what Chromium links and the image lacks, with their own dependencies. GPU drivers stay out of the runtime folder: `libgbm` loads them only on demand, and a container has no GPU. DejaVu gives sans, serif and mono. Liberation stands in for Arial, Times New Roman and Courier New. Noto Color Emoji gives the emoji.
 
 - **Folders.** The converge unpacks each package in its part and links its libraries into the version's `lib` and its fonts into `fonts`. Two packages that give the same name fail the build.
 - **Linker.** `/etc/ld.so.conf.d/zz-orbit-browser.conf` names `/opt/orbit-runtime/current/lib`. The name sorts after the stock `x86_64-linux-gnu.conf`, so a system library of the same name always wins: the folder only adds what the image lacks.
