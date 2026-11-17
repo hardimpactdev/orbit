@@ -3,7 +3,7 @@
 //! Nothing on this path syncs to disk: the journal's syncer covers the order, and a crash repeats the wake.
 use crate::incus::{Api, Instance};
 use crate::plan::{self, Plan, Range};
-use crate::pool::Item;
+use crate::pool::{Item, Shortfall};
 use crate::{invalid, load, micros, remove, valid_id, Identity, Power, UNMANAGED};
 use serde::Serialize;
 use std::fs::File;
@@ -23,7 +23,7 @@ const THAW_BOUND: Duration = Duration::from_secs(5);
 /// Measured wake result. It contains counts and timings, never addresses or raw process data.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct WakeReceipt {
-    /// `complete`, `partial` (cut at the bound), `skipped` (no usable plan) or `not_needed` (the container already ran).
+    /// `complete`, `partial` (cut at the bound or a page that could not be read), `skipped` (no usable plan) or `not_needed` (the container already ran).
     pub restore: String,
     /// Why the restore is not complete, if it is not.
     pub reason: Option<String>,
@@ -113,12 +113,17 @@ fn remote(address: u64) -> *mut libc::c_void {
 
 /// Read one item's missing pages back: one `process_madvise(MADV_WILLNEED)` to start every swap read at once, then one byte of
 /// each page through `process_vm_readv` to wait for them. A restore is a hint, so a refused call only reads fewer pages.
-fn restore(target: &Target, ranges: &[Range], deadline: Instant) -> (u64, bool) {
+///
+/// A pagemap that cannot be read, a failed read or a short one reports `read_failed`: the wake goes on, but as `partial`.
+fn restore(target: &Target, ranges: &[Range], deadline: Instant) -> (u64, Option<Shortfall>) {
     let Ok(runs) = missing(target, ranges) else {
-        return (0, false);
+        return (0, Some("read_failed"));
     };
     if runs.is_empty() {
-        return (0, false);
+        return (0, None);
+    }
+    if Instant::now() >= deadline {
+        return (0, Some("deadline"));
     }
     let advice: Vec<libc::iovec> = runs
         .iter()
@@ -151,7 +156,7 @@ fn restore(target: &Target, ranges: &[Range], deadline: Instant) -> (u64, bool) 
         .collect();
     let mut scratch = vec![0_u8; remote.len()];
     if Instant::now() >= deadline {
-        return (0, true);
+        return (0, Some("deadline"));
     }
     let local = libc::iovec {
         iov_base: scratch.as_mut_ptr().cast(),
@@ -169,7 +174,12 @@ fn restore(target: &Target, ranges: &[Range], deadline: Instant) -> (u64, bool) 
             0,
         )
     };
-    (u64::try_from(read).unwrap_or(0), false)
+    // The kernel stops at the first page it cannot read, so a short count is a failure too.
+    match usize::try_from(read) {
+        Ok(read) if read == remote.len() => (u64::try_from(read).unwrap_or(u64::MAX), None),
+        Ok(read) => (u64::try_from(read).unwrap_or(u64::MAX), Some("read_failed")),
+        Err(_) => (0, Some("read_failed")),
+    }
 }
 
 /// Split the plan into pool items of at most [`ITEM_PAGES`] pages, process by process.
@@ -216,19 +226,23 @@ pub(crate) fn ready(address: IpAddr, port: u16, bound: Duration) -> bool {
         if left.is_zero() {
             return false;
         }
-        if let Some(status) = ask(socket, left) {
-            if status < 500 {
+        if let Some(status) = ask(socket, deadline) {
+            if status < 500 && Instant::now() < deadline {
                 return true;
             }
         }
         std::thread::sleep(Duration::from_millis(20).min(left));
     }
 }
-fn ask(socket: SocketAddr, left: Duration) -> Option<u16> {
-    let mut stream = TcpStream::connect_timeout(&socket, left).ok()?;
-    stream.set_read_timeout(Some(left)).ok()?;
-    stream.set_write_timeout(Some(left)).ok()?;
+/// The time left before `deadline`, or `None` once it passed. Every socket call gets only this, so a peer that answers byte by
+/// byte cannot stretch the check past its one absolute bound.
+fn left(deadline: Instant) -> Option<Duration> {
+    Some(deadline.saturating_duration_since(Instant::now())).filter(|left| !left.is_zero())
+}
+fn ask(socket: SocketAddr, deadline: Instant) -> Option<u16> {
+    let mut stream = TcpStream::connect_timeout(&socket, left(deadline)?).ok()?;
     stream.set_nodelay(true).ok()?;
+    stream.set_write_timeout(Some(left(deadline)?)).ok()?;
     write!(
         stream,
         "GET / HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
@@ -236,7 +250,15 @@ fn ask(socket: SocketAddr, left: Duration) -> Option<u16> {
     )
     .ok()?;
     let mut head = [0; 12];
-    stream.read_exact(&mut head).ok()?;
+    let mut filled = 0;
+    while filled < head.len() {
+        stream.set_read_timeout(Some(left(deadline)?)).ok()?;
+        match stream.read(&mut head[filled..]).ok()? {
+            0 => return None,
+            read => filled += read,
+        }
+    }
+    left(deadline)?;
     std::str::from_utf8(&head[9..12]).ok()?.parse().ok()
 }
 
@@ -294,11 +316,12 @@ impl Power {
                     );
                     let restored = self.pool.restore(work, restoring + self.restore_bound);
                     receipt.pages_read = restored.pages;
-                    if restored.complete {
-                        "complete".clone_into(&mut receipt.restore);
-                    } else {
-                        "partial".clone_into(&mut receipt.restore);
-                        receipt.reason = Some("deadline".to_owned());
+                    match restored.shortfall {
+                        None => "complete".clone_into(&mut receipt.restore),
+                        Some(reason) => {
+                            "partial".clone_into(&mut receipt.restore);
+                            receipt.reason = Some(reason.to_owned());
+                        }
                     }
                 }
                 Err(reason) => {
@@ -335,6 +358,9 @@ impl Power {
             return Err("no_plan");
         }
         let plan: Plan = load(&path).map_err(|_| "plan_invalid")?;
+        if !plan::valid(&plan) {
+            return Err("plan_invalid");
+        }
         if plan.version != 1 || plan.identity != *identity || plan.init_pid != instance.pid {
             return Err("plan_stale");
         }

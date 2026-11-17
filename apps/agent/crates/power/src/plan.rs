@@ -167,12 +167,7 @@ pub(crate) fn capture(
         return Err(invalid("bound_processes"));
     }
     let pids: Vec<_> = pids.into_iter().collect();
-    // SAFETY: sysconf with this constant has no pointer arguments and does not mutate Rust memory.
-    let page =
-        u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).map_err(io::Error::other)?;
-    if page == 0 {
-        return Err(invalid("invalid page size"));
-    }
+    let page = page_size()?;
     let next = AtomicUsize::new(0);
     let results = Mutex::new(Vec::new());
     std::thread::scope(|scope| {
@@ -218,6 +213,46 @@ pub(crate) fn capture(
         return Err(invalid("bound_residency"));
     }
     Ok((page, processes))
+}
+
+/// The system page size; never 0.
+pub(crate) fn page_size() -> io::Result<u64> {
+    // SAFETY: sysconf with this constant has no pointer arguments and does not mutate Rust memory.
+    let page =
+        u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).map_err(io::Error::other)?;
+    if page == 0 {
+        return Err(invalid("invalid page size"));
+    }
+    Ok(page)
+}
+
+/// Whether a plan read from disk keeps every bound its capture keeps: the system page size, at most the processes, ranges and
+/// bytes a capture accepts, and each range non-empty, page-aligned and ending within the user address space without overflow.
+/// The wake builds its work only from a plan that passes.
+pub(crate) fn valid(plan: &Plan) -> bool {
+    if page_size().ok() != Some(plan.page_size) || plan.processes.len() > MAX_PROCESSES {
+        return false;
+    }
+    let page = plan.page_size;
+    let mut ranges = 0_usize;
+    let mut bytes = 0_u64;
+    for range in plan.processes.iter().flat_map(|p| &p.ranges) {
+        ranges += 1;
+        let Some(end) = range.start.checked_add(range.length) else {
+            return false;
+        };
+        bytes = bytes.saturating_add(range.length);
+        if range.length == 0
+            || range.start % page != 0
+            || range.length % page != 0
+            || end > 1 << 56
+            || ranges > MAX_RANGES
+            || bytes > MAX_BYTES
+        {
+            return false;
+        }
+    }
+    true
 }
 
 pub(crate) fn cgroup_identity(root: &Path) -> io::Result<(u64, u64)> {

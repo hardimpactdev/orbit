@@ -292,25 +292,30 @@ Slice 5 adds the `wake` action to the `power` family. Like sleep, only the proof
 
 The wake reads the Incus state first. A stopped container drops its plan and fails `instance.container_stopped`, because a boot is the run's work. A frozen container gets these steps, in order.
 
+**Plan bounds.** The plan's page size must be the system page size. Its processes, ranges and bytes stay within the capture's bounds, and each range is non-empty, page-aligned and ends below 2^56 without overflow. Otherwise the plan is dropped as `plan_invalid` before any work is built.
+
 **Identity, before any memory syscall.** The plan's boot id, cgroup device and inode, and Incus incarnation must equal the live ones. Its init PID must be the container's. For each recorded process the executor opens a pidfd, compares the process's start time, and sends signal 0 through the pidfd. A PID reused before the open fails the start time; one reused after it fails the signal. Any mismatch drops the plan with no memory syscall. The wake goes on without a restore.
 
 **Restore through the pool.** The plan's pages split into items of at most 1,024 pages. An item reads the process's pagemap and keeps only the pages that are not resident now. It calls `process_madvise(MADV_WILLNEED)` on them through the pidfd, so every swap read starts at once. Then it reads one byte of each page with `process_vm_readv`. The restore ends after 2 s. Items not started by then are skipped, and the result is `partial`.
+
+An item still running stops at its next deadline check, and the wake waits for it: no restore work outlives the frozen interval or the target's lock. An item whose pagemap cannot be read, or whose read fails or comes back short, also makes the result `partial`.
 
 **Unfreeze.** The executor unfreezes through the Incus local API, with the short freeze bounds of 5 s. It never unfreezes a replacement container, one with another incarnation. Then it waits up to 5 s for the kernel to thaw the cgroup. It never writes `cgroup.freeze` itself. A cgroup that stays frozen fails `instance.container_frozen_unmanaged`.
 
 **Limits.** It writes back exactly the values of the limits record and removes the record. A record of another incarnation names cgroups that are gone. It is dropped, and nothing is written.
 
-**Readiness.** The executor sends a request from the Node straight to the container's `eth0` address and web port 8080. It retries until an answer below 500, within 1.5 s. Then the asleep marker goes. An unready app fails `instance.web_unready`, and the marker stays.
+**Readiness.** The executor sends a request from the Node straight to the container's `eth0` address and web port 8080. It retries until an answer below 500, within one absolute bound of 1.5 s. Every connect, write and read gets only the time left, so a reply sent byte by byte cannot pass after the bound. Then the asleep marker goes. An unready app fails `instance.web_unready`, and the marker stays.
 
 A container that already runs gets only the limits and readiness steps, and reports `done`. So crash recovery, which runs an open wake again, and a repeat after the unfreeze are safe. A container that Incus calls running while its kernel cgroup is still frozen fails `instance.container_frozen_unmanaged` with no write; Incus lost that freeze, and an operator thaws it. Nothing on the wake's path syncs to disk: the journal's syncer covers the order.
 
-**The restore pool.** One per Node, with its own threads, separate from the connection threads, so order checks never wait behind a restore. The role writes its size to `/etc/orbit/executor/restore-threads`: 32, the measured size for the current Nodes' swap devices. Swap-in waits on the device, so the size follows the device's queue depth, not the CPU count. The executor refuses to start with fewer than 16 or more than 256. Jobs queue in arrival order, and every item of one target is claimed before any item of the next.
+**The restore pool.** One per Node, with its own threads, separate from the connection threads, so order checks never wait behind a restore. The role writes its size to `/etc/orbit/executor/restore-threads`: 32, the measured size for the current Nodes' swap devices. Swap-in waits on the device, so the size follows the device's queue depth, not the CPU count. The executor refuses to start with fewer than 16 or more than 256. Jobs queue in arrival order. A target leaves the front of the queue only when every one of its items has finished, so no item of the next target starts before then.
 
 | Result | Meaning |
 | --- | --- |
 | `done` | The container runs and answers. Every planned page that was not resident was read back, or the container already ran. |
 | `partial`, `instance.restore_deadline` | The container runs and answers, but the 2 s bound cut the restore. |
-| `partial`, `instance.restore_no_plan`, `instance.restore_plan_stale`, `instance.restore_plan_invalid` | The container runs and answers without a restore: there was no plan, an identity check failed, or the plan could not be read. |
+| `partial`, `instance.restore_read_failed` | The container runs and answers, but a pagemap or a planned page could not be read. |
+| `partial`, `instance.restore_no_plan`, `instance.restore_plan_stale`, `instance.restore_plan_invalid` | The container runs and answers without a restore: there was no plan, an identity check failed, or the plan could not be read or broke a bound. |
 | `failed`, `instance.container_stopped` | The container is stopped; the run boots it. |
 | `failed`, `instance.container_start_failed` | Incus did not report the same container running after the unfreeze, or another error. |
 | `failed`, `instance.container_frozen_unmanaged` | The kernel cgroup stayed frozen. |

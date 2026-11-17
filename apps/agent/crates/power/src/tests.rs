@@ -33,6 +33,8 @@ impl Api for Fake {
         Ok(())
     }
 }
+static POOL: std::sync::OnceLock<pool::Pool> = std::sync::OnceLock::new();
+
 fn fixture() -> (tempfile::TempDir, Power, Fake) {
     let dir = tempfile::tempdir().expect("tempdir");
     let power = Power {
@@ -41,7 +43,10 @@ fn fixture() -> (tempfile::TempDir, Power, Fake) {
         proc: dir.path().join("proc"),
         markers: dir.path().join("markers"),
         incus: Incus(dir.path().join("socket")),
-        pool: pool::Pool::new(pool::MIN_THREADS),
+        // One pool for every fixture, as on a Node: a pool per test would exhaust the test host's threads.
+        pool: POOL
+            .get_or_init(|| pool::Pool::new(pool::MIN_THREADS))
+            .clone(),
         restore_bound: Duration::from_secs(2),
         web_port: 0,
     };
@@ -832,4 +837,157 @@ fn crash_recovery_after_the_unfreeze_finishes_the_wake_and_a_repeat_returns_it()
         *api.actions.lock().expect("actions"),
         ["freeze", "unfreeze"]
     );
+}
+
+// Review 5767 reproductions, kept as regression tests.
+
+#[test]
+fn review_failed_pagemap_read_must_not_report_complete() {
+    let (_dir, mut power, api) = fixture();
+    power.web_port = web(200);
+    api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+    let buffer = vec![1_u8; 4096 * 9];
+    plant_self(&power, &api, &buffer, 8);
+    power.sleep_with(&api, "2", "op1").expect("sleep");
+    fs::write(
+        power
+            .proc
+            .join(std::process::id().to_string())
+            .join("pagemap"),
+        "",
+    )
+    .expect("short pagemap");
+    let receipt = power.wake_with(&api, "2").expect("wake should go on");
+    assert_eq!(
+        (receipt.restore.as_str(), receipt.reason.as_deref()),
+        ("partial", Some("read_failed")),
+        "no page was read, so reporting a complete restore is false"
+    );
+}
+
+#[test]
+fn review_failed_memory_read_must_not_report_complete() {
+    let (_dir, mut power, api) = fixture();
+    power.web_port = web(200);
+    api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+    let buffer = vec![1_u8; 4096 * 9];
+    plant_self(&power, &api, &buffer, 8);
+    power.sleep_with(&api, "2", "op1").expect("sleep");
+    let path = power.state.join("2/plan.json");
+    let mut plan: serde_json::Value = load(&path).expect("plan");
+    plan["processes"][0]["ranges"] = serde_json::json!([{"start": 0, "length": 4096}]);
+    publish(&path, &plan).expect("plan");
+    let receipt = power.wake_with(&api, "2").expect("wake should go on");
+    assert_eq!(
+        (receipt.restore.as_str(), receipt.reason.as_deref()),
+        ("partial", Some("read_failed")),
+        "process_vm_readv failed for an unmapped page"
+    );
+    assert!(!marker(&power).exists());
+}
+
+#[test]
+fn review_invalid_range_must_skip_plan_without_panicking() {
+    let (_dir, mut power, api) = fixture();
+    power.web_port = web(200);
+    api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+    let buffer = vec![1_u8; 4096 * 9];
+    plant_self(&power, &api, &buffer, 8);
+    power.sleep_with(&api, "2", "op1").expect("sleep");
+    let path = power.state.join("2/plan.json");
+    let mut plan: serde_json::Value = load(&path).expect("plan");
+    plan["processes"][0]["ranges"] =
+        serde_json::json!([{"start": u64::MAX - 4095, "length": 8192}]);
+    publish(&path, &plan).expect("plan");
+    let receipt = power
+        .wake_with(&api, "2")
+        .expect("wake should skip invalid plan");
+    assert_eq!(receipt.reason.as_deref(), Some("plan_invalid"));
+}
+
+#[test]
+fn every_invalid_plan_bound_skips_the_restore() {
+    let cases: [(&str, serde_json::Value); 5] = [
+        ("zero page size", serde_json::json!({"page_size": 0})),
+        ("other page size", serde_json::json!({"page_size": 4097})),
+        (
+            "unaligned start",
+            serde_json::json!({"ranges": [{"start": 4097, "length": 4096}]}),
+        ),
+        (
+            "empty range",
+            serde_json::json!({"ranges": [{"start": 4096, "length": 0}]}),
+        ),
+        (
+            "beyond user space",
+            serde_json::json!({"ranges": [{"start": 1_u64 << 56, "length": 4096}]}),
+        ),
+    ];
+    for (name, change) in cases {
+        let (_dir, mut power, api) = fixture();
+        power.web_port = web(200);
+        api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+        let buffer = vec![1_u8; 4096 * 9];
+        plant_self(&power, &api, &buffer, 8);
+        power.sleep_with(&api, "2", "op1").expect("sleep");
+        let path = power.state.join("2/plan.json");
+        let mut plan: serde_json::Value = load(&path).expect("plan");
+        if let Some(page) = change.get("page_size") {
+            plan["page_size"] = page.clone();
+        }
+        if let Some(ranges) = change.get("ranges") {
+            plan["processes"][0]["ranges"] = ranges.clone();
+        }
+        publish(&path, &plan).expect("plan");
+        let receipt = power.wake_with(&api, "2").expect(name);
+        assert_eq!(
+            (
+                receipt.restore.as_str(),
+                receipt.reason.as_deref(),
+                receipt.pages_read
+            ),
+            ("skipped", Some("plan_invalid"), 0),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn review_readiness_must_obey_one_absolute_deadline() {
+    use std::io::Read as _;
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+    let port = listener.local_addr().expect("address").port();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let mut request = [0; 256];
+        let _ = stream.read(&mut request).expect("request");
+        for byte in b"HTTP/1.1 200 " {
+            if stream.write_all(&[*byte]).is_err() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    });
+    let deadline = Instant::now() + Duration::from_millis(50);
+    let accepted = wake::ready([127, 0, 0, 1].into(), port, Duration::from_millis(50));
+    let exceeded = Instant::now() > deadline;
+    server.join().expect("server");
+    assert!(
+        !accepted || !exceeded,
+        "readiness accepted a response after its absolute deadline"
+    );
+    assert!(!accepted);
+}
+
+#[test]
+fn review_stale_limits_are_dropped_without_writing() {
+    let (_dir, power, api) = asleep(200);
+    let path = power.state.join("2/limits.json");
+    let mut record: serde_json::Value = load(&path).expect("record");
+    record["identity"]["incarnation"] = "uuid-other".into();
+    publish(&path, &record).expect("record");
+    power.wake_with(&api, "2").expect("wake");
+    assert_eq!(swap_limits(&api), ["max", "max"]);
+    assert!(!path.exists());
 }
