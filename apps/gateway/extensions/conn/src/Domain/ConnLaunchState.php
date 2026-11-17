@@ -66,6 +66,9 @@ final readonly class ConnLaunchState
                 || self::hasOpenOwnedWork($launch, [ConnLaunchChild::Create, ConnLaunchChild::Wake, ConnLaunchChild::Completion]))) {
                 return null;
             }
+            if ($role === ConnLaunchChild::Destroy) {
+                $state = $this->retainCompletedStages($launch);
+            }
 
             ['operation' => $child, 'owned' => $owned] = $admit($launch);
             $instanceId = ConnLaunchChild::instanceId($launch);
@@ -108,28 +111,31 @@ final readonly class ConnLaunchState
             ->whereHas('runtime', static fn ($runtime) => $runtime->where('clone_source_instance_id', $launch->input['default_instance_id']))->exists();
     }
 
-    /** Record readiness from the read-only native preparation of an already running target. */
+    /** Record the exact child's readiness or proof from the read-only preparation of a running target. */
     public function workspaceReady(int $id): void
     {
         DB::transaction(function () use ($id): void {
             $launch = $this->locked($id);
-            if ($launch->cancel_requested_at !== null || $launch->status->terminal() || isset($launch->state['dispatch_committed_at'])) {
+            if ($launch->cancel_requested_at !== null || $launch->status->terminal() || isset($launch->state['dispatch_committed_at'])
+                || ($launch->state['launch_phase'] ?? null) === 'needs_retry') {
                 return;
             }
-            if (Arr::get($this->snapshot->project($launch), 'readiness.workspace_server') === true) {
-                return;
+            $workspace = $this->snapshot->workspaceStage($launch);
+            if ($workspace['status'] !== 'succeeded') {
+                $child = ConnLaunchChild::Wake->operation($launch) ?? ConnLaunchChild::Create->operation($launch);
+                if ($child !== null && ($child->kind !== 'instance.start' || $child->status !== OperationStatus::Succeeded)) {
+                    throw new LogicException('Workspace readiness must come from the admitted create or wake.');
+                }
+                $instanceId = ConnLaunchChild::instanceId($launch);
+                if ($instanceId === null || ! ConnEnvironment::query()->where('instance_id', $instanceId)->where('node_id', $launch->node_id)->exists()) {
+                    throw new LogicException('Workspace readiness requires the registered target.');
+                }
+                $workspace = ConnLaunchStage::Workspace->fact('succeeded', ConnLaunchStage::at($child?->started_at), ConnLaunchStage::at(now()));
             }
-            $child = ConnLaunchChild::Wake->operation($launch) ?? ConnLaunchChild::Create->operation($launch);
-            if ($child !== null && ($child->kind !== 'instance.start' || $child->status !== OperationStatus::Succeeded)) {
-                throw new LogicException('Workspace readiness must come from the admitted create or wake.');
-            }
-            $instanceId = ConnLaunchChild::instanceId($launch);
-            if ($instanceId === null || ! ConnEnvironment::query()->where('instance_id', $instanceId)->where('node_id', $launch->node_id)->exists()) {
-                throw new LogicException('Workspace readiness requires the registered target.');
-            }
+            $state = [...($launch->state ?? []), 'launch_phase' => 'preparing'];
+            Arr::set($state, 'launch_stages.'.ConnLaunchStage::Workspace->value, $workspace);
             $this->store->change($launch, ['started_at' => $launch->started_at ?? now(), 'status' => OperationStatus::Running,
-                'error_code' => null, 'state' => self::stage([...($launch->state ?? []), 'launch_phase' => 'preparing'],
-                    ConnLaunchStage::Workspace, 'succeeded', now())]);
+                'error_code' => null, 'state' => $state]);
         });
     }
 
@@ -177,13 +183,18 @@ final readonly class ConnLaunchState
             }
 
             if (! $recovery) {
-                if (Arr::get($this->snapshot->project($launch), 'readiness.workspace_server') !== true
+                if (($state['launch_phase'] ?? null) === 'needs_retry') {
+                    return null;
+                }
+                $workspace = $this->snapshot->workspaceStage($launch);
+                if ($workspace['status'] !== 'succeeded'
                     || ! ConnEnvironment::query()->where('environment_id', $environmentId)->where('instance_id', $instanceId)
                         ->where('node_id', $launch->node_id)->exists()) {
                     throw new LogicException('Dispatch requires proof of readiness for the registered target.');
                 }
                 $this->freeze($launch, $environmentId, $incarnation, $t3ProjectId, $modelSelection);
                 $state['dispatch_committed_at'] = ConnLaunchStage::at(now());
+                Arr::set($state, 'launch_stages.'.ConnLaunchStage::Workspace->value, $workspace);
                 $this->store->change($launch, ['state' => $state]);
             }
 
@@ -301,12 +312,29 @@ final readonly class ConnLaunchState
             if ($launch->status->terminal() || ($launch->cancel_requested_at !== null) !== ($stage === ConnLaunchStage::Cleanup) || ! $stageAllowed) {
                 return;
             }
+            $workspace = $stage === ConnLaunchStage::Workspace ? $this->snapshot->workspaceStage($launch) : null;
             $state = self::stage($launch->state ?? [], $stage, 'failed', now(), $code);
+            $errorCode = Arr::get($state, 'launch_stages.'.$stage->value.'.error.code');
+            if ($workspace !== null && $workspace['status'] === 'succeeded') {
+                Arr::set($state, 'launch_stages.'.$stage->value, $workspace);
+            }
             Arr::forget($state, 'launch_retry_requests.launch');
             $state['launch_phase'] = $stage === ConnLaunchStage::Cleanup ? 'cancelling' : 'needs_retry';
-            $this->store->change($launch, ['state' => $state, 'status' => OperationStatus::Waiting,
-                'error_code' => Arr::get($state, 'launch_stages.'.$stage->value.'.error.code')]);
+            $this->store->change($launch, ['state' => $state, 'status' => OperationStatus::Waiting, 'error_code' => $errorCode]);
         });
+    }
+
+    /** @return array<string, mixed> */
+    public function retainCompletedStages(Operation $launch): array
+    {
+        $state = $launch->state ?? [];
+        foreach ($this->snapshot->stages($launch, ConnLaunchChild::Completion->operation($launch)) as $name => $fact) {
+            if (! in_array($fact['status'], ['pending', 'running'], true)) {
+                Arr::set($state, 'launch_stages.'.$name, $fact);
+            }
+        }
+
+        return $state;
     }
 
     /** A terminal child is not cleanup evidence: the settlement caller must verify the owned effects are gone first. */
@@ -326,9 +354,11 @@ final readonly class ConnLaunchState
                 throw new LogicException('Launch cleanup cannot finish while the owned Instance remains.');
             }
 
-            foreach ([ConnLaunchStage::Workspace, ConnLaunchStage::FirstMessage, ConnLaunchStage::Publication, ConnLaunchStage::Application] as $stage) {
-                $recorded = $stage->recorded(Arr::get($state, 'launch_stages.'.$stage->value));
-                if (in_array($recorded['status'], ['pending', 'running'], true)) {
+            $stages = $this->snapshot->stages($launch, ConnLaunchChild::Completion->operation($launch));
+            foreach ($stages as $name => $fact) {
+                $stage = ConnLaunchStage::from($name);
+                Arr::set($state, 'launch_stages.'.$name, $fact);
+                if ($stage !== ConnLaunchStage::Cleanup && in_array($fact['status'], ['pending', 'running'], true)) {
                     $state = self::stage($state, $stage, 'cancelled', now());
                 }
             }

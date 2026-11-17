@@ -6,10 +6,8 @@ namespace Orbit\Extensions\Conn\Data;
 
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Data\Operations\OperationData;
-use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -29,8 +27,7 @@ use Orbit\Extensions\Conn\Models\ConnEnvironment;
  */
 final readonly class ConnLaunchSnapshot
 {
-    public function __construct(private ContainerProcesses $processes, private ProcessTargetResolver $targets,
-        private InstantiateProjectRuntimeDefinitionsAction $definitions) {}
+    public function __construct(private InstantiateProjectRuntimeDefinitionsAction $definitions) {}
 
     /** @return array<string, mixed> */
     public function project(Operation $operation): array
@@ -113,7 +110,8 @@ final readonly class ConnLaunchSnapshot
     {
         $processId = Arr::get($completion->result ?? [], 'process_failure.process_id');
         $units = Arr::get($completion->input, 'direct_provisioning.container.processes');
-        if (! is_int($processId) || ! is_array($units) || ! isset(array_column($units, null, 'id')[$processId])) {
+        $failedUnit = is_int($processId) && is_array($units) ? array_column($units, null, 'id')[$processId] ?? null : null;
+        if (! is_int($processId) || ! is_array($failedUnit)) {
             return false;
         }
 
@@ -129,9 +127,11 @@ final readonly class ConnLaunchSnapshot
             return true;
         }
         try {
-            $attributes = $this->definitions->attributesForDefinition($instance, $definition, $this->targets->forInspection($process));
+            $expected = $this->definitions->developmentRetryUnit($instance, $definition, $process);
+            ksort($expected);
+            ksort($failedUnit);
 
-            return ! $this->processes->matchesDefinition($process, $attributes, $instance);
+            return array_keys($expected) === array_keys($failedUnit) && $expected !== $failedUnit;
         } catch (ResourceOperationException) {
             return false;
         }
@@ -144,18 +144,14 @@ final readonly class ConnLaunchSnapshot
     }
 
     /** @return array<string, Stage> */
-    private function stages(Operation $launch, ?Operation $completion): array
+    public function stages(Operation $launch, ?Operation $completion): array
     {
         $stages = [];
         foreach (ConnLaunchStage::cases() as $stage) {
             $stages[$stage->value] = $stage->recorded(Arr::get($launch->state ?? [], 'launch_stages.'.$stage->value));
         }
-        $workspace = ConnLaunchChild::Wake->operation($launch) ?? ConnLaunchChild::Create->operation($launch);
-        if ($workspace !== null && in_array($stages['workspace_server']['status'], ['pending', 'running'], true)
-            && ! ($workspace->kind === 'instance.start' && $workspace->status === OperationStatus::Succeeded)) {
-            $stages['workspace_server'] = self::childStage(ConnLaunchStage::Workspace, $workspace, self::registered($workspace));
-        }
-        if ($completion !== null) {
+        $stages['workspace_server'] = $this->workspaceStage($launch);
+        if ($completion !== null && $launch->status !== OperationStatus::Cancelled) {
             $stages['application_preview'] = self::childStage(ConnLaunchStage::Application, $completion, ($completion->result['ready'] ?? null) === true);
         }
         $destroy = ConnLaunchChild::Destroy->operation($launch);
@@ -165,6 +161,23 @@ final readonly class ConnLaunchSnapshot
         }
 
         return $stages;
+    }
+
+    /** @return Stage */
+    public function workspaceStage(Operation $launch): array
+    {
+        $stage = ConnLaunchStage::Workspace;
+        $recorded = $stage->recorded(Arr::get($launch->state ?? [], 'launch_stages.'.$stage->value));
+        if ($recorded['status'] === 'succeeded' || $launch->status === OperationStatus::Cancelled) {
+            return $recorded;
+        }
+        $workspace = ConnLaunchChild::Wake->operation($launch) ?? ConnLaunchChild::Create->operation($launch);
+        if ($workspace === null || ($workspace->kind === 'instance.start' && $workspace->status === OperationStatus::Succeeded)) {
+            return $recorded;
+        }
+        $child = self::childStage($stage, $workspace, self::registered($workspace));
+
+        return $child['status'] === 'succeeded' || in_array($recorded['status'], ['pending', 'running'], true) ? $child : $recorded;
     }
 
     private static function registered(Operation $workspace): bool

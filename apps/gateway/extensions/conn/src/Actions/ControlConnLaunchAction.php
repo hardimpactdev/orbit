@@ -38,6 +38,7 @@ final readonly class ControlConnLaunchAction
                 throw new ResourceOperationException('conn.launch_cancel_unavailable', 'The launch has ended.', 409);
             }
             $now = now();
+            $state = $this->state->retainCompletedStages($launch);
             unset($state['launch_retry_requests']);
             $state['launch_phase'] = 'cancelling';
             $state['launch_cancellation'] = ['node_id' => $caller->id, 'request_id' => $requestId, 'requested_at' => ConnLaunchStage::at($now)];
