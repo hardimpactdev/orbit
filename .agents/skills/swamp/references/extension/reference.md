@@ -169,7 +169,8 @@ All extension types follow the same lifecycle:
    [references/model/upgrades.md](references/model/upgrades.md). `push` warns
    when it detects a version bump without an upgrade entry.
 9. **Quality check** (optional) — `swamp extension quality manifest.yaml`.
-10. **Publish** — use the `swamp-extension-publish` skill.
+10. **Publish** — follow the
+    [extension-publish guide](../extension-publish/guide.md).
 
 ### Adversarial Review Gate
 
@@ -344,6 +345,10 @@ via the `binaries` manifest field. Files listed in `binaries` are:
   on POSIX systems.
 - **Warned at pull time** — `swamp extension pull` alerts users to inspect
   binaries before use.
+- **Shipped to remote workers** — a step placed on a worker gets them beside
+  `additionalFiles`, executable, so `context.extensionFile()` resolves them
+  there too. Only regular files inside the extension ship; a symlinked entry is
+  left on the orchestrator.
 
 ```yaml
 # manifest.yaml
@@ -364,16 +369,16 @@ Use `swamp extension version --manifest manifest.yaml --json` to get the correct
 next version. See
 [publishing reference](../extension-publish/references/publishing.md#calver-versioning).
 
-## When to Use Other Skills
+## Related Guides
 
-| Need                       | Use Skill                 |
-| -------------------------- | ------------------------- |
-| Use existing behaviors     | `swamp-model`             |
-| Use existing vaults        | `swamp-vault`             |
-| Create/run workflows       | `swamp-workflow`          |
-| Manage behavior data       | `swamp-data`              |
-| Repository setup           | `swamp-repo`              |
-| Run/configure reports      | `swamp-report`            |
-| Publish extensions         | `swamp-extension-publish` |
-| Debug runtime errors       | `swamp-troubleshooting`   |
-| Understand swamp internals | `swamp-troubleshooting`   |
+| Need                       | Guide                                              |
+| -------------------------- | -------------------------------------------------- |
+| Use existing behaviors     | [behavior](../behavior/guide.md)                   |
+| Use existing vaults        | [vault](../vault/guide.md)                         |
+| Create/run workflows       | [workflow](../workflow/guide.md)                   |
+| Manage behavior data       | [data](../data/guide.md)                           |
+| Repository setup           | [repo](../repo/guide.md)                           |
+| Run/configure reports      | [report](../report/guide.md)                       |
+| Publish extensions         | [extension-publish](../extension-publish/guide.md) |
+| Debug runtime errors       | [troubleshooting](../troubleshooting/guide.md)     |
+| Understand swamp internals | [troubleshooting](../troubleshooting/guide.md)     |

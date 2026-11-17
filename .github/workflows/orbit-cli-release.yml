@@ -1,10 +1,6 @@
 name: Orbit CLI Release
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       commit:
@@ -16,21 +12,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: orbit-cli-release-${{ github.event.workflow_run.head_sha || inputs.commit }}
+  group: orbit-cli-release-${{ inputs.commit }}
   cancel-in-progress: false
 
 jobs:
   resolve:
     name: Resolve release
-    # A CI run on main, from a push or a manual dispatch, can make a commit green. A pull-request run never
-    # releases. A backfill runs only main's copy of this workflow, so another branch cannot change how it publishes.
-    if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (
-        github.event_name == 'workflow_run' &&
-        contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event) &&
-        github.event.workflow_run.head_branch == 'main' &&
-        github.event.workflow_run.head_repository.full_name == github.repository
-      )
+    # CI dispatches after main delivery passes; manual dispatches backfill missed commits.
+    # Both run only main's copy of this workflow, so another branch cannot change how it publishes.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -54,7 +44,7 @@ jobs:
       - name: Resolve commit, version and tag
         id: release
         env:
-          REQUESTED_COMMIT: ${{ github.event.workflow_run.head_sha || inputs.commit }}
+          REQUESTED_COMMIT: ${{ inputs.commit }}
         run: |
           set -euo pipefail
           [[ "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Pass a full 40-character commit SHA, not ${REQUESTED_COMMIT}."; exit 1; }
@@ -73,7 +63,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           COMMIT: ${{ steps.release.outputs.commit }}
-          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
         run: python3 bin/ci-delivery verify --sha "$COMMIT"
 
       # A release carries an agent delivery when the agent source changed since the previous release, so a change

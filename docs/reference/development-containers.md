@@ -1017,11 +1017,15 @@ The nftables table `orbit_instance_egress` keeps the proxy on the public interne
 - **IPv4 ranges.** `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `224.0.0.0/4` and `240.0.0.0/4`.
 - **No IPv6.** A LAN often uses global IPv6 addresses, which no fixed range tells from the internet. So the proxy uses IPv4 only.
 - **Admitted.** Only the stub resolver, on port 53. On an Instance fleet Node also the parent proxy: exactly its address and port.
+- **Only `proxy`.** The output chain holds one rule: a packet whose socket belongs to `proxy` jumps to the chain `squid_out`, which holds the rules above. Every other packet leaves the table at once.
+- **Kernel sockets.** A packet of a kernel socket, such as a WireGuard handshake, has no socket user. It matches no `meta skuid` rule, so it passes.
+- **Why.** The earlier chain began with `meta skuid != "proxy" return`. A packet without a user does not match it either. So on `nested-app-dev` the handshake fell to the private address reject after a restart.
 What that means:
 
 - **Effect.** The rule holds whatever a name resolves to. The proxy answers 503.
 - **Out of reach.** The Gateway, WireGuard peers, other Nodes' private services and the Node's LAN.
 - **Order.** The table's unit, `orbit-instance-egress-table.service`, loads early at boot.
+- **Changed table.** The converge loads a changed table in place with `nft --file`. The file replaces the table atomically. Squid keeps running.
 - **Bound.** The proxy's unit binds to the table's unit (`BindsTo`). Each start first checks that the table is loaded.
 
 ### Proxy settings in a container
@@ -2470,6 +2474,12 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 
 Its egress proxy goes out through the fleet's proxy (see below).
 
+Three rules let the operator reach a site on it, also after a restart:
+
+- **Its tunnel.** `nested-app-dev`'s WireGuard handshakes to the hub are packets of a kernel socket. The proxy's table lets them pass, as on every Node ([The proxy's table](#the-proxys-table)).
+- **Through the hub.** The operator's tunnel `wg-nested` ends at the nested Gateway, the fleet's hub. Its rule `orbit:vpn-peer-forwarding` forwards traffic between two members ([firewall](/cli/firewall#vpn-peer-forwarding)). So the operator reaches `10.45.0.2` over TCP.
+- **By name.** The [fleet start](#the-fleet-step) gives `wg-nested` the hub's resolver for `nested-dev` and `nested-prod`.
+
 The [shared folders](#shared-folders) are the one other difference. An idmapped (`shift=true`) disk fails a third level below the host: the first window at 2,000,000 stopped at the start of the image's build container, and the journal showed the shifted mount of `orbit-agent` torn down at once.
 
 So the folder plans in the fleet Node's intent carry `shift: false`, and from them the profile `orbit-instances` mounts `orbit-runtime` and `orbit-agent` with `shift=false`. The start guard and the native clone of a nested-fleet container take the same two devices from the container intent's `allowed_devices`, so each admits only its Node's form: `shift=false` on the fleet Node and `shift=true` on every other Node. `InstanceFolderPlan::shift` is the one rule; it follows `ContainerNodes::fleetNode`. The Instance image does not change.
@@ -3196,7 +3206,7 @@ Each phase runs on the Node and reaches the inner Incus with `incus exec` into t
 | --- | --- | --- |
 | Check | `instance-fleet-check.yml` | Waits for the inner Incus and compares the fleet with its rules. It changes nothing |
 | Rules | `instance-fleet-rules.yml` | Applies the fleet rules below to the stopped fleet, then checks them |
-| Start | `instance-fleet-start.yml` | Checks the rules, starts the stopped nested containers, brings up `wg-nested`. Then checks the containers and the tunnel (`instance-fleet-reach.yml`), never Doctor. A stopped clone's start adds `instance-fleet-proxy.yml` |
+| Start | `instance-fleet-start.yml` | Checks the rules, starts the stopped nested containers, brings up `wg-nested` and gives it the fleet's DNS. Then checks the containers and the tunnel (`instance-fleet-reach.yml`), never Doctor. A stopped clone's start adds `instance-fleet-proxy.yml` |
 | Refresh | `instance-fleet-refresh.yml` | Migrates and restarts the nested Gateway, converges the three nested Nodes, waits for readiness (`instance-fleet-ready.yml`), stops the fleet and takes `base` again |
 | Resume | `instance-fleet-resume.yml` | Runs the start, then waits for readiness: the fleet after a passed refresh, or the fleet of a restored seed |
 | Reset | `instance-fleet-reset.yml` | Stops the three nested containers at once and restores `base` on each. Then it runs the start, migrates the nested Gateway forward and waits for readiness |
@@ -3227,6 +3237,8 @@ The deployment runs the check right after it starts the container, before it tak
 A restore of `base` reverts devices and configuration keys. So the rules must be in `base`. The start lets a missing owned rule pass, because the refresh after it writes the rule. The reset ends with the same start and has no refresh after it.
 
 Readiness is the proof's own check, from the container over `wg-nested`: every nested container runs, Doctor of the nested Gateway is healthy within a bounded wait, the three agents are online and the Gateway knows the operator with its key. A failure names the nested container or the check. A failed Doctor wait names what its last poll got: the HTTP status and the first 300 characters of the body, or curl's error when no response came.
+
+The start gives `wg-nested` the nested Gateway's resolver, `10.45.0.1`, and the routing domains `~nested-dev` and `~nested-prod`, the TLDs of the fleet's `app-dev` and `app-prod` Nodes, with `resolvectl dns` and `resolvectl domain`. So the operator in the container reaches a site of the fleet by name, such as `https://webtest.nested-dev`. It never routes `~orbit` there: the container keeps its own `gateway.orbit`. The start reads the link first and sets only what differs, so a second start changes nothing. The settings do not outlive the tunnel; the next start sets them again. `TaskVmNestedFleet` holds the addresses and TLDs; the intent carries them in `intent.fleet.operator`.
 
 A read right after a start waits for what the nested container sets up at boot, at most 60 s, and accepts only a ready value. The start takes the nested Gateway's hub key only when it is a WireGuard key: `wg-quick` makes the interface before it sets the key, and in between `wg show orbit public-key` prints `(none)` with exit 0. With no key in time, the start fails with "the nested Gateway's WireGuard key was not ready after 60 s" and sets no peer.
 

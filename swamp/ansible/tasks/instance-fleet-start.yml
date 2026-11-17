@@ -1,6 +1,6 @@
 ---
 # Start the nested fleet of an Instance container: check the fleet rules, start the three nested containers, link the Club key and bring
-# up the operator tunnel `wg-nested`. The start of a stopped clone also keeps the fleet off the egress proxy (instance-fleet-proxy.yml).
+# up the operator tunnel `wg-nested` with the hub's resolver for the fleet's TLDs. The start of a stopped clone also keeps the fleet off the egress proxy (instance-fleet-proxy.yml).
 # It ends with what a start can promise (instance-fleet-reach.yml): the containers run and the tunnel reaches the hub. It never waits for Doctor: in a deployment the checkout has just moved under a running nested Gateway, whose
 # schema and processes the refresh brings to the checkout first (docs/cli/instance/container/fleet-refresh.mmd). The deployment and the
 # reset use it; instance-fleet-resume.yml adds the readiness. Input: instance-fleet.yml.
@@ -147,6 +147,27 @@
 - name: Bring up the operator tunnel
   when: "'UP' not in (fleet_tunnel_address.stdout | from_json | first).flags"
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['ip', 'link', 'set', fleet_tunnel, 'up'] }}" }
+  changed_when: true
+# The operator reaches the fleet's sites by name: on `wg-nested` the hub's resolver answers the TLDs of the fleet's app Nodes
+# (docs/reference/development-containers.md#the-fleet-step). Never `~orbit`: the container keeps its own `gateway.orbit`. `resolvectl`
+# prints `Link <index> (wg-nested): <values>`; a start sets only what differs.
+- name: Read the resolver of the operator tunnel
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['resolvectl', 'dns', fleet_tunnel] }}" }
+  register: fleet_tunnel_dns
+  changed_when: false
+- name: Give the operator tunnel the hub's resolver
+  when: (fleet_tunnel_dns.stdout.split('):', 1) | last).split() != [intent.fleet.operator.hub]
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['resolvectl', 'dns', fleet_tunnel, intent.fleet.operator.hub] }}" }
+  changed_when: true
+- name: Read the routing domains of the operator tunnel
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['resolvectl', 'domain', fleet_tunnel] }}" }
+  register: fleet_tunnel_domains
+  changed_when: false
+- name: Route the fleet's TLDs to the hub's resolver
+  vars:
+    fleet_domains: "{{ ['~'] | product(intent.fleet.operator.domains) | map('join') | list }}"
+  when: (fleet_tunnel_domains.stdout.split('):', 1) | last).split() | sort != fleet_domains | sort
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['resolvectl', 'domain', fleet_tunnel] + fleet_domains }}" }
   changed_when: true
 
 # Only the start of a stopped nested-fleet clone writes the copy's proxy bypass and restarts T3 (instance-fleet-proxy.yml).

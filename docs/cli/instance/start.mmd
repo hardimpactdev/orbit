@@ -48,7 +48,7 @@ sequenceDiagram
   %%> - `instance.power_helper_busy` when another power action on the Instance held the power helper's lock for 10 s, `instance.power_helper_failed` when the helper refused its input or crashed; either leaves the asleep marker and the container's power state as they were
   SW->>N: Start the inner fleet<br/>Ansible · fleet check, resume
   %%> What it does:
-  %%> - the create's `clone-fleet`: the fleet rules, the three nested containers, the tunnel `wg-nested`
+  %%> - the create's `clone-fleet`: the fleet rules, the three nested containers, the tunnel `wg-nested` with the hub's resolver for `~nested-dev` and `~nested-prod`
   %%> - writes the copy's proxy bypass for units and login shells: the drop-ins and the manager environment
   %%> - restarts T3 once, only when the write changed something and this start booted the container (`last_used_at`)
   %%> - waits for Doctor over the tunnel and the three agents

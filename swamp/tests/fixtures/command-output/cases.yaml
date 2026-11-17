@@ -406,6 +406,8 @@ contexts:
       stdout: Rule added
     hub_lan_ssh:
       stdout: Rule added
+    hub_peer_forwarding:
+      stdout: Rule added
     task_host_firewall_removed:
       stdout: Rule added
   ufw-skip:
@@ -420,6 +422,8 @@ contexts:
     peer_trust:
       stdout: Skipping adding existing rule
     hub_lan_ssh:
+      stdout: Skipping adding existing rule
+    hub_peer_forwarding:
       stdout: Skipping adding existing rule
     task_host_firewall_removed:
       stdout: Skipping adding existing rule
@@ -1744,6 +1748,11 @@ cases:
   field: changed_when
   context: ufw-new
   expected: true
+- file: tasks/node-hub-source.yml
+  task: Forward traffic between WireGuard members
+  field: changed_when
+  context: ufw-new
+  expected: true
 - file: operation-node-add.yml
   task: Open public recovery SSH
   field: changed_when
@@ -1771,6 +1780,11 @@ cases:
   expected: false
 - file: tasks/node-hub-source.yml
   task: Open SSH on the hub's LAN address to its private network
+  field: changed_when
+  context: ufw-skip
+  expected: false
+- file: tasks/node-hub-source.yml
+  task: Forward traffic between WireGuard members
   field: changed_when
   context: ufw-skip
   expected: false

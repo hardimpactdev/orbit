@@ -43,6 +43,8 @@ class WireGuardHubLanRulesTest(SUPPORT["HubLanHarness"]):
         self.assertEqual(code, 0, output)
         self.assertIn('restart', calls)
         self.assertIn('ufw allow in proto tcp from 10.0.0.0/24 to 10.0.0.2 port 22', calls)
+        # docs/cli/firewall/index.mdx#vpn-peer-forwarding: the hub forwards between members, as production's hand rule does.
+        self.assertIn('ufw route allow in on orbit out on orbit from 10.44.0.0/24 to 10.44.0.0/24 comment orbit:vpn-peer-forwarding', calls)
 
     def test_a_hub_whose_unit_already_applies_the_rules_changes_nothing(self):
         code, output, calls = self.source(LIVE, RIGHT, installed=self.INSTALLED)
@@ -87,7 +89,8 @@ class WireGuardHubLanRulesTest(SUPPORT["HubLanHarness"]):
 
     def test_a_hub_whose_endpoint_is_no_longer_an_ipv4_address_removes_the_earlier_unit_rules_and_table(self):
         installed = {name: body for name, body in self.INSTALLED.items() if name.startswith('etc/')}
-        code, output, calls = self.run_tasks('node-hub-source.yml', {'hub_source': None, 'hub_source_owner': OWNER, 'hub_lan_ssh_argv': []},
+        code, output, calls = self.run_tasks('node-hub-source.yml', {'hub_source': None, 'hub_source_owner': OWNER, 'hub_lan_ssh_argv': [],
+                                                                         'hub_peer_forwarding_argv': []},
                                              {**installed, 'bin/ip': RETIRE_IP, 'ufw.txt': ''})
         self.assertEqual(code, 0, output)
         self.assertIn('systemctl stop orbit-hub-source.service', calls)

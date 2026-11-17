@@ -1,6 +1,6 @@
 /**
  * Stateful Incus boundary for the nested fleet of an Instance container (swamp/ansible/tasks/instance-fleet-*.yml). The Node's `incus`
- * reaches only `exec` into the Instance container; there the inner `incus`, `ip`, `wg`, `ping`, `test` and `curl` act on one JSON state:
+ * reaches only `exec` into the Instance container; there the inner `incus`, `ip`, `wg`, `resolvectl`, `ping`, `test` and `curl` act on one JSON state:
  * the nested containers with their devices, configuration keys, files and snapshots, the inner bridge's keys, the operator tunnel, and
  * the nested Gateway's API.
  * Every call is one JSON line in `calls`. No live host command runs.
@@ -56,7 +56,8 @@ const containers: Record<string, {
   snapshots?: Record<string, { config: Record<string, string>; devices: Record<string, Record<string, string>>; files: Record<string, string>; links?: Record<string, string>; taken: string }>;
 }> = state.containers;
 const container = (name: string) => containers[name] ?? fail(`Instance not found: ${name}`);
-const tunnel = state.tunnel as null | { addresses: string[]; up: boolean; key?: string; port?: string; peer?: string; endpoint?: string; allowed?: string };
+const tunnel = state.tunnel as null | { addresses: string[]; up: boolean; key?: string; port?: string; peer?: string; endpoint?: string; allowed?: string;
+  dns?: string[]; domains?: string[] };
 
 // instance_node_services.py `proxy`: the drop-ins and the manager environment, changed when the value differs.
 if (command[0] === "python3" && command[1] === "-c" && command[3] === "proxy") {
@@ -434,6 +435,14 @@ if (command[0] === "ip") {
     done();
   }
   fail(`Unexpected ip call: ${command.join(" ")}`);
+}
+// systemd-resolved's per-link settings, which go with the link: `resolvectl dns|domain wg-nested [values]` sets them, without values reads them.
+if (command[0] === "resolvectl" && ["dns", "domain"].includes(command[1]) && command[2] === "wg-nested") {
+  if (!tunnel) fail("Failed to resolve interface \"wg-nested\": No such device");
+  const key = command[1] === "dns" ? "dns" : "domains";
+  if (command.length === 3) done(`Link 9 (wg-nested): ${(tunnel![key] ?? []).join(" ")}`.trimEnd());
+  tunnel![key] = command.slice(3);
+  done();
 }
 const tunnelUp = () =>
   tunnel?.up && tunnel.peer === state.hubKey && tunnel.addresses.length > 0 && containers["nested-gateway"].status === "Running";

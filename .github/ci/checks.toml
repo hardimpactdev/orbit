@@ -57,7 +57,7 @@ inputs = [".github/workflows/ci.yml", ".github/actions/**", ".github/ci/checks.t
 
 [ignored]
 # These paths have intentionally paused checks, prose skips, or always-run plan tests.
-inputs = ["bin/ci-units", "bin/ci-proof-manual", "bin/ci-delivery", "bin/ci-tree-receipt", "bin/ci-proof-eligibility", "tools/test_ci_*", "tools/test_swamp_import_base*", "tools/test_frozen_agent_commands*", "apps/desktop/**", "apps/agent/**/*.md", "apps/agent/**/*.mdx"]
+inputs = ["bin/ci-units", "bin/ci-proof-manual", "bin/ci-delivery", "bin/ci-tree-receipt", "bin/ci-proof-eligibility", "bin/cli-flow", "tools/check_ci_workflow.py", "tools/test_ci_*", "tools/test_swamp_import_base*", "tools/test_frozen_agent_commands*", "apps/desktop/**", "apps/agent/**/*.md", "apps/agent/**/*.mdx"]
 
 [check.php]
 inputs = [

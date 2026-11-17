@@ -40,7 +40,8 @@ describe('the Instance egress proxy', function (): void {
         expect($ruleset)->toContain(
             "table inet orbit_instance_egress\ndelete table inet orbit_instance_egress\n",
             'ip daddr 10.253.0.1 tcp dport 3128 iifname != "orbitinst0" counter reject with tcp reset',
-            "meta skuid != \"proxy\" return\n", "ct state != new return\n", 'ip daddr 127.0.0.53 meta l4proto { tcp, udp } th dport 53 return',
+            "\tchain output {\n\t\ttype filter hook output priority filter - 10; policy accept;\n\t\tmeta skuid \"proxy\" jump squid_out\n\t}\n",
+            "\tchain squid_out {\n\t\tct state != new return\n", 'ip daddr 127.0.0.53 meta l4proto { tcp, udp } th dport 53 return',
             'fib daddr type local counter reject', 'oifname "orbit" counter reject', 'ip daddr @private_v4 counter reject', 'meta nfproto ipv6 counter reject',
             'elements = { '.implode(', ', InstanceEgress::PrivateV4).' }',
         )
@@ -49,6 +50,21 @@ describe('the Instance egress proxy', function (): void {
             // The fleet range, the VPN and the Node's LAN sit in these ranges. A LAN's IPv6 is often global, so IPv6 is refused whole.
             ->and(InstanceEgress::PrivateV4)->toContain('10.0.0.0/8', '100.64.0.0/10', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16')
             ->and($ruleset)->not->toContain('ip6 daddr');
+    });
+
+    // docs/reference/development-containers.md#the-proxys-table: a kernel socket's packet has no socket user. `meta skuid != "proxy"`
+    // does not match it, so in an output chain that begins with that return it fell to the private address reject.
+    it('sends only the proxy user\'s packets through its rules, so a packet without a socket user leaves the table', function (): void {
+        $ruleset = InstanceEgress::ruleset('orbitinst0', '10.253.0.1');
+        preg_match('/\tchain output \{\n(.*?)\n\t\}/s', $ruleset, $output);
+        preg_match('/\tchain squid_out \{\n(.*?)\n\t\}/s', $ruleset, $squid);
+
+        expect(array_map(trim(...), explode("\n", $output[1] ?? '')))->toBe(['type filter hook output priority filter - 10; policy accept;',
+            'meta skuid "proxy" jump squid_out'])
+            ->and(array_map(trim(...), explode("\n", $squid[1] ?? '')))->toBe(['ct state != new return',
+                'ip daddr 127.0.0.53 meta l4proto { tcp, udp } th dport 53 return', 'fib daddr type local counter reject',
+                'oifname "orbit" counter reject', 'ip daddr @private_v4 counter reject', 'meta nfproto ipv6 counter reject'])
+            ->and($ruleset)->not->toContain('skuid !=');
     });
 
     // docs/reference/development-containers.md#instance-host-in-the-fleet: a fleet Node goes out only through the fleet's proxy.
@@ -113,7 +129,7 @@ describe('the Instance egress proxy', function (): void {
 /**
  * Loads the rendered table on a real kernel, as root, through `tests/Support/instance-egress-nft-check.sh`: a container on a bridge
  * reaches the proxy and root does not; the proxy user reaches a public host and the stub resolver and is refused at once by a private
- * host, the Node's own addresses and WireGuard. It needs Linux, passwordless sudo, nft, ip, nsenter and python3, so it is in the
+ * host, the Node's own addresses and WireGuard; a kernel socket's packet, which has no socket user, reaches the private host. It needs Linux, passwordless sudo, nft, ip, nsenter and python3, so it is in the
  * `privileged` group, which the `gateway-static` CI job runs with `ORBIT_REAL_KERNEL_TESTS=1`.
  */
 it('confines the proxy user to public hosts and its port to the bridge, on a real kernel', function (): void {
@@ -139,5 +155,6 @@ it('confines the proxy user to public hosts and its port to the bridge, on a rea
         ->toContain('ok: the proxy user to a private host: refused')
         ->toContain('ok: the proxy user to the bridge address: refused')
         ->toContain('ok: the proxy user to WireGuard: refused')
-        ->toContain('ok: the proxy user to a global IPv6 host: refused');
+        ->toContain('ok: the proxy user to a global IPv6 host: refused')
+        ->toContain('ok: a kernel socket without a user to a private host: reached');
 })->group('privileged');

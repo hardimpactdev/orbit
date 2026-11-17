@@ -5,6 +5,11 @@
 Steps can iterate over arrays or objects using `forEach`. Each iteration creates
 a separate step instance.
 
+swamp's CEL has no `range()` or other list generator: build the list from a
+literal (`${{ ["a", "b"] }}`), a workflow input, or data (`data.latest`,
+`data.query`). `swamp workflow validate` refuses a call to a function swamp does
+not provide.
+
 ### Iterate Over Array
 
 ```yaml
@@ -170,6 +175,20 @@ Any async data helper works here — `data.findByTag()`, `data.findBySpec()`,
 `data.latest()`, `data.query()`. The evaluator resolves the Promise before
 walking the items.
 
+`forEach.in` resolves when its **job starts**, before any of the job's steps
+run. It cannot see data that a step in the same job writes, even one the forEach
+step `dependsOn`: the collection is empty and the step is skipped
+(`empty forEach`), along with every dependent whose condition is `succeeded`.
+`swamp workflow validate` warns about this shape. To iterate data produced in
+the same run, either:
+
+- put the forEach step in a later job that depends on the producer's job, or
+- iterate a fixed collection and skip unwanted iterations with a guard reading
+  `data.latest(name, data, [key])` (a truthy guard skips).
+
+To act on an empty fan-out, depend on the forEach step with
+`condition: { type: skipped }`.
+
 If you want a **typed boundary** between the producer of the list and the
 consumer that iterates it — for shape validation, reusable sub-processes, or
 independent cadence — split into a parent + child workflow and pass the list
@@ -228,11 +247,12 @@ steps:
 ```
 
 With 10 targets and `concurrency: 3`, at most 3 iterations execute at once. The
-remaining iterations queue until a permit is released. Resolution order:
-`step → job → workflow → unbounded` — the most-local non-zero value wins.
+remaining iterations queue until a permit is released. The limit applies to this
+step's iterations only: another forEach step in the same job runs alongside
+under its own limit, or under the job's (then workflow's) limit if it sets none.
 
-A global `SWAMP_MAX_CONCURRENT_STEPS` environment variable provides a host-level
-ceiling: `min(local, global)` is the effective limit.
+A global `SWAMP_MAX_CONCURRENT_STEPS` environment variable provides a ceiling on
+top: `min(local, global)` is the effective limit.
 
 ### forEach with Vary Dimensions
 

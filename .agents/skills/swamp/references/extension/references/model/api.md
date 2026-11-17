@@ -96,6 +96,12 @@ files: {
 },
 ```
 
+**Hiding from the run summary:** Set `display: false` on a resource or file spec
+to leave its records out of the "Data produced" box after `swamp behavior run`
+and `swamp workflow run`. The data is still written, returned as a handle, and
+listed by `data list` and every `--json` output; swamp tags each record
+`_swamp.display: hidden`.
+
 ---
 
 ## Reading Bundled Assets
@@ -311,6 +317,13 @@ Returned by `writeResource` and writer methods:
 | `metadata`   | Metadata for the data artifact (see below)                   |
 | `attributes` | Top-level resource attributes (resource kind only, optional) |
 
+`attributes` is absent once a run's written resources pass 16 MiB of stored
+JSON; the data is still written. Read content through
+`context.dataRepository.getContent` rather than relying on `attributes` in a
+method or report that may write or read many resources. The `--json` result of a
+method run or workflow run applies its own 16 MiB budget and marks artifacts
+past it `attributesOmitted: true`.
+
 **`metadata` sub-fields:**
 
 | Field               | Type                      | Description                                              |
@@ -360,6 +373,27 @@ readResource(
   available
 - Cast the result using `z.infer<typeof YourSchema>` to get type-safe access
   (the data was already validated against the schema on write)
+- If a sensitive field's vault key no longer exists (the secret was deleted, or
+  the vault config now points at a different vault), it rejects with an error
+  whose `code` is `"secret_not_found"`. Any other vault failure rejects with a
+  different error. Check with `isSecretNotFoundError` from
+  `jsr:@swamp-club/swamp-testing`, or by comparing `err.code`, never with
+  `instanceof`: each bundle has its own copy of the class.
+
+```typescript
+import { isSecretNotFoundError } from "jsr:@swamp-club/swamp-testing";
+
+let session: Session | null;
+try {
+  session = await context.readResource!("session") as Session | null;
+} catch (err) {
+  if (!isSecretNotFoundError(err)) throw err; // broken vault: fail, don't retry
+  session = null; // the cached secret is gone: recreate it
+}
+```
+
+To test that branch, give the test context a `readResource` that throws
+`new SecretNotFoundError("my-vault", "key")` from the same package.
 
 **Low-level alternative for binary data:**
 
@@ -674,6 +708,13 @@ execute: (async (
 | `context.modelId`              | `string`                                                                                       | The behavior instance ID                             |
 | `context.traceHeaders`         | `Readonly<Record<string, string>> \| undefined`                                                | This execution's W3C trace headers                   |
 
+A cancelled run (Ctrl+C, `--timeout`, `swamp workflow cancel`) aborts
+`context.signal`, waits about 4 s for the method to stop, then a little longer
+only for a `writeResource` or file save already under way; a write the method
+starts after that is lost. A method with an external side effect (creating a
+remote task, charging a card) should write a pending record before the side
+effect, pass `context.signal` to its own calls, and finalize the record after.
+
 For the cross-behavior APIs, see
 [Cross-Behavior Access](#cross-behavior-access). Locally,
 `dataRepository.getContent` and `findAllForModel` also accept a definition name
@@ -707,6 +748,33 @@ once the nested method finishes. When unrelated methods run at the same time,
 such as parallel workflow steps or parallel `runModel` calls, the env falls back
 to the run's inbound context until they have all finished.
 
+### Passing Secrets to Subprocesses
+
+A subprocess has no route to the run's vault, under `swamp serve` too. Swamp
+never puts vault values in `Deno.env`, so a child reads a secret only if the
+method passes it. Take the secret as an argument the definition fills with
+`vault.get()`, mark it sensitive (see [Resource Specs](#resource-specs) for
+`.meta`), and set it in the child's `env`:
+
+```typescript
+// definition: globalArguments.apiKey: ${{ vault.get(prod, linear-api-key) }}
+const GlobalArgsSchema = z.object({
+  apiKey: z.string().meta({ sensitive: true }),
+});
+
+await new Deno.Command("my-tool", {
+  args: ["sync"],
+  env: { LINEAR_API_KEY: context.globalArgs.apiKey },
+}).output();
+```
+
+Deno merges `env` into the inherited environment, so the child also sees the
+swamp process env, `SWAMP_*` credentials included. To drop them, pass
+`clearEnv: true` and list what the tool needs, such as
+`PATH: Deno.env.get("PATH") ?? ""` and `HOME`; with `clearEnv` alone the child
+gets an empty environment. A nested `swamp` command opens its own vault and is
+not held to the run's vault scope.
+
 ### Arguments Holding Another Service's Template Syntax
 
 `swamp behavior validate` (and every workflow step) checks `{{ ... }}` and
@@ -737,6 +805,45 @@ const GlobalArgsSchema = z.object({
   `${{ inputs.version }}`): the method then gets
   `Unresolved expression in globalArguments.<field>`, so a field that must carry
   such text belongs in the method's arguments rather than its global arguments.
+
+### Arguments Holding Text an Agent Wrote
+
+A `--input` value is operator-written, so `${{ vault.get(...) }}` in it
+resolves. When a method argument carries text someone else wrote (a plan, review
+or result an agent produced), mark it data so a value supplied for it is never
+evaluated:
+
+```typescript
+record: {
+  description: "Record an artifact",
+  arguments: z.object({
+    name: z.string(),
+    payload: z.string().meta({ data: true }),
+  }),
+  execute: async (args, context) => {
+    // args.payload is exactly what the caller sent, ${{ ... }} text included
+  },
+},
+```
+
+- It holds for every route a caller uses: `--input`, `--input key=@file`,
+  `--input-file`, `--stdin`, `swamp serve` and a follower forwarding to its
+  leader. The method sees the text verbatim and the data it writes is stored
+  byte for byte, never as `***`.
+- It reaches nested fields, array elements and record values; on the arguments
+  object it makes every argument data. A definition input the marked argument
+  reads through `${{ inputs.x }}` is data for that run too.
+- Text written in the definition or a workflow step is the author's and still
+  evaluates, so a deliberate `vault.get()` goes there, or in an unmarked
+  argument.
+- Only method arguments take it: registering a type with `data: true` in
+  `globalArguments` fails.
+- Swamp before the release that added it ignores the marker and evaluates. A
+  server lists `data-arguments` in `server.version` capabilities when it honours
+  it; until your type requires that release, callers keep passing
+  `--literal-inputs`.
+- A caller can make one unmarked input data with `--input-data key=<path>`,
+  which reads the file and never evaluates its content.
 
 ---
 
