@@ -65,6 +65,8 @@ The router's Node, the swamp Node and the vpn hub cannot run a forwarder. The ro
 
 The forwarder cannot tell the users in a container apart: both reach it from the container's address. So the container runtime keeps `orbit` out in the container's own network namespace, with an nftables rule that admits only the `agent` uid to the forwarder's address and port. The second spike proved this rule. The container runtime owns it, not this ADR.
 
+Since the [amendment of ADR 0268](/decisions/0268-one-owner-for-the-workspace#amendment-sudo-for-agent-in-every-container), `agent` has root in its container through sudo, so it can change this rule; containers hold only dev-scoped keys.
+
 ### Claude Code's query
 
 The guard accepts exactly one query, `beta=true`, and only on `/v1/messages` and `/v1/messages/count_tokens`. Every other query on every route is still refused: 401 from an admitted source, 403 from any other. Claude Code sends this query on every call and has no setting to drop it. Allowing one fixed value keeps the guard's reason for the rule: no client can pass router options, such as a key, in the query.

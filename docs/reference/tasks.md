@@ -260,7 +260,9 @@ For a group with a task copy, `task:publish <group>` without `--check` publishes
 
 For a group with a task copy and no pull request, `--check` without `pull_request` opens the pull request in the same Operation when the check is the group's [done check](#when-the-work-is-done) and the reviewer sent its [text](#the-reviewers-pull-request-text). The Gateway then publishes exactly what the release publishes: the reviewer's title and body, a ready pull request, and the done check read again under the group lock. So one `task:publish <group> --check=<id>` after the approval opens the pull request of a `review_before_pr` group.
 
-Any other check only pushes: one that is not the done check, such as a newer check the reviewer has not approved, and the done check while the reviewer's newest turn sent no text. The Operation's input and its result then name why in `pull_request_withheld`; the run's intent never carries it. A group that has its pull request only pushes, as before.
+Any other check only pushes: one that is not the done check, such as a newer check the reviewer has not approved, and the done check while the reviewer's newest turn sent no text. The Operation's input and its result then name why in `pull_request_withheld`; the run's intent never carries it.
+
+On a group that has its pull request, `--check` without `pull_request` that names the done check with the reviewer's text updates the open pull request's title and body with that text, as a [republish](#release-a-waiting-group) does. Any other check of such a group only pushes, with no `pull_request_withheld`.
 
 The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
 
@@ -321,7 +323,7 @@ A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write ch
 
 The publish of a copy also checks the copy itself, before any token exists. A workspace phase, `scan`, runs `swamp/ansible/task_copy_scan.py` in the container, where the secrets are. Root reads the secret values and never follows a link to a source. Git runs as `agent` and only lists and reads objects. The program searches them itself, so a value reaches no other process. It checks each object's hash, so a changed object file reads as an error.
 
-The program prints one line of evidence. It names paths, line numbers and secret names, never a value. So no value reaches an Operation result, a log line, an error or a vault execution copy. In a nested-fleet copy `agent` has root through `sudo`, so there these rules guard the check, not the secrets: the agent can read them anyway.
+The program prints one line of evidence. It names paths, line numbers and secret names, never a value. So no value reaches an Operation result, a log line, an error or a vault execution copy. In every copy `agent` has root through `sudo` ([ADR 0268](/decisions/0268-one-owner-for-the-workspace#amendment-sudo-for-agent-in-every-container)), so these rules guard the check, not the secrets: the agent can read them anyway. A container holds only dev-scoped secrets, never production-grade ones.
 
 | Part | Rule |
 | --- | --- |
@@ -1368,7 +1370,7 @@ The reviewer reads the key from the file, not from its environment: Codex can le
 
 The request also takes JSON, `{"title": "...", "body": "..."}`. It names no group, check or commit: the key names the copy, and the copy names its group. The Gateway accepts it only when all of these hold:
 
-- The copy's group is open and has no pull request. Otherwise `tasks.group_closed` (409).
+- The copy's group is open: it has not ended. Otherwise `tasks.group_closed` (409). A group that has its pull request accepts the text too.
 - A turn of the group's reviewer thread runs now, on a checked commit. Otherwise `tasks.pr_text_not_reviewer_turn` (409).
 - That turn's check is still an eligible candidate of the current subtask. Otherwise `tasks.commit_not_checked` (422).
 - The Project is released for copy publish, as [Task copy](#task-copy) describes. Otherwise `tasks.copy_publish_held` (409).
@@ -1380,9 +1382,13 @@ Orbit records the text on that check, with the reviewer turn's Operation, and an
 {"data": {"state": "recorded", "check_id": 20977, "operation_id": 21890, "opens": "when the group is done"}}
 ```
 
+For a group that has its pull request, `opens` reads `updates the pull request on the next publish of the done check`.
+
 A second call in the same turn replaces the text. Orbit opens nothing at this point. A turn cannot publish its own work: while it runs, the group is busy. The reviewer sends the text only when it approves the commit. Its turn prompt says so.
 
-When the group is [done](#when-the-work-is-done), the publish takes the title and the body from the done check. The text counts only when the reviewer thread's newest turn sent it. A later reviewer turn on the same check that sends nothing leaves the group without text. Every guard of the publish reads this text as it read Orbit's own: the `.env` content check, the [copy check](#the-copy-check) and the waiver lines.
+When the group is [done](#when-the-work-is-done), the publish takes the title and the body from the done check. Every publish of the done check carries that text: the first opens the pull request with it, and a [republish](#release-a-waiting-group) updates the open pull request's title and body with it. So a reviewer turn after the pull request opened, such as one after a CI fix, rewrites the pull request without a hand edit.
+
+The text counts only when the reviewer thread's newest turn sent it. A later reviewer turn on the same check that sends nothing leaves the group without text. Every guard of the publish reads this text as it read Orbit's own: the `.env` content check, the [copy check](#the-copy-check) and the waiver lines.
 
 There is no fallback text. A group whose done check has no text waits in `waiting_for_pr_text` until a reviewer turn sends one. A task copy made before the copy key existed cannot send text: a person publishes its group with `task:publish <group> --check=<id> --title=<text> --body=<text>`.
 
@@ -1418,7 +1424,9 @@ A group can name the GitHub issue it works on: [`task:create --issue=<number>`](
 
 `task:publish <group>` without `--check`, `--title` and `--body` publishes what the automatic publish would: the done check, the reviewer's title and body, and a ready pull request. It refuses with `tasks.not_done` (409) when the group's work is not done, and with `tasks.pr_text_missing` (409) when the group waits for its text. It also releases a group in `refused` after the cause is fixed. The form with `--check` stays as [Publish an external group](#publish-an-external-group) describes. A group without a task copy has no done check: without `--check`, its publish keeps the validation error (422) on `check`.
 
-On a group that has its pull request, the same call publishes the done check again: a republish. The work must be done by every other rule of [When the work is done](#when-the-work-is-done): the newest handoff check is the last subtask's, and the reviewer approved its commit. The publish pushes that check to the pull request's branch with no pull request text, so the open pull request keeps its title and body and shows the new commits. The tick never republishes: it publishes only a group without a pull request.
+On a group that has its pull request, the same call publishes the done check again: a republish. The work must be done by every other rule of [When the work is done](#when-the-work-is-done): the newest handoff check is the last subtask's, and the reviewer approved its commit. The publish pushes that check to the pull request's branch.
+
+When the reviewer thread's newest turn sent its [text](#the-reviewers-pull-request-text) for the done check, the same publish updates the open pull request's title and body with it, with `Closes #<issue>` as on the first publish. Without such text, the publish only pushes, so the open pull request keeps its title and body and shows the new commits. `task:publish <group> --check=<id>` naming the done check publishes the same way. The tick never republishes: it publishes only a group without a pull request.
 
 The admission reads done again inside its transaction, after it locks the group's row. A subtask added or a turn started since the first read refuses with `tasks.not_done`. For the automatic publish it also reads the mode again there: a group or done check outside `pr_when_done` refuses the same way.
 

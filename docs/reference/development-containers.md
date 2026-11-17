@@ -146,16 +146,16 @@ Clone phases stage their release's helpers and intent once in a private folder f
 
 The clone copy supplies a complete root disk device, including its type, path, pool and size. This works when the seed inherits its root disk from a profile or stores it locally.
 
-Every development container has the same layout. The image and the create set it up. Root owns everything below except the homes and the workspace. A container installs as little as possible: the image holds only OS packages, the users and the firewall.
+Every development container has the same layout. The image and the create set it up. Root owns everything below except the homes and the workspace. A container installs as little as possible: the image holds only OS packages, the users, `agent`'s sudo grant and the firewall.
 
 | Part | Setting |
 | --- | --- |
-| Image | Ubuntu 26.04 with the OS packages the runtime needs, the users, `nftables`, `acl` and `hidepid`. No PHP, no Node, no agent software |
+| Image | Ubuntu 26.04 with the OS packages the runtime needs, the users, `nftables`, `acl`, `sudo` and `hidepid`. No PHP, no Node, no agent software |
 | Egress | The [proxy settings](#egress-and-dns) for every unit, login shell and apt, and no DNS server |
 | `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process. Owns no part of the workspace that Orbit keeps ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)) |
-| `agent` | uid 2750, home `/home/agent` mode 0700, password locked. Runs T3, the agents, Orbit's checkout Git calls and the deploy steps. Owns the workspace, the T3 state, the agent settings and the placeholder key |
+| `agent` | uid 2750, home `/home/agent` mode 0700, password locked, [sudo](#sudo-and-secrets). Runs T3, the agents, Orbit's checkout Git calls and deploy steps. Owns the workspace, T3 state, agent settings and placeholder key |
 | `work` | gid 2760, members `agent` and `orbit` |
-| Sudo | None for either user. The image's `sudoers.d` grant is removed. The [nested-fleet image](#the-nested-fleet-image) gives `agent` alone passwordless sudo, so it is root in its own [nested-fleet](#users) container |
+| Sudo | Passwordless for `agent` alone, in every container, from the [shared file](#existing-containers) `/etc/sudoers.d/orbit-agent` (root:root, mode 0440). `orbit` has none. See [Sudo and secrets](#sudo-and-secrets) |
 | Workspace | `/srv/workspace` and every entry in it, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others, and `core.sharedRepository=group`. Root's [pass](#who-runs-what) gives `agent` what `orbit` made |
 | Git | `safe.directory=/srv/workspace` in `/etc/gitconfig`, for every user and only that path; the agent part of the T3 step also writes it to `agent`'s own Git config and preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
@@ -163,11 +163,15 @@ Every development container has the same layout. The image and the create set it
 | `PATH` | The runtime folder's `bin` first, for units, login shells and `incus exec` sessions, so `composer` is on it |
 | `php` | `/usr/local/bin/php` links to the Project's static `php` in the runtime folder. A Project without a PHP version has none. The create and each start set it |
 | Instance file | `/etc/orbit/instance`, root-owned and readable by all: Instance, Project id, slug and quoted one-line name, Node and URL. Absent on the default, keeping T3 stopped |
-| Model route | `nftables` in the container lets only uid 2750 reach the forwarder, and only uid 0 and 2750 reach T3's port |
+| Model route | `nftables` in the container lets only uid 2750 reach the forwarder, and only uid 0 and 2750 reach T3's port. `agent` can change the rule through sudo; the container wall stays the boundary |
 | Processes | `/proc` with `hidepid=invisible`, so each user sees only its own processes |
 | Kernel surface | Unprivileged, no nesting, `user.max_user_namespaces=0`, an isolated ID map |
 
 A container mounts no host checkout and no Incus socket. Root work, such as units, goes through Orbit from the Node.
+
+### Sudo and secrets
+
+`agent` has passwordless sudo in every container, normal and nested. The grant is one line, `agent ALL=(ALL:ALL) NOPASSWD: ALL`. The image removes the stock image's grant and its `ubuntu` user, so this grant is the only sudo path. A container holds only dev-scoped keys, never production-grade secrets. [ADR 0268](/decisions/0268-one-owner-for-the-workspace#amendment-sudo-for-agent-in-every-container) holds the security model.
 
 The Gateway renders the image: its packages, the setup script, its files and the units it enables. The script turns cloud-init off, so a new container never makes the stock `ubuntu` user and its sudo grant again. The image's alias is `orbit-instance-` with the first 12 hex digits of a digest of that definition, so a changed definition is a new image. A build container from the stock Ubuntu image runs the definition and is published under that alias. The stable alias `orbit-instance` then moves to it, and prior images remain for separately authorized operator cleanup; a container keeps what it was made from.
 
@@ -509,9 +513,11 @@ A fresh JavaScript install can drop the folder. With the same Playwright version
 
 ### Existing containers
 
-A container keeps the image it was made from. The image definition marks the files that every container needs as `existing`: the linker and font configuration and `/etc/gitconfig`. The converge of the Node writes them into each existing container too. It writes them into running, stopped and frozen containers, in the Instance project and in the nested-fleet one. Nothing restarts. Each later process reads the files by itself.
+A container keeps the image it was made from. The image definition marks the files that every container needs as `existing`: the linker and font configuration, `/etc/gitconfig` and `agent`'s sudo grant, `/etc/sudoers.d/orbit-agent` (mode 0440). The converge of the Node writes them into each existing container too. It writes them into running, stopped and frozen containers, in the Instance project and in the nested-fleet one. Nothing restarts. Each later process reads the files by itself.
 
 A clone copies its default's seed snapshot, not the default itself, and a seed taken before these files existed lacks them. So every clone gets the same files before its first start, with an empty linker cache that the stock `ldconfig.service` rebuilds at that start.
+
+The sudo grant needs the `sudo` program. The image installs it, and the stock Ubuntu image that every older image came from ships it, so no container needs an install. An existing default and its running copies get the grant at the Node's next converge. A new copy gets it from its clone, also from a seed taken before the grant existed. A deployment, a start or a refresh writes no grant.
 
 The dynamic linker reads its cache, `/etc/ld.so.cache`:
 
@@ -723,7 +729,7 @@ Each Project type has one note in the agent folder, at `notes/<note>.md`. The no
 
 A container that runs T3 without a default to copy, such as a migrated checkout, links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A clone reads the note through its own [agent instructions](#agent-instructions). A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are.
 
-It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow. It says that there is no sudo and no direct internet, how the egress proxy works, and how Git leaves the container. The note does not state the nested-fleet exception yet, where `agent` has sudo.
+It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow. It says that `agent` has passwordless sudo and `orbit` has none, that there is no direct internet, how the egress proxy works, and how Git leaves the container.
 
 A note gives no instructions about the work. The Project's own instructions and skills come from its [agent instructions](#agent-instructions); MCP servers come from the project's own files.
 
@@ -2166,11 +2172,11 @@ It is the normal image with these changes:
 | Part | Change |
 | --- | --- |
 | Inner Incus | `incus-base` and `incus-client` from the recipe's pinned artifacts, checked by SHA-256 |
-| Packages | `wireguard-tools`, `sqlite3`, `sudo`, `zstd` and `btrfs-progs` too. `zstd` reads the `.tar.zst` archives of the inner fleet's containers; the inner Incus's btrfs driver needs `btrfs-progs` for the pool on the [inner volume](#the-inner-volume) |
+| Packages | `wireguard-tools`, `sqlite3`, `zstd` and `btrfs-progs` too. `zstd` reads the `.tar.zst` archives of the inner fleet's containers; the inner Incus's btrfs driver needs `btrfs-progs` for the pool on the [inner volume](#the-inner-volume) |
 | User namespaces | No `/etc/sysctl.d/90-orbit-no-userns.conf` |
 | Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:100000000`. The inner Incus does not read them: see [The ID map size](#the-id-map-size) |
 | AppArmor marker | `/etc/orbit/apparmor-off` holds `N` |
-| `agent` | A member of the inner `incus-admin` group, with passwordless sudo from `/etc/sudoers.d/orbit-agent` (root:root, mode 0440) |
+| `agent` | A member of the inner `incus-admin` group. Its passwordless sudo is the normal image's grant |
 | `orbit` | Neither the group nor sudo. The first rule of the firewall's output chain drops its traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24`. The other rules stay the same |
 | Firewall reset | `destroy table inet orbit_agent_guard` instead of `flush ruleset`, also as the `ExecStop` of `nftables.service` |
 | Network wait | `systemd-networkd-wait-online.service.d/90-orbit-no-dns.conf`: eth0 routable, at most 30 s, no DNS |
@@ -2181,7 +2187,17 @@ The inner Incus wants `network-online.target`. Netplan's own wait asks for a DNS
 
 The Node fetches each Incus package through the artifact cache, checks its SHA-256 and pushes it into the build container. The build container installs both packages with their dependencies through the egress proxy. A `policy-rc.d` file stops the packages from starting the inner Incus during the build; the build removes it before it publishes.
 
-A failed fetch, a wrong digest or a failed install publishes no image. There is no unpinned fallback. Before it publishes, the build checks the sudo paths: no `ubuntu` user, no grant in `sudoers.d` other than `orbit-agent` with its one line, a grant that `visudo` accepts (judged by its exit code, not its output), `agent` alone in `incus-admin`, sudo works for `agent` and fails for `orbit`. An Instance start fetches and installs nothing. A failed build removes only a build container that it made; a build container from an earlier run stays for the operator.
+A failed fetch, a wrong digest or a failed install publishes no image. There is no unpinned fallback.
+
+Before it publishes, the build checks the sudo paths of both images:
+
+- no `ubuntu` user and no member of `sudo` or `admin`;
+- no grant in `sudoers.d` other than `orbit-agent` with its one line;
+- a grant that `visudo` accepts, judged by its exit code, not its output;
+- sudo works for `agent` and fails for `orbit`;
+- in the nested-fleet image `agent` is alone in `incus-admin`, and the normal image has no `incus-admin` group.
+
+An Instance start fetches and installs nothing. A failed build removes only a build container that it made; a build container from an earlier run stays for the operator.
 
 A failed nested-fleet build fails only the nested-fleet image. The converge goes on: the normal image, the project, the bridge, the folders and the end checks complete, and the role succeeds. The Node records the failure in `/var/lib/orbit/instance-nested-image.json`: `nested image build failed`, the image's alias and the failed task. The converge log names the failed task too.
 
@@ -2545,7 +2561,7 @@ The nested Nodes reach the internet through `oe-nested`, the outer container's N
 
 Two users share the outer container, and only one of them reaches the fleet.
 
-`agent` drives the inner Incus as a member of its admin group. It restores `base`, runs commands in the nested containers and reads their journals. It has root in its own container through `sudo` with no password. It is never root on the Node.
+`agent` drives the inner Incus as a member of its admin group. It restores `base`, runs commands in the nested containers and reads their journals. It has root in its own container through `sudo` with no password, as in every container. It is never root on the Node.
 
 `orbit` cannot use the inner Incus. A firewall rule by uid in the outer container drops its traffic to the fleet's bridge and WireGuard subnets, as the image does for the model route. The rule is needed because the nested Gateway trusts the source address. Without it, any user in the container would be the fleet's operator.
 

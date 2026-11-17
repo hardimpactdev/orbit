@@ -1783,7 +1783,9 @@ Deno.test({
           "orbit-worker-b-access", "orbit-worker-c-access"].map((token) => [token, token === "orbit-gateway-read" ? old : young]));
         state.intentDigests = { "app-dev": "9".repeat(64) };
       });
+      const refreshStarted = tokenMark(Date.now());
       const refreshed = f.run("refresh");
+      const refreshEnded = tokenMark(Date.now());
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
       const at = (call: string) => calls.indexOf(call);
@@ -1797,7 +1799,8 @@ Deno.test({
       assertEquals(f.state().reminted, 1);
       assert(!tokenShaped.test(refreshed.output), "a token-shaped string is in the output");
       // The record now holds the remint's time, so the next refresh reads no list.
-      assert(JSON.parse(f.state().outer.files[record]).tokens >= tokenMark(Date.now() - 60_000));
+      const remintedAt = JSON.parse(f.state().outer.files[record]).tokens;
+      assert(remintedAt >= refreshStarted && remintedAt <= refreshEnded, JSON.stringify({ remintedAt, refreshStarted, refreshEnded }));
       assert(f.run("refresh").ok);
       assertEquals([f.calls().includes(tokenRead), f.refreshed()?.tokens_reason], [false, "recorded"]);
     } finally {
@@ -1859,15 +1862,16 @@ Deno.test({
   fn() {
     const f = refreshedOnce();
     try {
-      // The nested Gateway renders another branch intent for nested-app-dev (InstanceHostIntent::digest), and the converge runs for 200
-      // reads: more than the 180 of a base converge's 900 s, within the 360 of the host's 1800 s (roles_seconds).
+      // Run a short pending sequence and assert the rendered retry budget below. Replaying 200 polling subprocesses
+      // only to cross the base converge's 180 retries spends CPU without testing another state transition.
       f.change((state) => {
         state.hostIntentDigest = "5".repeat(64);
-        state.convergeRunning = { 2: 200 };
+        state.convergeRunning = { 2: 2 };
         delete state.roleConverges;
       });
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
+      assertStringIncludes(refreshed.output, "FAILED - RETRYING: [localhost]: Wait for the converge of each due nested Node (360 retries left)");
       assertEquals(f.calls().filter((call) => call.includes("/converge ")), [convergeAdmit(2, true)]);
       assertEquals([f.refreshed()!.host, f.state().roleConverges, f.state().convergeRunning], ["converged", [2], { 2: 0 }]);
       assertEquals(JSON.parse(f.state().outer.files[record]).host, sha256("host c3 e5 " + "5".repeat(64)));
