@@ -23,7 +23,7 @@ Deno.test({
         const pin = recipe.tools[part.tool];
         const f = await fixture();
         try {
-            hostTasks(f.folder, ["Install the shared folders"]);
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders"]);
             // Match the upstream ZIP layout without downloading a release in this fixture.
             const source = `${f.folder}/deno`;
             Deno.writeTextFileSync(
@@ -91,7 +91,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
-            hostTasks(f.folder, ["Install the shared folders"]);
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders"]);
             const install = async (frankenphp: string[]) => {
                 const name = `static-php-${frankenphp.length}.tar.gz`;
                 const sha = await program(f.folder, name, {
@@ -160,7 +160,7 @@ Deno.test({
 async function viteFixture() {
     const f = await fixture();
     try {
-        hostTasks(f.folder, ["Install the shared folders"]);
+        hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders"]);
         const calls = `${f.folder}/vp-calls`;
         // npm installs the locked package under its --prefix; vp records its calls and runs the home's Node.
         const npm = await program(f.folder, "node-1.0.tar.gz", {

@@ -356,9 +356,11 @@ A Project chooses the server that runs in its containers, in its [`container_ser
 
 When Orbit reserves the runtime of a container with a server, a clone or a [migrated checkout](#migrate-a-checkout-instance), the runtime records the Project's choice as its own `container_server`. The default's runtime records none: the default runs no server. Every later step reads the runtime's record, never the Project's setting. So a changed setting reaches only containers that Orbit reserves after the change. An existing container keeps its server: the two servers store threads and pairings differently, and nothing converts them.
 
-The record names the program that every call inside the container runs: the create's sessions and `project add`, and a task turn's `thread` commands and its RPC helper. The drop-in `/etc/systemd/system/t3.service.d/20-orbit-server.conf` sets the unit's `ExecStart` to the same program, with the image's arguments: `serve --host=0.0.0.0 --port=3773 --no-browser`. A clone gets it before its first start, with [T3's other files](#t3-starts-with-the-copy). A migrated checkout gets it with the agent's files, and its T3 phase reloads systemd before it starts the unit.
+The record names the program that every call inside the container runs: the create's sessions and `project add`, and a task turn's `thread` commands and its RPC helper. The drop-in `/etc/systemd/system/t3.service.d/20-orbit-server.conf` sets the unit's `ExecStart` to the same program, with the image's arguments: `serve --host=0.0.0.0 --port=3773 --no-browser`. A clone gets it before its first start, with [T3's other files](#t3-starts-with-the-copy). A migrated checkout gets it with the agent's files, and its T3 phase reloads systemd before it starts the unit. The Node's converge keeps it and `10-orbit-boot.conf` current in every existing container: see [T3's unit drop-ins](#t3s-unit-drop-ins).
 
-For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`. This is the unpacked executable in the current agent folder version, beside its support files, rather than its `bin` link. [agent-browser](#agent-browser) opens the same executable. It also sets `T3CODE_SERVER_BROWSER_SANDBOX=0` because the container has no user namespaces. T3 gets neither override. The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
+For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`. This is the unpacked executable in the current agent folder version, beside its support files, rather than its `bin` link. [agent-browser](#agent-browser) opens the same executable. It also sets `T3CODE_SERVER_BROWSER_SANDBOX=0` because the container has no user namespaces. T3 gets neither override.
+
+The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
 
 The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins Conn Server 0.2.0 as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, so every agent folder holds both programs. Its releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host.
 
@@ -550,6 +552,25 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 - **Frozen.** A frozen container gets the files through the file API. `incus exec` refuses it, so it gets no exec.
 - **Thaw.** A frozen container keeps its cache, because it thaws without a boot. Its wake rebuilds a cache that lacks a runtime library.
 - **Failure.** A failed Incus call fails the converge after every other container had its turn.
+
+#### T3's unit drop-ins
+
+A container with a T3, a clone or a migrated checkout, holds two root-owned drop-ins of `t3.service`: `10-orbit-boot.conf` and `20-orbit-server.conf` in `/etc/systemd/system/t3.service.d/`. `InstanceContainer::t3DropIns` renders both. The create writes them before the first start, and the Gateway hands the same texts to the Node converge as `t3_files`, one entry for each container with a T3. A default has none.
+
+When a drop-in in a container holds other text, the converge rewrites it through the file API, as root with mode 0644. It does this in its own step, before the shared folders, so a change such as a new Conn environment line reaches existing containers:
+
+| State | What the converge does |
+| --- | --- |
+| Running | Writes the file and runs `systemctl daemon-reload`. The agent folder's step then restarts T3 once, after the reload. |
+| Stopped | Writes the file only. systemd reads it at the next boot |
+| Frozen | Writes the file only: `incus exec` refuses a frozen container. The first converge that finds it running sees that systemd has not reloaded the unit (`NeedDaemonReload`), so it reloads and restarts T3 then |
+| Same text | No rewrite. A retained restart or `NeedDaemonReload` still gets its catch-up; otherwise a second converge writes nothing and restarts nothing |
+
+The restart is `systemctl try-restart t3.service`. When the agent folder changed in the same converge, its restart covers the container, so T3 does not restart twice. The Node lists each reloaded container in `/var/lib/orbit/instance-t3-restart.json` until its T3 restarted. So a converge that fails between the reload and the restart leaves the list.
+
+Each successful restart removes only its own entry, even if another restart fails. A frozen or stopped container keeps its entry until a converge finds it running and successfully restarts T3; a deleted container leaves the list. A stopped container may already have read the new drop-in at boot, but the entry still requires that explicit restart rather than inferring completion from its power state.
+
+The converge writes only these root-owned drop-ins. T3's settings, `.claude.json` and Codex's `config.toml` belong to `agent`: T3 and the agents change them, and root never writes through `agent`'s paths. `/etc/orbit/instance` keeps the text of its create.
 
 ### The machine name
 
