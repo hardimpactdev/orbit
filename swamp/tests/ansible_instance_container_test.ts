@@ -1541,7 +1541,9 @@ Deno.test({
       const destroyCalls = calls().slice(beforeDestroy);
       assert(destroyCalls.includes(`disable --now -- ${paused.name}`), destroyCalls.join("\n"));
       assert(destroyCalls.includes("daemon-reload"));
-      assertEquals(destroyCalls.filter((call: string) => call.includes(worker.name)), []);
+      // The shared swap reads every Orbit unit for recovery; destroying this Process changes no other active unit.
+      assertEquals(destroyCalls.filter((call: string) => call.includes(worker.name) &&
+        !call.startsWith("is-enabled ") && !call.startsWith("is-active ")), []);
       // A unit already gone, with a boot link left behind, converges: the link goes and the check passes.
       Deno.symlinkSync(`/etc/systemd/system/${paused.name}`, `${rootfs}/etc/systemd/system/multi-user.target.wants/${paused.name}`);
       assert(f.run("process", { ORBIT_PROCESS_ACTION: "destroy" }).ok);
