@@ -287,7 +287,7 @@ class ReceiptTest(unittest.TestCase):
         needs = needs_for()
         needs['changes']['outputs'].update(outputs, fixture_shards='[]', fixture_capacity='[]')
         for name in needs:
-            if name not in ('changes', 'gateway-release'):
+            if name not in ('changes', 'ci-policy', 'gateway-release'):
                 needs[name]['result'] = 'skipped'
         with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'):
             delivery.validate(copy.deepcopy(needs))

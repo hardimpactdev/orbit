@@ -576,6 +576,23 @@ jobs:
       - name: Test the agent and composed extension crates
         run: scripts/check-crates test --locked
 
+  ci-policy:
+    name: CI policy
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check CI scope and import fixtures
+        run: |
+          python3 -m unittest discover -s tools -p 'test_ci_*.py'
+          python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'
+          python3 tools/test_swamp_import_base.py
+          python3 tools/test_frozen_agent_commands.py
+
   changes:
     name: Select build inputs
     permissions:
@@ -624,13 +641,6 @@ jobs:
           path: ${{ runner.temp }}/main-tree-receipt.json
           if-no-files-found: error
           retention-days: 14
-      - name: Check CI scope and import fixtures
-        if: steps.reuse.outputs.reuse != 'true'
-        run: |
-          python3 -m unittest discover -s tools -p 'test_ci_*.py'
-          python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'
-          python3 tools/test_swamp_import_base.py
-          python3 tools/test_frozen_agent_commands.py
       - name: Select changed build inputs
         id: plan
         env:
@@ -905,7 +915,7 @@ jobs:
   required:
     name: ${{ github.ref == 'refs/heads/main' && 'PR required checks' || 'Required checks' }}
     if: always() && github.ref != 'refs/heads/main'
-    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
+    needs: [ci-policy, php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
     runs-on: ubuntu-26.04
     timeout-minutes: ${{ vars.ORBIT_PROOF_ENABLED == 'true' && github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' && 275 || 2 }}
     permissions:
@@ -957,7 +967,7 @@ jobs:
   delivery:
     name: Main delivery checks
     if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
+    needs: [ci-policy, php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:

@@ -92,7 +92,7 @@ class RequiredGateTest(unittest.TestCase):
         jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
         needs = {job: {'result': 'success'} for job in jobs}
         needs['self-hosted-fixtures']['result'] = 'skipped'
-        selection = {job: True for job in jobs if job not in ('changes', 'gateway-release', 'fixtures', 'self-hosted-fixtures')}
+        selection = {job: True for job in jobs if job not in ('changes', 'ci-policy', 'gateway-release', 'fixtures', 'self-hosted-fixtures')}
         selection['swamp'] = True
         for name, value in (selections or {}).items():
             if value is None:

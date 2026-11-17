@@ -5,7 +5,7 @@ CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units
 Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
 names for changed SDK fixtures, the project's pin test files (PIN_TESTS), and the whole SDK suite, which takes
 seconds, each with the per-test time limit that CI's job passes to Pest. The rest of the Gateway, CLI and docs suites
-is left to CI and named as skipped. CI's policy tests run on every change, as CI's "Select build inputs" job runs them.
+is left to CI and named as skipped. CI's policy tests run on every change, as CI's "CI policy" job runs them.
 The fixtures part runs the units of CI's plan that the change touches directly first, then the other planned units
 that fit the time left; it names the rest as deferred to CI. Every part gets the time left as its limit; a part the
 budget stops or leaves out is named. The output starts with CI's per-unit
@@ -500,6 +500,23 @@ def main(argv=None):
         chosen = sorted(name for name, on in jobs.items() if on)
         record(Part('ci-plan', 'passed', time.monotonic() - plan_started, 'jobs: ' + ', '.join(chosen)))
 
+    # Placement is a preflight of the complete CI selection, not a budgeted local fixture run.
+    # Even --only must refuse a change that Required cannot place before publication.
+    table = None
+    if jobs is not None:
+        try:
+            _budget, table, _defaults = units.configuration()
+            capacity = capacity_errors(plan, table)
+        except (ValueError, OSError, subprocess.CalledProcessError) as error:
+            record(Part('fixture-capacity', 'FAILED', 0, 'the fixture table does not load', str(error)))
+        else:
+            record(Part('fixture-capacity', 'FAILED' if capacity else 'passed', 0,
+                        f'{len(capacity)} capacity rows of the CI plan' if capacity else 'all required units fit',
+                        '\n'.join(capacity)))
+    if any(part.status == 'FAILED' for part in parts):
+        print('\n'.join(report(parts, base, time.monotonic() - started)), flush=True)
+        return 1
+
     def want(part):
         return part in selected and jobs is not None
 
@@ -546,15 +563,7 @@ def main(argv=None):
         for name, project, files, status, detail in pest_plan(jobs, paths, base):
             record(pest(name, project, files, detail, deadline) if status == 'run' else Part(name, status, 0, detail))
     if want('fixtures'):
-        try:
-            _budget, table, _defaults = units.configuration()
-        except (ValueError, OSError, subprocess.CalledProcessError) as error:
-            record(Part('fixtures', 'FAILED', 0, 'the fixture table does not load', str(error)))
-        else:
-            capacity = capacity_errors(plan, table)
-            if capacity:
-                record(Part('fixture-capacity', 'FAILED', 0, f'{len(capacity)} capacity rows of the CI plan', '\n'.join(capacity)))
-            record(fixtures(plan, deadline, table, paths))
+        record(fixtures(plan, deadline, table, paths))
 
     lines = report(parts, base, time.monotonic() - started)
     print('\n'.join(lines), flush=True)

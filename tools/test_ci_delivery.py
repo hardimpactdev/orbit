@@ -31,7 +31,7 @@ JOB = dict(id=43, name=delivery.DELIVERY, run_attempt=1, head_sha=SHA,
 
 def needs_for(name='delivery'):
     needs = {name: {'result': 'success'} for name in JOBS[name]['needs']}
-    selected = {name: True for name in needs if name not in ('changes', 'gateway-release', 'fixtures', 'self-hosted-fixtures')}
+    selected = {name: True for name in needs if name not in ('changes', 'ci-policy', 'gateway-release', 'fixtures', 'self-hosted-fixtures')}
     needs['changes']['outputs'] = dict(jobs=json.dumps(selected), gateway_release='true',
                                       fixture_shards='[{"name":"01"}]',
                                       fixture_capacity='[{"file":"overfull"}]' if name == 'fixture-report' else '[]',
@@ -87,6 +87,18 @@ class DeliveryGateTest(unittest.TestCase):
                 needs = needs_for()
                 needs[job]['result'] = state
                 with self.subTest(job=job, state=state), self.assertRaises(SystemExit):
+                    self.run_gate(needs)
+
+    def test_policy_must_pass_even_when_a_main_tree_is_reused(self):
+        for reuse in ('false', 'true'):
+            for status in (None, 'failure', 'cancelled', 'skipped', 'pending'):
+                needs = needs_for()
+                needs['changes']['outputs']['reuse'] = reuse
+                if status is None:
+                    needs.pop('ci-policy')
+                else:
+                    needs['ci-policy']['result'] = status
+                with self.subTest(reuse=reuse, status=status), self.assertRaisesRegex(SystemExit, 'CI policy checks failed'):
                     self.run_gate(needs)
 
     def test_main_fails_on_fixture_capacity_and_skips_only_an_empty_matrix(self):
