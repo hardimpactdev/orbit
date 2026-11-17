@@ -12,7 +12,7 @@ const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn
 const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, "");
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const ssh = { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } };
-const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", candidate: null, settle: [] as { operation_id: number; title: string; branch: string | null }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
+const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", options: [] as { id: string; value: string }[], candidate: null, settle: [] as { operation_id: number; title: string; branch: string | null }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
 // What TaskCopyTurn admits; the workflow passes only the runtime, the SSH target and the turn to the phase.
 const intent = { subtask: 4971, role: "implementer", thread: "new", group_id: 4970, instance_id: 2685, node_id: 9, ssh_execution: ssh,
     runtime: { project: "orbit-instances-nested", name: "instance-2685" }, branch: "task-4970", thread_id: 77, turn };
@@ -108,7 +108,8 @@ if rest[:5] == ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace']:
 if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
     catalog = os.environ.get('T3_CATALOG', 'cached')
     if rest[3] == '/home/agent/.t3/userdata/settings.json':
-        print(json.dumps({'providerInstances': {'claudeMedium': {'driver': 'claudeAgent', 'displayName': 'Claude, medium effort'}}}))
+        print(json.dumps({'providerInstances': {'claudeMedium': {'driver': 'claudeAgent', 'displayName': 'Claude, medium effort'},
+                                                'codexHigh': {'driver': 'codex', 'displayName': 'Codex, high effort'}}}))
         sys.exit(0)
     assert rest[3:] == ['/home/agent/.t3/userdata/model-manifest.json'], rest
     if catalog == 'missing':
@@ -121,7 +122,7 @@ if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
         models = {'claude-opus-5-5': {}}
     if catalog == 'noentry':
         models = [{'name': 'No slug'}, 'claude-fable-5-2']
-    print(json.dumps({'fetchedAtMs': 1, 'manifest': {'providers': {'claudeAgent': {'models': models}, 'codex': {'models': [{'slug': 'other-model'}]}}}}))
+    print(json.dumps({'fetchedAtMs': 1, 'manifest': {'providers': {'claudeAgent': {'models': models}, 'codex': {'models': [{'slug': 'other-model'}, {'slug': 'gpt-6.1-sol'}]}}}}))
     sys.exit(0)
 if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node', '-']:
     assert stdin == open(os.environ['T3_HELPER']).read(), 'the shipped helper arrives on stdin'
@@ -131,6 +132,16 @@ if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node',
         run = 'run:earlier' if rest[6] == 'earlier' else 'run:1'
         print(json.dumps({'end': {'stopped': True, 'run': run, 'state': 'interrupted'}, 'refuse': {'stopped': False, 'run': run, 'state': 'running'},
                           'idle': {'stopped': False, 'run': None, 'state': None}}[os.environ.get('T3_STOP', 'end')]), end='')
+        sys.exit(0)
+    if rest[5] == 'create':
+        # T3_CREATE: 'refuse' is a create T3 answers with its refusal, 'fail' a helper that printed nothing.
+        assert rest[6:9] == ['Orbit task 4970 thread 77', os.environ.get('T3_INSTANCE', 'claudeMedium'), os.environ.get('T3_MODEL', 'claude-opus-5-5')], rest
+        assert json.loads(rest[9]) == json.loads(os.environ.get('T3_OPTIONS', '[]')), rest
+        create = os.environ.get('T3_CREATE', 'made')
+        if create == 'fail':
+            sys.stderr.write('T3 refused a WebSocket ticket (HTTP 401).')
+            sys.exit(1)
+        print(json.dumps({'thread_id': thread, 'error': None} if create == 'made' else {'thread_id': None, 'error': 'Unknown provider instance codexHigh.'}), end='')
         sys.exit(0)
     if rest[5:] == ['read', thread]:
         ask = os.environ.get('T3_ASK', 'questions')
@@ -152,7 +163,7 @@ if rest == ['/usr/bin/true']:
     sys.exit(1 if os.environ['T3_START'] == 'unreachable' else 0)
 if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
     assert rest[2] == '3600' and rest[3] == os.environ['T3_PROGRAM'], rest
-    assert rest[4:] == ['thread', 'send', '--wait', '--json', thread, '-'] or (rest[4:6] == ['thread', 'start'] and rest[-4:] == ['--wait', '--json', '/srv/workspace', '-']), rest
+    assert rest[4:] == ['thread', 'send', '--wait', '--json', thread, '-'], rest
     mode = os.environ['T3_START']
     if mode == 'garbled':
         mode = 'completed'
@@ -238,10 +249,13 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
 Deno.test({ name: "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back", ignore: !available, async fn() {
     const done = await phase("completed");
     assert(done.ok, done.output);
-    assertEquals(done.calls.length, 6);
-    const start = done.calls[3];
+    assertEquals(done.calls.length, 7);
+    // The new thread is made first with its title, instance, model and model options; its first turn is a send to it.
+    const create = done.calls[3];
+    assertEquals(create.args.slice(20), ["create", turn.title, "claudeMedium", "claude-opus-5-5", "[]"]);
+    const start = done.calls[4];
     assertEquals(start.stdin, turn.prompt);
-    assertEquals(start.args.slice(21, 29), ["--provider", "claudeMedium", "--model", "claude-opus-5-5", "--title", turn.title, "--wait", "--json"]);
+    assertEquals(start.args.slice(19), ["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"]);
     // An implementer's turn leaves the checkout to the agent: no Git command, no review or restore evidence.
     assertEquals([done.review, done.restore], [null, null]);
     assertEquals([done.launched, done.start!.start_exit, JSON.parse(done.start!.start as string).status], [true, 0, "completed"]);
@@ -332,7 +346,7 @@ Deno.test({ name: "a turn cut by its bound still reads the thread it started; a 
     assertEquals([cut.launched, cut.start!.start_exit, cut.start!.start, cut.read!.found, cut.read!.show_exit], [true, 124, "", 1, 0]);
     const refused = await phase("refused");
     assert(refused.ok, refused.output);
-    assertEquals([refused.start!.start_exit, refused.read!.list_exit, refused.read!.found, refused.read!.status, refused.read!.show_exit, refused.calls.length], [1, 0, 0, null, null, 5]);
+    assertEquals([refused.start!.start_exit, refused.read!.list_exit, refused.read!.found, refused.read!.status, refused.read!.show_exit, refused.calls.length], [1, 0, 0, null, null, 6]);
     // T3 refuses a start on stderr only; the evidence keeps it.
     assertEquals(refused.start!.error, 'Provider instance "claudeMedium" is disabled for project p.');
     // A copy the phase cannot reach launches nothing, so no turn can hold its group.
@@ -378,7 +392,26 @@ Deno.test({ name: "a thread list that is not JSON reads as no thread, and the st
     const garbled = await phase("garbled");
     assert(garbled.ok, garbled.output);
     assertEquals([JSON.parse(garbled.start!.start as string).status, garbled.read!.list_exit, garbled.read!.found, garbled.read!.show_exit, garbled.calls.length],
-        ["completed", null, 0, null, 5]);
+        ["completed", null, 0, null, 6]);
+} });
+
+Deno.test({ name: "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start", ignore: !available, async fn() {
+    const options = [{ id: "reasoningEffort", value: "high" }];
+    const codex = { T3_INSTANCE: "codexHigh", T3_MODEL: "gpt-6.1-sol", T3_OPTIONS: JSON.stringify(options) };
+    const done = await phase("completed", { provider: "codexHigh", model: "gpt-6.1-sol", options }, "clean", "questions", "", codex);
+    assert(done.ok, done.output);
+    const create = done.calls.find((call) => call.args[20] === "create")!;
+    assertEquals([...create.args.slice(20, 24), JSON.parse(create.args[24])], ["create", turn.title, "codexHigh", "gpt-6.1-sol", options]);
+    assertEquals([done.start!.start_exit, done.result.state], [0, "done"]);
+    // A create that T3 refuses, or a helper that fails, makes no thread: no send runs, and the start carries T3's message.
+    for (const [create, error] of [["refuse", "T3 could not create the thread: Unknown provider instance codexHigh."],
+        ["fail", "T3 could not create the thread: T3 refused a WebSocket ticket (HTTP 401)."]]) {
+        const refused = await phase("completed", { provider: "codexHigh", model: "gpt-6.1-sol", options }, "clean", "questions", "", { ...codex, T3_CREATE: create });
+        assert(refused.ok, refused.output);
+        assertEquals([refused.launched, refused.start, refused.calls.some((call) => call.args.includes("send"))],
+            [true, { start_exit: 1, start: "", error }, false], create);
+        assertEquals([refused.result.state, refused.result.error_code], ["failed", "tasks.copy_turn_failed"], create);
+    }
 } });
 
 const reads = (calls: Phase["calls"]) => calls.map((call) => call.args.slice(15)).filter((args) => args[2] === "/usr/bin/cat").map((args) => args[3]);
@@ -440,7 +473,9 @@ Deno.test({ name: "the start evidence keeps stderr only when the start failed, a
     assertEquals([refused.start!.start_exit, error.length, error.endsWith("the end")], [1, 4096, true]);
 } });
 
-const helper = (calls: Phase["calls"]) => calls.map((call) => call.args.slice(15)).filter((args) => args[2] === turn.node).map((args) => args.slice(5).join(" "));
+// The helper's reads and stops; a new thread's create is checked on its own.
+const helper = (calls: Phase["calls"]) => calls.map((call) => call.args.slice(15)).filter((args) => args[2] === turn.node && args[5] !== "create")
+    .map((args) => args.slice(5).join(" "));
 
 Deno.test({ name: "a run that asks has its question stored before the run is stopped, and the thread is read back after", ignore: !available, async fn() {
     const asked = await phase("waiting");

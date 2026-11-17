@@ -681,7 +681,7 @@ jobs:
     name: Fixtures (${{ matrix.shard.name }})
     needs: changes
     if: ${{ needs.changes.outputs.fixture_shards != '[]' }}
-    # Fork code stays on GitHub-hosted runners. All trusted shards share Sabre and Shark's nine runners.
+    # Fork code stays on GitHub-hosted runners. All trusted shards share Sabre and Shark's CPU-bounded pool; both classes pack and run two workers.
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-26.04' || fromJSON('["self-hosted","hardimpact","orbit-shard"]') }}
     timeout-minutes: 4
     strategy:

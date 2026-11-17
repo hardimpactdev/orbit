@@ -4,18 +4,19 @@
 CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units plans the Swamp fixture units.
 Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
 names for changed SDK fixtures, the project's pin test files (PIN_TESTS), and the whole SDK suite, which takes
-seconds. The rest of the Gateway, CLI and docs suites is left to CI and named as skipped. A change to what CI's own
-policy tests read (the CI registry and its fixture tomls, workflows, CI scripts, Swamp test files) adds those tests,
-tools/test_ci_*.py, before Pest and the fixtures. Every part gets the time left as its limit; a part the budget stops
-or leaves out is named as skipped. The output ends with a summary of at most SUMMARY_BYTES: one line per part with its
-outcome and seconds, then the last lines of each failed part, so the stored tail of the output always holds it.
+seconds, each with the per-test time limit that CI's job passes to Pest. The rest of the Gateway, CLI and docs suites
+is left to CI and named as skipped. CI's policy tests run on every change, as CI's "Select build inputs" job runs them.
+The fixtures part runs the units of CI's plan that the change touches directly first, then the other planned units
+that fit the time left; it names the rest as deferred to CI. Every part gets the time left as its limit; a part the
+budget stops or leaves out is named. The output starts with CI's per-unit
+time caps and ends with a summary of at most SUMMARY_BYTES: one line per part with its outcome and seconds, then the
+last lines of each failed part, so the stored tail of the output always holds it.
 
 --base REF        the start commit (default: the merge base with origin/main, else main)
 --budget SECONDS  wall time of the whole run (default 270)
 --only PARTS      comma-separated part names, such as pest,phpstan"""
 import argparse
 from contextlib import contextmanager
-from fnmatch import fnmatch
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 import json
@@ -29,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -51,6 +53,9 @@ PARTS = ('ci-plan', 'docs-impact', 'check-flows', 'docs-lint', 'pint', 'phpstan'
 PHP_PROJECTS = review['PHP_PROJECTS']
 # The CI jobs that run a project's Pest suite or its static analysis. CI runs no PHPStan on apps/docs.
 PEST_JOBS = {'gateway-tests': 'apps/gateway', 'cli-tests': 'apps/cli', 'sdk-tests': 'packages/php-sdk', 'docs': 'apps/docs'}
+# CI's workflow owns each Pest job's per-test time limit and its fixture table owns the per-unit cap: the check reads both.
+CI_WORKFLOW = ROOT / '.github/workflows/ci.yml'
+CI_TABLE = ROOT / '.github/ci/checks.toml'
 STATIC_JOBS = {'gateway-static': 'apps/gateway', 'cli-static': 'apps/cli', 'sdk-static': 'packages/php-sdk',
                'e2e-static': 'apps/e2e'}
 # The suites small enough to run whole. Each other suite runs only its changed, contract-mapped and pin test files.
@@ -63,12 +68,9 @@ PIN_TESTS = {
                      'tests/Feature/InstanceNodeServiceTargetsTest.php', 'tests/Feature/Http/CollectionAccessContractTest.php'),
     'apps/cli': ('tests/Feature/CommandSurfaceTest.php',),
 }
-# The CI policy tests that CI's changes job runs on every PR, and the changed paths that select them here: what those tests read.
-# They check the CI registry and its fixture tomls, the workflows, the CI scripts and this check, their own evidence files, and
-# the Swamp test files whose cases and sources the registry pins. Other test files they do not read.
-CI_POLICY = ['python3', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_ci_*.py']
-CI_POLICY_INPUTS = ('.github/ci/*', '.github/workflows/*', 'tools/test_ci_*.py', 'tools/tests/*', 'tools/ci*', 'bin/ci-*',
-                    'bin/task-check', 'swamp/tests/*_test.py', 'swamp/tests/*_test.ts')
+# The CI policy and budget tests that CI's "Select build inputs" job runs on every PR, whatever it changed.
+CI_POLICY = [['python3', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_ci_*.py'],
+             ['python3', '-m', 'unittest', 'discover', '-s', 'tools/ci-runners', '-p', 'test_*.py']]
 COLLECT_SECONDS = 15
 FIXTURE_SETUP_SECONDS = 10
 OUTPUT_LINES = 80
@@ -252,8 +254,37 @@ def pest_plan(jobs, paths, base):
     return entries
 
 
+def ci_job(job):
+    """The lines of one job of CI's workflow."""
+    match = re.search(rf'^  {re.escape(job)}:\n((?:(?: {{4}}.*)?\n)*)', CI_WORKFLOW.read_text(), re.M)
+    if not match:
+        raise RuntimeError(f'{CI_WORKFLOW.relative_to(ROOT)} has no {job} job')
+    return match.group(1)
+
+
+def ci_time_limit(job):
+    """The per-test time limit, in seconds, that CI's job passes to Pest, or None: the project's phpunit.xml then holds."""
+    limits = {int(limit) for line in ci_job(job).splitlines() if 'vendor/bin/pest' in line or 'composer test' in line
+              for limit in re.findall(r'--default-time-limit=(\d+)', line)}
+    if len(limits) > 1:
+        raise RuntimeError(f'the {job} job of CI passes more than one Pest time limit')
+    return next(iter(limits), None)
+
+
+def ci_caps():
+    """CI's per-unit time caps, as the check prints them at its start."""
+    budget = tomllib.loads(CI_TABLE.read_text())['budget']
+    pest_limits = [f'{project} {limit}s' for job, project in PEST_JOBS.items() if (limit := ci_time_limit(job)) is not None]
+    return (f"CI's per-unit time cap: a fixture unit declares at most {budget['shard_seconds']}s and is stopped at "
+            f"{budget['unit_ceiling_seconds']}s (.github/ci/checks.toml); a Pest test stops at its project's limit"
+            + (' (' + ', '.join(pest_limits) + ' in CI)' if pest_limits else '') + '. Keep each new or changed test unit within it.')
+
+
 def pest(name, project, files, detail, deadline):
+    job = next(job for job, owner in PEST_JOBS.items() if owner == project)
+    limit = ci_time_limit(job)
     argv = [str(ROOT / 'bin/pest-plain'), 'vendor/bin/pest', '--compact', '--colors=never',
+            *([f'--default-time-limit={limit}'] if limit is not None else []),
             *[str(Path(file).relative_to(project)) for file in files or ()]]
     part = timed(name, [argv], deadline, cwd=ROOT / project)
     if part.status != 'skipped':
@@ -329,9 +360,17 @@ def missing_programs(planned, table):
     return groups
 
 
-def fixtures(plan, deadline, table):
-    """Admit planned units while they still pack into the time left, by the rule of bin/ci-units; name the rest.
-    A unit whose declared host program is missing in this copy does not run: CI has the program and runs it."""
+def deferral(units_of, costs):
+    """The units the check leaves to CI, with their count and declared seconds."""
+    return (f'deferred to CI: {len(units_of)} units, {sum(costs[unit] for unit in units_of):g}s declared: '
+            + ', '.join(units_of))
+
+
+def fixtures(plan, deadline, table, paths):
+    """Run the planned units the change touches directly first, by the input mapping of bin/ci-units, then the other
+    planned units that still pack into the time left, by its pack rule. The rest are deferred to CI and named, with their
+    count and declared seconds; they never fail the check. A unit whose declared host program is missing in this copy
+    does not run: CI has the program and runs it."""
     started = time.monotonic()
     planned = units.planned_units(plan)
     if not planned:
@@ -340,23 +379,22 @@ def fixtures(plan, deadline, table):
     unrunnable = {unit for units_of in lacking.values() for unit in units_of}
     lacks = '; '.join(f'{len(units_of)} not runnable here: {names} missing in this copy ({", ".join(units_of)})' for names, units_of in lacking.items())
     costs = {unit: plan['units'][unit]['declared_seconds'] for unit in planned}
+    direct = units.direct_files(paths, table)
     workers = fixture_workers()
     capacity = {**plan['budget'], 'shard_seconds': deadline - time.monotonic() - FIXTURE_SETUP_SECONDS, 'pr_shards': 1,
                 'shard_workers': workers}
-    admitted, skipped = [], []
-    # Cheapest first: a quick source check of the change runs before a long suite can take the budget, which CI runs anyway.
-    for unit in sorted((unit for unit in planned if unit not in unrunnable), key=lambda unit: costs[unit]):
+    admitted, deferred = [], []
+    # The units of directly touched fixtures first, then the rest; each group cheapest first, so a quick check of the
+    # change runs before a long suite can take the budget.
+    for unit in sorted((unit for unit in planned if unit not in unrunnable),
+                       key=lambda unit: (unit.split('#')[0] not in direct, costs[unit], unit)):
         try:
             fits = capacity['shard_seconds'] > 0 and units.pack([(name, costs[name], 0) for name in (*admitted, unit)], capacity) is not None
         except ValueError:
             fits = False
-        if fits:
-            admitted.append(unit)
-        else:
-            skipped.append(f'{unit} (budget: declared {costs[unit]:g}s)')
+        (admitted if fits else deferred).append(unit)
     if not admitted:
-        return Part('fixtures', 'skipped', 0, '; '.join(([lacks] if lacks else []) + ([
-            'budget skipped: ' + ', '.join(skipped)] if skipped else [])))
+        return Part('fixtures', 'skipped', 0, '; '.join(([lacks] if lacks else []) + ([deferral(deferred, costs)] if deferred else [])))
     with tempfile.TemporaryDirectory(prefix='task-check-units-') as scratch:
         times = Path(scratch) / 'times.json'
         code, output = run(['python3', 'bin/ci-units', 'run', '--units', json.dumps(admitted), '--times', str(times),
@@ -365,12 +403,11 @@ def fixtures(plan, deadline, table):
         results = json.loads(times.read_text()) if times.is_file() else []
     outcomes = {row['unit']: row['status'] for row in results}
     failed = [unit for unit in admitted if outcomes.get(unit) in ('FAILED', 'OVER BUDGET')]
-    # Only the check's own timeout stops a unit. A unit that did not run otherwise, such as after a failed tool setup,
-    # fails: CI's job fails on it too.
+    # Only the check's own timeout stops a unit, and CI runs it. A unit that did not run otherwise, such as after a failed
+    # tool setup, fails: CI's job fails on it too.
     unfinished = [unit for unit in admitted if outcomes.get(unit) not in ('passed', 'FAILED', 'OVER BUDGET')]
-    stopped_by_budget = code is None
-    stopped = [f'{unit} (stopped at the end of the budget)' for unit in unfinished if stopped_by_budget or outcomes.get(unit) == 'CANCELLED']
-    not_run = [unit for unit in unfinished if not (stopped_by_budget or outcomes.get(unit) == 'CANCELLED')]
+    stopped = [unit for unit in unfinished if code is None or outcomes.get(unit) == 'CANCELLED']
+    not_run = [unit for unit in unfinished if unit not in stopped]
     passed = [unit for unit in admitted if outcomes.get(unit) == 'passed']
     detail = f'{len(passed)} of {len(planned)} planned units passed'
     if failed:
@@ -379,24 +416,16 @@ def fixtures(plan, deadline, table):
         detail += '; not run: ' + ', '.join(not_run)
     if lacks:
         detail += '; ' + lacks
-    if stopped or skipped:
-        detail += '; budget skipped: ' + ', '.join(stopped + skipped)
+    if stopped or deferred:
+        detail += '; ' + deferral(stopped + deferred, costs)
     seconds = time.monotonic() - started
     if failed or not_run or (code not in (0, None) and not stopped):
         return Part('fixtures', 'FAILED', seconds, detail, output)
     return Part('fixtures', 'passed' if passed else 'skipped', seconds, detail)
 
 
-def ci_policy_path(path):
-    """A path the CI policy tests read: the CI registry and its fixture tomls, a workflow, a CI script, their own evidence, or a
-    Swamp test file whose cases the registry pins."""
-    return any(fnmatch(path, pattern) for pattern in CI_POLICY_INPUTS)
-
-
-def ci_policy(paths, deadline):
-    if not any(ci_policy_path(path) for path in paths):
-        return Part('ci-policy', 'not selected', 0, 'no changed path that the CI policy tests read')
-    return timed('ci-policy', [CI_POLICY], deadline)
+def ci_policy(deadline):
+    return timed('ci-policy', CI_POLICY, deadline)
 
 
 def ci_plan(base, head):
@@ -452,6 +481,7 @@ def main(argv=None):
         return 1
     print(f'Task check against {base[:12]}, the merge base with {ref}: {len(paths)} changed paths; budget {args.budget:g}s',
           flush=True)
+    print(ci_caps(), flush=True)
     parts = []
 
     def record(part):
@@ -509,7 +539,7 @@ def main(argv=None):
         else:
             record(Part('swamp-shape', 'not selected', 0, 'the Swamp checks are not selected'))
     if want('ci-policy'):
-        record(ci_policy(paths, deadline))
+        record(ci_policy(deadline))
     if want('fixture-population'):
         record(fixture_population(plan, deadline))
     if want('pest'):
@@ -524,7 +554,7 @@ def main(argv=None):
             capacity = capacity_errors(plan, table)
             if capacity:
                 record(Part('fixture-capacity', 'FAILED', 0, f'{len(capacity)} capacity rows of the CI plan', '\n'.join(capacity)))
-            record(fixtures(plan, deadline, table))
+            record(fixtures(plan, deadline, table, paths))
 
     lines = report(parts, base, time.monotonic() - started)
     print('\n'.join(lines), flush=True)

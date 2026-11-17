@@ -1685,7 +1685,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($turn->input['runtime'])->toBe(['project' => InstancePlacement::NestedProject, 'name' => $copy->runtime->container_name])
             ->and($turn->input['branch'])->toBe('task-'.$group->id)
             ->and(Arr::except($turn->input['turn'], 'prompt'))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'node' => '/opt/orbit-runtime/current/bin/node',
-                'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'candidate' => null, 'settle' => [], 'seconds' => 3600,
+                'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [], 'seconds' => 3600,
                 'title' => 'Orbit task '.$group->id.' thread '.$thread->id])
             // The implementer learns how to ask: a question ends the turn.
             // The group's title and brief come first, the copy rules once, then the turn's clock: the admission's time and the end of its bound.
@@ -1857,14 +1857,15 @@ describe('a turn of a group that owns a copy', function (): void {
             $this->fail('The turn was admitted.');
         } catch (ResourceOperationException $error) {
             expect($error->errorCode.' '.$error->status)->toBe('tasks.copy_turn_unoffered 422')
-                ->and($error->details['offered'])->toBe(['claude' => ['low', 'medium', 'high', 'xhigh', 'max']]);
+                ->and($error->details['offered'])->toBe(['claude' => ['low', 'medium', 'high', 'xhigh', 'max'], 'codex' => ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']]);
         }
         expect(AgentThread::query()->count())->toBe(0)->and(Operation::query()->count())->toBe($before);
     })->with([
         'a Gateway effort Claude Code has no instance for' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.effort' => 'minimal'])],
-        'a Gateway provider the copy has no instance of' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.provider' => 'codex'])],
+        'a Gateway provider the copy has no instance of' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.provider' => 'pi'])],
+        'a Codex effort Claude Code has no instance for' => [static fn (Task $group) => $group->update(['implementer_agent_effort' => 'ultra'])],
         'a stored group effort the copy no longer offers' => [static fn (Task $group) => $group->update(['implementer_agent_effort' => 'minimal'])],
-        'a stored Project provider the copy no longer offers' => [static fn (Task $group) => $group->project->update(['task_implementer_provider' => 'codex'])],
+        'a stored Project provider the copy no longer offers' => [static fn (Task $group) => $group->project->update(['task_implementer_provider' => 'pi'])],
     ]);
 
     it('refuses a new thread whose Gateway model is no model name, and records nothing', function (): void {
@@ -1877,15 +1878,18 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(AgentThread::query()->count())->toBe(0)->and(Operation::query()->count())->toBe($before);
     });
 
-    it('gives a task copy\'s T3 one Claude provider instance per effort, each with CLAUDE_CODE_EFFORT_LEVEL', function (): void {
+    it('gives a task copy\'s T3 one Claude provider instance per effort, each with CLAUDE_CODE_EFFORT_LEVEL, and one Codex instance per effort', function (): void {
         $group = copyGroup(copySource()->project);
 
         $files = collect(ValidatedData::object(containerIntentOf(startCopy($group))['clone'])['files'])->keyBy('path');
 
         $instances = $files['/home/agent/.t3/userdata/settings.json']['json']['providerInstances'];
-        expect(array_keys($instances))->toBe(['claudeLow', 'claudeMedium', 'claudeHigh', 'claudeXhigh', 'claudeMax'])
+        expect(array_keys($instances))->toBe(['claudeLow', 'claudeMedium', 'claudeHigh', 'claudeXhigh', 'claudeMax',
+            'codexLow', 'codexMedium', 'codexHigh', 'codexXhigh', 'codexMax', 'codexUltra'])
             ->and($instances['claudeMedium'])->toBe(['driver' => 'claudeAgent', 'displayName' => 'Claude, medium effort',
                 'environment' => [['name' => 'CLAUDE_CODE_EFFORT_LEVEL', 'value' => 'medium']]])
+            // Codex takes its effort from the thread's model options, not from its instance (InstanceContainer::providerOptions).
+            ->and($instances['codexHigh'])->toBe(['driver' => 'codex', 'displayName' => 'Codex, high effort'])
             ->and($files['/home/agent/.t3/userdata/settings.json']['json']['linkedEnvironmentsEnabled'])->toBeTrue();
     });
 
@@ -1905,7 +1909,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect($next->input['thread_id'])->toBe($first->input['thread_id'])
             ->and(Arr::except($next->input['turn'], 'prompt'))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'node' => '/opt/orbit-runtime/current/bin/node',
-                'thread' => 'continue', 'provider' => null, 'model' => 'claude-opus-5-5', 'candidate' => null, 'settle' => [], 'seconds' => 3600, 'title' => $first->input['turn']['title']])
+                'thread' => 'continue', 'provider' => null, 'model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [], 'seconds' => 3600, 'title' => $first->input['turn']['title']])
             ->and($next->input['turn']['prompt'])->toEndWith("Prompt of this turn:\nFix the failing test.\n\n".TaskCopyTurn::AskRule)
             ->and($named->input['thread_id'])->toBe($first->input['thread_id'])->and($named->input['turn']['thread'])->toBe('continue')
             ->and(AgentThread::query()->where('task_group_id', $group->id)->sole()->only(['model', 'effort', 'provider_instance']))
@@ -1927,6 +1931,22 @@ describe('a turn of a group that owns a copy', function (): void {
         expect($fresh->input['thread_id'])->not->toBe($first->input['thread_id'])->and($fresh->input['turn']['thread'])->toBe('new')
             ->and($next->input['thread_id'])->toBe($fresh->input['thread_id'])->and($next->input['turn']['thread'])->toBe('continue')
             ->and($group->tasks()->firstOrFail()->implementer_agent_thread_id)->toBe($fresh->input['thread_id']);
+    });
+
+    it('starts a Codex reviewer on its effort\'s instance with the effort as its reasoningEffort option, and the reviewer rule', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        copyTurnEnded(copyTurn($group), 'succeeded', copyTurnDone('mcp:1'));
+        $check = copyCandidate($group);
+        $group->project->update(['task_reviewer_provider' => 'codex', 'task_reviewer_model' => 'gpt-6.1-sol', 'task_reviewer_effort' => 'high']);
+
+        $review = copyTurn($group, ['role' => 'reviewer', 'check' => $check->id]);
+
+        expect($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'codexHigh', 'model' => 'gpt-6.1-sol',
+            'options' => [['id' => 'reasoningEffort', 'value' => 'high']]])
+            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::ReviewRule."\n\n".TaskCopyTurn::PrTextRule)
+            ->and(AgentThread::query()->findOrFail($review->input['thread_id'])->only(['model', 'effort', 'provider_instance']))
+            ->toBe(['model' => 'gpt-6.1-sol', 'effort' => 'high', 'provider_instance' => 'codexHigh']);
     });
 
     it('starts a new thread when the role\'s recorded thread is not a T3 thread of this copy', function (): void {
@@ -1959,14 +1979,22 @@ describe('a turn of a group that owns a copy', function (): void {
                 'effort' => 'high', 'external_id' => 'mcp:2'])
             ->and($review->input)->toMatchArray(['role' => 'reviewer', 'check' => $check->id, 'candidate' => $check->commit_sha])
             // The phase checks the candidate out for the reviewer, and the prompt names it.
-            ->and($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'claudeHigh', 'candidate' => $check->commit_sha])
+            // A Claude thread carries no model options: its instance's CLAUDE_CODE_EFFORT_LEVEL sets its effort, as before.
+            ->and($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'claudeHigh', 'model' => 'claude-opus-5-5', 'options' => [],
+                'candidate' => $check->commit_sha])
             // The reviewer gets the group's title and brief first, the copy rules once and its clock, as the implementer does.
             ->and($review->input['turn']['prompt'])->toStartWith("Task group: Group\n\nGroup brief:\nBrief\n\nSubtask: Step\n\n")
             ->and(substr_count($review->input['turn']['prompt'], TaskTurnPrompt::CopyRules))->toBe(1)
             ->and($review->input['turn']['prompt'])->toMatch('/'.preg_quote(TaskTurnPrompt::CopyRules, '/').'\n\nThis turn started at \S+Z and Orbit ends it at \S+Z\. Commit your work before then\.\n\n'
                 .'Prompt of this turn:\nReview the checked commit\.\n\nThe checked commit under review: '.$check->commit_sha.'\./')
-            // A reviewer that approves sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
-            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::PrTextRule)
+            // The reviewer rule bounds the review by the task's scope (docs/reference/tasks.md#the-reviewer-rule); a reviewer that approves
+            // then sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
+            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::ReviewRule."\n\n".TaskCopyTurn::PrTextRule)
+            ->and(substr_count($review->input['turn']['prompt'], TaskCopyTurn::ReviewRule))->toBe(1)
+            // The scope bounds the findings, not a count.
+            ->and(TaskCopyTurn::ReviewRule)->toContain('Report every finding inside that scope.')->not->toMatch('/at most|\bno more than\b/i')
+            ->and($implementer->input['turn']['prompt'])->not->toContain(TaskCopyTurn::ReviewRule)
+            ->and($implementer->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::AskRule)
             ->and($again->input['turn']['candidate'])->toBe($check->commit_sha)
             ->and($group->refresh()->reviewer_agent_thread_id)->toBe($thread->id)
             ->and($again->input['thread_id'])->toBe($thread->id)->and($again->input['turn']['thread'])->toBe('continue');

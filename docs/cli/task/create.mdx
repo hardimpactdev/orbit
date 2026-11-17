@@ -18,7 +18,7 @@ orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--
 | `--orchestration=MODE` | `external` | Swamp executes task groups. The only supported mode is `external`; any other value returns `task.orchestration_invalid`. |
 | `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
 | `--review=MODE` | `manual` | How the gate of the task pull request is passed. `manual`: Nick approves the exact head. `automatic`: its review rounds are removed, so the [gate check](/reference/tasks#gate-check) switches the group to manual mode when its pull request leaves draft. Any other value returns `tasks.review_invalid`. `task:show` returns the mode as `review`. |
-| `--implementer-provider=NAME` | Project's, else Gateway's | The implementer's provider in a [task copy](/reference/tasks#copy-turn-agents), such as `claude`. |
+| `--implementer-provider=NAME` | Project's, else Gateway's | The implementer's provider in a [task copy](/reference/tasks#copy-turn-agents): `claude` or `codex`. |
 | `--implementer-model=MODEL` | Project's, else Gateway's | The implementer's model in a task copy, such as `claude-opus-5-5`. |
 | `--implementer-effort=LEVEL` | Project's, else Gateway's | The implementer's effort in a task copy: `low`, `medium`, `high`, `xhigh` or `max`. |
 | `--reviewer-provider=NAME` | Project's, else Gateway's | The reviewer's provider in a task copy. |
