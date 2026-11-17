@@ -36,6 +36,29 @@ sequenceDiagram
   %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
   %%> On failure:
   %%> - no container, a non-development Instance, a nested-fleet default whose last sleep did not freeze it, or other lifecycle work starts no run
+  alt executor wake enabled
+    %% path: executor
+    GW->>N: Sign and publish wake<br/>executor-order · WebSocket
+    %%> What it does:
+    %%> - record or join instance.wake under the Instance lock before signing; only a new Operation publishes an order
+    %%> - the observer passes the order unread to the executor; no SSH, Python or marker/times command runs on this path
+    GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
+    %%> Result:
+    %%> - a joined visit also reads the durable result, because another waiter may have consumed its Valkey copy
+    alt done or partial within the bound
+      GW-->>CL: 200, continue request<br/>original method, URI and body
+      %%> Result:
+      %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
+      %%> - the Operation succeeds and records the runtime running
+    else no successful result in time
+      %% path: executor-pending
+      GW-->>CL: 401 progress page<br/>activation state pending
+      %%> Result:
+      %%> - the existing page polls every 250 ms and loads the app when the marker goes
+      %%> - a queued completion reads the durable result at 6 s, without holding a request worker; done or partial succeeds, refused or failed fails, and no result fails executor.wake_timeout
+      %%> - slice 7 adds the relay and Swamp fallback; until then this path fails without calling either, and the setting stays off by default
+    end
+  else executor wake disabled
   opt Caddy, for a development visit
     GW-->>CL: 401 progress page, at once<br/>spinner only
     %%> Result:
@@ -171,6 +194,7 @@ sequenceDiagram
     %%> Retry:
     %%> - Try again or the same command; a start of a running container changes nothing
     %%> - planned, a production live: the first visit 30 s or more after the failure starts one new wake by itself; until then Caddy answers `503` with `Retry-After: 30`
+  end
   end
   loop until terminal
     CL->>GW: operation:show TASK
