@@ -92,7 +92,7 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | CLI static analysis, PHP SDK static analysis | Run PHPStan for `apps/cli` or `packages/php-sdk` |
 | Docs build | Generate contracts and the Docs index; run strict lint, Docs Pest, `bin/check-flows` and the PR docs-impact gate |
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
-| Web build | Build and retain the web app on every PR for tree reuse; require `dist/index.html` and `dist/version.json` |
+| Web build | Run unit and Chromium/WebKit verification tests, then Chromium app tests; build and retain the web app on every PR for tree reuse; require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only and docs-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
@@ -230,6 +230,8 @@ A hosted runner has none of these, so a `self_hosted` file never runs there.
 ### CI budget
 
 Pull request CI takes at most five minutes from push to result, including queues and dependencies. Proof CI is the only exception. Run only checks that apply to the changed files, using `bin/ci-build-plan`. Docs impact is a policy check on every pull request; it shares the existing Docs job and its two-minute ceiling. Switch an over-budget check off until it meets the budget; no merge, deploy or review waits on it. Whoever adds or restores a job measures its complete path first.
+
+The Web job has a three-minute ceiling and an estimated 150-second table cost, including browser setup, both test stages and the build. A hosted Ubuntu 26.04 run spent 62 seconds installing the locked Chromium and WebKit engines and their system libraries, then 44 seconds running all 541 tests. Its former two-minute limit expired before the build. The extra minute of allowance keeps the existing five-minute overall target; the table cost includes cold browser installation rather than relying on a warm cache. Measure the complete hosted path, including build and upload, before treating that cost as verified.
 
 Measure CI wall time from workflow creation to completion of `Required checks`. Include queueing, input selection and the final gate. Independent jobs overlap, so use the longest required path rather than adding every job's duration. The full workflow can continue after Required checks passes.
 
@@ -482,11 +484,11 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 ### Gateway shards
 
-Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. Remote-program and web unit test jobs remain local checks; their test files and commands remain available.
+Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. The Web build job installs the locked Playwright WebKit and Chromium headless shell with their system libraries on `ubuntu-26.04`, then runs `bun run test:unit` and `bun run test:browser` in order before building. Both stages gate its artifact and Required checks under the [Web job budget](#ci-budget). Tests for remote programs still run only locally.
 
 ### Runner policy during the Swamp migration
 
-During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
+During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest, web and Rust tests. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
 Each CI Node runs its CI runners in unprivileged Incus containers. Every runner carries the same labels and no host label, so a workflow never names a host; see [CI runner role](/reference/node-provisioning#ci-runner-role).
 
