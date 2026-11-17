@@ -904,7 +904,13 @@ Deno.test({
   name: "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture(withStatus("Running"), { club: true });
+    // A current fleet already holds its Node pins; the missing-store repair has its own case above.
+    const currentFleet = (status: string) => {
+      const containers = withStatus(status);
+      containers["nested-gateway"].files["/home/orbit/.orbit/ssh/known_hosts"] = "recorded-node-pins";
+      return containers;
+    };
+    const f = fixture(currentFleet("Running"), { club: true });
     f.change((state) => state.tunnel = structuredClone(tunnelUp));
     try {
       const check = f.run("check");
@@ -915,18 +921,18 @@ Deno.test({
       assert(start.ok, start.output);
       assertEquals(start.changed, 0);
       assertEquals(writes(f.calls()), []);
-      assertEquals(f.state().containers, withStatus("Running"));
+      assertEquals(f.state().containers, currentFleet("Running"));
     } finally {
       f.cleanup();
     }
-    const g = fixture(withStatus("Stopped"), { club: true });
+    const g = fixture(currentFleet("Stopped"), { club: true });
     try {
       const start = g.run("start");
       assert(start.ok, start.output);
       const calls = g.calls();
       assertEquals(calls.filter((call) => call.startsWith("incus start")), names.map((name) => `incus start ${name}`));
       assertEquals(writes(calls), []);
-      assertEquals(g.state().containers, withStatus("Running"));
+      assertEquals(g.state().containers, currentFleet("Running"));
     } finally {
       g.cleanup();
     }
