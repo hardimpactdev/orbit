@@ -13,7 +13,7 @@ use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Schedule;
@@ -25,7 +25,7 @@ final readonly class MigrateSchedules
     /** Bare names the container runtime puts on the Schedule's PATH. */
     private const RuntimeNames = ['php', 'node', 'bun', 'vp', 'composer', 'git', 'true', 'false', 'echo', 'printf'];
 
-    public function __construct(private ScheduleTargetResolver $targets, private RecipeImageBuilds $recipes) {}
+    public function __construct(private ScheduleTargetResolver $targets, private CurrentRecipe $recipes) {}
 
     /** @return list<array<string,mixed>> */
     public function plans(Instance $instance): array

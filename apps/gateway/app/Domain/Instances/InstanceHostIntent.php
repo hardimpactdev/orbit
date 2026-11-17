@@ -10,9 +10,9 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -129,7 +129,7 @@ final readonly class InstanceHostIntent
     public function __construct(
         private ContainerNodes $nodes,
         private AllocateInstanceBridgeAction $bridges,
-        private RecipeImageBuilds $recipes,
+        private CurrentRecipe $recipes,
         private PeerDnsPolicy $privateDns,
     ) {}
 

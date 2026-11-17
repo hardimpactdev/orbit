@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
-use App\Domain\TaskVms\TaskVmNestedFleet;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 
 /**
  * The container image of a development Instance (docs/reference/development-containers.md#inside-a-container): the stock Ubuntu image
@@ -52,7 +51,7 @@ final readonly class InstanceImage
      */
     public const string AppUserSwap = '/usr/local/libexec/orbit-app-user';
 
-    public const string NestedAppGuard = 'ip daddr { '.TaskVmNestedFleet::WireGuardSubnet.', '.TaskVmNestedFleet::Subnet.' } meta skuid { '.InstanceHostIntent::AppUid.', '.InstanceHostIntent::OrbitUid.' } drop';
+    public const string NestedAppGuard = 'ip daddr { '.NestedFleetLayout::WireGuardSubnet.', '.NestedFleetLayout::Subnet.' } meta skuid { '.InstanceHostIntent::AppUid.', '.InstanceHostIntent::OrbitUid.' } drop';
 
     /**
      * The environment of every program from the runtime folder: Vite+ links the prepared runtime from its writable home,
@@ -194,7 +193,7 @@ final readonly class InstanceImage
     public static function browserTrust(): array
     {
         $home = '/home/agent';
-        $module = app(RecipeImageBuilds::class)->currentRecipe()->instances?->trustModule()
+        $module = app(CurrentRecipe::class)->currentRecipe()->instances?->trustModule()
             ?? throw new \LogicException('The recipe holds no shared Instance folders.');
         $library = $module->trustModule['library'] ?? throw new \LogicException('The trust module part names no library.');
 
