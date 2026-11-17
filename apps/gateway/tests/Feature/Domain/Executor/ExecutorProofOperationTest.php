@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Broadcasting\RealtimeConnection;
+use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Executor\ExecutorOrderBroadcast;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Executor\ExecutorProofOperation;
@@ -36,9 +38,12 @@ use Psr\Log\NullLogger;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    Event::fake([ExecutorOrderBroadcast::class]);
+    Event::fake([ExecutorOrderBroadcast::class, RecordBroadcast::class]);
     $this->mock(WebSocketCredentialManager::class)->shouldReceive('current')->andReturn(new WebSocketCredentials('test-app', 'test-key', 'test-secret'));
-    config(['orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey(sodium_crypto_sign_keypair()))]);
+    $this->app->forgetInstance(RealtimeConnection::class);
+    $keyPair = sodium_crypto_sign_keypair();
+    $this->publicKey = sodium_crypto_sign_publickey($keyPair);
+    config(['orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey($keyPair)), 'orbit.executor.wait_ms' => 1000]);
     $this->node = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'app-dev-1', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.8',
         'public_ssh_host' => '10.44.0.8', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:test',
@@ -94,6 +99,157 @@ function proofDone(Operation $operation, bool $repeat, int $clock): array
     return ['operation' => (string) $operation->id, 'action' => 'proof.noop', 'target' => (string) $operation->node_id,
         'status' => 'done', 'repeat' => $repeat, 'node_clock_ms' => $clock];
 }
+
+function onProofPublish(Closure $reply): void
+{
+    Event::swap(new class(app('events'), $reply) extends EventFake
+    {
+        public function __construct($dispatcher, private Closure $reply)
+        {
+            parent::__construct($dispatcher, [ExecutorOrderBroadcast::class, RecordBroadcast::class]);
+        }
+
+        public function dispatch($event, $payload = [], $halt = false)
+        {
+            if ($event instanceof ExecutorOrderBroadcast) {
+                ($this->reply)($event);
+            }
+
+            return parent::dispatch($event, $payload, $halt);
+        }
+    });
+}
+
+describe('the Node executor diagnostic', function (): void {
+    beforeEach(function (): void {
+        $this->gateway = Node::withoutEvents(fn (): Node => Node::query()->create([
+            'name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.1',
+            'public_ssh_host' => '10.44.0.1', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:test',
+        ]));
+        $this->gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+        $this->operator = Node::withoutEvents(fn (): Node => Node::query()->create([
+            'name' => 'operator', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.2',
+            'public_ssh_host' => '10.44.0.2', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:test',
+        ]));
+        $this->path = "/api/v1/nodes/{$this->node->id}/executor/proof";
+    });
+
+    it('sends exactly one signed no-op order and returns its durable verdict', function (string $sequence, string $status, ?string $error): void {
+        $this->operator->accessibleNodes()->attach($this->gateway);
+        $reply = function (ExecutorOrderBroadcast $event) use ($sequence): void {
+            ['operation' => $id, 'order' => $wire] = $event->broadcastWith();
+            $operation = Operation::query()->findOrFail($id);
+            [$payload, $signature] = array_map(base64_decode(...), explode('.', $wire));
+
+            expect(sodium_crypto_sign_verify_detached($signature, $payload, $this->publicKey))->toBeTrue()
+                ->and($event->broadcastOn()[0]->name)->toBe("presence-node.{$this->node->id}")
+                ->and(json_decode($payload, true))->toMatchArray([
+                    'action' => 'proof.noop', 'target' => (string) $this->node->id, 'node' => (string) $this->node->id, 'operation' => $id,
+                ]);
+
+            $accepted = proofReply($operation, ['status' => 'accepted']);
+            if ($sequence === 'cancelled first') {
+                $this->node->accessibleNodes()->attach($this->node);
+                $this->call('POST', "/api/v1/operations/{$operation->id}/cancel", [], [], [], [
+                    'REMOTE_ADDR' => $this->node->wireguard_ip, 'HTTP_ACCEPT' => 'application/json',
+                ])->assertOk()->assertJsonPath('data.status', 'cancelled');
+            }
+            if (in_array($sequence, ['accepted first', 'cancelled first'], true)) {
+                $this->listener->receive($this->node->id, $accepted);
+            } elseif ($sequence === 'wrong Node') {
+                $this->listener->receive($this->operator->id, $accepted);
+            }
+            $done = proofDone($operation, repeat: false, clock: 1);
+            if ($sequence === 'wrong target') {
+                $done['target'] = (string) $this->operator->id;
+                $this->listener->receive($this->node->id, $accepted);
+            }
+            $this->listener->receive($this->node->id, proofReply($operation, $done));
+            if ($sequence === 'done first') {
+                $this->listener->receive($this->node->id, $accepted);
+            }
+        };
+        onProofPublish($reply);
+
+        $response = $this->withServerVariables(['REMOTE_ADDR' => $this->operator->wireguard_ip])
+            ->postJson($this->path)
+            ->assertOk()
+            ->assertJsonPath('data.kind', 'executor.proof')
+            ->assertJsonPath('data.target_type', 'node')
+            ->assertJsonPath('data.target_id', $this->node->id)
+            ->assertJsonPath('data.status', $status)
+            ->assertJsonPath('data.error_code', $error);
+
+        Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, 1);
+        $operation = Operation::query()->sole();
+        expect($response->json('data.id'))->toBe($operation->id)
+            ->and($response->json('meta.request_id'))->toBe($operation->request_id)
+            ->and($operation->node_id)->toBe($this->node->id)
+            ->and($operation->status->value)->toBe($status)
+            ->and($operation->executor_result)->toMatchArray(['status' => 'done', 'operation' => (string) $operation->id])
+            ->and($operation->result)->toBe($status === 'succeeded' ? $operation->executor_result : null);
+    })->with([
+        'accepted and done already queued' => ['accepted first', 'succeeded', null],
+        'done only' => ['done only', 'failed', 'executor.proof_not_accepted'],
+        'owning Node cancels before replies arrive' => ['cancelled first', 'cancelled', null],
+        'accepted after done' => ['done first', 'failed', 'executor.proof_not_accepted'],
+        'foreign accepted then owning Node done' => ['wrong Node', 'failed', 'executor.proof_not_accepted'],
+        'done names another target' => ['wrong target', 'failed', 'executor.proof_result_mismatch'],
+    ]);
+
+    it('returns the failed Operation when signing, publishing or waiting throws', function (string $stage): void {
+        $this->operator->accessibleNodes()->attach($this->gateway);
+        match ($stage) {
+            'sign' => config(['orbit.executor.signing_key' => '']),
+            'publish' => onProofPublish(static fn () => throw new RuntimeException('Reverb failed.')),
+            'wait' => $this->queue->fails = true,
+        };
+
+        $response = $this->withServerVariables(['REMOTE_ADDR' => $this->operator->wireguard_ip])
+            ->postJson($this->path)
+            ->assertOk()
+            ->assertJsonPath('data.status', 'failed')
+            ->assertJsonPath('data.error_code', ExecutorProofOperation::Aborted);
+
+        $operation = Operation::query()->sole();
+        expect($response->json('data.id'))->toBe($operation->id)
+            ->and($operation->status)->toBe(OperationStatus::Failed)
+            ->and($operation->error_code)->toBe(ExecutorProofOperation::Aborted)
+            ->and($operation->finished_at)->not->toBeNull();
+    })->with(['sign', 'publish', 'wait']);
+
+    it('rejects a caller without both an active peer and Gateway authority before signing', function (string $caller, string $error): void {
+        if ($caller === 'inactive operator') {
+            $this->operator->accessibleNodes()->attach($this->gateway);
+            $this->operator->updateQuietly(['status' => 'failed']);
+        } elseif ($caller === 'target grant only') {
+            $this->operator->accessibleNodes()->attach($this->node);
+        }
+        $this->withServerVariables(['REMOTE_ADDR' => $caller === 'unknown' ? '10.44.0.99' : $this->operator->wireguard_ip])
+            ->postJson($this->path)
+            ->assertForbidden()
+            ->assertJsonPath('error.code', $error);
+
+        Event::assertNotDispatched(ExecutorOrderBroadcast::class);
+        expect(Operation::query()->count())->toBe(0);
+    })->with([
+        'unknown peer' => ['unknown', 'peer.identity_unknown'],
+        'inactive peer with Gateway authority' => ['inactive operator', 'peer.identity_unknown'],
+        'no target grant' => ['no grants', 'node_access.required'],
+        'target grant alone' => ['target grant only', 'node_access.required'],
+    ]);
+
+    it('rejects a power action in the request', function (): void {
+        $this->operator->accessibleNodes()->attach($this->gateway);
+
+        $this->withServerVariables(['REMOTE_ADDR' => $this->operator->wireguard_ip])
+            ->postJson($this->path, ['action' => 'sleep', 'target' => '7'])
+            ->assertUnprocessable();
+
+        Event::assertNotDispatched(ExecutorOrderBroadcast::class);
+        expect(Operation::query()->count())->toBe(0);
+    });
+});
 
 it('records a running executor.proof Operation on its Node that the Gateway closes, with no Swamp run', function (): void {
     $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
@@ -159,9 +315,11 @@ it('recovers a lost hand-off by a repeat: the record keeps the first result and 
     $first = proofDone($operation, repeat: false, clock: 1);
     $repeat = proofDone($operation, repeat: true, clock: 2);
 
+    $this->listener->receive($this->node->id, proofReply($operation, ['status' => 'accepted']));
     $this->listener->receive($this->node->id, proofReply($operation, $first));
     $this->queue->lists = [];
     $lost = $this->proof->wait($operation, 0.5);
+    $this->listener->receive($this->node->id, proofReply($operation, ['status' => 'accepted']));
     $this->listener->receive($this->node->id, proofReply($operation, $repeat));
     $recovered = $this->proof->wait($operation, 1.0);
     $this->proof->finish($operation, $recovered);
@@ -187,21 +345,29 @@ it('fails the Operation with its result status and sends no order for a closed o
     Event::assertNotDispatched(ExecutorOrderBroadcast::class);
 });
 
-it('is not reachable through the public API, the direct Operation routes or any other Gateway code', function (): void {
+it('keeps generic start and direct Operation paths closed for both executor proof kinds', function (): void {
     $starts = collect(Route::getRoutes()->getRoutes())
         ->filter(fn (RoutingRoute $route): bool => is_string($controller = $route->getControllerClass()) && method_exists($controller, $route->getActionMethod()))
         ->map(fn (RoutingRoute $route): ?StartsOperation => StartsOperation::forRoute($route))->filter()
         ->flatMap(fn (StartsOperation $start): array => [$start->kind, ...array_values($start->kindWhenTrue)]);
     $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
-    // Only the registry and the proof class name the kind; the proof support on a nested Gateway is the one caller of that class.
+    // The diagnostic controller is the sole API caller. The power proof stays inside the nested proof support.
     $naming = collect([...glob(app_path('{,*/,*/*/,*/*/*/,*/*/*/*/}*.php'), GLOB_BRACE), ...glob(base_path('routes/{,*/}*.php'), GLOB_BRACE)])
-        ->filter(fn (string $path): bool => preg_match('/executor\.proof\b|ExecutorProof\b|ExecutorProofOperation\b/', (string) file_get_contents($path)) === 1)
+        ->filter(fn (string $path): bool => preg_match('/executor\.(?:proof|power_proof)\b|Executor(?:Power)?Proof\b|ExecutorProofOperation\b/', (string) file_get_contents($path)) === 1)
         ->map(fn (string $path): string => str_replace(base_path().'/', '', $path))->sort()->values()->all();
 
-    expect($starts)->not->toContain(OperationKinds::ExecutorProof)
-        ->and(app(DirectOperation::class)->definition(OperationKinds::ExecutorProof))->toBeNull()
-        ->and(fn () => app(DirectOperation::class)->projection($operation))->toThrow(ResourceOperationException::class)
-        ->and($naming)->toBe(['app/Domain/Executor/ExecutorProofOperation.php', 'app/Domain/Operations/OperationKinds.php']);
+    foreach ([OperationKinds::ExecutorProof, OperationKinds::ExecutorPowerProof] as $kind) {
+        $operation->kind = $kind;
+        expect($starts)->not->toContain($kind)
+            ->and(app(DirectOperation::class)->definition($kind))->toBeNull()
+            ->and(fn () => app(DirectOperation::class)->projection($operation))->toThrow(ResourceOperationException::class);
+    }
+
+    expect($naming)->toBe([
+        'app/Domain/Executor/ExecutorProofOperation.php',
+        'app/Domain/Operations/OperationKinds.php',
+        'app/Http/Controllers/Api/NodeExecutorProofController.php',
+    ]);
 });
 
 it('fails every Operation of a run that throws in a wait, so none stays running', function (): void {
@@ -219,7 +385,7 @@ it('fails every Operation of a run that throws in a wait, so none stays running'
 
 it('fails every open Operation of a burst whose third publish throws, and keeps the ones that closed', function (): void {
     // Reverb refuses the third `executor-order`, so its publish throws.
-    Event::swap(new class(app('events'), [ExecutorOrderBroadcast::class]) extends EventFake
+    Event::swap(new class(app('events'), [ExecutorOrderBroadcast::class, RecordBroadcast::class]) extends EventFake
     {
         public int $accepted = 2;
 
@@ -240,6 +406,7 @@ it('fails every open Operation of a burst whose third publish throws, and keeps 
             $operations[] = $operation = $start();
             $this->proof->send($operation, ExecutorOrderSigner::fromConfig());
             if ($index === 0) {
+                $this->listener->receive($this->node->id, proofReply($operation, ['status' => 'accepted']));
                 $this->listener->receive($this->node->id, proofReply($operation, proofDone($operation, repeat: false, clock: 1)));
                 $this->proof->finish($operation, $this->proof->wait($operation, 1.0));
             }

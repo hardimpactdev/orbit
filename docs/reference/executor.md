@@ -146,20 +146,20 @@ The [agent view subscriber](/reference/node-agent#gateway-view) is the listener.
 
 1. It checks the sender. Reverb must stamp the event with the member `agent.{id}` of that Node's channel, as for `client-log`. It drops and logs an event from any other sender.
 2. It checks the form. `operation` must be an Operation id, and `line` one JSON object with a known `status`. A line that names another Operation fails too. It drops and logs a malformed event.
-3. It pushes an `accepted` line to the Valkey key `executor:op:<operation>:accepted`, and writes nothing to the database. Slice 7 reads this key for "accepted within 150 ms".
+3. It checks that the sender owns the Operation before it queues an `accepted` line. The line goes to `executor:op:<operation>` with no database write.
 4. It records a result line on the Operation's `executor_result`, so the result is durable. A result line has the status `done`, `partial`, `failed` or `refused`.
 5. It logs a `refused` result with its reason and the Node's clock. It also leaves a failed Activity with the code `executor.order_check_failed` on the Node. It logs a `failed` result with its code.
 6. It then pushes the result line to `executor:op:<operation>`. A refusal is already logged and recorded by then, so a Valkey failure cannot hide it.
 
-The record is one conditional `UPDATE`. It changes only an Operation of that Node that holds no result yet. A repeat changes no row, and neither does a second listener during a release ([ADR 0269](/decisions/0269-run-the-gateway-in-release-containers-with-frankenphp-worker-mode)). The listener still pushes that copy, because it may recover a lost push. It drops and logs a result for an Operation of another Node, or for no Operation.
+The record is one conditional `UPDATE`. It changes only an Operation of that Node that holds no result yet. A repeat changes no row, and neither does a second listener during a release ([ADR 0269](/decisions/0269-run-the-gateway-in-release-containers-with-frankenphp-worker-mode)). The listener still pushes that copy, because it may recover a lost push. It drops and logs any reply for an Operation of another Node, or for no Operation.
 
-Both keys live in the Gateway queue's Valkey, under its `orbit-gateway:` prefix. Each push is one Lua call that runs `RPUSH` and `EXPIRE` of 60 s together, so a key never exists without its expiry. If the database or Valkey fails, the subscriber logs it and goes on. The waiting request then falls back as for a lost result.
+The list lives in the Gateway queue's Valkey, under its `orbit-gateway:` prefix. Each push is one Lua call that runs `RPUSH` and `EXPIRE` of 60 s together, so a key never exists without its expiry. If the database or Valkey fails, the subscriber logs it and goes on. The waiting request then falls back as for a lost result.
 
 **The alert.** The [Problem collector](/reference/tasks#fingerprints) selects an Activity whose code ends in `_failed`. So each refusal counts toward the Problem `orbit:agent-view|executor.order_check_failed`, and the Activity's `error_message` names the reason. The subscriber saves the Activity without its model observers. The broadcast observer would send a Reverb HTTP request at once, and the socket loop must not wait for it. The properties sanitizer still runs. So `activity:list` and the collector see the row, but no browser gets a live Activity event for it.
 
 **Cost in the socket loop.** We measured 300 results on a file SQLite database in WAL mode with 20,000 Operations and a local Valkey. The record write takes 0.12 ms median (0.15 ms p95), the push 0.05 ms median (0.07 ms p95), and the whole hand-off 0.19 ms median (0.27 ms p95, 2.1 ms at most). No queue job, HTTP call or Laravel boot sits between the listener and the waiting request. A refusal adds one Activity insert: in a second run of 300 results of each kind, a `done` result took 0.21 ms median (0.35 ms p95), and a refusal 0.54 ms median (0.84 ms p95, 8.8 ms at most). No broadcast fired.
 
-**The waiting request.** `ExecutorResultWait::wait(operation, bound)` runs `BLPOP`, through `ExecutorResultQueue::pop`, on the result key and the `accepted` key until a result arrives or the bound passes. It returns `done`, `partial`, `failed`, `refused` or `timeout`, with the time to the `accepted` line, the elapsed time and the result line. The result key comes first, so a result that is already there wins. The bound is the Gateway setting `ORBIT_EXECUTOR_WAIT_MS`, 500 ms to start. Slice 6 wires it into the activation endpoint.
+**The waiting request.** `ExecutorResultWait::wait(operation, bound)` runs `BLPOP`, through `ExecutorResultQueue::pop`, on the Operation list until a result arrives or the bound passes. It reads lines in arrival order, including lines already queued when the wait starts. It returns `done`, `partial`, `failed`, `refused` or `timeout`, with the elapsed time, the result line and the time to an observed `accepted` line if one arrived first. The bound is the Gateway setting `ORBIT_EXECUTOR_WAIT_MS`, 500 ms to start. Slice 6 wires it into the activation endpoint.
 
 Valkey checks a blocked command's timeout on its server tick. With the default `hz 10`, a 200 ms bound ended after 297 ms. With `hz 100` it ended after 212 ms. A result that arrives is handed over at once, so only a timeout runs late. The Gateway's Valkey needs `hz 100` before slice 6 holds visits on this bound.
 
@@ -191,22 +191,28 @@ The Gateway and the executor share one fixture, `apps/agent/contract/fixtures/ex
 
 ## The proof Operation
 
-The Operation kind `executor.proof` exists only for the proof. Each one is a real Operation row with `node_id` set to its Node ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) D7). Its target is the Node, as for `proof.noop`, and its input is `{"action": "proof.noop"}`. Its orders go out as `executor-order` on `presence-node.{id}`, and the listener records its result on it.
+The Operation kind `executor.proof` records a no-op diagnostic on a Node. Each one is a real Operation row with `node_id` set to its Node ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) D7). Its target is the Node, as for `proof.noop`, and its input is `{"action": "proof.noop"}`. Its orders go out as `executor-order` on `presence-node.{id}`, and the listener records its result on it.
 
 The kind's chart is [`docs/cli/proof/executor-proof.mmd`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/proof/executor-proof.mmd). No page places it, because no command starts the kind. `ExecutorProofOperation` (`apps/gateway/app/Domain/Executor`) holds the whole kind:
 
 1. `run` holds one proof run. The run records each Operation as `running` through the `start` closure it gets.
 2. `send` signs a new order, with a new nonce, and publishes it. It refuses a closed Operation and every other kind.
 3. `wait` waits for the result through `ExecutorResultWait` within `ORBIT_EXECUTOR_WAIT_MS`, as a waiting request does.
-4. `finish` closes the Operation: `succeeded` on a `done` result, which it also stores as the result, and `failed` with `executor.proof_<status>` otherwise.
+4. `finish` succeeds the Operation only after an observed `accepted` line followed by a matching `done` line. It stores the result on success.
 
-When a run throws, `run` fails every Operation the run recorded that is still open, with `executor.proof_aborted`. So no proof Operation stays `running` after a failed publish or wait.
+A `done` line without prior acceptance fails with `executor.proof_not_accepted`. A `done` line with the wrong action, target or Operation id fails with `executor.proof_result_mismatch`. Other results fail with `executor.proof_<status>`.
+
+When a nested proof run throws, `run` fails each open Operation it recorded with `executor.proof_aborted` and passes the exception to the runner. The operator diagnostic returns its recorded failure if signing, publishing or waiting throws.
 
 The Gateway runs and closes the kind itself. It starts no Swamp run, and `proof.noop` changes nothing on the Node.
 
-`tests/Feature/Domain/Executor/ExecutorProofOperationTest.php` covers the kind in CI, with a faked publish and an in-memory Valkey. It checks the row and its `node_id`, a new nonce for each order, a result the listener records reaching the waiter, a lost hand-off recovered by a repeat, a failed result, and that the kind cannot be reached from outside. Two more tests make a run throw, once with Valkey down in a wait and once when Reverb refuses the third publish of a burst. Both check that no Operation is left `running`.
+`tests/Feature/Domain/Executor/ExecutorProofOperationTest.php` covers the kind in CI, with a faked publish and an in-memory Valkey. It checks the row and its `node_id`, a new nonce for each order, a result the listener records reaching the waiter, a lost hand-off recovered by a repeat, a failed result, and that generic Operation starts stay closed. Two more tests make a run throw, once with Valkey down in a wait and once when Reverb refuses the third publish of a burst. Both check that no Operation is left `running`.
 
-**Who can create it.** Only the proof support on a nested Gateway, `tools/swamp-proof-guest/executor-order.php`, run there by the proof runner as the Gateway's managed user. That script is the only caller of `ExecutorProofOperation`. No route, CLI command, job or schedule names the kind. It has no direct Operation declaration, so the Node routes under `direct-operations/` refuse it with `operation.direct_invalid`. `ExecutorProofOperationTest` holds this: no route that starts an Operation names the kind, and only `OperationKinds` and `ExecutorProofOperation` name it in the Gateway's code. To create one you must run PHP as the Gateway's user, which can already sign any order ([Key custody](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#the-order)).
+**Operator diagnostic.** Send `POST /api/v1/nodes/{node}/executor/proof` with no inputs. The caller must be an active WireGuard peer with access to the target Node and Gateway authority. Gateway authority comes from the Gateway Node, its bootstrap serving host, or a grant to the active Gateway Node. The request sends one signed `proof.noop` order through Reverb, waits within `ORBIT_EXECUTOR_WAIT_MS`, and returns the terminal Operation as `data` with HTTP 200. Check `data.status` and `data.error_code` for the verdict. The signing key stays on the Gateway.
+
+A peer with access to the target Node can cancel the Operation through `operation:cancel`. The first terminal verdict stands. An order already sent can still return a reply.
+
+The nested proof runner can also use `tools/swamp-proof-guest/executor-order.php` as the nested Gateway's managed user. The generic `direct-operations/` paths refuse the proof kinds. The operator endpoint has no action parameter. The separate power proof is available only to the nested Gateway proof support.
 
 **Recovering a lost result.** A result can reach Valkey and still be lost: the request that took it ended, or the key expired. The Gateway then sends a new order for the same Operation, with a new nonce. The executor finds the done record of that Operation, action and target, and answers `repeat` with the first result without acting. The listener changes no row, because the Operation already holds a result, but it pushes the copy again. The waiting request then gets it.
 
@@ -234,13 +240,13 @@ Two cases prove the slice 3 row of ADR 0266: "50 round trips; result in a waitin
 
 **`executor-round-trip`** runs `executor_round_trip` with `count: 50`. The proof support runs 50 `executor.proof` Operations, one after another. Each one publishes its order and waits with `ExecutorResultWait`. Each trip needs three things:
 
-- a `done` result in the waiter;
+- an observed `accepted` followed by `done` in the waiter;
 - the same line recorded on its Operation by the listener;
 - one `done` record for its Operation in the executor's journal.
 
 The evidence `executor-round-trip-<operation>.json` holds every trip. It gives the latency from just before the publish to the result in the waiter as p50, p95 and max, the time to the `accepted` line, and the wait's bound.
 
-**`executor-lost-result`** runs `executor_lost_result`. The proof support runs one `executor.proof` order. A first wait takes its result and drops it. The support then deletes the Operation's Valkey keys, and a second wait must time out. Next it sends a new order, with a new nonce, for the same Operation. The step needs:
+**`executor-lost-result`** runs `executor_lost_result`. The proof support runs one `executor.proof` order. A first wait takes its result and drops it. The support then deletes the Operation's Valkey list, and a second wait must time out. Next it sends a new order, with a new nonce, for the same Operation. The step needs:
 
 - `repeat: true` in the waiter;
 - the same result as the first, apart from `repeat` and the Node's clock;

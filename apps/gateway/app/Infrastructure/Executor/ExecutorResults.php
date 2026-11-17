@@ -15,9 +15,8 @@ use Throwable;
 /**
  * The listener's side of the executor hand-off (ADR 0266 "The path", step 4). The agent view subscriber passes
  * each checked reply line here. A result is recorded on its Operation first, so it is durable (D7), and then
- * pushed to the Valkey key `executor:op:<operation>` for a waiting request (`ExecutorResultWait`). The `accepted`
- * line goes only to `executor:op:<operation>:accepted`, so a waiter can tell it from the result. Both keys
- * expire after `ExpirySeconds`. No queue job, HTTP call or Laravel boot sits between the two sides.
+ * pushed to the Valkey list `executor:op:<operation>` for a waiting request (`ExecutorResultWait`). The list
+ * holds the owning Node's `accepted` and result lines in arrival order and expires after `ExpirySeconds`. No queue job, HTTP call or Laravel boot sits between the two sides.
  */
 final readonly class ExecutorResults
 {
@@ -39,22 +38,11 @@ final readonly class ExecutorResults
         return self::KeyPrefix.$operation;
     }
 
-    public static function acceptedKey(int $operation): string
-    {
-        return self::KeyPrefix.$operation.':accepted';
-    }
-
     /** Hands one reply line from Node `$nodeId`'s agent to the waiting request. Throws when Valkey or the database fails. */
     public function receive(int $nodeId, ExecutorReply $reply): void
     {
-        if ($reply->isAccepted()) {
-            $this->queue->push(self::acceptedKey($reply->operation), $reply->raw, self::ExpirySeconds);
-
-            return;
-        }
-
-        if (! $this->record($nodeId, $reply)) {
-            $this->log->warning('The agent view subscriber dropped an executor result for an Operation that is not on its Node.', [
+        if (! $this->verifyAndRecord($nodeId, $reply)) {
+            $this->log->warning('The agent view subscriber dropped an executor reply for an Operation that is not on its Node.', [
                 'node_id' => $nodeId, 'operation_id' => $reply->operation, 'status' => $reply->status,
             ]);
 
@@ -72,16 +60,18 @@ final readonly class ExecutorResults
     }
 
     /**
-     * One conditional write: it stores the result only on an Operation of this Node that has none yet, so a second
-     * copy of a result (a repeat, or two listeners) changes no row. False when the Operation is not on this Node.
+     * Checks that the reply comes from the Operation's owning Node. For a terminal reply, it stores the first result.
+     * A copy of a recorded result still goes to Valkey to recover a lost push.
      */
-    private function record(int $nodeId, ExecutorReply $reply): bool
+    private function verifyAndRecord(int $nodeId, ExecutorReply $reply): bool
     {
-        $changed = Operation::query()->whereKey($reply->operation)->where('node_id', $nodeId)->whereNull('executor_result')
-            ->update(['executor_result' => $reply->raw]);
+        $operation = Operation::query()->whereKey($reply->operation)->where('node_id', $nodeId);
 
-        // A copy of a recorded result still goes to Valkey: it may be the one that recovers a lost push.
-        return $changed === 1 || Operation::query()->whereKey($reply->operation)->where('node_id', $nodeId)->exists();
+        if (! $reply->isAccepted() && (clone $operation)->whereNull('executor_result')->update(['executor_result' => $reply->raw]) === 1) {
+            return true;
+        }
+
+        return $operation->exists();
     }
 
     /**

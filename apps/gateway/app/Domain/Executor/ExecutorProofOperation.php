@@ -24,8 +24,8 @@ use Throwable;
  * `executor-order` and waits for the result with {@see ExecutorResultWait}, the waiting request's path (D5). It starts no Swamp run.
  * The no-op changes nothing; the power proof hibernates the whole target.
  *
- * No route, CLI command, job or schedule names this kind: only the proof support on a nested Gateway
- * (`tools/swamp-proof-guest/executor-order.php`, run as that Gateway's managed user) calls this class.
+ * The Node diagnostic calls diagnose() for one no-op. The nested proof runner also uses the proof lifecycle directly,
+ * including the power proof.
  */
 final readonly class ExecutorProofOperation
 {
@@ -41,6 +41,28 @@ final readonly class ExecutorProofOperation
         private ExecutorOrderPublisher $publisher,
         private ExecutorResultWait $wait,
     ) {}
+
+    public function diagnose(Node $node, string $requestId): Operation
+    {
+        $operation = $this->start($node, null, self::Action, $requestId);
+        if ($operation->status->terminal()) {
+            return $operation;
+        }
+
+        try {
+            $this->send($operation, ExecutorOrderSigner::fromConfig());
+            $result = $this->wait($operation);
+        } catch (Throwable $exception) {
+            $this->abort($operation);
+            report($exception);
+
+            return $operation;
+        }
+
+        $this->finish($operation, $result);
+
+        return $operation;
+    }
 
     /**
      * Runs one proof run, `$body`, which records its Operations through the `start` closure it gets. When `$body` throws, every
@@ -60,25 +82,23 @@ final readonly class ExecutorProofOperation
 
         try {
             return $body(function () use ($node, $instance, $action, &$started): Operation {
-                return $started[] = $this->start($node, $instance, $action);
+                return $started[] = $this->start($node, $instance, $action, (string) Str::uuid());
             });
         } catch (Throwable $exception) {
             foreach ($started as $operation) {
-                if (! $operation->refresh()->status->terminal()) {
-                    $this->operations->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => self::Aborted]);
-                }
+                $this->abort($operation);
             }
 
             throw $exception;
         }
     }
 
-    /** Records a running proof Operation on its Node or Instance target. Only {@see self::run} calls it. */
-    private function start(Node $node, ?Instance $instance, string $action): Operation
+    /** Records a proof Operation on its Node or Instance target. */
+    private function start(Node $node, ?Instance $instance, string $action, string $requestId): Operation
     {
         $operation = $this->operations->create($instance === null ? OperationKinds::ExecutorProof : OperationKinds::ExecutorPowerProof, $instance === null ? 'node' : 'instance', $instance === null ? $node->id : $instance->id, $node->id,
-            ['action' => $instance === null ? self::Action : $action], self::TriggeredBy, (string) Str::uuid());
-        $this->operations->change($operation, ['status' => OperationStatus::Running, 'started_at' => now()]);
+            ['action' => $instance === null ? self::Action : $action], self::TriggeredBy, $requestId);
+        $this->operations->change($operation, ['status' => OperationStatus::Running, 'started_at' => now()], onlyWhileOpen: true);
 
         return $operation;
     }
@@ -110,14 +130,41 @@ final readonly class ExecutorProofOperation
         return $this->wait->wait($operation->id, $boundSeconds);
     }
 
-    /**
-     * Closes the Operation: succeeded on a `done` result, or a `partial` one (a wake whose container runs again before its whole
-     * restore), which it also stores as the result; failed with `executor.proof_<status>` otherwise.
-     */
     public function finish(Operation $operation, ExecutorWaitResult $result): void
     {
-        $this->operations->change($operation, in_array($result->status, [ExecutorWaitStatus::Done, ExecutorWaitStatus::Partial], true)
+        $error = $this->proofError($operation, $result);
+        $this->operations->change($operation, $error === null
             ? ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => $result->line]
-            : ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'executor.proof_'.$result->status->value]);
+            : ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => $error], onlyWhileOpen: true);
+    }
+
+    private function abort(Operation $operation): void
+    {
+        $this->operations->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => self::Aborted], onlyWhileOpen: true);
+    }
+
+    private function proofError(Operation $operation, ExecutorWaitResult $result): ?string
+    {
+        if ($operation->kind === OperationKinds::ExecutorPowerProof && $result->status === ExecutorWaitStatus::Partial) {
+            return null;
+        }
+
+        if ($result->status !== ExecutorWaitStatus::Done) {
+            return 'executor.proof_'.$result->status->value;
+        }
+
+        if ($operation->kind !== OperationKinds::ExecutorProof) {
+            return null;
+        }
+
+        if ($result->acceptedMs === null) {
+            return 'executor.proof_not_accepted';
+        }
+
+        return ($result->line['operation'] ?? null) === (string) $operation->id
+            && ($result->line['target'] ?? null) === (string) $operation->target_id
+            && ($result->line['action'] ?? null) === self::Action
+            ? null
+            : 'executor.proof_result_mismatch';
     }
 }

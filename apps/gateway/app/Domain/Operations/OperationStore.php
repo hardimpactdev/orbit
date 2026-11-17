@@ -113,13 +113,16 @@ final readonly class OperationStore
     }
 
     /** @param array<string,mixed> $changes */
-    public function change(Operation $operation, array $changes = []): void
+    public function change(Operation $operation, array $changes = [], bool $onlyWhileOpen = false): void
     {
         $before = $operation->status;
         $cancelRequested = array_key_exists('cancel_requested_at', $changes) && $operation->cancel_requested_at === null;
-        DB::transaction(function () use ($operation, $changes): void {
+        $written = DB::transaction(function () use ($operation, $changes, $onlyWhileOpen): bool {
             $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
             $operation->setRawAttributes($current->getAttributes(), true);
+            if ($onlyWhileOpen && $current->status->terminal()) {
+                return false;
+            }
             $operation->forceFill([...$changes, 'sequence' => $current->sequence + 1])->save();
             if ($operation->kind === InstanceMigration::Kind && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(InstanceMigrateProjection::class)->terminal($operation, $current);
@@ -145,7 +148,12 @@ final readonly class OperationStore
             if (ProofSeeds::claimFreed($current, $operation)) {
                 DB::afterCommit(static fn (): ?Operation => app(ProofSeeds::class)->admit('seed'));
             }
+
+            return true;
         });
+        if (! $written) {
+            return;
+        }
         $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);
         // The terminal state frees the Nodes of a Route write; a timed-out one keeps them until Swamp confirms that its run stopped.
         if ($operation->status->terminal() && RoutePublicationHolds::tracks($operation->kind) && ! RoutePublicationHolds::keepsNodes($operation)) {
