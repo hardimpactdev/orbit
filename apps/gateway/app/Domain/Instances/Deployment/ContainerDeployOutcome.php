@@ -128,8 +128,9 @@ final readonly class ContainerDeployOutcome
     }
 
     /**
-     * One reason for each of the three nested Nodes: `digest_unreadable` with its `error`, `no_record`, `digest_changed`, `stale` or
-     * `unchanged`. A Node the refresh converged may name the skippable `phases` its converge ran; an unchanged Node converged nothing.
+     * One reason for each of the three nested Nodes: `digest_unreadable` with its `error`, `no_record`, `digest_changed`, `stale`,
+     * `host_due` (nested-app-dev only: its base digest is unchanged, but the Instance host part is due) or `unchanged`. `unchanged` means
+     * the Node did not converge, and every other reason that it did. A converged Node may name the skippable `phases` its converge ran.
      *
      * @param  list<string>  $converged
      * @return array<string,array{reason:string,error?:string,phases?:list<string>}>|null
@@ -142,7 +143,8 @@ final readonly class ContainerDeployOutcome
         $reasons = [];
         foreach ($raw as $node => $entry) {
             $reason = is_array($entry) ? ($entry['reason'] ?? null) : null;
-            if (! is_array($entry) || ! in_array($reason, ['digest_unreadable', 'no_record', 'digest_changed', 'stale', 'unchanged'], true)
+            if (! is_array($entry) || ! in_array($reason, ['digest_unreadable', 'no_record', 'digest_changed', 'stale', 'host_due', 'unchanged'], true)
+                || ($reason === 'unchanged') === in_array($node, $converged, true) || ($reason === 'host_due' && $node !== 'app-dev')
                 || array_diff(array_keys($entry), ['reason', 'error', 'phases']) !== []
                 || ($reason === 'digest_unreadable') !== (is_string($entry['error'] ?? null) && $entry['error'] !== '' && mb_strlen($entry['error']) <= 300)
                 || ($reason !== 'digest_unreadable' && array_key_exists('error', $entry))) {

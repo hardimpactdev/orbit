@@ -92,7 +92,7 @@ sequenceDiagram
   %%> - after the migrate, makes one converge digest per nested Node from what its default converge reads: the `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists, the role, software, Tool and network includes too, the nested Gateway's digest of that Node's default intent (`orbit:node-converge-digest`, which admits and writes nothing) and the fleet intent
   %%> - a part runs when its digest differs from the record; a missing record, or one it cannot read, makes every part run, and an unreadable record adds a warning
   %%> - a Node also converges when its last converge (`converged_<role>` in the record) is more than 7 days old, when the record holds no digest for it, or when its own digest cannot be read; one Node's unreadable digest does not make the others due
-  %%> - each Node has its own reason: `digest_unreadable` (with the error), `no_record`, `digest_changed`, `stale` or `unchanged`
+  %%> - each Node has its own reason: `digest_unreadable` (with the error), `no_record`, `digest_changed`, `stale`, `host_due` (nested-app-dev only: its base digest did not change, but the Instance host part is due) or `unchanged`; `unchanged` alone means the Node does not converge
   %%> - also from the record: `grants` (with the Club key only), the digest of `apps/gateway` and `swamp`, from which the nested Gateway renders its Swamp grants; `tokens`, the creation time of the oldest of the nested Gateway's six Swamp tokens
   %%> - every run, once: waits until the state mounts of the nested Gateway (with its Swamp state when the Club key is there) and app-dev are active (60 s)
   %%> - `code` changed: places the agent delivery (into the checkout)

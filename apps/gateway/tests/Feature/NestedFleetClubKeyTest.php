@@ -315,6 +315,12 @@ describe('the result of a start', function (): void {
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'gateway' => ['reason' => 'because']]]])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'app-dev' => ['reason' => 'digest_unreadable']]]])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'gateway' => ['reason' => 'unchanged', 'phases' => ['roles']]]]])->result)->not->toHaveKey('fleet_refresh')
+            // `unchanged` means the Node did not converge: a converged Node never says it, and a Node that did not converge says nothing else.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'app-prod' => ['reason' => 'unchanged']]]])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'gateway' => ['reason' => 'stale']]]])->result)->not->toHaveKey('fleet_refresh')
+            // Only nested-app-dev converges for its Instance host part.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'app-dev' => ['reason' => 'host_due', 'phases' => ['roles']]]]])->result['fleet_refresh']['converge_reasons']['app-dev'])->toBe(['reason' => 'host_due', 'phases' => ['roles']])
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_nodes' => ['gateway', 'app-dev', 'app-prod'], 'converge_reasons' => [...$refresh['converge_reasons'], 'gateway' => ['reason' => 'host_due']]]])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reasons' => [...$refresh['converge_reasons'], 'app-prod' => ['reason' => 'digest_changed', 'phases' => ['check']]]]])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => array_diff_key($refresh, ['converge_reasons' => true])])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'changed' => '3']])->result)->not->toHaveKey('fleet_refresh')

@@ -2386,6 +2386,8 @@ The fleet's egress proxy lies in the Instance container's own bridge, in `10.253
 
 **Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has the part `host`. It digests what the container branch reads: the `swamp/ansible` tree, the machine-software recipe, and `nested-app-dev`'s branch intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, the folders, Incus, without the admission time). When it differs from the record, `nested-app-dev` joins the due converges, and its converge takes `{"roles":["app-dev"]}` instead of the base only. That is the nested Gateway's own `node.converge`, through its Swamp. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
 
+When only the host part is due, the base digest of `nested-app-dev` did not change, and its converge reason is `host_due`.
+
 A refresh with no change keeps the host and adds no time. The host is built only when the default's recorded ID map size is 2,000,000 or more: the fleet intent's `host` says so. Below that no isolated Instance fits on `nested-app-dev`, so the refresh changes nothing there. The result names `host` as `converged`, `kept` or `skipped_idmap_small`; the Operation's `fleet_refresh` keeps it, and leaves it out when the run names none ([What a refresh skips](#what-a-refresh-skips)).
 
 **Time bounds.** The first host build installs Incus, downloads the shared folders, and builds the stock image and the Instance image. On a task copy at 1,165,536 the converge took 325 s for the base packages and 428 s for the roles phase up to the stock image (2026-11-16). The images could not be built there. So the roles phase of a fleet Node's `app-dev` converge has 1,800 s, from `roles_seconds` in its intent.
@@ -2664,11 +2666,12 @@ Each Node has its own reason in the result, `converge_reasons`. The refresh only
 | `no_record` | The record is missing or unreadable, or holds no digest for the Node | Yes |
 | `digest_changed` | Its digest differs from the record | Yes |
 | `stale` | Its last converge is more than 7 days old | Yes |
-| `unchanged` | None of these | No |
+| `host_due` | `nested-app-dev` only: its base digest did not change, but the [Instance host](#instance-host-in-the-fleet) part is due | Yes |
+| `unchanged` | None of these. The Node does not converge | No |
 
 A digest cannot be read when the Node's intent cannot be built, when the read failed, or when the checkout gives no tree ID of the `swamp` files.
 
-For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change). The `swamp/ansible` tree is in every phase digest, so a changed Ansible task file runs every phase.
+`unchanged` is the only reason of a Node that does not converge. For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change). The `swamp/ansible` tree is in every phase digest, so a changed Ansible task file runs every phase.
 
 A file list cannot follow the Gateway code that builds an intent: through its models, that code reaches much of the Gateway. So the nested Gateway hashes the intent itself.
 

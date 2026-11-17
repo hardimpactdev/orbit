@@ -280,7 +280,8 @@
 # - `no_record`: the record is missing or unreadable, or holds no digest for it.
 # - `digest_changed`: its digest differs from the record.
 # - `stale`: its last converge is older than `fleet_converge_max_age` seconds (7 days): a safety net for an input no digest covers.
-# - `unchanged`: none of these; it is not due.
+# - `host_due`: nested-app-dev only: its base digest is unchanged, but the Instance host part is due, so its `app-dev` role converges.
+# - `unchanged`: none of these; it does not converge.
 - name: Work out which nested Nodes the converge is due for
   vars:
     fleet_intents_line: "{{ fleet_intents_read.stdout_lines | default([]) | last | default('') }}"
@@ -318,6 +319,7 @@
       {%- set _ = reasons.update({role: {'reason': 'no_record' if fleet_record_state != 'present' or ('converge_' ~ key) not in fleet_recorded
             else 'digest_changed' if fleet_recorded['converge_' ~ key] != fleet_converge_now['converge_' ~ key]
             else 'stale' if age < 0 or age > fleet_converge_max_age | default(604800) | int
+            else 'host_due' if role == 'app-dev' and fleet_due.host | default(false) | bool
             else 'unchanged'}}) -%}
       {%- endif -%}
       {%- endfor -%}
@@ -327,8 +329,7 @@
     fleet_converge_reasons: "{{ fleet_converge_reasons }}"
     # The due Nodes, in converge order.
     fleet_converge_roles: >-
-      {{ fleet_roles | select('in', fleet_converge_reasons | dict2items | rejectattr('value.reason', 'eq', 'unchanged') | map(attribute='key') | list
-         + (['app-dev'] if fleet_due.host | bool else [])) | list }}
+      {{ fleet_roles | select('in', fleet_converge_reasons | dict2items | rejectattr('value.reason', 'eq', 'unchanged') | map(attribute='key') | list) | list }}
     # The phases each converged Node ran, from its Operation's result (instance-fleet-converge-node.yml).
     fleet_converge_phases: {}
 - name: Name the due converge

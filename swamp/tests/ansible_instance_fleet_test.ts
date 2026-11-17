@@ -1856,6 +1856,8 @@ Deno.test({
       assertEquals(f.calls().filter((call) => call.includes("/converge ")), [convergeAdmit(2, true)]);
       const result = f.refreshed()!;
       assertEquals([result.host, result.converge_nodes, f.state().roleConverges], ["converged", ["app-dev"], [2]]);
+      // app-dev's base digest did not move: it converges because the host part is due, and the result says so.
+      assertEquals(result.converge_reasons, { gateway: { reason: "unchanged" }, "app-dev": { reason: "host_due" }, "app-prod": { reason: "unchanged" } });
       assert(JSON.parse(f.state().outer.files[record]).host !== "0".repeat(64));
     } finally {
       f.cleanup();
