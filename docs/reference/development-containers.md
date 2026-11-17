@@ -539,23 +539,32 @@ The app user is `web`, uid 1000, and its primary group is `web`, gid 2760, with 
 
 Only the names change: every uid and gid other than 1000 stays, and so does `agent`. So the model route rule, which matches uid 2750, and the nested firewall rule, which matches uid 1000, stay as they are. The nested fleet's `raw.idmap` maps by number too.
 
-Root renames an older container in the `start` phase, which every start, wake and deployment runs. The rename comes as soon as the container runs, before any other step that runs a command in it. A default gets it at its next deployment or start.
+One root shell file renames an older container: `/usr/local/libexec/orbit-app-user` (`InstanceImage::AppUserSwap`, root-owned, mode 0755). Its source is `swamp/ansible/files/instance-app-user.sh`. It is one of the shared files of the image (`InstanceImage::shared`), so the image, a Node converge and the boot files of every copy carry it.
 
-A copy takes the names of its seed. A clone does not run the `start` phase: the Node's clone script starts the copy. So a copy of a seed taken before the rename keeps the old names until its first start through Orbit, and its units, which name `web`, do not run until then. A running copy keeps the old names until its next start. No converge is needed.
+Root runs it before the first command as `web` on every path:
 
-**Rollout step.** After the release that renames the app user, start or deploy each default before new copies are made from it. Its start renames it, and its next seed carries the new names to every new copy.
+- the container phase, right after the container starts, in the `container`, `clone`, `start`, `processes` and `seed` phases. A wake that boots nothing skips it;
+- the `node-store` and `node-runtime` phases;
+- a Process's `start`, `stop`, `restart` or `destroy` (the `process` tag);
+- the `config:clear` of a mail update and of `env:sync` on a container;
+- a copy's clone guest, at the start of its services part, before its Node store step runs as `web`.
 
-The tasks are the block "Name the app user web" in `swamp/ansible/tasks/instance-container-phase.yml`. They first read three facts in the container: the users `orbit` and `web` (`getent passwd`), the groups `orbit`, `work`, `web` and gid 1000 (`getent group`), and the unit files that name the old account (`grep -rl` in `/etc/systemd/system`). A container that has the user `web`, no group `work` or 1000 and no such unit file changes nothing. Otherwise root runs these steps:
+The Ansible paths run the playbook's copy of the file, so a container that the Node's converge has not given the file yet renames too. The clone guest runs the copy from its boot files.
 
-1. Stop the units that the boot started under the old name: each one whose file or drop-in names the old account, and a Schedule's timer.
-2. `usermod -l web -d /home/web -m orbit`. It refuses a user that still runs a process and names it; the next start renames again.
-3. `groupmod -n web work`, then `usermod -g web web`.
-4. Give each entry with gid 1000 in the workspace and in `/home/web` the group `web`, without following a link. Then remove the group 1000.
-5. Write `User=web`, `Group=web` and `/home/web` in those unit files for the old values with `sed`. Then reload systemd and start again each unit that step 1 stopped and each enabled one.
+So an existing default renames at its next deployment, start or wake that boots, or at the first Orbit command that writes or changes one of its units. A copy of a seed taken before the rename renames in its own completion: no release step is needed. A move to a container (`instance:migrate`) makes a new container, which its container phase renames.
 
-`usermod -l` also renames `orbit` in the member list of `work`, so a renamed container lists `web` in its own group beside `agent`.
+The file first reads the state: the users `orbit` and `web`, the groups `work` and gid 1000, and the unit files under `/etc/systemd/system` that name `User=orbit`, `Group=orbit`, `Group=work` or a path below `/home/orbit`. A container that has the user `web` in its group `web`, no group `work` or 1000 and no such unit file changes nothing: the file prints `unchanged` and exits 0. Otherwise root runs these steps, and the file prints `renamed`:
 
-Each step has its own guard from those facts, so a rename that stopped half way finishes at the next start. A container with the user `web` gets only the steps that are left: the group `work`, the group 1000, or a unit file that still names `orbit`.
+1. Refuse a stray process of uid 1000, such as a shell outside the units: the file names it on stderr and exits 3, with no change.
+2. Stop the units that the boot started under the old name: each one whose file or drop-in names the old account, and a Schedule's timer.
+3. `usermod -l web -d /home/web -m orbit`.
+4. `groupmod -n web work`, then `usermod -g web web`.
+5. Give each entry with gid 1000 in the workspace and in `/home/web` the group `web`, without following a link. Then remove the group 1000.
+6. Write `User=web`, `Group=web` and `/home/web` in those unit files for the old values with `sed`. Then reload systemd and start again each unit that step 2 stopped and each enabled one.
+
+`usermod -l` also renames `orbit` in the member list of `work`, so a renamed container lists `web` in its own group beside `agent`. The file never touches `agent`.
+
+Each step has its own guard from the state it read, so a rename that stopped half way finishes at the next run. A container with the user `web` gets only the steps that are left: the group `work`, the group 1000, or a unit file that still names `orbit`.
 
 ### The machine name
 
