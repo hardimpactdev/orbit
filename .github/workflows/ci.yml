@@ -497,6 +497,12 @@ jobs:
         working-directory: .
         run: composer install --working-dir=apps/gateway --no-dev --no-interaction --prefer-dist
       - run: bun install --frozen-lockfile
+      - name: Install test browsers and system libraries
+        run: bunx playwright install --with-deps --only-shell webkit chromium
+      - name: Unit and verification tests
+        run: bun run test:unit
+      - name: Browser tests
+        run: bun run test:browser
       - name: Build
         run: bun run build && test -s dist/index.html && test -s dist/version.json
       - name: Record web build attempt

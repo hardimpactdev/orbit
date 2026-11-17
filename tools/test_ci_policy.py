@@ -109,6 +109,28 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn("format('web-dist-{0}', github.sha)", publish['with']['name'])
         self.assertIn("format('web-pr-{0}-{1}', github.run_id, github.run_attempt)", publish['with']['name'])
 
+    def test_web_tests_gate_the_build_with_locked_browsers_within_the_existing_budget(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
+        job = workflow['jobs']['web']
+        self.assertEqual(('ubuntu-26.04', 2), (job['runs-on'], job['timeout-minutes']))
+        steps = job['steps']
+        commands = [step.get('run', '') for step in steps]
+        required = [
+            'bun install --frozen-lockfile',
+            'bunx playwright install --with-deps --only-shell webkit chromium',
+            'bun run test:unit',
+            'bun run test:browser',
+            'bun run build && test -s dist/index.html && test -s dist/version.json',
+        ]
+        indexes = [commands.index(command) for command in required]
+        self.assertEqual(indexes, sorted(indexes))
+        publish = next(i for i, step in enumerate(steps) if step.get('id') == 'web-artifact')
+        self.assertLess(indexes[-1], publish)
+        for index in indexes:
+            self.assertNotIn('if', steps[index])
+            self.assertFalse(steps[index].get('continue-on-error', False))
+
     def test_slow_jobs_are_absent_from_required_ci(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         self.assertNotIn('project-check', caller)
