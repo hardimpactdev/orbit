@@ -109,6 +109,8 @@ if rest[:5] == ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace']:
 if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
     catalog = os.environ.get('T3_CATALOG', 'cached')
     if rest[3] == '/home/agent/.t3/userdata/settings.json':
+        if os.environ.get('T3_SETTINGS') == 'unreadable':
+            sys.exit(1)
         print(json.dumps({'providerInstances': {'claudeMedium': {'driver': 'claudeAgent', 'displayName': 'Claude, medium effort'},
                                                 'codexHigh': {'driver': 'codex', 'displayName': 'Codex, high effort'}}}))
         sys.exit(0)
@@ -453,7 +455,48 @@ Deno.test({ name: "an uncatalogued Codex model needs provider confirmation befor
         assertEquals(git(done.calls), []);
         if (probe === "rejected") assertEquals(done.result.error, `The copy's Codex provider rejected the model ${model}.`);
     }
+    const model = "gpt-6.2-sol-typo";
+    const unreadable = await phase("completed", { provider: "codexHigh", model, candidate }, "clean", "questions", "",
+        { T3_SETTINGS: "unreadable" });
+    assertEquals(unreadable.model, { model, offered: null, accepted: false, driver_unresolved: true }, unreadable.output);
+    assertEquals([unreadable.launched, unreadable.result.error_code, git(unreadable.calls)], [false, "tasks.copy_turn_model_unverified", []]);
+    assert(!unreadable.calls.some((call) => call.args.includes("/usr/bin/python3")), unreadable.output);
 } });
+
+Deno.test("the Codex model probe requires a usable response for the exact requested model", async () => {
+    const home = Deno.makeTempDirSync();
+    const model = "gpt-6.2-sol";
+    const requests: unknown[] = [];
+    let response = { status: 200, body: {} as Record<string, unknown> };
+    const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
+        requests.push([request.method, new URL(request.url).pathname, await request.json()]);
+        return Response.json(response.body, { status: response.status });
+    });
+    try {
+        const origin = `http://127.0.0.1:${server.addr.port}`;
+        Deno.mkdirSync(`${home}/.codex`);
+        Deno.mkdirSync(`${home}/.config/orbit`, { recursive: true });
+        Deno.writeTextFileSync(`${home}/.codex/config.toml`,
+            `model_provider = "orbit"\n[model_providers.orbit]\nbase_url = "${origin}/v1"\nenv_key = "ORBIT_MODEL_KEY"\nwire_api = "responses"\n`);
+        Deno.writeTextFileSync(`${home}/.config/orbit/model.env`, `ANTHROPIC_BASE_URL=${origin}\nORBIT_MODEL_KEY=fixture\n`);
+        for (const [status, body, exit] of [
+            [200, { object: "response", status: "completed", model }, 0],
+            [200, { object: "response", status: "incomplete", model, incomplete_details: { reason: "max_output_tokens" } }, 0],
+            [200, { object: "response", status: "completed", model: "different-model" }, 1],
+            [400, { error: { code: "model_not_found", message: "Provider detail" } }, 2],
+            [503, { error: { message: "Provider unavailable" } }, 1],
+        ] as const) {
+            response = { status, body };
+            const result = await new Deno.Command("python3", { args: [`${shipped}/task_copy_codex_model.py`, model], env: { HOME: home } }).output();
+            assertEquals([result.code, result.stdout.length, result.stderr.length], [exit, 0, 0]);
+        }
+        assertEquals(requests, Array.from({ length: 5 }, () =>
+            ["POST", "/v1/responses", { model, input: "Reply OK.", max_output_tokens: 16, store: false }]));
+    } finally {
+        await server.shutdown();
+        Deno.removeSync(home, { recursive: true });
+    }
+});
 
 const reads = (calls: Phase["calls"]) => calls.map((call) => call.args.slice(15)).filter((args) => args[2] === "/usr/bin/cat").map((args) => args[3]);
 

@@ -43,7 +43,8 @@
     "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start": 40
   },
   "local_completed_seconds": {
-    "an uncatalogued Codex model needs provider confirmation before launch or reviewer checkout": 8.0,
+    "an uncatalogued Codex model needs provider confirmation before launch or reviewer checkout": 10.0,
+    "the Codex model probe requires a usable response for the exact requested model": 0.147,
     "a continued answer resolves its stored requests before the send so a stale question cannot cut the work": 12,
     "an answered request that stays pending refuses the turn before launch or reviewer checkout": 8,
     "a failed or unreadable answered resolution launches nothing and names the resolution failure": 19

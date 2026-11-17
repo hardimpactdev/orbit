@@ -1148,7 +1148,7 @@ A new thread's values are checked against what the copy's T3 offers, in two plac
 | Value | Where | Against | Refusal |
 | --- | --- | --- | --- |
 | Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max`; `codex` at `low`, `medium`, `high`, `xhigh`, `max` or `ultra` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
-| Model | First in the turn, before any checkout or start | The slugs and aliases in T3's cached `model-manifest.json` for the driver, or a successful probe of an unlisted Codex model | `tasks.copy_turn_model_unoffered` if the provider rejects the model or the catalog rules it out. `tasks.copy_turn_model_unverified` if the Codex probe is inconclusive. Nothing is launched |
+| Model | First in the turn, before any checkout or start | The slugs and aliases in T3's cached `model-manifest.json` for the driver, or a successful probe of an unlisted Codex model | `tasks.copy_turn_model_unoffered` if the provider rejects the model or the catalog rules it out. `tasks.copy_turn_model_unverified` if Orbit cannot resolve the driver or the Codex probe is inconclusive. Nothing is launched |
 
 Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy.
 

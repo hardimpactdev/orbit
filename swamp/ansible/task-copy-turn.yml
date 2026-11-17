@@ -80,9 +80,10 @@
           {{ model_entries is not none
              and intent.turn.model in (model_entries | map(attribute='slug') | list
                  + (model_entries | map(attribute='aliases', default=[]) | flatten)) }}
-        codex_model: "{{ model_driver | default(intent.turn.provider) == 'codex' }}"
+        driver_known: "{{ model_driver is defined and model_driver is string and model_driver | length > 0 }}"
+        codex_model: "{{ model_driver | default(none) == 'codex' }}"
         probe_exit: "{{ model_probe.rc | default(none) }}"
-        model_accepted: "{{ catalog_match or (probe_exit == 0 if codex_model else model_entries is none) }}"
+        model_accepted: "{{ driver_known and (catalog_match or (probe_exit == 0 if codex_model else model_entries is none)) }}"
       block:
         - name: Read T3's provider instances
           ansible.builtin.command:
@@ -101,8 +102,8 @@
         - name: Name the instance's driver
           ansible.builtin.set_fact:
             model_driver: >-
-              {{ (model_settings.stdout | from_json).get('providerInstances', {}).get(intent.turn.provider, {}).get('driver', intent.turn.provider)
-                 if model_settings.rc == 0 else intent.turn.provider }}
+              {{ (model_settings.stdout | from_json).get('providerInstances', {}).get(intent.turn.provider, {}).get('driver')
+                 if model_settings.rc == 0 else none }}
           no_log: true
         - name: Read the driver's model list
           ansible.builtin.set_fact:
@@ -141,6 +142,7 @@
               {{ {'model': intent.turn.model,
                   'offered': none if model_entries is none else model_entries | map(attribute='slug') | list,
                   'accepted': model_accepted}
+                  | combine({'driver_unresolved': true} if not driver_known else {})
                   | combine({} if probe_exit is none else {'probe': {0: 'confirmed', 2: 'rejected'}.get(probe_exit, 'unavailable')})
                   | to_json }}
             dest: "{{ run }}/model.json"
@@ -154,7 +156,7 @@
         - name: Require an offered or provider-verified model
           ansible.builtin.assert:
             that: model_accepted
-            fail_msg: "{{ 'tasks.copy_turn_model_unverified' if codex_model and probe_exit != 2 else 'tasks.copy_turn_model_unoffered' }}"
+            fail_msg: "{{ 'tasks.copy_turn_model_unverified' if not driver_known or (codex_model and probe_exit != 2) else 'tasks.copy_turn_model_unoffered' }}"
     # An earlier turn that may still run is settled before any launch, by one rule: T3 lists its thread in no active state, or none of its title, and
     # a reviewer's detach is undone. Every such turn is over in Orbit (cut by its bound, cancelled or lost), so a thread T3 still shows
     # active has its run stopped first, by the helper's `stop`, once per thread; a run the stop ended, or a thread it found with no active
