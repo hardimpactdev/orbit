@@ -9,13 +9,13 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 
 /**
  * The container image of a development Instance (docs/reference/development-containers.md#inside-a-container): the stock Ubuntu image
- * with the OS packages the runtime needs, the users `agent` and `orbit` in the group `work`, passwordless sudo for `agent` alone, the firewall of the model route
+ * with the OS packages the runtime needs, the users `agent` and `web` in the group `web`, passwordless sudo for `agent` alone, the firewall of the model route
  * and T3's port, the egress proxy for everything and no DNS, `hidepid`, and the T3 unit, which starts only once the create flow writes `/etc/orbit/instance`. No PHP, Node or agent
  * software: those come from the shared folders. The host builds it once per alias, a digest of this whole definition.
  *
  * A Node with nested-fleet hosting on also builds the nested-fleet variant (docs/reference/development-containers.md#the-nested-fleet-image):
  * the same image with the pinned inner Incus, `agent` in `incus-admin`, user namespaces, root's subordinate IDs,
- * the AppArmor marker, a firewall rule that keeps `orbit` off the inner fleet's networks and leaves the inner Incus's own tables alone,
+ * the AppArmor marker, a firewall rule that keeps `web` off the inner fleet's networks and leaves the inner Incus's own tables alone,
  * `zstd` for the inner fleet's archives, and a network wait that does not ask for the DNS the container never gets.
  */
 final readonly class InstanceImage
@@ -42,7 +42,7 @@ final readonly class InstanceImage
 
     /**
      * `agent`'s passwordless sudo in every container, normal and nested (ADR 0268, amendment): the only sudo path an image keeps.
-     * `orbit` has none. Containers hold only dev-scoped keys, so root in one reads nothing of production grade.
+     * `web` has none. Containers hold only dev-scoped keys, so root in one reads nothing of production grade.
      */
     public const string SudoGrant = '/etc/sudoers.d/orbit-agent';
 
@@ -78,7 +78,7 @@ final readonly class InstanceImage
             ...($nested ? ['incus' => array_values(array_filter($incus['packages'], static fn (array $package): bool => $package['name'] !== 'incus'))] : []),
             // Users, the workspace and the leftovers of the stock image. The stock `ubuntu` user holds uid 1000 and a sudo grant, and
             // cloud-init would make it again at each new Instance's first boot, so it is off; the network keeps its DHCP setup.
-            // Cloud-init also made the group `lxd` for that user, and it took gid 1000, which `orbit` needs.
+            // Cloud-init also made the group `lxd` for that user, and it took gid 1000, which no group of a container holds.
             'prepare' => self::prepare().($nested ? "usermod --append --groups incus-admin agent\n" : ''),
             'files' => [
                 ['path' => '/etc/nftables.conf', 'content' => self::firewall($gateway, $nested), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
@@ -149,7 +149,7 @@ final readonly class InstanceImage
      * - The dynamic linker finds the runtime folder's libraries, such as a headless browser's. The name sorts after
      *   `x86_64-linux-gnu.conf`, so a system library of the same name always wins: the folder only adds what the image lacks.
      * - Fontconfig, also the copy that Chromium bundles, finds the runtime folder's fonts and maps the generic families to them.
-     * - Git trusts the workspace for every user, `agent` and `orbit` alike, and only that path: both users share it by design.
+     * - Git trusts the workspace for every user, `agent` and `web` alike, and only that path: both users share it by design.
      * - `agent`'s sudo grant (self::SudoGrant), root-only readable as sudo requires. A container of an older image, and a copy of an
      *   older seed, get it here; sudo reads it at each call.
      *
@@ -218,8 +218,8 @@ final readonly class InstanceImage
     private static function prepare(): string
     {
         $agent = InstanceHostIntent::AgentUid;
-        $orbit = InstanceHostIntent::OrbitUid;
-        $work = InstanceHostIntent::WorkGid;
+        $web = InstanceHostIntent::WebUid;
+        $group = InstanceHostIntent::WebGid;
         $workspace = InstanceHostIntent::Workspace;
         $vite = self::RuntimeEnvironment['VP_HOME'];
         $sharedVite = InstanceHostIntent::RuntimeFolder.'/current/vite-plus-home';
@@ -231,23 +231,21 @@ final readonly class InstanceImage
             if getent group lxd >/dev/null 2>&1; then groupdel lxd; fi
             groupadd --gid {$agent} agent
             useradd --uid {$agent} --gid agent --create-home --shell /bin/bash agent
-            groupadd --gid {$orbit} orbit
-            useradd --uid {$orbit} --gid orbit --create-home --shell /bin/bash orbit
-            groupadd --gid {$work} work
-            usermod --append --groups work agent
-            usermod --append --groups work orbit
+            groupadd --gid {$group} web
+            useradd --uid {$web} --gid web --create-home --shell /bin/bash web
+            usermod --append --groups web agent
             passwd --lock agent
-            passwd --lock orbit
+            passwd --lock web
             chmod 0700 /home/agent
-            chmod 0750 /home/orbit
+            chmod 0750 /home/web
             install -d -o agent -g agent -m 0700 /home/agent/.codex /home/agent/.config /home/agent/.config/orbit
             find /etc/sudoers.d -mindepth 1 ! -name README -delete
             install -d -o root -g root -m 0755 /etc/orbit
-            install -d -o agent -g work -m 2770 {$workspace}
-            setfacl -m g:work:rwX -m d:u::rwX,d:g::rwX,d:g:work:rwX,d:o::--- {$workspace}
-            install -d -o agent -g work -m 2770 {$vite}
-            setfacl -m g:work:rwX -m d:u::rwX,d:g::rwX,d:g:work:rwX,d:o::--- {$vite}
-            install -d -o agent -g work -m 2770 {$vite}/cache
+            install -d -o agent -g web -m 2770 {$workspace}
+            setfacl -m g:web:rwX -m d:u::rwX,d:g::rwX,d:g:web:rwX,d:o::--- {$workspace}
+            install -d -o agent -g web -m 2770 {$vite}
+            setfacl -m g:web:rwX -m d:u::rwX,d:g::rwX,d:g:web:rwX,d:o::--- {$vite}
+            install -d -o agent -g web -m 2770 {$vite}/cache
             for part in bin js_runtime node_modules recipe config.json; do
                 ln -s {$sharedVite}/\$part {$vite}/\$part
             done
@@ -257,7 +255,7 @@ final readonly class InstanceImage
     }
 
     /**
-     * The nested-fleet variant's own files: the inner Incus maps root's range and the outer `orbit` into its containers, Docker in
+     * The nested-fleet variant's own files: the inner Incus maps root's range and the outer `web` into its containers, Docker in
      * them reads the AppArmor marker. Its user namespaces stay on, so it has no limit file.
      *
      * Two unit drop-ins. The inner Incus wants `network-online.target`, so each start after the first waits for it. Netplan's wait
@@ -272,7 +270,7 @@ final readonly class InstanceImage
     {
         // The inner Incus does not read these files: the image has no newuidmap, so it takes its range from its own map, 1,000,000 up to
         // the outer size (development-containers.md#the-id-map-size). They stay as built, so the image keeps its alias.
-        $ids = "root:1000000:100000000\nroot:".InstanceHostIntent::OrbitUid.":1\n";
+        $ids = "root:1000000:100000000\nroot:".InstanceHostIntent::WebUid.":1\n";
 
         return [
             ['path' => '/etc/subuid', 'content' => $ids, 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
@@ -287,7 +285,7 @@ final readonly class InstanceImage
 
     /**
      * Only `agent` reaches the model forwarder, and only root and `agent` reach T3's port; others get a reset. In the nested-fleet
-     * variant the first rule also drops `orbit`'s traffic to the inner fleet's networks, and the file replaces only its own table:
+     * variant the first rule also drops `web`'s traffic to the inner fleet's networks, and the file replaces only its own table:
      * a `flush ruleset` there would also remove the inner Incus's tables (its bridge NAT and ACLs) at each reload.
      */
     public static function firewall(string $gateway, bool $nested = false): string
@@ -296,7 +294,7 @@ final readonly class InstanceImage
         $forwarder = InstanceHostIntent::ModelForwarderPort;
         $t3 = InstanceHostIntent::T3Port;
         $reset = $nested ? 'destroy table inet orbit_agent_guard' : 'flush ruleset';
-        $guard = $nested ? "\n        ip daddr { ".TaskVmNestedFleet::WireGuardSubnet.', '.TaskVmNestedFleet::Subnet.' } meta skuid '.InstanceHostIntent::OrbitUid.' drop' : '';
+        $guard = $nested ? "\n        ip daddr { ".TaskVmNestedFleet::WireGuardSubnet.', '.TaskVmNestedFleet::Subnet.' } meta skuid '.InstanceHostIntent::WebUid.' drop' : '';
 
         return <<<NFT
             #!/usr/sbin/nft -f

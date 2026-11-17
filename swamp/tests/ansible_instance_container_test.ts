@@ -2510,7 +2510,7 @@ Deno.test({
   fn() {
     // The record that the host tasks write when the nested build fails its sudo audit, as ansible_instance_host_image_test.ts
     // proves ("a sudo path in the nested-fleet image fails only the nested-fleet image").
-    const record = { error: "nested image build failed", alias: "orbit-instance-nested-aaaaaaaaaaaa", task: "Require an image without a sudo path" };
+    const record = { error: "nested image build failed", alias: "orbit-instance-nested-aaaaaaaaaaaa", task: "Require the image's accounts and its one sudo path" };
     const f = fixture();
     try {
       nestedCreate(f);
