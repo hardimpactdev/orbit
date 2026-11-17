@@ -1676,15 +1676,39 @@
                 }
             },
             "conn-server": {
-                "version": "0.1.1",
+                "version": "0.2.0",
                 "artifacts": {
                     "amd64": {
-                        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.1.1/conn-server-0.1.1-linux-x64.tar.gz",
-                        "sha256": "a775a91e71ee59ea542230fe4fcdf527ed014c129d036fccc7997b3adc51f5fe"
+                        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.2.0/conn-server-0.2.0-linux-x64.tar.gz",
+                        "sha256": "e1f861432b2740f41899bf9ec315cc4ddf97aa5fe9f9414d5f687b00c338c734"
                     }
                 },
                 "bin": {
-                    "conn-server": "conn-server-0.1.1-linux-x64/conn-server"
+                    "conn-server": "conn-server-0.2.0-linux-x64/conn-server"
+                }
+            },
+            "chrome-headless-shell": {
+                "version": "157.0.8103.78",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/linux64/chrome-headless-shell-linux64.zip",
+                        "sha256": "f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a"
+                    }
+                },
+                "bin": {
+                    "chrome-headless-shell": "chrome-headless-shell-linux64/chrome-headless-shell"
+                }
+            },
+            "agent-browser": {
+                "version": "0.41.2",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://github.com/vercel-labs/agent-browser/releases/download/v0.41.2/agent-browser-linux-x64",
+                        "sha256": "c4351f3802ffa5254d8c69f20a52e2fcf56925c6016fcf4203db25a07d811379"
+                    }
+                },
+                "bin": {
+                    "agent-browser": "agent-browser-linux-x64"
                 }
             }
         },

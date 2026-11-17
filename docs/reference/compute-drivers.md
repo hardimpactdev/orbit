@@ -91,7 +91,7 @@ A part that pins its own artifact may leave `bin` out: it gives the folder files
 | Folder | Parts |
 | --- | --- |
 | `runtime` | `node`, `bun` and `deno`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `php-data-bridge`, with no program; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>`, with `bin/` and `modules/` |
-| `agent` | `t3` and `conn-server`, the release tarballs; `claude-code` and `codex`, the npm packages of the Linux x64 builds |
+| `agent` | `t3` and `conn-server`, the release tarballs; `claude-code` and `codex`, the npm packages of the Linux x64 builds; `chrome-headless-shell`, the Conn preview browser ZIP, which agent-browser opens too; `agent-browser`, the release's Linux x64 binary |
 
 #### The Vite+ home
 

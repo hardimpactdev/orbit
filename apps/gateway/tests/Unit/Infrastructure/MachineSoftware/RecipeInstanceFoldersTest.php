@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\ContainerServer;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceFolderPlan;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 
@@ -28,13 +30,42 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
         ->and($recipe->instances->vitePlus?->part)->toBe('vite-plus')
         ->and($recipe->instances->vitePlus?->vp)->toBe($recipe->tools['vp'])
         ->and($recipe->instances->vitePlus?->node)->toBe($node->version)
-        ->and(array_keys($recipe->instances->agent))->toBe(['t3', 'claude-code', 'codex', 'conn-server'])
+        ->and(array_keys($recipe->instances->agent))->toBe(['t3', 'claude-code', 'codex', 'conn-server', 'chrome-headless-shell', 'agent-browser'])
         ->and($recipe->instances->runtime['node']->artifact)->toBe($node->artifacts['amd64'])
         ->and($recipe->instances->runtime['node']->version)->toBe($node->version)
         ->and($recipe->instances->agent['claude-code']->artifact->algorithm)->toBe('sha512')
         ->and($recipe->instances->agent['codex']->bin)->toBe(['codex' => 'package/vendor/x86_64-unknown-linux-musl/bin/codex'])
         ->and($recipe->instances->agent['conn-server']->artifact->location)->toStartWith('https://github.com/nckrtl/conn/releases/download/conn-server-v'.$recipe->instances->agent['conn-server']->version.'/')
         ->and($recipe->instances->agent['conn-server']->bin)->toBe(['conn-server' => 'conn-server-'.$recipe->instances->agent['conn-server']->version.'-linux-x64/conn-server']);
+});
+
+it('ships the Conn preview browser as a complete ZIP in the agent folder', function (): void {
+    $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
+    $parts = array_column(InstanceFolderPlan::for($recipe->instances)['agent']['parts'], null, 'name');
+
+    expect($recipe->instances->agent['conn-server']->version)->toBe('0.2.0')
+        ->and($recipe->instances->agent['conn-server']->artifact->digest)->toBe('e1f861432b2740f41899bf9ec315cc4ddf97aa5fe9f9414d5f687b00c338c734')
+        ->and($parts['chrome-headless-shell'])->toBe([
+            'name' => 'chrome-headless-shell', 'version' => '157.0.8103.78',
+            'url' => 'https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/linux64/chrome-headless-shell-linux64.zip',
+            'archive' => 'zip', 'sha256' => 'f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a',
+            'bin' => ['chrome-headless-shell' => 'chrome-headless-shell-linux64/chrome-headless-shell'],
+        ]);
+});
+
+it('ships agent-browser as one pinned release binary in the agent folder, which opens the same headless Chrome', function (): void {
+    $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
+    $parts = array_column(InstanceFolderPlan::for($recipe->instances)['agent']['parts'], null, 'name');
+
+    expect($parts['agent-browser'])->toBe([
+        'name' => 'agent-browser', 'version' => '0.41.2',
+        'url' => 'https://github.com/vercel-labs/agent-browser/releases/download/v0.41.2/agent-browser-linux-x64',
+        'archive' => 'file', 'sha256' => 'c4351f3802ffa5254d8c69f20a52e2fcf56925c6016fcf4203db25a07d811379',
+        'bin' => ['agent-browser' => 'agent-browser-linux-x64'],
+    ])->and(InstanceContainer::browserEnvironment($recipe->instances))->toBe([
+        'PLAYWRIGHT_BROWSERS_PATH' => '0',
+        'AGENT_BROWSER_EXECUTABLE_PATH' => '/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell',
+    ])->and(ContainerServer::Conn->dropIn($recipe->instances))->toContain('Environment=CONN_SERVER_BROWSER_PATH='.InstanceContainer::headlessChrome($recipe->instances)."\n");
 });
 
 it('pins the browser libraries and fonts as Debian packages of the recipe\'s Ubuntu snapshot, which give no program', function (): void {

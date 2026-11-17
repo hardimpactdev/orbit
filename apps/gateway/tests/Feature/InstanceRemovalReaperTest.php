@@ -365,6 +365,34 @@ describe('a refused start is visible at once', function (): void {
     });
 });
 
+describe('the scheduled command', function (): void {
+    // The schedule runs `artisan orbit:instance-removal-reap`, not InstanceRemovalReaper::run(). Release 2135 scheduled it, but no
+    // provider registered the command, so every pass failed with "Command is not defined" in the Gateway log only (Instance 2186).
+    it('starts a failed destroy shaped like 2186 again when the schedule runs the command', function (): void {
+        $removal = ($this->failed)(true);
+        $this->travel(5)->minutes();
+
+        expect(Artisan::call(InstanceRemovalReaper::Trigger))->toBe(0);
+
+        $operation = Operation::query()->where('triggered_by', InstanceRemovalReaper::Trigger)->sole();
+        expect($operation->input['removal_id'])->toBe($removal->id)->and($operation->input['force'])->toBeTrue()
+            ->and($removal->fresh()->retry_count)->toBe(1)
+            ->and(Artisan::output())->toContain('Started 1 removal retries.');
+    });
+
+    it('flags a 2186-shaped removal without saved intent when the schedule runs the command', function (): void {
+        $removal = ($this->failed)(true);
+        DB::statement('DROP TRIGGER IF EXISTS instance_removals_native_intent_immutable');
+        DB::table('instance_removals')->where('id', $removal->id)->update(['native_intent' => null]);
+        $this->travel(5)->minutes();
+
+        expect(Artisan::call(InstanceRemovalReaper::Trigger))->toBe(0)
+            ->and($removal->fresh()->start_refusal)->toBe(InstanceRemovalReaper::IntentMissingCode)
+            ->and(Activity::query()->where('command', InstanceRemovalReaper::Trigger)->where('description', 'instance.removal_stuck')->count())->toBe(1)
+            ->and(($this->stuckIssues)())->toHaveCount(1);
+    });
+});
+
 it('registers the reaper on the schedule every five minutes without overlapping', function (): void {
     config(['queue.gateway.connection' => null]);
     Artisan::call('schedule:list');

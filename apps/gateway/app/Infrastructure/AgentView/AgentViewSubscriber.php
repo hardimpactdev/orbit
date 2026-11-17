@@ -12,6 +12,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketHostname;
+use App\Infrastructure\Executor\ExecutorReply;
+use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Models\Node;
@@ -48,6 +50,10 @@ use Throwable;
  * whether the agent joined it on any server and queues the agent's log events with the publisher,
  * whose log relay runs redact and publish them for the viewers of live log streams. It never sends a
  * client event there either.
+ *
+ * ADR 0266 makes it the executor's result listener. It takes each `client-executor-result` that Reverb stamps
+ * with the member `agent.{id}` and hands it to `ExecutorResults`, which records it on the Operation and pushes it
+ * to Valkey for the waiting request. Anything else is dropped and logged.
  */
 final class AgentViewSubscriber
 {
@@ -140,6 +146,7 @@ final class AgentViewSubscriber
         private readonly ?AgentViewPublisher $publisher = null,
         ?Closure $sockets = null,
         private readonly ?SwampRunSubscriber $swamp = null,
+        private readonly ?ExecutorResults $executor = null,
     ) {
         $this->idleSockets = [$socket];
         $this->sockets = $sockets ?? static fn (): WebSocketClient => new StreamWebSocketClient;
@@ -627,6 +634,12 @@ final class AgentViewSubscriber
             return;
         }
 
+        if ($event === 'client-executor-result') {
+            $this->handleExecutorResult($nodeId, $message, $data);
+
+            return;
+        }
+
         // Reverb stamps every client event on a presence channel with the sender's signed member ID.
         if (
             in_array($event, ['client-heartbeat', 'client-snapshot', 'client-process', 'client-workspaces', 'client-workspace'], strict: true)
@@ -634,6 +647,47 @@ final class AgentViewSubscriber
             && $state->apply($event, $data, $this->now())
         ) {
             $this->dirty[$nodeId] = true;
+        }
+    }
+
+    /**
+     * Hands one executor reply line to the waiting request (ADR 0266 "The path", step 4). Only the Node's own agent
+     * can send it, as for `client-log`. The record write and the Valkey push are the only waits on the loop.
+     *
+     * @param  array<string, mixed>  $message
+     * @param  array<string, mixed>  $data
+     */
+    private function handleExecutorResult(int $nodeId, array $message, array $data): void
+    {
+        if ($this->executor === null) {
+            return;
+        }
+
+        $member = $message['user_id'] ?? null;
+
+        if ($member !== "agent.{$nodeId}") {
+            $this->log->warning('The agent view subscriber dropped an executor result from another member.', [
+                'node_id' => $nodeId, 'member' => is_string($member) ? mb_strcut($member, 0, 64, 'UTF-8') : null,
+            ]);
+
+            return;
+        }
+
+        $reply = ExecutorReply::fromEvent($data);
+
+        if ($reply === null) {
+            $this->log->warning('The agent view subscriber dropped a malformed executor result.', ['node_id' => $nodeId]);
+
+            return;
+        }
+
+        try {
+            $this->executor->receive($nodeId, $reply);
+        } catch (Throwable $exception) {
+            // Nothing reached the waiting request; it falls back as when the result is lost (ADR 0266 "Fallback").
+            $this->log->warning('The agent view subscriber could not hand off an executor result.', [
+                'node_id' => $nodeId, 'operation_id' => $reply->operation, 'status' => $reply->status, 'error' => $exception->getMessage(),
+            ]);
         }
     }
 

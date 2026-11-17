@@ -9,8 +9,8 @@ use App\Infrastructure\MachineSoftware\InstanceFolders;
 
 /**
  * The server that runs in a container with a server (docs/reference/development-containers.md#container-server): the T3 server or the
- * Conn Server. A Project chooses it; the runtime records the choice at its reservation, and every later step reads that record. Only
- * the program differs: the unit, its environment and the credentials stay.
+ * Conn Server. A Project chooses it; the runtime records the choice at its reservation, and every later step reads that
+ * record. The unit and credentials stay; Conn also receives its shared preview browser path.
  */
 enum ContainerServer: string
 {
@@ -38,10 +38,15 @@ enum ContainerServer: string
         return $this->program().' serve --host=0.0.0.0 --port='.InstanceHostIntent::T3Port.' --no-browser';
     }
 
-    /** The drop-in that sets the unit's `ExecStart` to this server; the empty line clears the image's own. */
-    public function dropIn(): string
+    /** The server command and, for Conn, the agent folder's one headless Chrome, which agent-browser opens too. */
+    public function dropIn(InstanceFolders $folders): string
     {
-        return "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=".$this->serve()."\n";
+        $browser = '';
+        if ($this === self::Conn) {
+            $browser = 'Environment=CONN_SERVER_BROWSER_PATH='.InstanceContainer::headlessChrome($folders)."\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\n";
+        }
+
+        return "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=".$this->serve()."\n".$browser;
     }
 
     /** Refuses a server whose program the recipe's agent folder does not pin: no container could start it. */

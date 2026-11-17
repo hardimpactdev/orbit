@@ -96,8 +96,9 @@ describe('the first default Instance of a Project on a build-list Node', functio
                 'VP_HOME=/var/lib/orbit/vite-plus-home', 'VP_NO_UPDATE_CHECK=1', 'HTTP_PROXY=http://10.253.0.1:3128',
                 'HTTPS_PROXY=http://10.253.0.1:3128', 'NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1', 'http_proxy=http://10.253.0.1:3128',
                 'https_proxy=http://10.253.0.1:3128', 'no_proxy=localhost,127.0.0.1,::1,10.253.0.1', 'NODE_USE_ENV_PROXY=1',
-                // The deploy steps' Playwright installs its browsers beside its package, which the seed carries to every clone.
-                'PLAYWRIGHT_BROWSERS_PATH=0'],
+                // The deploy steps' Playwright installs its browsers beside its package, which the seed carries to every clone, and
+                // agent-browser opens the agent folder's one headless Chrome.
+                'PLAYWRIGHT_BROWSERS_PATH=0', 'AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell'],
             'steps' => [['name' => 'install', 'phase' => 'before_activation', 'required' => true, 'timeout_seconds' => 300, 'command_digest' => hash('sha256', 'bun install'), 'inputs' => []]],
             // A Project without a PHP version links no `php`.
             'php' => null,

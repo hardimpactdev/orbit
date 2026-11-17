@@ -73,6 +73,68 @@ const relativeDirectory = (path: string) =>
 const within = (root: string, directory: string) =>
     directory === "." || directory === "" ? root : `${root}/${directory}`;
 
+const quoted = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
+/** A Pest run: Laravel's test command, Pest itself, Pest through a wrapper, or a Composer test script. */
+const PestCall =
+    /^(?:php artisan test|(?:\.\/)?vendor\/bin\/pest|\S*bin\/pest-plain\s+(?:\.\/)?vendor\/bin\/pest|composer test)(?:\s|$)/;
+
+/**
+ * A command deliverable that runs Pest gets CI's per-test time limit, which a
+ * task copy, a shared and loaded host, needs as CI does
+ * (docs/reference/tasks.md#a-pest-command-gets-cis-time-limit). The Project
+ * opts in through its check command: one executable path whose file contains
+ * the text `--ci-time-limit`. Asked `--ci-time-limit DIR`, it prints exactly
+ * `ci-time-limit: N`, or `ci-time-limit: none` when CI passes no limit to the
+ * Pest project that holds DIR. The check asks it for the directory that the
+ * final Pest call runs in, relative to `tree`, the checked workspace or a
+ * start-commit tree, and appends the limit to that call. Any other answer, or
+ * a call outside `tree`, fails the command. A check command that does not
+ * declare the flag is never asked, and the command runs as given; so does a
+ * command whose last simple command is not a Pest call, or that passes its
+ * own limit.
+ */
+export function withCiTimeLimit(
+    source: string,
+    check: string | null,
+    workspace: string,
+    tree: string,
+): string {
+    const simple = !/[|;&<>`\n]|\$\(/.test(source.replaceAll("&&", ""));
+    const calls = source.split("&&");
+    const last = calls.pop()!.trim();
+    if (
+        check === null || !/^[\w.-]+(?:\/[\w.-]+)+$/.test(check) ||
+        !relativeFile(check) || !simple || !PestCall.test(last) ||
+        source.includes("--default-time-limit")
+    ) return source;
+    return [
+        "orbit_ci_time_limit() {",
+        `    local check=${
+            quoted(`${workspace}/${check}`)
+        } tree directory answer limit extra`,
+        '    [[ -f $check ]] && grep -qF -- --ci-time-limit "$check" || { "$@"; return; }',
+        // Physical paths: `env -C` leaves `PWD` unset, so a symlinked checkout would not match.
+        `    tree=$(cd ${quoted(tree)} && pwd -P) && directory=$(pwd -P) &&`,
+        '        [[ $directory == "$tree" || $directory == "$tree"/* ]] &&',
+        '        directory=${directory#"$tree"} && directory=${directory#/} &&',
+        '        answer=$("$check" --ci-time-limit "${directory:-.}") &&',
+        "        [[ $answer =~ ^ci-time-limit:\\ ([0-9]+|none)$ ]] || {",
+        `        echo ${
+            quoted(`Task check: ${check} --ci-time-limit gave no limit`)
+        } >&2`,
+        "        return 2",
+        "    }",
+        "    limit=${BASH_REMATCH[1]}",
+        '    if [[ $limit == none ]]; then echo "Pest time limit: CI passes none for ${directory:-.}; its phpunit.xml holds"; "$@"; return; fi',
+        '    echo "Pest time limit: --default-time-limit=$limit, CI\'s limit for ${directory:-.}"',
+        '    extra=(--default-time-limit="$limit")',
+        '    [[ $1 == composer && " $* " != *" -- "* ]] && extra=(-- "${extra[@]}")',
+        '    "$@" "${extra[@]}"',
+        "}",
+        [...calls, ` orbit_ci_time_limit ${last}`].join("&&"),
+    ].join("\n");
+}
+
 /**
  * The argv lists of every check step, from the admitted intent. `root` is the
  * run's scratch directory on the VM; it holds the snapshot index, the
@@ -116,7 +178,12 @@ export function prepare(raw: unknown, nodeId: number, root: string) {
             command(
                 `deliverable-${index}`,
                 within(workspace, item.directory),
-                item.command,
+                withCiTimeLimit(
+                    item.command,
+                    input.command,
+                    workspace,
+                    workspace,
+                ),
             )
         ),
         // The start-commit run of a `fails_on_base` command: an extracted
@@ -180,10 +247,16 @@ export function prepare(raw: unknown, nodeId: number, root: string) {
                     ]
                     : ["true"],
                 directory: ["test", "-d", within(tree, item.directory)],
+                // The same limit as the deliverable's own run, from the checked workspace.
                 run: command(
                     `base-${index}`,
                     within(tree, item.directory),
-                    item.command,
+                    withCiTimeLimit(
+                        item.command,
+                        input.command,
+                        workspace,
+                        tree,
+                    ),
                 ),
             };
         }),
@@ -230,6 +303,94 @@ async function commandResult(
 }
 
 class MissingOutput extends Error {}
+
+const encoder = new TextEncoder();
+const bytes = (text: string) => encoder.encode(text).length;
+/** The last `limit` bytes of `text`, cut at a character boundary. */
+function tailBytes(text: string, limit: number) {
+    const encoded = encoder.encode(text);
+    if (encoded.length <= limit) return text;
+    let start = encoded.length - Math.max(limit, 0);
+    while (start < encoded.length && (encoded[start] & 0xc0) === 0x80) start++;
+    return new TextDecoder().decode(encoded.subarray(start));
+}
+
+/** The line that ends every check output; it states the check's outcome. */
+export function outcomeLine(outcome: string, cause = "") {
+    return outcome === "passed"
+        ? "Task check PASSED"
+        : outcome === "changed"
+        ? "Task check CHANGED"
+        : "Task check FAILED" + (cause ? `: ${cause}` : "");
+}
+
+/**
+ * The check's stored output (docs/reference/tasks.md#stored-result): the
+ * redacted setup and Project output, then a `Deliverables` block with each
+ * deliverable's outcome, its command's exit code, its failures and, for a
+ * failed command, the last lines of its redacted output, then the outcome
+ * line. The older Project output gives way so the whole stays within
+ * OUTPUT_BYTES; a block too large to fit drops the output tails.
+ */
+export function checkOutput(
+    project: string,
+    deliverables: { id: string; outcome: string; failures: string[] }[],
+    commands: Record<string, Command>,
+    line: string,
+    tails = true,
+): string {
+    const block = deliverables.length ? ["Deliverables"] : [];
+    for (const item of deliverables) {
+        const run = commands[item.id];
+        block.push(
+            `  ${item.id}: ${item.outcome}` +
+                (run?.exit_code === undefined ? "" : `, exit ${run.exit_code}`),
+            ...item.failures.map((failure) => `    ${failure}`),
+        );
+        const tail = tailBytes((run?.output ?? "").trimEnd(), 1024)
+            .split("\n").filter((row, index) => index > 0 || row !== "");
+        if (
+            tails && item.outcome === "failed" && run?.exit_code && tail.length
+        ) {
+            block.push(
+                `    Last lines of ${item.id}:`,
+                ...tail.map((row) => `      ${row}`),
+            );
+        }
+    }
+    const end = [...block, line].join("\n");
+    const head = project && !project.endsWith("\n") ? project + "\n" : project;
+    // Too many failed commands to fit drop their output tails, then the oldest block lines.
+    if (bytes(end) >= OUTPUT_BYTES) {
+        return tails
+            ? checkOutput(project, deliverables, commands, line, false)
+            : tailBytes(end, OUTPUT_BYTES);
+    }
+    return tailBytes(head, OUTPUT_BYTES - bytes(end)) + end;
+}
+
+/** `result` with `outcome`, the last line of its output restated to agree. */
+function restated<T extends Record<string, unknown>>(
+    result: T,
+    outcome: string,
+    cause = "",
+): T & { outcome: string } {
+    return {
+        ...result,
+        outcome,
+        ...(typeof result.output === "string"
+            ? {
+                output: tailBytes(
+                    result.output.replace(
+                        /[^\n]*$/,
+                        outcomeLine(outcome, cause),
+                    ),
+                    OUTPUT_BYTES,
+                ),
+            }
+            : {}),
+    };
+}
 
 /** `git diff-tree -r --no-renames --name-status -z` rows, or null when the diff did not run. */
 export function diffRows(item: Run) {
@@ -353,8 +514,7 @@ export async function localResult(
             ? "passed"
             : "failed",
         exit_code: project.exit_code,
-        output: (setupOutput.slice(-OUTPUT_BYTES) + (project.output ?? ""))
-            .slice(-OUTPUT_BYTES),
+        output: "",
         head_before: before.head,
         tree_before: before.tree,
         head: after.head,
@@ -374,14 +534,28 @@ export async function localResult(
             (run(steps, "original").stdout ?? "").trim(),
     });
     const deliverables = deliverableResults(input, local);
+    const failed = local.outcome === "passed"
+        ? deliverables.filter((item) =>
+            ["failed", "not_run"].includes(item.outcome)
+        ).map((item) => item.id)
+        : [];
+    const outcome = failed.length ? "failed" : local.outcome;
     return {
         ...local,
-        outcome: local.outcome === "passed" &&
-                deliverables.some((item) =>
-                    ["failed", "not_run"].includes(item.outcome)
-                )
-            ? "failed"
-            : local.outcome,
+        outcome,
+        output: checkOutput(
+            setupOutput + (project.output ?? ""),
+            deliverables,
+            commands,
+            outcomeLine(
+                outcome,
+                failed.length
+                    ? `deliverable${failed.length > 1 ? "s" : ""} ${
+                        failed.join(", ")
+                    } did not pass`
+                    : "",
+            ),
+        ),
         check_id: input.check_id,
         group_id: input.group_id,
         subtask: input.subtask,
@@ -419,7 +593,7 @@ export function candidateResult(
         !Sha.test(commit) || tree !== local.tree ||
         (!recorded && parent !== local.head)
     ) {
-        return { ...local, outcome: "changed" };
+        return restated(local, "changed");
     }
     return { ...local, commit };
 }
@@ -464,10 +638,13 @@ export function ciResult(
             ? "tasks.handoff_ci_unavailable"
             : null);
     const result = {
-        ...local,
+        ...restated(
+            local,
+            read.fault === "change" ? "failed" : "passed",
+            "CI failed",
+        ),
         pending: !terminal,
         ci,
-        outcome: read.fault === "change" ? "failed" : "passed",
         failed_step: read.fault === "change" ? "ci" : local.failed_step,
         ...(error_code ? { error_code } : {}),
     };
@@ -578,7 +755,7 @@ export function observed(
     }
     return current.head === result.commit && current.tree === result.tree
         ? value
-        : { ...value, result: { ...result, outcome: "changed" } };
+        : { ...value, result: restated(result, "changed") };
 }
 
 /**

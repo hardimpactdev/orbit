@@ -264,11 +264,11 @@ describe('a clone of the container default', function (): void {
                 ['home' => '/home/agent', 'directories' => ['/home/agent/.pki', '/home/agent/.pki/nssdb'], 'path' => '/home/agent/.pki/nssdb/pkcs11.txt',
                     'entry' => "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
                     'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'directory_mode' => '0700', 'library' => 'libp11-kit0', 'version' => '0.26.2-2'],
-                // Playwright's browsers beside its package, for units and for login shells, the task check among them. Only a new clone
-                // gets them: no running container changes.
-                ['path' => '/etc/systemd/system.conf.d/91-orbit-browsers.conf', 'content' => "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PLAYWRIGHT_BROWSERS_PATH=0\n",
+                // Playwright's browsers beside its package, and agent-browser on the agent folder's one headless Chrome, which Conn uses
+                // too, for units and for login shells, the task check among them. Only a new clone gets them: no running container changes.
+                ['path' => '/etc/systemd/system.conf.d/91-orbit-browsers.conf', 'content' => "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PLAYWRIGHT_BROWSERS_PATH=0 AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\n",
                     'uid' => 0, 'gid' => 0, 'mode' => '0644'],
-                ['path' => '/etc/profile.d/91-orbit-browsers.sh', 'content' => "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0\n",
+                ['path' => '/etc/profile.d/91-orbit-browsers.sh', 'content' => "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0 AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\n",
                     'uid' => 0, 'gid' => 0, 'mode' => '0644'],
                 // The presented machine name, which T3 reads as its label at its first start.
                 ['path' => '/etc/machine-info', 'content' => "PRETTY_HOSTNAME=feature.tool\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
@@ -1859,7 +1859,7 @@ describe('the server a container records', function (): void {
             // An intent built after the Project changed back still names the container's own server.
             ->and($intent['clone']['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server')
             ->and(collect($intent['clone']['files'])->firstWhere('path', InstanceContainer::ServerDropIn)['content'])
-            ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve --host=0.0.0.0 --port=3773 --no-browser\n")
+            ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve --host=0.0.0.0 --port=3773 --no-browser\nEnvironment=CONN_SERVER_BROWSER_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\n")
             ->and(InstanceRuntime::query()->where('instance_id', $later->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3);
     });
 
