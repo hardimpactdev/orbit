@@ -175,7 +175,7 @@ function proofRoundTrip(array $input): array
 
 /**
  * A lost result recovered by a repeat. The first order runs, and the listener records its result and hands it to Valkey. A request
- * that takes the hand-off and dies loses it: here the first wait takes it and drops it, and the Operation's keys are deleted. A new
+ * that takes the hand-off and dies loses it: here the first wait takes it and drops it, and the Operation's list is deleted. A new
  * waiting request then gets nothing within its bound. The Gateway signs a new order, with a new nonce, for the same Operation: the
  * executor answers `repeat` with the first result, the listener pushes it again, and the waiting request gets it. The runner checks
  * the executor's journal for one run.
@@ -192,7 +192,7 @@ function proofLostResult(array $input): array
         $operation = $start();
         $first = $proof->send($operation, ExecutorOrderSigner::fromConfig());
         $dropped = $proof->wait($operation);
-        app('redis')->connection('gateway')->command('del', [ExecutorResults::resultKey($operation->id), ExecutorResults::acceptedKey($operation->id)]);
+        app('redis')->connection('gateway')->command('del', [ExecutorResults::resultKey($operation->id)]);
         $lost = $proof->wait($operation);
         $started = hrtime(true);
         $repeat = $proof->send($operation, ExecutorOrderSigner::fromConfig());
