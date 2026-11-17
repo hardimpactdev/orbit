@@ -109,11 +109,11 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn("format('web-dist-{0}', github.sha)", publish['with']['name'])
         self.assertIn("format('web-pr-{0}-{1}', github.run_id, github.run_attempt)", publish['with']['name'])
 
-    def test_web_tests_gate_the_build_with_locked_browsers_within_the_existing_budget(self):
+    def test_web_tests_gate_the_build_with_locked_browsers(self):
         import yaml
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
         job = workflow['jobs']['web']
-        self.assertEqual(('ubuntu-26.04', 2), (job['runs-on'], job['timeout-minutes']))
+        self.assertEqual(('ubuntu-26.04', 3), (job['runs-on'], job['timeout-minutes']))
         steps = job['steps']
         commands = [step.get('run', '') for step in steps]
         required = [

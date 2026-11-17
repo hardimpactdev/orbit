@@ -470,7 +470,7 @@ jobs:
     needs: changes
     if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['web']) != 'false' }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 2
+    timeout-minutes: 3
     defaults:
       run:
         working-directory: apps/web

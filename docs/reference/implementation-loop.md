@@ -219,6 +219,8 @@ A hosted runner has none of these, so a `self_hosted` file never runs there.
 
 Pull request CI takes at most five minutes from push to result, including queues and dependencies. Proof CI is the only exception. Run only checks that apply to the changed files, using `bin/ci-build-plan`. Docs impact is a policy check on every pull request; it shares the existing Docs job and its two-minute ceiling. Switch an over-budget check off until it meets the budget; no merge, deploy or review waits on it. Whoever adds or restores a job measures its complete path first.
 
+The Web job has a three-minute ceiling and an estimated 150-second table cost, including browser setup, both test stages and the build. A hosted Ubuntu 26.04 run spent 62 seconds installing the locked Chromium and WebKit engines and their system libraries, then 44 seconds running all 541 tests. Its former two-minute limit expired before the build. The extra minute of allowance keeps the existing five-minute overall target; the table cost includes cold browser installation rather than relying on a warm cache. Measure the complete hosted path, including build and upload, before treating that cost as verified.
+
 Measure CI wall time from workflow creation to completion of `Required checks`. Include queueing, input selection and the final gate. Independent jobs overlap, so use the longest required path rather than adding every job's duration. The full workflow can continue after Required checks passes.
 
 | Switch or job | Observed today |
@@ -470,7 +472,7 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 ### Gateway shards
 
-Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. The Web build job installs the locked Playwright WebKit and Chromium headless shell with their system libraries on `ubuntu-26.04`, then runs `bun run test:unit` and `bun run test:browser` in order before building. Both stages gate its artifact and Required checks within the existing two-minute job limit. Tests for remote programs still run only locally.
+Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. The Web build job installs the locked Playwright WebKit and Chromium headless shell with their system libraries on `ubuntu-26.04`, then runs `bun run test:unit` and `bun run test:browser` in order before building. Both stages gate its artifact and Required checks under the [Web job budget](#ci-budget). Tests for remote programs still run only locally.
 
 ### Runner policy during the Swamp migration
 
