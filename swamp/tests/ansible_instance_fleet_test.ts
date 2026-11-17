@@ -57,7 +57,7 @@ const marker = "/etc/orbit/instance-fleet";
 const markerFile = "# Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).\n";
 /** nested-app-dev is an Instance host (development-containers.md#instance-host-in-the-fleet): its nesting keys. */
 const instanceHostKeys = { "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true" };
-/** The files each container owns: the egress and size files. The container branch writes nested-app-dev's Incus drop-in. */
+/** The files each container owns: the egress and size files and the Git file. The container branch writes nested-app-dev's Incus drop-in. */
 const ownedBy = (_name: string) => owned;
 /** The memory rule of each nested container (NestedFleetIntent::Memory): app-dev hosts Instances, app-prod serves none. */
 const memory: Record<string, string> = { "nested-gateway": "4GiB", "nested-app-dev": "5GiB", "nested-app-prod": "2GiB" };
