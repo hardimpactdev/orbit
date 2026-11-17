@@ -1860,15 +1860,16 @@ Deno.test({
   fn() {
     const f = refreshedOnce();
     try {
-      // The nested Gateway renders another branch intent for nested-app-dev (InstanceHostIntent::digest), and the converge runs for 200
-      // reads: more than the 180 of a base converge's 900 s, within the 360 of the host's 1800 s (roles_seconds).
+      // Run a short pending sequence and assert the rendered retry budget below. Replaying 200 polling subprocesses
+      // only to cross the base converge's 180 retries spends CPU without testing another state transition.
       f.change((state) => {
         state.hostIntentDigest = "5".repeat(64);
-        state.convergeRunning = { 2: 200 };
+        state.convergeRunning = { 2: 2 };
         delete state.roleConverges;
       });
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
+      assertStringIncludes(refreshed.output, "FAILED - RETRYING: [localhost]: Wait for the converge of each due nested Node (360 retries left)");
       assertEquals(f.calls().filter((call) => call.includes("/converge ")), [convergeAdmit(2, true)]);
       assertEquals([f.refreshed()!.host, f.state().roleConverges, f.state().convergeRunning], ["converged", [2], { 2: 0 }]);
       assertEquals(JSON.parse(f.state().outer.files[record]).host, sha256("host c3 e5 " + "5".repeat(64)));

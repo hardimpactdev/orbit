@@ -248,13 +248,13 @@ A canary file must be a registered hosted fixture; `bin/ci-units plan` refuses a
 
 `bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill two lanes per shard, each with at most 150 declared seconds, with at most eighteen fixture jobs across both shard classes per run.
 
-Ordinary fixture jobs run on the shared Sabre and Shark pool. Each host has twelve CPUs and at most six active runners; two workers per runner keep the worker count within that CPU count. Extra runner containers stay stopped with their listener and autostart disabled. Both classes count against the planner's eighteen-job bound; jobs beyond the twelve active runners wait for a place.
+Ordinary fixture jobs run on the shared Sabre and Shark pool. Each host has six physical cores with twelve CPU threads and at most four active runners. Each runner has three disjoint CPU threads from three different cores and two fixture workers; eight workers per host leave room for Ansible child processes. Extra runner containers stay stopped with their listener and autostart disabled. Both classes count against the planner's eighteen-job bound; jobs beyond the eight active runners wait for a place.
 
 Four concurrent Ansible units on a shared runner can exceed the unit ceiling even when each case passes alone. The complete fleet fixture names the CI workflow as an input, so workflow changes exercise every fleet case.
 
 Fork shards use the same two-lane plan on GitHub-hosted runners. Other jobs and proof holds can still occupy places; measure queue delay as part of the five-minute push-to-Required limit. A file can declare a larger slice count when its cases need finer slices.
 
-For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per case, so a long refresh cannot share its unit with another refresh.
+For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per case, so a long refresh cannot share its unit with another refresh. Its host-converge case checks the rendered 360-retry budget and polls through pending to success; it does not spend 200 subprocess calls just to cross the shorter base-converge budget.
 
 A slice takes every n-th case, so a new case can move two long cases into one slice; then raise the slice count until no slice is above the lane budget. A slice count equal to the number of retained cases always meets this: each case gets its own slice.
 
