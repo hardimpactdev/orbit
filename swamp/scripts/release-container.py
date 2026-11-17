@@ -148,7 +148,18 @@ def address(record):
               if entry["family"] == "inet" and entry["scope"] == "global"]
     if len(values) != 1 or not ipaddress.IPv4Address(values[0]).is_private:
         raise ValueError("release.container_address_unavailable")
-    return values[0]
+    ip = values[0]
+    nic = record["expanded_devices"].get("eth0", {})
+    if nic.get("type") != "nic" or not nic.get("network"):
+        raise ValueError("release.container_address_requires_managed_bridge")
+    reservation = nic.get("ipv4.address")
+    if reservation and reservation != ip:
+        raise ValueError("release.container_address_changed")
+    if not reservation:
+        # Caddy and the service bind this address. Persist the private DHCP reservation across Node reboots.
+        action = "set" if "eth0" in record["devices"] else "override"
+        incus("config", "device", action, record["name"], "eth0", "ipv4.address=" + ip)
+    return ip
 
 
 def main(argv):

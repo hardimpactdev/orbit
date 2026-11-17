@@ -27,6 +27,23 @@ def record(name, role, operation="13", status="Running", **tags):
 
 
 class ReleaseTest(unittest.TestCase):
+    def test_address_is_reserved_once_and_cannot_silently_drift_after_boot(self):
+        ip = "10.123.45.67"
+        nic = {"type": "nic", "network": "orbitgw0"}
+        item = {"name": "gateway-" + SHA[:12], "state": {"network": {"eth0": {
+            "addresses": [{"family": "inet", "scope": "global", "address": ip}]}}},
+            "devices": {}, "expanded_devices": {"eth0": nic}}
+        with patch.object(release, "incus") as incus:
+            self.assertEqual(release.address(item), ip)
+            incus.assert_called_once_with("config", "device", "override", item["name"], "eth0", "ipv4.address=" + ip)
+            incus.reset_mock()
+            nic["ipv4.address"] = ip
+            self.assertEqual(release.address(item), ip)
+            nic["ipv4.address"] = "10.123.45.68"
+            with self.assertRaisesRegex(ValueError, "address_changed"):
+                release.address(item)
+            incus.assert_not_called()
+
     def test_one_operation_uses_the_same_candidate_without_a_second_copy(self):
         owner = "instance-8"
         name = owner + "-" + SHA[:12]
