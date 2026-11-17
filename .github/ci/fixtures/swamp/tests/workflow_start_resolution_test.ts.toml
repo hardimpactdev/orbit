@@ -1,10 +1,8 @@
 order = 1490
 cases = [
-  "a task VM sync starts: every expression of operation-task-sync resolves against its intent",
   "a copy sync starts: every expression of operation-task-sync-copy resolves against its intent",
   "a proof run in a copy starts: every expression of operation-proof-run-copy resolves, and each batch child too",
-  "the task VM sync workflow could not start for a copy, so the Gateway never starts it for one",
-  "a publish starts for a task VM and for a copy: every expression of operation-task-publish resolves",
+  "a publish starts for a copy: every expression of operation-task-publish resolves",
   "serve's secret rule: a vault.get expression with any container comparison is refused, has() is not one",
   "no workflow holds a vault.get expression that serve refuses at run start",
   "the child workflows that a run starts resolve against the inputs their caller builds",

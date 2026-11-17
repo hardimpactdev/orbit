@@ -28,12 +28,10 @@ mod incus;
 pub mod instances;
 pub mod laravel;
 mod macos_enrollment;
-mod metrics_publication;
 mod node_bootstrap;
 mod node_identity;
 pub mod node_worker;
 pub mod os_release;
-mod package_cache;
 pub mod peer_dns;
 pub mod php_build;
 mod php_fpm;
@@ -93,12 +91,9 @@ pub fn all() -> Vec<Entry> {
         entry::<incus::ReadInstances>(),
         entry::<incus::ReadInventory>(),
         entry::<incus::volumes::ReadVolumes>(),
-        entry::<incus::vm::ReadVm>(),
-        entry::<incus::vm::ChangeVm>(),
         entry::<guest::ReadCloudInit>(),
         entry::<guest::ReadFingerprint>(),
         entry::<incus::image::ReadInstanceImages>(),
-        entry::<package_cache::HostCache>(),
         entry::<agent::Install>(),
         entry::<agent_footprint::ConfigureAgent>(),
         entry::<agent_footprint::RemoveAgent>(),
@@ -114,7 +109,6 @@ pub fn all() -> Vec<Entry> {
         entry::<ssh_host_key::Scan>(),
         entry::<role_prerequisites::InstallPrerequisites>(),
         entry::<instances::InspectLaravelRoutes>(),
-        entry::<production::ActivateRelease>(),
         entry::<production::InspectRepositoryBinding>(),
         entry::<production::RebindRepository>(),
         entry::<application_log::ReadApplicationLog>(),
@@ -139,7 +133,6 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_observation::ReadLive>(),
         entry::<caddy_certificate::RemoveCertificate>(),
         entry::<caddy_package::InstallPackage>(),
-        entry::<metrics_publication::Publication>(),
         entry::<project_source::UpdateProjectSource>(),
         entry::<hibernation::PrepareDirectories>(),
         entry::<hibernation::MarkHibernation>(),
@@ -172,7 +165,6 @@ pub fn all() -> Vec<Entry> {
         entry::<php_shared::Converge>(),
         entry::<php_runtime::ConvergeRuntime>(),
         entry::<php_runtime::RemoveRuntime>(),
-        entry::<php_runtime::RefreshCache>(),
         entry::<wireguard::ProjectHub>(),
         entry::<wireguard_peer::PrepareKey>(),
         entry::<wireguard_peer::Publish>(),

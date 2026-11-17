@@ -1,6 +1,6 @@
 # The Swamp shape: how every Orbit operation must look
 
-Read this before you port, write or review any Orbit operation in Swamp. It replaces the per-family contracts of the old, frozen `orbit-swamp` repository that say "no shell", "private bytes on stdin" or "never a workflow argument". Where this guide and an older doc disagree, this guide wins. The source of truth is the Swamp manual: https://swamp-club.com/manual (Workflows, Behavior Definitions, Vaults, Data, Remote Execution).
+Read this before you port, write or review any Orbit operation in Swamp. This is Orbit's sole owner for machine execution, placement, secrets, Gateway callbacks and result transport. Skills and integration references route here; they do not add execution rules. It overrides the generic Swamp-managed AGENTS preamble and older per-family contracts, including blanket "no shell" rules. The [Swamp manual](https://swamp-club.com/manual) owns native mechanics (Workflows, Behavior Definitions, Vaults, Data, Remote Execution); [docs/cli/README.md](../../docs/cli/README.md) owns chart design.
 
 Decided by Nick, 2026-10-31.
 
@@ -28,7 +28,9 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - Swamp keeps what is not machine work: the logical phases and their order (`dependsOn`, `guard`, `forEach`, `allowFailure`), the two Gateway calls a step may make (mint and sign), external API calls (GitHub), cancellation, and the `input`, result and `cleanup` steps of the run folder.
    - A native step that acts on a machine (`@swamp/ssh exec`, an official `cfgmgmt` behavior) is the exception. The PR names the measured numbers that justify it: Swamp steps, end-to-end time and per-phase time of both forms. Several reads and changes on one machine, and any work that repeats per Node, belong in a phase.
    - Use a typed TypeScript behavior only for a typed, schema-validated result that a file cannot print. A plan of a machine change is not one: it is a pure Jinja template in the playbook with its own template test (see the [porting guide](../../docs/swamp/porting.md)).
-   - A change to the phase sequence needs a written reason in the PR. See the [ansible-phase skill](../../.agents/skills/ansible-phase/SKILL.md) for the playbook rules.
+   - A single command is not an automatic native exception. Work that must not run twice uses a native guard around the phase. A native cfgmgmt check must report `compliant`; successful execution alone can still report drift.
+   - A script or custom Ansible module needs a named gap in core and official extensions, explained in the PR. Never hide a custom transport in it or copy scripts to a Node.
+   - A change to the phase sequence needs a written reason in the PR. The [Ansible phase contract](#ansible-phase-contract) below owns the playbook rules.
 4. **Scripts are visible and linted.**
    - The script text lives in the workflow or the behavior definition (`run: |`), or in a file that Swamp ships to the worker, never inside a TypeScript string.
    - CI runs shellcheck (and ruff for Python) on all of it. Playbooks live in `swamp/ansible/` and pass `ansible-lint` in the `production` profile; the gate lists each playbook. Their Jinja templates and expressions have template tests in `swamp/tests/` that check them against fixed text: a Deno `*_test.ts`, or a Python test that the gate names in its `ANSIBLE_TESTS` list. The gate runs both.
@@ -60,6 +62,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    The gate accepts a literal positive timeout as the first word of the step command (`timeout N …`). Every invocation of a polling file must be bounded. On exit 124 from a step whose command starts with a literal `timeout N`, the shared F1 projector renders `<step> timed out after <N>s` (OD2; lane 16's projector, pending on main). Scripts print nothing for it, and the gate rejects shell wrappers and epilogues. The script uses a fixed positive literal interval shorter than the timeout; one fixed wait follows the same rule. Python polls return on success and raise a readable error on a bad terminal state. Their HTTPS GET must have a fixed external origin. The shell and Python checks exclude Orbit domains, Gateway names, local names and IP literals. Python `requests` and `httpx` responses need an unconditional `raise_for_status()` before reading state; `urllib.request.urlopen` raises HTTP errors itself. A provider wrapper must prove the same read and failure handling from its source, with no exception suppression. The checker follows imports into sibling modules in the same shipped scripts directory. It grants no DNS-read allowance. Shell polls use `set -e`, a failing HTTP GET, a state `case` and a fixed sleep. Request failures propagate; they are not retried. Script paths may come from a typed metadata step's `ctx.extensionFile` asset. The gate parses these files without running them.
 7. **Placement on every step.**
    - Each step declares `target` or `labels`, and serve only relays (`--remote-only`).
+   - Use one effective selector, not both `target` and `labels`. Ansible control steps use `labels: {role: swamp}` on the Swamp worker; that is not a blanket selector for every workflow. Keep run-folder producers and consumers on the same worker.
    - A per-Node worker acts only on its own Node.
    - vpn1 and usexit18 run their steps through the SSH proxy workers on 209.
 8. **No agent actions.** Do not call orbit-agent action commands from a step. Implement the action as steps. The agent is frozen and will be stripped to an observer.
@@ -70,6 +73,28 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
     - The one exception: short-lived minted tokens that never stay on the VM, such as GitHub App tokens.
     - First use: the model router guard, `ai_router.task_guard`, on `services` at `10.44.0.3:8318`.
     - Containers on agent Nodes reach the same guard through a forwarder with no key on their Node, `ai_router.model_forwarder` ([ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder)).
+
+## Ansible phase contract
+
+Playbooks live under `swamp/ansible/`. Use built-in modules first, then pinned collections; use `command` for a tool without a module and declare `changed_when`. Each tagged phase reads, changes and checks its end state in one invocation. Refuse before the first dependent change, with a public error code in `assert.fail_msg`. Reload only on change with a handler, validate replacement configuration, and require zero changes on a second completed phase run. A pure decision beyond a simple `when` belongs in a small Jinja template with fixed-input tests, not a TypeScript planner.
+
+The workflow's run-folder sequence is:
+
+1. `@nckrtl/ansible-input` writes the whole admitted intent as a 0600 run-scoped file and resolves shipped playbooks from manifest assets. Swamp expressions have no JSON encoder; environment values must be strings.
+2. Optional secret jobs read the declared vault into a 0600 file. Guard the job on descriptor presence: `vault.get` arguments can be evaluated in both arms of a conditional expression. The input builder writes inventory, vars and `known_hosts` using admitted accounts and pinned host keys, then removes the staging secret file. Never scan keys or disable host-key checking. Set `no_log: true` on private tasks.
+3. Each phase is one placed `command/shell` carrier invoking `timeout <literal seconds> ansible-playbook --tags <phase>`, with the run's inventory, vars and pinned `known_hosts`. Mark machine-changing steps `writes: true`; a read-only check is not a writer. Work on several Nodes uses one parallel play or parallel child workflows with separate run folders.
+4. Project results as described below. Cleanup waits for every producer and consumer of the run folder to settle, including failed and skipped optional jobs. A bare `completed` dependency excludes skipped jobs on the pinned runtime; use conditions covering both. Cleanup removes private vars and partial staging after success or failure, not only after a successful copy. Preserve the original failure and expose incomplete cleanup.
+
+Pin Ansible, collections and filter libraries in `requirements.*`. Every playbook, task, template and helper asset belongs in the manifest's `additionalFiles`. See [Ansible phase lessons](../../docs/solutions/ansible-phase-lessons.md) for loader, delegation and fixture pitfalls.
+
+## Result transport
+
+The Gateway uses the shared terminal event/history reader and the family's declared selector. Families add no callbacks, history readers, timers or pollers. [Swamp command steps](../../docs/reference/swamp-command-steps.md) documents the helper API, native captures and transport recovery.
+
+- **Native results:** when native run status and producer captures contain the public result, declare `terminal_result` with `native => true` and project that data directly. Capture producer JSON rather than relying on the step summary's truncated stdout. Do not add a reporting step to reconstruct native status or diagnostics.
+- **Ansible result files:** Ansible's stdout is a log, not the public JSON contract. When structured phase results are needed, the playbook writes public `result.json` on success and in failure rescue, then fails the phase on failure. A bounded run-folder result step may print that file after the phase settles, including failure. This is result transport, not another machine phase or a callback; it must not turn a failed run into success. Keep its selector synchronized with the Gateway declaration.
+- **Private output:** SSH records stdout and stderr before later shaping. Capture private command output in protected files, transfer privately, apply the [shared output filter](../../docs/reference/tasks.md#keep-command-output-out-of-run-history), then delete the files. Never print a secret or its encoding into history. Keep vault values small; public intent is not a secret envelope.
+- **Terminal failures:** retain completed producer observations when cleanup fails, while keeping the Operation failed. An exact native terminal within budget survives Gateway expiry; a failed projection leaves expiry armed. Missing, active or mismatched history is not a result and authorizes no retry or resubmission.
 
 ## Checks on every PR
 
@@ -97,61 +122,9 @@ The Python shape policy proves the bridge writer's complete transaction structur
 
 This is a structural contract, not a pathname allowance. The checker verifies the context manager, dispatcher, entry point, protected bindings and calls together. Destructive file operations are denied everywhere in the writer except inside one exact `state_file` helper. That helper takes the state root, a fixed state kind and a validated endpoint identity. It constructs each destination leaf itself; callers cannot supply a leaf path or callback. It can unlink those leaves or atomically replace them from a newly created temporary file, so it cannot remove a directory or the `writer.lock` inode. Helper aliases, altered helper bodies, arbitrary temporary-directory cleanup and external mutation commands fail the contract. The checker does not infer path values through loops, matches or helper arguments. The ACL transport also has a fixed body. The import check uses the whole Python inventory, including package and relative imports from other directories. Missing acquisition, early release, mutation on busy, wait loops and destructive calls in any control-flow form fail both the current checker and a checker frozen from the policy commit. A policy change must land before a caller relies on it; the frozen-base check keeps using its comparison commit's policy and baseline.
 
-## Before and after
-
-Wrong (today's typical port):
-
-```yaml
-inputs: { properties: { operation_id: ..., node_id: ..., kind: ... } }
-jobs:
-  - name: run
-    steps:
-      - name: converge        # one step; reads intent from the Gateway, gets secrets on stdin,
-        task:                 # runs a 400-line Python program embedded in a TypeScript string
-          type: behavior
-          behaviorType: "@nckrtl/node"
-          methodName: converge
-```
-
-Right:
-
-```yaml
-inputs:
-  properties:
-    operation_id: { type: integer }
-    node_id: { type: integer }
-    packages: { type: array }
-    password_key: { type: string }   # a vault key name, never the value
-jobs:
-  - name: packages
-    steps:
-      - name: install
-        labels: { node: "${{ string(inputs.node_id) }}" }
-        task:
-          type: behavior
-          behaviorType: command/shell
-          methodName: execute
-          inputs:
-            run: |
-              sudo apt-get install -y ${{ inputs.packages.join(' ') }}
-  - name: database
-    dependsOn: [{ job: packages, condition: { type: succeeded } }]
-    steps:
-      - name: set-password
-        labels: { node: "${{ string(inputs.node_id) }}" }
-        task:
-          type: behavior
-          behaviorType: command/shell
-          methodName: execute
-          inputs:
-            run: |
-              printf '%s' "$DB_PASSWORD" | sudo mysql-set-password
-          # DB_PASSWORD comes from vault.get('orbit', inputs.password_key)
-```
-
-The second example is a sketch; the pilot fixes the exact syntax. Each action is a step that Swamp shows, can resume and can skip with `guard`.
-
 ## Open points settled by the spike
+
+The following sections record earlier capability proofs, not current workflow templates. Use the execution, Ansible and result contracts above when writing an operation.
 
 The current template uses official `@swamp/ssh` package `2026.10.23.1` (model `2026.10.20.1`), checked at upstream commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`. The hand-built SSH launcher, key scanner and common Python module have been deleted. Official `exec` observes platform/architecture; `collect-host-public-key` observes the public key; one pure TypeScript step shapes their outputs. Stored public host keys use the official pinned policy. Missing pins fail native validation; the probe does not select trust on first use. The extension owns its default key agent and connection handling.
 

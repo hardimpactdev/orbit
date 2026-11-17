@@ -1,50 +1,21 @@
 id: 21853e24-9096-4770-90e9-31c385c71e51
 name: operation-task-check
 autoContinue: false
-description: Native local check and CI admission as official SSH exec argv in the owned task VM workspace, or Ansible phases in a container Instance workspace; scheduled reads own later hosted CI observations.
+description: Run the check in the group's task copy through its Instance workspace phases.
 queueTimeout: 30
 vaults:
 - orbit-control-inputs
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
     kind: {type: string, const: tasks.check}
     intent:
       type: object
-    execution_secrets:
-      type: object
-      propertyNames:
-        enum:
-        - github_token
-        - checks_token
-        - git_authorization
-      maxProperties: 3
-      additionalProperties:
-        type: object
-        properties:
-          vault:
-            type: string
-            enum:
-            - orbit-control-inputs
-          key:
-            type: string
-            pattern: ^task-check-(write|read|git)-[a-f0-9-]{36}$
-        required:
-        - vault
-        - key
-        additionalProperties: false
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+      required: [workspace]
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: check
@@ -52,8 +23,6 @@ jobs:
   steps:
   - name: Check in the Instance
     labels: {role: swamp}
-    # Only a container Instance workspace names `workspace`; its child returns the receipt the push child returns.
-    guard: '${{ !("workspace" in inputs.intent) }}'
     task:
       type: workflow
       workflowIdOrName: task-instance-check
@@ -64,145 +33,6 @@ jobs:
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
         run_id: ${{ run.id }}
-  - name: Build every argv
-    labels: {role: swamp}
-    guard: '${{ "workspace" in inputs.intent }}'
-    task:
-      type: workflow
-      workflowIdOrName: task-check-prepare
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        run_id: ${{ run.id }}
-  - name: Run setup in order
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-check-setup
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        run_id: ${{ run.id }}
-        prepared: '${{ steps["Build every argv"].outputs.prepare }}'
-    dependsOn:
-    - step: Build every argv
-      condition:
-        type: succeeded
-  - name: Run the Project check
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-check-project
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        run_id: ${{ run.id }}
-        prepared: '${{ steps["Build every argv"].outputs.prepare }}'
-        setup: '${{ steps["Run setup in order"].outputs.setup_result }}'
-    dependsOn:
-    - step: Run setup in order
-      condition:
-        type: succeeded
-  - name: Snapshot the workspace
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-check-snapshot-before
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        run_id: ${{ run.id }}
-    dependsOn:
-    - step: Run the Project check
-      condition:
-        type: succeeded
-  - name: Run each deliverable
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-check-deliverables
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        run_id: ${{ run.id }}
-        before: '${{ steps["Snapshot the workspace"].outputs.before }}'
-        prepared: '${{ steps["Build every argv"].outputs.prepare }}'
-        project: '${{ "Run the Project check" in steps && "outputs" in steps["Run the Project check"] && "project" in steps["Run the Project check"].outputs ? steps["Run the Project check"].outputs.project : {"exitCode": 0} }}'
-        setup: '${{ steps["Run setup in order"].outputs.setup_result }}'
-    dependsOn:
-    - step: Snapshot the workspace
-      condition:
-        type: succeeded
-  - name: Snapshot the checked tree
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-check-snapshot-after
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        run_id: ${{ run.id }}
-        before: '${{ steps["Snapshot the workspace"].outputs.before }}'
-        prepared: '${{ steps["Build every argv"].outputs.prepare }}'
-        observed: '${{ steps }}'
-    dependsOn:
-    - step: Run each deliverable
-      condition:
-        type: succeeded
-  - name: Commit the candidate
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-check-commit
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        run_id: ${{ run.id }}
-        local: '${{ steps["Snapshot the checked tree"].outputs.local }}'
-    dependsOn:
-    - step: Snapshot the checked tree
-      condition:
-        type: succeeded
-  - name: Push the candidate
-    labels: {role: swamp}
-    # Runs after any earlier failure too: it reports the check and removes the scratch files.
-    guard: '${{ "workspace" in inputs.intent }}'
-    task:
-      type: workflow
-      workflowIdOrName: task-check-push
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        run_id: ${{ run.id }}
-        candidate: '${{ "Commit the candidate" in steps && "outputs" in steps["Commit the candidate"] && "candidate" in steps["Commit the candidate"].outputs ? steps["Commit the candidate"].outputs.candidate : {"result": {"error_code": "tasks.repository_execution_unknown", "check_id": inputs.intent.check_id}, "remote": "", "refspec": "", "object_format": ""} }}'
-    dependsOn:
-    - step: Commit the candidate
-      condition:
-        type: always
   - name: Read the result
     labels: {role: swamp}
     task:
@@ -211,11 +41,8 @@ jobs:
       behaviorName: '${{ ("task-check-read-result-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: checked
       inputs:
-        result_json: '${{ "Push the candidate" in steps && "outputs" in steps["Push the candidate"] && "finish" in steps["Push the candidate"].outputs ? steps["Push the candidate"].outputs.finish.result_json : ("Check in the Instance" in steps && "outputs" in steps["Check in the Instance"] && "finish" in steps["Check in the Instance"].outputs ? steps["Check in the Instance"].outputs.finish.result_json : "") }}'
+        result_json: '${{ "Check in the Instance" in steps && "outputs" in steps["Check in the Instance"] && "finish" in steps["Check in the Instance"].outputs ? steps["Check in the Instance"].outputs.finish.result_json : "" }}'
     dependsOn:
-    - step: Push the candidate
-      condition:
-        type: always
     - step: Check in the Instance
       condition:
         type: always
@@ -223,7 +50,7 @@ jobs:
     labels: {role: swamp}
     task:
       type: assert
-      expr: '["Push the candidate", "Check in the Instance"].exists(name, name in steps && "outputs" in steps[name] && "finish" in steps[name].outputs && !("error_code" in steps[name].outputs.finish.result))'
+      expr: '"Check in the Instance" in steps && "outputs" in steps["Check in the Instance"] && "finish" in steps["Check in the Instance"].outputs && !("error_code" in steps["Check in the Instance"].outputs.finish.result)'
       message: The task check could not complete its repository work.
       severity: high
     dependsOn:

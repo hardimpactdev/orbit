@@ -5,17 +5,17 @@
 - name: Select only admitted software and manager prerequisites
   ansible.builtin.import_tasks: node-converge-software-plan.yml
 - name: Reconcile exact package pins
-  ansible.builtin.import_tasks: task-vm-apt.yml
+  ansible.builtin.import_tasks: node-converge-apt.yml
 - name: Hold every recipe package at its pin
   ansible.builtin.dpkg_selections: { name: "{{ item.package }}", selection: hold }
   loop: "{{ ubuntu_tools }}"
   loop_control: { label: "{{ item.name }}" }
 - name: Reconcile selected JavaScript pins
   when: "'vp' in tool_by_name"
-  ansible.builtin.import_tasks: task-vm-javascript.yml
+  ansible.builtin.import_tasks: node-converge-javascript.yml
 - name: Reconcile the Tool helper's Deno pin
   when: "'deno' in tool_by_name"
-  ansible.builtin.import_tasks: task-vm-deno.yml
+  ansible.builtin.import_tasks: node-converge-deno.yml
 - name: Reconcile selected browser pin
   when: "'chrome-headless-shell' in tool_by_name"
   ansible.builtin.import_tasks: node-converge-browser.yml

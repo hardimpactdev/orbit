@@ -82,7 +82,6 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | `ufw` | `installed`, `enabled`, and each rule. See below. | every 60 seconds |
 | `env_keys` | One Instance `.env`, named by its path in `subject`: its `kind`, its key names in `keys`, and `testing_tracked`. See [Environment key names](#environment-key-names). | every 60 seconds |
 | `accounts` | The local accounts of the Node: each `user`, `uid`, primary `group`, `home` and `shell`, as `/etc/passwd` and `/etc/group` hold them. See below. | every 60 seconds |
-| `egress` | One task VM's outside destinations, named by the VM in `subject`. See [Task VM egress](#task-vm-egress). | read every 5 seconds; sent on change, at most every 15 seconds |
 
 `ufw` holds each rule from the `### tuple ###` lines of `/etc/ufw/user.rules` and `user6.rules`: `action`, `protocol`, `port`, `destination`, `source_port`, `source`, `direction` (`in`, `out` or `fwd`), `in_interface`, `out_interface`, `family`, the decoded `comment` (empty for a rule without one) and `app`. A rule the agent cannot read is `{"unreadable": true}`. The agent reads `ufw.conf` and the rules files; it runs no `ufw` command.
 
@@ -169,63 +168,7 @@ After the checkouts, the agent sends the `checkouts` index. The Gateway deletes 
 
 ### Task VM egress
 
-The [watch list](#watch-list) sends `egress: null` to every Node, because no Node is a task VM host any more. The Gateway refuses every `egress` fact with `422 agent.fact_not_expected`.
-
-The rest of this section describes what the agent does when a watch list names a bridge. A task VM host's watch list named the Incus bridge of the task VMs in `egress`, and on a container host also the bridge of the task containers.
-
-The agent then records which outside hosts each VM or container connects to and sends one `egress` fact per guest, named by the guest in `subject`. It runs one observer per bridge, with its own files, offsets and state. The record is a log only: nothing is blocked. The agent reads three kinds of files, starts no program and opens no port.
-
-| Source | Path | What the agent takes |
-| --- | --- | --- |
-| DNS log | `/var/log/orbit/dnsmasq-<network>.log` | The names a VM asked for (`query[A]`) and the IPv4 addresses answered, paired by dnsmasq's serial number. An address in a CNAME chain counts for the name the VM asked for. |
-| Connection log | `/var/log/orbit/task-egress.log` | The sender, destination, protocol and port of each new outbound TCP or UDP connection, from the kernel's `orbit-egress` log lines of this bridge. Private, reserved and multicast destinations are skipped. |
-| VM identity | `/var/lib/incus/networks/<network>/dnsmasq.hosts/*` and `dnsmasq.leases` | The MAC and name of each VM from the host files Incus writes. A lease only gives the MAC of an address. The DHCP host name is never trusted. |
-
-Every 5 seconds the agent reads the identity files, then the new part of the DNS log, then the new part of the connection log. It reads each log from a remembered byte offset, at most 4 MiB per file per read.
-
-A log that does not exist yet reads as empty, because rsyslog and dnsmasq create theirs when they first write. A file that is there when the agent first looks is read from its end, so history is not replayed, also after an agent restart. A file that appears later is read once from its start. When a file shrinks or its inode changes, as after log rotation, the agent reads the new file from the start.
-
-The agent keeps state per VM by MAC, so a reused VM name with a new MAC starts fresh. It tracks only the MACs that a host file names, and uses the leases only to find the MAC of an address. It drops the state of a MAC when its host file is gone. It tracks at most 64 VMs. With more host files, it keeps the 64 whose host files it saw appear last.
-
-A connection line names its VM by the source MAC in its `MACSRC=` field. Older kernels print one `MAC=` field with the 14 octets of the Ethernet header instead, and the agent takes the source MAC from octets 7 to 12 of it. `MACSRC=` wins when a line has both. Without either field, the agent finds the VM through the source address and the lease. A line whose MAC field is malformed, or names a MAC that is no tracked VM, is dropped. So is a line without `IN=` of this bridge. A DNS line names its VM through the lease of its client address.
-
-A connection to address A by a VM gives one row for each name that VM resolved to A in the last 30 minutes, or one row with the address when it resolved none. A name's answer time is its latest answer. A DNS answer gives a row with no port or protocol for its name. The agent leaves that row out of the fact once the VM connects to the name.
-
-The agent ignores an answer that is private or reserved. Rows are unique by destination, port and protocol, and sorted by those three, so an unchanged set gives the same fact.
-
-```json
-{
-  "network": "orbittask0",
-  "mac": "10:66:6a:f0:65:d4",
-  "rows": [
-    {
-      "destination": "registry.npmjs.org", "kind": "name", "port": 443, "protocol": "tcp",
-      "addresses": ["104.16.1.34"], "sources": ["conn", "dns"], "flags": [],
-      "first_seen": "2026-11-07T19:00:05Z"
-    }
-  ],
-  "overflow": 0
-}
-```
-
-| Row field | Meaning |
-| --- | --- |
-| `destination`, `kind` | A lower-case name (`name`) or an IPv4 address (`address`). |
-| `port`, `protocol` | The port and `tcp` or `udp` of a connection. Both are null on a row that only a DNS answer made. |
-| `addresses` | The IPv4 addresses of the row in numeric order, at most 8. |
-| `sources` | `conn` for a logged connection, `dns` for a DNS answer. A row has one or both. |
-| `flags` | `dot` for port 853. `dns` for port 53 to an outside address. `doh` for port 443 to a well-known public resolver such as `1.1.1.1` or `8.8.8.8`. |
-| `first_seen` | The agent's UTC time, to the second, when it first saw the row. It never changes. |
-
-The agent keeps at most 1,500 rows per VM. That keeps a full fact below the 1 MiB the Gateway accepts. All VMs together share a budget of 32 MiB for rows, names and answers, so a host full of busy VMs stays well inside the agent's 128 MiB memory limit. A row that the row cap or the budget refuses is counted once in `overflow`, however often the VM repeats it, up to 1,024 distinct refused rows per VM.
-
-The agent also remembers at most 8,192 DNS questions, 1,024 name and address pairs per VM, and 8 names per address. A ninth name replaces the oldest name of its address, and the oldest pair goes first when a VM has too many.
-
-The agent reads every 5 seconds but sends a VM's fact only when it changed, at most once every 15 seconds, and again every 10 minutes. It hands at most 4 facts to the reporter per read, and the rest follow on the next reads. A fact that the Gateway refuses is not sent again before the next change or the 10-minute resync. State lives in memory only. When the watch list has no `egress`, the agent drops all state and reads no file.
-
-The agent runs as root without capabilities, so it reads only files that it owns or that others may read. A file it cannot open is not available, except a log that does not exist yet. While it cannot read one of the other files, the agent keeps its state and sends no `egress` fact. It logs the path and the kind of error, never content, at most once in 10 minutes per path.
-
-The fact holds no URL path, packet content or secret, and the agent never writes row contents to its log. Agents before 0.13.0 send no `egress` fact.
+The task bridge egress observer is removed. The [watch list](#watch-list) has no `egress` member. The Gateway refuses every `egress` fact with `422 agent.fact_not_expected`; rows already stored stay readable through [`task:egress`](/cli/task/egress).
 
 ## Task workspaces
 
@@ -244,7 +187,6 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
     "applications": { "operator": "server/web" },
     "tools": [{ "manager": "apt", "paths": ["/var/lib/dpkg/status"] }],
     "environments": ["/home/orbit/apps/operator/default/server/web/.env", "/home/orbit-app-16/.env"],
-    "egress": null,
     "workspaces": [
       {
         "instance_id": 31,
@@ -264,7 +206,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
 
 `environments` names the `.env` of each Instance on the Node: the application directory of a development checkout, or the home of a production account; the agent reports their [key names](#environment-key-names). Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
 
-`egress` is null on every Node: the stored `task_vms` Node setting that named a task VM host's bridges is removed ([old paths](/reference/old-paths#task-vm-settings)). On a host, `network` named the Incus bridge of the task VMs, such as `orbittask0`. `container_network` named the bridge of the removed task container setting, such as `orbittaskc0`. The agent accepts only a name that is `orbittask` followed by 1 to 6 lower-case letters or digits, and ignores any other value. Agents before 0.15.0 read only `network`, so they observe only the VM bridge. Without `egress` the agent reads none of the [egress](#task-vm-egress) files and holds no egress state.
+The watch list names no task bridges. The agent reads no [task VM egress](#task-vm-egress) files and holds no egress state.
 
 `workspaces` holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
 
@@ -401,6 +343,8 @@ Every root command that runs `apt-get` or `dpkg` holds the shared `packages` res
 A command name is `<namespace>.<action>`, and an error code is `<namespace>.<reason>`. A namespace is singular, as in the CLI: `instance.inspect-laravel-routes` refuses with `instance.laravel_routes_unreadable`. An action can name a collection, such as `incus.images`. Four namespaces end in `s` but are not plurals: the mass nouns `analytics` and `metrics`, the product `incus`, and the extension slug `documents`. The Gateway Node's start-hook drop-in runs `orbit-agent service documents.prepare-cleanup`, so that name stays with the extension slug. Service entry points are not commands: `schedules-run` and `schedules-complete` are written into every Schedule's units on its Node, so they keep their names. A Rust test refuses any other namespace whose last word ends in one `s`; `process` ends in two.
 
 Rust defines each command: its input, output, error codes, bound, privilege, and whether it mutates. `apps/agent/contract/commands.json` is written from those definitions, and a Rust test fails when the file is stale. During the freeze, the Gateway reads privileges and bounds from `apps/gateway/resources/agent/frozen-commands.json`, captured from the published binary. Removing an uncalled source command regenerates only the source contracts; it does not rewrite the published binary's frozen contract or move its pin. The manual topology start, status, evidence read and worker are removed from source. `ORBIT_AGENT_CONTRACT` can select a different contract file; a relative path resolves from the Gateway directory. Rewrite the file with `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- contract_file` in `apps/agent`.
+
+Source cleanup removes uncalled commands from the Rust registry and regenerates its command and schema files. It does not edit the published binary's frozen snapshot or its recorded hashes: those change only with a reviewed release pin. The source has no `incus.vm`, `incus.vm-state`, `instance.activate-release`, `metrics.publication-firewall`, `package-cache.host` or `php.refresh-production-cache` command. Swamp's inventory also drops the five uncalled `task-vm.*` kinds; the topology harness remains until its own removal.
 
 `apps/agent/contract/schemas.json` holds the JSON Schema of each command's input and output, derived from the same Rust types. `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- schemas_file` rewrites it. Rust tests keep every input object closed to unknown fields in the schema, and decode a generated input of every command with an unknown field at each level to prove the real decoder refuses it.
 

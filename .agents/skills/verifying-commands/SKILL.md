@@ -23,7 +23,7 @@ Each case specifies:
 - the Gateway record, the Node state and the real effect to assert;
 - what must stay unchanged, including unmanaged resources and state after a refusal;
 - what a repeat must do under the documented contract;
-- for a failure case, what is cleaned up, restored or retained, per [flow-tighten rule 28](../flow-tighten/SKILL.md#what-a-good-flow-looks-like).
+- for a failure case, what is cleaned up, restored or retained, per the [chart design rules](../../../docs/cli/README.md#design-rules).
 
 Setup can use other commands, but the case must invoke the command under test through its real interface.
 

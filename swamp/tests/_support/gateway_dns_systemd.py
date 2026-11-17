@@ -1,4 +1,4 @@
-"""Service-manager boundary for the stock-fleet fixture. Only its private DNS process is real."""
+"""Service-manager boundary for Gateway DNS. Only its private DNS process is real."""
 import json
 import os
 import shlex
