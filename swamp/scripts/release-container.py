@@ -57,23 +57,19 @@ def release(target, revision):
     return record
 
 
-def power_command(name, action):
-    return [
-        "systemd-run", "--unit=orbit-instance-power-" + name, "--wait", "--pipe", "--collect", "--quiet",
+def power(name, action, operation=None):
+    arguments = [
+        "--unit=orbit-instance-power-" + name, "--wait", "--pipe", "--collect", "--quiet",
         "/usr/local/libexec/orbit-instance-power", action, "--release", name,
     ]
-
-
-def power(record, action, operation):
-    name = record["name"]
-    intent = json.dumps({
-        "schema_version": 1, "instance_id": name, "incus_project": PROJECT, "incus_name": name,
-        "operation_id": int(operation), "web": None,
-    })
-    result = subprocess.run(
-        [*power_command(name, action), "--operation", operation],
-        input=intent, capture_output=True, text=True, timeout=120, check=True,
-    )
+    intent = None
+    if operation is not None:
+        arguments.extend(["--operation", operation])
+        intent = json.dumps({
+            "schema_version": 1, "instance_id": name, "incus_project": PROJECT, "incus_name": name,
+            "operation_id": int(operation), "web": None,
+        })
+    result = subprocess.run(["systemd-run", *arguments], input=intent, capture_output=True, text=True, timeout=120, check=True)
     receipt = json.loads(result.stdout)
     if receipt["outcome"] in ("failed", "missing"):
         raise ValueError(receipt.get("error_code") or "release.power_failed")
@@ -84,10 +80,10 @@ def wake(record, operation):
     if record["status"] == "Stopped":
         # Clear receipts from a stopped incarnation before start. A cold boot is also
         # the recovery path after a Node reboot loses the earlier frozen processes.
-        power(record, "restore", operation)
+        power(record["name"], "restore", operation)
         incus("start", record["name"])
     # A kernel freeze can survive an Incus daemon restart even when Incus says Running.
-    receipt = power(record, "restore", operation)
+    receipt = power(record["name"], "restore", operation)
     if receipt["state_after"] != "running":
         raise ValueError("release.container_unavailable")
     return record["name"]
@@ -98,7 +94,7 @@ def sleep(record, operation):
         raise ValueError("release.container_still_active")
     if len(Path("/proc/swaps").read_text().splitlines()) < 2:
         raise ValueError("release.swap_unavailable")
-    receipt = power(record, "prepare", operation)
+    receipt = power(record["name"], "prepare", operation)
     if receipt["outcome"] not in ("frozen", "already_frozen"):
         raise ValueError("release.container_not_frozen")
     path = Path("/sys/fs/cgroup") / ("lxc.payload." + PROJECT + "_" + record["name"])
@@ -106,7 +102,7 @@ def sleep(record, operation):
     receipt["residual_anon_bytes"] = int(memory["anon"])
     receipt["swap_bytes"] = int((path / "memory.swap.current").read_text())
     if receipt["swap_bytes"] == 0 or receipt["residual_anon_bytes"] > 32 * 1024 * 1024:
-        power(record, "restore", operation)
+        power(record["name"], "restore", operation)
         raise ValueError("release.memory_not_reclaimed")
     return receipt
 
@@ -186,7 +182,7 @@ def main(argv):
         name = f"{args.target}-{args.revision}"
         if instance(name) is not None:
             raise ValueError("release.container_still_exists")
-        subprocess.run(power_command(name, "discard"), capture_output=True, check=True, timeout=30)
+        power(name, "discard")
         return name
     record = release(args.target, args.revision)
     if args.action == "address":
