@@ -13,7 +13,6 @@ use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
@@ -110,7 +109,7 @@ final class InstanceNodeServiceTargets
     {
         $base = InstanceEgress::environment($gateway)['NO_PROXY'];
         $hosts = array_values(array_unique(array_column(array_filter($endpoints, static fn (array $target): bool => ! $target['docker']), 'host')));
-        $fleet = $nestedFleet ? [TaskVmNestedFleet::Layout['gateway']['wireguard'], TaskVmNestedFleet::WireGuardSubnet, TaskVmNestedFleet::Subnet] : [];
+        $fleet = $nestedFleet ? [NestedFleetLayout::Layout['gateway']['wireguard'], NestedFleetLayout::WireGuardSubnet, NestedFleetLayout::Subnet] : [];
         $names = array_values(array_unique(array_column($privateNames, 'name')));
         $value = implode(',', [$base, ...$hosts, ...$fleet, ...$names]);
 

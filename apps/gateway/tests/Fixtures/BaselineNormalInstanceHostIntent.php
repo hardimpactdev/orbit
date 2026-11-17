@@ -13,8 +13,8 @@ namespace App\Domain\Instances;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 
@@ -67,7 +67,7 @@ final readonly class BaselineNormalInstanceHostIntent
     public function __construct(
         private ContainerNodes $nodes,
         private AllocateInstanceBridgeAction $bridges,
-        private RecipeImageBuilds $recipes,
+        private CurrentRecipe $recipes,
         private PeerDnsPolicy $privateDns,
     ) {}
 
@@ -169,8 +169,8 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
@@ -218,7 +218,7 @@ final readonly class BaselineNormalInstanceContainer
     /** The placeholder model key and the model origin, which T3's unit hands to Claude Code and Codex. */
     public const string ModelEnvironment = '/home/agent/.config/orbit/model.env';
 
-    public function __construct(private RecipeImageBuilds $recipes) {}
+    public function __construct(private CurrentRecipe $recipes) {}
 
     public static function name(Instance $instance): string
     {

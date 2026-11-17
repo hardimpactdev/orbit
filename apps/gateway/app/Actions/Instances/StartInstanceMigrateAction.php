@@ -12,6 +12,7 @@ use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\InstanceMigration\MigratedProcessDefinitions;
 use App\Domain\InstanceMigration\MigrateSchedules;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceContainer;
@@ -25,7 +26,6 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\DatabaseConnection;
@@ -192,10 +192,10 @@ final readonly class StartInstanceMigrateAction
                 "The Project's default Instance runs on Node [{$default->node_id}]. Its other Instances live there.", 409);
         }
         app(InstanceLifecycleContributions::class)->assertCreateAvailable();
-        if (! app()->bound(TaskVmModelRoute::class)) {
+        if (! app()->bound(ContainerModelRoute::class)) {
             throw new ResourceOperationException('operation.kind_unavailable', 'An Instance with T3 needs the model router.', 503);
         }
-        app(TaskVmModelRoute::class)->assertReady();
+        app(ContainerModelRoute::class)->assertReady();
 
         return $default;
     }

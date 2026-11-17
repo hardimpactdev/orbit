@@ -36,6 +36,7 @@ import sys
 import tempfile
 import time
 import tomllib
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -274,12 +275,20 @@ def ci_job(job):
 
 
 def ci_time_limit(job):
-    """The per-test time limit, in seconds, that CI's job passes to Pest, or None: the project's phpunit.xml then holds."""
+    """CI's explicit per-test limit, or the enforced project default shared with plain local Pest."""
     limits = {int(limit) for line in ci_job(job).splitlines() if 'vendor/bin/pest' in line or 'composer test' in line
               for limit in re.findall(r'--default-time-limit=(\d+)', line)}
     if len(limits) > 1:
         raise RuntimeError(f'the {job} job of CI passes more than one Pest time limit')
-    return next(iter(limits), None)
+    if limits:
+        return next(iter(limits))
+    project = ROOT / PEST_JOBS[job]
+    for filename in ('phpunit.xml', 'phpunit.xml.dist'):
+        config = project / filename
+        if config.exists():
+            attributes = ET.parse(config).getroot().attrib
+            return int(attributes['defaultTimeLimit']) if attributes.get('enforceTimeLimit') == 'true' and 'defaultTimeLimit' in attributes else None
+    return None
 
 
 def project_time_limit(directory):

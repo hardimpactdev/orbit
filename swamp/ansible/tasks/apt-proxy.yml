@@ -1,6 +1,5 @@
 ---
-# The package cache used by nested-fleet Nodes. `apt_proxy` is the
-# Gateway's value (TaskVmAptCache): the stock apt-cacher-ng of the VM for a Node inside the nested subnet, none for every other Node.
+# An explicit bootstrap package proxy, or null for all Gateway-generated Node intents.
 # A Node of an Instance container's nested fleet gets none, so this removes the file; its apt reads the egress proxy from the fleet's
 # own file (95orbit-nested-egress, swamp/ansible/tasks/instance-fleet.yml), which no play here touches.
 # One drop-in of apt.conf.d, so the apt module, `apt-get` and a console read it alike. The cache proxies plain http only: https sources

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceImage;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 
@@ -26,7 +26,7 @@ function nestedImageHost(bool $switch): Node
 /** @return array{line: string, packages: list<array{name: string, sha256: string, urls: list<string>}>} */
 function nestedImageIncus(): array
 {
-    return app(RecipeImageBuilds::class)->currentRecipe()->incus('amd64') ?? throw new RuntimeException('The recipe holds no Incus packages.');
+    return app(CurrentRecipe::class)->currentRecipe()->incus('amd64') ?? throw new RuntimeException('The recipe holds no Incus packages.');
 }
 
 it('keeps the normal image definition byte-identical to the one before the nested-fleet variant', function (): void {
@@ -59,7 +59,7 @@ it('names the runtime folder\'s trust module in agent\'s NSS store of both image
 
     // The module's version is the recipe part's, inside the definition that names the image: a new pin names a new image, which
     // the build checks again.
-    $part = app(RecipeImageBuilds::class)->currentRecipe()->instances?->trustModule();
+    $part = app(CurrentRecipe::class)->currentRecipe()->instances?->trustModule();
     expect($normal['browser_trust']['version'])->toBe($part?->version)
         ->and($normal['browser_trust']['library'])->toBe($part?->trustModule['library'] ?? null);
 });
