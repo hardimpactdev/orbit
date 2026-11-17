@@ -87,6 +87,12 @@ sequenceDiagram
     %%> On failure:
     %%> - the copy does not start; the copy's destroy releases the hold
   end
+    SW->>N: Wait for the seed<br/>native clone-seed-wait
+    %%> What it does:
+    %%> - `curl` on the Node's Incus API asks for the admitted seed snapshot `seed-<commit>` of the default, with curl's own retry: every 2 s, for at most 120 s, the bound of a deployment's `seed` phase; a normal copy finds it at the first request
+    %%> - a retake at the admitted commit deletes `seed-<commit>` and renames its `next-` to that name a moment later, so the copy waits through that moment (docs/reference/development-containers.md#a-retake-keeps-the-seed)
+    %%> On failure:
+    %%> - at the bound the step fails, not the run (`allowFailure`); the copy step still runs and decides from one read of the snapshots
     SW->>N: Clone default container<br/>native clone-container
     %%> Stage, the step's first part:
     %%> - SSH stdin is the Gateway's launch copy, one vault value on ONE line: `stage` (the clone script, its helpers and the container intent from the admitting Gateway's release) beside `private` (the read token's credential line and the model environment). Swamp turns a vault value with a newline into one regular expression, which a 32 KB line breaks (release 2080)
@@ -96,10 +102,10 @@ sequenceDiagram
     %%> What it does:
     %%> - the copy supplies the full root disk device (type, path, pool and size), whether the seed inherits it or stores it locally
     %%> - `incus copy` of the default container's snapshot `seed-<commit>`, a ZFS clone; a stopped default needs no start
-    %%> Seed retake (docs/reference/development-containers.md#a-retake-keeps-the-seed):
-    %%> - when the admitted seed is gone, or a `next-` snapshot shows a retake that runs, the copy reads the default's snapshots again every 2 s for up to 120 s, the bound of a deployment's `seed` phase; when no `next-` is left, it copies the admitted seed if it is there, else the newest `seed-` snapshot
-    %%> - a copy of another seed than the admitted one records that seed's commit for the later phases: a branch that the Node's mirror lacks starts at that commit, which the copied seed's repository holds
-    %%> - a retake that is still running at the bound fails the create with `instance.default_seed_moved` before any change, as before; a default without any `seed-` or `next-` snapshot refuses at once with `instance.default_seed_missing`
+    %%> Seed (docs/reference/development-containers.md#a-retake-keeps-the-seed):
+    %%> - reads the default's snapshots once, after "Wait for the seed": copies the admitted seed when it is there
+    %%> - when a deployment replaced it by a newer seed and no `next-` of the admitted seed is there, copies the newest `seed-` snapshot and records its commit for the later phases: a branch that the Node's mirror lacks starts at that commit, which the copied seed's repository holds
+    %%> - the admitted seed's `next-` still there after the wait (a retake that did not end within 120 s) fails the create with `instance.default_seed_moved` before any change, as before; a default without any `seed-` or `next-` snapshot refuses with `instance.default_seed_missing`
     %%> Inner volume (a clone whose intent has `inner_volume` only; every other clone makes no volume call and copies the container as before):
     %%> - the default's volume must hold its own snapshot `seed-<commit>`, the other half of the seed, else `instance.default_seed_incomplete` before any change; a deployment of the default takes the pair
     %%> - before the container: `incus storage volume copy` of that snapshot to `inner-<id>`, a ZFS clone; Incus gives the copy a new btrfs fsid (about 4 s in the 2026-11-14 test); a volume of that name without its container, left by a failed copy, is deleted and copied again. The clone inherits `volmode=dev` from the pool's `custom` dataset, which the Node's host converge sets, so its device is made once (docs/reference/development-containers.md#the-inner-volume)
