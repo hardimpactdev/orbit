@@ -2664,7 +2664,7 @@ The nested Nodes reach the internet through `oe-nested`, the outer container's N
 
 ### Users
 
-Two users share the outer container, and only one of them reaches the fleet.
+`agent`, `www-data` and the nested fleet’s `orbit` share the outer container; only `agent` reaches the fleet.
 
 `agent` drives the inner Incus as a member of its admin group. It restores `base`, runs commands in the nested containers and reads their journals. It has root in its own container through `sudo` with no password, as in every container. It is never root on the Node.
 
