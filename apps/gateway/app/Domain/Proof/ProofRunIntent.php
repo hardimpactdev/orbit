@@ -177,14 +177,23 @@ final readonly class ProofRunIntent
             $waitStep = "Waiting for proof Operation {$working->id} to finish.";
             throw new TaskCapacityException(TaskWait::Capacity, $waitStep);
         }
-        // Expired parents cannot keep the queue closed if their next retry was lost.
-        if (Operation::query()->where('kind', OperationKinds::ProofRun)->whereNotIn('status', OperationStatus::terminalValues())
-            ->whereNull('cancel_requested_at')->whereJsonLength('input->runs', 0)->where('id', '<', $proof->id)
-            ->where('created_at', '>=', now()->subSeconds(self::WaitSeconds))->exists()) {
+        if (self::waitsForAdmission($proof->id)) {
             throw new TaskCapacityException(TaskWait::Capacity, 'Waiting behind an earlier proof.');
         }
 
         return $current;
+    }
+
+    /**
+     * Whether a proof waits for its admission: it is open, names no runs yet and is within its admission budget. With `$before`, only
+     * a proof admitted earlier than that one counts. The warm pool makes no new warm copy while one waits (ProofWarmPool::keep).
+     */
+    public static function waitsForAdmission(?int $before = null): bool
+    {
+        // Expired parents cannot keep the queue closed if their next retry was lost.
+        return Operation::query()->where('kind', OperationKinds::ProofRun)->whereNotIn('status', OperationStatus::terminalValues())
+            ->whereNull('cancel_requested_at')->whereJsonLength('input->runs', 0)->when($before !== null, static fn ($query) => $query->where('id', '<', $before))
+            ->where('created_at', '>=', now()->subSeconds(self::WaitSeconds))->exists();
     }
 
     /**
@@ -237,11 +246,14 @@ final readonly class ProofRunIntent
             }
             $nodes = Node::query()->findMany(array_keys($places))->keyBy('id');
             $runs = [];
-            foreach (self::spread($places, count($shards)) as $index => $nodeId) {
+            foreach (ProofCopies::spread($places, count($shards)) as $index => $nodeId) {
                 $assignments = $shards[$index];
                 $case = $assignments[0];
-                $group = $this->group($commit, $case['command']);
-                $copy = Instance::query()->findOrFail(app(TaskCopyStart::class)->admitRead($group, ProofGroup::Trigger, null, $read, $nodes->get($nodeId))->target_id);
+                // A warm copy of the Node first: its create has ended. Else a new copy from the Node's seed.
+                $group = app(ProofWarmPool::class)->take($nodeId);
+                $group?->update(self::groupText($commit, $case['command']));
+                $copy = $group !== null ? Instance::query()->findOrFail($group->taskable_id)
+                    : Instance::query()->findOrFail(app(TaskCopyStart::class)->admitRead($group = $this->group($commit, $case['command']), ProofGroup::Trigger, null, $read, $nodes->get($nodeId))->target_id);
                 $stored = ProofBatchPlan::stored($assignments);
                 $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(StartOperationAction::class)->execute('proof.command', 'task_group', $group->id, $copy->node_id, [
                     'proof_operation_id' => $proof->id, 'commit' => $commit, 'command' => $case['command'], 'file' => $case['file'], 'copy' => true,
@@ -253,27 +265,6 @@ final readonly class ProofRunIntent
             }
             $this->recordRuns($proof, $current, $intent, $runs, $batches);
         });
-    }
-
-    /**
-     * The Node of each shard, one shard per free place: the Nodes take turns, so fewer shards than places spread over the Nodes.
-     *
-     * @param  array<int, int>  $places
-     * @return list<int>
-     */
-    private static function spread(array $places, int $shards): array
-    {
-        $nodes = [];
-        while (count($nodes) < $shards) {
-            foreach ($places as $nodeId => $free) {
-                if ($free > 0 && count($nodes) < $shards) {
-                    $nodes[] = $nodeId;
-                    $places[$nodeId] = $free - 1;
-                }
-            }
-        }
-
-        return $nodes;
     }
 
     private function assertExecutionEnabled(): void
@@ -359,11 +350,22 @@ final readonly class ProofRunIntent
         });
     }
 
+    /**
+     * The title and brief of a proof run's group: a new group's, and a taken warm copy's group's from then on.
+     *
+     * @return array{title: string, brief: string}
+     */
+    private static function groupText(string $commit, string $command): array
+    {
+        return ['title' => 'Proof '.$command.' '.substr($commit, 0, 12), 'brief' => 'Prove '.$command.' at commit '.$commit.'.'];
+    }
+
     private function group(string $commit, string $command): Task
     {
-        return app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), 'Proof '.$command.' '.substr($commit, 0, 12),
-            'Prove '.$command.' at commit '.$commit.'.', TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
-                'The Swamp workflow operation-proof-run-copy proves the command in its own copy.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
+        $text = self::groupText($commit, $command);
+
+        return app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), $text['title'], $text['brief'], TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
+            'The Swamp workflow operation-proof-run-copy proves the command in its own copy.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
     }
 
     /**

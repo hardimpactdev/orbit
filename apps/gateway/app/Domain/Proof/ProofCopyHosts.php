@@ -17,6 +17,7 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Models\ProofWarmCopy;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -114,7 +115,7 @@ final readonly class ProofCopyHosts
 
     /**
      * The Node's free CI places (docs/cli/proof/run.mdx#the-run): its `ci.places` minus its busy runners minus the proof copies already
-     * on it, of any proof. A task copy takes no place. None on a Node that takes no proof copies (takesCopies). The runner view shows this
+     * on it, of any proof, and the warm copies. A task copy takes no place. None on a Node that takes no proof copies (takesCopies). The runner view shows this
      * count, and proof:run places one copy in each.
      */
     public static function freePlaces(Node $node, NodeCiData $ci, int $busyRunners, int $proofCopies): int
@@ -129,8 +130,8 @@ final readonly class ProofCopyHosts
     }
 
     /**
-     * The live proof copies: each copy in the nested Incus project whose task group a proof run owns (ProofGroup), also one that is
-     * failing or being destroyed.
+     * The live proof copies: each copy in the nested Incus project whose task group a proof run owns (ProofGroup) or the warm pool holds
+     * (ProofWarmPool), also one that is failing or being destroyed. A warm copy holds its place while it waits.
      *
      * @return Builder<Instance>
      */
@@ -138,7 +139,9 @@ final readonly class ProofCopyHosts
     {
         return Instance::query()->whereNotNull('task_workspace_owner_id')
             ->whereHas('runtime', static fn ($runtime) => $runtime->where('incus_project', InstancePlacement::NestedProject))
-            ->whereIn('task_workspace_owner_id', Operation::query()->select('target_id')->where('kind', ProofGroup::OwnerKind)->where('target_type', 'task_group'));
+            ->where(static fn (Builder $owned): Builder => $owned
+                ->whereIn('task_workspace_owner_id', Operation::query()->select('target_id')->where('kind', ProofGroup::OwnerKind)->where('target_type', 'task_group'))
+                ->orWhereIn('task_workspace_owner_id', ProofWarmCopy::query()->select('task_id')));
     }
 
     /**

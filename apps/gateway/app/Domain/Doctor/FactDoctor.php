@@ -316,13 +316,20 @@ final readonly class FactDoctor
             if ($removal !== null && $removal->status === InstanceRemovalStatus::Removing && $removal->retry_count >= InstanceRemovalReaper::MaxRetries) {
                 continue;
             }
+            $refusal = $removal?->start_refusal === null ? '' : '; start refused: '.$removal->start_refusal;
             if ($removal !== null && InstanceRemovalReaper::stuck($removal)) {
                 $step = $removal->failed_step->value ?? 'unknown';
                 $check->issue(InstanceDoctorIssueCode::RemovalStuck->value, $instance->id, $instance->name,
-                    sprintf('Removal %s failed at %s with %s after %d automatic retries.', $removal->id, $step, $removal->error_code ?? 'unknown', $removal->retry_count),
-                    'removed', $step.': '.($removal->error_code ?? 'unknown'));
+                    sprintf('Removal %s failed at %s with %s after %d automatic retries%s.', $removal->id, $step, $removal->error_code ?? 'unknown',
+                        $removal->retry_count, $refusal === '' ? '' : ", the last start refused with {$removal->start_refusal}"),
+                    'removed', $step.': '.($removal->error_code ?? 'unknown').$refusal);
+            } elseif ($removal !== null && $removal->status === InstanceRemovalStatus::Failed && $removal->start_refusal !== null) {
+                // Before it is stuck, each refused reaper start shows at once with its own code (InstanceRemovalReaper::refused).
+                $check->issue(InstanceDoctorIssueCode::RemovalRetryRefused->value, $instance->id, $instance->name,
+                    sprintf('The removal reaper could not start removal %s again: %s. It tries again after its next delay.', $removal->id, $removal->start_refusal),
+                    'admitted', $removal->start_refusal);
             }
-            $check->observed($instance->id, InstanceDoctorIssueCode::RemovalStuck->value);
+            $check->observed($instance->id, InstanceDoctorIssueCode::RemovalStuck->value, InstanceDoctorIssueCode::RemovalRetryRefused->value);
         }
 
         return $check->report();
@@ -345,13 +352,14 @@ final readonly class FactDoctor
             ->orderBy('instances.id')
             ->get(['instances.id', 'instances.node_id', 'instances.name', 'removals.id as removal_id', 'removals.status as removal_status',
                 'removals.kind as removal_kind', 'removals.retry_count as removal_retry_count', 'removals.error_code as removal_error_code',
-                'removals.failed_step as removal_failed_step']);
+                'removals.failed_step as removal_failed_step', 'removals.start_refusal as removal_start_refusal']);
         $grouped = [];
         foreach ($rows as $row) {
             $attributes = $row->getAttributes();
             $removal = $attributes['removal_id'] === null ? null : (new InstanceRemoval)->newFromBuilder(['id' => $attributes['removal_id'],
                 'status' => $attributes['removal_status'], 'kind' => $attributes['removal_kind'], 'retry_count' => $attributes['removal_retry_count'],
-                'error_code' => $attributes['removal_error_code'], 'failed_step' => $attributes['removal_failed_step']]);
+                'error_code' => $attributes['removal_error_code'], 'failed_step' => $attributes['removal_failed_step'],
+                'start_refusal' => $attributes['removal_start_refusal']]);
             $grouped[$row->node_id][] = [$row, $removal];
         }
 
