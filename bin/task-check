@@ -5,10 +5,12 @@ CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units
 Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
 names for changed SDK fixtures, the project's pin test files (PIN_TESTS), and the whole SDK suite, which takes
 seconds, each with the per-test time limit that CI's job passes to Pest. The rest of the Gateway, CLI and docs suites
-is left to CI and named as skipped. CI's policy tests run on every change, as CI's "CI policy" job runs them.
+is left to CI and named as skipped. Expensive policy and docs checks run when their inputs change; fixture budget
+and capacity checks remain unconditional. CI's "CI policy" job still runs its full suite on every PR.
 The fixtures part runs the units of CI's plan that the change touches directly first, then the other planned units
 that fit the time left; it names the rest as deferred to CI. Every part gets the time left as its limit; a part the
-budget stops or leaves out is named. The output starts with CI's per-unit
+budget stops or leaves out is named, and the final result explicitly marks incomplete coverage without failing it.
+The output starts with CI's per-unit
 time caps and ends with a summary of at most SUMMARY_BYTES: one line per part with its outcome and seconds, then the
 last lines of each failed part, so the stored tail of the output always holds it.
 
@@ -70,9 +72,16 @@ PIN_TESTS = {
                      'tests/Feature/InstanceNodeServiceTargetsTest.php', 'tests/Feature/Http/CollectionAccessContractTest.php'),
     'apps/cli': ('tests/Feature/CommandSurfaceTest.php',),
 }
-# The CI policy and budget tests that CI's "Select build inputs" job runs on every PR, whatever it changed.
+# CI runs these on every PR; this local check runs them for tooling and docs inputs.
 CI_POLICY = [['python3', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_ci_*.py'],
              ['python3', '-m', 'unittest', 'discover', '-s', 'tools/ci-runners', '-p', 'test_*.py']]
+# Policy tests also consume the fixture/proof registry, runner implementation and recipe/build inputs.
+# Keep their non-tooling inputs here; docs inputs come from the CI table below.
+CI_POLICY_INPUTS = ('swamp/**', 'apps/agent/**', 'apps/pi-server/**', 'apps/gateway/resources/ci-runner/**',
+                    'apps/gateway/resources/machine-software/**',
+                    'apps/gateway/app/Infrastructure/MachineSoftware/StaticPhpBuild.php',
+                    'apps/gateway/.env.example', 'apps/cli/tests/Fixtures/Console/command-consent.php',
+                    *(f'{project}/{file}' for project, files in PIN_TESTS.items() for file in files))
 COLLECT_SECONDS = 15
 FIXTURE_SETUP_SECONDS = 10
 OUTPUT_LINES = 80
@@ -301,12 +310,13 @@ def pest(name, project, files, detail, deadline):
     return part
 
 
-def fixture_population(plan, deadline):
+def fixture_population(plan, deadline, fixtures=None):
     """A planned Deno fixture's registered cases must equal its stored cases: CI fails its PR unit before any case otherwise."""
     started = time.monotonic()
     try:
         # The table load refuses a Python fixture whose case_costs no longer match its live tests.
-        _budget, fixtures, _defaults = units.configuration()
+        if fixtures is None:
+            _budget, fixtures, _defaults = units.configuration()
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         return Part('fixture-population', 'FAILED', time.monotonic() - started, 'the fixture table does not load', str(error))
     # The units CI runs on the PR, hosted and self-hosted.
@@ -458,7 +468,10 @@ def report(parts, base, seconds):
     lines = ['', 'Task check summary']
     lines += [clip(f'  {part.status:<12} {part.name} ({part.seconds:.1f}s{"; " + part.detail if part.detail else ""})')
               for part in parts]
-    end = [NOT_IN_CHECK, f'Task check {"FAILED" if failed else "PASSED"} against {base[:12]} in {seconds:.1f}s']
+    incomplete = any('budget:' in part.detail or 'budget skipped:' in part.detail or 'deferred to CI:' in part.detail
+                     for part in parts)
+    result = 'FAILED' if failed else ('PASSED with incomplete coverage (budget exhausted; CI must finish)' if incomplete else 'PASSED')
+    end = [NOT_IN_CHECK, f'Task check {result} against {base[:12]} in {seconds:.1f}s']
     shown = [part for part in parts if part.status == 'FAILED' and part.output.strip()]
     room = SUMMARY_BYTES - size(lines + end)
     for part in shown:
@@ -536,18 +549,30 @@ def main(argv=None):
     def want(part):
         return part in selected and jobs is not None
 
+    # CI forces Docs on every PR for its impact gate. Keep that cheap gate, but use the table's actual
+    # input rules for the expensive checks, including inputs outside docs/ such as apps/docs and charts.
+    input_jobs = review['ci_select'](paths)['jobs']
+    tooling = any(path.startswith(('bin/', 'tools/', '.github/')) for path in paths)
+    # Policy also checks tracked presence of literal table inputs, including deleted files.
+    checks, _, _ = units.selection.check_table()
+    entries = (checks['all-checks'], checks['ignored'], *checks['check'].values(), *checks['roots'].values())
+    named_inputs = {pattern.removeprefix('!') for entry in entries for pattern in entry['inputs']
+                    if not set('*?') & set(pattern)}
+    policy_rules = units.selection.input_rules((*CI_POLICY_INPUTS, *named_inputs))
+    policy_inputs = tooling or input_jobs['docs'] or any(units.selection.matches(path, policy_rules) for path in paths)
+    docs_inputs = tooling or input_jobs['docs'] or input_jobs['api-reference']
     if want('docs-impact'):
         common = Path(review['git'](ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
         record(timed('docs-impact', [review['docs_impact_command'](ROOT, base, common)], deadline))
     if want('check-flows'):
-        record(timed('check-flows', [['node', 'bin/check-flows']], deadline, env={'BASE': base}) if jobs['docs']
-               else Part('check-flows', 'not selected', 0, 'the Docs job is not selected'))
+        record(timed('check-flows', [['node', 'bin/check-flows']], deadline, env={'BASE': base}) if docs_inputs
+               else Part('check-flows', 'not selected', 0, 'no tooling, docs or API reference input changed'))
     if want('docs-lint'):
         # Root composer check writes docs/openapi.json before the docs build, so the lint never reads a stale one.
         commands = [['bin/docs-openapi']] if jobs['api-reference'] else []
         commands += [['composer', 'docs-build'], ['composer', 'docs-lint']]
-        record(timed('docs-lint', commands, deadline) if jobs['docs']
-               else Part('docs-lint', 'not selected', 0, 'the Docs job is not selected'))
+        record(timed('docs-lint', commands, deadline) if docs_inputs
+               else Part('docs-lint', 'not selected', 0, 'no tooling, docs or API reference input changed'))
     if want('pint'):
         projects = [project for project in PHP_PROJECTS if php_files(paths, project)]
         for project in projects:
@@ -572,9 +597,10 @@ def main(argv=None):
         else:
             record(Part('swamp-shape', 'not selected', 0, 'the Swamp checks are not selected'))
     if want('ci-policy'):
-        record(ci_policy(deadline))
+        record(ci_policy(deadline) if policy_inputs
+               else Part('ci-policy', 'not selected', 0, 'no policy input changed; CI runs the full policy suite'))
     if want('fixture-population'):
-        record(fixture_population(plan, deadline))
+        record(fixture_population(plan, deadline, table))
     if want('pest'):
         for name, project, files, status, detail in pest_plan(jobs, paths, base):
             record(pest(name, project, files, detail, deadline) if status == 'run' else Part(name, status, 0, detail))

@@ -92,7 +92,7 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | CLI static analysis, PHP SDK static analysis | Run PHPStan for `apps/cli` or `packages/php-sdk` |
 | Docs build | Generate contracts and the Docs index; run strict lint, Docs Pest, `bin/check-flows` and the PR docs-impact gate |
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
-| Web build | Build and retain the web app on every PR for tree reuse; require `dist/index.html` and `dist/version.json` |
+| Web build | Run unit and Chromium/WebKit verification tests, then Chromium app tests; build and retain the web app on every PR for tree reuse; require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only and docs-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
@@ -230,6 +230,8 @@ A hosted runner has none of these, so a `self_hosted` file never runs there.
 ### CI budget
 
 Pull request CI takes at most five minutes from push to result, including queues and dependencies. Proof CI is the only exception. Run only checks that apply to the changed files, using `bin/ci-build-plan`. Docs impact is a policy check on every pull request; it shares the existing Docs job and its two-minute ceiling. Switch an over-budget check off until it meets the budget; no merge, deploy or review waits on it. Whoever adds or restores a job measures its complete path first.
+
+The Web job has a three-minute ceiling and an estimated 150-second table cost, including browser setup, both test stages and the build. A hosted Ubuntu 26.04 run spent 62 seconds installing the locked Chromium and WebKit engines and their system libraries, then 44 seconds running all 541 tests. Its former two-minute limit expired before the build. The extra minute of allowance keeps the existing five-minute overall target; the table cost includes cold browser installation rather than relying on a warm cache. Measure the complete hosted path, including build and upload, before treating that cost as verified.
 
 Measure CI wall time from workflow creation to completion of `Required checks`. Include queueing, input selection and the final gate. Independent jobs overlap, so use the longest required path rather than adding every job's duration. The full workflow can continue after Required checks passes.
 
@@ -482,11 +484,11 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 ### Gateway shards
 
-Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. Remote-program and web unit test jobs remain local checks; their test files and commands remain available.
+Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. The Web build job installs the locked Playwright WebKit and Chromium headless shell with their system libraries on `ubuntu-26.04`, then runs `bun run test:unit` and `bun run test:browser` in order before building. Both stages gate its artifact and Required checks under the [Web job budget](#ci-budget). Tests for remote programs still run only locally.
 
 ### Runner policy during the Swamp migration
 
-During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
+During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest, web and Rust tests. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
 Each CI Node runs its CI runners in unprivileged Incus containers. Every runner carries the same labels and no host label, so a workflow never names a host; see [CI runner role](/reference/node-provisioning#ci-runner-role).
 
@@ -691,17 +693,21 @@ The [start commit](/reference/tasks#start-commit) has one rule, which the tasks 
 | Part | Runs when | What it runs |
 | --- | --- | --- |
 | `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the branch's [waiver file](/reference/tasks#docs-impact-waivers-in-a-copy) as the candidate gate passes it |
-| `check-flows` | The plan selects the Docs job | `node bin/check-flows`, with `BASE` set to the start commit, as CI runs it |
-| `docs-lint` | The plan selects the Docs job | `bin/docs-openapi` when the plan selects the API reference job, as root `composer check` does, then `composer docs-build` and `composer docs-lint`, which is strict |
+| `check-flows` | Tooling, docs or API reference inputs changed | `node bin/check-flows`, with `BASE` set to the start commit, as CI runs it |
+| `docs-lint` | Tooling, docs or API reference inputs changed | `bin/docs-openapi` when the plan selects the API reference job, as root `composer check` does, then `composer docs-build` and `composer docs-lint`, which is strict |
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
 | `phpstan <project>` | The plan selects the project's static job | `vendor/bin/phpstan analyse` with the project's `phpstan.neon`, on the changed PHP files inside the paths that config analyses |
 | `swamp-shape` | The plan selects the Swamp checks | `bin/swamp-shape-gate --only control`, the static controls that CI's shape job runs, in a checkout of the candidate |
-| `ci-policy` | Always | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy and budget tests that CI's "CI policy" job runs on every PR |
+| `ci-policy` | Policy inputs changed | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy tests that CI's "CI policy" job runs on every PR |
 | `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
 | `pest <project>` | The plan selects the project's Pest job | See below |
 | `fixtures` | `bin/ci-units plan` plans units | Directly touched planned units, then other planned units that fit the budget, through `bin/ci-units run`; the rest are deferred to CI (see below) |
 
-The `ci-policy` part runs on every change, whatever it touched, as CI runs it. CI's budget tests catch a fixture unit above CI's lane even when no CI input changed. The part runs before Pest and the fixtures, so the budget never leaves it out for them. On a loaded Beast it takes about 65 seconds.
+Tooling inputs are paths under `bin/`, `tools/` or `.github/`. The CI checks table owns docs and API reference inputs. The local check uses those inputs, not CI's unconditional PR Docs job, to select expensive checks. The `ci-policy` part still runs before Pest and the fixtures when selected. CI runs its full policy suite on every PR.
+
+Policy inputs also include Swamp's fixtures and proof tooling, the agent, runner resources and machine-software recipes. The `CI_POLICY_INPUTS` table in `bin/task-check` names these source inputs and the files whose presence policy tests check. API inputs select flow checks too, since Gateway operation declarations choose which workflows a chart must match.
+
+Fixture budget validation and placement run on every change, even with `--only` or no time left. They refuse invalid budgets and units above the declared lane outside named capacity gaps. The population check reuses the fixture table already validated for this candidate.
 
 The check prints CI's per-unit time caps at its start: the most seconds a fixture unit declares, `shard_seconds`, and the ceiling that stops it, `unit_ceiling_seconds`, both from `.github/ci/checks.toml`, and the Pest per-test limit of each CI job that sets one. Keep each new or changed test unit within them.
 
@@ -738,7 +744,7 @@ The `fixtures` part runs units of CI's plan only: the same planner, changed-file
 
 First come the units the change touches directly: the units of a changed fixture file, of a fixture whose declared input changed, or of a fixture whose metadata file under `.github/ci/fixtures/` changed. `bin/ci-units` owns that input mapping, `path_matches`, and its planner uses the same one. A change to the fixture machinery touches no fixture directly. The other planned units follow. Each group runs cheapest first. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
 
-The units that did not join, or that the check's own time limit stopped, are deferred to CI. The `fixtures` line names them with their count and total declared seconds, such as `deferred to CI: 76 units, 3200s declared: …`. A deferral never fails the check: CI runs those units. A unit that ran and failed fails the check.
+The units that did not join, or that the check's own time limit stopped, are deferred to CI. The `fixtures` line names them with their count and total declared seconds, such as `deferred to CI: 76 units, 3200s declared: …`. A deferral never fails the check: CI runs those units. A unit that ran and failed fails the check. When the budget stops or omits a part, collection or unit, the final result says `PASSED with incomplete coverage (budget exhausted; CI must finish)` rather than an unqualified pass. The exit code remains zero if no part failed.
 
 The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`.
 

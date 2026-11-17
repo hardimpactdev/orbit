@@ -194,7 +194,9 @@ export default defineConfig({
                     include: ["tests/browser/**/*.test.tsx"],
                     browser: {
                         enabled: true,
-                        provider: playwright(),
+                        provider: playwright({
+                            contextOptions: { locale: "en-GB", timezoneId: "UTC" },
+                        }),
                         headless: true,
                         instances: [{ browser: "chromium" }],
                         viewport: { width: 1280, height: 800 },

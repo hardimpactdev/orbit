@@ -144,6 +144,10 @@ def configuration(path=TABLE):
     if not isinstance(gaps, list) or len(gaps) != len(set(gaps)) or \
             any(file not in fixtures or not fixtures[file].get('self_hosted') for file in gaps):
         raise ValueError('capacity_gap must list unique registered self_hosted fixtures')
+    for file, fixture in fixtures.items():
+        for name, cost in units_for(fixture, budget):
+            if file not in gaps and cost > budget['shard_seconds']:
+                raise ValueError(f'{name}: {cost:g}s exceeds the {budget["shard_seconds"]}s fixture lane')
     return budget, fixtures, config['fixtures']['default']
 
 
