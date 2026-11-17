@@ -56,7 +56,7 @@ The first part builds hot while live serves.
 4. **Upgrade.** Hot applies the Node's pending package upgrades.
 5. **Source.** The Node's mirror fetches the commit: the pinned one, or the branch head for a manual deploy. Orbit pushes it into hot and checks it out. Untracked dependency folders stay.
 6. **Links and environment.** Orbit links each shared path into the volume and writes the rendered `.env`.
-7. **Before steps.** Each `before_activation` step runs in order as `orbit` at the repository root, after the [Vite+ preparation](/reference/deployments#vite-store-prerequisite) that a step needs. The `migrate` step changes the shared database here. Live still serves.
+7. **Before steps.** Each `before_activation` step runs in order as `www-data` at the repository root, after the [Vite+ preparation](/reference/deployments#vite-store-prerequisite) that a step needs. The `migrate` step changes the shared database here. Live still serves.
 8. **Install and snapshot.** Orbit installs a disabled unit for each Process and a disabled container timer for each systemd-calendar Schedule. It restarts FrankenPHP and takes hot's `release` snapshot.
 
 A warm hot carries live's `.env` from its clone until step 6 writes the new one, because live's snapshot holds it. Secrets never come from the image or the mirror.
@@ -109,7 +109,7 @@ After the switch, Orbit moves the work from the previous live to the new live, i
 3. It enables and starts each Process of the new live whose desired state is `running`.
 4. It turns `boot.autostart` on for the new live and off for the previous live.
 
-A native Schedule fire reads the live link when it starts and runs its command in that container as `orbit`, as a transient unit named for its Schedule. No Process, timer or fire runs in two release containers.
+A native Schedule fire reads the live link when it starts and runs its command in that container as `www-data`, as a transient unit named for its Schedule. No Process, timer or fire runs in two release containers.
 
 ## Retire
 

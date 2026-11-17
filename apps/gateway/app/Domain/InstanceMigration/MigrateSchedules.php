@@ -63,7 +63,7 @@ final readonly class MigrateSchedules
                 'service' => 'orbit-schedule-'.$schedule->id.'.service', 'timer' => 'orbit-schedule-'.$schedule->id.'.timer',
                 'user' => $target->user, 'group' => $target->group, 'home' => $target->home, 'shell' => $target->shell, 'login_shell' => $target->loginShell,
                 'source_directory' => $directory, 'directory' => InstanceHostIntent::Workspace.substr($directory, strlen(rtrim($instance->checkout_path, '/'))),
-                'container_user' => 'orbit', 'container_home' => '/home/orbit', 'container_shell' => '/bin/bash',
+                'container_user' => InstanceHostIntent::AppUser, 'container_home' => InstanceHostIntent::AppHome, 'container_shell' => '/bin/bash',
                 'command_hash' => hash('sha256', $schedule->command), 'mapped_command_hash' => hash('sha256', $compiled['command']),
                 'source_script_hash' => hash('sha256', $script), 'source_command_paths' => $compiled['paths'],
                 'environment_file' => InstanceHostIntent::Workspace.substr($directory, strlen(rtrim($instance->checkout_path, '/'))).'/.env',

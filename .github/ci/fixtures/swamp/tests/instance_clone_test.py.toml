@@ -13,6 +13,11 @@ cases = [
   "test_unreadable_remote_fails_without_creating_a_branch",
   "test_unreachable_frozen_commit_fails_without_using_current_tip",
   "test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy",
+  "test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved",
+  "test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit",
+  "test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing",
+  "test_the_copy_reaches_the_default_only_through_its_snapshots_so_a_sleeping_default_needs_no_wake",
+  "test_a_replaced_seed_copies_the_newest_seed",
   "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
   "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
   "test_the_copys_own_acl_is_read_by_its_name_and_never_from_the_list_of_every_acl",
@@ -86,6 +91,7 @@ cases = [
   "test_checkout_pushes_the_bundle_and_passes_only_the_env_half",
   "test_a_branch_the_mirror_lacks_starts_at_the_seeds_commit_without_a_bundle",
   "test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase",
+  "test_a_branch_the_mirror_lacks_starts_at_the_commit_of_the_seed_that_the_copy_took",
   "test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout",
   "test_services_install_the_node_helper_and_pass_only_the_process_files",
   "test_workspace_still_passes_the_whole_value_in_one_guest_call",
@@ -104,12 +110,6 @@ cases = [
   "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value",
   "test_names_a_failed_delivery_without_its_output",
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
-  "test_the_copy_reaches_the_default_only_through_its_snapshots_so_a_sleeping_default_needs_no_wake",
-  "test_a_replaced_seed_copies_the_newest_seed",
-  "test_a_branch_the_mirror_lacks_starts_at_the_commit_of_the_seed_that_the_copy_took",
-  "test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved",
-  "test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit",
-  "test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
 cost = 150

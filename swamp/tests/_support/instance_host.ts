@@ -274,8 +274,10 @@ function gatewayImage() {
     );
     const values: Record<string, string> = {
         agent: "2750",
-        orbit: "1000",
-        work: "2760",
+        // The normal image: the stock `www-data` group, and no accounts of the nested-fleet image's own.
+        group: "www-data",
+        accounts: "",
+        home: "/var/www",
         workspace: "/srv/workspace",
         vite: "/var/lib/orbit/vite-plus-home",
         sharedVite: "/opt/orbit-runtime/current/vite-plus-home",

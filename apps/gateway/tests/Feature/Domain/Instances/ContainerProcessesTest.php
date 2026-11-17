@@ -14,6 +14,7 @@ use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceImage;
 use App\Domain\Logs\LogStreamTargetResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessLifecycleInput;
@@ -108,7 +109,7 @@ function processContainerError(Closure $call): string
 }
 
 describe('a container default with development Process definitions', function (): void {
-    it('records each Process as an orbit unit in the container, its values kept out of the intent', function (): void {
+    it('records each Process as a web unit in the container, its values kept out of the intent', function (): void {
         $operation = processContainerCreate(processContainerProject(), processContainerNode());
         $process = Process::query()->where('owner_id', $operation->target_id)->sole();
         $units = processContainerUnits($operation);
@@ -119,8 +120,8 @@ describe('a container default with development Process definitions', function ()
             ->and($units)->toHaveCount(1)
             ->and($units[0])->toMatchArray(['id' => $process->id, 'name' => "orbit-process-{$process->id}-worker.service",
                 'environment' => $environment, 'desired' => 'running'])
-            ->and($units[0]['content'])->toContain("User=orbit\nGroup=orbit\nUMask=0007\nWorkingDirectory=/srv/workspace\n")
-            ->toContain("Environment=HOME=/home/orbit\nEnvironment=PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin\n")
+            ->and($units[0]['content'])->toContain("User=www-data\nGroup=www-data\nUMask=0007\nWorkingDirectory=/srv/workspace\n")
+            ->toContain("Environment=HOME=/var/www\nEnvironment=PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin\n")
             ->toContain("EnvironmentFile=-/srv/workspace/.env\nEnvironmentFile={$environment}\n")
             ->and(str_contains(json_encode($operation->input, JSON_THROW_ON_ERROR), 'secret-value-41'))->toBeFalse()
             ->and($operation->input['members'])->toBe([]);
@@ -178,9 +179,11 @@ describe('the Process target of a container Instance', function (): void {
         $view = new Operation;
         $view->forceFill(['id' => 9, 'kind' => 'process.restart', 'target_type' => 'process', 'target_id' => $this->process->id,
             'node_id' => $this->instance->node_id, 'input' => $input]);
-        $container = ['instance_id' => $this->instance->id, 'project' => 'orbit-instances', 'name' => 'instance-'.$this->instance->id];
+        // The swap file rides along, so a Process action writes it into a container that lacks it (InstanceImage::appAccount).
+        $container = ['instance_id' => $this->instance->id, 'project' => 'orbit-instances', 'name' => 'instance-'.$this->instance->id,
+            'app_account' => InstanceImage::appAccount()];
 
-        expect($target->user)->toBe('orbit')
+        expect($target->user)->toBe('www-data')
             ->and($target->container)->toBe($container)
             ->and($input['container'])->toBe($container)
             ->and(app(ProcessLifecycleInput::class)->forOperation($view)['intent']['container'])->toBe($container);
@@ -222,7 +225,8 @@ describe('the Process target of a container Instance', function (): void {
         processContainerError(fn () => app(DestroyProcessAction::class)->admit($this->process->refresh(), instanceId: $this->instance->id));
 
         $operation = Operation::query()->where('kind', 'process.destroy')->sole();
-        expect($operation->input['container'])->toBe(['instance_id' => $this->instance->id, 'project' => 'orbit-instances', 'name' => 'instance-'.$this->instance->id])
+        expect($operation->input['container'])->toBe(['instance_id' => $this->instance->id, 'project' => 'orbit-instances', 'name' => 'instance-'.$this->instance->id,
+            'app_account' => InstanceImage::appAccount()])
             ->and($operation->input['name'])->toBe(app(SystemdProcessRenderer::class)->unitName($this->process))
             ->and($this->process->refresh()->status)->toBe(LifecycleStatus::Removing);
     })->with(['removed definition', 'no definition']);

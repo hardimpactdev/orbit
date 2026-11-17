@@ -75,6 +75,22 @@ final readonly class InstanceHostIntent
 
     public const int AgentUid = 2750;
 
+    /**
+     * The app account of a container (development-containers.md#the-app-users-name): the stock Debian `www-data`, uid and gid 33, with its
+     * stock home. FrankenPHP, every Process and Schedule run as it; `agent` is in its group.
+     */
+    public const string AppUser = 'www-data';
+
+    public const string AppHome = '/var/www';
+
+    public const int AppUid = 33;
+
+    public const int AppGid = 33;
+
+    /**
+     * The nested-fleet container's `orbit` and `work`: its inner guests are Nodes whose `orbit` the ID map puts on these numbers, and
+     * the inner fleet runs as them over the shared checkout (ADR 0268, second amendment).
+     */
     public const int OrbitUid = 1000;
 
     public const int WorkGid = 2760;

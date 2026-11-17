@@ -179,7 +179,7 @@ it('leaves a Node that is not on the build list on checkouts', function (): void
         ->and(Instance::query()->findOrFail($operation->target_id)->checkout_path)->toBe('/home/orbit/apps/tool/default');
 });
 
-it('renders FrankenPHP as an orbit unit on the bridge address, with the Project\'s PHP first on its path', function (): void {
+it('renders FrankenPHP as a web unit on the bridge address, with the Project\'s PHP first on its path', function (): void {
     $node = containerDefaultNode();
     $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/x', 'root' => 'public']);
@@ -191,7 +191,7 @@ it('renders FrankenPHP as an orbit unit on the bridge address, with the Project\
 
     expect($units)->toHaveCount(1)
         ->and($units[0]['name'])->toBe('orbit-frankenphp.service')
-        ->and($units[0]['content'])->toContain("User=orbit\nGroup=orbit\nUMask=0007\nWorkingDirectory=/srv/workspace\n")
+        ->and($units[0]['content'])->toContain("User=www-data\nGroup=www-data\nUMask=0007\nWorkingDirectory=/srv/workspace\n")
         ->toContain('Environment=PATH=/opt/orbit-runtime/current/php/8.5/bin:/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin')
         ->toContain('ExecStart=/opt/orbit-runtime/current/php/8.5/bin/frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile')
         ->and(str_contains($units[0]['content'], '/etc/orbit/instance'))->toBeFalse();
