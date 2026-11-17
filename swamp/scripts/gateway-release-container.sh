@@ -215,6 +215,7 @@ case "$action" in
     printf '%s\n' "$sha" | user "$prep" tee "$checkout/REVISION.next" >/dev/null
     user "$prep" mv -T "$checkout/REVISION.next" "$checkout/REVISION"
     ctl candidate gateway "$operation" "$sha" "$digest"
+    src swamp/scripts/gateway-release-seal.sh | enter "$candidate" /bin/sh -se
     ;;
   snapshot)
     if retained; then exit 0; fi
