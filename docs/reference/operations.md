@@ -30,6 +30,8 @@ Native terminal projection reads Swamp history and any private result material o
 
 Removing a [Node service target record](/reference/processes-and-schedules#node-service-target-records) returns an already completed `instance.node_service_detach` Operation. This record-only operation works after a successful migration and performs no network, environment or runtime change. It still refuses an active lifecycle operation or an unfinished failed migration with a retained runtime.
 
+Automatic release role convergence reserves the Node against Instance and task Operations that participate on it. Admission refuses a conflict with `operation.target_busy`. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
+
 ## Instance failure alerts
 
 Every `instance.create`, `instance.complete` or `instance.deploy` Operation that enters `failed` or `interrupted` sends an immediate notification after the state transaction commits. This includes failures before source resolution and automatic deployments. A terminal replay does not send another notification. Cancelled and successful Operations do not alert.

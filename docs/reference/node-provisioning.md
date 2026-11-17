@@ -610,6 +610,8 @@ A failed phase stops later phases and fails the Operation with its failed step a
 
 ### Skip a phase whose input did not change
 
+A converge that defers a T3 restart records the container in its Operation result and leaves the roles digest unset so the next pass can retry. See [T3 restarts](/reference/development-containers#t3s-unit-drop-ins).
+
 This is the one rule for a skipped phase. It applies to `node:converge` and to the role Operations of [`node:role:add`](/cli/node/role-add), with and without `--converge`. They share one digest, one comparison and one record.
 
 | Operation | Phases that can skip | Phases that always run |

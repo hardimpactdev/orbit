@@ -51,9 +51,8 @@ final readonly class ContinueReleaseFleetAction
         return DB::transaction(function () use ($release): ?int {
             $release = GatewayRelease::query()->lockForUpdate()->findOrFail($release->id);
             $phase = ValidatedData::object($release->phases['fleet']);
-            if ($phase['status'] === 'current') {
-                return null;
-            }
+            $members = $this->members();
+            $this->preserveHostBaselines($release->previous_release_id, $members);
             if (! config('fleet.rollout')) {
                 $this->save($release, $phase, 'disabled');
 
@@ -70,7 +69,6 @@ final readonly class ContinueReleaseFleetAction
                 return 10;
             }
 
-            $members = $this->members();
             $previousRows = (array) ($phase['nodes'] ?? []);
             $rows = [];
             $phase['nodes'] = &$rows;
@@ -81,7 +79,6 @@ final readonly class ContinueReleaseFleetAction
             $inputs = app(ReleaseNodeInputs::class);
             try {
                 $host = $inputs->host();
-                $baseline = $this->baseline($release, $inputs, $host);
             } catch (Throwable) {
                 $this->save($release, [...$phase, 'error_code' => 'fleet.inputs_unavailable'], 'failed');
 
@@ -90,14 +87,6 @@ final readonly class ContinueReleaseFleetAction
             unset($phase['error_code']);
             foreach ($members as $node) {
                 $row = &$rows[$node->id];
-                if ($row['status'] === 'current') {
-                    continue;
-                }
-                if (! AdmitFleetRolloutAction::daytime($node) && ! in_array(now('Europe/Amsterdam')->hour, [3, 4, 5], true)) {
-                    $row['status'] = 'deferred';
-
-                    continue;
-                }
                 if ($row['status'] === 'failed') {
                     foreach (['delivery_operation_id', 'role_operation_id'] as $key) {
                         $previous = $this->operation($row, $key);
@@ -111,7 +100,7 @@ final readonly class ContinueReleaseFleetAction
                     }
                 }
                 try {
-                    $delay = $this->visit($release, $node, $row, $inputs, $host, $baseline);
+                    $delay = $this->visit($release, $node, $row, $inputs, $host);
                     if ($delay !== null) {
                         $this->save($release, $phase, 'pending');
 
@@ -119,6 +108,7 @@ final readonly class ContinueReleaseFleetAction
                     }
                 } catch (ResourceOperationException $failure) {
                     if (in_array($failure->errorCode, ['operation.target_busy', 'fleet.rollout_busy'], true)) {
+                        $row['status'] = 'pending';
                         $this->save($release, $phase, 'pending');
 
                         return 15;
@@ -142,6 +132,9 @@ final readonly class ContinueReleaseFleetAction
                 return null;
             }
             $this->save($release, $phase, 'current');
+            if ($phase['status'] === 'current') {
+                return null;
+            }
             DB::afterCommit(static function () use ($release): void {
                 try {
                     app(NestedFleetRefresh::class)->admitAll((string) $release->sha);
@@ -167,30 +160,75 @@ final readonly class ContinueReleaseFleetAction
         return $nodes;
     }
 
-    /** A pre-feature Node has no host receipt. Compare against the previous sealed release before trusting its baseline. */
-    private function baseline(GatewayRelease $release, ReleaseNodeInputs $inputs, string $host): string
+    /**
+     * Seed every missing approval before the verified record can be superseded and before a pass can stop at one Node.
+     * A missing previous tree records an unknown approval that requires an explicit converge.
+     *
+     * @param  list<Node>|null  $members
+     */
+    public function preserveHostBaselines(?string $previousRelease, ?array $members = null): void
     {
-        if ($release->previous_release_id === null) {
-            return $host;
+        $members ??= $this->members();
+        $missing = array_filter($members, static fn (Node $node): bool => ! array_key_exists('host', $node->release_inputs ?? []));
+        if ($missing === []) {
+            return;
         }
 
-        return $inputs->host(GatewayReleaseLayout::fromConfig()->releasePath($release->previous_release_id));
+        try {
+            $inputs = app(ReleaseNodeInputs::class);
+            $baseline = $inputs->host($previousRelease === null ? null : GatewayReleaseLayout::fromConfig()->releasePath($previousRelease));
+        } catch (Throwable) {
+            $baseline = null;
+        }
+        DB::transaction(static function () use ($missing, $baseline): void {
+            $locked = Node::query()->whereKey(array_map(static fn (Node $node): int => $node->id, $missing))
+                ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            foreach ($missing as $member) {
+                $node = $locked->get($member->id);
+                if ($node !== null && ! array_key_exists('host', $node->release_inputs ?? [])) {
+                    $node->forceFill(['release_inputs' => [...($node->release_inputs ?? []), 'host' => $baseline]])->save();
+                }
+                if ($node !== null) {
+                    $member->release_inputs = $node->release_inputs;
+                }
+            }
+        });
     }
 
     /** @param array<string,mixed> $row */
-    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, string $host, string $baseline): ?int
+    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, string $host): ?int
     {
         $recorded = $node->release_inputs ?? [];
-        // Keep the original baseline even if a later Gateway release supersedes an unfinished pass.
-        if (! isset($recorded['host'])) {
-            $node->forceFill(['release_inputs' => [...$recorded, 'host' => $baseline]])->save();
-        }
-        if (($recorded['host'] ?? $baseline) !== $host) {
+        if (($recorded['host'] ?? null) !== $host) {
             throw new ResourceOperationException('fleet.host_inputs_changed', 'Host-wide inputs require an explicit Node converge.', 409);
         }
         $desired = $inputs->roles($node);
         $applied = (array) ($recorded['roles'] ?? []);
         $changed = array_filter($desired, static fn (array $role, int $id): bool => ($applied[$id] ?? null) !== $role['digest'], ARRAY_FILTER_USE_BOTH);
+        $delivery = app(AgentDelivery::class);
+        $pin = $delivery->pin($node);
+        $cli = CliConvergePlan::required($node) ? app(DesiredFleetState::class)->current()->cli : null;
+        $deliveryOperation = $this->operation($row, 'delivery_operation_id');
+        $roleOperation = $this->operation($row, 'role_operation_id');
+        $reported = app(AgentReportedVersions::class)->get($node->id);
+        $drifted = $reported !== null && $reported['version'] !== $delivery->reportedVersion($node)
+            && ($deliveryOperation?->finished_at === null || $reported['at'] > (float) $deliveryOperation->finished_at->format('U.u'));
+        $needsDelivery = static fn (array $applied): bool => ($applied['agent'] ?? null) !== $pin || $drifted
+            || ($cli !== null && (! $cli->isAvailable() || ($applied['cli'] ?? null) !== $cli->version));
+
+        if ($row['status'] === 'current' && $changed === [] && ! $needsDelivery($recorded)) {
+            return null;
+        }
+        if ($row['status'] === 'current') {
+            // A previously completed visit cannot certify this new work.
+            unset($row['delivery_operation_id'], $row['role_operation_id'], $row['agent']);
+            $deliveryOperation = $roleOperation = null;
+        }
+        if (! AdmitFleetRolloutAction::daytime($node) && ! in_array(now('Europe/Amsterdam')->hour, [3, 4, 5], true)) {
+            $row['status'] = 'deferred';
+
+            return null;
+        }
         $row['roles'] = array_fill_keys(array_column($desired, 'role'), 'unchanged');
         foreach ($changed as $role) {
             $row['roles'][$role['role']] = 'pending';
@@ -198,12 +236,6 @@ final readonly class ContinueReleaseFleetAction
         $row['status'] = 'running';
         unset($row['error_code']);
 
-        $delivery = app(AgentDelivery::class);
-        $reported = app(AgentReportedVersions::class)->get($node->id)['version'] ?? null;
-        $pin = $delivery->pin($node);
-        $cli = CliConvergePlan::required($node) ? app(DesiredFleetState::class)->current()->cli : null;
-        $deliveryOperation = $this->operation($row, 'delivery_operation_id');
-        $roleOperation = $this->operation($row, 'role_operation_id');
         if ($deliveryOperation !== null) {
             $observations = (array) ($deliveryOperation->result['nodes'] ?? []);
             $result = ValidatedData::object($observations[0] ?? []);
@@ -213,19 +245,22 @@ final readonly class ContinueReleaseFleetAction
                     return FleetReleaseLag::RetryAfterSeconds;
                 }
                 unset($row['delivery_operation_id']);
-            } elseif ($deliveryOperation->status !== OperationStatus::Succeeded || ! in_array($row['agent'], ['unchanged', 'converged'], true)
-                || ($result['node_id'] ?? null) !== $node->id || ($result['agent_version'] ?? null) !== $delivery->reportedVersion($node)) {
-                $row['agent'] = 'failed';
-                throw new ResourceOperationException(ValidatedData::nullableString($result['error_code'] ?? null) ?? $deliveryOperation->error_code ?? 'fleet.agent_delivery_failed', 'Agent delivery failed.', 409);
             } else {
-                // The fleet run checked the running executable, even if its file already matched.
                 $admittedNodes = (array) ($deliveryOperation->input['nodes'] ?? []);
                 $admitted = ValidatedData::object($admittedNodes[0] ?? []);
+                $plannedAgent = ValidatedData::object($admitted['agent'] ?? []);
                 $plannedCli = ValidatedData::object($admitted['release'] ?? []);
-                // A healthy newer CLI or commit build satisfies the admitted pin without replacing it.
-                $recorded = [...($node->release_inputs ?? []), 'agent' => $pin,
+                if ($deliveryOperation->status !== OperationStatus::Succeeded || ! in_array($row['agent'], ['unchanged', 'converged'], true)
+                    || ($result['node_id'] ?? null) !== $node->id || ! isset($plannedAgent['sha256'], $plannedAgent['version'])
+                    || ($result['agent_version'] ?? null) !== $plannedAgent['version']) {
+                    $row['agent'] = 'failed';
+                    throw new ResourceOperationException(ValidatedData::nullableString($result['error_code'] ?? null) ?? $deliveryOperation->error_code ?? 'fleet.agent_delivery_failed', 'Agent delivery failed.', 409);
+                }
+                // Credit the pins this operation actually checked. The desired CLI can change while it runs.
+                $locked = Node::query()->whereKey($node->id)->lockForUpdate()->firstOrFail();
+                $recorded = [...($locked->release_inputs ?? []), 'agent' => $plannedAgent['sha256'],
                     'cli' => isset($result['cli_version']) ? ($plannedCli['version'] ?? null) : null];
-                $node->forceFill(['release_inputs' => $recorded])->save();
+                $locked->forceFill(['release_inputs' => $recorded])->save();
             }
         }
         if ($roleOperation !== null) {
@@ -235,14 +270,22 @@ final readonly class ContinueReleaseFleetAction
                 }
                 throw new ResourceOperationException($roleOperation->error_code ?? 'fleet.role_converge_failed', 'Role converge failed.', 409);
             }
-            $capture = ValidatedData::object($roleOperation->input['_converge']);
-            $intent = ValidatedData::object($capture['intent']);
-            foreach (ValidatedData::stringList($intent['selected_roles']) as $role) {
-                $row['roles'][$role] = 'converged';
+            if (($roleOperation->result['t3_restart_deferred'] ?? []) !== []) {
+                $row['status'] = 'pending';
+                if ($roleOperation->finished_at?->gt(now()->subSeconds(FleetReleaseLag::RetryAfterSeconds))) {
+                    return FleetReleaseLag::RetryAfterSeconds;
+                }
+            } else {
+                $capture = ValidatedData::object($roleOperation->input['_converge']);
+                $intent = ValidatedData::object($capture['intent']);
+                foreach (ValidatedData::stringList($intent['selected_roles']) as $role) {
+                    if (($row['roles'][$role] ?? null) === 'unchanged') {
+                        $row['roles'][$role] = 'converged';
+                    }
+                }
             }
         }
-        if (($recorded['agent'] ?? null) !== $pin || ($deliveryOperation === null && $reported !== null && $reported !== $delivery->reportedVersion($node))
-            || ($cli !== null && (! $cli->isAvailable() || ($recorded['cli'] ?? null) !== $cli->version))) {
+        if ($needsDelivery($recorded)) {
             if ($cli !== null && ! $cli->isAvailable()) {
                 return 60;
             }

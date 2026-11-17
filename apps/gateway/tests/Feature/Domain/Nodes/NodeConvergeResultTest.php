@@ -384,3 +384,25 @@ it('keeps the seed listener record when the roles phase of a ci-runner converge 
 
     expect($this->node->refresh()->seed_sender_id)->toBe($default->id);
 });
+
+it('retains the deferred T3 receipt without crediting its role, then credits an idle retry', function (): void {
+    $role = $this->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $snapshot = $this->operation->input['_converge'] + ['release_inputs' => ['roles' => [$role->id => str_repeat('a', 64)], 'host' => null]];
+    $this->operation->update(['input' => ['_converge' => $snapshot]]);
+    $observations = $this->tools->map(fn (Tool $tool): array => ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '2.3.4'])->all();
+    $result = converge_receipt(null, $observations, [], ['roles' => str_repeat('b', 64)]);
+    $deferred = ['orbit-instances/instance-7'];
+    $projection = app(NodeConvergeProjection::class);
+
+    $operation = $projection->apply($this->operation, [...$this->native, 'result' => $result + ['t3_restart_deferred' => $deferred]]);
+    expect($operation->status)->toBe(OperationStatus::Succeeded)
+        ->and($operation->result['t3_restart_deferred'])->toBe($deferred)
+        ->and($this->node->refresh()->release_inputs)->toBeNull()
+        ->and($this->node->converge_digests)->toBeNull();
+
+    $retry = $this->operation->replicate(['result', 'finished_at'])->forceFill(['status' => OperationStatus::Running]);
+    $retry->save();
+    $projection->apply($retry, [...$this->native, 'result' => $result + ['t3_restart_deferred' => []]]);
+    expect($this->node->refresh()->release_inputs)->toBe(['roles' => [$role->id => str_repeat('a', 64)]])
+        ->and($this->node->converge_digests)->toBe(['roles' => str_repeat('b', 64)]);
+});

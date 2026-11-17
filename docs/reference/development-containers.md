@@ -579,7 +579,7 @@ T3 never restarts in the middle of a turn. Right before each T3 restart, whether
 Then:
 
 - An open turn defers the restart. The drop-in is written and systemd reloads, but T3 keeps running.
-- A deferred container stays on the Node's list. The converge reports it under `deferred`, with its reason.
+- A deferred container stays on the Node's list. The Node converge Operation lists its identity in `t3_restart_deferred`. A [release rollout](/reference/gateway-recovery#fleet-rollout) keeps that Node pending and retries.
 - When `t3.service` is active but the read fails or times out, the container counts as busy too. T3 never restarts blind.
 - A missing store, or one whose tables changed, fails the read.
 - When `t3.service` is not active, nothing is asked. `try-restart` does nothing there, and the entry leaves the list.

@@ -100,7 +100,9 @@
     - name: Record the containers without the browser trust store
       ansible.builtin.copy:
         dest: "{{ orbit_run }}/roles-result.json"
-        content: "{{ {'browser_trust': instance_browser_trust | default([])} | to_json }}"
+        content: >-
+          {{ {'browser_trust': instance_browser_trust | default([]),
+              't3_restart_deferred': instance_t3_restart_deferred | default([])} | to_json }}
         mode: "0600"
       delegate_to: localhost
       become: false

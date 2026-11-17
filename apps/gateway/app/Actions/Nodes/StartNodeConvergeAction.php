@@ -44,7 +44,7 @@ final readonly class StartNodeConvergeAction
             // Read before the admission clears the record; a holder refuses this admission, so nothing writes it in between.
             $recorded = app(NodeConvergePhaseDigest::class)->recorded($node->fresh() ?? $node, $full);
             $operation = $this->operations->execute('node.converge', 'node', $node->id, $node->id,
-                ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base]],
+                ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base], 'intent' => ['release_roles_only' => $release]],
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
                 'operator', $requestId, lockKey: OperationStore::lockKey('node', $node->id));
             if ($operation->wasRecentlyCreated) {

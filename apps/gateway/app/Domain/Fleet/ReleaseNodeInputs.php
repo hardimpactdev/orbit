@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace App\Domain\Fleet;
 
+use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Nodes\AppDevRuntimeFootprint;
+use App\Domain\Nodes\CiRunnerStateFiles;
 use App\Domain\Nodes\NodeExecutorInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeRoleUnits;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\ToolPin;
@@ -32,15 +37,39 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/tasks/gateway-runtime.yml',
     ];
 
+    /** Shipped assets consumed by the shared Instance-host branch on app-dev and CI-only Nodes. */
+    private const array InstanceHostFiles = [
+        'apps/gateway/app/Domain/Instances/InstanceHostIntent.php',
+        'apps/gateway/app/Domain/Instances/InstanceContainer.php',
+        'swamp/ansible/tasks/instance-host*.yml',
+        'swamp/ansible/tasks/instance-folder*.yml',
+        'swamp/ansible/tasks/instance-bridge-*.yml',
+        'swamp/ansible/tasks/instance-container-files.yml',
+        'swamp/ansible/tasks/instance-power-helper.yml',
+        'swamp/ansible/tasks/instance-fleet-node.yml',
+        'swamp/ansible/tasks/instance-pool-create.yml',
+        'swamp/ansible/tasks/instance-network-*.yml',
+        'swamp/ansible/tasks/instance-egress.yml',
+        'swamp/ansible/tasks/instance-image.yml',
+        'swamp/ansible/tasks/instance-vite-plus-home.yml',
+        'swamp/ansible/tasks/task-container-host-*.yml',
+        'swamp/ansible/instance-nic-filters.json',
+        'swamp/ansible/transport-exit-codes.json',
+        'swamp/ansible/instance_container_files.py',
+        'swamp/ansible/instance_machine_name.py',
+        'swamp/ansible/instance_folder_*.py',
+        'swamp/ansible/instance_bridge.py',
+        'swamp/ansible/files/instance-browser-trust.sh',
+        'swamp/ansible/files/instance-container-wake.sh',
+        'swamp/ansible/files/instance-container-power.py',
+        'swamp/ansible/templates/t3-service-processes.j2',
+    ];
+
     private const array RoleFiles = [
-        'app-dev' => ['swamp/ansible/tasks/node-executor.yml', 'apps/gateway/app/Domain/Instances/InstanceHostIntent.php', 'apps/gateway/app/Domain/Nodes/AppDevRuntimeFootprint.php',
-            'apps/gateway/app/Infrastructure/Fleet/Footprint/TmpfilesFootprintArtifact.php',
-            'swamp/ansible/tasks/instance-host*.yml', 'swamp/ansible/tasks/instance-folder*.yml', 'swamp/ansible/instance_container_files.py'],
-        'app-prod' => ['swamp/ansible/tasks/php.yml'],
-        'swamp' => ['apps/gateway/app/Domain/Nodes/SwampRoleUnits.php', 'swamp/ansible/tasks/swamp-start-cache.yml', 'swamp/ansible/tasks/swamp-worker-renewal.yml'],
-        'websocket' => ['apps/gateway/app/Infrastructure/WebSocket/WebSocketServiceUnitRenderer.php', 'swamp/ansible/tasks/websocket.yml'],
+        'swamp' => ['swamp/ansible/tasks/swamp-start-cache.yml', 'swamp/ansible/swamp-worker-renewal.yml', 'swamp/ansible/tasks/swamp-worker-*.yml'],
+        'websocket' => ['swamp/ansible/tasks/websocket.yml'],
         'metrics' => ['swamp/ansible/tasks/metrics.yml'],
-        'ci-runner' => ['swamp/ansible/tasks/ci.yml'],
+        'ci-runner' => ['swamp/ansible/tasks/ci.yml', 'swamp/ansible/tasks/ci-*.yml', 'swamp/ansible/tasks/proof-seed-listener.yml'],
     ];
 
     public function host(?string $root = null): string
@@ -73,12 +102,28 @@ final readonly class ReleaseNodeInputs
             $runtime = app(NodeRoleRuntimeInput::class)->capture($node, $assignment);
             // Transport, exporter publication, and the pinned binary are separate inputs to their own Operations.
             unset($runtime['agent_sha256'], $runtime['ssh_execution'], $runtime['fleet']);
-            $files = [...(self::RoleFiles[$role] ?? []), ...($php !== [] ? ['swamp/ansible/tasks/php.yml'] : [])];
+            $instanceHost = app(InstanceHostIntent::class)->role($node) === $assignment->role;
+            $executor = isset(NodeExecutorInput::RoleFamilies[$role]);
+            $files = [
+                ...(self::RoleFiles[$role] ?? []),
+                ...($php !== [] ? ['swamp/ansible/tasks/php.yml'] : []),
+                ...($executor ? ['swamp/ansible/tasks/node-executor.yml'] : []),
+                ...($instanceHost ? self::InstanceHostFiles : []),
+            ];
+            $renderedFiles = match ($assignment->role) {
+                RoleName::AppDev => [AppDevRuntimeFootprint::directories(), AppDevRuntimeFootprint::files()],
+                RoleName::CiRunner => app(CiRunnerStateFiles::class)->runtime(),
+                default => [],
+            };
+            $phpRuntime = $php === [] ? [] : array_values(array_filter(
+                app(PhpRuntimeFootprintArtifact::class)->inputs($node),
+                static fn (array $configuration): bool => in_array($configuration['version'], $versions, true),
+            ));
             $roles[$assignment->id] = ['role' => $role, 'digest' => self::digest([
                 $this->pins($recipe, $profile), $php, in_array($role, $recipe->phpPolicy->pcovProfiles, true),
-                $role === RoleName::AppDev->value ? $raw['instances'] : null,
-                $runtime, isset(NodeExecutorInput::RoleFamilies[$role]) ? NodeExecutorInput::for($node) : null,
-                $this->files($root, $files),
+                $instanceHost ? $raw['instances'] : null,
+                $runtime, $executor ? NodeExecutorInput::for($node) : null,
+                $renderedFiles, $phpRuntime, NodeRoleUnits::for($node, [$role]), $this->files($root, $files),
             ])];
         }
 

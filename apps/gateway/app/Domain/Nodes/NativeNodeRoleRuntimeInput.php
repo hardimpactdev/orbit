@@ -58,9 +58,7 @@ final readonly class NativeNodeRoleRuntimeInput
         }
         $copies = [];
         if ($assignment->role === RoleName::CiRunner) {
-            $runtime['directories'] = CiRunnerStateFiles::directories();
-            $runtime['files'] = CiRunnerStateFiles::files();
-            $runtime['units'] = CiRunnerStateFiles::units();
+            $runtime = array_replace($runtime, app(CiRunnerStateFiles::class)->runtime());
         }
         if ($assignment->role === RoleName::Gateway) {
             $gateway = app(GatewayRuntimeFiles::class)->render($node);

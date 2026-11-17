@@ -11,7 +11,9 @@ use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\FleetRolloutAlerts;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\ReleaseHistory;
+use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Nodes\CiRunnerStateFiles;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Problems\ProblemSource;
@@ -22,6 +24,7 @@ use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\GatewayRelease;
@@ -306,4 +309,100 @@ it('refuses host-wide input changes before starting a delivery or a role converg
         ->and($fleet['nodes'][$this->nodes['dev']]['error_code'])->toBe('fleet.host_inputs_changed')
         ->and($fleet['nodes'][$this->nodes['db']]['status'])->toBe('pending')
         ->and(Operation::query()->count())->toBe(0);
+});
+
+it('preserves every prior host approval before an early halt and across a superseding release', function (): void {
+    $previous = $this->base.'/releases/'.substr(OtherCommit, 0, 12);
+    $resource = '/apps/gateway/resources/machine-software/recipe.json';
+    mkdir(dirname($previous.$resource), 0700, true);
+    copy(dirname(base_path(), 2).$resource, $previous.$resource);
+
+    $release = GatewayRelease::query()->sole();
+    $release->update(['previous_release_id' => substr(OtherCommit, 0, 12), 'phases' => [
+        ...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []],
+    ]]);
+    $action = app(ContinueReleaseFleetAction::class);
+    $action->execute($release);
+
+    $inputs = app(ReleaseNodeInputs::class);
+    $old = $inputs->host($previous);
+    expect($old)->not->toBe($inputs->host())
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->nodes['dev']]['error_code'])->toBe('fleet.host_inputs_changed')
+        ->and(Node::query()->whereKey(array_values($this->nodes))->get()->map(fn (Node $node) => $node->release_inputs['host'])->all())
+        ->toBe([$old, $old, $old]);
+
+    // The next release's immediate predecessor carries the unapproved change.
+    $matching = str_repeat('c', 12);
+    symlink(dirname(base_path(), 2), $this->base.'/releases/'.$matching);
+    $next = GatewayRelease::query()->create(['sha' => str_repeat('d', 40), 'trigger' => 'auto', 'outcome' => 'verified',
+        'previous_release_id' => $matching, 'phases' => ['fleet' => ['status' => 'pending', 'nodes' => []]], 'duration_ms' => 0]);
+    Node::query()->findOrFail($this->nodes['dev'])->update(['status' => LifecycleStatus::Failed]);
+    $action->execute($next);
+    expect($next->refresh()->phases['fleet']['nodes'][$this->nodes['db']]['error_code'])->toBe('fleet.host_inputs_changed')
+        ->and(Operation::query()->count())->toBe(0);
+});
+
+it('detects membership, agent pin drift and late CLI publication on the daily pass after fleet current', function (string $change): void {
+    Queue::fake();
+    $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
+    $gateway = SwampNodeFixture::ensure();
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    app(GatewayServingHost::class)->remember($gateway);
+    config(['swamp.run_token' => 'test-token']);
+    file_put_contents($this->base.'/agent.json', json_encode(['commit' => RolloutCommit, 'version' => '1.2.3',
+        'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/agent']]], JSON_THROW_ON_ERROR));
+    $delivery = new AgentDelivery($this->base.'/agent.json', '/unused');
+    app()->instance(AgentDelivery::class, $delivery);
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    if ($change === 'late CLI') {
+        $dev->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    }
+    $inputs = app(ReleaseNodeInputs::class);
+    $rows = [];
+    foreach (Node::query()->whereKey([...array_values($this->nodes), $gateway->id])->get() as $node) {
+        $node->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned', 'release_inputs' => [
+            'host' => $inputs->host(), 'agent' => $delivery->pin($node), 'cli' => $node->id === $dev->id && $change === 'late CLI' ? '0.9000.0' : null,
+            'roles' => array_map(fn (array $role): string => $role['digest'], $inputs->roles($node)),
+        ]])->saveQuietly();
+        $rows[$node->id] = ['node_id' => $node->id, 'name' => $node->name, 'status' => 'current'];
+    }
+    if ($change === 'membership') {
+        unset($rows[$dev->id]);
+        $dev->refresh()->forceFill(['release_inputs' => null])->saveQuietly();
+    } elseif ($change === 'agent drift') {
+        app(AgentReportedVersions::class)->record($dev->id, '1.2.3+0000000000000000');
+    }
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'current', 'nodes' => $rows]]]);
+
+    $job = new AdmitFleetRollout()->withFakeQueueInteractions();
+    app()->call([$job, 'handle']);
+    $job->assertReleased(10);
+
+    $operation = Operation::query()->where('kind', 'fleet.rollout')->sole();
+    expect(array_column($operation->input['nodes'], 'node_id'))->toBe([$dev->id])
+        ->and($release->refresh()->phases['fleet']['status'])->toBe('pending')
+        ->and($release->phases['fleet']['nodes'][$dev->id]['delivery_operation_id'])->toBe($operation->id);
+    if ($change === 'late CLI') {
+        expect($operation->input['nodes'][0]['release']['version'])->toBe($this->cli);
+    }
+})->with(['membership', 'agent drift', 'late CLI']);
+
+it('fingerprints a state.py-only change on the CI runner and leaves another role stable', function (): void {
+    $node = Node::query()->findOrFail($this->nodes['dev']);
+    $runner = $node->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    $dev = $node->roles()->where('role', RoleName::AppDev)->sole();
+    $path = $this->base.'/role-resources';
+    mkdir($path.'/ci-runner', 0700, true);
+    foreach (['state.py', 'hold.py'] as $name) {
+        copy(resource_path('ci-runner/'.$name), $path.'/ci-runner/'.$name);
+    }
+    app()->instance(CiRunnerStateFiles::class, new CiRunnerStateFiles($path.'/ci-runner'));
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node);
+    file_put_contents($path.'/ci-runner/state.py', "\n# Test a different deployed script.\n", FILE_APPEND);
+    $after = $inputs->roles($node);
+
+    expect($after[$runner->id]['digest'])->not->toBe($before[$runner->id]['digest'])
+        ->and($after[$dev->id]['digest'])->toBe($before[$dev->id]['digest']);
 });

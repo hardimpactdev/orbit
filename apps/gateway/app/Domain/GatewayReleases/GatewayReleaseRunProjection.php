@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\GatewayReleases;
 
+use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubTokenGrant;
@@ -139,6 +140,7 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $previous];
         }
         if ($code === null) {
+            app(ContinueReleaseFleetAction::class)->preserveHostBaselines($previous);
             $phases['fleet'] = ['status' => config('fleet.rollout') ? 'pending' : 'disabled', 'nodes' => []];
         }
         $recorder = app(GatewayReleaseRecorder::class);

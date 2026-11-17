@@ -80,13 +80,21 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             $rolesPassed = is_array($phases) && NodeConvergeResult::passed($phases[3]);
             self::recordCiRunner($operation, $intent, $rolesPassed);
             if ($result['outcome'] === 'succeeded') {
-                app(NodeConvergePhaseDigest::class)->record(ValidatedData::integer($operation->node_id), ValidatedData::object($result['digests']));
-                if (isset($snapshot['release_inputs'])) {
+                $digests = ValidatedData::object($result['digests']);
+                $restartDeferred = ($result['t3_restart_deferred'] ?? []) !== [];
+                if ($restartDeferred) {
+                    unset($digests['roles']);
+                }
+                app(NodeConvergePhaseDigest::class)->record(ValidatedData::integer($operation->node_id), $digests);
+                if (! $restartDeferred && isset($snapshot['release_inputs'])) {
                     $node = Node::query()->whereKey($operation->node_id)->lockForUpdate()->firstOrFail();
                     $inputs = ValidatedData::object($snapshot['release_inputs']);
                     $recorded = $node->release_inputs ?? [];
                     $roles = array_replace((array) ($recorded['roles'] ?? []), (array) $inputs['roles']);
-                    $node->forceFill(['release_inputs' => [...$recorded, 'roles' => $roles, 'host' => $inputs['host'] ?? $recorded['host'] ?? null]])->save();
+                    if (isset($inputs['host'])) {
+                        $recorded['host'] = $inputs['host'];
+                    }
+                    $node->forceFill(['release_inputs' => [...$recorded, 'roles' => $roles]])->save();
                 }
             }
             if ($rolesPassed) {
