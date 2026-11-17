@@ -11,6 +11,8 @@ covers:
 
 # Instance cloning
 
+Production clone is the sole new host-checkout exception to [container-only admission](/reference/development-containers#container-only-admission) until production containers ship. Existing development checkouts can remain candidates; new development creates are containers. This exception does not enable new host registration.
+
 Cloning turns an active candidate into a new production Instance on an `app-prod` Node. The Gateway reserves the target, copies the candidate's stored environment values and captures public intent. One native Swamp workflow, `operation-instance-clone`, runs on Node 209 and reaches the Nodes through official `@swamp/ssh` and `@swamp/cfgmgmt` actions. The candidate keeps running. The [chart](/cli/instance/clone) shows each step.
 
 ```bash

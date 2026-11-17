@@ -1,7 +1,7 @@
 # Format: docs/reference/verification-cases.
 # These cases run on the proof fleet as it is. The cases that move an Instance need a proof Node with the Instance pool and the
 # container image, which the proof fleet does not build yet (docs/solutions/development-container-runtime.md, PR 4). Until then
-# the Pest, Deno and Ansible fixture tests cover the move, and the live check on a build-list Node proves it.
+# the Pest, Deno and Ansible fixture tests cover the move; this branch still owes end-to-end proof on an app-dev Node.
 # Retirement fixture coverage (ansible_instance_migrate_preflight_test.ts): dirty tracked/staged/deleted/renamed files refuse before
 # downtime; all untracked files pass, copy into the container and report the count of untracked files that Git does not ignore (selected nested repository leaves included, no paths/content).
 # Empty untracked/ignored directories, including nested trees and storage/app/public mode 3775, are carried with their modes.
@@ -44,6 +44,7 @@ sources: [gateway]
 baseline: [operations]
 
 uncovered:
+  universal-admission: "Gateway tests admit development migration without a build-list opt-in and refuse production on a mixed-role Node. Existing checkout Instances and PHP-FPM pools stay supported; fleet proof and live inventory remain owed."
   "code:instance.migrate_env_service_unused": "Real-file fixtures cover stock MySQL with no listener, local listeners, private/public classification, bounded probes and redaction; Ansible and result fixtures retain the generic warning before downtime. The release owner proves a stock checkout moves with the warning and an answering unattached endpoint refuses before quiesce."
   "code:source.github_app_denied": "Pest covers missing installation, excluded repository and no vault copy; Ansible covers later Git authentication refusal with the same safe App/repository message and no raw diagnostics."
   "code:source.github_unavailable": "Faked HTTP tests distinguish GitHub 5xx and timeout from missing installation; no live credential faults are injected."

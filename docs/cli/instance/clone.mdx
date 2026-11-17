@@ -4,6 +4,8 @@ sidebarTitle: "instance:clone"
 description: "Clone a candidate Instance into a prepared production Instance."
 ---
 
+Production clone is the sole exception to [container-only new Instance admission](/reference/development-containers#container-only-admission) until production containers ship. It still requires a checkout candidate; container candidates remain unavailable.
+
 ```bash
 orbit instance:clone <candidate> <node> <name> --preview-name=NAME [--branch=BRANCH] [--sqlite-source-path=PATH] [--json]
 ```

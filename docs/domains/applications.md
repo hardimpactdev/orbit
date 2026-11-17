@@ -13,7 +13,7 @@ covers:
 
 # Applications
 
-A Project records one Git repository and the defaults for running it. An Instance is one copy of that Project on one Node. An Instance on an `app-dev` Node owns a checkout or a linked worktree, or runs in an [Instance container](/reference/development-containers) on a Node of the build list. An Instance on an `app-prod` Node owns a production home with releases. The Project [type](/reference/projects#project-types) decides whether an Instance gets a Route and serves PHP.
+A Project records one Git repository and the defaults for running it. An Instance is one copy of that Project on one Node. Every new development Instance runs in an [Instance container](/reference/development-containers). Existing checkout and worktree Instances keep working until they migrate. Production clone remains the sole new-checkout exception: an Instance on an `app-prod` Node owns a production home with releases. The Project [type](/reference/projects#project-types) decides whether an Instance gets a Route and serves PHP.
 
 This page follows an Instance from creation to removal. Each step links to the page that owns its details.
 
@@ -35,7 +35,7 @@ This page follows an Instance from creation to removal. Each step links to the p
 
 ## Create a development Instance
 
-Select an active Linux Node with an active `app-dev` role. On a Node of the build list, create makes an Instance container; see [On a container Node](/cli/instance/create#on-a-container-node). The name `default` is reserved for the Project's default development source. A name that equals the Project `default_branch`, such as `main`, also means `default`: Orbit creates the `default` Instance, exactly as if you passed `default`. See [A default-branch name means default](#a-default-branch-name-means-default).
+Select an active Linux Node with an active `app-dev` role. Every new create makes an Instance container; see [Container creation](/cli/instance/create#container-creation). The name `default` is reserved for the Project's default development source. A name that equals the Project `default_branch`, such as `main`, also means `default`: Orbit creates the `default` Instance, exactly as if you passed `default`. See [A default-branch name means default](#a-default-branch-name-means-default).
 
 ```bash
 orbit instance:create <project> <node> default
@@ -176,7 +176,7 @@ A request containing `domain` returns `operation.kind_unavailable`. Native Route
 
 ## Register an existing checkout
 
-Run registration on the `app-dev` Node that holds the source. Supply an existing Project ID and a checkout at `<apps-root>/<project-slug>/<name>`. A plain checkout or a linked worktree of the Project repository is accepted.
+New host registration is refused with `instance.container_required` (409), before checkout observation or records. Use [`instance:create`](/cli/instance/create) for a new container. The behavior below applies only to retrying an existing registered checkout on its app-dev Node. Supply its Project ID and original checkout at `<apps-root>/<project-slug>/<name>`.
 
 ```bash
 cd /fast/apps/acme/feature

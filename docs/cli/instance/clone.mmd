@@ -36,6 +36,7 @@ sequenceDiagram
   end
   Note over GW: Validate, reserve 43<br/>render .env · task #5152
   %%> Requirements:
+  %%> - production clone is the sole new host-checkout exception until production containers ship; the candidate must remain a checkout
   %%> - your Node has access grants to Node 12 and Node 14
   %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: only `instance:create` makes Instances of such a Project, as containers
   %%> - Node 14 is active, has the `app-prod` role and a TLD
