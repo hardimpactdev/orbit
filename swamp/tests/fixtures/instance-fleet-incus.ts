@@ -294,6 +294,30 @@ if (command[0] === "incus") {
       gateway.files[path] = "recorded-node-pins";
       done(JSON.stringify({ changed }));
     }
+    if (rest.join(" ") === "test -f /etc/orbit/instance-fleet-node") {
+      if (container(name).files?.["/etc/orbit/instance-fleet-node"] === undefined) { save(); Deno.exit(1); }
+      done();
+    }
+    if (rest.join(" ") === "id -nG orbit") {
+      if (state.failHostGroups) fail("Instance host groups unavailable");
+      const groups = container(name).files?.["/etc/group"] ?? fail("Instance host group file missing");
+      done(groups.trim().split("\n").map((line) => line.split(":"))
+        .filter((parts) => parts[0] === "orbit" || parts[3].split(",").includes("orbit")).map((parts) => parts[0]).join(" "));
+    }
+    if (rest[0] === "usermod") {
+      if (asOrbit || rest.join(" ") !== "usermod --append --groups incus-admin orbit") fail("Wrong Instance host membership command");
+      const found = container(name);
+      const groups = found.files?.["/etc/group"] ?? fail("Instance host group file missing");
+      if (!groups.split("\n").some((line) => line.startsWith("incus-admin:"))) fail("Incus admin group missing");
+      found.files!["/etc/group"] = groups.split("\n").map((line) => {
+        if (!line.startsWith("incus-admin:")) return line;
+        const parts = line.split(":"), members = parts[3].split(",").filter(Boolean);
+        if (!members.includes("orbit")) members.push("orbit");
+        parts[3] = members.join(",");
+        return parts.join(":");
+      }).join("\n");
+      done();
+    }
     // wg-quick makes the interface before it sets its private key; a read in between prints `(none)` with exit 0.
     if (rest[0] === "wg" && rest[1] === "show") {
       if ((state.hubKeyNone ?? 0) > 0) {
