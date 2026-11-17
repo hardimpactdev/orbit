@@ -10,6 +10,7 @@ use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
 use App\Domain\Instances\ContainerInstanceDestroy;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceContainer;
@@ -37,7 +38,6 @@ use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Proof\ProofWarmPool;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Processes\CommandResult;
@@ -164,7 +164,7 @@ beforeEach(function (): void {
     app(ExtensionStore::class)->set('conn', true);
     app(ExtensionStore::class)->set('tasks', true);
     app(TaskExtensionState::class)->enable();
-    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
     {
         public function assertReady(): void {}
 

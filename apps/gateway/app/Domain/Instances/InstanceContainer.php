@@ -14,9 +14,9 @@ use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\Tasks\TaskCopyKey;
 use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
 use App\Infrastructure\MachineSoftware\StaticPhpBuild;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
@@ -127,7 +127,7 @@ final readonly class InstanceContainer
 
     public const string BrowserShellFile = '/etc/profile.d/91-orbit-browsers.sh';
 
-    public function __construct(private RecipeImageBuilds $recipes) {}
+    public function __construct(private CurrentRecipe $recipes) {}
 
     public static function name(Instance $instance): string
     {

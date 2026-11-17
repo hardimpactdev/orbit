@@ -8,6 +8,7 @@ import tempfile
 import textwrap
 import unittest
 from unittest.mock import patch
+import xml.etree.ElementTree as ET
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +25,12 @@ class GatewayTestsPolicyTest(unittest.TestCase):
         self.assertNotIn('continue-on-error', JOB)
         self.assertNotIn('ORBIT_SLOW_CHECKS_BLOCKING', JOB)
         command = next(line.strip() for line in JOB.splitlines() if 'vendor/bin/pest ' in line)
-        self.assertEqual(command, 'vendor/bin/pest --parallel --processes=4 --default-time-limit=5 --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"')
+        self.assertEqual(command, 'vendor/bin/pest --parallel --processes=4 --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"')
+        config = ET.parse(ROOT / 'apps/gateway/phpunit.xml').getroot().attrib
+        self.assertEqual(config['defaultTimeLimit'], '5')
+        for flag in ('enforceTimeLimit', 'failOnRisky', 'stopOnRisky'):
+            self.assertEqual(config[flag], 'true')
+        self.assertNotIn('--default-time-limit=', SOURCE)
         self.assertIn('if: always()\n        uses: actions/upload-artifact@', JOB)
         self.assertIn('name: gateway-tests-junit', JOB)
         self.assertIn('if-no-files-found: error', JOB)

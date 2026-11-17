@@ -91,7 +91,7 @@ jobs:
           ORBIT_REAL_KERNEL_TESTS: '1'
         run: |
           ../../bin/ci-runner-prerequisites nftables
-          vendor/bin/pest --default-time-limit=5 --group privileged tests/Feature/Extensions/AiRouter/AiRouterModelForwarderTest.php --filter 'on a real kernel'
+          vendor/bin/pest --group privileged tests/Feature/Extensions/AiRouter/AiRouterModelForwarderTest.php --filter 'on a real kernel'
       # The same for the Instance egress proxy's table. It runs after the forwarder's prerequisite check.
       - name: Prove the Instance egress proxy's nftables table on a real kernel
         working-directory: apps/gateway
@@ -100,7 +100,7 @@ jobs:
           DB_CONNECTION: sqlite
           DB_DATABASE: ':memory:'
           ORBIT_REAL_KERNEL_TESTS: '1'
-        run: vendor/bin/pest --default-time-limit=5 --group privileged tests/Feature/Domain/Instances/InstanceEgressTest.php --filter 'on a real kernel'
+        run: vendor/bin/pest --group privileged tests/Feature/Domain/Instances/InstanceEgressTest.php --filter 'on a real kernel'
 
   gateway-tests:
     name: Gateway Pest suite
@@ -211,7 +211,7 @@ jobs:
         run: |
           php -r 'if (ini_get("memory_limit") !== "1G") { exit(1); }'
           command -v caddy
-          vendor/bin/pest --parallel --processes=4 --default-time-limit=5 --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"
+          vendor/bin/pest --parallel --processes=4 --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"
       - name: Publish Gateway Pest results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

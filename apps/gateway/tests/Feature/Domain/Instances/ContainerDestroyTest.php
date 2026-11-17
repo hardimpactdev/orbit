@@ -8,6 +8,7 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceContainer;
@@ -21,7 +22,6 @@ use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Processes\CommandResult;
@@ -461,7 +461,7 @@ it('wires the lifecycle destroy contribution while Conn is disabled', function (
 function ownedPostgresClone(): array
 {
     app(ExtensionStore::class)->set('conn', true);
-    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
     {
         public function assertReady(): void {}
 
@@ -523,7 +523,7 @@ it('deletes the owned server database create and destroy copies but keeps the de
 
 it('deletes a clone\'s own Valkey user and its copies, never the default\'s shared user', function (): void {
     app(ExtensionStore::class)->set('conn', true);
-    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
     {
         public function assertReady(): void {}
 

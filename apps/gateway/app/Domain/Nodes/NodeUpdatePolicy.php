@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Domain\TaskVms\TaskVmNestedFleet;
+use App\Domain\Instances\NestedFleetLayout;
 use App\Models\Node;
 
 /**
@@ -16,7 +16,7 @@ use App\Models\Node;
  * for a long time or cuts the fleet's work. A protected unit on an old library makes the Node due instead, through the same
  * `/var/run/reboot-required` that a kernel update writes, so the pass has one signal.
  *
- * A Node of a nested fleet (a task VM's or an Instance container's) gets the same files with the daily timers off: a proof must not
+ * A Node of an Instance container's nested fleet gets the same files with the daily timers off: a proof must not
  * change under an unattended upgrade, and its fleet is rebuilt or refreshed by Orbit, not patched.
  */
 final readonly class NodeUpdatePolicy
@@ -33,7 +33,7 @@ final readonly class NodeUpdatePolicy
     public static function for(Node $node): array
     {
         return ['packages' => ['unattended-upgrades', 'needrestart'], 'timers' => ['apt-daily.timer', 'apt-daily-upgrade.timer'],
-            'daily' => ! TaskVmNestedFleet::holds((string) $node->public_ssh_host), 'files' => [
+            'daily' => ! NestedFleetLayout::holds((string) $node->public_ssh_host), 'files' => [
                 ['path' => '/etc/apt/apt.conf.d/20auto-upgrades', 'mode' => '0644',
                     'content' => "// Managed by Orbit.\nAPT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Unattended-Upgrade \"1\";\n"],
                 ['path' => '/etc/apt/apt.conf.d/52orbit-unattended-upgrades', 'mode' => '0644',

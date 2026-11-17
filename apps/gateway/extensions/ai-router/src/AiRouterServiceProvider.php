@@ -7,10 +7,10 @@ namespace Orbit\Extensions\AiRouter;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Routes\ContributedPrivateHostnames;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\Firewall\ContributedNodeFirewallRules;
 use App\Providers\ExtensionServiceProvider;
@@ -28,10 +28,10 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSnapshotStore;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterContainerModelRoute;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterFootprintArtifact;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterPrivateHostnames;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterTaskGuardFirewall;
-use Orbit\Extensions\AiRouter\Infrastructure\AiRouterTaskVmModelRoute;
 use Orbit\Extensions\AiRouter\Infrastructure\ArrayAiRouterCache;
 use Orbit\Extensions\AiRouter\Infrastructure\ConfiguredAiRouterCache;
 use Orbit\Extensions\AiRouter\Infrastructure\HttpAiRouterAccountControlClient;
@@ -45,7 +45,7 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
-        TaskVmModelRoute::class => AiRouterTaskVmModelRoute::class,
+        ContainerModelRoute::class => AiRouterContainerModelRoute::class,
         AiRouterAccountControlClient::class => HttpAiRouterAccountControlClient::class,
     ];
 
