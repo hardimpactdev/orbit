@@ -591,15 +591,20 @@ When the candidate selects the Swamp checks by the rule of `bin/ci-build-plan`, 
 
 #### Run the Swamp shape gate before you push
 
-The `Swamp shape gate` and `Swamp workflow validate` jobs of CI call one script, `bin/swamp-shape-gate`. CI selects `--only control` for static shape rules. The candidate gate uses the full shape group. CI runs the selected fixtures in shards ([CI budget](#ci-budget)). Commit your change first: the checkers compare committed `HEAD` with the base.
+The Swamp jobs of CI call `bin/swamp-shape-gate`: `--only control` for static shape rules, `--only lint` for pinned Ansible and Python lint, and `--only validate` for native validation. The full local gate runs those same check groups and CI's affected-fixture shards ([CI budget](#ci-budget)). Commit your change first: fixture selection and the static checkers compare committed `HEAD` with the base.
 
 ```bash
 bin/swamp-shape-gate                # shape and validation, against the merge base with origin/main
 bin/swamp-shape-gate --base REF     # compare with another base
 bin/swamp-shape-gate --only shape   # or --only validate
+bin/swamp-shape-gate --only lint    # the same lint group as CI
 ```
 
-The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate` and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts`, the frozen agent command check and the workflow placement lint, `lint-workflow-placement.ts`. The placement lint needs no credential, so it is one of the static controls that `--only control` runs.
+Install Git, Python 3.13 or newer with `venv` and pip support, and Deno 2.9.8 on `PATH`. On Debian, Python needs `python3-venv`. Cold tool setup needs PyPI and Ansible Galaxy access; cold Deno imports need JSR and npm access. The gate reports missing Git or Deno before running checks, and explains a failed pinned-tool installation. Lint alone needs neither Git nor Deno nor a comparison base. Python tools and PyYAML come from the pinned environment, not an unpinned global installation.
+
+Fixture-specific programs are listed in each fixture's `host_programs` metadata under `.github/ci/fixtures/`. For example, the runtime fixtures for Instance hosts need `zip` and `unzip`. Missing declared programs fail even without `--strict`, before the affected fixture starts. Native fixtures also need the recipe-pinned Swamp binary in `ORBIT_SWAMP_PROOF_BINARY`; FrankenPHP fixtures need `ORBIT_FRANKENPHP`. The setup for self-hosted runners provides both. A Deno unit cannot pass with ignored or unrun cases: CI's runner requires a complete receipt. Python units use unittest's process result. Missing local fixture tools are environment limits, not reasons to weaken the checks or increase their deadlines.
+
+The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate` and reuses it. `--tools DIR` selects a different cache for both lint and delegated fixture units. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts`, the frozen agent command check and the workflow placement lint, `lint-workflow-placement.ts`. The placement lint needs no credential, so it is one of the static controls that `--only control` runs.
 
 Unit reloads and restarts that the next task depends on remain immediate tasks, with narrow `no-handler` annotations. Deferring them to handlers would change phase ordering.
 
@@ -612,11 +617,11 @@ A venv runs only with the interpreter that built it. A venv of another interpret
 
 So when the interpreter changes, the name changes too, and the gate never reuses a venv of another interpreter. It builds a new one. The CI cache key of these tools covers the version and the path of the job's interpreter beside the pin files, so CI never restores a venv of another interpreter. The rule lives in one file, `swamp/ansible/shape_tool_names.py`. The gate runs it in its own interpreter. The task VM role playbook runs it on the VM with the `python3` that builds the venv there.
 
-Independent commands share up to four workers, with one worker inside each command. The Instance host fixture files run in two serial groups at the front of the queue: updates and ACL cases in one; host, image and runtime cases in the other. At most two Instance host playbooks run at once, leaving workers for the other checks. The updates and ACL cases measured 356 and 257 seconds on ci-shark-2, or 613 seconds together. The image/runtime group must not also carry those ACL cases.
+Independent non-shard commands use the `shard_workers` value from `.github/ci/checks.toml`, capped by available CPUs; `--workers N` overrides only that concurrency. The gate calls `bin/ci-units plan` against the same base and head as CI, then runs each admitted shard through `bin/ci-units run`. A local run processes the shards in order instead of allocating CI runners. Each shard retains the pool worker count used to pack it, even on a one-CPU host or with `--workers 1`: reducing its lanes would invalidate the plan's deadline.
 
-Each playbook has a four-minute hang guard. Before launching a fixture command, the gate sets `ORBIT_INSTANCE_HOST_DEADLINE_MS` to the current epoch time in milliseconds plus twelve minutes. Every test file reads that same deadline; a late playbook gets only the time left. A file run outside the gate defaults to twelve minutes from its helper import. The updates and ACL sample leaves 107 seconds in its group budget; this margin depends on runner load. Cleanup and output collection take at most five more seconds.
+Slice selection, receipt checks, the unit ceiling and the shard deadline are the same. Each slice of an Instance-host file gets its own deadline rather than sharing one twelve-minute budget across unsliced file isolates. The inner playbook hang guards remain, but CI's shorter unit ceiling bounds each slice.
 
-An earlier ci-shark-3 calibration measured 503.7 seconds for the slower group in a 897-second job. Setup and the other checks added `ceil(897 - 503.7) = 394` seconds. Its stall estimate is `720 + 5 + 394 = 1119` seconds (18m39s), leaving 1m21s below the twenty-minute target and 11m21s below the unchanged thirty-minute workflow limit. This estimate depends on measured runner overhead; it is not a hard bound on unrelated setup or checks.
+The [CI budget](#ci-budget) owns the numbers. Local runs do not raise or duplicate them. Local and CI runs enforce the same admission limits and report ADR 0262's named capacity-gap units as not run; other capacity overflow fails before execution. The local `fixture-plan.json` records the selection, declared costs and cases. The full gate means every check group, not every fixture in the repository. To investigate a fixture outside the change's selection, run its unit explicitly with `bin/ci-units run`; that does not establish that a broader change fits CI admission.
 
 A Python child subreaper owns each playbook from launch. Detached workers and orphans reparent to it. On deadline it sends TERM to its children, waits one second, then repeatedly kills and reaps children, including those adopted during cleanup. Signals use pidfds. Output collection also has a deadline. A timeout fails the case with the captured output, including its last task.
 
@@ -626,7 +631,7 @@ The shape checker resolves a constant quoted CEL child-workflow name and scans t
 
 A task VM holds the same environment in `/opt/orbit-shape-gate`, and so does a copy of a nested-fleet default: its [refresh](/reference/development-containers#the-pinned-shape-tools) builds the tools before the seed. The task VM role playbook builds it for the pins of its release. The script uses it when its name matches the pins and the interpreter, so the check runs offline.
 
-Workflow validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the script skips the workflow validation, the Node enrollment trust test (it imports the extensions that validation pulls) and the grant pattern check (it also needs PHP). It names each skipped step and still exits 0. `--only validate` exits 78 then, which the candidate gate reads as skipped. CI passes `--strict`: a skipped step is a failure there.
+Workflow validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the script skips the workflow validation, the Node enrollment trust test (it imports the extensions that validation pulls) and the grant pattern check (it also needs PHP 8.5). It names each missing credential and skipped step and still exits 0 if all other checks pass. `--only validate` exits 78 then, which the candidate gate reads as skipped. CI passes `--strict`: a missing prerequisite fails clearly without launching a credential-dependent command. A local result with skipped validation is not a fully green gate.
 
 CI gives the credentials to this one step on pull requests, on main pushes, on the three-hour schedule and on the push of a `task-*-handoff` branch by the Orbit App (`orbit-nckrtl[bot]`), so a task handoff that changes `swamp/` can pass hosted CI. It never gives them on `pull_request_target` or to a fork. Decided by the orchestrator, for Nick's review: the push of a handoff branch by the App.
 
@@ -720,8 +725,8 @@ The check prints CI's per-unit time caps at its start: the most seconds a fixtur
 The Pest jobs are `gateway-tests`, `cli-tests`, `sdk-tests` and `docs` for the docs app. For a selected job:
 
 - `packages/php-sdk` runs its whole suite. It takes about a second.
-- Each Pest run uses the per-test time limit of the project's CI job, read from `.github/workflows/ci.yml`. For `apps/gateway` that is `--default-time-limit=5`.
-- A job that sets no limit keeps its project's `phpunit.xml` limit. A copy, like CI, runs on a shared and loaded host.
+- Each Pest run uses its project's enforced `phpunit.xml` default. Explicit CI job overrides in `.github/workflows/ci.yml` take precedence. Gateway's XML owns the five-second default for local runs, CI and the task check.
+- A copy, like CI, runs on a shared and loaded host.
 - A command deliverable that runs Pest gets the same limit. The handoff check asks `bin/task-check --ci-time-limit <directory>` for it and appends it to the deliverable's Pest call. See [A Pest command gets CI's time limit](/reference/tasks#a-pest-command-gets-cis-time-limit).
 - `apps/gateway`, `apps/cli` and `apps/docs` run their changed test files in one Pest run. `apps/cli` also runs the CLI tests that replay a changed SDK fixture, as `bin/cli-contract --changed <start commit>` names them.
 - `apps/gateway` and `apps/cli` also run their pin test files in that run, whatever changed. The `PIN_TESTS` table in `bin/task-check` lists them.
@@ -901,9 +906,9 @@ The check name remains `Required checks` so branch protection, task handoff CI a
 
 ### Gateway test time limits
 
-Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="2"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. The default is two seconds locally. Tests remain unsized except for reviewed cases whose real deadline or kernel age is the behaviour under test.
+Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="5"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. That file owns the five-second default for plain `composer test`, CI and `bin/task-check`. Tests remain unsized except for reviewed cases whose real deadline or kernel age is the behaviour under test.
 
-CI passes `--default-time-limit=5` to the Gateway suite and its privileged cases. Local Gateway runs keep the two-second default. Both retain failure and stop-on-risky behavior. Fixtures for large row limits insert batches that fit SQLite's parameter limit while still storing every row up to the production limit.
+CI's Gateway suite and privileged cases inherit the project default without a command-line override. The task check reads the same default when CI passes no override. All retain failure and stop-on-risky behavior. Fixtures for large row limits insert batches that fit SQLite's parameter limit while still storing every row up to the production limit.
 
 An exception uses a dedicated native PHPUnit class with class-level `#[Large]` and a one-line justification beside the attribute. Each case needs review; the class contains only the approved real-deadline cases, never unrelated tests. The approved classes are `DocumentTransportDeadlineTest`, with the native Guzzle connection and total-request deadlines, `LinuxHostCtimeTest`, with real kernel-ctime aging through GNU `find`, and `TaskCheckDeadlineTest`, with the retained Tasks checker’s real setup deadlines, TERM grace, and output-drain bound. They use stock PHPUnit `timeoutForLargeTests`, without an override. Installed PHPUnit supports sizes only on classes, and installed Pest cannot declare sizes. Do not substitute size-named groups or add custom timeout or sizing machinery.
 

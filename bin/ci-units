@@ -632,7 +632,7 @@ def run_unit(step, environment, ceiling, shard_deadline=None):
     return {'unit': step.name, **result}
 
 
-def run(units, budget, fixtures, times):
+def run(units, budget, fixtures, times, tools=None):
     os.umask(0o022)
     shard_deadline = time.monotonic() + budget['shard_deadline_seconds']
     results = [{'unit': unit, 'status': 'NOT RUN', 'seconds': 0,
@@ -644,7 +644,7 @@ def run(units, budget, fixtures, times):
     times.write_text(json.dumps(results, indent=2) + '\n')
     if units:
         try:
-            environment, collections = prepare(shard_deadline)
+            environment, collections = prepare(shard_deadline, tools)
         except RuntimeError as error:
             print(str(error), flush=True)
             summary(str(error))
@@ -676,11 +676,13 @@ def run(units, budget, fixtures, times):
     return int(not units or CANCELLED.is_set() or any(r['status'] != 'passed' for r in results))
 
 
-def prepare(shard_deadline):
+def prepare(shard_deadline, tools=None):
     # The same ownership and deadline cover cold pip/collection setup too.
     with tempfile.TemporaryDirectory() as scratch:
         receipt = Path(scratch) / 'tools.json'
         step = gate.Step('shape', 'fixture tool setup', [sys.executable, str(ROOT / 'bin/ci-units'), '--prepare', str(receipt)])
+        if tools is not None:
+            step.argv.append(str(tools))
         result = run_unit(step, os.environ.copy(), max(.001, shard_deadline - time.monotonic()), shard_deadline)
         if result['status'] != 'passed':
             raise RuntimeError(f"Fixture tool setup {result['status']}; every selected case is NOT RUN (named in the artifact)")
@@ -688,8 +690,8 @@ def prepare(shard_deadline):
         return {**os.environ, 'PATH': tools['path']}, Path(tools['collections'])
 
 
-def prepare_tools(receipt):
-    tools = gate.default_tools()
+def prepare_tools(receipt, tools=None):
+    tools = tools if tools is not None else gate.default_tools()
     environment = {**os.environ, 'PATH': f'{gate.tool_path(tools)}{os.pathsep}{os.environ["PATH"]}'}
     collections = gate.collections_path(tools)
     setup = gate.plan('', ROOT, ROOT, collections)[0]
@@ -729,6 +731,7 @@ def main():
     runner.add_argument('--units', required=True, help='JSON array of unit names')
     runner.add_argument('--times', type=Path, default=Path('ci-unit-times.json'))
     runner.add_argument('--workers', type=int, help="concurrent units (default: the lanes of the units' pool)")
+    runner.add_argument('--tools', type=Path, help='pinned tools cache (default: the shape gate cache)')
     args = parser.parse_args()
     if args.command == 'collect':
         print(json.dumps(collect(args.file), indent=2))
@@ -747,7 +750,7 @@ def main():
         budget = {**budget, 'shard_workers': workers}
         signal.signal(signal.SIGTERM, lambda *_: CANCELLED.set())
         signal.signal(signal.SIGINT, lambda *_: CANCELLED.set())
-        return run(units, budget, fixtures, args.times)
+        return run(units, budget, fixtures, args.times, args.tools.resolve() if args.tools is not None else None)
     base, paths = selection.changed_inputs(gate.resolve_base(args.base), args.head)
     inventory_changed = inventory_changes(base, args.head) if registry.metadata_changed(paths) else []
     registry_changed, shared_registry = registry_changes(base, args.head) if registry.metadata_changed(paths) else ([], False)
@@ -772,7 +775,7 @@ def main():
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == '--prepare':
-        prepare_tools(Path(sys.argv[2]))
+        prepare_tools(Path(sys.argv[2]), Path(sys.argv[3]) if len(sys.argv) > 3 else None)
     elif len(sys.argv) > 1 and sys.argv[1] == '--supervise':
         supervise(float(sys.argv[2]), Path(sys.argv[3]), sys.argv[5:],
                   None if sys.argv[4] == 'none' else float(sys.argv[4]))
