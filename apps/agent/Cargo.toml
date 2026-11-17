@@ -68,7 +68,7 @@ enum_glob_use = "allow"                  # use Enum::* inside a function that ma
 name = "orbit-agent"
 version = "0.15.0"
 edition = "2021"
-rust-version = "1.81"
+rust-version = "1.89"
 
 [lib]
 name = "orbit_agent"

@@ -6,7 +6,7 @@ observer joins `[lints] workspace = true`.
 `orbit-agent` is the observer: the outbound-only service that reports facts, Process states and logs to the Gateway, plus
 the frozen agent commands that SSH or the Gateway start. It is an application with a library target (`src/lib.rs`) that only
 its own binary and tests use, so this review applies the application rules: no API-evolution findings, and `missing_docs`,
-`missing_errors_doc`, `exhaustive_enums` and `print_stderr` are noted only as lint noise. Edition 2021, no `rust-version`.
+`missing_errors_doc`, `exhaustive_enums` and `print_stderr` are noted only as lint noise. Edition 2021, no `rust-version` at review time. A later commit set 1.81, which made clippy report 25 `incompatible_msrv` errors; the B1 fix slice raised it to 1.89, the lowest version that clears them.
 
 The code is in good shape for its size (69k lines with tests). Plain clippy (`-D warnings`, all targets) is clean, every
 test passes, every `unsafe` block has a reason nearby, and almost every `unwrap()` outside tests sits on a value that the
