@@ -27,8 +27,9 @@ sequenceDiagram
   %%> Input:
   %%> - the task group, and the passed handoff check whose commit is published
   %%> - optionally a title and body together, to open or update the pull request; without them it only pushes
-  %%> - a task copy's group may omit `--check`, `--title` and `--body`: the release of its done check, with the reviewer's title and body, as a ready pull request; on a group that has its pull request, the release pushes its done check again
+  %%> - a task copy's group may omit `--check`, `--title` and `--body`: the release of its done check, with the reviewer's title and body, as a ready pull request; on a group that has its pull request, the release pushes its done check again and updates the pull request's title and body with the reviewer's text when its newest turn sent one for that check, else it only pushes
   %%> - a task copy's `--check` without `--title` and `--body`, on a group without a pull request: when the check is the reviewed done check with the reviewer's text, the same Operation opens the pull request, as the release does; any other check only pushes
+  %%> - a task copy's `--check` without `--title` and `--body`, on a group that has its pull request: when the check is the done check with the reviewer's text, the same Operation updates the pull request with it, as the release does; any other check only pushes
   Note over GW: Check the candidate<br/>task #5165 · record the key names
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
