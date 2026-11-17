@@ -5,6 +5,8 @@ sidebarTitle: "task:publish"
 
 Push an [eligible checked candidate's](/reference/tasks#check-an-external-group) commit for an external group. When hosted CI is required, the owning handoff operation must have succeeded with passed CI on that check/commit. Optionally open or update its pull request. See [Publish an external group](/reference/tasks#publish-an-external-group).
 
+Publish a feature that already works end to end in its copy; a release only confirms it. See [Build a feature in one copy](/reference/tasks#build-a-feature-in-one-copy).
+
 ```bash
 orbit task:publish 42 --check=17 --title="Deliver the feature" --body="Adds the feature."
 ```
