@@ -8,7 +8,7 @@ repo=/home/orbit/shared/orbit.git
 script=swamp/scripts/gateway-release-container.sh
 # Manual moves and offline recovery already hold the same lock.
 case "$phase" in
-  switch|restore|switch-back|start-horizon|retire|release-unused)
+  switch|restore|switch-back|start-horizon|retire|prune|release-unused)
     if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 ]]; then
       exec 9<>/home/orbit/.orbit/gateway-release.lock
       flock -w 130 9 || { echo 'Gateway release lock is busy' >&2; exit 1; }
@@ -36,6 +36,19 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
   # The operation that created the clone and the serving inventory fence deletion.
   if [[ ! -f $inventory && ${ORBIT_GATEWAY_INITIAL_MOVE:-0} != 1 ]]; then exit 0; fi
   [[ ! -e $journal/operation ]] || { echo 'Unfinished traffic switch needs recovery' >&2; exit 1; }
+  # A failed Incus copy can leave only the preparer snapshot. Check the seal that
+  # created it rather than trusting the name of a snapshot or the current preparer.
+  snapshot="built-$operation"
+  snapshots=$("${incus_cli[@]}" snapshot list prepare-gateway --format json)
+  if jq -e --arg name "$snapshot" 'any(.[]; .name==$name)' <<< "$snapshots" >/dev/null; then
+    jq -e --arg name "$snapshot" --arg op "$operation" --arg sha "$sha" '
+      any(.[]; .name==$name and .config["user.orbit.release.target"]=="gateway"
+        and .config["user.orbit.release.role"]=="prepare" and .config["user.orbit.release.operation"]==$op
+        and .config["user.orbit.release.commit"]==$sha)' <<< "$snapshots" >/dev/null || {
+          echo 'Refusing to remove a snapshot with a different identity' >&2; exit 1;
+        }
+    "${incus_cli[@]}" snapshot delete prepare-gateway "$snapshot"
+  fi
   if [[ -f $inventory && $(jq -er '.live' "$inventory") == "$sha" ]]; then exit 0; fi
   if [[ -f $inventory && $(jq -r '.old // ""' "$inventory") == "$sha" ]]; then
     ctl retire gateway "${sha:0:12}" "$operation"

@@ -9,6 +9,10 @@ done
 # Sticky ownership prevents it from renaming or replacing the root-owned release trees.
 chown root:orbit "$home"
 chmod 1770 "$home"
+# Keep the read-only environment link fixed while the storage mount remains writable.
+test -d "$home/shared" && test ! -L "$home/shared"
+chown root:orbit "$home/shared"
+chmod 0750 "$home/shared"
 find -P "$home/orbit" "$home/web" -xdev \
     \( -path "$home/orbit/apps/gateway/bootstrap/cache" -o \
        -path "$home/orbit/apps/cli/bootstrap/cache" -o \
