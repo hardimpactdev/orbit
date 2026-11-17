@@ -76,7 +76,11 @@ The child runs up to four Ansible phases through this playbook. Each runs as `ag
 | `commit` | Stages everything and commits as Orbit with hooks off, unless `HEAD` is a clean recorded candidate. Reads back `HEAD`, its tree and a new commit's parent |
 | `commit-ref` | Records the accepted candidate under `refs/orbit/check-operations/{operation}` |
 
-Commands run as `env -C <directory> … /bin/bash -lc <command>` with the task check variables, `HOME=/home/agent` and the agent's login shell. They use the dependencies installed in the container. A start-commit run extracts the base commit into guest scratch, copies the installed `vendor` and `node_modules` directories and the declared test paths, then runs the command. Commands get no credentials. The admitted `checkout_path` is never a Node path: a Node directory with the same path is never read or run.
+Commands run as `env -C <directory> … /bin/bash -lc <command>` with the task check variables, `HOME=/home/agent` and the agent's login shell. They use the dependencies installed in the container. The Project check, base runs and deliverables remain serial. Commands get no credentials. The admitted `checkout_path` is never a Node path: a Node directory with the same path is never read or run.
+
+The first runnable start-commit command extracts the base tree once into guest scratch. Each command gets a private copy of that extraction, with `vendor` and `node_modules` from its directory and ancestors, and the same dependency directories of local packages reached through installed symlinks. Linked installation payloads are copied too when they are inside the checkout and ignored by Git, including their transitive links. Unrelated projects' dependency trees are not copied. Tracked local package source stays at the base version; only the command's declared test paths overlay it.
+
+Absolute dependency links inside the checkout are redirected into the private tree; a dependency link outside the checkout refuses the phase rather than exposing shared writable files. Copies use `cp --reflink=auto`, never hard links, so writes cannot change the candidate, the shared extraction or another command's replay. A filesystem without reflinks uses ordinary copies. Each command's private tree is removed after its base run; the shared extraction is removed with check scratch on success or failure.
 
 Snapshots use the temporary index described above, so a staged, force-added ignored file is in the checked tree. The commit stages the same work, so its tree matches the snapshot.
 

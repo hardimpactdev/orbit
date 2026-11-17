@@ -1,4 +1,4 @@
-"""Own one test run's temporary files and processes before PHP or ParaTest starts."""
+"""Own one Pest run's temporary files and processes before PHP or ParaTest starts."""
 import ctypes
 import os
 import re

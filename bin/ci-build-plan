@@ -19,6 +19,7 @@ SELECTION = 'swamp/proof/selection.txt'
 SELECTION_COMMAND = re.compile(r'[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+')
 
 
+@lru_cache(maxsize=4096)
 def selection_regex(glob):
     """Match `ProofSelectionRule` in the Gateway: `**` crosses directories, `*` and `?` stay in one name."""
     pattern, i = '', 0

@@ -322,6 +322,8 @@ Use [web verification](/reference/web-verification) for demo-mode layout checks.
 
 Browser tests assert on the page, the URL, and the requests that the demo Gateway received. They never write tracked files, so a passing `bun run test` in `apps/web` leaves the working tree unchanged.
 
+CI runs these tests before publishing its web build. [Bun and Rust projects](/reference/bun-and-rust-projects#web-app) owns setup and the fixed browser, viewport, locale and timezone used for exact text snapshots.
+
 Polling tests that need no DOM run in Node in `src/realtime/polling.test.ts`. They use real Query observers with Vitest fake timers and enable client scheduling through TanStack's environment manager. They check both fallback intervals and that polling stops when the page loses focus or the live connection takes over. Cleanup restores the clock, focus, liveness, and server mode. These checks need no browser launch; page and control behavior stays in the browser suite.
 
 [Web verification](/reference/web-verification#automated-tests) describes the separate tests that launch the screenshot tool's real Chromium and WebKit sessions. These run headless; CI installs Chromium's headless shell without the unused full browser and keeps WebKit for engine-specific verification.

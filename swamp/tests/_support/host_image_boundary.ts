@@ -8,6 +8,21 @@ export type Boundary = { entries: Record<string, Entry> };
 const roots = ["images", "arc", "arc.conf", "subuid", "subgid", "sysctl", "modules-load", "systemd", "libexec", "hibernation", "bridge-policy",
     "container-libraries", "opt", "cache", "debs", "egress", "etc-orbit", "dev-ports.nft", "state.json", "remote-state.json", "calls", "targets", "nested-image.json", "boundary-facts.json"];
 
+export function readBoundaries() {
+    // Store only changed entries; restore still creates each test's complete independent filesystem.
+    const saved = JSON.parse(Deno.readTextFileSync(new URL("../fixtures/host-image-boundaries.json", import.meta.url)));
+    const boundaries: Record<string, Boundary> = {};
+    for (const [name, row] of Object.entries(saved) as [string, { from: string | null; entries: Record<string, Entry & { append?: string } | null> }][]) {
+        const entries = { ...(row.from ? boundaries[row.from].entries : {}) };
+        for (const [path, entry] of Object.entries(row.entries)) {
+            if (entry === null) delete entries[path];
+            else entries[path] = entry.append !== undefined ? { mode: entry.mode, text: entries[path].text! + entry.append } : entry;
+        }
+        boundaries[name] = { entries };
+    }
+    return boundaries;
+}
+
 function substitutions(f: Fixture): [string, string][] {
     const pairs: [string, string][] = [[`${f.folder}/unix.socket`, "@SOCKET@"], [`/proc/${Deno.readTextFileSync(`${f.folder}/daemon.pid`).trim()}`, "/proc/@DAEMON@"], [f.folder, "@FIXTURE@"], [Deno.readTextFileSync(`${f.folder}/orbit-root-ca.crt`), "@ROOT_CA@"]];
     const visit = (value: unknown, path: string) => {

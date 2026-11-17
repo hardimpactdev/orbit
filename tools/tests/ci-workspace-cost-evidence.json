@@ -27,6 +27,13 @@
         "test_exact_branch_export_and_corrupt_transfer_cleanup": 10.469
       }
     },
+    "swamp/tests/task_instance_check_dependencies_test.py": {
+      "case_seconds": {
+        "test_project_closures_keep_base_source_and_writes_private_between_commands": 13.599,
+        "test_ignored_linked_installations_are_present_and_writable_without_false_base_failures": 10.399,
+        "test_external_dependency_link_refuses_and_cleans_up_without_running_commands": 2.950
+      }
+    },
     "swamp/tests/task_instance_check_test.py": {
       "case_seconds": {
         "test_check_runs_in_the_guest_and_commits_the_exact_candidate": 10.987,
