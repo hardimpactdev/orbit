@@ -27,6 +27,7 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed> $input
  * @property array<string, mixed>|null $state
  * @property array<string, mixed>|null $result
+ * @property array<string, mixed>|null $executor_result The executor's result line for this Operation's order (ADR 0266), written once by the agent view subscriber.
  * @property OperationStatus $status
  * @property int $sequence
  * @property string|null $current_step
@@ -113,6 +114,7 @@ final class Operation extends Model
             'input' => 'array',
             'state' => 'array',
             'result' => 'array',
+            'executor_result' => 'array',
             'status' => OperationStatus::class,
             'sequence' => 'integer',
             'attempts' => 'integer',
