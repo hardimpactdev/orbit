@@ -17,9 +17,11 @@ use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Nodes\CiRunnerStateFiles;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
@@ -39,7 +41,6 @@ use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyStart;
-use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -1188,7 +1189,7 @@ describe('the recorded Incus project', function (): void {
         config(['instances.fleet_marker' => $marker]);
         $project = containerDefaultProject();
         $real = recordedNestedInstance($project, containerDefaultNode());
-        $fleet = recordedNestedInstance($project, containerDefaultNode('app-dev', TaskVmNestedFleet::Layout['app-dev']['address']), 'feature');
+        $fleet = recordedNestedInstance($project, containerDefaultNode('app-dev', NestedFleetLayout::Layout['app-dev']['address']), 'feature');
         $device = static fn (Instance $instance): array => app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail())['allowed_devices'][$folder];
         $path = $folder === 'orbit-runtime' ? '/opt/orbit-runtime' : '/opt/orbit-agent';
         $idmapped = ['type' => 'disk', 'source' => $path, 'path' => $path, 'readonly' => 'true', 'shift' => 'true'];
@@ -1294,7 +1295,9 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
         $default = Instance::query()->where('name', 'default')->sole();
         expect($actual['machine_names'] ?? null)->toBe([['project' => 'orbit-instances', 'container' => 'instance-'.$default->id,
             ...InstanceMachineName::intent($default)]])
-            ->and(json_encode(array_diff_key($actual ?? [], ['own_site' => true, 'machine_names' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
+            // So did `t3_files`; a default runs no T3, and InstanceHostIntentTest pins a clone's.
+            ->and($actual['t3_files'] ?? null)->toBe([])
+            ->and(json_encode(array_diff_key($actual ?? [], ['own_site' => true, 'machine_names' => true, 't3_files' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
             ->and($actual)->not->toHaveKeys(['nested', 'runtime_projects']);
     })->with(['absent', 'off'])->with([false, true]);
 
@@ -1338,7 +1341,7 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
                 '/home/agent/.codex/config.toml' => true, '/home/agent/.claude.json' => true, '/home/agent/.t3/userdata/settings.json' => true, InstanceContainer::T3BootDropIn => true,
                 InstanceContainer::ServerDropIn => true]);
             expect(array_column($actual['clone']['boot_files'], 'path'))
-                ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/sudoers.d/orbit-agent', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
+                ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/sudoers.d/orbit-agent', InstanceImage::AppUserSwap, '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
                     '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh',
                     // The presented machine name that T3's first start reads (InstanceMachineName::bootFile).
                     '/etc/machine-info']);
@@ -1409,6 +1412,11 @@ function normalContainerSinceMain(Instance $instance, InstanceRuntime $runtime):
     // The CLI-only PHP ini came after main, right after `php`; a Project without PHP has none (InstanceContainer::phpCliIni).
     $php = array_search('php', array_keys($expected), true) + 1;
     $expected = [...array_slice($expected, 0, $php, true), 'php_cli_ini' => null, ...array_slice($expected, $php, null, true)];
+    // The workspace's ids came with the app account `www-data`, right after the `.env` path (ADR 0268, second amendment): a nested-fleet
+    // container keeps `work` and `orbit` for its inner fleet.
+    $file = array_search('environment_file', array_keys($expected), true) + 1;
+    $ids = $runtime->incus_project === InstancePlacement::NestedProject ? ['group' => 2760, 'writer' => 1000] : ['group' => 33, 'writer' => 33];
+    $expected = [...array_slice($expected, 0, $file, true), 'workspace_ids' => $ids, 'app_account' => InstanceImage::appAccount(), ...array_slice($expected, $file, null, true)];
 
     return $expected;
 }

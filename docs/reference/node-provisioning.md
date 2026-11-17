@@ -840,13 +840,9 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `amd64` `.de
 
 New assignments from `node:role:add` run through one Swamp workflow. A native SSH step checks the Ubuntu release. Ansible phases apply prerequisites, role state, publications, firewall rules and Metrics changes, then check the result. Tool Manager commands and runtime copies run only when the admitted pin or lock differs from the last successful setup. The pin is recorded after its checks pass, so a failed setup retries.
 
-A Node inside the nested subnet of a [task VM](/reference/compute-drivers) (`10.232.2.0/24`) reads its apt packages through the `apt-cacher-ng` of that VM, at `http://10.232.2.1:3142`. The Gateway puts that address in the `apt_proxy` field of the intent of the Node enrollment (`node.add`), of each role add and converge, and of each metrics exporter.
+The Gateway gives Node enrollment (`node.add`), role add and converge, and metrics exporters a null `apt_proxy`. Their plays remove `/etc/apt/apt.conf.d/90orbit-package-cache`, the old task VM cache setting. Tool setup reads the snapshot with the Node's own apt settings. No address in the nested subnet selects a VM cache.
 
-A play with an `apt_proxy` writes `/etc/apt/apt.conf.d/90orbit-package-cache` before its first apt call: `Acquire::http::Proxy` with the cache, no pipelining, and `Acquire::https::Proxy "DIRECT"`, because the cache refuses https tunnels. A play without one removes that file. Every other Node has no `apt_proxy` and reads the archive.
-
-The same subnet holds the nested fleet of a [nested-fleet Instance container](/reference/development-containers#fleet-rules), where no `apt-cacher-ng` runs. The Gateway does not decide that by the address.
-
-The fleet rules write the marker `/etc/orbit/instance-fleet` on that fleet's nested Gateway, and a Gateway with the marker gives its Nodes no `apt_proxy`. So a role add, a role converge, an enrollment or an exporter there removes `90orbit-package-cache`, and a tool setup reads the snapshot with the Node's own apt settings.
+The [nested-fleet Instance container](/reference/development-containers#fleet-rules) runs no `apt-cacher-ng`. Its fleet rules write the marker `/etc/orbit/instance-fleet` on the nested Gateway so it can identify the container fleet and read its parent egress proxy.
 
 The Node's apt reaches the internet through the egress proxy, which the fleet's own file `95orbit-nested-egress` names. No Orbit play touches that file. It sorts after `90orbit-package-cache`, so it also wins over a cache file that an older role add left. The daily apt timers stay off on every nested Node. Docker on a nested Node reads through the same egress proxy: the fleet rules write the drop-in `docker.service.d/50-inner-fleet-proxy.conf`.
 

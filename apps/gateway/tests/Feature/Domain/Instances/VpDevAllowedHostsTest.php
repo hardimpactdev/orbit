@@ -217,9 +217,12 @@ it('changes only the application EnvironmentFile line and adds the public origin
 
     expect(app(ContainerProcesses::class)->unit($instance, $process, migrate: true)['content'])
         ->toBe(str_replace(
-            ['EnvironmentFile=-/srv/workspace/.env'."\n", 'Environment=ORBIT_DEV_SERVER_ORIGIN=', '"ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite"'],
+            ['EnvironmentFile=-/srv/workspace/.env'."\n", 'Environment=ORBIT_DEV_SERVER_ORIGIN=', '"ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite"',
+                // ADR 0268, second amendment: the app account is the stock `www-data`.
+                "User=orbit\nGroup=orbit\n", 'HOME=/home/orbit'],
             ['', 'Environment=DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite'."\n".'Environment=ORBIT_DEV_SERVER_ORIGIN=',
-                '"DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite" "ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite"'],
+                '"DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite" "ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite"',
+                "User=www-data\nGroup=www-data\n", 'HOME=/var/www'],
             $legacy,
         ));
 });
@@ -294,7 +297,8 @@ UNIT;
 
 it('adds only the generic public origin to an existing container dev-server unit', function (): void {
     [, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'container', 5195, true);
-    // Captured on main at 718d7b891f; only the Process id is normalized.
+    // Captured on main at 718d7b891f; only the Process id is normalized, and the app account is the stock `www-data` since ADR 0268's
+    // second amendment.
     $baseline = <<<'UNIT'
 [Unit]
 Description=Orbit process vite
@@ -303,11 +307,11 @@ After=network.target
 
 [Service]
 Type=simple
-User=orbit
-Group=orbit
+User=www-data
+Group=www-data
 UMask=0007
 WorkingDirectory=/fast/apps/tool/container
-Environment=HOME=/home/orbit
+Environment=HOME=/var/www
 Environment=PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin
 Environment=NODE_USE_SYSTEM_CA=1
 Environment=ORBIT_DEV_SERVER_ORIGIN=https://container.tool.test/__orbit/vite
@@ -404,13 +408,13 @@ it('preserves main bytes for non-recipients and Project-supplied origins', funct
     'preset-container-supplied', 'preset-checkout-supplied', 'preset-container-supplied-empty',
     'ordinary-route-supplied', 'node-supplied', 'routeless-supplied']);
 
-/** Exact bytes captured from main at 8c0618a2bc; its renderer matches 718d7b891f. */
+/** Exact bytes captured from main at 8c0618a2bc; its renderer matches 718d7b891f. A container unit names the app account `www-data` (ADR 0268, second amendment). */
 function originAliasMainBytes(string $case): array
 {
     return json_decode(<<<'JSON'
 {
     "ordinary-route": {
-        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=orbit\nGroup=orbit\nUMask=0007\nWorkingDirectory=\/fast\/apps\/tool\/default\nEnvironment=HOME=\/home\/orbit\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironment=ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_HOST=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nExecStart=\"\/usr\/bin\/env\" \"ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\" \"ORBIT_DEV_SERVER_HOST=default.tool.test\" \"ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\" \"ORBIT_DEV_SERVER_PORT=5195\" \"\/usr\/bin\/true\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
+        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=www-data\nGroup=www-data\nUMask=0007\nWorkingDirectory=\/fast\/apps\/tool\/default\nEnvironment=HOME=\/var\/www\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironment=ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_HOST=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nExecStart=\"\/usr\/bin\/env\" \"ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\" \"ORBIT_DEV_SERVER_HOST=default.tool.test\" \"ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\" \"ORBIT_DEV_SERVER_PORT=5195\" \"\/usr\/bin\/true\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
         "environment": "# Orbit Process 1\n",
         "path": "\/etc\/orbit\/processes\/1\/f4ae17981b6fb7d3db3d1466c15b057687796b364aaf0caa17d4e8fcd27c570c.env"
     },
@@ -420,17 +424,17 @@ function originAliasMainBytes(string $case): array
         "path": "\/etc\/orbit\/processes\/1\/f4ae17981b6fb7d3db3d1466c15b057687796b364aaf0caa17d4e8fcd27c570c.env"
     },
     "routeless": {
-        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=orbit\nGroup=orbit\nUMask=0007\nWorkingDirectory=\/fast\/apps\/tool\/default\nEnvironment=HOME=\/home\/orbit\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nExecStart=\"\/usr\/bin\/true\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
+        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=www-data\nGroup=www-data\nUMask=0007\nWorkingDirectory=\/fast\/apps\/tool\/default\nEnvironment=HOME=\/var\/www\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nExecStart=\"\/usr\/bin\/true\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
         "environment": "# Orbit Process 1\n",
         "path": "\/etc\/orbit\/processes\/1\/f4ae17981b6fb7d3db3d1466c15b057687796b364aaf0caa17d4e8fcd27c570c.env"
     },
     "preset-routeless": {
-        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=orbit\nGroup=orbit\nUMask=0007\nWorkingDirectory=\/fast\/apps\/tool\/default\nEnvironment=HOME=\/home\/orbit\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nUnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY\nExecStart=\"\/usr\/bin\/env\" \"ORBIT_DEV_SERVER_PORT=5195\" \"\/opt\/orbit-runtime\/current\/bin\/vp\" \"dev\" \"--host=0.0.0.0\" \"--port=5195\" \"--strictPort\" \"--base=\/__orbit\/vite\/\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
+        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=www-data\nGroup=www-data\nUMask=0007\nWorkingDirectory=\/fast\/apps\/tool\/default\nEnvironment=HOME=\/var\/www\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nUnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY\nExecStart=\"\/usr\/bin\/env\" \"ORBIT_DEV_SERVER_PORT=5195\" \"\/opt\/orbit-runtime\/current\/bin\/vp\" \"dev\" \"--host=0.0.0.0\" \"--port=5195\" \"--strictPort\" \"--base=\/__orbit\/vite\/\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
         "environment": "# Orbit Process 1\n",
         "path": "\/etc\/orbit\/processes\/1\/f4ae17981b6fb7d3db3d1466c15b057687796b364aaf0caa17d4e8fcd27c570c.env"
     },
     "preset-container-supplied": {
-        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=orbit\nGroup=orbit\nUMask=0007\nWorkingDirectory=\/srv\/workspace\nEnvironment=HOME=\/home\/orbit\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironmentFile=\/etc\/orbit\/processes\/1\/cf1d0dce8a189c27c2f022251522479e1d7808a812b9231f80a363be1979dca6.env\nEnvironment=ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_HOST=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\nEnvironment=__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nUnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY\nExecStart=\"\/usr\/bin\/env\" \"ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\" \"ORBIT_DEV_SERVER_HOST=default.tool.test\" \"ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\" \"__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=default.tool.test\" \"ORBIT_DEV_SERVER_PORT=5195\" \"\/opt\/orbit-runtime\/current\/bin\/vp\" \"dev\" \"--host=0.0.0.0\" \"--port=5195\" \"--strictPort\" \"--base=\/__orbit\/vite\/\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
+        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=www-data\nGroup=www-data\nUMask=0007\nWorkingDirectory=\/srv\/workspace\nEnvironment=HOME=\/var\/www\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironmentFile=\/etc\/orbit\/processes\/1\/cf1d0dce8a189c27c2f022251522479e1d7808a812b9231f80a363be1979dca6.env\nEnvironment=ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_HOST=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\nEnvironment=__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nUnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY\nExecStart=\"\/usr\/bin\/env\" \"ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\" \"ORBIT_DEV_SERVER_HOST=default.tool.test\" \"ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\" \"__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=default.tool.test\" \"ORBIT_DEV_SERVER_PORT=5195\" \"\/opt\/orbit-runtime\/current\/bin\/vp\" \"dev\" \"--host=0.0.0.0\" \"--port=5195\" \"--strictPort\" \"--base=\/__orbit\/vite\/\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
         "environment": "# Orbit Process 1\nDEV_SERVER_ORIGIN=\"https:\/\/project.example\/own\"\nPRIVATE_SETTING=\"kept\"\n",
         "path": "\/etc\/orbit\/processes\/1\/cf1d0dce8a189c27c2f022251522479e1d7808a812b9231f80a363be1979dca6.env"
     },
@@ -440,12 +444,12 @@ function originAliasMainBytes(string $case): array
         "path": "\/etc\/orbit\/processes\/1\/cf1d0dce8a189c27c2f022251522479e1d7808a812b9231f80a363be1979dca6.env"
     },
     "preset-container-supplied-empty": {
-        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=orbit\nGroup=orbit\nUMask=0007\nWorkingDirectory=\/srv\/workspace\nEnvironment=HOME=\/home\/orbit\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironmentFile=\/etc\/orbit\/processes\/1\/abe633894ebf499fa0d1278a3cd32628d1eefafbbbbd3f718ad587d888b75e39.env\nEnvironment=ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_HOST=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\nEnvironment=__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nUnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY\nExecStart=\"\/usr\/bin\/env\" \"ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\" \"ORBIT_DEV_SERVER_HOST=default.tool.test\" \"ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\" \"__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=default.tool.test\" \"ORBIT_DEV_SERVER_PORT=5195\" \"\/opt\/orbit-runtime\/current\/bin\/vp\" \"dev\" \"--host=0.0.0.0\" \"--port=5195\" \"--strictPort\" \"--base=\/__orbit\/vite\/\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
+        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=www-data\nGroup=www-data\nUMask=0007\nWorkingDirectory=\/srv\/workspace\nEnvironment=HOME=\/var\/www\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironmentFile=\/etc\/orbit\/processes\/1\/abe633894ebf499fa0d1278a3cd32628d1eefafbbbbd3f718ad587d888b75e39.env\nEnvironment=ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_HOST=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\nEnvironment=__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nUnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY\nExecStart=\"\/usr\/bin\/env\" \"ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\" \"ORBIT_DEV_SERVER_HOST=default.tool.test\" \"ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\" \"__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=default.tool.test\" \"ORBIT_DEV_SERVER_PORT=5195\" \"\/opt\/orbit-runtime\/current\/bin\/vp\" \"dev\" \"--host=0.0.0.0\" \"--port=5195\" \"--strictPort\" \"--base=\/__orbit\/vite\/\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
         "environment": "# Orbit Process 1\nDEV_SERVER_ORIGIN=\"\"\nPRIVATE_SETTING=\"kept\"\n",
         "path": "\/etc\/orbit\/processes\/1\/abe633894ebf499fa0d1278a3cd32628d1eefafbbbbd3f718ad587d888b75e39.env"
     },
     "ordinary-route-supplied": {
-        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=orbit\nGroup=orbit\nUMask=0007\nWorkingDirectory=\/srv\/workspace\nEnvironment=HOME=\/home\/orbit\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironmentFile=-\/srv\/workspace\/.env\nEnvironmentFile=\/etc\/orbit\/processes\/1\/cf1d0dce8a189c27c2f022251522479e1d7808a812b9231f80a363be1979dca6.env\nEnvironment=ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_HOST=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nExecStart=\"\/usr\/bin\/env\" \"ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\" \"ORBIT_DEV_SERVER_HOST=default.tool.test\" \"ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\" \"ORBIT_DEV_SERVER_PORT=5195\" \"\/usr\/bin\/true\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
+        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=www-data\nGroup=www-data\nUMask=0007\nWorkingDirectory=\/srv\/workspace\nEnvironment=HOME=\/var\/www\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironmentFile=-\/srv\/workspace\/.env\nEnvironmentFile=\/etc\/orbit\/processes\/1\/cf1d0dce8a189c27c2f022251522479e1d7808a812b9231f80a363be1979dca6.env\nEnvironment=ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_HOST=default.tool.test\nEnvironment=ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nExecStart=\"\/usr\/bin\/env\" \"ORBIT_DEV_SERVER_ORIGIN=https:\/\/default.tool.test\/__orbit\/vite\" \"ORBIT_DEV_SERVER_HOST=default.tool.test\" \"ORBIT_DEV_SERVER_PATH=\/__orbit\/vite\" \"ORBIT_DEV_SERVER_PORT=5195\" \"\/usr\/bin\/true\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
         "environment": "# Orbit Process 1\nDEV_SERVER_ORIGIN=\"https:\/\/project.example\/own\"\nPRIVATE_SETTING=\"kept\"\n",
         "path": "\/etc\/orbit\/processes\/1\/cf1d0dce8a189c27c2f022251522479e1d7808a812b9231f80a363be1979dca6.env"
     },
@@ -455,7 +459,7 @@ function originAliasMainBytes(string $case): array
         "path": "\/etc\/orbit\/processes\/1\/718d988646b0738414e0a0c8d22a16db4b1b4c7b6994a5dcd57d3c0eab04e18d.env"
     },
     "routeless-supplied": {
-        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=orbit\nGroup=orbit\nUMask=0007\nWorkingDirectory=\/fast\/apps\/tool\/default\nEnvironment=HOME=\/home\/orbit\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironmentFile=\/etc\/orbit\/processes\/1\/cf1d0dce8a189c27c2f022251522479e1d7808a812b9231f80a363be1979dca6.env\nExecStart=\"\/usr\/bin\/true\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
+        "unit": "[Unit]\nDescription=Orbit process vite\nX-Orbit-Process-ID=1\nAfter=network.target\n\n[Service]\nType=simple\nUser=www-data\nGroup=www-data\nUMask=0007\nWorkingDirectory=\/fast\/apps\/tool\/default\nEnvironment=HOME=\/var\/www\nEnvironment=PATH=\/opt\/orbit-runtime\/current\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin\nEnvironment=NODE_USE_SYSTEM_CA=1\nEnvironmentFile=\/etc\/orbit\/processes\/1\/cf1d0dce8a189c27c2f022251522479e1d7808a812b9231f80a363be1979dca6.env\nExecStart=\"\/usr\/bin\/true\"\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
         "environment": "# Orbit Process 1\nDEV_SERVER_ORIGIN=\"https:\/\/project.example\/own\"\nPRIVATE_SETTING=\"kept\"\n",
         "path": "\/etc\/orbit\/processes\/1\/cf1d0dce8a189c27c2f022251522479e1d7808a812b9231f80a363be1979dca6.env"
     }

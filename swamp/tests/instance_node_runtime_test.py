@@ -56,6 +56,7 @@ if 'device' in args:
  sys.exit()
 args=args[args.index('--')+1:]
 if args[0]=='runuser':args=args[args.index('--')+1:]
+if args[:2]==['sh','-c'] and args[-1]=='/usr/local/libexec/orbit-app-user':sys.stdin.read();print('orbit-app-user: already www-data');sys.exit()
 if args[0]=='cat':
  p=root/'guest'/args[1].lstrip('/')
  if not p.exists():sys.exit(1)
@@ -252,11 +253,11 @@ class NodeRuntimeTest(unittest.TestCase):
         source = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
         source = source.replace("Path('/opt/orbit-runtime/current/vite-plus-home')", 'Path(' + repr(str(self.shared)) + ')')
         source = source.replace("VP = '/opt/orbit-runtime/current/bin/vp'", 'VP = ' + repr(str(self.vp)))
-        source = source.replace("app_user='orbit'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
+        source = source.replace("app_user='www-data'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
         helper = self.root / 'helper.py'
         helper.write_text(source)
         result = subprocess.run([sys.executable, str(helper), 'clone-fetch',
-                                 json.dumps({**self.container, 'processes': []})], capture_output=True, text=True, input='{}')
+                                 json.dumps({**self.container, 'processes': []})], capture_output=True, text=True, input='{}', check=False)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertTrue(runtime.private_store(self.home))
         self.assertEqual(json.loads(result.stdout)['status'], 'converted')
@@ -264,7 +265,7 @@ class NodeRuntimeTest(unittest.TestCase):
         self.assertFalse((self.home / 'calls').exists())
         with patch.dict(os.environ, self.environment):
             result = subprocess.run([sys.executable, str(helper), 'fetch', json.dumps(self.container)],
-                                     capture_output=True, text=True, input='{}')
+                                     capture_output=True, text=True, input='{}', check=False)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertTrue((self.home / 'js_runtime/node/22.23.5/bin/node').is_file())
         self.assertEqual(runtime.versions(self.home), ['22.23.5', '24.22.1'])
@@ -293,7 +294,7 @@ class NodeRuntimeTest(unittest.TestCase):
         helper = self.root / 'helper.py'
         helper.write_text(source)
         container = {**self.container, 'processes': [{'content': 'ExecStart=/bin/sh -c "exec vp dev"'}]}
-        result = subprocess.run([sys.executable, str(helper), 'clone-fetch', json.dumps(container)], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, str(helper), 'clone-fetch', json.dumps(container)], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertTrue(runtime.private_store(self.home))
         self.assertFalse((self.home / 'calls').exists())
@@ -308,7 +309,7 @@ class NodeRuntimeTest(unittest.TestCase):
         source = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
         helper = self.root / 'helper.py'
         helper.write_text(source)
-        result = subprocess.run([sys.executable, str(helper), 'seed-complete', json.dumps(self.container)], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, str(helper), 'seed-complete', json.dumps(self.container)], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertFalse(marker.exists())
 
@@ -318,7 +319,7 @@ class NodeRuntimeTest(unittest.TestCase):
         source = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
         helper = self.root / 'helper.py'
         helper.write_text(source)
-        result = subprocess.run([sys.executable, str(helper), 'fetch', json.dumps(self.container)], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, str(helper), 'fetch', json.dumps(self.container)], capture_output=True, text=True, check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('legacy stores are not converted', result.stdout)
         self.assertTrue((self.home / 'js_runtime').is_symlink())
@@ -341,7 +342,7 @@ class NodeRuntimeTest(unittest.TestCase):
         (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')
         script = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
         script = script.replace("Path('/opt/orbit-runtime/current/vite-plus-home')", 'Path(' + repr(str(self.shared)) + ')')
-        script = script.replace("app_user=\'orbit\'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
+        script = script.replace("app_user=\'web\'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
         script = script.replace("VP = '/opt/orbit-runtime/current/bin/vp'", 'VP = ' + repr(str(self.vp)))
         (self.root / 'instance_node_runtime.py').write_text(script)
         (self.root / 'tasks').mkdir()
@@ -349,13 +350,14 @@ class NodeRuntimeTest(unittest.TestCase):
         incus = self.root / 'incus'
         incus.write_text(FAKE_INCUS)
         incus.chmod(0o755)
-        container = {**self.container, 'project': 'fixture', 'name': 'fixture'}
+        container = {**self.container, 'project': 'fixture', 'name': 'fixture',
+                     'app_account': {'path': '/usr/local/libexec/orbit-app-user', 'content': '#!/bin/sh\n'}}
         play = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
                  'vars': {'ansible_python_interpreter': sys.executable, 'container': container,
                           'intent': {'migrate': {'checkout': str(self.checkout)}},
                           'phase': 'node-runtime', 'node_fetch': True,
                           'as_root': [str(incus), 'exec', '--project', 'fixture', 'fixture', '--'],
-                          'as_orbit': [str(incus), 'exec', '--project', 'fixture', 'fixture', '--', 'runuser', '-u', 'orbit', '--'],
+                          'as_app': [str(incus), 'exec', '--project', 'fixture', 'fixture', '--', 'runuser', '-u', 'www-data', '--'],
                           'incus_project': [str(incus), '--project', 'fixture']},
                  'tasks': [{'ansible.builtin.include_tasks': 'tasks/instance-node-runtime.yml'}]}]
         path = self.root / 'play.yml'
@@ -368,6 +370,9 @@ class NodeRuntimeTest(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertIn('instance.node_runtime_prepare_failed', done.stdout + done.stderr)
         calls = [json.loads(line) for line in (self.root / 'incus-calls').read_text().splitlines()]
+        # Root moves the app account first: the phase's first command in the container is the swap file.
+        execs = [call for call in calls if 'exec' in call]
+        self.assertEqual(execs[0][execs[0].index('--') + 1:][3:], ['/usr/local/libexec/orbit-app-user'])
         self.assertTrue(any('add' in call and 'readonly=true' in call for call in calls))
         self.assertTrue(any('remove' in call and 'orbit-node-source' in call for call in calls))
         self.assertFalse(any('systemctl' in call and any(x in call for x in ('start', 'stop', 'restart', 'try-restart', '--now')) for call in calls))

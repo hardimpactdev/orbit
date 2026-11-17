@@ -12,6 +12,11 @@ cases = [
   "a deployment refuses a pinned commit off the branch at its fetch, and dirty or diverged work at its checkout",
   "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase",
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
+  "a start moves an older container's orbit and work to www-data before its units run again; a second start changes nothing",
+  "a start writes the swap file into an older container that lacks it and moves the app account in the same run; a second start writes nothing",
+  "a Process write on a running container of an older image moves its app account to www-data first; a stray uid 1000 process refuses it",
+  "a start finishes a move that stopped after the user: the group work, the unit files and the units that failed under orbit",
+  "a nested-fleet container keeps orbit, work and their files for its inner fleet; agent joins www-data and www-data joins work",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions",
   "a rerun of a clone's clone and workspace phases changes nothing",
   "a rerun of a clone's agent, processes and T3 phases changes nothing, and its T3 phase dispatches no other phase",
@@ -108,12 +113,12 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 8452
+cost = 8747
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
 # Every registered case has its own slice; startup is added separately.
-slices = 105
+slices = 110
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/instance_workspace_owner.py",
@@ -136,6 +141,7 @@ inputs = [
   "swamp/ansible/tasks/address-node.yml",
   "swamp/ansible/tasks/instance-bridge-rules.yml",
   "swamp/ansible/tasks/instance-container-*.yml",
+  "swamp/ansible/files/instance-app-user.sh",
   "swamp/ansible/tasks/instance-fleet.yml",
   "swamp/ansible/tasks/instance-proof-checkout.yml",
   "swamp/ansible/tasks/instance-network-nic-check.yml",
@@ -262,7 +268,13 @@ inputs = [
 "nested-fleet failures retain Doctor, command, restore and reset diagnostics" = 80
 "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk" = 110
 
+"a start moves an older container's orbit and work to www-data before its units run again; a second start changes nothing" = 45
+"a start writes the swap file into an older container that lacks it and moves the app account in the same run; a second start writes nothing" = 95
+"a Process write on a running container of an older image moves its app account to www-data first; a stray uid 1000 process refuses it" = 70
+"a start finishes a move that stopped after the user: the group work, the unit files and the units that failed under orbit" = 45
+"a nested-fleet container keeps orbit, work and their files for its inner fleet; agent joins www-data and www-data joins work" = 40
 [mandatory_cases]
 "swamp/ansible/tasks/instance-fleet.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]
 "swamp/ansible/tasks/instance-container-*.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]
 "swamp/ansible/instance_nested.py" = ["nested fleet start gate: kernel-modules"]
+"swamp/ansible/files/instance-app-user.sh" = ["a start moves an older container's orbit and work to www-data before its units run again; a second start changes nothing", "a start finishes a move that stopped after the user: the group work, the unit files and the units that failed under orbit", "a Process write on a running container of an older image moves its app account to www-data first; a stray uid 1000 process refuses it", "a nested-fleet container keeps orbit, work and their files for its inner fleet; agent joins www-data and www-data joins work", "a start writes the swap file into an older container that lacks it and moves the app account in the same run; a second start writes nothing"]

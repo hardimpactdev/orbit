@@ -163,7 +163,7 @@ Tool installs and updates wait for a busy apt or dpkg lock, for example while un
 
 Version probes, `apt-cache policy`, and the removal plan `apt-get --simulate remove` do not wait.
 
-A Node inside the nested subnet of a task VM reads the snapshot indexes for the `composer` transaction through the package cache of that VM (`http://10.232.2.1:3142`, one request at a time) and downloads the packages directly. Any other Node reads everything directly over https. The apt runs of enrollment and role prerequisites on a nested Node also go through that cache; see [Role prerequisites](/reference/node-provisioning#role-prerequisites). A Node of an Instance container's nested fleet has the same address but no cache: its Gateway names none, and apt reads the snapshot through the egress proxy that the Node's own apt settings name.
+A Node reads the snapshot indexes and packages for the `composer` transaction through its own apt settings. Orbit names no task VM package cache. In an Instance container's nested fleet, those settings name the container egress proxy; see [Role prerequisites](/reference/node-provisioning#role-prerequisites).
 
 A first-use setup failure on `tool:install` returns `tool.manager_provision_failed` (HTTP 502). The manager stays `failed` at step `materialize` with error code `node.tool_manager_materialization_failed`, and Orbit creates no Tool. Only a failed package install marks the Tool `failed`. Retry the install; a manager or apt source set up before the failure stays, and the retry reuses it.
 

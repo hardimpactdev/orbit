@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Models\Node;
 use Illuminate\Support\Facades\Config;
 
@@ -25,7 +24,7 @@ final readonly class ContainerNodes
     /** Whether the Node is the `app-dev` Node of this nested Gateway's Instance fleet: `nested-app-dev`, a third level below the host. */
     public static function fleetNode(Node $node): bool
     {
-        return InstanceFleetGateway::holds() && $node->public_ssh_host === TaskVmNestedFleet::Layout['app-dev']['address'];
+        return InstanceFleetGateway::holds() && $node->public_ssh_host === NestedFleetLayout::Layout['app-dev']['address'];
     }
 
     /** @return list<int> */

@@ -7,12 +7,13 @@ before you push; commit first, because the checkers compare committed HEAD with 
 
 --base REF         compare with REF (default: the merge base with origin/main)
 --only shape       run only the shape group; --only validate runs only the validation group
+--only lint        run the pinned Ansible lint and Ruff checks; --only control runs static controls
 --reports DIR      write the JSON reports here (default: a per-user directory in the temp directory)
 --cache DIR        Swamp runtime cache for the validation (default: ~/.cache/orbit-shape-runtime)
 --tools DIR        cache of the pinned tool venvs (default: /opt/orbit-shape-gate when the task image holds tools
                    for these pins, else ~/.cache/orbit-shape-gate)
---workers N        maximum concurrent independent shape commands (default: up to four available CPUs)
---strict           fail instead of skipping a step that needs a credential or a tool
+--workers N        maximum concurrent independent shape commands (default: CI's shard_workers, capped by available CPUs)
+--strict           fail instead of skipping credential-dependent validation (missing tools always fail)
 
 The linters are pinned in swamp/ansible/shape-gate-requirements.txt, the only place that names them.
 Container preparation caches them in /opt/orbit-shape-gate so a task copy runs the gate without a download.
@@ -23,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import groupby
 import fcntl
 import hashlib
+import json
 import os
 import re
 import runpy
@@ -31,6 +33,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -79,8 +82,7 @@ DENO_TEST_FILE = re.compile(r'(.*[._])?test\.(ts|tsx|mts|js|mjs|jsx)')
 DENO_TESTS_ELSEWHERE = ('tests/metrics_exporter_firewall_test.ts', 'tests/native_host_method_test.ts', 'tests/node_add_bootstrap_test.ts')
 
 
-# CI exhausted the updates+ACL command's shared 720s budget; ACL fixtures own a third command, the browser fixtures a fourth.
-# Each command shares a 720s fixture budget across all Deno file isolates.
+# Discovery groups only. Execution expands these into the same metadata slices as CI.
 INSTANCE_HOST_TEST_GROUPS = (
     ('tests/ansible_instance_host_updates_test.ts',),
     ('tests/ansible_instance_host_test.ts', 'tests/ansible_instance_host_image_test.ts', 'tests/ansible_instance_host_runtime_test.ts'),
@@ -200,18 +202,51 @@ def tool_path(tools):
 
 
 def skip_reason(step, environment):
+    missing = [tool for tool in step.needs if tool != 'credentials' and not shutil.which(tool, path=environment['PATH'])]
+    if missing:
+        return 'required tools not found on PATH: ' + ', '.join(missing)
     if 'credentials' in step.needs and not all(environment.get(name) for name in CREDENTIALS):
         return 'no Swamp credential: set ' + ' and '.join(CREDENTIALS)
-    if 'php' in step.needs and not shutil.which('php', path=environment['PATH']):
-        return 'php not found'
     return None
+
+
+def fixture_commands(steps, reports, tools, base):
+    """Select, pack and run fixtures through CI's planner and bounded runner."""
+    units = runpy.run_path(str(ROOT / 'bin/ci-units'))
+    budget, fixtures, _defaults = units['configuration']()
+    planned = subprocess.run([sys.executable, str(ROOT / 'bin/ci-units'), 'plan', '--base', base,
+                              '--head', 'HEAD', '--plan-json', str(reports / 'fixture-plan.json')],
+                             cwd=ROOT, capture_output=True, text=True)
+    if planned.returncode:
+        raise ValueError('Cannot plan CI fixtures: ' + planned.stderr)
+    result = json.loads(planned.stdout)
+    print(units['plan_summary'](result, fixtures), flush=True)
+    if result.get('capacity'):
+        raise ValueError('Fixture plan fails CI admission; see fixture-plan.json')
+    commands = []
+    for index, row in enumerate(result['shards'] + result['self_hosted_shards'], 1):
+        shard = row['units']
+        # Retain the lanes used for packing; serializing a shard can exceed its unchanged deadline.
+        commands.append(Step('shape', f'CI fixture shard {index}', [sys.executable, str(ROOT / 'bin/ci-units'), 'run',
+             '--units', json.dumps(shard), '--workers', str(units['shard_workers'](shard, budget, fixtures)),
+             '--tools', str(tools), '--times', str(reports / f'fixture-{index}.json')],
+             needs=tuple(sorted({tool for unit in shard for tool in fixtures[unit.split('#')[0]].get('host_programs', [])}))))
+    pending = iter(commands)
+    expanded = []
+    for step in steps:
+        if step.parallel and step.argv[0] in ('python3', 'deno'):
+            expanded.extend(pending)
+        else:
+            expanded.append(step)
+    return expanded
 
 
 def run_step(step, environment, strict):
     print(f'==> {step.name}', flush=True)
     reason = skip_reason(step, environment)
-    if reason and not strict:
-        return (step, 'skipped', 0.0, reason), ''
+    if reason:
+        outcome = 'skipped' if not strict and reason.startswith('no Swamp credential:') else 'FAILED'
+        return (step, outcome, 0.0, reason), reason + '\n'
     started = time.monotonic()
     # Each command owns its output and temporary fixtures. A parallel Deno command gets one worker,
     # so nested test parallelism cannot multiply the shared command budget.
@@ -220,8 +255,6 @@ def run_step(step, environment, strict):
         env = {**environment, **step.env, 'TMPDIR': scratch, 'TEMP': scratch, 'TMP': scratch}
         if step.parallel:
             env.update(DENO_JOBS='1', ANSIBLE_FORKS='1', PYTHON_CPU_COUNT='1', RAYON_NUM_THREADS='1')
-        if step.argv[:2] == ['deno', 'test'] and tuple(step.argv[3:]) in INSTANCE_HOST_TEST_GROUPS:
-            env['ORBIT_INSTANCE_HOST_DEADLINE_MS'] = str(int(time.time() * 1000) + 720_000)
         try:
             code = subprocess.run(step.argv, cwd=SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT).returncode
         except FileNotFoundError as error:
@@ -261,27 +294,49 @@ def execute(steps, environment, strict, workers):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--base')
-    parser.add_argument('--only', choices=('shape', 'control', 'validate'))
+    parser.add_argument('--only', choices=('shape', 'control', 'lint', 'validate'))
     parser.add_argument('--reports', type=Path, default=Path(tempfile.gettempdir()) / f'orbit-shape-gate-{os.getuid()}')
     parser.add_argument('--cache', type=Path, default=Path.home() / '.cache/orbit-shape-runtime')
     parser.add_argument('--tools', type=Path)
     parser.add_argument('--strict', action='store_true')
-    parser.add_argument('--workers', type=int, default=min(4, os.cpu_count() or 1))
+    parser.add_argument('--workers', type=int, default=min(
+        tomllib.loads((ROOT / '.github/ci/checks.toml').read_text())['budget']['shard_workers'], os.cpu_count() or 1))
     args = parser.parse_args(argv)
     if args.workers < 1:
         parser.error('--workers must be positive')
     # CI's umask; a looser one changes file modes that the Ansible artifact tests compare.
     os.umask(0o022)
-    # The validation group needs neither the base nor the pinned linters, so its CI job can check out one commit.
-    args.tools = args.tools or default_tools()
-    base = resolve_base(args.base) if args.only != 'validate' else ''
+    args.reports = args.reports.resolve()
     args.reports.mkdir(parents=True, exist_ok=True)
     environment = {**os.environ}
+    missing = [tool for tool in (() if args.only == 'lint' else ('git', 'deno'))
+               if not shutil.which(tool, path=environment['PATH'])]
+    if missing:
+        print('Missing gate prerequisites: ' + ', '.join(missing)
+              + '. Install Git and Deno 2.9.8 on PATH; see docs/reference/implementation-loop.md#run-the-swamp-shape-gate-before-you-push.',
+              file=sys.stderr)
+        return 2
+    # Lint and validation need no base; their CI jobs can check out one commit.
+    args.tools = (args.tools or default_tools()).resolve()
+    base = resolve_base(args.base) if args.only not in ('validate', 'lint') else ''
     if args.only != 'validate':
-        environment['PATH'] = f'{tool_path(args.tools)}{os.pathsep}{environment["PATH"]}'
+        try:
+            environment['PATH'] = f'{tool_path(args.tools)}{os.pathsep}{environment["PATH"]}'
+        except (OSError, subprocess.CalledProcessError) as error:
+            print(f'Cannot prepare pinned gate tools: {error}. Install Python 3.13+ with venv/pip '
+                  'support (python3-venv on Debian/Ubuntu) and allow downloads from PyPI.', file=sys.stderr)
+            return 2
     collections = collections_path(args.tools)
     steps = [step for step in plan(base, args.reports, args.cache, collections)
-             if args.only in (None, step.group) or args.only == 'control' and step.group == 'shape' and not step.parallel and step.name != 'ansible collections']
+             if args.only in (None, step.group)
+             or args.only == 'control' and step.group == 'shape' and not step.parallel and step.name != 'ansible collections'
+             or args.only == 'lint' and step.name in ('ansible collections', 'ansible-lint', 'ruff')]
+    if args.only in (None, 'shape'):
+        try:
+            steps = fixture_commands(steps, args.reports, args.tools, base)
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 1
     print('Swamp shape gate' + (f' against {base[:12]}' if base else '') + f'; reports in {args.reports}', flush=True)
     results = execute(steps, environment, args.strict, args.workers)
     print('\nSwamp shape gate summary', flush=True)

@@ -6,7 +6,6 @@ cases = [
   "test_a_first_build_keeps_standard_output_free",
   "test_deno_ansible_fixtures_receive_the_installed_pinned_collections",
   "test_every_deno_test_file_runs_once_with_three_early_instance_host_groups",
-  "test_each_instance_command_receives_one_deadline_at_launch",
   "test_a_completed_command_is_reported_while_its_neighbor_is_still_running",
   "test_missing_tools_are_built_where_the_gate_looks_and_other_pins_go",
   "test_complete_tools_are_only_read_and_a_cleanup_left_over_is_done",

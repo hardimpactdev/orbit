@@ -1,7 +1,7 @@
 ---
 title: "ADR 0268: One owner for the workspace"
 sidebarTitle: "0268 One workspace owner"
-description: "In progress. `agent` owns a development container's workspace. It runs Orbit's checkout Git calls and the Project's development deploy steps. `orbit` stays the app user: FrankenPHP, queue workers and every Orbit Process. Root's group pass also makes `agent` the owner of each workspace entry that `orbit` owns."
+description: "In progress. `agent` owns a development container's workspace. It runs Orbit's checkout Git calls and the Project's development deploy steps. `orbit`, the stock `www-data` in a normal container since its second amendment, stays the app user: FrankenPHP, queue workers and every Orbit Process. Root's group pass also makes `agent` the owner of each workspace entry that `orbit` owns."
 ---
 
 # ADR 0268: One owner for the workspace
@@ -26,7 +26,7 @@ The workspace already gives the group `work` write access: setgid folders with m
 
 The owner decided these points, and they stay closed:
 
-- **Q1. Keep the names.** `agent` (uid 2750) is the owner of the workspace and runs the steps. `orbit` (uid 1000) is the app user. No user is renamed and no uid changes.
+- **Q1. Keep the names.** `agent` (uid 2750) is the owner of the workspace and runs the steps. `orbit` (uid 1000) is the app user. No uid changes. The [second amendment](#amendment-the-app-account-is-the-stock-www-data) renames the app user and its group, names only.
 - **Q2. Sudo for `agent`.** Today the normal image gives `agent` no sudo, and the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) gives it passwordless sudo. The owner decided that `agent` gets passwordless sudo in every container, normal and nested, and that membership of `incus-admin` stays as it is. That comes with a security model in which a container holds no production-grade secrets. A separate task group builds it; the [amendment](#amendment-sudo-for-agent-in-every-container) below records it.
 - **Q3. Development deploy steps run as `agent` everywhere**, nested-fleet defaults included.
 
@@ -55,6 +55,16 @@ The owner decided on 2026-11-16 to build Q2.
 - **Reason.** Convenience: the agent installs a package or fixes a system file itself and never needs outside help.
 - **Trade-off.** Root in a container can read that Instance's `.env` and its per-copy model key, and can change the container's own firewall, which holds the model-route rule of [ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder). So that rule no longer keeps `agent`'s own processes apart; it still keeps `orbit` and the app off the model route while nobody uses root to change it. The container wall stays the boundary: the container is unprivileged, with an isolated ID map, and root in it is no user on the Node.
 - **Existing sudo use stays.** The task check's `sudo -n systemd-run` and `reconcile-firewall.py` work as before.
+
+### Amendment: the app account is the stock `www-data`
+
+The owner decided on 2026-11-16 to rename the container app user, and on 2026-11-17 that it is the stock Debian `www-data`, not a renamed uid 1000. The rest of this ADR uses the old names `orbit` and `work`; in a normal container read them as `www-data`.
+
+- **Normal containers.** The app account is the stock `www-data`, uid and gid 33, with its stock home `/var/www`. It serves the Project: FrankenPHP, the workers, the Processes and the Schedules. `agent` is in the group `www-data`. The workspace is `agent:www-data`, group read and write, setgid folders, with the ACL `g:www-data` and its default. uid 1000 `orbit`, the group `work` (2760) and gid 1000 go; their files go to 33.
+- **Nested-fleet containers.** The inner guests are Nodes. `raw.idmap` maps their `orbit` 1:1 onto the outer uid 1000 and gid 2760, and the inner fleet runs as uid 1000 over the shared checkout. So a nested-fleet container keeps uid 1000 `orbit`, gid 2760 `work` and all their files and ACLs. Only an outer app account uses `www-data`: `agent` joins `www-data` there too, and `www-data` joins `work`, so the app opens the workspace.
+- **Kept.** `agent` (uid 2750) keeps its name, its home and its sudo, so T3, Conn and the agents' settings do not change. The model route rule (uid 2750) and the nested fleet's `raw.idmap` stay. The nested firewall rule drops uid 33 beside uid 1000. The Node's own `orbit` user and its `/home/orbit` do not change, nor do the inner guests' `orbit` and their checkout `/home/orbit/orbit`.
+- **Reason.** `orbit` named both the Node's account and the app user in a container, so a reader had to tell them apart from the context. The stock `www-data` is the account Debian gives a web server, and the image already has it.
+- **Existing containers.** One root shell file moves an older container to `www-data`, and every path runs it before its first command as `www-data`: the container phase after the start, a Process write, `config:clear`, and a copy's clone guest before its Node store step ([The app user's name](/reference/development-containers#the-app-users-name)). The image, a converge and every copy's boot files carry it, and every container intent carries it too, so each path writes it when it is missing or different and never waits for a converge. A default moves at its next deployment, start or unit write, and a copy of an older seed moves in its own completion. No release step and no migration are needed.
 
 ## Rejected alternatives
 

@@ -6,12 +6,12 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NestedFleetIntent;
+use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofVerifyIntent;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskInstanceWorkspace;
-use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -150,7 +150,7 @@ describe('orbit proof admission', function (): void {
             // The play of the reset reads the container and the fleet as every fleet phase does (swamp/ansible/tasks/instance-fleet.yml).
             ->and(ValidatedData::object($operation->input['container']))->toMatchArray(['project' => InstancePlacement::NestedProject, 'name' => $runtime->container_name])
             ->and($operation->input['fleet'])->toBe(app(NestedFleetIntent::class)->forClone($instance, $runtime))
-            ->and(ValidatedData::object($operation->input['fleet'])['guests'])->toBe(TaskVmNestedFleet::Guests)
+            ->and(ValidatedData::object($operation->input['fleet'])['guests'])->toBe(NestedFleetLayout::Guests)
             ->and(ValidatedData::object(ValidatedData::object($operation->input['ssh_execution'])['target']))->toMatchArray(['node_id' => $instance->node_id, 'host' => '10.44.0.9', 'user' => 'orbit']);
     });
 

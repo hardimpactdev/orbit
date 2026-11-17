@@ -15,7 +15,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -135,10 +134,10 @@ final readonly class DevelopmentInstanceCreateAdmission
 
     public function assertModelRoute(): void
     {
-        if (! app()->bound(TaskVmModelRoute::class)) {
+        if (! app()->bound(ContainerModelRoute::class)) {
             throw new ResourceOperationException('operation.kind_unavailable', 'A clone needs the model router.', 503);
         }
-        app(TaskVmModelRoute::class)->assertReady();
+        app(ContainerModelRoute::class)->assertReady();
     }
 
     public function assertDefaults(Project $project): void

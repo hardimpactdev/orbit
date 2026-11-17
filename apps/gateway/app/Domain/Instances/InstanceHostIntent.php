@@ -10,8 +10,9 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
+use App\Infrastructure\MachineSoftware\InstanceFolders;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -75,6 +76,22 @@ final readonly class InstanceHostIntent
 
     public const int AgentUid = 2750;
 
+    /**
+     * The app account of a container (development-containers.md#the-app-users-name): the stock Debian `www-data`, uid and gid 33, with its
+     * stock home. FrankenPHP, every Process and Schedule run as it; `agent` is in its group.
+     */
+    public const string AppUser = 'www-data';
+
+    public const string AppHome = '/var/www';
+
+    public const int AppUid = 33;
+
+    public const int AppGid = 33;
+
+    /**
+     * The nested-fleet container's `orbit` and `work`: its inner guests are Nodes whose `orbit` the ID map puts on these numbers, and
+     * the inner fleet runs as them over the shared checkout (ADR 0268, second amendment).
+     */
     public const int OrbitUid = 1000;
 
     public const int WorkGid = 2760;
@@ -112,7 +129,7 @@ final readonly class InstanceHostIntent
     public function __construct(
         private ContainerNodes $nodes,
         private AllocateInstanceBridgeAction $bridges,
-        private RecipeImageBuilds $recipes,
+        private CurrentRecipe $recipes,
         private PeerDnsPolicy $privateDns,
     ) {}
 
@@ -242,6 +259,9 @@ final readonly class InstanceHostIntent
             'folders' => InstanceFolderPlan::for($folders, InstanceFolderPlan::shift($node)),
             // The presented machine name of each container on the Node, which the converge writes into its files (InstanceMachineName).
             'machine_names' => InstanceMachineName::forNode($node),
+            // The drop-ins of T3's unit in each container with a T3, which the converge rewrites when their text changed and then restarts
+            // T3 in a running one (docs/reference/development-containers.md#existing-containers).
+            't3_files' => self::t3Files($node, $folders),
             // What the Node's Caddy serves, which a CI Node does not run: the redirect of agent development ports on the WireGuard
             // address to Caddy's development listener, and a container's own site on the bridge's gateway address (InstanceOwnSite),
             // which the bridge ACL and UFW admit. Without them the converge installs no wake of frozen containers either.
@@ -259,6 +279,19 @@ final readonly class InstanceHostIntent
                 ),
             ],
         ];
+    }
+
+    /**
+     * Each container on the Node with a T3, a clone or a moved checkout, and its unit drop-ins as its create writes them
+     * (InstanceContainer::t3DropIns). A default runs no T3.
+     *
+     * @return list<array{project: string, container: string, files: list<array{path: string, content: string, mode: string}>}>
+     */
+    private static function t3Files(Node $node, InstanceFolders $folders): array
+    {
+        return array_values(InstanceRuntime::query()->where('node_id', $node->id)->whereNotNull('t3_port')->orderBy('incus_project')->orderBy('container_name')->get()
+            ->map(static fn (InstanceRuntime $runtime): array => ['project' => $runtime->incus_project, 'container' => $runtime->container_name,
+                'files' => InstanceContainer::t3DropIns($runtime, $folders)])->all());
     }
 
     /**

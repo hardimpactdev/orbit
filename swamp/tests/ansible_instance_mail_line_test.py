@@ -56,6 +56,12 @@ if '--project' in args and args != ['--project', 'fixture', 'exec', 'fixture', '
 if args[:1] == ['--project'] and any(x in args[:args.index('--')] for x in ['--user', '--group', '--cwd']):
     sys.exit(95)
 args = args[args.index('--') + 1:]
+# Root's swap file of the app account (/usr/local/libexec/orbit-app-user): recorded, never run on this machine.
+if args[:2] == ['sh', '-c'] and args[-1] == '/usr/local/libexec/orbit-app-user':
+    sys.stdin.read()
+    (root / 'app-user-swaps').open('a').write('swap\\n')
+    print('unchanged')
+    sys.exit(0)
 args = [x.replace('/srv/workspace/.env', str(root / '.env')).replace('/fixture/app', str(root / 'app')).replace('/fixture/php', str(root / 'php')) for x in args]
 if args[:2] == ['systemctl', 'try-restart']:
     calls = json.loads((root / 'calls.json').read_text())
@@ -346,10 +352,11 @@ sys.exit(result.returncode)
             (tasks / 'instance-mail.yml').write_text('---\n- name: Fixture mail path failure\n  ansible.builtin.fail: {msg: instance.host_unavailable}\n')
         wrapper = yaml.safe_load((ROOT / 'swamp/ansible/instance-mail-update.yml').read_text())[1]
         wrapper.update({'hosts': 'fixture_host', 'connection': 'local', 'become': False})
-        wrapper['vars'] = {'ansible_python_interpreter': sys.executable, 'container': {'project': 'fixture', 'name': 'fixture'},
+        wrapper['vars'] = {'ansible_python_interpreter': sys.executable, 'container': {'project': 'fixture', 'name': 'fixture',
+                                         'app_account': {'path': '/usr/local/libexec/orbit-app-user', 'content': '#!/bin/sh\n'}},
                            'mail_refresh': {'php': '/fixture/php' if php else None, 'application': '/fixture/app',
                                             'units': ['orbit-frankenphp.service', 'orbit-process-42.service', 'orbit-process-stopped.service']},
-                           'as_root': ['incus', 'exec', 'fixture', '--'], 'as_orbit': ['incus', 'exec', 'fixture', '--']}
+                           'as_root': ['incus', 'exec', 'fixture', '--'], 'as_app': ['incus', 'exec', 'fixture', '--']}
         wrapper['vars']['intent'] = {'migrate': {}} if migrate else {}
         if probe_preserved:
             wrapper['post_tasks'] = [
@@ -400,6 +407,8 @@ sys.exit(result.returncode)
         self.assertEqual(self.ansible(migrate=True)['mailer'], {'status': 'changed', 'lines': [1]})
         self.assertTrue(self.envfile.read_bytes() == before.replace(b'"log"', b'"smtp"'))
         self.assertTrue((self.root / 'config-clear').exists())
+        # Root moves the app account to www-data before config:clear runs as www-data.
+        self.assertEqual((self.root / 'app-user-swaps').read_text(), 'swap\n')
         self.assertEqual(json.loads(self.calls.read_text()), ['orbit-frankenphp.service', 'orbit-process-42.service'])
         self.assertEqual(self.ansible('unchanged')['mailer'], {'status': 'already_smtp'})
         self.assertEqual(json.loads(self.calls.read_text()), ['orbit-frankenphp.service', 'orbit-process-42.service'])
@@ -489,15 +498,15 @@ sys.exit(result.returncode)
             self.assertTrue(self.envfile.read_bytes() == copied.replace(b'log', b'smtp'))
 
 
-    def test_the_config_clear_runs_as_orbit_with_its_groups(self):
+    def test_the_config_clear_runs_as_app_with_its_groups(self):
         import yaml
-        play = next(play for play in yaml.safe_load((ROOT / 'swamp/ansible/instance-mail-update.yml').read_text()) if 'as_orbit' in play.get('vars', {}))
-        # `runuser` gives `orbit` its groups, among them `work`, which opens the workspace that `agent` owns (ADR 0268); `incus exec
+        play = next(play for play in yaml.safe_load((ROOT / 'swamp/ansible/instance-mail-update.yml').read_text()) if 'as_app' in play.get('vars', {}))
+        # `runuser` gives `www-data` its groups, among them `www-data`, which opens the workspace that `agent` owns (ADR 0268); `incus exec
         # --user 1000 --group 1000` gives none, so its `cd` into the workspace failed and `failed_when: false` hid it.
-        self.assertEqual(play['vars']['as_orbit'],
-                         "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/home/orbit', container.name, '--', 'runuser', "
-                         "'-u', 'orbit', '--'] }}")
-        self.assertIn("as_orbit + ['sh', '-c', 'if [ -x \"$1\" ] && [ -f \"$2/artisan\" ]; then cd -- \"$2\" && \"$1\" artisan config:clear",
+        self.assertEqual(play['vars']['as_app'],
+                         "{{ ['incus', 'exec', '--project', container.project, '--env', 'HOME=/var/www', container.name, '--', 'runuser', "
+                         "'-u', 'www-data', '--'] }}")
+        self.assertIn("as_app + ['sh', '-c', 'if [ -x \"$1\" ] && [ -f \"$2/artisan\" ]; then cd -- \"$2\" && \"$1\" artisan config:clear",
                       (ROOT / 'swamp/ansible/tasks/instance-mail-line.yml').read_text())
 
 if __name__ == '__main__':
