@@ -13,23 +13,42 @@ Encrypted secrets (local_encryption vaults only) live in `.swamp/`:
 
 ```
 .swamp/secrets/local_encryption/{vault-name}/
-  .key          # Encryption key (NEVER commit)
-  {secret-key}  # Encrypted secret data
+  .key              # Encryption key (NEVER commit)
+  {secret-key}.enc  # Encrypted secret data
 ```
+
+Back up `.key` together with the secrets. If it is lost while secrets remain,
+every read and write refuses, saying the key file is missing; swamp never
+generates a replacement key for a vault that holds secrets. Restore the key to
+recover.
 
 ## Vault Types
 
-### Built-in Types
+### Built-in Type
 
-| Type               | Description                   | Key Config                 |
-| ------------------ | ----------------------------- | -------------------------- |
-| `aws-sm`           | AWS Secrets Manager           | `--region` or `AWS_REGION` |
-| `azure-kv`         | Azure Key Vault               | `--vault-url` or env var   |
-| `1password`        | 1Password via CLI             | `--op-vault` or `OP_VAULT` |
-| `local_encryption` | Local AES-GCM encrypted files | Auto-generated key         |
+| Type               | Description                   | Key Config         |
+| ------------------ | ----------------------------- | ------------------ |
+| `local_encryption` | Local AES-GCM encrypted files | Auto-generated key |
 
-See [references/providers.md](references/providers.md) for full configuration
-details on each built-in type.
+### Official Extension Types
+
+| Type               | Description         | Required `--config` key |
+| ------------------ | ------------------- | ----------------------- |
+| `@swamp/aws-sm`    | AWS Secrets Manager | `region`                |
+| `@swamp/azure-kv`  | Azure Key Vault     | `vault_url`             |
+| `@swamp/1password` | 1Password via `op`  | `op_vault`              |
+
+Non-local vault types need a logged-in swamp-club account, and a collective
+token must carry the `vault:*` scope.
+
+The legacy names `aws-sm`, `aws`, `azure-kv`, `azure` and `1password` are
+deprecated. `vault migrate`, and `vault create` once you are logged in, refuse
+them with an error naming the scoped type; a stored vault config that still uses
+one is remapped with a warning when it loads.
+
+See [references/providers.md](references/providers.md) for each type's
+configuration, and `swamp extension info @swamp/<name>` for the extension's own
+documentation.
 
 ### User-Defined Types
 
@@ -47,13 +66,13 @@ referenced in vault configurations — no manual `extension pull` needed. Use
 ## Create a Vault
 
 ```bash
-# Built-in types
+# Built-in type
 swamp vault create local_encryption dev-secrets --json
-swamp vault create aws-sm prod-secrets --region us-east-1 --json
-swamp vault create azure-kv azure-secrets --vault-url https://myvault.vault.azure.net/ --json
-swamp vault create 1password op-secrets --op-vault "my-vault" --json
 
-# User-defined types (pass config as JSON)
+# Extension types (pass config as JSON)
+swamp vault create @swamp/aws-sm prod-secrets --config '{"region": "us-east-1"}' --json
+swamp vault create @swamp/azure-kv azure-secrets --config '{"vault_url": "https://myvault.vault.azure.net"}' --json
+swamp vault create @swamp/1password op-secrets --config '{"op_vault": "my-vault"}' --json
 swamp vault create @hashicorp/vault my-hcv --config '{"address": "https://vault.example.com:8200"}' --json
 ```
 
@@ -64,7 +83,10 @@ swamp vault create @hashicorp/vault my-hcv --config '{"address": "https://vault.
   "id": "8f4e2d1c-9a3b-4c5d-ae7f-0a1b2c3d4e5f",
   "name": "dev-secrets",
   "type": "local_encryption",
-  "path": ".swamp/vault/local_encryption/8f4e2d1c-9a3b-4c5d-ae7f-0a1b2c3d4e5f.yaml"
+  "typeName": "Local Encryption",
+  "config": {
+    "auto_generate": true
+  }
 }
 ```
 
@@ -138,18 +160,24 @@ agent context or chat history.
 
 ```json
 {
-  "vault": "dev-secrets",
-  "key": "API_KEY",
-  "status": "stored"
+  "vaultName": "dev-secrets",
+  "secretKey": "API_KEY",
+  "vaultType": "local_encryption",
+  "overwritten": false,
+  "timestamp": "2026-11-13T18:11:44.179Z"
 }
 ```
+
+`overwritten` is `true` when the key already held a value.
 
 ## Automatic Refresh
 
 Attach a refresh hook to a secret so swamp automatically re-runs a command when
 the TTL elapses, replacing the stored value with the command's stdout. If the
-refresh command fails, swamp logs a WARN with the command's stderr and falls
-back to the last-known-good value — no corruption.
+refresh command fails or prints nothing, swamp logs a WARN naming the secret and
+vault and falls back to the last-known-good value — no corruption. The warning
+leaves out the command's output, which can carry the secret; run the command by
+hand to see why it failed.
 
 ```bash
 # Auto-refresh a GCP access token every 50 minutes
@@ -216,8 +244,10 @@ swamp vault list-keys dev-secrets --json
 
 ```json
 {
-  "vault": "dev-secrets",
-  "keys": ["API_KEY", "DB_PASSWORD"]
+  "vaultName": "dev-secrets",
+  "vaultType": "local_encryption",
+  "secretKeys": ["API_KEY", "DB_PASSWORD"],
+  "count": 2
 }
 ```
 
@@ -237,8 +267,8 @@ swamp vault remove trip-planner --yes --json
 - Refuses a vault that definitions, workflows or the datastore config reference;
   remove the references, or pass `--force`. Unlike `vault delete --force`, this
   `--force` does not skip the prompt.
-- Keeps secrets stored outside this repository (an absolute `base_dir` from
-  another checkout).
+- Keeps secrets stored outside this repository (an absolute or `$HOME`
+  `base_dir`).
 - `--json` never prompts, so confirm with the user before running it.
 
 ## Annotate Secrets
@@ -393,14 +423,16 @@ with a warning, even when the text matches an expression the author wrote.
 | Behavior definitions, workflow YAML      | evaluated       |
 | `swamp behavior run --input`             | evaluated       |
 | `swamp behavior run --literal-inputs`    | inert (literal) |
+| `swamp behavior run --input-data`        | inert (literal) |
+| An argument the type marks `data: true`  | inert (literal) |
 | `swamp workflow run/resume --input`      | inert (literal) |
 | Data content (`data.latest(...)` etc.)   | inert (literal) |
 | `forEach` items, webhook/trigger payload | inert (literal) |
 
 ## Using Vaults in Workflows
 
-For detailed workflow integration including the `swamp/lets-get-sensitive`
-behavior, see the **swamp-workflow** skill.
+For detailed workflow integration, see the
+[workflow reference](../workflow/reference.md#working-with-vaults).
 
 **Quick syntax reference:**
 
@@ -458,22 +490,23 @@ with more than one vault should set `defaultVault`; `swamp doctor vaults --json`
 reports a `fallbackWarning` naming the vault the fallback picks when it does
 not.
 
-See the **swamp-extension** skill for full schema examples.
+See [Resource Specs](../extension/references/model/api.md#resource-specs) for
+full schema examples.
 
 ## Security Best Practices
 
 Use separate vaults for dev/staging/prod to enforce environment separation.
 
-## When to Use Other Skills
+## Related Guides
 
-| Need                         | Use Skill               |
-| ---------------------------- | ----------------------- |
-| Vault usage in workflows     | `swamp-workflow`        |
-| Create/run behaviors         | `swamp-model`           |
-| Create custom behavior types | `swamp-extension`       |
-| Repository structure         | `swamp-repo`            |
-| Manage behavior data         | `swamp-data`            |
-| Understand swamp internals   | `swamp-troubleshooting` |
+| Need                         | Guide                                          |
+| ---------------------------- | ---------------------------------------------- |
+| Vault usage in workflows     | [workflow](../workflow/guide.md)               |
+| Create/run behaviors         | [behavior](../behavior/guide.md)               |
+| Create custom behavior types | [extension](../extension/guide.md)             |
+| Repository structure         | [repo](../repo/guide.md)                       |
+| Manage behavior data         | [data](../data/guide.md)                       |
+| Understand swamp internals   | [troubleshooting](../troubleshooting/guide.md) |
 
 ## References
 

@@ -113,8 +113,9 @@ Use CLI choice > manifest > registry default. Accept `public` or `private` as
 explicit values. `visibility: public` and `--visibility public` select the
 existing registry behavior: new extensions follow the collective's default and
 existing extensions keep their visibility. Use `--visibility public` to override
-a private manifest; it does not convert an already-private extension to public.
-Only private intent is sent to the registry; public omits the request field.
+a private manifest; it does not convert an already-private extension to public
+(the push warns when that happens). Only private intent is sent to the registry;
+public omits the request field.
 
 Preview/dry-run `visibility` is `public`, `private` or `default` (registry
 decides); successful publication reports applied `public` or `private`. With
@@ -131,6 +132,23 @@ during service rollback. The registry supports private extensions in public
 collectives and checks permissions/entitlements. An already-public extension
 returns a conflict; change its visibility through the registry before publishing
 privately. Omitting both field and flag retains existing defaults.
+
+### Changing visibility after publication
+
+To build privately and release publicly, push with `--visibility private`, then
+make the extension public once it is ready:
+
+```bash
+swamp extension visibility @myorg/ext --json                        # read
+swamp extension visibility @myorg/ext --set public --dry-run --json # preview
+swamp extension visibility @myorg/ext --set public --yes --json     # apply
+```
+
+The JSON reports `before`, `after`, `changed` and `dryRun`; `after` is the
+registry's applied value, and `requested` appears only when the registry kept a
+different value. A collective token needs `extensions:push` and can only make an
+extension public; `--set private` needs a signed-in collective owner and
+private-extension entitlement.
 
 ### additionalFiles — directory structure and runtime access
 
@@ -474,9 +492,9 @@ reports:
 2. **Bump version** in `manifest.yaml` — use `nextVersion` from the output above
 3. **Format & lint**: `swamp extension fmt manifest.yaml`
 4. **(Optional) Quality score**: `swamp extension quality manifest.yaml --json`
-   — see the `swamp-extension` skill for the rubric. Packages and caches the
-   tarball at `.swamp/cache/packages/<hash>/`; the cache is reused by the
-   dry-run and push below if source hasn't changed.
+   — see the [quality rubric](../../extension/references/quality/rubric.md).
+   Packages and caches the tarball at `.swamp/cache/packages/<hash>/`; the cache
+   is reused by the dry-run and push below if source hasn't changed.
 5. **Dry-run push**: `swamp extension push manifest.yaml --dry-run --json`
 6. **Push**: `swamp extension push manifest.yaml --yes --json`
 
@@ -766,9 +784,12 @@ swamp extension push manifest.yaml --repo-dir /path/to/repo --json
    replacement is added to the review warnings, prompting the user to confirm
    before push. It cannot be accepted. An `uncatalogued-model` warning is added
    the same way for each behavior entry point the registry catalog would leave
-   out (see "How Content Maps to Manifest"). A `behavior-spelling` warning is
-   added once when the extension uses the behavior spelling (see "Warnings
-   (prompted)").
+   out (see "How Content Maps to Manifest"). A `registry-listing-limit` warning
+   is added for each list over a registry listing limit (more than 50 behaviors,
+   50 methods per behavior, 30 arguments per method, and so on): the registry
+   discards the whole listing on any breach, so the published page can list
+   nothing. A `behavior-spelling` warning is added once when the extension uses
+   the behavior spelling (see "Warnings (prompted)").
 9. **Bundle TypeScript** — compiles each entry point (behaviors, vaults,
    datastores) to standalone JS. Include files are not bundled. If a `deno.json`
    is present, the import map governs dependency resolution.
@@ -874,14 +895,18 @@ to use `swamp vault put <vault> <key>` (it prompts) and
 
 The review rules (`credentials-sensitive-field`, `schema-strictness`,
 `testing-completeness`), the extension-scoped `bare-specifiers` and
-`behavior-spelling` findings and the file-scoped `uncatalogued-model` finding
-are warnings too. `bare-specifiers` cannot be accepted: the registry cannot
-score the extension however it is justified, and the fix is to write each
-import's `npm:`/`jsr:` target. `uncatalogued-model` cannot be accepted either:
-it names a behavior entry point the registry catalog would not list (a
-type-annotated or non-object export, or no string-literal `type` or `version` in
-it), and the fix is to write those literals in a plain
-`export const behavior = { ... }` object. `behavior-spelling` can be accepted
+`behavior-spelling` and `registry-listing-limit` findings and the file-scoped
+`uncatalogued-model` finding are warnings too. `bare-specifiers` cannot be
+accepted: the registry cannot score the extension however it is justified, and
+the fix is to write each import's `npm:`/`jsr:` target. `uncatalogued-model`
+cannot be accepted either: it names a behavior entry point the registry catalog
+would not list (a type-annotated or non-object export, or no string-literal
+`type` or `version` in it), and the fix is to write those literals in a plain
+`export const behavior = { ... }` object. `registry-listing-limit` cannot be
+accepted in source or `quality.yaml`, only waived per push with `--yes` or
+`--force`: the extension still installs and runs, but its registry page can list
+no behaviors, methods or arguments. The fix is to split the extension, for
+example one extension per API domain. `behavior-spelling` can be accepted
 (`--yes`, or a `quality.yaml` entry with no `file`): swamp clients and workers
 older than the release that added the behavior spelling cannot load the
 extension. Keep the model spelling when older clients or workers must install
@@ -1106,17 +1131,17 @@ swamp extension version --manifest manifest.yaml --json
 | "Extension is already deprecated" | Already deprecated — use `undeprecate` first if re-deprecating with new reason                                                     |
 | "Extension is not deprecated"     | Nothing to undeprecate — extension is not currently deprecated                                                                     |
 
-## Related Skills
+## Related Guides
 
-| Need                               | Use Skill                 |
-| ---------------------------------- | ------------------------- |
-| Create custom behaviors            | `swamp-extension`         |
-| Create custom vaults               | `swamp-extension`         |
-| Create custom datastores           | `swamp-extension`         |
-| Repository setup and management    | `swamp-repo`              |
-| Create reports                     | `swamp-report`            |
-| Quality scorecard & best practices | `swamp-extension`         |
-| Deprecate/undeprecate extensions   | `swamp-extension-publish` |
+| Need                               | Guide                                                 |
+| ---------------------------------- | ----------------------------------------------------- |
+| Create custom behaviors            | [extension](../../extension/guide.md)                 |
+| Create custom vaults               | [extension](../../extension/guide.md)                 |
+| Create custom datastores           | [extension](../../extension/guide.md)                 |
+| Repository setup and management    | [repo](../../repo/guide.md)                           |
+| Create reports                     | [report](../../report/guide.md)                       |
+| Quality scorecard & best practices | [extension](../../extension/guide.md)                 |
+| Deprecate/undeprecate extensions   | [extension-publish](../../extension-publish/guide.md) |
 
 ## Quality Self-Check
 
@@ -1144,4 +1169,5 @@ reused by dry-run and push while the source tree and swamp version are
 unchanged.
 
 This step is optional — skipping does not block the push. See the
-`swamp-extension` skill for the full rubric and per-factor guidance.
+[quality rubric](../../extension/references/quality/rubric.md) for the full
+rubric and per-factor guidance.
