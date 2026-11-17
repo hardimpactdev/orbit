@@ -74,34 +74,6 @@
     argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'ln', '-sfnT', fleet_club_target, fleet_club_link] }}"
   changed_when: true
 
-# The checkout is `agent:web` (2750:2760) in the Instance container, and `fleet_idmap` maps gid 2760 by number, so each nested Node's app
-# user opens it through its group 2760. The guests are Nodes: their app user keeps the name `orbit`, and the group is named `work` there.
-# nested-app-prod's seed had no such group, so its `orbit` got EACCES on the 2770 checkout (#3930). A start gives every guest the group and
-# its `orbit` the membership when either is missing; the next refresh's `base` keeps them.
-- name: Read the checkout group of each nested Node
-  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', item, '--', 'getent', 'group', '2760'] }}" }
-  loop: "{{ intent.fleet.guests.values() | list }}"
-  register: fleet_checkout_group
-  changed_when: false
-  failed_when: fleet_checkout_group.rc not in [0, 2]
-- name: Make the checkout group of a nested Node
-  when: item.rc == 2
-  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', item.item, '--', 'groupadd', '--gid', '2760', 'work'] }}" }
-  loop: "{{ fleet_checkout_group.results }}"
-  loop_control: { label: "{{ item.item }}" }
-  changed_when: true
-- name: Read the groups of each nested Node's app user
-  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', item, '--', 'id', '-G', 'orbit'] }}" }
-  loop: "{{ intent.fleet.guests.values() | list }}"
-  register: fleet_app_groups
-  changed_when: false
-- name: Give each nested Node's app user the checkout group
-  when: "'2760' not in item.stdout.split()"
-  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', item.item, '--', 'usermod', '--append', '--groups', '2760', 'orbit'] }}" }
-  loop: "{{ fleet_app_groups.results }}"
-  loop_control: { label: "{{ item.item }}" }
-  changed_when: true
-
 - name: Look for the operator key
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['test', '-s', fleet_operator_key] }}" }
   register: fleet_key
