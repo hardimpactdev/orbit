@@ -1,0 +1,45 @@
+---
+title: "orbit proof:pool:drain"
+sidebarTitle: "proof:pool:drain"
+covers:
+  - apps/gateway/app/Domain/Proof/ProofWarmPool.php
+  - apps/gateway/app/Http/Controllers/Api/ProofPoolController.php
+  - apps/cli/app/Commands/Proof/ProofPoolCommand.php
+description: "Destroy the idle warm proof copies and stop the pool from making new ones. Running proofs finish."
+---
+
+```bash
+orbit proof:pool:drain [--json]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the result as JSON. |
+
+```bash
+orbit proof:pool:drain
+```
+
+Use it before a maintenance window that needs every copy of the proof Project's default gone. It is the one command for that.
+
+The command does three things:
+
+- It records the drain. The drain lasts until [`orbit proof:pool:resume`](/cli/proof/pool-resume), also across Gateway restarts.
+- It destroys each idle [warm copy](/cli/proof/run#warm-copies). A warm copy whose create still runs is destroyed when the create ends.
+- It stops every refill. No new warm copy is made while the pool is drained, also by a refill that was already reading the Nodes when the drain came.
+
+Running proofs are not touched. Their copies, also those taken from the pool, are destroyed at the end of each run, as always. A proof that starts while the pool is drained finds no warm copy and creates its copies.
+
+The answer lists the warm copies whose destroy started and the proof copies that still run. Run the command again to see both lists. The window can start when both are empty. A second drain changes nothing else.
+
+The caller needs Gateway access, as for [`orbit proof:run`](/cli/proof/run).
+
+## How it works
+
+The Gateway records the drain under the lock of the proof default and cancels the task group of each idle warm copy with discard. A refill takes the same lock and checks the drain again before it starts a copy, so its slow reads of the Nodes cannot start a copy after the drain. Each cancel destroys its copy and drops the copy's hold on its Node's places. The destroy of the last copy on a Node starts that Node's stopped runners again.
+
+<div className="flow-at" data-chart="proof/pool-drain"></div>
+
+## Errors
+
+The command has no error of its own. A caller without Gateway access is refused as on every Gateway route.

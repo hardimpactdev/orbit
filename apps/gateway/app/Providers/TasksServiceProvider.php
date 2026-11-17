@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Console\Commands\FileProblemsCommand;
 use App\Console\Commands\TaskCopySettleCommand;
+use App\Console\Commands\TaskMergeRoundCommand;
 use App\Console\Commands\TaskPublishWhenDoneCommand;
 use App\Console\Commands\TaskPullRequestGateCommand;
 use App\Domain\Tasks\BriefCoverageLabeler;
@@ -108,6 +109,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
             FileProblemsCommand::class,
             TaskPullRequestGateCommand::class,
             TaskPublishWhenDoneCommand::class,
+            TaskMergeRoundCommand::class,
             TaskCopySettleCommand::class,
         ]);
 

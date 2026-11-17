@@ -1,0 +1,17 @@
+sequenceDiagram
+  %% status: draft
+  %% command: proof:pool:resume
+  %% kind: proof.pool.resume
+  autonumber
+  participant CLI as Operator<br/>CLI · MCP
+  participant GW as Gateway
+  participant SW as Swamp
+  participant CP as CI Nodes<br/>warm copies
+  CLI->>GW: Resume the warm pool
+  GW->>GW: Clear the drain
+  %%> A pool that is not drained stays as it is: the command changes nothing.
+  GW->>GW: Refill the warm pool
+  %%> Start warm copies until the pool holds proof.warm_copies, on Nodes with a free place, the Nodes in turns. A refill never waits for a place: a Node without one gets its warm copy at a later refill.
+  GW-->>CLI: Resumed<br/>warm copies being made
+  SW->>CP: Create each warm copy<br/>from the Node's seed
+  %%> The same instance.create as any proof copy: it holds its place and stops idle runners down to the Node's limit.

@@ -234,7 +234,7 @@ sequenceDiagram
     %%> - a commit or the proposed body holds a secret value of the copy or a private key block: `tasks.publish_secret_value`, with `refused` (path:line and secret name) and `refused_more`; nothing is pushed; remove it from the branch history and check again
     %%> - a task copy's candidate changed a path under `.github/workflows/` since the merge base: `tasks.publish_workflow_change`, with the paths in `refused` and `refused_more`; nothing is pushed; a person makes a workflow change of the copy's own in a pull request of their own (docs/reference/tasks.md#the-base-of-a-copy-publish)
     %%> - the task branch's tip is neither an ancestor of the candidate nor an earlier publish merge of it: `tasks.not_fast_forward`; nothing is pushed
-    %%> - a task copy's candidate conflicts with the default branch head: `tasks.publish_conflict`, with `conflicting_paths` and `conflicting_more`; nothing is pushed; merge or rebase in the copy, check again and publish
+    %%> - a task copy's candidate conflicts with the default branch head: `tasks.publish_conflict`, with `conflicting_paths` and `conflicting_more`; nothing is pushed; the `task:merge-round` tick then syncs, merges in one implementer turn, checks, reviews the merge and publishes again (docs/reference/tasks.md#the-merge-round)
     %%> - a step waited 60 s for a behavior lock that another run held: `tasks.publish_lock_timeout`; a step after the push can fail so too, so the branch may be pushed already
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:

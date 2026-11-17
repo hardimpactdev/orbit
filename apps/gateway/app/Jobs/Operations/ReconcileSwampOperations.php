@@ -16,6 +16,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Proof\ProofRunWatch;
+use App\Domain\Proof\ProofWarmPool;
 use App\Infrastructure\Swamp\ReadNativeRunFailure;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampTerminalOutputUnavailable;
@@ -106,6 +107,12 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             app(ProofRunWatch::class)->sweep();
         } catch (Throwable $exception) {
             Log::warning('The proof runs could not be watched; the next pass tries again.', ['exception_type' => $exception::class]);
+        }
+        // After a warm copy is taken or dropped, and after a seed refresh, the pool replaces and refills its warm copies.
+        try {
+            app(ProofWarmPool::class)->keep();
+        } catch (Throwable $exception) {
+            Log::warning('The warm proof copies could not be kept; the next pass tries again.', ['exception_type' => $exception::class]);
         }
         app(RoutePublicationHolds::class)->sweep();
 

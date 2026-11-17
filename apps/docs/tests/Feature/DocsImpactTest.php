@@ -437,6 +437,20 @@ it('docs impact maps the Conn operator commands to their pages', function (): vo
         ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/conn/environment-restart.mdx');
 });
 
+it('docs impact maps the proof commands to their pages', function (): void {
+    $root = docsImpactFixture();
+    is_dir($root.'/docs/cli/proof') || mkdir($root.'/docs/cli/proof', 0777, true);
+    file_put_contents($root.'/docs/cli/proof/pool-drain.mdx', "---\ntitle: \"orbit proof:pool:drain\"\n---\nWarm copies\n");
+    $path = 'apps/cli/app/Commands/Proof/DrainProofPoolCommand.php';
+    is_dir(dirname($root.'/'.$path)) || mkdir(dirname($root.'/'.$path), 0777, true);
+    file_put_contents($root.'/'.$path, "<?php class DrainProofPoolCommand { protected \$signature = 'proof:pool:drain'; }\n");
+
+    $report = new DocsImpact($root)->report(null, [$path]);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/proof/pool-drain.mdx');
+});
+
 it('docs impact rejects unknown CLI families instead of guessing an owner', function (): void {
     $root = docsImpactFixture();
     $path = 'apps/cli/app/Commands/UnknownCommand.php';

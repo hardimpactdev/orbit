@@ -15,6 +15,10 @@ return [
     // One copy's peak memory in bytes, with room above the measured peak. A copy goes on a Node only when the Node's MemAvailable
     // holds it (docs/cli/proof/run.mdx#the-run); the free CI places of each Node count the rest.
     'copy_memory' => 8 * 1024 ** 3,
+    // The warm proof copies across all CI Nodes (docs/cli/proof/run.mdx#warm-copies): copies whose create has ended, which a proof takes
+    // first. Each holds a CI place, a task copy slot and a copy's memory peak while it waits. 0, the default, turns the pool off; the
+    // owner sets it.
+    'warm_copies' => 0,
     // The repository whose commits Orbit proves, as owner/name.
     'repository' => 'hardimpactdev/orbit',
     // The branch whose merge base starts a commit's diff.

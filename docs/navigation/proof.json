@@ -10,7 +10,9 @@
           "pages": [
             "cli/proof/index",
             "cli/proof/proof",
-            "cli/proof/run"
+            "cli/proof/run",
+            "cli/proof/pool-drain",
+            "cli/proof/pool-resume"
           ]
         }
       ]

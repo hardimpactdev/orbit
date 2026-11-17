@@ -208,6 +208,12 @@ final readonly class InstanceHostIntent
         $taskIds = $ciPlaces === null ? 0 : ($ciPlaces + 1) * self::TaskPlaceIds;
         $subnet = Ipv4Subnet::from($cidr);
         [$gateway, $last] = $subnet->usableRange();
+        $fleetNode = ContainerNodes::fleetNode($node);
+        // An Instance fleet Node goes out only through the fleet's egress proxy; its own proxy must never go direct
+        // (docs/reference/development-containers.md#instance-host-in-the-fleet).
+        $parent = $fleetNode ? (InstanceFleetGateway::egressProxy()
+            ?? throw new ResourceOperationException('instance.fleet_egress_unavailable', 'The nested Gateway reads no egress proxy from HTTPS_PROXY in '
+                .config()->string('instances.fleet_environment').', so the Instance fleet Node\'s egress proxy would have no way out.', 409)) : null;
 
         return [
             'project' => self::Project, 'network' => self::Network, 'nic_acl' => self::NicAcl, 'pool' => self::Pool, 'cidr' => $cidr,
@@ -216,7 +222,7 @@ final readonly class InstanceHostIntent
             ...($ci ? ['create_pool' => true] : []),
             // An Instance fleet Node installs Incus and creates a directory pool first
             // (docs/reference/development-containers.md#instance-host-in-the-fleet).
-            ...(ContainerNodes::fleetNode($node) ? ['fleet_node' => true] : []),
+            ...($fleetNode ? ['fleet_node' => true] : []),
             'address' => $gateway.'/'.$subnet->prefixLength(),
             // The image build container takes the bridge's last address, which no Instance gets.
             'build_address' => $last,
@@ -229,7 +235,7 @@ final readonly class InstanceHostIntent
             'ingress' => self::ingress($gateway),
             'bridge_admitted_at' => $admittedAt,
             'bridge_endpoints' => app(InstanceContainer::class)->nodeEndpoints($node),
-            'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains()),
+            'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains(), $parent),
             // A CI Node needs a map of the proof default's size for each CI place, its seed holder and a snapshot that a seed copy adds
             // (docs/reference/node-settings.md#a-ci-node).
             'ids' => (self::Containers + 1) * self::IdMapSize + ($ci

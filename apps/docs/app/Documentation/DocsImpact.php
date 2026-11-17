@@ -17,7 +17,7 @@ final readonly class DocsImpact
 
     private const array CLI_FAMILIES = [
         'activity', 'analytics', 'app', 'cluster', 'conn', 'database', 'dns', 'doctor', 'env', 'extension', 'firewall', 'fleet',
-        'gateway', 'github', 'instance', 'internal', 'metrics', 'node', 'operation', 'process', 'profile', 'project', 'ai-router',
+        'gateway', 'github', 'instance', 'internal', 'metrics', 'node', 'operation', 'process', 'profile', 'project', 'proof', 'ai-router',
         'realtime', 'route', 'schedule', 'self-update', 'task', 'tool', 'vault', 'websocket', 'workspace',
     ];
 
@@ -37,6 +37,7 @@ final readonly class DocsImpact
         'project-documents:probes:repair' => 'docs/reference/project-documents.md',
         'task:pr-gate' => 'docs/reference/tasks.md',
         'task:pr-when-done' => 'docs/reference/tasks.md',
+        'task:merge-round' => 'docs/reference/tasks.md',
         'task:copy-settle' => 'docs/reference/tasks.md',
         'tasks:pr-gate' => 'docs/reference/tasks.md',
         'task:tick' => 'docs/reference/tasks.md',
