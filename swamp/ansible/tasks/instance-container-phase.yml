@@ -494,12 +494,17 @@
 # (/usr/local/libexec/orbit-app-user) as soon as the container runs, before any command as `www-data` and before the steps below write or start
 # a unit as `www-data`; a processes phase on a running container and a seed run it too
 # (docs/reference/development-containers.md#the-app-users-name). A moved container only reads, and a nested-fleet container keeps
-# `orbit` for its inner fleet. The image, a Node converge and a copy's boot files install it (InstanceImage::shared). A wake that
-# boots nothing moves nothing.
+# `orbit` for its inner fleet. The intent carries the file, so a container that lacks it, or holds an older one, gets it here and no
+# path waits for a Node converge. A wake that boots nothing moves nothing.
 - name: Move the app account to www-data
   tags: [container, clone, start, processes, seed]
   when: phase in ['container', 'clone', 'start', 'processes', 'seed'] and not start_skips_boot | default(false) | bool
-  ansible.builtin.command: { argv: "{{ as_root + ['/usr/local/libexec/orbit-app-user'] }}" }
+  # The file from the intent, root's and 0755, written only when it is missing or differs; then it runs (InstanceImage::appAccount).
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['sh', '-c', 'set -e; t=$(mktemp); cat >"$t"; cmp -s "$t" "$0" || install -D -o 0 -g 0 -m 0755 "$t" "$0"; rm -f "$t"; exec "$0"', container.app_account.path] }}
+    stdin: "{{ container.app_account.content }}"
+    stdin_add_newline: false
   register: app_user_name
   changed_when: "'moved to www-data' in app_user_name.stdout"
 

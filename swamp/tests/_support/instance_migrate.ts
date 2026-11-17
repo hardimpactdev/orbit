@@ -34,6 +34,7 @@ export type MigrationSchedule = {
   path: string;
   environment_file: string;
   workspace_ids: { group: number; writer: number };
+  app_account: { path: string; content: string };
   fixture_command: string;
 };
 
@@ -232,6 +233,7 @@ export function fixture(instance: "default" | "feature" = "default", dirty = fal
     workspace: "/srv/workspace",
     environment_file: "/srv/workspace/.env",
     workspace_ids: { group: 33, writer: 33 },
+    app_account: { path: "/usr/local/libexec/orbit-app-user", content: Deno.readTextFileSync(new URL("files/instance-app-user.sh", root)) },
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=www-data\n" }],
     php: null as string | null,
     processes: [] as { id: number; name: string; content: string; environment: string | null; desired: string }[],
@@ -417,6 +419,7 @@ export function migrationSchedules(f: ReturnType<typeof fixture>, desired: "enab
     path: "/usr/bin:/bin",
     environment_file: "/srv/workspace/.env",
     workspace_ids: { group: 33, writer: 33 },
+    app_account: { path: "/usr/local/libexec/orbit-app-user", content: Deno.readTextFileSync(new URL("files/instance-app-user.sh", root)) },
     fixture_command: command.replaceAll(f.checkout, "/srv/workspace"),
   };
   const input = {

@@ -1414,7 +1414,7 @@ function normalContainerSinceMain(Instance $instance, InstanceRuntime $runtime):
     // container keeps `work` and `orbit` for its inner fleet.
     $file = array_search('environment_file', array_keys($expected), true) + 1;
     $ids = $runtime->incus_project === InstancePlacement::NestedProject ? ['group' => 2760, 'writer' => 1000] : ['group' => 33, 'writer' => 33];
-    $expected = [...array_slice($expected, 0, $file, true), 'workspace_ids' => $ids, ...array_slice($expected, $file, null, true)];
+    $expected = [...array_slice($expected, 0, $file, true), 'workspace_ids' => $ids, 'app_account' => InstanceImage::appAccount(), ...array_slice($expected, $file, null, true)];
 
     return $expected;
 }

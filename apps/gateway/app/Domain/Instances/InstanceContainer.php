@@ -339,6 +339,8 @@ final readonly class InstanceContainer
             // stock `www-data` in a normal container; `work` and `orbit` in a nested-fleet one, whose inner fleet writes the checkout as them.
             'workspace_ids' => $nestedFleet ? ['group' => InstanceHostIntent::WorkGid, 'writer' => InstanceHostIntent::OrbitUid]
                 : ['group' => InstanceHostIntent::AppGid, 'writer' => InstanceHostIntent::AppUid],
+            // Root's swap file of the app account, which each path writes when missing or different and runs first (InstanceImage::appAccount).
+            'app_account' => InstanceImage::appAccount(),
             // The deploy commands' whole environment: the home of `agent`, the workspace's owner who runs them (ADR 0268), the runtime
             // folder with the Project's PHP first, the Vite+ home and the egress proxy (docs/reference/development-containers.md#egress-and-dns),
             // and the Playwright browser folder.

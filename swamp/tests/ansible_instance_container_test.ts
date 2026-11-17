@@ -147,6 +147,8 @@ function fixture() {
     environment_file: "/srv/workspace/.env",
     // A normal container: the workspace group and the pass's writer are the stock `www-data` (InstanceContainer::intent).
     workspace_ids: { group: 33, writer: 33 },
+    // Root's swap file as the Gateway renders it into every container intent (InstanceImage::appAccount).
+    app_account: { path: "/usr/local/libexec/orbit-app-user", content: Deno.readTextFileSync(new URL("../ansible/files/instance-app-user.sh", import.meta.url)) },
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=www-data\n" }],
     web_config: { path: "/etc/orbit/frankenphp.Caddyfile", content: ":8080 {\n    php_server\n}\n" },
     web_port: 8080,
@@ -866,6 +868,38 @@ Deno.test({
       assertEquals([f.state().accounts, f.state().handover], [undefined, undefined]);
       assert(!systemctlCalls(f).some((call: string) => call.startsWith("stop ") || call === "daemon-reload"), systemctlCalls(f).join("\n"));
       assertEquals(Deno.readTextFileSync(`${root}/etc/systemd/system/orbit-frankenphp.service`), MOVED_UNIT);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a start writes the swap file into an older container that lacks it and moves the app account in the same run; a second start writes nothing",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      assert(f.run("container").ok);
+      const root = olderContainer(f);
+      // An older container whose Node has not converged since the release: it has no swap file, or an older one.
+      Deno.removeSync(`${root}/usr/local/libexec/orbit-app-user`);
+      const state = f.state();
+      delete state.app_account_writes;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const result = f.run("start");
+      assert(result.ok, result.output);
+      assertEquals(Deno.readTextFileSync(`${root}/usr/local/libexec/orbit-app-user`), f.container.app_account.content);
+      assertEquals(Deno.statSync(`${root}/usr/local/libexec/orbit-app-user`).mode! & 0o777, 0o755);
+      assertEquals(f.state().app_account_writes, 1);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/passwd`), IMAGE_PASSWD);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/systemd/system/orbit-frankenphp.service`), MOVED_UNIT);
+      // An older file is replaced by the intent's; the same file is left alone.
+      Deno.writeTextFileSync(`${root}/usr/local/libexec/orbit-app-user`, "#!/bin/sh\necho an older file\n");
+      assert(f.run("start").ok);
+      assertEquals(Deno.readTextFileSync(`${root}/usr/local/libexec/orbit-app-user`), f.container.app_account.content);
+      assert(f.run("start").ok);
+      assertEquals(f.state().app_account_writes, 2);
     } finally {
       f.cleanup();
     }

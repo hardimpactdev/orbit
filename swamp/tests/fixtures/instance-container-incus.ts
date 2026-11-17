@@ -400,9 +400,27 @@ if (family === "list") {
     save();
     Deno.exit(0);
   }
-  // Root's swap file (/usr/local/libexec/orbit-app-user from ansible/files/instance-app-user.sh) runs here as in the container: its account, unit, process and file calls come
+  // Root's swap file, as installed in the container, runs here as in the container: its account, unit, process and file calls come
   // back to this stand-in through `incus exec`, and the text filters it runs on its own output run as they are.
-  if (command[0] === "/usr/local/libexec/orbit-app-user") {
+  const appAccount = "/usr/local/libexec/orbit-app-user";
+  // The install wrapper of each Ansible path: it writes the intent's file on stdin when the container lacks it or holds another
+  // version (`app_account_writes` counts the writes), then runs the installed file. A container without the file cannot run it.
+  const installs = command[0] === "sh" && command[1] === "-c" && command[2].includes("install -D -o 0 -g 0 -m 0755") && command[3] === appAccount;
+  if (installs || command[0] === appAccount) {
+    const installed = `${rootfs(name)}${appAccount}`;
+    if (installs) {
+      const given = await new Response(Deno.stdin.readable).text();
+      if (!exists(installed) || Deno.readTextFileSync(installed) !== given) {
+        Deno.mkdirSync(`${rootfs(name)}/usr/local/libexec`, { recursive: true });
+        Deno.writeTextFileSync(installed, given, { mode: 0o755 });
+        state.app_account_writes = (state.app_account_writes ?? 0) + 1;
+      }
+    }
+    if (!exists(installed)) {
+      save();
+      console.error(`sh: 1: ${appAccount}: not found`);
+      Deno.exit(127);
+    }
     const bin = `${folder}/app-user-bin`;
     // The stand-in runs its own tools from the plain PATH, so a routed call never finds these shims again.
     const back = 'PATH=$APP_USER_PATH exec incus --project "$APP_USER_PROJECT" exec "$APP_USER_NAME" --';
@@ -416,7 +434,7 @@ if (family === "list") {
     }
     save();
     // The file's own path tests (`[ -e … ]`, `[ -d … ]`) are shell builtins: they read the container's folder here, not this machine.
-    const source = Deno.readTextFileSync(new URL("../../ansible/files/instance-app-user.sh", import.meta.url));
+    const source = Deno.readTextFileSync(installed);
     const script = source.replace(/\[ -([def]) "?(\/[^" \]]*|\$WS)"? \]/g, (_, flag, path) => `[ -${flag} "${rootfs(name)}${path}" ]`);
     const done = new Deno.Command("sh", {
       args: ["-c", script, "orbit-app-user"],

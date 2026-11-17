@@ -57,7 +57,8 @@ if args[:1] == ['--project'] and any(x in args[:args.index('--')] for x in ['--u
     sys.exit(95)
 args = args[args.index('--') + 1:]
 # Root's swap file of the app account (/usr/local/libexec/orbit-app-user): recorded, never run on this machine.
-if args == ['/usr/local/libexec/orbit-app-user']:
+if args[:2] == ['sh', '-c'] and args[-1] == '/usr/local/libexec/orbit-app-user':
+    sys.stdin.read()
     (root / 'app-user-swaps').open('a').write('swap\\n')
     print('unchanged')
     sys.exit(0)
@@ -351,7 +352,8 @@ sys.exit(result.returncode)
             (tasks / 'instance-mail.yml').write_text('---\n- name: Fixture mail path failure\n  ansible.builtin.fail: {msg: instance.host_unavailable}\n')
         wrapper = yaml.safe_load((ROOT / 'swamp/ansible/instance-mail-update.yml').read_text())[1]
         wrapper.update({'hosts': 'fixture_host', 'connection': 'local', 'become': False})
-        wrapper['vars'] = {'ansible_python_interpreter': sys.executable, 'container': {'project': 'fixture', 'name': 'fixture'},
+        wrapper['vars'] = {'ansible_python_interpreter': sys.executable, 'container': {'project': 'fixture', 'name': 'fixture',
+                                         'app_account': {'path': '/usr/local/libexec/orbit-app-user', 'content': '#!/bin/sh\n'}},
                            'mail_refresh': {'php': '/fixture/php' if php else None, 'application': '/fixture/app',
                                             'units': ['orbit-frankenphp.service', 'orbit-process-42.service', 'orbit-process-stopped.service']},
                            'as_root': ['incus', 'exec', 'fixture', '--'], 'as_app': ['incus', 'exec', 'fixture', '--']}

@@ -174,7 +174,7 @@ final readonly class InstanceImage
             $file('/etc/fonts/fonts.conf', self::fonts("{$runtime}/fonts")),
             $file('/etc/gitconfig', "# Managed by Orbit.\n[safe]\n\tdirectory = ".InstanceHostIntent::Workspace."\n"),
             ['path' => self::SudoGrant, 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440', 'existing' => true],
-            ['path' => self::AppUserSwap, 'content' => self::appUserSwap(), 'uid' => 0, 'gid' => 0, 'mode' => '0755', 'existing' => true],
+            [...self::appAccount(), 'uid' => 0, 'gid' => 0, 'mode' => '0755', 'existing' => true],
         ];
     }
 
@@ -200,6 +200,17 @@ final readonly class InstanceImage
             'entry' => 'library='.InstanceHostIntent::RuntimeFolder.'/current/'.InstanceHostIntent::TrustModule."\nname=Orbit system trust\n\n",
             'uid' => InstanceHostIntent::AgentUid, 'gid' => InstanceHostIntent::AgentUid, 'mode' => '0600', 'directory_mode' => '0700',
             'library' => $library, 'version' => $module->version];
+    }
+
+    /**
+     * Root's swap file of the app account as a container intent carries it: every Ansible path writes it from here when the container
+     * lacks it or holds another version, then runs it, so no path waits for a Node converge. The boot files carry the same content.
+     *
+     * @return array{path: string, content: string}
+     */
+    public static function appAccount(): array
+    {
+        return ['path' => self::AppUserSwap, 'content' => self::appUserSwap()];
     }
 
     private static function appUserSwap(): string

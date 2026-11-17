@@ -8,6 +8,7 @@ use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -200,7 +201,8 @@ final readonly class ProcessTargetResolver
                 instance: $instance,
                 environmentFile: "{$directory}/.env",
                 routeDomain: $this->developmentRouteDomain($instance),
-                container: ['instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name],
+                container: ['instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
+                    'app_account' => InstanceImage::appAccount()],
             );
         }
 

@@ -56,7 +56,7 @@ if 'device' in args:
  sys.exit()
 args=args[args.index('--')+1:]
 if args[0]=='runuser':args=args[args.index('--')+1:]
-if args==['/usr/local/libexec/orbit-app-user']:print('orbit-app-user: already www-data');sys.exit()
+if args[:2]==['sh','-c'] and args[-1]=='/usr/local/libexec/orbit-app-user':sys.stdin.read();print('orbit-app-user: already www-data');sys.exit()
 if args[0]=='cat':
  p=root/'guest'/args[1].lstrip('/')
  if not p.exists():sys.exit(1)
@@ -350,7 +350,8 @@ class NodeRuntimeTest(unittest.TestCase):
         incus = self.root / 'incus'
         incus.write_text(FAKE_INCUS)
         incus.chmod(0o755)
-        container = {**self.container, 'project': 'fixture', 'name': 'fixture'}
+        container = {**self.container, 'project': 'fixture', 'name': 'fixture',
+                     'app_account': {'path': '/usr/local/libexec/orbit-app-user', 'content': '#!/bin/sh\n'}}
         play = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
                  'vars': {'ansible_python_interpreter': sys.executable, 'container': container,
                           'intent': {'migrate': {'checkout': str(self.checkout)}},
@@ -371,7 +372,7 @@ class NodeRuntimeTest(unittest.TestCase):
         calls = [json.loads(line) for line in (self.root / 'incus-calls').read_text().splitlines()]
         # Root moves the app account first: the phase's first command in the container is the swap file.
         execs = [call for call in calls if 'exec' in call]
-        self.assertEqual(execs[0][execs[0].index('--') + 1:], ['/usr/local/libexec/orbit-app-user'])
+        self.assertEqual(execs[0][execs[0].index('--') + 1:][3:], ['/usr/local/libexec/orbit-app-user'])
         self.assertTrue(any('add' in call and 'readonly=true' in call for call in calls))
         self.assertTrue(any('remove' in call and 'orbit-node-source' in call for call in calls))
         self.assertFalse(any('systemctl' in call and any(x in call for x in ('start', 'stop', 'restart', 'try-restart', '--now')) for call in calls))

@@ -14,6 +14,7 @@ use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceImage;
 use App\Domain\Logs\LogStreamTargetResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessLifecycleInput;
@@ -178,7 +179,9 @@ describe('the Process target of a container Instance', function (): void {
         $view = new Operation;
         $view->forceFill(['id' => 9, 'kind' => 'process.restart', 'target_type' => 'process', 'target_id' => $this->process->id,
             'node_id' => $this->instance->node_id, 'input' => $input]);
-        $container = ['instance_id' => $this->instance->id, 'project' => 'orbit-instances', 'name' => 'instance-'.$this->instance->id];
+        // The swap file rides along, so a Process action writes it into a container that lacks it (InstanceImage::appAccount).
+        $container = ['instance_id' => $this->instance->id, 'project' => 'orbit-instances', 'name' => 'instance-'.$this->instance->id,
+            'app_account' => InstanceImage::appAccount()];
 
         expect($target->user)->toBe('www-data')
             ->and($target->container)->toBe($container)
@@ -222,7 +225,8 @@ describe('the Process target of a container Instance', function (): void {
         processContainerError(fn () => app(DestroyProcessAction::class)->admit($this->process->refresh(), instanceId: $this->instance->id));
 
         $operation = Operation::query()->where('kind', 'process.destroy')->sole();
-        expect($operation->input['container'])->toBe(['instance_id' => $this->instance->id, 'project' => 'orbit-instances', 'name' => 'instance-'.$this->instance->id])
+        expect($operation->input['container'])->toBe(['instance_id' => $this->instance->id, 'project' => 'orbit-instances', 'name' => 'instance-'.$this->instance->id,
+            'app_account' => InstanceImage::appAccount()])
             ->and($operation->input['name'])->toBe(app(SystemdProcessRenderer::class)->unitName($this->process))
             ->and($this->process->refresh()->status)->toBe(LifecycleStatus::Removing);
     })->with(['removed definition', 'no definition']);
