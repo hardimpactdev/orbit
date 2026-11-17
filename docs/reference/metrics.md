@@ -134,6 +134,8 @@ The Node exporter enables its systemd collector for `orbit-node-worker.service`.
 
 ## Process runtime status
 
+For Horizon and the scheduler on a container Gateway, Process status reads the unit in the serving release. The probe checks the release revision, so a switch cannot attribute the former live unit to the new release.
+
 A Process list reads each Process's status from the Gateway's [view of the Node agents](/reference/node-agent#gateway-view) first. For a Process whose Node has no fresh view, it reads Prometheus in one query.
 
 In Prometheus, a systemd Process takes its state from `node_systemd_unit_state`. A missing unit is `inactive`. cAdvisor reports only running containers, so a Docker Process with a series is `running` and one without is `exited`. The Gateway caches this answer for 10 seconds.

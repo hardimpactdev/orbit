@@ -48,6 +48,8 @@ In disposable proof fleets, each batch installs the tested checkout's frozen pin
 
 ## What it observes
 
+On a Gateway with release containers, the host watch list omits the Horizon and scheduler units inside the live container. The [Process commands](/reference/processes-and-schedules#operate-a-process) inspect those units in their release.
+
 The agent watches two sources and reports each Orbit Process unit or container by its full name, such as `orbit-process-42-web`.
 
 | Source | What it watches | Reported `runtime_state` |
