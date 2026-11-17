@@ -15,9 +15,7 @@ const commandKeys = ["argv", "cmd", "command", "shell", "ansible.builtin.command
 const varKeys = ["vars", "set_fact", "ansible.builtin.set_fact"];
 
 /** Where the command runs, and why a path open of stdin is safe there. Keyed by file and task name. */
-const safe: Record<string, string> = {
-  "ansible/task-vm-host.yml: Give the base VM the Club key": "a virtual machine: the Incus agent makes the pipe inside the guest",
-};
+const safe: Record<string, string> = {};
 
 type Node = unknown;
 const isMap = (node: Node): node is Record<string, Node> => typeof node === "object" && node !== null && !Array.isArray(node);

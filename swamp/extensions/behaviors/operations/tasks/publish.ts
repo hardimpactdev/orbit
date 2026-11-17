@@ -1,10 +1,9 @@
 import { z } from "npm:zod@4.4.3";
 
 /*
- * Typed data for tasks.publish and the handoff push of tasks.check. The task
- * VM work is one official `@swamp/ssh exec` argv per step and the 209 work is
- * inline `git` and `gh api` in `command/shell`; this module only builds their
- * inputs and reads their outputs. It runs nothing and holds no token.
+ * Typed data for tasks.publish. Instance phases export the copy; inline `git`
+ * and `gh api` in `command/shell` publish it from the worker. This module only
+ * builds their inputs and reads their outputs. It runs nothing and holds no token.
  */
 
 const Id = z.number().int().positive();
@@ -90,31 +89,6 @@ export function pushed(item: Run) {
         ? "tasks.not_fast_forward"
         : "tasks.push_failed";
     return { pushed: false, error_code };
-}
-
-/** HEAD and the whole working tree must still equal the checked candidate. */
-export function verify(raw: unknown) {
-    const { input, steps } = z.object({
-        input: PublishInput,
-        steps: ObjectValue,
-    }).parse(raw);
-    const oid = (name: string) => {
-        const item = run(steps, name);
-        const value = (item.stdout ?? "").trim();
-        return item.exitCode === 0 && Sha.safeParse(value).success
-            ? value
-            : null;
-    };
-    const head = oid("snapshot-head"), tree = oid("snapshot-tree");
-    if (head === null || tree === null) {
-        return {
-            admitted: false,
-            error_code: "tasks.repository_execution_unknown",
-        };
-    }
-    return head === input.commit && tree === input.tree
-        ? { admitted: true, error_code: "" }
-        : { admitted: false, error_code: "tasks.head_moved" };
 }
 
 const PullRow = z.object({
@@ -292,7 +266,7 @@ export function pullPlan(raw: unknown) {
     const { input, steps, base } = z.object({
         input: PublishInput,
         steps: ObjectValue,
-        // The JSON statement of "Check the base", or "" for a task VM or a run before that step.
+        // The JSON statement of "Check the base", or "" before that step.
         base: z.string().optional(),
     }).parse(raw);
     const facts = base ? BaseFacts.parse(JSON.parse(base)) : null;

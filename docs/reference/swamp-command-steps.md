@@ -120,7 +120,7 @@ A result-reporting declaration may name one `fallback` step of the same job. Whe
 
 ### Read Swamp's run data instead of a result step
 
-Flow-tighten rule 14 removes the step that reports a result. A kind without one declares `terminal_result` with `native => true`; `job` and `step` name its real end check, for example `['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true]`. The same single history read then gives the family projector:
+The binding [result transport contract](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md#result-transport) distinguishes native results from Ansible result-file carriers. A kind using native results declares `terminal_result` with `native => true`; `job` and `step` name its real end check, for example `['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true]`. The same single history read then gives the family projector:
 
 - `steps`: every step by name and status, with `stdout` up to 4 KiB and `exit_code` for the first 256 entries.
 - `summary`: the run status, the step counts by status, and `failed_steps`.

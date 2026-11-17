@@ -1,7 +1,6 @@
 /.worktrees/
 /vendor/
 __pycache__/
-/.e2e/
 /.loop/
 # Checkouts from before Orbit dropped TIA still hold Pest graph directories. Ignoring them keeps those checkouts
 # clean for bin/review-check.

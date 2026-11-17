@@ -1,7 +1,7 @@
 order = 1040
 cases = [
   "restored fleets require checkout migration before every nested Gateway API check",
-  "the first fleet build and image snapshots follow migration",
+  "Gateway bootstrap follows migration",
   "batch restore calls the shared proof-fleet-restore workflow",
   "replay restore calls the shared proof-fleet-restore workflow",
   "systemd boot and every required state mount gate apply",
@@ -19,7 +19,4 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/ansible/task-vm-role.yml",
-  "swamp/ansible/tasks/task-vm-fleet-build.yml",
-  "swamp/ansible/tasks/task-vm-fleet.yml",
 ]

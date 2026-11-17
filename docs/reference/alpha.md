@@ -35,6 +35,8 @@ Generated files stay out of feature branches. See [Generated artifacts](/referen
 
 Composer installs run one project at a time because concurrent installs can corrupt their shared download cache. Composer still downloads packages concurrently within each install. CI uses `--dependencies-only` when it needs only the installed projects: this installs the [pre-push docs gate](/contributor-guide) but stops before writing the Gateway key. A source alpha trial needs the normal bootstrap instead.
 
+Repeat bootstrap runs reuse unchanged dependencies and generated outputs, but the normal bootstrap still runs every project's tests and quality checks. The [contributor guide](/contributor-guide) describes the input fingerprints and how to force a rebuild.
+
 ## Limits
 
 The trial has a small environment and workload on purpose.

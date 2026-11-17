@@ -30,4 +30,4 @@ Begin as an advisory self-check. Add a blocking gate only for rules validated ag
 
 Each rule needs a realistic failing fixture and nearby valid controls, including indirect assertions, exception-only tests, mock expectations, datasets, and architecture tests where relevant. Demonstrate that a valid behavior test becomes flagged when changed into the targeted bad pattern, and clears after repair. Test parser errors and unknown constructs so the tool cannot report a false clean result.
 
-Run the checker across all five PHP projects and manually review its findings before enabling it for implementers. Record false positives, known blind spots, and runtime. Evaluate whether repeated use improves findings before expanding the rule set. Keep non-PHP adapters and semantic duplication analysis as separate follow-ups.
+Run the checker across all four PHP projects and manually review its findings before enabling it for implementers. Record false positives, known blind spots, and runtime. Evaluate whether repeated use improves findings before expanding the rule set. Keep non-PHP adapters and semantic duplication analysis as separate follow-ups.

@@ -1,5 +1,5 @@
 {
-  "note": "Completed local baseline, pinned Ansible. ESTIMATE: ceil(local seconds x 2.1) + 1 per case; not hosted p90. All original test method ASTs preserved.",
+  "note": "Completed local baseline, pinned Ansible. ESTIMATE: ceil(local seconds x 2.1) + 1 per case; not hosted p90. Retained case timings are unchanged after removing the retired task VM assertion and renaming the copy sync assertion.",
   "files": {
     "swamp/tests/task_instance_workspace_test.py": {
       "case_seconds": {
@@ -27,13 +27,19 @@
         "test_exact_branch_export_and_corrupt_transfer_cleanup": 10.469
       }
     },
+    "swamp/tests/task_instance_check_dependencies_test.py": {
+      "case_seconds": {
+        "test_project_closures_keep_base_source_and_writes_private_between_commands": 13.599,
+        "test_ignored_linked_installations_are_present_and_writable_without_false_base_failures": 10.399,
+        "test_external_dependency_link_refuses_and_cleans_up_without_running_commands": 2.950
+      }
+    },
     "swamp/tests/task_instance_check_test.py": {
       "case_seconds": {
         "test_check_runs_in_the_guest_and_commits_the_exact_candidate": 10.987,
         "test_only_a_clean_recorded_candidate_makes_no_commit": 15.888,
         "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing": 5.22,
         "test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch": 1.676,
-        "test_task_vm_intents_keep_the_task_vm_steps": 0.198,
         "test_check_phases_need_their_check_and_candidate": 0.977
       }
     },
@@ -43,7 +49,7 @@
         "test_nothing_new_makes_no_bundle_and_a_merged_branch_is_not_behind": 15.906,
         "test_a_copy_whose_mirror_exists_syncs_without_the_default": 12.76,
         "test_only_the_base_child_reads_the_credential_and_the_shared_child_has_no_base": 0.553,
-        "test_the_copy_sync_workflow_calls_the_base_and_the_task_vm_workflow_has_no_copy_step": 1.143
+        "test_the_copy_sync_workflow_calls_the_base": 1.143
       }
     },
     "swamp/tests/task_instance_workspace_base_cleanup_test.py": {

@@ -15,13 +15,7 @@ covers:
 
 Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. The `vpn` Node serves the fleet. When no separate VPN Node serves the Gateway, the Gateway machine runs the shared listener itself. One listener owns each machine. Managed Linux Nodes route only Orbit names to it by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer. The active WireGuard manager projects VPN DNS behavior without creating local dnsmasq snippet files.
 
-[ADR 0248](/decisions/0248-render-private-dns-as-desired-state) replaces the plan of [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router), which proposed moving the Router LAN answers to a Cluster DNS on each Cluster Router and replaces the listener with plain dnsmasq. The proposal preserves the Cluster TLD and exact Cluster Route domains outside it, and forwards remaining names to VPN DNS. The approved behavior returns members automatically to healthy LAN DNS after VPN fallback. The recovery mechanism and member acceptance checks remain implementation gates. Until the DNS service and member steps are built, this page describes the listener.
-
-[ADR 0248](/decisions/0248-render-private-dns-as-desired-state) is in progress. It renders the whole private DNS from the Gateway database into one dnsmasq configuration, written by one Ansible phase, and deletes the listener, the catalog and the three-way merge. Nick chose option A on 2026-11-07; the chart is `docs/cli/dns/publish.mmd`.
-
-Build step 1 adds only the [Router LAN DNS firewall families](/cli/firewall#router-lan-member-rules), alongside HTTPS, with exact eligible-member IPv4 sources and Router LAN destination port 53 over UDP and TCP. It preserves this listener, current resolver selection, and Route answers; it does not install dnsmasq on Routers or switch members.
-
-Before later Cluster DNS enablement, the [firewall rollout](/cli/firewall#safe-dns-firewall-rollout) requires authorized narrowing of overlapping allowances, preservation of bridge-scoped Incus DNS, and authorized success plus unauthorized LAN denial over both transports. Disposable tests are not live acceptance. Exact outside-TLD Route NODATA, descendant forwarding, no-TLD behavior, bind-overlap refusal, and automatic member return remain later implementation gates, not claims made by the firewall step.
+[ADR 0248](/decisions/0248-render-private-dns-as-desired-state) is in progress. Its selected design renders the whole private DNS from the Gateway database into stock dnsmasq on the `vpn` Node. It removes the listener, the catalog, the three-way merge and caller-specific LAN answers. It has no Cluster DNS, member delegate or DNS fallback. Until that replacement is built, this page describes the delivered listener and resolver selection.
 
 Node and Route parents capture Gateway-rendered records and the requester catalog, then publish them through the shared `route-dns-publish` child in their native run. The Node footprint installs the listener before publication. Private DNS publication starts no separate Operation.
 
@@ -44,13 +38,13 @@ The Gateway starts each `fleet.peer_dns` intent directly in Swamp. Its native wo
 
 The run keeps the `PostUp` hook and writes the DNS marker; both steps change nothing when the files already match. One guarded command then sets the server, routing domains and `default-route no` on `orbit`, unless the live link already holds them.
 
-The run ends by resolving `gateway.orbit`, the private name the Gateway puts in the intent, which must answer through `orbit`, and `example.com`, which must not. A succeeded Operation records the applied server and domains. A policy change waits at most one minute plus queue and traversal time. Host drift with an unchanged policy is not detected by a schedule; doctor reports it, and a reconcile repairs it. Record changes do not block on fleet SSH.
+The run ends by resolving `gateway.orbit`, the private name the Gateway puts in the intent, which must answer through `orbit`, and `example.com`, which must not. A succeeded Operation records the applied server and domains. There is no automatic timing guarantee: policy changes wait for explicit `orbit:peer-dns-reconcile` admission and execution. Host drift with an unchanged policy needs [peer repair](#repair-one-peer); Doctor reports it. Record changes do not block on fleet SSH.
 
 Peer DNS reconciliation is serialized by the native behavior on each target Node. It holds no Gateway target lock. The agent uses a shared WireGuard peer lock for inspection and the existing exclusive peer lock for repair, including against native peer convergence.
 
 Private Route, Cluster TLD, and Node TLD writes validate names in a serialized database transaction. A change is refused only if the rendered count increases beyond 512 domains. Deletion or rollback that keeps or reduces an already oversized count is allowed. The renderer also refuses invalid stored names or more than 512 domains before peer mutation, never truncating or using `~.`. systemd 259 allows 1,024 domains per link. Orbit reserves half that capacity so a complete replacement can allocate new domains before resolved removes old ones.
 
-Doctor reports `node.private_dns_uplink_missing` when no usable non-Orbit DNS server is configured. Reconcile reports `vpn.peer_dns_uplink_missing` by Node name. Doctor reports `node.private_dns_policy_mismatch` for drift and `node.private_dns_unreachable` when a private DNS query fails or returns the wrong Gateway address. `node.public_dns_unreachable` reports a failed uncached public lookup or one sent over `orbit`. Global `resolved.conf` DNS servers are valid public resolvers. A failed read is unverifiable (`node.inspection_failed`), not policy drift. Namespace changes can report temporary mismatch until the next successful scheduled pass.
+Doctor reports `node.private_dns_uplink_missing` when no usable non-Orbit DNS server is configured. Reconcile reports `vpn.peer_dns_uplink_missing` by Node name. Doctor reports `node.private_dns_policy_mismatch` for drift and `node.private_dns_unreachable` when a private DNS query fails or returns the wrong Gateway address. `node.public_dns_unreachable` reports a failed uncached public lookup or one sent over `orbit`. Global `resolved.conf` DNS servers are valid public resolvers. A failed read is unverifiable (`node.inspection_failed`), not policy drift. After a namespace change, run `orbit:peer-dns-reconcile` on the Gateway and inspect the returned Operations.
 
 The policy leaves `/etc/resolv.conf` and uplink DNS in place. Route-only suffixes make the private link ineligible as a default DNS route. Apply sets the private link's live default-route flag to false. PostUp sets its DNS server and route-only domains; after tunnel restart, resolved infers `no` from those domains. WireGuard endpoint overrides stay separate. The global VPN DNS server must also be a usable WireGuard-subnet address for managed peers.
 
@@ -102,7 +96,7 @@ When a separate VPN resolver joins later, an owned Gateway switches resolver rou
 
 Two races can leave an untracked listener. First, a VPN role is added to a fleet without a separate VPN while a Gateway role converge is queued. Second, the Gateway role is removed while a Node converge that carries the listener is still queued: removal takes no operation lock and clears ownership, and the later install does not claim it again.
 
-Both races are out of scope. No current automated fleet flow does either. `node:add` can enrol the first VPN Node, but no flow does that while a Gateway converge waits. Local DNS exists only in fleets without a separate VPN assignment, such as the nested CI fleet. The worst case is an untracked listener on a disposable task-VM Gateway.
+Both races are out of scope. No current automated fleet flow does either. `node:add` can enrol the first VPN Node, but no flow does that while a Gateway converge waits. Local DNS exists only in fleets without a separate VPN assignment, such as the nested CI fleet. The worst case is an untracked listener on a disposable nested Gateway.
 
 Closing these races needs one exclusion across role add, role converge, Node converge, role removal and rekey, which would change production locking. Revisit them for the first real fleet without a VPN Node.
 
@@ -312,7 +306,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Split private DNS on peers
 
-Nick approved split private DNS on 2026-10-19. Public names must not depend on the VPN Node. The Gateway owns the private namespace, so it renders and reconciles the routing domains from its records. One renderer serves provision, repair, scheduled reconciliation, and Doctor. The scheduled pass keeps fleet SSH out of record mutations. It retries unreachable peers independently.
+Public names must not depend on the VPN Node. The Gateway owns the private namespace, so it renders the routing domains from its records. One renderer serves provision, repair, explicit reconciliation and Doctor. Explicit reconciliation keeps fleet SSH out of record mutations; a failed or busy peer needs another invocation.
 
 The former `~.` default is rejected because a VPN DNS outage also breaks public lookups. A VPN-first, public-second fallback chain is rejected because systemd-resolved stays on the second server after failover, where private names remain broken. Static hosts are rejected because Routes and Router placement change and TLDs need DNS. The cost of split DNS is propagating private namespace changes and respecting the 512-domain bound.
 

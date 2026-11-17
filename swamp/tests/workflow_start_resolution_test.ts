@@ -5,7 +5,7 @@
  * resolves every such expression of a workflow against the inputs the Gateway really starts it with, from the fixture that the Pest
  * tests keep equal to the Gateway's own builders (tests/Support/WorkflowStartIntents.php in the Gateway).
  */
-import { assertEquals, assertNotEquals } from "jsr:@std/assert@1.0.19";
+import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { environment, secretRefusal } from "./_support/swamp_workflow.ts";
 
@@ -89,10 +89,6 @@ function unresolved(workflow: string, inputs: Inputs, caller = "", followed: str
   return failed;
 }
 
-Deno.test("a task VM sync starts: every expression of operation-task-sync resolves against its intent", () => {
-  assertEquals(unresolved("workflow-operation-task-sync.yaml", intents.sync_vm), []);
-});
-
 Deno.test("a copy sync starts: every expression of operation-task-sync-copy resolves against its intent", () => {
   assertEquals(unresolved("workflow-operation-task-sync-copy.yaml", intents.sync_copy), []);
 });
@@ -106,14 +102,7 @@ Deno.test("a proof run in a copy starts: every expression of operation-proof-run
   }
 });
 
-Deno.test("the task VM sync workflow could not start for a copy, so the Gateway never starts it for one", () => {
-  const failed = unresolved("workflow-operation-task-sync.yaml", intents.sync_copy);
-  assertNotEquals(failed, []);
-  assertEquals(failed.every((line) => line.includes("checkout_path")), true, failed.join("\n"));
-});
-
-Deno.test("a publish starts for a task VM and for a copy: every expression of operation-task-publish resolves", () => {
-  assertEquals(unresolved("workflow-operation-task-publish.yaml", intents.publish_vm), []);
+Deno.test("a publish starts for a copy: every expression of operation-task-publish resolves", () => {
   assertEquals(unresolved("workflow-operation-task-publish.yaml", intents.publish_copy), []);
 });
 
@@ -163,6 +152,4 @@ Deno.test("the child workflows that a run starts resolve against the inputs thei
   assertEquals(followed("workflow-operation-task-publish.yaml", intents.publish_copy).filter((line) => line.includes("task-instance-workspace")),
     ["Preflight the copy -> task-instance-workspace", "Export the copy -> task-instance-workspace", "Check the copy -> task-instance-workspace",
       "Discard the copy scratch -> task-instance-workspace"]);
-  // A task VM's publish skips the copy's steps, so it starts no workspace child.
-  assertEquals(followed("workflow-operation-task-publish.yaml", intents.publish_vm).filter((line) => line.includes("task-instance-workspace")), []);
 });

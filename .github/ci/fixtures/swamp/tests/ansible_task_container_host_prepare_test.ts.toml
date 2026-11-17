@@ -1,13 +1,13 @@
 order = 480
 cases = [
-  "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing",
+  "a container host gets its kernel side, bridge, project and clone check, then changes nothing",
   "the container bridge gets DHCP and DNS input rules under its own catalog names",
   "a small host caps the ARC at 1 GiB",
   "a host without Incus installs the recipe's pinned packages, fetched by digest",
   "a container host is refused before its container side changes: another Incus line, SCTP, subordinate IDs, a taken bridge",
   "a copy that Incus shifted fails the phase and leaves no probe",
   "a prior clone probe refuses with its exact name and recipe instead of being deleted",
-  "a container host on a native pool gets the ARC cap now and after reboot, and keeps it when containers go",
+  "a container host on a native pool gets the ARC cap now and after reboot, and changes nothing on a repeat",
   "the container rule never raises a cap the host already runs",
   "an Incus package removed with its config files left counts as missing and is installed",
   "fresh stock publication is independent and a healthy repeat retains all caches without changes",
@@ -56,22 +56,20 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/ansible/task-vm-host.yml",
   "swamp/ansible/tasks/artifact-fetch.yml",
   "swamp/ansible/tasks/task-container-*.yml",
-  "swamp/ansible/tasks/task-vm-host-prepare.yml",
   "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
 
 [case_costs]
-  "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing" = 79 # completed body 77.221s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 26.0s gives 56s estimate
+  "a container host gets its kernel side, bridge, project and clone check, then changes nothing" = 79 # completed body 77.221s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 26.0s gives 56s estimate
   "the container bridge gets DHCP and DNS input rules under its own catalog names" = 47 # completed body 45.777s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 14.0s gives 31s estimate
   "a small host caps the ARC at 1 GiB" = 48 # completed body 46.428s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 14.0s gives 31s estimate
   "a host without Incus installs the recipe's pinned packages, fetched by digest" = 52 # completed body 50.154s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 15.0s gives 33s estimate
   "a container host is refused before its container side changes: another Incus line, SCTP, subordinate IDs, a taken bridge" = 58 # completed body 56.209s, run 43011901748; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 16.0s gives 35s estimate
   "a copy that Incus shifted fails the phase and leaves no probe" = 50 # completed body 48.946s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 16.0s gives 35s estimate
   "a prior clone probe refuses with its exact name and recipe instead of being deleted" = 37 # ESTIMATE: ede21ef9 Beast 17.0s * 2.1, rounded up + 1s
-  "a container host on a native pool gets the ARC cap now and after reboot, and keeps it when containers go" = 104 # completed body 102.375s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 37.0s gives 79s estimate
+  "a container host on a native pool gets the ARC cap now and after reboot, and changes nothing on a repeat" = 104 # completed body 102.375s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 37.0s gives 79s estimate
   "the container rule never raises a cap the host already runs" = 67 # ESTIMATE: ede21ef9 Beast 31.0s * 2.1, rounded up + 1s
   "an Incus package removed with its config files left counts as missing and is installed" = 48 # completed body 46.508s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 16.0s gives 35s estimate
   "fresh stock publication is independent and a healthy repeat retains all caches without changes" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s

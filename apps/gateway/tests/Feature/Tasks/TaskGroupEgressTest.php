@@ -121,8 +121,7 @@ it('sends no egress bridge in the watch list, also to a Node whose settings stil
     $host->update(['settings' => ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2, 'network' => 'orbittaskb',
         'containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1]]]]);
 
-    expect(app(AgentWatchListAction::class)->execute($host->refresh()))->toHaveKey('egress')
-        ->and(app(AgentWatchListAction::class)->execute($host)['egress'])->toBeNull();
+    expect(app(AgentWatchListAction::class)->execute($host->refresh()))->not->toHaveKey('egress');
 });
 
 it('lists a name without a port only until the VM connected to it', function (): void {

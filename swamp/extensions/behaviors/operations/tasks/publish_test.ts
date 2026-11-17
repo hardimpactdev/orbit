@@ -10,7 +10,6 @@ import {
     PublishInput,
     pullPlan,
     pushed,
-    verify,
     withBase,
     withWaivers,
 } from "./publish.ts";
@@ -64,25 +63,6 @@ function steps(withPr = true): Record<string, unknown> {
             : {}),
     };
 }
-Deno.test("a moved HEAD or working tree is refused before export", () => {
-    const input = publishInput();
-    assertEquals(verify({ input, steps: steps() }), {
-        admitted: true,
-        error_code: "",
-    });
-    assertEquals(
-        verify({
-            input,
-            steps: { ...steps(), "snapshot-tree": out(0, "f".repeat(40)) },
-        }),
-        { admitted: false, error_code: "tasks.head_moved" },
-    );
-    assertEquals(
-        verify({ input, steps: { ...steps(), "snapshot-head": out(128) } })
-            .admitted,
-        false,
-    );
-});
 Deno.test("the imported bundle must hold exactly the admitted commit and tree", () => {
     const input = publishInput();
     assertEquals(

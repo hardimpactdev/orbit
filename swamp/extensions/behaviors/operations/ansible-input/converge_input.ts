@@ -12,7 +12,7 @@ export function unsafeYaml(value: unknown, depth = 0): string {
     return "\n" + entries.map(([key, item]) => `${pad}${key === null ? "-" : JSON.stringify(key) + ":"} ${unsafeYaml(item, depth + 1)}`).join("\n");
 }
 
-/** The launcher of the recipe's pinned Deno on the Swamp Node (ansible/tasks/task-vm-deno.yml). It runs the Tool helper: this code runs in the
+/** The launcher of the recipe's pinned Deno on the Swamp Node (ansible/tasks/node-converge-deno.yml). It runs the Tool helper: this code runs in the
  * compiled Swamp binary, so `Deno.execPath()` names Swamp, which cannot run a script. */
 export const toolRuntime = "/usr/local/bin/deno";
 

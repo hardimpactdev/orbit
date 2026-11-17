@@ -3,18 +3,8 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1";
 import { browserTrust, fixture as rawFixture, hasAnsible } from "./_support/instance_host.ts";
 
-import { capture, restore, stages, type Boundary, type Stage } from "./_support/host_image_boundary.ts";
-// Store only changed entries between boundaries; restore still creates each test's complete independent filesystem.
-const saved = JSON.parse(Deno.readTextFileSync(new URL("fixtures/host-image-boundaries.json", import.meta.url)));
-const boundaries: Record<string, Boundary> = {};
-for (const [name, row] of Object.entries(saved) as [string, { from: string | null; entries: Record<string, Boundary["entries"][string] & { append?: string } | null> }][]) {
-    const entries = { ...(row.from ? boundaries[row.from].entries : {}) };
-    for (const [path, entry] of Object.entries(row.entries)) {
-        if (entry === null) delete entries[path];
-        else entries[path] = entry.append !== undefined ? { mode: entry.mode, text: entries[path].text! + entry.append } : entry;
-    }
-    boundaries[name] = { entries };
-}
+import { capture, readBoundaries, restore, stages, type Stage } from "./_support/host_image_boundary.ts";
+const boundaries = readBoundaries();
 type Kind = "dir" | "zfs" | "nested";
 const options = (kind: Kind) => ({ pool: kind === "zfs" ? "zfs" : "dir", nested: kind === "nested" });
 async function fixture(opts: Parameters<typeof rawFixture>[0] = {}, boundary = "prepare", phases: Stage[] = ["normal", "nested", "finish"]) {

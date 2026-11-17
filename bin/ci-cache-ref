@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 
-PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
+PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'packages/php-sdk')
 # Each tool's configuration file and the cache that `composer check` writes.
 QUALITY = {
     'pint': ('pint.json', 'vendor/pint.cache'),

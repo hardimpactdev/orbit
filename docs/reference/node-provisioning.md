@@ -4,11 +4,11 @@ description: "How node:add bootstraps or converges a Node, how roles share and l
 covers:
   - swamp/{ansible/**,extensions/behaviors/operations/ansible-input/**,manifest.yaml,extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local}.ts,node-enrollment-plan/**,node-removal-command/**},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-relocate,node-role-remove,node-caddy-package,node-private-dns,node-cli-install,fleet-release-node}.yaml}
   - apps/gateway/app/{Domain/Nodes/{NodeNetworkReservation,NodeRemovalInput,NativeNodeRoleRemovalInput,NativeNodeRoleRelocateInput,NodeRoleRelocateInput,NodeRoleRelocateProjection,NativeNodeEnrollmentInput,NativeNodeEnrollmentProjection,NodeEnrollmentPolicy,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction,AdmitNodeEnrollmentOperationAction}.php}}
-  - apps/gateway/app/Infrastructure/{WireGuard/NativeGatewayPeerProjectionManager.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
+  - apps/gateway/app/Infrastructure/{WireGuard/NativeGatewayPeerProjectionManager.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapPackageCatalog,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/{Console/Commands/{ProvisionNodeCommand,BootstrapPlanCommand,BootstrapControlPlanCommand,RoleAddCommand,NodeAddCommand,NodeConvergeCommand},Domain/Gateway/{GatewayBootstrapPlan,GatewayControlPlan}}.php
   - apps/gateway/{database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_08_000000_add_node_untouched_to_node_roles_table,2027_03_01_000000_add_ci_hold_digest_to_nodes,2027_03_01_000001_add_ci_nested_hosting_to_nodes,2027_03_04_000000_add_converge_digests_to_nodes}.php,app/{Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php,Models/NodeRole.php}}
   - apps/gateway/app/Infrastructure/{Swamp/SwampSshExecutionInput,Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
-  - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/CliConverge*.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php,Actions/Nodes/StartNodePhpPackagesAction.php,Domain/Nodes/NodePhpPackages*.php,Domain/Nodes/operation-kinds.php}
+  - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/CliConverge*.php,Infrastructure/Fleet/Footprint/**,Http/Controllers/Api/NodeFootprintsController.php}
   - apps/agent/src/commands/{ci_runner.rs,recipe.rs,recipe/**,php_build.rs,php_build/**}
 ---
 
@@ -147,7 +147,7 @@ The enrollment workflow records the verified bootstrap host key for the WireGuar
 
 `node.bootstrap` creates a missing managed account, adds its SSH key, and validates passwordless sudo before publishing the rule. It preserves existing home and directory modes and refuses linked access paths.
 
-A [task VM copies its base snapshot](/reference/compute-drivers#claims-copy-the-base-snapshot) for the `app-dev` software. Its [common converge](/reference/compute-drivers#converge-a-running-task-vm) prepares the SSH user's Incus client config before parallel fleet work. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
+Node enrollment runs the software phases for every Node. Task copies instead clone a Project's default Instance; no task VM base or role playbook supplies their software ([task copies](/reference/development-containers#lifecycle)).
 
 The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. The gateway role convergence installs the [host log-retention rules](/reference/gateway-recovery#disk-retention), the Gateway PHP-FPM pool and the agent-view and hibernator units, and retires the release unit's timer and the Documents PHP-FPM start hook. Releases leave them unchanged.
 
@@ -731,33 +731,13 @@ Inspect the original Operation and native run before admitting another attempt. 
 
 ## Task VM role phases
 
-A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The base snapshot refresh of an Incus host and every [`task:start`](/cli/task/start) run it as the common converge ([compute drivers](/reference/compute-drivers#converge-a-running-task-vm)), so a base and a started VM end in the same state. The refresh runs it on the base VM that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only.
+The uncalled `swamp/ansible/task-vm-role.yml` and `task-vm-host.yml` graph is removed, including the boot, base build, software, fleet build and cleanup tasks used only by it. Normal Node convergence keeps its shared software helpers under `node-converge-apt.yml`, `node-converge-apt-config.yml`, `node-converge-javascript.yml` and `node-converge-deno.yml`.
 
-The wait for a nested fleet is not a phase of the role: it is the task file `swamp/ansible/tasks/task-vm-nested-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code. The playbook `task-vm-fleet-wait.yml` runs it from Node 209 for the readiness of a fleet, and the `fleet` phase imports it for the waits of its [fleet build](/reference/compute-drivers#build-the-nested-fleet-in-the-converge).
+The chain that replays proof on the merge base is separate and stays until replay is ported ([old paths](/reference/old-paths#the-unreachable-swamp-vm-paths)). It still uses `swamp/ansible/task-vm-fleet-wait.yml` and `tasks/task-vm-nested-wait.yml`. The latter stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code.
 
-The nested guests are Incus system containers. The role serves them nothing: each gets the checkout of its task as an Incus disk device, and a restore of `base` is a plain restore and a reboot (see [compute drivers](/reference/compute-drivers)).
-
-A nested fleet inside an Instance container is kept by its own task files, `swamp/ansible/tasks/instance-fleet-*.yml`, not by this role. Orbit calls them when it deploys the default of such a Project, through the `fleet_*` tags of `instance-container.yml`. A failed fleet phase writes its failed task and message into the run's result file. [The fleet step](/reference/development-containers#the-fleet-step) describes them. Their reads right after a start wait, within a bound, for a ready value, such as a real WireGuard key in place of `(none)`. A migrate registers the container's T3 server through the `register` tag of `instance-container.yml`; [T3 registration](/reference/development-containers#t3-registration-and-pairing) has the steps.
+A nested fleet inside an Instance container is kept by its own task files, `swamp/ansible/tasks/instance-fleet-*.yml`. Orbit calls them when it deploys the default of such a Project, through the `fleet_*` tags of `instance-container.yml`. A failed fleet phase writes its failed task and message into the run's result file. [The fleet step](/reference/development-containers#the-fleet-step) describes them. Their reads right after a start wait, within a bound, for a ready value, such as a real WireGuard key in place of `(none)`. A migrate registers the container's T3 server through the `register` tag of `instance-container.yml`; [T3 registration](/reference/development-containers#t3-registration-and-pairing) has the steps.
 
 The fleet phase reconciles the checkout’s scoped Swamp grants before candidate operations. It uses the existing serve-driver credential; token renewal is separate. [Fleet apply](/reference/compute-drivers#apply-and-check-the-nested-fleet) also reconciles grants after restore.
-
-Before starting a base VM, the host playbook converges its [firmware boot setting](/reference/compute-drivers#incus-provider). Task copies inherit it from the base snapshot, so the OVMF menu adds no delay.
-
-A host without a recorded base snapshot first discards any unpromoted base VM and seed and builds from stock. This also removes the cached cloud-init state of a failed first boot, whose one-shot package installation does not run again on a restart. Recorded bases are preserved unless the refresh requests `--from-stock`.
-
-On a base snapshot refresh or a task start the role first waits until SSH answers and cloud-init has finished. Both callers share the [SSH readiness budget](/reference/compute-drivers#refresh-the-base-snapshot); a task start reaches the VM over WireGuard. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that a template build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
-
-The role reads the package indexes of the Ubuntu snapshot with the `apt` module's own retry (`update_cache_retries`: twelve attempts, backing off to 30 seconds, about four minutes). It installs packages with the task keywords `retries`, `until` and `delay`: four retries, 30 seconds apart. The retries also apply to a permanent failure such as a missing pin, which then fails after two more minutes. The snapshot service answers 503 now and then, for an index and for a package. Rule 6 of the Swamp shape allows this tool-native retry and no shell loop.
-
-The playbook reads the pins of `recipe.json` from the intent and names none. The `software` phase adds `python3-venv` and `jq` from the same Ubuntu snapshot: the shape gate linters need the first, and its Swamp load test needs the second. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
-
-The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a directory storage pool and the default profile's root disk, so a VM made from the image can launch nested containers. A task VM that names a nested subnet also gets the nested bridge, with the first address of the subnet and NAT on. It reads the pools and networks first and applies a preseed only for what is missing, so a repeat changes nothing.
-
-### The topology seed pool
-
-A base VM makes the pool `topology-seed` (btrfs) once, on its blank seed disk. Its Incus database keeps the pool, and a task VM copied from the base has it from the database it copied. The phase refuses a seed disk with a file system that the Incus of the VM does not know: it imports no seed. The `fleet` phase builds the nested fleet on that pool ([compute drivers](/reference/compute-drivers#build-the-nested-fleet-in-the-converge)).
-
-A task VM with a nested subnet also opens its firewall to the nested bridge (`tasks/task-vm-nested-firewall.yml`): DHCP and DNS in, and routing out, so the nested containers get an address and reach the internet. Nothing else is opened.
 
 ## Gateway bootstrap prerequisites
 

@@ -13,7 +13,7 @@ covers:
 
 # Task Instance workspace phases
 
-This internal child workflow supplies workspace evidence and branch export for later container task flows. It provides no checkout restoration. The [check phases](#check-phases) run `tasks.check` for a group that owns a container Instance workspace. [`task:start`](/cli/task/start#a-task-copy) creates that ownership for a [task copy](/reference/tasks#task-copy). Nothing here changes runtime selection, Instance lifecycle or task VM behavior. [Task commands](/reference/tasks) keep their existing workspace path until their container admission is implemented.
+This internal child workflow supplies workspace evidence and branch export for task copies. It provides no checkout restoration. The [check phases](#check-phases) run `tasks.check` for a group that owns a container Instance workspace. [`task:start`](/cli/task/start#a-task-copy) creates that ownership for a [task copy](/reference/tasks#task-copy). Task check, publish and sync require that copy; there is no VM alternative. These phases own neither runtime selection nor the Instance lifecycle. [Task commands](/reference/tasks) own admission and cleanup.
 
 [Internal phase chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/instance-workspace.mmd).
 
@@ -63,9 +63,9 @@ The copy's Instance id names its Node scratch, `/var/tmp/orbit-task-base-<instan
 
 Before it records a check row, it refuses a handoff whose Project requires hosted CI (`tasks.instance_hosted_check_unavailable`). The hosted push from the Node arrives with publication. There is no task VM fallback.
 
-A baseline in a container workspace runs no setup steps: its intent holds an empty `setup` list. The container is a copy of the Project default, whose seed already ran them, as for every [clone](/reference/development-containers#lifecycle). The baseline runs the Project check alone; a Project without one passes on the snapshot. A task copy [starts clean](/reference/development-containers#a-task-copy-starts-clean), so its baseline snapshot is the start commit plus ignored files. A task VM baseline keeps every setup step.
+A baseline in a container workspace runs no setup steps: its intent holds an empty `setup` list. The container is a copy of the Project default, whose seed already ran them, as for every [clone](/reference/development-containers#lifecycle). The baseline runs the Project check alone; a Project without one passes on the snapshot. A task copy [starts clean](/reference/development-containers#a-task-copy-starts-clean), so its baseline snapshot is the start commit plus ignored files.
 
-The intent is the task VM check intent with two differences: `checkout_path` is `/srv/workspace`, and `workspace` holds the recorded Incus project and container, the Instance branch and a new scratch ID. The SSH target is the Instance Node. The parent workflow runs `Check in the Instance` and skips the task VM steps.
+The intent sets `checkout_path` to `/srv/workspace`, and `workspace` holds the recorded Incus project and container, the Instance branch and a new scratch ID. The SSH target is the Instance Node. The parent workflow always runs `Check in the Instance`.
 
 The child runs up to four Ansible phases through this playbook. Each runs as `agent` in the container with closed stdin. The phases check the checkout root and branch, but need no expected head. A handoff check first brings in the default branch through `task-copy-base`, as a sync does, then runs `base-merge` ([The handoff check merges main first](/reference/tasks#the-handoff-check-merges-main-first)).
 
@@ -76,17 +76,21 @@ The child runs up to four Ansible phases through this playbook. Each runs as `ag
 | `commit` | Stages everything and commits as Orbit with hooks off, unless `HEAD` is a clean recorded candidate. Reads back `HEAD`, its tree and a new commit's parent |
 | `commit-ref` | Records the accepted candidate under `refs/orbit/check-operations/{operation}` |
 
-Commands run as `env -C <directory> … /bin/bash -lc <command>` with the task check variables, `HOME=/home/agent` and the agent's login shell. They use the dependencies installed in the container. A start-commit run extracts the base commit into guest scratch, copies the installed `vendor` and `node_modules` directories and the declared test paths, then runs the command. Commands get no credentials. The admitted `checkout_path` is never a Node path: a Node directory with the same path is never read or run.
+Commands run as `env -C <directory> … /bin/bash -lc <command>` with the task check variables, `HOME=/home/agent` and the agent's login shell. They use the dependencies installed in the container. The Project check, base runs and deliverables remain serial. Commands get no credentials. The admitted `checkout_path` is never a Node path: a Node directory with the same path is never read or run.
+
+The first runnable start-commit command extracts the base tree once into guest scratch. Each command gets a private copy of that extraction, with `vendor` and `node_modules` from its directory and ancestors, and the same dependency directories of local packages reached through installed symlinks. Linked installation payloads are copied too when they are inside the checkout and ignored by Git, including their transitive links. Unrelated projects' dependency trees are not copied. Tracked local package source stays at the base version; only the command's declared test paths overlay it.
+
+Absolute dependency links inside the checkout are redirected into the private tree; a dependency link outside the checkout refuses the phase rather than exposing shared writable files. Copies use `cp --reflink=auto`, never hard links, so writes cannot change the candidate, the shared extraction or another command's replay. A filesystem without reflinks uses ordinary copies. Each command's private tree is removed after its base run; the shared extraction is removed with check scratch on success or failure.
 
 Snapshots use the temporary index described above, so a staged, force-added ignored file is in the checked tree. The commit stages the same work, so its tree matches the snapshot.
 
 Every check makes a fresh Orbit commit on the checked `HEAD`, with the checked tree as its tree, also an empty one when the implementer committed the work. Its message is the Gateway's cleaned handoff message, so a candidate never carries a skip directive from the implementer's message.
 
-The one exception is a clean tree whose `HEAD` an earlier check recorded under `refs/orbit/check-operations/`, such as a published head that is checked again. That check makes no commit: its candidate is that `HEAD`. Another empty commit would be work that origin lacks, and it would make a [cancel](/reference/development-containers#workspace-work-state) refuse the copy. A task VM check always commits.
+The one exception is a clean tree whose `HEAD` an earlier check recorded under `refs/orbit/check-operations/`, such as a published head that is checked again. That check makes no commit: its candidate is that `HEAD`. Another empty commit would be work that origin lacks, and it would make a [cancel](/reference/development-containers#workspace-work-state) refuse the copy.
 
 Each command writes its output to a guest file. Ansible copies the output folder to the Node and fetches it into the private worker run folder; the guest and Node copies are removed on success and failure. The typed result holds only exit codes and Git evidence, within the 512 KiB result bound; a larger diff fails the phase.
 
-The existing task check rules then read, redact and delete the output files, judge deliverables, check the candidate commit and shape the receipt. A phase failure returns its workspace error code as the check's error code. The parent captures the receipt from `Check in the Instance`; the Gateway records it as it records a task VM check. The `candidate` step receives the commit read as a map, closed with `} }`: Swamp ends an expression at the first `}}`.
+The task check rules then read, redact and delete the output files, judge deliverables, check the candidate commit and shape the receipt. A phase failure returns its workspace error code as the check's error code. The parent captures the receipt from `Check in the Instance`; the Gateway records it through its terminal projection. The `candidate` step receives the commit read as a map, closed with `} }`: Swamp ends an expression at the first `}}`.
 
 ## Verification
 

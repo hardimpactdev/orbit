@@ -160,7 +160,7 @@ function cancelSocket(array $reply): WebSocketClient
 }
 
 it('asks Swamp to cancel the run with a workflow.cancel request on the run token', function (): void {
-    $socket = cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-sync', 'status' => 'cancellation_requested']]]);
+    $socket = cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-sync-copy', 'status' => 'cancellation_requested']]]);
     $operation = runningScript();
 
     app(CancelSwampRun::class)->execute($operation);
@@ -173,7 +173,7 @@ it('asks Swamp to cancel the run with a workflow.cancel request on the run token
 });
 
 it('accepts a cancel that already settled the run', function (): void {
-    cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-sync', 'status' => 'cancelled']]]);
+    cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-sync-copy', 'status' => 'cancelled']]]);
 
     app(CancelSwampRun::class)->execute(runningScript());
 
@@ -228,7 +228,7 @@ afterEach(fn () => app(SwampConnection::class)->release());
 /** One Swamp connection that answers a history read with the run the test names and a cancel with the frame it names. */
 function reconcileSocket(?Operation $operation, string $status, string $cancel = 'cancellation_requested', ?Closure $onCancel = null): WebSocketClient
 {
-    $history = $operation === null ? [] : ['id' => RUN, 'workflowName' => 'operation-task-sync', 'status' => $status,
+    $history = $operation === null ? [] : ['id' => RUN, 'workflowName' => 'operation-task-sync-copy', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.sync'],
         'startedAt' => now()->subMinutes(3)->toIso8601ZuluString('millisecond'), 'completedAt' => now()->toIso8601ZuluString('millisecond'), 'jobs' => []];
     $socket = new class($history, $cancel, $onCancel) implements WebSocketClient
@@ -409,7 +409,7 @@ it('does not record a confirmation for a request that was recorded again while S
 it('forwards a cancellation recorded before native start confirmation once the run binds', function (): void {
     Queue::fake();
     $operation = runningScript(run: null, minutes: 0);
-    $operation->update(['state' => ['swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-task-sync']], 'attempts' => 0]);
+    $operation->update(['state' => ['swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-task-sync-copy']], 'attempts' => 0]);
     app(CancelOperationAction::class)->execute($operation);
     $operation->update(['state' => [...$operation->state, 'swamp_run_id' => RUN]]);
     $socket = reconcileSocket($operation, 'running');

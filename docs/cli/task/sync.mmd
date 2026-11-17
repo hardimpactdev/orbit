@@ -1,6 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 2 and stage 4 of the command development pipeline (docs/reference/pipeline/2-development-environment.mmd, 4-pr-and-ci.mmd). A task VM holds no GitHub credential, so the workspace cannot fetch. The author needs the branch of the pull request and main when either moved on origin (a merge of main into the branch, a correction pushed by the owner), to merge or rebase before the push. Decided by the orchestrator, for Nick's review.
-  %% Task copy (2026-11-14): the same kind brings the Project's default branch into a task copy through the copy's Node mirror and one incremental bundle; no credential enters the copy and the branch is never merged or rebased. The Gateway starts one of two workflows: `operation-task-sync-copy` for an intent with `copy`, `operation-task-sync` for a task VM. Swamp resolves every step input of a run when it starts, also of a step a guard will skip, so each workflow reads only the keys its own intent has (live: Operation 22250 never started). Task VMs get no new work. docs/reference/tasks.md#bring-main-into-a-copy.
+  %% Target design: docs/reference/tasks.md#bring-main-into-a-copy. Fetch the default branch through the copy's Node mirror and an incremental bundle. No credential enters the copy; sync never merges or rebases its branch.
   %% status: draft
   %% command: task:sync
   %% kind: tasks.sync
@@ -13,7 +12,7 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as Task VM, Node<br/>reached over ssh
+  participant N as Instance Node<br/>reached over ssh
   participant GH as GitHub<br/>origin
   CLI->>GW: task:sync 42<br/>refresh the refs
   %%> Command:
@@ -26,7 +25,7 @@ sequenceDiagram
   %%> - a task copy's container runs, else `tasks.instance_not_running`, and no copy turn of the group is unended, else `tasks.copy_turn_unended`
   %%> - no other task runs on group 42, so no check or publish; the Gateway holds one lock per group
   %%> What it does:
-  %%> - captures the repository, the default branch, the branch `task-42`, the workspace path and the SSH target of the VM
+  %%> - captures the repository, the default branch, the branch `task-42`, the workspace path and the SSH target of the copy's Node
   %%> - for a task copy, adds `copy`: its Node's SSH target, its container, its start commit and its Node mirror
   %%> - names the vault key of the read credential
   %%> Decided by the orchestrator, for Nick's review:
@@ -35,10 +34,7 @@ sequenceDiagram
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Next:
   %%> - the CLI follows the Operation with `operation:show`
-  alt a task copy
     GW->>SW: Start the copy's run<br/>operation-task-sync-copy
-    %%> Why its own workflow:
-    %%> - Swamp resolves every step's inputs when the run starts, also of a step that a guard skips; the task VM steps read `checkout_path`, which a copy intent has not, so one shared workflow could not start for a copy
     %%> Inputs:
     %%> - the copy intent and the vault key name of the read token, never the token; every expression of the workflow reads only its keys
     SW->>N: Bring in the base<br/>task-copy-base · base
@@ -64,49 +60,15 @@ sequenceDiagram
     %%> - the bundles on the Node and in the copy go when the base ends, here after the run, at the next sync of the copy, or at the copy's destroy, whichever comes first; no credential is ever written, so none is left to remove
     %%> Test:
     %%> - a failed fetch, a cancel during the fetch and a cancel after the push leave no credential anywhere and no bundle in the copy once this step or the next base ran
-  else a task VM
-    GW->>SW: Start one run, full intent<br/>operation-task-sync
-    %%> Inputs:
-    %%> - the whole intent above and the vault key name of the read credential, never the credential
-    %%> - no step of the run calls the Gateway
-    SW->>GH: Clone the refs<br/>git clone --bare · fetch
-    %%> What it does:
-    %%> - on Node 209, in a scratch directory of the run: a bare clone of the default branch and a fetch of `task-42`, with the token, read from its vault key, as an extra header of the commands and nowhere else
-    SW->>SW: Bundle the refs<br/>git bundle create
-    %%> What it does:
-    %%> - one bundle of the default branch and `task-42`
-    %%> - the clone and the bundle run as the behaviors `task-sync-clone-42` and `task-sync-bundle-42`, up to 180 s and 60 s, so a sync of another group never waits for their lock
-    SW->>N: Prepare the VM directory<br/>mkdir -m 0700
-    %%> What it does:
-    %%> - a private directory of the run on the VM
-    SW->>N: Copy the bundle<br/>official SSH copy
-    %%> What it does:
-    %%> - copies the bundle into that directory; no token and no script reaches the VM
-    SW->>N: Fetch the refs<br/>git fetch · bundle
-    %%> What it does:
-    %%> - `git fetch` of the bundle into `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-42` of the workspace
-    %%> Result:
-    %%> - HEAD, the working tree and the local branches are not touched; the author merges or rebases itself, as the review of the stage asks
-    SW->>N: Read the refs<br/>git rev-parse
-    %%> What it does:
-    %%> - reads the two commits the fetch stored
-    SW->>SW: Clean up the scratch<br/>rm -rf
-    %%> When:
-    %%> - always, on success and failure: the scratch directory of the run on Node 209
-    SW->>N: Clean up the VM directory<br/>rm -rf
-    %%> When:
-    %%> - always, after the scratch: the run's directory on the VM
-  end
   Note over SW: Confirm the sync
   %%> What it does:
-  %%> - native assert, the last step of either workflow: for a task VM, the read and both clean ups succeeded; for a task copy, the base and its discard succeeded
+  %%> - native assert: the base and its discard succeeded
   alt synced
     SW-->>GW: Run succeeded<br/>terminal event · commits
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
     Note over GW: Record the result<br/>refs · behind_by
     %%> Result:
-    %%> - a task VM: the commit of the default branch and the commit of `task-42`
     %%> - a task copy: `default_branch`, `default_commit`, `branch`, `branch_commit`, `behind_by`, `start` and `work`
   else a step failed
     SW--xGW: Run failed<br/>error_code · failed step
