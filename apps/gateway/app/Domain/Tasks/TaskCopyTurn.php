@@ -37,13 +37,24 @@ final readonly class TaskCopyTurn
     public const string AskRule = 'To ask a question, use your question tool. Asking ends this turn; the answer comes as the next turn.';
 
     /**
+     * What a reviewer in a copy judges, whatever its provider (docs/reference/tasks.md#the-reviewer-rule): the task's scope, every finding
+     * inside it, nothing outside it. Its approval leads into PrTextRule, which follows it.
+     */
+    public const string ReviewRule = 'Judge only the task\'s scope: the brief, its deliverables, the diff of the checked commit against the task\'s base, '
+        .'and what that diff directly affects. Report every finding inside that scope. A blocking finding is a defect: wrong behaviour, a missed or '
+        .'unproven deliverable, a broken or missing test the brief asks for, or a security hole the diff adds. Give its file, line and failing case. '
+        .'A finding inside the scope that is not a defect, such as a misleading name in the new code, is non-blocking: mark it so. Report nothing '
+        .'outside the scope: no ideas, refactors or redesigns beyond the task. Do not ask for changes outside the files the task touches unless a '
+        .'defect forces it; then name that defect. If you find no blocking finding, approve.';
+
+    /**
      * How a reviewer in a copy approves (docs/reference/tasks.md#the-reviewers-pull-request-text): it sends the pull request text through
      * its copy key. Orbit opens the pull request once the group is done; the copy holds no Git token.
      */
     public const string PrTextRule = 'If you approve this commit, write its pull request: a title of one line, and a body in Markdown in a file such as '
         .'pr-body.md. Send them before this turn ends: . ~/.config/orbit/model.env && curl -sS --fail-with-body -H "Authorization: Bearer $ORBIT_COPY_KEY" '
         .'--form-string "title=$TITLE" -F \'body=<pr-body.md\' "$ORBIT_COPY_API/pull-request" (set TITLE to the title first). A second send replaces the text. '
-        .'Orbit opens the pull request with it once the work is done. If you do not approve, send nothing.';
+        .'Orbit opens the pull request with it once the work is done; when the pull request is open already, the next publish of this check updates its title and body with it. If you do not approve, send nothing.';
 
     public function __construct(private TaskOperations $operations, private TaskCheckedCandidate $candidates) {}
 
@@ -94,9 +105,11 @@ final readonly class TaskCopyTurn
             $candidate = (string) $check->commit_sha;
         }
         $provider = null;
+        $options = [];
         if ($thread === null) {
             $agent = TaskCopyAgent::forNewThread($group, $role);
             $provider = $agent['instance'];
+            $options = $agent['options'];
             $thread = AgentThread::query()->create([
                 'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
                 'driver' => self::Driver, 'runtime_key' => $runtime, 'external_id' => (string) Str::uuid(),
@@ -114,14 +127,15 @@ final readonly class TaskCopyTurn
         // A turn that continues a thread whose last turn asked answers it: the questions come first, in the agent's own words.
         $prompt = $provider === null && $thread->questions !== null ? self::asked($thread->questions)."\n\nAnswer:\n".$data->prompt : $data->prompt;
         $prompt = $candidate === null ? $prompt."\n\n".self::AskRule : $prompt."\n\nThe checked commit under review: {$candidate}. The checkout holds it, "
-            .'detached. Orbit checks the task branch out again after this turn and discards every change in the checkout.'."\n\n".self::PrTextRule;
+            .'detached. Orbit checks the task branch out again after this turn and discards every change in the checkout.'."\n\n".self::ReviewRule."\n\n".self::PrTextRule;
 
         return [
             ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
             'turn' => ['t3' => $instance->runtime()->firstOrFail()->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
-                'candidate' => $candidate, 'settle' => $settle, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
+                // A new thread's model options: T3 runs its every turn with them (InstanceContainer::providerOptions).
+                'options' => $options, 'candidate' => $candidate, 'settle' => $settle, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
                 'prompt' => TaskTurnPrompt::compose($task, $prompt, now())],
         ];
     }

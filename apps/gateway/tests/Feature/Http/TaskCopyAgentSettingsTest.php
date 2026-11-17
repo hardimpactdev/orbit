@@ -103,14 +103,27 @@ describe('the copy turn agent of a task group', function (): void {
         $this->patchJson('/api/v1/projects/'.$this->project->id, array_combine(array_map(static fn (string $key): string => 'task_'.$key, array_keys($body)), $body))
             ->assertUnprocessable()->assertJsonValidationErrors('task_'.$field, 'error.details');
     })->with([
-        'a provider the copy has no instance of' => [['implementer_provider' => 'codex'], 'implementer_provider'],
-        'an effort Claude Code has no instance for' => [['reviewer_effort' => 'minimal'], 'reviewer_effort'],
+        'a provider the copy has no instance of' => [['implementer_provider' => 'pi'], 'implementer_provider'],
+        'an effort no provider has an instance for' => [['reviewer_effort' => 'minimal'], 'reviewer_effort'],
         'a model with a provider in it' => [['reviewer_model' => 'claudeAgent/claude-opus-5-5'], 'reviewer_model'],
         'an empty model' => [['reviewer_model' => ''], 'reviewer_model'],
         'a blank model' => [['implementer_model' => ' '], 'implementer_model'],
         'an empty provider' => [['reviewer_provider' => ''], 'reviewer_provider'],
         'a blank effort' => [['implementer_effort' => '  '], 'implementer_effort'],
     ]);
+
+    it('takes Codex for the reviewer on a task and as the Project\'s default, at each effort the copy offers it', function (): void {
+        $body = ['reviewer_provider' => 'codex', 'reviewer_model' => 'gpt-6.1-sol', 'reviewer_effort' => 'high'];
+
+        $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', ...$body])->assertCreated()
+            ->assertJsonPath('data.resolved_agents.reviewer.provider', ['value' => 'codex', 'source' => 'group'])
+            ->assertJsonPath('data.resolved_agents.reviewer.effort', ['value' => 'high', 'source' => 'group']);
+        $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog]);
+        $this->patchJson('/api/v1/tasks/'.$group->id, [...$body, 'reviewer_effort' => 'ultra'])->assertOk()->assertJsonPath('data.reviewer_provider', 'codex');
+        $this->patchJson('/api/v1/projects/'.$this->project->id, ['task_reviewer_provider' => 'codex', 'task_reviewer_model' => 'gpt-6.1-sol', 'task_reviewer_effort' => 'high'])
+            ->assertOk();
+        expect($this->project->refresh()->only(['task_reviewer_provider', 'task_reviewer_effort']))->toBe(['task_reviewer_provider' => 'codex', 'task_reviewer_effort' => 'high']);
+    });
 
     it('changes and clears a role\'s values with task:update until the role\'s first thread, then refuses them with tasks.agent_settings_locked', function (): void {
         $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo,

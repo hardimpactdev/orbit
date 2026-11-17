@@ -10,7 +10,8 @@ const token = "t3-session-" + "x".repeat(40);
 
 type Request = { id: string; kind: string; status: string };
 // `interrupt` is how T3 takes a `run.interrupt`: `end` ends the run, `refuse` answers a failure, `stuck` accepts it but the run never ends.
-type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck" };
+type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck";
+    projects?: { id: string; workspaceRoot: string; archivedAt: string | null }[] };
 
 /** Answers T3's ticket and RPC as T3 0.1.7 does, for one thread whose state the test sets. A stop ends the run and cancels its requests. */
 function serve(state: Server) {
@@ -24,6 +25,12 @@ function serve(state: Server) {
         socket.onmessage = (event) => {
             const frame = JSON.parse(String(event.data));
             let value: unknown;
+            if (frame.tag === "orchestration.subscribeShell") {
+                // A stream: its first chunk holds the snapshot. The helper interrupts it after.
+                socket.send(JSON.stringify({ _tag: "Chunk", requestId: frame.id, values: [{ kind: "snapshot", snapshot: { projects: state.projects ?? [] } }] }) + "\n");
+                return;
+            }
+            if (frame._tag === "Interrupt") return;
             if (frame.tag === "orchestration.getThreadProjection") {
                 value = { thread: { id: thread }, runs: [{ id: run, status: state.runStatus }], runtimeRequests: state.requests,
                     turnItems: Object.entries(state.questions).map(([requestId, questions]) => ({ type: "user_input_request", requestId, questions })) };
@@ -151,3 +158,28 @@ Deno.test({ name: "a stop that T3 refuses, or a run that does not end within the
         assertEquals([kept.code, kept.out, kept.revoked], [0, { stopped: false, run, state: "running" }, ["session-1"]]);
         assert(Date.now() - began < 60000, `the stop took ${Date.now() - began} ms`);
     } });
+
+Deno.test({ name: "the create makes a thread of the workspace's project with the title, instance, model and options, in full access, and sends no message",
+    ignore: !available, async fn() {
+    const options = [{ id: "reasoningEffort", value: "high" }];
+    const state: Server = { ...waiting([], {}), projects: [{ id: "old", workspaceRoot: "/srv/workspace", archivedAt: "2026-01-01" },
+        { id: "other", workspaceRoot: "/srv/other", archivedAt: null }, { id: "p1", workspaceRoot: "/srv/workspace", archivedAt: null }] };
+    const made = await helper(state, ["create", "Orbit task 1 thread 2", "codexHigh", "gpt-6.1-sol", JSON.stringify(options)]);
+    assertEquals([made.code, made.out!.error, made.revoked], [0, null, ["session-1"]]);
+    assert(String(made.out!.thread_id).startsWith("orbit:"));
+    const [create] = state.commands;
+    assertEquals(state.commands.length, 1);
+    assertEquals({ ...create, commandId: null, createdAt: null }, { type: "thread.create", commandId: null, threadId: made.out!.thread_id, projectId: "p1",
+        title: "Orbit task 1 thread 2", modelSelection: { instanceId: "codexHigh", model: "gpt-6.1-sol", options }, runtimeMode: "full-access",
+        interactionMode: "default", branch: null, worktreePath: null, createdBy: "system", creationSource: "server", createdAt: null });
+    // A Claude thread carries no options. A refused create, or no project at the workspace, makes no thread and says why.
+    const claude = await helper({ ...waiting([], {}), projects: [{ id: "p1", workspaceRoot: "/srv/workspace", archivedAt: null }] },
+        ["create", "Orbit task 1 thread 3", "claudeMedium", "claude-opus-5-5", "[]"]);
+    assertEquals(claude.out!.error, null);
+    const refused = await helper({ ...waiting([], {}), interrupt: "refuse", projects: [{ id: "p1", workspaceRoot: "/srv/workspace", archivedAt: null }] },
+        ["create", "Orbit task 1 thread 4", "codexHigh", "gpt-6.1-sol", "[]"]);
+    assertEquals(refused.out!.thread_id, null);
+    assert(String(refused.out!.error).includes("run is not interruptible"));
+    const none = await helper(waiting([], {}), ["create", "Orbit task 1 thread 5", "codexHigh", "gpt-6.1-sol", "[]"]);
+    assertEquals(none.out, { thread_id: null, error: "T3 holds no project at /srv/workspace." });
+} });

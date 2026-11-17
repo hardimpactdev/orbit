@@ -28,10 +28,10 @@ sequenceDiagram
   %%> - the calling Node has an access grant to the target Node
   %%> - the target is an active, managed Linux Node, and the role is not `vpn` or `swamp`
   %%> - `router` only as a stale assignment, under the Cluster's Router lock: not the active Router, `failed` (or `provisioning`), no replacement step on any Router row of the Cluster, and no open Router Operation of the Cluster; else `node_role.router_protected`
-  %%> - the role is `active` or `failed`; a `provisioning` or `removing` role is refused until its claim is stale, except a stale `router` above
+  %%> - the role is `active` or `failed`; a `provisioning` or `removing` role is refused until its claim is stale (`node_role.claim_busy`), except a stale `router` above
   %%> - while the stale `router` removal runs, `cluster:router:set` and `cluster:router:unset` of its Cluster are refused (`cluster.router_transition_conflict`)
   %%> - `app-dev` and `app-prod` have no Route targets, `ingress` no public Routes, and `analytics` no tracking hosts
-  %%> - one add, converge or remove Operation per Node (`operation.target_busy`); a second removal after the first finished finds no such role (`http.404`)
+  %%> - one add, converge or remove Operation per Node (`operation.target_busy`), on both paths below; a second removal after the first finished finds no such role (`http.404`)
   %%> - until the `--offline` flow below is built, `--offline` is refused on both paths (`operation.kind_unavailable`)
   %%> Then:
   %%> - the Gateway reads the recorded state of the assignment and picks one of the two paths below

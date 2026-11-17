@@ -27,7 +27,7 @@ The workspace already gives the group `work` write access: setgid folders with m
 The owner decided these points, and they stay closed:
 
 - **Q1. Keep the names.** `agent` (uid 2750) is the owner of the workspace and runs the steps. `orbit` (uid 1000) is the app user. No user is renamed and no uid changes.
-- **Q2. Sudo for `agent`.** Today the normal image gives `agent` no sudo, and the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) gives it passwordless sudo. The owner decided that `agent` gets passwordless sudo in every container, normal and nested, and that membership of `incus-admin` stays as it is. That comes with a security model in which a container holds no production-grade secrets. A separate task group builds it, with its own decision record; this ADR does not change sudo.
+- **Q2. Sudo for `agent`.** Today the normal image gives `agent` no sudo, and the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) gives it passwordless sudo. The owner decided that `agent` gets passwordless sudo in every container, normal and nested, and that membership of `incus-admin` stays as it is. That comes with a security model in which a container holds no production-grade secrets. A separate task group builds it; the [amendment](#amendment-sudo-for-agent-in-every-container) below records it.
 - **Q3. Development deploy steps run as `agent` everywhere**, nested-fleet defaults included.
 
 From those points:
@@ -44,6 +44,17 @@ An existing default gets the new owner at its next deployment: the pass runs at 
 ### The nested fleet
 
 The nested fleet's guests mount the checkout with `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` ([instance-fleet.yml](/reference/development-containers#fleet-rules)). So an `agent:work` file keeps its owner and group in the guests, and the inner `orbit` is a member of `work` there. On 16 November 2026, in nested-fleet copy 3481, the inner Gateway's `orbit` read and wrote a `2750:2760` file with mode 0660 in the checkout, and PHP ran an `agent`-owned script that loads the Gateway's autoloader. The map stays as it is.
+
+### Amendment: sudo for `agent` in every container
+
+The owner decided on 2026-11-16 to build Q2.
+
+- **The grant.** `agent` (uid 2750) has passwordless sudo in every development container, from the normal image and from the [nested-fleet image](/reference/development-containers#the-nested-fleet-image). One file holds it: `/etc/sudoers.d/orbit-agent`, root:root, mode 0440, with the one line `agent ALL=(ALL:ALL) NOPASSWD: ALL`. Both images take it from the same definition, `InstanceImage::shared()`. `orbit` (uid 1000) has no sudo. `incus-admin` stays nested-only. The image build refuses an image with any other sudo path.
+- **Existing containers.** The grant is one of the image's [shared files](/reference/development-containers#existing-containers). The Node's converge writes it into every existing container, defaults and copies, normal and nested. A clone writes it before its first start, so a copy of an older seed has it too. Every container already has the `sudo` program: the stock Ubuntu image ships it.
+- **Security model.** A container holds no production-grade secrets, only dev-scoped keys. That is the rule for anything Orbit or a Project puts into a container.
+- **Reason.** Convenience: the agent installs a package or fixes a system file itself and never needs outside help.
+- **Trade-off.** Root in a container can read that Instance's `.env` and its per-copy model key, and can change the container's own firewall, which holds the model-route rule of [ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder). So that rule no longer keeps `agent`'s own processes apart; it still keeps `orbit` and the app off the model route while nobody uses root to change it. The container wall stays the boundary: the container is unprivileged, with an isolated ID map, and root in it is no user on the Node.
+- **Existing sudo use stays.** The task check's `sudo -n systemd-run`, `bin/e2e-topology-host-setup` and `reconcile-firewall.py` work as before.
 
 ## Rejected alternatives
 
@@ -63,5 +74,6 @@ The nested fleet's guests mount the checkout with `raw.idmap` `both 1000 1000`, 
 
 - Components: apps/gateway, apps/docs
 - ADRs: [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers), [0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder)
-- Detail: [Who runs what](/reference/development-containers#who-runs-what), [Inside a container](/reference/development-containers#inside-a-container), [`instance:deploy`](/cli/instance/deploy)
+- Detail: [Who runs what](/reference/development-containers#who-runs-what), [Inside a container](/reference/development-containers#inside-a-container), [Existing containers](/reference/development-containers#existing-containers), [`instance:deploy`](/cli/instance/deploy)
 - Verify: the Python test of the pass (`swamp/tests/instance_workspace_modes_test.py`), the clone guest's tests (`swamp/tests/instance_clone_guest_test.py`), the container phase's Deno tests and the Pest tests of the step argv
+- Verify the amendment: the image tests (`apps/gateway/tests/Feature/NestedFleetImageTest.php`, `apps/gateway/tests/Feature/Domain/Instances/InstanceHostIntentTest.php`) and the image build's audit (`swamp/tests/ansible_instance_host_image_test.ts`)

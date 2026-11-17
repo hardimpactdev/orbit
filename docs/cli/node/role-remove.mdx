@@ -29,13 +29,13 @@ In a terminal, an omitted Node is chosen from an interactive list and an omitted
 
 `vpn` and `swamp` cannot be removed with this command, and `router` only as [a stale Router assignment](#a-stale-router-assignment). `app-dev` cannot be removed while the Node owns Instances, nor `app-dev` and `app-prod` while a Route targets them, nor `ingress` while public Routes use it, nor `analytics` while tracking hosts exist (`analytics.tracking_hosts_exist`). Removing the last role restores public SSH first, as [Public SSH](/reference/node-provisioning#public-ssh) describes. A CI role is not removed while CI guests still run on the Node: the run fails with `node.removal_incomplete`, and the rerun after they are drained succeeds. An unreachable Node is refused with `node.removal_incomplete` unless you pass `--offline --force`. Removal keeps role data, CI resources, release data and container volumes unless you pass `--purge-data`.
 
-The command removes a role that is `active` or `failed`. A role that is `provisioning` or `removing` is refused until its claim is stale. A failed removal leaves the role `failed` at `remove:STEP` with the step's own error code. Finished steps stay and nothing is rolled back; run the same command again, because each removal step is safe to repeat. A failed public SSH restore leaves the Node reachable.
+The command removes a role that is `active` or `failed`. A role that is `provisioning` or `removing` is refused with `node_role.claim_busy` until its claim is stale. A failed removal leaves the role `failed` at `remove:STEP` with the step's own error code. Finished steps stay and nothing is rolled back; run the same command again, because each removal step is safe to repeat. A failed public SSH restore leaves the Node reachable.
 
 A role whose runs never changed the Node is removed from the Gateway record alone. The Gateway keeps that fact on the assignment. It is true only while every run for the assignment, from its first add on, failed at `Read the OS release` or `Require supported Ubuntu`. One run that ended any other way makes it false for good. So does a lost run result. It is also false for an assignment that `node:add`, a relocation or Metrics created, and for one that existed before the Gateway kept this fact.
 
 When the fact holds, the Gateway starts no run and does not contact the Node, and the Operation ends `succeeded` at once. `--purge-data` is accepted there and has no effect. The `--offline` removal described above is not built yet: the Gateway refuses `--offline` with `operation.kind_unavailable`, on this path too. After the record is gone, `node:role:add` adds the role again.
 
-Only one add, converge or remove runs on a Node at a time; a second call is refused with `operation.target_busy`. A role the Node does not hold, including one a finished removal already took, returns `http.404`, except `ingress`: a confirmed removal of an `ingress` role that the Node does not hold succeeds and changes nothing.
+Only one add, converge or remove runs on a Node at a time, and a removal from the record alone takes the Node too; a second call is refused with `operation.target_busy`. A role the Node does not hold, including one a finished removal already took, returns `http.404`, except `ingress`: a confirmed removal of an `ingress` role that the Node does not hold succeeds and changes nothing.
 
 The CLI follows the Operation and prints the final result with the request ID.
 
@@ -58,12 +58,13 @@ On that Node only, the run removes the Router LAN rules and the Router certifica
 | --- | --- |
 | `node.id_invalid` | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
 | `node_role.role_required` | The role is missing and the CLI cannot prompt. |
-| `validation.failed` | Consent is missing, the role is protected (`vpn`, `swamp`), the role is in progress, `app-dev` has Instances, or a Route depends on the role. Nothing changes. |
+| `validation.failed` | Consent is missing, the role is protected (`vpn`, `swamp`), `app-dev` has Instances, or a Route depends on the role. Nothing changes. |
+| `node_role.claim_busy` | The role is `provisioning` or `removing` and its claim is not stale yet (409). `details.status` is the role's status and `details.reason` is `claim_active`. Nothing changes. Retry when that work ends. |
 | `node_role.router_protected` | The `router` assignment is its Cluster's Router or part of a Router change, or a Router Operation of the Cluster is open (409). `details.reason` is `active_router`, `replacement_in_progress`, `router_operation_open` or `no_cluster`. Nothing changes. |
 | `cluster.router_busy` | Another Cluster Router request holds the Cluster's Router lock (409). Retry. |
 | `analytics.tracking_hosts_exist` | Tracking hosts still use the `analytics` role (409). |
 | `operation.kind_unavailable` | The Node is not active, or not managed over SSH. |
-| `operation.target_busy` | Another add, converge or remove holds the Node. |
+| `operation.target_busy` | Another add, converge or remove holds the Node (409). Nothing changes. |
 | `node.removal_incomplete` | The Node is unreachable and `--offline` was not given, or CI guests still run. The role is `failed` at that step. |
 | `http.404` | The Node has no such role (except `ingress`), or the Node is unknown. |
 | `node_access.required` | The caller has no access grant to the Node. |

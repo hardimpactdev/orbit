@@ -35,13 +35,17 @@ final class TaskDonePublication
     /** How many publishes of one done check may time out on a lock, the first and its retries, before the check shows as refused. */
     public const int LockTimeoutAttempts = 3;
 
-    /** A group that has its pull request pushes the check only: the open pull request shows the new commits and keeps its title and body. */
+    /**
+     * Every publish of the done check carries the reviewer's text: the first opens the pull request with it, a republish updates the open
+     * pull request's title and body with it. A republish without such text pushes the check only, and the open pull request keeps its text.
+     */
     public static function for(Task $group, TaskCheck $check): StartTaskPublishData
     {
-        if ($group->pr_url !== null) {
+        $text = TaskGroupDone::prText($group, $check);
+        if ($text === null && $group->pr_url !== null) {
             return new StartTaskPublishData($check->id);
         }
-        $text = TaskGroupDone::prText($group, $check) ?? throw new ResourceOperationException(self::TextMissingCode,
+        $text ??= throw new ResourceOperationException(self::TextMissingCode,
             'The task group\'s work is done, but its reviewer sent no pull request text. A reviewer turn that approves the commit sends it.', 409);
 
         return new StartTaskPublishData($check->id, ['title' => $text['title'], 'body' => $text['body'], 'draft' => false]);

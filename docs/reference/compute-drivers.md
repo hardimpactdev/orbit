@@ -1177,6 +1177,8 @@ The child `task-nested-apply` applies the checkout to the nested fleet, and the 
 
 The child checks each of the three units on the Gateway and on app-dev and starts none. In a container no udev confirms the device behind the checkout's mount, so a start job would wait 90 s for it and fail.
 
+The child places the agent delivery and migrates as the app user: as root through `runuser -u orbit --`, with `incus exec --cwd` where a command needs a folder. `runuser` gives `orbit` its groups, among them `work`, which opens the checkout (`agent:work`, mode 2770). `incus exec --user 1000` gives only the user ID, with group 0, and fails with EACCES. The read of the nested checkout in `proof-fleet-verify` runs Git the same way.
+
 The child then renders and reloads the checkout’s scoped Swamp grants after optional token renewal, with the renewed or still-valid serve-driver credential, before migrations. Reconciliation requires successful agent delivery and successful or skipped renewal; either prerequisite failing stops apply. It uses the candidate manifests, not the grants saved in the bootstrap control plan.
 
 Before the single authenticated reload, it waits up to 60 seconds for the local Swamp listener. The wait and the reload’s 90-second bound fit inside the 180-second reconciliation limit with 30 seconds for setup. The proof runner also allows 180 seconds for its Gateway preparation command and 190 seconds for the calling process. Its overall fleet preparation limit remains 330 seconds. A listener timeout or failed reload stops apply and prevents snapshots.
