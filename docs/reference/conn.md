@@ -722,7 +722,7 @@ On every attempt, verify the live server against the pinned persisted incarnatio
 
 If the first message has left the RPC snapshot, read the same thread through the authenticated bounded snapshot and older conversation pages. An older item must be a local, user-authored message of that thread. A match proves acceptance: store the bounded receipt and finish publication only, even if T3's run failed after accepting the message.
 
-The native handoff stages the private request in the run folder and passes its exact bytes on stdin. The first send claims one execution in that folder. The separate recovery action never sends a message.
+The native handoff stages the private request in the run folder and passes its exact bytes on stdin. The first send claims one execution in that folder. After an ambiguous first reply, the reconciler starts a read-only recovery attempt. Further Retry requests use the same read-only action.
 
 After a lost reply, send the identical frozen command only if an authoritative read proves the expected message is absent **and** the original incarnation is still within a known safe replay window. A stable URL, the passage of time alone, an empty thread, or a generic read error is not proof. A replacement server, mismatched identity or text, a failed read, or an incomplete projection without authoritative absence and a safe window leaves the launch recoverable without another send. V1 does not assume a stock T3 receipt lifetime from a successful test.
 

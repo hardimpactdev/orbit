@@ -743,6 +743,33 @@ describe('launch control and progress', function (): void {
         expect(Instance::query()->find($this->instance->id))->not->toBeNull();
     });
 
+    it('automatically reconciles the first ambiguous handoff with read-only work', function (): void {
+        InstanceRuntime::query()->create(['instance_id' => $this->instance->id, 'node_id' => $this->host->id,
+            'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$this->instance->id, 'bridge_address' => '10.253.0.2',
+            'runtime_version' => 'fixture-runtime', 'agent_version' => 'fixture-agent', 'power_state' => InstanceRuntimePowerState::Running]);
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
+        $dispatch = launchFixtureDispatch($id);
+        $dispatch->update(['status' => OperationStatus::Failed, 'input' => [...$dispatch->input, 'intent' => ['action' => 'launch']],
+            'finished_at' => now(), 'error_code' => 'conn.launch_first_message_unconfirmed']);
+        $launch = Operation::query()->findOrFail($id);
+        $launch->update(['state' => [...$launch->state, 'launch_dispatch_copy_removed' => $dispatch->id]]);
+
+        $settlement = app(ConnLaunchSettlement::class);
+        $settlement->advance($launch);
+        $recovery = Operation::query()->findOrFail($launch->refresh()->state['launch_dispatch_operation_id']);
+        expect($recovery->id)->not->toBe($dispatch->id)->and($recovery->input['intent']['action'])->toBe('reconcile-launch')
+            ->and($recovery->triggered_by)->toBe($dispatch->triggered_by)
+            ->and(Operation::query()->where('kind', OperationKinds::ConnLaunchDispatch)->count())->toBe(2);
+
+        $recovery->update(['status' => OperationStatus::Succeeded, 'result' => ['accepted_at' => now()->toISOString()],
+            'finished_at' => now(), 'error_code' => null, 'lock_key' => null]);
+        $launch->update(['state' => [...$launch->state, 'launch_dispatch_copy_removed' => $recovery->id]]);
+        $settlement->advance($launch);
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()->assertJsonPath('data.phase', 'ready')
+            ->assertJsonPath('data.thread.message_id', $this->body['message_id']);
+        expect(ConnLaunchIntent::query()->find($id))->toBeNull()->and(Operation::query()->where('kind', OperationKinds::ConnLaunchDispatch)->count())->toBe(2);
+    });
+
     it('stops polling a ready launch whose preparation found no application work', function (): void {
         $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
         $dispatch = launchFixtureDispatch($id);

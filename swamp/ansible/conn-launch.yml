@@ -57,13 +57,37 @@
         ansible_python_interpreter: "{{ ansible_playbook_python }}"
       when: intent.action == 'launch'
 
+    - name: Read the private request in memory
+      ansible.builtin.slurp:
+        src: "{{ run }}/launch.json"
+      register: launch_material
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      when: not inspect
+      no_log: true
+
+    - name: Remove the staged private request before the T3 call
+      ansible.builtin.file:
+        path: "{{ run }}/launch.json"
+        state: absent
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      when: not inspect
+      no_log: true
+
     - name: Attempt the admitted T3 call
       ansible.builtin.command:
         argv: >-
           {{ instance_exec + ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node',
              '--input-type=module', '-e', rpc, '--', 'orbit-rpc', '/opt/orbit-agent/current/agent/bin/t3', intent.action]
              + probe_args }}
-        stdin: "{{ omit if inspect else lookup('ansible.builtin.file', run ~ '/launch.json', rstrip=false) }}"
+        stdin: "{{ omit if inspect else launch_material.content | b64decode }}"
         stdin_add_newline: false
         expand_argument_vars: false
       register: launch_call

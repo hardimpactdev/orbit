@@ -57,10 +57,9 @@ final readonly class ConnLaunchNativeWork
     public function dispatch(Operation $launch, Instance $instance, string $environmentId, string $incarnation,
         string $projectId, stdClass $model): ?Operation
     {
-        $key = ConnLaunchInstances::key($launch, 'dispatch', 'launch');
-
         return $this->state->admitDispatch($launch->id, $environmentId, $incarnation, $projectId, $model,
-            fn (Operation $parent, bool $recover): Operation => $this->admit($parent, $instance, OperationKinds::ConnLaunchDispatch, $key,
+            fn (Operation $parent, bool $recover): Operation => $this->admit($parent, $instance, OperationKinds::ConnLaunchDispatch,
+                ConnLaunchInstances::key($parent, $recover ? 'reconcile' : 'dispatch', 'launch'),
                 ['action' => $recover ? 'reconcile-launch' : 'launch']));
     }
 

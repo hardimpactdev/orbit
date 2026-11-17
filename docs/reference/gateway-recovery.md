@@ -483,6 +483,8 @@ While it is up to date, the runner reads the branch head at most every 5 minutes
 
 `orbit gateway:auto-release:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, the stalls, and the last run result. `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes needs investigation. Check the Gateway scheduler, its logs and, when configured, the queue workers.
 
+A [Conn launch](/reference/conn#durable-launches-v1) resumes from its recorded Operation. An ambiguous T3 reply is recovered by reading the exact message on the original server. While a launch is Cancelling, owned native work must settle before Orbit can verify teardown.
+
 ## Recover a failed update
 
 Keep requests and automation paused. Save redacted failure output and preserve the failed state separately for diagnosis. Do not use a generic migration rollback to guess compatibility with older code.

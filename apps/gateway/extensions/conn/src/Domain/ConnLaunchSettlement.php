@@ -192,7 +192,8 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
 
             return;
         }
-        if (! Arr::has($launch->state ?? [], 'launch_retry_requests.launch')) {
+        if (Arr::get($dispatch->input, 'intent.action') !== 'launch'
+            && ! Arr::has($launch->state ?? [], 'launch_retry_requests.launch')) {
             $this->blocked($launch, ConnLaunchStage::FirstMessage, $dispatch->error_code);
 
             return;
@@ -223,9 +224,12 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
             if (! $this->nativeCancellation->settled($operation)) {
                 if ($operation->status->terminal()) {
                     $this->nativeCancellation->request($operation);
-                } elseif ($operation->cancel_requested_at === null) {
+                } elseif ($operation->status === OperationStatus::Queued && $operation->attempts === 0
+                    && $operation->cancel_requested_at === null) {
                     $this->cancel->execute($operation);
                 }
+                // A started remote step can keep working after the cancellation of its SSH client.
+                // Wait for its native end before allowing teardown.
 
                 return;
             }

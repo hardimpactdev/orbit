@@ -177,7 +177,11 @@ final readonly class ConnLaunchState
             $previousId = $state['launch_dispatch_operation_id'] ?? null;
             if ($recovery && is_int($previousId)) {
                 $previous = Operation::query()->findOrFail($previousId);
-                if (! app(NativeRunCancellation::class)->settled($previous) || ! Arr::has($state, 'launch_retry_requests.launch')) {
+                $observe = Arr::get($previous->input, 'intent.action') === 'launch'
+                    && ($state['launch_dispatch_copy_removed'] ?? null) === $previousId
+                    && ($state['launch_phase'] ?? null) === 'dispatching';
+                if (! app(NativeRunCancellation::class)->settled($previous)
+                    || (! $observe && ! Arr::has($state, 'launch_retry_requests.launch'))) {
                     return $previous;
                 }
             }
