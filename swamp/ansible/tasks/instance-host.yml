@@ -132,6 +132,30 @@
       ansible.builtin.command: { argv: [zfs, set, volmode=dev, "{{ instance_pool_root.stdout | trim }}/custom"] }
       changed_when: true
 
+# The drop-ins of T3's unit in each existing container with a T3 (docs/reference/development-containers.md#existing-containers):
+# instance_container_files.py `t3` writes each one whose text the Gateway changed, in running, stopped and frozen containers, and
+# reloads systemd in each running one it changed. The Node keeps those containers in its restart list until the agent folder's step
+# that follows restarts T3 there once, beside its own restart when the folder changed (instance-folder.yml). A stopped container reads
+# the drop-in at boot, a frozen one at its T3's next restart.
+# Before the shared folders, so the reload comes before the agent folder's restart.
+- name: Bring the T3 unit drop-ins of the existing containers to their text
+  block:
+    - name: Write the changed T3 unit drop-ins into each existing container
+      ansible.builtin.command:
+        argv: [python3, -I, "-", "{{ {'mode': 't3', 't3_files': instances.t3_files, 'state': instance_t3_restart_list} | to_json }}"]
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_container_files.py') }}"
+      register: t3_files
+      vars:
+        # The Node's restart list, which instance-folder.yml empties.
+        instance_t3_restart_list: /var/lib/orbit/instance-t3-restart.json
+      changed_when: (t3_files.stdout | from_json).written | length > 0
+      failed_when: t3_files.rc != 0
+
+    # The running containers whose T3 reads a new drop-in at its restart in the agent folder's step.
+    - name: Keep the containers whose T3 restarts for its drop-ins
+      ansible.builtin.set_fact:
+        instance_t3_reload: "{{ (t3_files.stdout | from_json).reload }}"
+
 - name: Install the shared folders
   ansible.builtin.include_tasks: instance-folder.yml
   loop: [runtime, agent]

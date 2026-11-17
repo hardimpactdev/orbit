@@ -24,6 +24,15 @@ Nothing restarts: every later process reads the files by itself.
   the file API, by instance_machine_name.py `render`, whose text the task passes and which runs on the Node. Nothing restarts and the
   kernel hostname stays: it takes the file at the container's next start, and T3 its label at its next start.
 
+`t3` mode, its own step before the shared folders: each container with a T3 gets the root-owned drop-ins of its unit
+(InstanceContainer::t3DropIns) through the file API, uid 0, gid 0, only where the text differs, running, stopped or frozen. A running
+container with a new drop-in runs `systemctl daemon-reload` and joins the Node's restart list, `state`; `reload` names the whole list.
+The agent folder's step then restarts each T3 there once, with the folder's own restart if one is due, and empties the list
+(instance-folder.yml). A run that fails between the reload and the restart leaves the list, so the next converge restarts them.
+A stopped container reads the drop-in at its next boot, and a
+frozen one, which refuses `incus exec`, at the first converge that finds it running and its unit not reloaded (NeedDaemonReload). The agent-owned files of a create (T3's settings, `.claude.json`,
+Codex's configuration) are T3's and the agents' to change, so this mode never writes them.
+
 The Node keeps a digest of the library names it last applied to every container, so a changed folder reaches stopped containers
 too. Prints a JSON summary; a failed Incus call fails the run after every other container had its turn.
 """
@@ -274,7 +283,55 @@ def converge(projects, files, trust_spec, browser, libraries, state, machine_nam
     return 0
 
 
+def t3_files(entries, state):
+    """The T3 unit drop-ins of each container the Gateway names (`t3` mode). Prints the summary; a failed Incus call fails the run after
+    every other container had its turn."""
+    state_file = Path(state)
+    pending = json.loads(state_file.read_text()) if state_file.is_file() else []
+    summary = {"written": [], "reload": [], "frozen": [], "skipped": [], "failed": []}
+    rows = {(row.get("project"), row["name"]): row["status"]
+            for row in json.loads(incus("query", "/1.0/instances?all-projects=true&recursion=1").stdout)} if entries else {}
+    for entry in sorted(entries, key=lambda entry: (entry["project"], entry["container"])):
+        project, name = entry["project"], entry["container"]
+        label, status = f"{project}/{name}", rows.get((project, name))
+        if status not in ("Running", "Stopped", "Frozen"):
+            summary["skipped"].append(f"{label}: {status or 'missing'}")
+            continue
+        try:
+            changed = False
+            for file in entry["files"]:
+                if pull_named(project, name, file["path"]) == file["content"]:
+                    continue
+                incus("file", "push", "--project", project, "--create-dirs", "--uid", "0", "--gid", "0", "--mode", file["mode"], "-",
+                      name + file["path"], stdin=file["content"])
+                summary["written"].append(label + file["path"])
+                changed = True
+            # A running unit that systemd has not reloaded since its drop-in changed: a container that was frozen at the write, or a
+            # run that failed between the write and the reload. It gets the reload and the restart now.
+            if not changed and status == "Running":
+                changed = incus("exec", "--project", project, name, "--", "systemctl", "show", "-p", "NeedDaemonReload", "--value",
+                                "t3.service").stdout.strip() == "yes"
+            if changed and status == "Running":
+                incus("exec", "--project", project, name, "--", "systemctl", "daemon-reload")
+                if {"project": project, "name": name} not in pending:
+                    pending.append({"project": project, "name": name})
+                    state_file.parent.mkdir(parents=True, exist_ok=True)
+                    state_file.write_text(json.dumps(pending) + "\n")
+            elif changed and status == "Frozen":
+                summary["frozen"].append(label)
+        except IncusFailure as failure:
+            summary["failed"].append(f"{label}: {failure}")
+    summary["reload"] = pending
+    if summary["failed"]:
+        print(json.dumps({"error_code": "instance.host_unavailable", **summary}))
+        return 1
+    print(json.dumps(summary))
+    return 0
+
+
 if __name__ == "__main__":
     spec = json.loads(sys.argv[1])
+    if spec.get("mode") == "t3":
+        sys.exit(t3_files(spec["t3_files"], spec["state"]))
     sys.exit(converge(spec["projects"], spec["files"], spec["trust"], spec["browser_trust"], spec["libraries"], spec["state"],
                       spec["machine_names"], spec["machine_name_code"]))
