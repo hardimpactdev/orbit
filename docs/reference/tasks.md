@@ -682,6 +682,27 @@ There is no `test` deliverable type. A stored continuation uses the source subta
 
 A subtask's diff runs from its start commit to the working tree that the check sees, uncommitted and untracked files included. Deleted and ignored files never match. Orbit records the start commit when the subtask starts, before the implementer's first turn. An unreadable base leaves evidence for Swamp to handle before another turn. After that, the start commit stays empty, and the diff uses a fallback base: the previous subtask's approved commit, or the workspace starting commit for the first subtask.
 
+### A Pest command gets CI's time limit
+
+A task copy is a shared, loaded host, as CI's runners are. So a `command` deliverable that runs Pest gets the per-test time limit that CI passes to Pest, not the local limit in the project's `phpunit.xml`. The Pest calls are `php artisan test`, `vendor/bin/pest`, `bin/pest-plain … vendor/bin/pest` and `composer test`.
+
+The Project's check command supplies the limit. The check asks it only when the command is one executable path, such as `bin/task-check`:
+
+- The check runs `<check command> --ci-time-limit <directory>`. The directory is where the Pest call runs, relative to the checkout.
+- The check command prints the limit, or nothing when CI passes none.
+- `bin/task-check` reads the limit from `.github/workflows/ci.yml`, as its own Pest part does. For `apps/gateway` that is 5 seconds.
+- A project whose CI job passes no limit keeps its `phpunit.xml` limit.
+
+The check appends `--default-time-limit=<N>` to the last simple command of the deliverable. `composer test` gets `--` first, so Composer passes the option on to Pest. The deliverable's output starts with the line `Pest time limit: --default-time-limit=<N>, CI's limit for <directory>`, or with a line that says CI passes none. The start-commit run of a `fails_on_base` command uses the same limit, read from the checked workspace.
+
+These commands run unchanged:
+
+- A command that already passes `--default-time-limit`.
+- A command whose Pest call is not its last simple command, such as one with a pipe, a `;` or a redirect.
+- Every command of a Project whose check command is not one executable path.
+
+The deliverable fails with exit 2 when the check command fails or prints something other than a number. Its output then says `Task check: <check command> --ci-time-limit gave no limit`.
+
 ### Prove a command fails on the start commit
 
 A `command` deliverable with `fails_on_base: true` proves that the command fails before the fix. Omitted and `false` are the same: Orbit runs the command once, on the working tree. With `true`, Orbit runs it twice at handoff. The deliverable passes only when the base command exits nonzero and the working-tree command exits 0. A failing base command is the expected evidence.
@@ -1343,6 +1364,17 @@ Orbit stores the last 16 KiB of the check's output, redacted by [the one rule](#
 - The parts CI alone runs, then `Task check PASSED` or `FAILED`, the start commit and the seconds.
 
 Each line of the summary and of a part's output is at most 300 bytes. A longer line keeps its start and ends with `… (N bytes)`, such as a list of budget-skipped fixture units. The output before the summary, each part as it ends, fills the rest of the 16 KiB.
+
+After the Project check's output, Orbit appends the deliverables and the check's outcome, so the output never ends with a result that the check's outcome contradicts:
+
+- A `Deliverables` block for a subtask with deliverables. Each deliverable gets one line: its id, its outcome and its command's exit code.
+- The outcome is `passed`, `failed`, `not_run` or `not_checked`. The exit code appears only when the command ran.
+- Each failure follows on its own line.
+- A failed command also shows `Last lines of <id>:` and at most 1 KiB of the last lines of its redacted output.
+- Then one final line states the outcome: `Task check PASSED`, `Task check FAILED`, or `Task check CHANGED`. `CHANGED` means the workspace moved during the check.
+- Deliverables that fail a check whose Project check passed are named on that line, such as `Task check FAILED: deliverable merge-round-tests did not pass`.
+
+The final line is always the last line of `output` and always agrees with `outcome`. A later step that changes the outcome restates it: a moved candidate gives `Task check CHANGED`, and a failed CI run gives `Task check FAILED: CI failed`. The older Project output gives way, so the whole output stays within 16 KiB; the block and the final line are kept. A check that refuses with an `error_code` has no such line.
 
 ## Review a subtask
 
