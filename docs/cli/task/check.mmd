@@ -85,6 +85,7 @@ sequenceDiagram
     %%> How:
     %%> - `diff`: `git diff-tree -r --no-renames --name-status -z <base> <tree>` for file deliverables
     %%> - a `fails_on_base` command first runs on its start commit: `git archive`, `tar -x`, a copy of installed `vendor` and `node_modules`, the declared test paths, then the command
+    %%> - a command whose last simple command calls Pest gets CI's `--default-time-limit`, which the Project's check command, when it is one executable path, prints for `--ci-time-limit <directory>`; its start-commit run gets the same limit (docs/reference/tasks.md#a-pest-command-gets-cis-time-limit)
     %%> Refuses:
     %%> - a missing overlay file or directory: `tasks.deliverable_invalid`
   end
@@ -94,6 +95,7 @@ sequenceDiagram
   %%> - a command deliverable with no run, because setup or the Project check failed first or no evidence was recorded, reads `not_run` with that reason; it also makes the check `failed`
   %%> How:
   %%> - official SSH copy downloads the private command files; the local reader redacts them, keeps a 16 KiB tail and deletes them before history
+  %%> - the output ends with a `Deliverables` block and one line that states the outcome; a later `changed` or CI failure restates that line (docs/reference/tasks.md#stored-result)
   opt passed handoff
     SW->>N: Commit the candidate
     %%> How:
