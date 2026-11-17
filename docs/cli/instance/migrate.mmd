@@ -88,10 +88,10 @@ sequenceDiagram
   %%> - imports objects, installs branch refs atomically and rebuilds the stash reflog and staging state; copies no source hooks, config, alternates or worktree registrations
   %%> - copies every file that differs from the commit, every untracked file and every ignored file, `.env` among them, plus missing directories including empty ignored trees; the result counts untracked files that Git does not ignore, expanding selected nested repositories to archived leaf entries, without paths or contents
   %%> - untracked files enter the default's seed and every clone, as ignored build output already does; a later branch tracking those paths can refuse checkout in a clone or deploy; forgotten credentials travel into the seed like `.env`
-  %%> - restores added directories' exact modes after the shared file-mode rule, including setgid and sticky bits; ownership remains orbit/work; restoration runs as orbit with the manifest on stdin, opens every component as a directory without following links, and refuses absolute paths or parent traversal
+  %%> - restores added directories' exact modes after the shared file-mode rule, including setgid and sticky bits; ownership remains web:web; restoration runs as web with the manifest on stdin, opens every component as a directory without following links, and refuses absolute paths or parent traversal
   %%> - removes the tracked files that the checkout deleted, and rewrites the checkout's path in `.env` to `/srv/workspace`
-  %%> - removes as orbit each ignored file under a `cache` folder, outside `vendor` and `node_modules`, whose content names the old checkout path, such as PHPStan's and Rector's caches; Git trusts the workspace on its own call; a Git failure warns `instance.migrate_tool_cache_clear_failed` and the move goes on
-  %%> - in a PHP container with `artisan`, clears as orbit the Laravel caches built at the old path: config, route, event, compiled and view caches, and the cache store when its driver is `file`; a failed clear warns `instance.migrate_cache_clear_failed` and the move goes on
+  %%> - removes as web each ignored file under a `cache` folder, outside `vendor` and `node_modules`, whose content names the old checkout path, such as PHPStan's and Rector's caches; Git trusts the workspace on its own call; a Git failure warns `instance.migrate_tool_cache_clear_failed` and the move goes on
+  %%> - in a PHP container with `artisan`, clears as web the Laravel caches built at the old path: config, route, event, compiled and view caches, and the cache store when its driver is `file`; a failed clear warns `instance.migrate_cache_clear_failed` and the move goes on
   %%> - before path rewrites or application starts, compares branch refs, selected HEAD, exact stash reflog, index, porcelain status and hashes of every carried file, including untracked and ignored paths, on both sides; git fsck proves object completeness; a mismatch fails before cutover and restore discards the container
   %%> - checks the exact copied tree inside the container, maps old-checkout targets into the workspace and rewrites absolute internal links there; broken or external links fail with the same code before any Process starts, relative links keep their targets, and source links never change
   %%> - a non-default Instance gets the proxy device that publishes its T3 port
@@ -105,10 +105,10 @@ sequenceDiagram
     %%> - the shared path status and exact-line result, with line numbers only; conflicts skip the line rule
   end
   SW->>C: Start the container<br/>Processes · T3 · seed
-  %%> - first installs carried Schedule pairs disabled, after the workspace copy and before application Processes start; services run as orbit
+  %%> - first installs carried Schedule pairs disabled, after the workspace copy and before application Processes start; services run as web
   %%> - container units use `network.target` and nonblocking starts; reads all moved desired-running Processes active with no pending job, waits 5 seconds once for the whole set, then requires each still active with the same positive MainPID and NRestarts; failure names the Process with `instance.migrate_processes_failed` and restores before cutover
   %%> What it does:
-  %%> - starts FrankenPHP and the Instance's existing Processes as `orbit`, with the same ids and desired states; their environment files come through the vault
+  %%> - starts FrankenPHP and the Instance's existing Processes as `web`, with the same ids and desired states; their environment files come through the vault
   %%> - writes the shared FrankenPHP Caddyfile and unit; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP; other requests keep native values
   %%> - `vp-dev` uses the runtime folder’s `current/bin/vp`, workspace paths and its assigned port on `0.0.0.0`; only the Node can reach that port, and Caddy sends `/__orbit/vite` there
   %%> - a non-default Instance gets `/etc/orbit/instance`, the agent settings with the drop-in that names its recorded container server, and that server, started after a systemd reload and registered as in create

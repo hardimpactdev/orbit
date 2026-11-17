@@ -152,11 +152,11 @@ Every development container has the same layout. The image and the create set it
 | --- | --- |
 | Image | Ubuntu 26.04 with the OS packages the runtime needs, the users, `nftables`, `acl`, `sudo` and `hidepid`. No PHP, no Node, no agent software |
 | Egress | The [proxy settings](#egress-and-dns) for every unit, login shell and apt, and no DNS server |
-| `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process. Owns no part of the workspace that Orbit keeps ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)) |
+| `web` | uid 1000, primary group `web`, home `/home/web` mode 0750, password locked. Runs the app and every Orbit Process. Owns no part of the workspace that Orbit keeps ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)) |
 | `agent` | uid 2750, home `/home/agent` mode 0700, password locked, [sudo](#sudo-and-secrets). Runs T3, the agents, Orbit's checkout Git calls and deploy steps. Owns the workspace, T3 state, agent settings and placeholder key |
-| `work` | gid 2760, members `agent` and `orbit` |
-| Sudo | Passwordless for `agent` alone, in every container, from the [shared file](#existing-containers) `/etc/sudoers.d/orbit-agent` (root:root, mode 0440). `orbit` has none. See [Sudo and secrets](#sudo-and-secrets) |
-| Workspace | `/srv/workspace` and every entry in it, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others, and `core.sharedRepository=group`. Root's [pass](#who-runs-what) gives `agent` what `orbit` made |
+| Group `web` | gid 2760, `web`'s primary group, with `agent` as a member. A container has no group 1000 and no user or group named `orbit` or `work`; [The app user's name](#the-app-users-name) renames them in an older container |
+| Sudo | Passwordless for `agent` alone, in every container, from the [shared file](#existing-containers) `/etc/sudoers.d/orbit-agent` (root:root, mode 0440). `web` has none. See [Sudo and secrets](#sudo-and-secrets) |
+| Workspace | `/srv/workspace` and every entry in it, owned `agent:web`. Directories are setgid `web`, mode 2770, with the default ACL `g:web:rwX` and no access for others, and `core.sharedRepository=group`. Root's [pass](#who-runs-what) gives `agent` what `web` made |
 | Git | `safe.directory=/srv/workspace` in `/etc/gitconfig`, for every user and only that path; the agent part of the T3 step also writes it to `agent`'s own Git config and preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped; unshifted on an [Instance fleet Node](#shared-folders) |
 | T3 unit | `User=agent`, `UMask=0007`, `PATH` from the shared folders, `Requires=nftables.service`, `ConditionPathExists=/etc/orbit/instance`. The unit file is mode 0640. A drop-in names the [container server](#container-server) it starts |
@@ -183,21 +183,21 @@ The build container reaches the internet as every container does, through the [e
 
 ### Who runs what
 
-The app runs as `orbit`: FrankenPHP, queue workers and every Orbit Process. `orbit` cannot run the agent binaries, read `/home/agent`, reach the model route or T3's port, or see agent processes. A public preview URL reaches only an Orbit Process, so an attacker who comes in through it lands as `orbit`.
+The app runs as `web`: FrankenPHP, queue workers and every Orbit Process. `web` cannot run the agent binaries, read `/home/agent`, reach the model route or T3's port, or see agent processes. A public preview URL reaches only an Orbit Process, so an attacker who comes in through it lands as `web`.
 
 T3 and the agents run as `agent`, and so do the shell commands of Claude Code and Codex. There is no wrapper shell.
 
-`agent` owns the workspace ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)). Orbit's own work in it runs as `agent` too, with `HOME=/home/agent`. That is the checkout's Git calls, the line that keeps `.env` out of Git and the record of the deploy steps. It is also each development deploy step of a deployment, a create and a proof run. A deploy step runs as uid 2750, so it can reach the model forwarder, as the agent can. `orbit` stays off the model route.
+`agent` owns the workspace ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)). Orbit's own work in it runs as `agent` too, with `HOME=/home/agent`. That is the checkout's Git calls, the line that keeps `.env` out of Git and the record of the deploy steps. It is also each development deploy step of a deployment, a create and a proof run. A deploy step runs as uid 2750, so it can reach the model forwarder, as the agent can. `web` stays off the model route.
 
-Both users read and write the workspace: a file each one writes is `rw-rw----`, group `work`. Some calls only a file's owner may make, such as `chmod`, `utime` with explicit times and `setfacl`. So an `orbit` file in the workspace, such as one that the running app wrote in `storage/` or `bootstrap/cache`, stays `orbit`'s only until root's next pass.
+Both users read and write the workspace: a file each one writes is `rw-rw----`, group `web`. Some calls only a file's owner may make, such as `chmod`, `utime` with explicit times and `setfacl`. So an `web` file in the workspace, such as one that the running app wrote in `storage/` or `bootstrap/cache`, stays `web`'s only until root's next pass.
 
-A tool that asks for a narrower mode, such as Bun with its 0755 folders in `node_modules`, caps the ACL mask, and the other user cannot write there. Root's pass gives the group back what the owner has, and gives `agent` each entry that `orbit` owns. It runs before a deployment's steps and after them, before a proof run's steps, and in the `services` part of a clone's create. Between those, a folder that one user creates with a narrow mode stays closed to the other until the next pass.
+A tool that asks for a narrower mode, such as Bun with its 0755 folders in `node_modules`, caps the ACL mask, and the other user cannot write there. Root's pass gives the group back what the owner has, and gives `agent` each entry that `web` owns. It runs before a deployment's steps and after them, before a proof run's steps, and in the `services` part of a clone's create. Between those, a folder that one user creates with a narrow mode stays closed to the other until the next pass.
 
 One program does the pass: `swamp/ansible/instance_workspace_owner.py`. It names each entry it changed, up to 20; above that it prints only the count.
 
 The workspace is live while root does this: Git, the app or an agent may remove an entry between its listing and its change. An entry that is gone needs nothing. Any other error fails the pass and names the path.
 
-The pass never follows a link: it changes the mode and the owner through the entry it opened without following one, and it gives a link or a socket itself to `agent`, never its target. A file it gives to `agent` loses its setuid and setgid bits, so `orbit` cannot make a program that runs as `agent`. A file with a second name, a hard link, keeps its owner, because that name may be outside the workspace; it still gets the group's bits.
+The pass never follows a link: it changes the mode and the owner through the entry it opened without following one, and it gives a link or a socket itself to `agent`, never its target. A file it gives to `agent` loses its setuid and setgid bits, so `web` cannot make a program that runs as `agent`. A file with a second name, a hard link, keeps its owner, because that name may be outside the workspace; it still gets the group's bits.
 
 Orbit's own Git commands in the workspace start no automatic maintenance (`maintenance.auto=false`, `gc.auto=0`): a fetch would otherwise repack in the background and remove pack files while the pass and the deploy steps run. The Git commands of the people and agents who work in the workspace still repack it.
 
@@ -205,7 +205,7 @@ Each deployment's fetch adds one pack, so a deployment's checkout runs its own r
 
 A repack that fails or runs out of time does not fail the deployment: the checkout's output names it in one `orbit-workspace-repack=` line, and the next deployment tries again. A repack that ran out of time leaves its temporary files (`tmp_pack_*`, `tmp_idx_*`, `tmp_rev_*`); the next checkout removes them once they are an hour old. A workspace whose repack never fits in 30 seconds pays those seconds at each deployment and prints the line each time.
 
-There is one exception to "a URL reaches only `orbit`". An agent may start its own development server, such as `npm run dev`, as `agent`, and the Instance's Route reaches it on the server's own port. That server can read what `agent` can read. So only a private Route serves it, which only WireGuard peers reach; a public Route never does. [Agent development servers](#agent-development-servers) has the details.
+There is one exception to "a URL reaches only `web`". An agent may start its own development server, such as `npm run dev`, as `agent`, and the Instance's Route reaches it on the server's own port. That server can read what `agent` can read. So only a private Route serves it, which only WireGuard peers reach; a public Route never does. [Agent development servers](#agent-development-servers) has the details.
 
 ### Agent development servers
 
@@ -298,7 +298,7 @@ Why the band:
 
 ### PHP
 
-FrankenPHP serves the app, in classic mode, as an Orbit Process running as `orbit`. The runtime folder holds one static build per PHP version that Orbit supports, and each Instance uses the version that Orbit picks from its `composer.json`, as it does today. A monorepo uses its root Composer requirement without framework classification. Its Caddy listens on port 8080; the Node's Caddy terminates TLS for the Route and proxies to the container's bridge address.
+FrankenPHP serves the app, in classic mode, as an Orbit Process running as `web`. The runtime folder holds one static build per PHP version that Orbit supports, and each Instance uses the version that Orbit picks from its `composer.json`, as it does today. A monorepo uses its root Composer requirement without framework classification. Its Caddy listens on port 8080; the Node's Caddy terminates TLS for the Route and proxies to the container's bridge address.
 
 The container's `/etc/orbit/frankenphp.Caddyfile` trusts only the Node's bridge address (`10.253.0.1/32` on the first Node). When that connection sends `X-Forwarded-Proto: https`, it sets PHP's `HTTPS=on`, `REQUEST_SCHEME=https`, `SERVER_PORT=443` and `REMOTE_ADDR` to Caddy's resolved client IP. Other requests keep their native PHP values, even if they send forwarded headers. Stock Laravel needs no application changes: assets, redirects, signed URLs and session cookies follow the Route's HTTPS scheme. Create, clone and migrate install the same rendered configuration.
 
@@ -328,13 +328,13 @@ The folders live on the Node's root filesystem, at the same paths as in the cont
 
 A folder's version is the first 12 hex digits of a digest of everything in it, the notes included, so any change is a new version. Each program in `bin` links to its path in its part.
 
-The idmapped mount keeps gid 2750 the same in every container, whatever its ID map. The spike proved this with one container; PR 3 proves it with two containers whose ID maps differ. `orbit` sees the folder `agent`, but not what is in it, except on an Instance fleet Node.
+The idmapped mount keeps gid 2750 the same in every container, whatever its ID map. The spike proved this with one container; PR 3 proves it with two containers whose ID maps differ. `web` sees the folder `agent`, but not what is in it, except on an Instance fleet Node.
 
 **On an Instance fleet Node.** An idmapped mount fails a third level below the host: on `nested-app-dev` Incus tears the shifted mount of `orbit-agent` down at the start of the first container. So the Instance containers there mount both folders with `shift=false` ([Instance host in the fleet](#instance-host-in-the-fleet)). An isolated container then sees every file of a folder as owned by `nobody` and `nogroup`, and only the mode bits for others count.
 
 The runtime folder is mode 755 and 644 throughout, so everyone still reads it. Gid 2750 does not reach the container, so on that Node the agent's programs are open to everyone as well: `agent/` and its releases are mode 755, as the rest of the folder. Each folder plan of that Node's intent carries `shift: false`, so its folder versions differ from a real Node's and the host installs them fresh. A real `app-dev` or CI Node keeps the idmapped mounts and gid 2750.
 
-An update installs the new version beside the old one and flips `current`. It runs with the converge of each Node, so a recipe change reaches the Node with its release refresh. Both `agent` and `orbit` have `/opt/orbit-runtime/current/bin` on `PATH`, so a running clone gets added programs, such as Deno, without recreation.
+An update installs the new version beside the old one and flips `current`. It runs with the converge of each Node, so a recipe change reaches the Node with its release refresh. Both `agent` and `web` have `/opt/orbit-runtime/current/bin` on `PATH`, so a running clone gets added programs, such as Deno, without recreation.
 
 For the agent folder, Orbit then restarts T3 in each running container, one after another; T3 continues a running turn after its restart. For the runtime folder, Orbit restarts the FrankenPHP Process and the other Processes of each running container: every unit named `orbit-*.service`, so the Process units of a container carry that prefix. A stopped container uses the new versions when it wakes. An old version stays until no process maps a file of it.
 
@@ -378,7 +378,7 @@ The workspace belongs to its Instance. Only an explicit package link gives anoth
 - Container roots, homes, T3 state and caches outside linked workspaces stay private. The [shared software folders](#shared-folders) remain read-only.
 - Dependencies inside a linked workspace belong to that explicit sharing. No additional writable state is shared.
 
-The owned workspace stays at `/srv/workspace`, owned `agent:work`, with directories mode 2770 and default group ACLs. The [existing account values](#inside-a-container) stay: `agent` uid/gid 2750, `orbit` uid/gid 1000 and `work` gid 2760. Tools can narrow modes; [Who runs what](#who-runs-what) describes their correction.
+The owned workspace stays at `/srv/workspace`, owned `agent:web`, with directories mode 2770 and default group ACLs. The [existing account values](#inside-a-container) stay: `agent` uid/gid 2750, `web` uid 1000 and the group `web` gid 2760. Tools can narrow modes; [Who runs what](#who-runs-what) describes their correction.
 
 Containers keep distinct isolated ID maps. Sharing cannot require privileged containers, identical host ID ranges, world access, new sudo grants or removal of the user boundary. Refuse a mapping that cannot preserve isolation.
 
@@ -423,11 +423,11 @@ Explicit abandonment deletes only the failed Instance's container and volume aft
 
 ### Writable links and proposed mount path
 
-**Agreed policy; not implemented or proved.** An explicitly linked package workspace is writable from BOTH the owning package Instance and consuming app Instance. Both `agent` and `orbit` can create, edit, delete and rename files through `work`. Changes are live and visible in both directions and to every other explicit consumer.
+**Agreed policy; not implemented or proved.** An explicitly linked package workspace is writable from BOTH the owning package Instance and consuming app Instance. Both `agent` and `web` can create, edit, delete and rename files through `web`. Changes are live and visible in both directions and to every other explicit consumer.
 
 The link permits edits to the selected package, including files outside the app's own checkout. Neither another attachment nor consumer writes may break owner or other explicit consumer access. Preserve numeric guest ownership, default ACLs and group permissions across distinct isolated maps. This support remains UNPROVEN.
 
-Keep `/srv/workspace` owned `agent:work`, mode 2770. A file belongs to its creating user under the group policy. Do not relabel every file as `agent` or recursively shift owners for each mount.
+Keep `/srv/workspace` owned `agent:web`, mode 2770. A file belongs to its creating user under the group policy. Do not relabel every file as `agent` or recursively shift owners for each mount.
 
 Recommend `/srv/packages/<vendor>/<name>` outside the consumer's own workspace. It needs an unambiguous package naming rule. Aliases and renaming home directories stay outside this slice.
 
@@ -475,7 +475,7 @@ Backups retain their manifest and data until explicit backup removal, with no au
 
 ### Proof required before implementation
 
-First authorize a small disposable proof separately. Check distinct isolated maps with `agent` uid/gid 2750, `orbit` uid/gid 1000 and `work` gid 2760. Verify `/srv/workspace` ownership `agent:work`, mode 2770 and default group ACLs.
+First authorize a small disposable proof separately. Check distinct isolated maps with `agent` uid/gid 2750, `web` uid 1000 and the group `web` gid 2760. Verify `/srv/workspace` ownership `agent:web`, mode 2770 and default group ACLs.
 
 As both users in the owner and every explicit consumer, create, edit, delete and rename files in both directions. Verify numeric host and guest ownership, ACL inheritance, setgid and group permissions after each mutation. Neither consumer writes nor subsequent attachments may break owner or other consumer access.
 
@@ -502,7 +502,7 @@ The recipe pins each library and font as a Debian package of its Ubuntu snapshot
 
 #### Playwright browsers
 
-The default's deploy steps and a [task check](#a-task-copy-starts-clean) both run as `agent`. A browser in `agent`'s own cache would still be outside the workspace, where the app, as `orbit`, does not see it. The dependency folder is shared by both users through the group `work`. When a Project ignores `node_modules` in its `.gitignore`, the folder survives the clean of a task copy. The seed carries it, and a clone gets it with no copy and no download. The build always matches the Project's own Playwright version.
+The default's deploy steps and a [task check](#a-task-copy-starts-clean) both run as `agent`. A browser in `agent`'s own cache would still be outside the workspace, where the app, as `web`, does not see it. The dependency folder is shared by both users through the group `web`. When a Project ignores `node_modules` in its `.gitignore`, the folder survives the clean of a task copy. The seed carries it, and a clone gets it with no copy and no download. The build always matches the Project's own Playwright version.
 
 So a Project whose check runs browser tests installs the browser in a [development deploy step](/reference/deployments#development-deploy-steps) of its own, after its JavaScript install, such as `bunx playwright install chromium`. The step downloads only when the Project's Playwright version changed. Otherwise it does nothing.
 
@@ -532,6 +532,25 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 - **Frozen.** A frozen container gets the files through the file API. `incus exec` refuses it, so it gets no exec.
 - **Thaw.** A frozen container keeps its cache, because it thaws without a boot. Its wake rebuilds a cache that lacks a runtime library.
 - **Failure.** A failed Incus call fails the converge after every other container had its turn.
+
+### The app user's name
+
+The app user is `web`, uid 1000, and its primary group is `web`, gid 2760, with `agent` as a member. A container made from an older image has the user `orbit` (uid 1000) with the group `orbit` (gid 1000), and the group `work` (gid 2760).
+
+Only the names change: every uid and gid other than 1000 stays, and so does `agent`. So the model route rule, which matches uid 2750, and the nested firewall rule, which matches uid 1000, stay as they are. The nested fleet's `raw.idmap` maps by number too.
+
+Root renames an older container in the `start` phase, which every start, wake and deployment runs. The rename comes as soon as the container runs, before any other step that runs a command in it. A default gets it at its next deployment or start. A copy gets it from its seed; a copy of an older seed gets it at its first start, in its clone, which runs the same steps. A running copy keeps the old names until its next start. No converge is needed.
+
+A container that has the user `web`, no group `work` or 1000 and no unit file that names `orbit` skips it. Otherwise root runs these steps:
+
+1. Stop every unit file under `/etc/systemd/system` that names `User=orbit`: FrankenPHP, the Processes and the Schedules' timers and services. The container's boot started them under the old name.
+2. `usermod -l web -d /home/web -m orbit`.
+3. `groupmod -n web work`, then `usermod -g web web`.
+4. Remove the group 1000.
+5. Give each entry with gid 1000 in the workspace and in `/home/web` the group `web`.
+6. In those unit files, write `User=web`, `Group=web` and `HOME=/home/web` for the old values, reload systemd and start again each unit that step 1 stopped.
+
+Each step checks its own result first, so a rename that stopped half way finishes at the next start. A container with the user `web` gets only the steps that are left: the group `work`, the group 1000, or a unit file that still names `orbit`.
 
 ### The machine name
 
@@ -733,7 +752,7 @@ Each Project type has one note in the agent folder, at `notes/<note>.md`. The no
 
 A container that runs T3 without a default to copy, such as a migrated checkout, links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A clone reads the note through its own [agent instructions](#agent-instructions). A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are.
 
-It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow. It says that `agent` has passwordless sudo and `orbit` has none, that there is no direct internet, how the egress proxy works, and how Git leaves the container.
+It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow. It says that `agent` has passwordless sudo and `web` has none, that there is no direct internet, how the egress proxy works, and how Git leaves the container.
 
 A note gives no instructions about the work. The Project's own instructions and skills come from its [agent instructions](#agent-instructions); MCP servers come from the project's own files.
 
@@ -847,7 +866,7 @@ The model key does not tell one container from another: every container holds th
 
 The Gateway makes a random key each time it writes a task copy's model environment, at the copy's create. A task copy is never migrated: it already runs in a container. The Gateway stores only the key's SHA-256 hash, on the copy's runtime record. A new key replaces the hash, so the older key stops working.
 
-The key goes into `model.env` as `ORBIT_COPY_KEY`. This is the same `0600` file of `agent` that holds the placeholder. `ORBIT_COPY_API` in the same file holds `http://<bridge address>:8319/orbit/v1/copy`. T3 hands both values to Claude Code and Codex. The app user `orbit` cannot read them.
+The key goes into `model.env` as `ORBIT_COPY_KEY`. This is the same `0600` file of `agent` that holds the placeholder. `ORBIT_COPY_API` in the same file holds `http://<bridge address>:8319/orbit/v1/copy`. T3 hands both values to Claude Code and Codex. The app user `web` cannot read them.
 
 A clone that is not a task copy gets no copy key and no `ORBIT_COPY_*` line. The copy's destroy deletes its runtime record, so the key ends with the copy. The copy holds no other credential for Orbit and no Git token.
 
@@ -942,7 +961,7 @@ What it serves:
 - **Scope.** A forward proxy with `CONNECT`, open to every public host and port.
 - **Nothing kept.** It keeps no cache and no files. It sends no `Via` or `X-Forwarded-For` header.
 - **No cache manager.** It refuses requests for its own cache manager, so a container cannot read what other containers fetch.
-- **Who.** Every container on the bridge uses it, `orbit` and `agent` alike, and so does the image build container.
+- **Who.** Every container on the bridge uses it, `web` and `agent` alike, and so does the image build container.
 - **Admission.** Only the bridge reaches the port. The common NIC ACL and the Node's rule `orbit:instances-egress` admit it there. The proxy's table resets a connection to the port from anywhere else.
 - **Health.** The converge ends by checking that the proxy and its table run. Otherwise it fails with `instance.host_unavailable`.
 
@@ -1027,7 +1046,7 @@ A stale projection mark is repaired only for an active default on an active app-
 
 All Routes targeting the Instance must be active and published, with no failure, placement transition, replacement or target-set change. No unfinished Instance or Route publication and no retained publication hold may remain. A non-web Project without a Route counts as complete.
 
-After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Each new commit of the default branch also deploys it [by itself](/reference/deployments#automatic-development-defaults), unless the Project turned `default_auto_deploy` off. Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. A step with [inputs](/reference/deployments#step-inputs) is skipped when they and its command are as at its last passed run in the workspace; its record is in the workspace's `.git/orbit-deploy-steps`, so a clone keeps it with the files it describes. Before that snapshot, a Node/Vite default converts an old shared Node store once as `orbit`, without restarting a Process.
+After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Each new commit of the default branch also deploys it [by itself](/reference/deployments#automatic-development-defaults), unless the Project turned `default_auto_deploy` off. Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. A step with [inputs](/reference/deployments#step-inputs) is skipped when they and its command are as at its last passed run in the workspace; its record is in the workspace's `.git/orbit-deploy-steps`, so a clone keeps it with the files it describes. Before that snapshot, a Node/Vite default converts an old shared Node store once as `web`, without restarting a Process.
 
 A converted store replaces the same-commit seed too: an immutable old snapshot cannot inherit a later filesystem change. Until this explicit deploy, clones of an old seed still convert their own store correctly.
 
@@ -1071,10 +1090,10 @@ A proof copy's runtime still names the default as its clone source, so the defau
 | ACL | The NIC carries `orbitinst0-proxy` and the container's own ACL `instance-<id>`; `orbitinst0-egress` stays on the bridge only. Only the Node's Caddy, from the bridge's address, reaches port 8080 |
 | Git | The Node fetches with the read token into its mirror `/var/lib/orbit/instance-repositories/<id>.git`. A bundle carries the branch into the container, and `agent` checks it out in `/srv/workspace` |
 | Checkout path | The workspace's path on the Node, inside the container's root file system. It keeps the path unique on the Node; Orbit never works in it from the Node |
-| `.env` | In the workspace's application directory, for `orbit` with group `work`, mode 0640. Git never takes it: see [the `.env` stays out of Git](#the-env-stays-out-of-git) |
+| `.env` | In the workspace's application directory, for `web` with group `web`, mode 0640. Git never takes it: see [the `.env` stays out of Git](#the-env-stays-out-of-git) |
 | Deploy steps | Each runs as `agent` at `/srv/workspace`, from its own vault copy ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)). Its environment holds only `HOME=/home/agent`, `USER=agent`, `LOGNAME=agent`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, the [proxy settings](#proxy-settings-in-a-container), and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders |
-| FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile` as `orbit` on port 8080. The Route proxies to the bridge address; the Node runs no PHP pool for it |
+| FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile` as `web` on port 8080. The Route proxies to the bridge address; the Node runs no PHP pool for it |
 | Seed | The first build and each passed deployment take `seed-<commit>` with the units stopped. Older seeds go, except the proof default's [base](#a-retake-keeps-the-seed). The runtime row records the commit |
 | Deployment | The variant `container` starts a stopped container and fetches the commit on the Node. It refuses `deployment.checkout_dirty`, `deployment.commit_not_on_branch` and `deployment.branch_diverged` as a checkout does |
 | Processes | The Project's development Process definitions run as `orbit-*` units in the container. [Processes](#processes) has the details |
@@ -1117,7 +1136,7 @@ A container Instance's Processes come from the Project's development Process def
 
 | Part | In a container |
 | --- | --- |
-| User | `orbit`, group `orbit`, `UMask=0007`, `HOME=/home/orbit` |
+| User | `web`, group `web`, `UMask=0007`, `HOME=/home/web` |
 | Directory | The workspace's application directory, `/srv/workspace` or the Project root in it |
 | `PATH` | The Project's PHP build, then runtime `bin` and system folders. Supported names, such as `php8.5` and `node`, resolve at rendering; proven opaque migration argv stays exact |
 | Environment | The workspace's `.env`, then the definition's own values in `/etc/orbit/processes/<id>/<sha256>.env`, root only, mode 0600. The values come only from the run's vault copy |
@@ -1732,11 +1751,11 @@ Before downtime, migration resolves the [deploy credential](/reference/github-ap
 - **Branch.** The Node's mirror fetches the Instance's branch from the checkout, and Orbit pushes it in.
 - **Files.** Orbit copies the changed, untracked and ignored files, never the checkout's `.git`. It then removes the caches built at the old path ([rule](/cli/instance/migrate)).
 - **Database.** A database on a Database server stays where it is, and the container gets its own way to it. A SQLite file in the checkout moves with the files.
-- **Start.** FrankenPHP starts as `orbit`. A non-default Instance gets its T3 server, registered as in [Create](#create). A default gets its first seed snapshot.
+- **Start.** FrankenPHP starts as `web`. A non-default Instance gets its T3 server, registered as in [Create](#create). A default gets its first seed snapshot.
 - **Route.** Orbit points the Route at FrankenPHP in the container.
 - **Retirement.** Orbit retains all files and Git recovery data. It removes only the linked checkout's registration. An owner's dependents and any registered descendant block retirement.
 
-Registered Schedule timers keep their UUID, calendar, timeout and enabled or paused state. Their timers and commands run inside the container as `orbit`, only while it runs, without catch-up. The container's `/bin/bash` and PATH run each command, whatever the host account's login shell; a host path such as `/usr/bin/php8.5` becomes the container's `php`. [Schedule migration](/reference/schedules#checkout-migration) defines refusals, rollback and retained logs.
+Registered Schedule timers keep their UUID, calendar, timeout and enabled or paused state. Their timers and commands run inside the container as `web`, only while it runs, without catch-up. The container's `/bin/bash` and PATH run each command, whatever the host account's login shell; a host path such as `/usr/bin/php8.5` becomes the container's `php`. [Schedule migration](/reference/schedules#checkout-migration) defines refusals, rollback and retained logs.
 
 A failed move before cutover leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
 
@@ -1748,9 +1767,9 @@ A link must have both its named target and its resolved destination inside the c
 
 Prediction accepts these Git paths: `.git`, `.git/HEAD`, `.git/config`, `.git/index`, `.git/FETCH_HEAD`, `.git/objects`, `.git/objects/info`, `.git/objects/pack`, the checked-out branch at `.git/refs/heads/BRANCH`, the fetched branch at `.git/refs/remotes/origin/BRANCH`, and the directories that contain those refs. The workspace's init, fetch and checkout steps create these paths. Every other `.git/**` target refuses before downtime, including `.git/local-only`. Template files, reflogs and object filenames are not promised.
 
-Directories absent after the Git checkout and file archive are copied too, including empty untracked and ignored trees. Added directories keep their exact modes, including setgid and sticky bits, with the normal `orbit`/`work` ownership mapping.
+Directories absent after the Git checkout and file archive are copied too, including empty untracked and ignored trees. Added directories keep their exact modes, including setgid and sticky bits, with the normal `web:web` ownership mapping.
 
-The Node passes their mode manifest through the protected execution result and stdin; it creates no manifest file in the container. Restoration runs as `orbit` and opens each path component relative to the workspace with directory descriptors that refuse symlinks. Absolute paths and parent traversal refuse before any mode changes. The directory scan excludes `.git` metadata and tracked submodule contents and never follows directory links. Selected nested repositories still enter the file archive as before. Absolute links in ignored directories follow the same rule, including links from `storage/framework/testing` into tracked `database/migrations` files.
+The Node passes their mode manifest through the protected execution result and stdin; it creates no manifest file in the container. Restoration runs as `web` and opens each path component relative to the workspace with directory descriptors that refuse symlinks. Absolute paths and parent traversal refuse before any mode changes. The directory scan excludes `.git` metadata and tracked submodule contents and never follows directory links. Selected nested repositories still enter the file archive as before. Absolute links in ignored directories follow the same rule, including links from `storage/framework/testing` into tracked `database/migrations` files.
 
 A target ending in `/` or `/.` requires a directory at every link hop. A regular file with either suffix is a broken target and refuses, even if removing the suffix would make it work.
 
@@ -1772,7 +1791,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
 | Retirement check | Checks identity before downtime and retention. Carries local branches, stash history, staging and all copied file bytes. Active clean/smudge filters, intent-to-add, submodule changes, owner dependencies and registered descendants still block |
 | Branch | The mirror fetches the recorded branch locally; the files phase imports every local branch tip and complete stash history into independent Git metadata |
-| Files | One archive carries changed, untracked and ignored files and missing directories. Added directories keep their modes; ownership maps to `orbit`/`work`. Deleted tracked files are removed |
+| Files | One archive carries changed, untracked and ignored files and missing directories. Added directories keep their modes; ownership maps to `web:web`. Deleted tracked files are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
 | Database server | The NIC ACL and the Node's firewall rule to every attached target. The container phase checks every port from inside before quiesce, else `instance.database_unreachable`, with zero downtime |
 | SQLite | The file moves with the files. The Gateway drops the connection record of a SQLite file inside the checkout |
@@ -1907,7 +1926,7 @@ Stock T3 0.1.7 serves its thread tools at `/mcp`, but accepts there only an MCP 
 
 - **Path.** One Ansible phase on the container's Node runs `incus exec` into the container, then `runuser -u agent`. The shell is not a login shell.
 - **Lock.** Swamp locks the turn's step by the copy's Instance id for the whole turn. One copy takes one turn at a time; turns in two copies on one Node run side by side ([turn](/cli/task/turn#in-a-task-copy)).
-- **Groups.** `runuser` keeps the agent's groups. `incus exec --user` would drop the `work` group, which owns the checkout's Git folder.
+- **Groups.** `runuser` keeps the agent's groups. `incus exec --user` would drop the `web` group, which owns the checkout's Git folder.
 - **Session.** Each `t3 thread` command issues its own full-access session inside the container.
 - **Session end.** The command calls T3 on its loopback address. At its exit, it revokes the session.
 - **No credential outside.** No T3 session reaches the Node, Swamp, the vault or the Gateway.
@@ -2181,7 +2200,7 @@ It is the normal image with these changes:
 | Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:100000000`. The inner Incus does not read them: see [The ID map size](#the-id-map-size) |
 | AppArmor marker | `/etc/orbit/apparmor-off` holds `N` |
 | `agent` | A member of the inner `incus-admin` group. Its passwordless sudo is the normal image's grant |
-| `orbit` | Neither the group nor sudo. The first rule of the firewall's output chain drops its traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24`. The other rules stay the same |
+| `web` | Neither the group nor sudo. The first rule of the firewall's output chain drops its traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24`. The other rules stay the same |
 | Firewall reset | `destroy table inet orbit_agent_guard` instead of `flush ruleset`, also as the `ExecStop` of `nftables.service` |
 | Network wait | `systemd-networkd-wait-online.service.d/90-orbit-no-dns.conf`: eth0 routable, at most 30 s, no DNS |
 
@@ -2198,7 +2217,7 @@ Before it publishes, the build checks the sudo paths of both images:
 - no `ubuntu` user and no member of `sudo` or `admin`;
 - no grant in `sudoers.d` other than `orbit-agent` with its one line;
 - a grant that `visudo` accepts, judged by its exit code, not its output;
-- sudo works for `agent` and fails for `orbit`;
+- sudo works for `agent` and fails for `web`;
 - in the nested-fleet image `agent` is alone in `incus-admin`, and the normal image has no `incus-admin` group.
 
 An Instance start fetches and installs nothing. A failed build removes only a build container that it made; a build container from an earlier run stays for the operator.
@@ -2488,7 +2507,7 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 | Rule | Where | Why |
 | --- | --- | --- |
 | The workspace `/srv/workspace` is the disk device `checkout`, with `shift=false` | `nested-gateway`, `nested-app-dev` | An edit reaches them at once. A shifted mount fails two levels below the host, as the [shared folders](#instance-host-in-the-fleet) of `nested-app-dev`'s Instances do |
-| `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` in the inner Incus | All three nested containers | The workspace is `agent:work` (2750:2760) with files of `orbit` (1000). With only the `orbit` line, nested root cannot resolve the state mounts. The outer container still has no `raw.*` key |
+| `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` in the inner Incus | All three nested containers | The workspace is `agent:web` (2750:2760) with files of `web` (1000), the guests' `orbit`. With only the 1000 line, nested root cannot resolve the state mounts. The outer container still has no `raw.*` key |
 | The Club key folder device `club-key`: `/run/orbit-club` at `/home/orbit/.config/swamp/club`, `shift=false`, and the link `/home/orbit/.config/swamp/api-key` to `club/swamp-club-api-key` | `nested-gateway` | The nested Swamp reads the [Club key](#the-club-key-of-the-nested-gateway) that Orbit delivers to the outer container's `/run` |
 | A read-only disk device that shows `N` at `/sys/module/apparmor/parameters/enabled`, from `/etc/orbit/apparmor-off` | `nested-app-dev`, `nested-app-prod` | `docker run` fails without it: Docker's own profile cannot load two levels below the host |
 | `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` in the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service`, `orbit-swamp-worker@.service` and `orbit-gateway-horizon.service`, one `Environment=` line | `nested-gateway` | Swamp verifies a new Club key at Swamp Club, Horizon's jobs read Git, and the fleet reaches the internet only through the Node's [egress proxy](#egress-and-dns) |
@@ -2498,7 +2517,7 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 | `limits.memory`: 4 GiB, 5 GiB and 2 GiB | `nested-gateway`, `nested-app-dev`, `nested-app-prod` | `nested-app-dev` hosts the fleet's Instances; see [Instance host in the fleet](#instance-host-in-the-fleet) |
 | The egress files: the egress proxy for apt in `/etc/apt/apt.conf.d/95orbit-nested-egress`, and the same proxy settings, `NO_PROXY` included, in `/etc/environment` after the image's `PATH` line | All three | A Node's base converge runs apt and downloads the agent over SSH with sudo. See below the table |
 | The marker `/etc/orbit/instance-fleet` | `nested-gateway` | The nested Gateway names no task VM package cache for its Nodes. See below the table |
-| `/etc/gitconfig` with `safe.directory` for the checkout, `/home/orbit/orbit` | All three | `agent` owns the checkout, so Git as `orbit` stops with "dubious ownership" without it. The outer container's `/etc/gitconfig` does the same for `/srv/workspace` |
+| `/etc/gitconfig` with `safe.directory` for the checkout, `/home/orbit/orbit` | All three | `agent` owns the checkout, so Git as the guest's `orbit` stops with "dubious ownership" without it. The outer container's `/etc/gitconfig` does the same for `/srv/workspace` |
 | The size files: `APT::Keep-Downloaded-Packages "false";` in `/etc/apt/apt.conf.d/91orbit-nested-package-files`, and `SystemMaxUse=64M` in `/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf` | All three | Every nested root disk is in every copy. See below the table |
 | `security.nesting=true` and a memory limit | All three | Docker runs in them |
 | `boot.autostart=true` | All three | They start with the outer container, also after a restore of its seed. With `false`, the start still starts them, and the refresh writes `true` |
@@ -2576,7 +2595,7 @@ Two users share the outer container, and only one of them reaches the fleet.
 
 `agent` drives the inner Incus as a member of its admin group. It restores `base`, runs commands in the nested containers and reads their journals. It has root in its own container through `sudo` with no password, as in every container. It is never root on the Node.
 
-`orbit` cannot use the inner Incus. A firewall rule by uid in the outer container drops its traffic to the fleet's bridge and WireGuard subnets, as the image does for the model route. The rule is needed because the nested Gateway trusts the source address. Without it, any user in the container would be the fleet's operator.
+`web` cannot use the inner Incus. A firewall rule by uid in the outer container drops its traffic to the fleet's bridge and WireGuard subnets, as the image does for the model route. The rule is needed because the nested Gateway trusts the source address. Without it, any user in the container would be the fleet's operator.
 
 ### Club key and snapshots
 
@@ -3124,7 +3143,7 @@ The fleet rules:
 - The disk device `checkout` gives the workspace to all three nested containers with `shift=false`. An ID shift fails two levels below the host.
 - The disk device `club-key` gives the folder `/run/orbit-club` of the container to the nested Gateway at `/home/orbit/.config/swamp/club`, with `shift=false` and `required=false`.
 - In the nested Gateway, `/home/orbit/.config/swamp/api-key` links to `club/swamp-club-api-key`. `base` keeps the link.
-- `raw.idmap` of the inner Incus maps `orbit` (1000), `agent` (2750) and the group `work` (2760) into all three nested containers, so the nested `orbit` and the container's `orbit` own the workspace together.
+- `raw.idmap` of the inner Incus maps uid 1000, 2750 and gid 2760 by number into all three nested containers. The container's `web` is the nested `orbit`.
 - The AppArmor-off device is on the nested `app-dev` and `app-prod`.
 - `boot.autostart=true` is on the three nested containers.
 - The egress proxy settings are `environment.*` keys on the three nested containers. The nested Gateway's Swamp, Horizon and PHP-FPM get them from their [fleet rule files](#fleet-rules).
@@ -3152,7 +3171,7 @@ The refresh waits in the same way until the state mounts of the nested Gateway a
 
 Every API call of the fleet step passes `--noproxy '*'`. The Instance container's environment sends every address but the egress proxy's own through that proxy, which cannot reach the tunnel; it answers `CONNECT tunnel failed, response 503`.
 
-A command that the fleet step runs as the app user in a nested container, the agent delivery and the migrate, runs with `runuser -u orbit`. That gives `orbit` its groups, among them `work`, which opens the checkout. `incus exec --user 1000` gives only the user ID, with group 0.
+A command that the fleet step runs as the app user in a nested container, the agent delivery and the migrate, runs with `runuser -u orbit`. That gives the guest's `orbit` its groups, among them `work` (gid 2760), which opens the checkout. The container names the same gid `web`. The guests are Nodes, so their app user keeps the name `orbit`. `incus exec --user 1000` gives only the user ID, with group 0.
 
 The fleet step never reads, prints or copies the Club key file. Without the file, the fleet starts and is ready; only Swamp in the nested Gateway stays down.
 
@@ -3167,10 +3186,10 @@ The bundle holds only what the workspace lacks: its prerequisite is the newest c
 Step 10 of ADR 0250 moves production Instances into containers on `app-prod` Nodes, after development containers work. The decided basics:
 
 - The `app-prod` role installs the container setup and the runtime folder, not PHP-FPM. It installs no agent folder.
-- A production container has only the user `orbit`: no T3, no agent and no model route.
+- A production container has only the user `web`: no T3, no agent and no model route.
 - A production container gets no `php-cli.ini`, so its PHP never loads PCOV ([ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov)).
 - FrankenPHP serves it once it has proved itself in development, by the criteria of the plan's [production gate](/solutions/development-container-runtime#production-gate).
-- Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
+- Schedules stay native Swamp schedules that run their command in the container as `web`; the per-minute Laravel scheduler runs inside it.
 - Planned ([ADR 0265](/decisions/0265-sleep-idle-production-containers)): an idle live sleeps and wakes fully ready by the rule of [Sleep and wake](#sleep-and-wake). [Production containers](/reference/production-containers#sleep-and-wake) has the details.
 - Existing production checkouts are migrated, as development checkouts are.
 
@@ -3323,7 +3342,7 @@ T3's changed-files view, terminals and browser work on its own disk. From outsid
 
 ### Two users, no wrapper
 
-The boundary that matters is the preview URL, which reaches only `orbit`. A switch for agent commands adds little. The container holds only its Project's `.env`, and its traffic goes through Orbit's egress proxy. Codex also has no documented setting for its shell.
+The boundary that matters is the preview URL, which reaches only `web`. A switch for agent commands adds little. The container holds only its Project's `.env`, and its traffic goes through Orbit's egress proxy. Codex also has no documented setting for its shell.
 
 ### Clones of a default that never runs T3
 
@@ -3370,7 +3389,7 @@ Two spikes on Beast on 2026-11-09 ran the user and agent layout in one container
 | Claude and Codex turns | Through the router with a placeholder key, about 13 s for a short turn |
 | Restart in a turn | Both agents continued after `systemctl restart t3` in a 40 s tool call |
 | Changed files | `orchestration.getTurnDiff` answered from a Mac over WireGuard |
-| `orbit` user | Could not run `t3`, `claude` or `codex`, read `/home/agent`, reach the model route or T3's port, or see agent processes |
+| `web` user | Could not run `t3`, `claude` or `codex`, read `/home/agent`, reach the model route or T3's port, or see agent processes |
 | Shared workspace | Each user edited the other's files; Git was clean for both |
 | Egress | Only DNS and the guard; no turn failed |
 
@@ -3378,13 +3397,13 @@ Two spikes on Beast on 2026-11-09 ran the user and agent layout in one container
 
 Migrate and clone prepare a writable `VP_HOME/js_runtime/node` directory in the new container. The launch phase copies the recipe Node once, with no download. A real copy avoids dangling version links when the Node replaces and retires its shared runtime folder: Vite+ 1.4.0 cannot install over a dangling version symlink. Unpinned Projects initially use the same recipe binary contents.
 
-Vite+ resolves and downloads additional pins as `orbit`, through the Instance proxy, with its own signature and checksum verification. Resolution uses `vp env current node --json`; only a missing resolved executable runs `vp env install VERSION`. Orbit does not implement Node pin precedence. Each other pin on the Process-directory-to-workspace path is also checked in isolation by Vite+, so a malformed child cannot silently fall back to a valid parent.
+Vite+ resolves and downloads additional pins as `web`, through the Instance proxy, with its own signature and checksum verification. Resolution uses `vp env current node --json`; only a missing resolved executable runs `vp env install VERSION`. Orbit does not implement Node pin precedence. Each other pin on the Process-directory-to-workspace path is also checked in isolation by Vite+, so a malformed child cannot silently fall back to a valid parent.
 
 Migration prepares Node before quiesce. It mounts the serving checkout read-only for this phase and removes the mount even after failure. The phase has a 150-second bound; tool resolution and downloads share 90 seconds. Failure records `instance.node_runtime_prepare_failed` with the pin and a specific malformed-pin, network, HTTP, checksum, disk or unknown-version reason while the checkout keeps serving.
 
 Clone resolution and downloads share 60 seconds instead. Its guest helper allows 75 seconds for store preparation and fetch; all commands in the workspace phase share a 115-second deadline, inside the existing 120-second shell and 130-second Swamp limits. The Operation budget stays unchanged.
 
-Clone converts an old seed's whole-store link as the app user, retains private downloaded versions from new-style seeds, and fetches the selected branch's pin before starting Processes. No privileged command traverses or changes the private store. The launch phase installs a root-owned helper outside the store, but runs all conversion, copy, validation and downloads as `orbit`.
+Clone converts an old seed's whole-store link as the app user, retains private downloaded versions from new-style seeds, and fetches the selected branch's pin before starting Processes. No privileged command traverses or changes the private store. The launch phase installs a root-owned helper outside the store, but runs all conversion, copy, validation and downloads as `web`.
 
 This release needs only the Gateway/Swamp release for migrate and clone. It changes no image or converge tasks and installs no boot unit or Process startup hook. Fresh default creates keep the stock image behavior: their typed result includes `node_pin: {status: "not_prepared", reason: "container_from_stock_image"}` (pin not served: container from the stock image). This advisory does not fail the Operation. An existing container's store is not converted by converge or deploy; deploy fetches only into an already-private store.
 
