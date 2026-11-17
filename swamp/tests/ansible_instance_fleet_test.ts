@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 const hasAnsible = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 const root = new URL("../ansible/", import.meta.url);
 const shapes = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-containers.json", import.meta.url)));
-const phases = ["check", "rules", "rules-read", "files", "start", "proxy", "reach", "ready", "refresh", "mounts", "room", "migrate", "converge-node", "reset", "resume", ""];
+const phases = ["check", "rules", "rules-read", "files", "start", "proxy", "reach", "ready", "refresh", "mounts", "room", "migrate", "known-hosts", "converge-node", "reset", "resume", ""];
 const guests = { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" };
 const names = Object.values(guests);
 const outer = ["--project", "orbit-instances-nested", "exec", "instance-9", "--"];
@@ -265,12 +265,13 @@ const compareReads = reads.slice(0, names.length + 1);
 /** A start, which is also a deployment's one fleet check, waits for the inner Incus and compares the rules first. */
 const startReads = ["incus admin waitready --timeout 80", ...compareReads];
 const instanceHostReads = names.map((name) => `incus exec ${name} -- test -f /etc/orbit/instance-fleet-node`);
+const knownHostsList = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan list --raw --no-interaction";
 const knownHostsSync = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan gateway:known-hosts:sync --no-interaction";
 const startCalls = [
   "incus list --format csv --columns ns",
   ...names.map((name) => `incus start ${name}`),
   ...instanceHostReads,
-  knownHostsSync,
+  knownHostsList, knownHostsSync,
   // The nested Swamp's key file is a link into the folder of the club-key device.
   "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
   "incus exec nested-gateway -- ln -sfnT club/swamp-club-api-key /home/orbit/.config/swamp/api-key",
@@ -419,6 +420,34 @@ Deno.test({
 });
 
 Deno.test({
+  name: "an old-checkout fleet start records unavailable pin sync, then refresh writes pins on the new checkout and repeats unchanged",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled());
+    try {
+      f.change((state) => state.oldGatewayCommands = true);
+      const old = f.run("start"); assert(old.ok, old.output);
+      assertStringIncludes(old.output, "command_unavailable");
+      assert(f.calls().includes(knownHostsList));
+      assert(!f.calls().includes(knownHostsSync));
+      assertEquals(f.state().containers["nested-gateway"].files["/home/orbit/.orbit/ssh/known_hosts"], undefined);
+      // The checkout moves between Prepare and Finish; refresh must write pins without another start.
+      f.change((state) => state.oldGatewayCommands = false);
+      const refreshed = f.run("refresh"); assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      assert(calls.indexOf(knownHostsSync) > calls.findIndex((call) => call.includes("artisan migrate --force")));
+      assertEquals(f.state().containers["nested-gateway"].files["/home/orbit/.orbit/ssh/known_hosts"], "recorded-node-pins");
+      const again = f.run("start"); assert(again.ok, again.output);
+      assertEquals(again.changed, 0);
+      assert(f.calls().includes(knownHostsSync));
+      f.change((state) => state.failCommandList = true);
+      const failed = f.run("start"); assert(!failed.ok);
+      assertStringIncludes(failed.output, "Gateway command list unavailable");
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
   name: "a fleet start appends the managed user to Incus admin on every marked host, preserves other groups and repeats unchanged without a converge",
   ignore: !hasAnsible,
   fn() {
@@ -470,7 +499,7 @@ Deno.test({
       const again = f.run("start");
       assert(again.ok, again.output);
       assertEquals(again.changed, 0);
-      assertEquals(f.calls(), [...startReads, "incus list --format csv --columns ns", ...instanceHostReads, knownHostsSync, "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key", "test -s /etc/wireguard/wg-nested.key",
+      assertEquals(f.calls(), [...startReads, "incus list --format csv --columns ns", ...instanceHostReads, knownHostsList, knownHostsSync, "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key", "test -s /etc/wireguard/wg-nested.key",
         "incus exec nested-gateway -- wg show orbit public-key", "wg show wg-nested", "ip -j addr show dev wg-nested", ...tunnelDnsReads, ...reachCalls]);
     } finally {
       f.cleanup();
@@ -639,6 +668,7 @@ Deno.test({
         ...swampReads,
         "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan migrate --force",
         exec("nested-gateway", `systemctl restart ${services.join(" ")}`),
+        knownHostsList, knownHostsSync,
         // One read of every service; with the Club key Swamp serve and its three workers too.
         exec("nested-gateway", `systemctl is-active ${[...services, ...swampServices].join(" ")}`),
         intentRead,
@@ -664,7 +694,7 @@ Deno.test({
         "incus list --format csv --columns ns",
         ...names.map((name) => `incus start ${name}`),
         ...instanceHostReads,
-        knownHostsSync,
+        knownHostsList, knownHostsSync,
         "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
         "test -s /etc/wireguard/wg-nested.key",
         "incus exec nested-gateway -- wg show orbit public-key",
@@ -818,7 +848,7 @@ Deno.test({
         // One call starts the three after the rules check: Incus boots them in parallel.
         `incus start ${names.join(" ")}`,
         ...instanceHostReads,
-        knownHostsSync,
+        knownHostsList, knownHostsSync,
         "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
         "incus exec nested-gateway -- ln -sfnT club/swamp-club-api-key /home/orbit/.config/swamp/api-key",
         "test -s /etc/wireguard/wg-nested.key",
@@ -1391,6 +1421,7 @@ Deno.test({
         recordRemove,
         ...mountReads,
         ...swampReads,
+        knownHostsList, knownHostsSync,
         serviceRead,
         intentRead,
         ...compareReads,
