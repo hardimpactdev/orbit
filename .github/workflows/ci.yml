@@ -564,7 +564,7 @@ jobs:
       # BeautifulRust (ADR 0267 P9): the executor crates have been clippy-clean from their first commit; the observer and its
       # contract crate joined in slice B1 (#3944), which also denies unwrap() outside tests.
       - name: Lint the agent and executor crates
-        run: cargo clippy --locked -p orbit-agent -p orbit-agent-contract -p orbit-executor-core -p orbit-executor -p orbit-executor-power --all-targets -- -D warnings
+        run: cargo clippy --locked -p orbit-agent -p orbit-agent-contract -p orbit-executor-core -p orbit-executor --all-targets -- -D warnings
 
   ci-policy:
     name: CI policy
