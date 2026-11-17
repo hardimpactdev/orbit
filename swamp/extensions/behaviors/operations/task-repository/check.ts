@@ -295,6 +295,87 @@ async function commandResult(
 
 class MissingOutput extends Error {}
 
+const encoder = new TextEncoder();
+const bytes = (text: string) => encoder.encode(text).length;
+/** The last `limit` bytes of `text`, cut at a character boundary. */
+function tailBytes(text: string, limit: number) {
+    const encoded = encoder.encode(text);
+    if (encoded.length <= limit) return text;
+    let start = encoded.length - Math.max(limit, 0);
+    while (start < encoded.length && (encoded[start] & 0xc0) === 0x80) start++;
+    return new TextDecoder().decode(encoded.subarray(start));
+}
+
+/** The line that ends every check output; it states the check's outcome. */
+export function outcomeLine(outcome: string, cause = "") {
+    return outcome === "passed"
+        ? "Task check PASSED"
+        : outcome === "changed"
+        ? "Task check CHANGED"
+        : "Task check FAILED" + (cause ? `: ${cause}` : "");
+}
+
+/**
+ * The check's stored output (docs/reference/tasks.md#stored-result): the
+ * redacted setup and Project output, then a `Deliverables` block with each
+ * deliverable's outcome, its command's exit code, its failures and, for a
+ * failed command, the last lines of its redacted output, then the outcome
+ * line. The older Project output gives way so the whole stays within
+ * OUTPUT_BYTES.
+ */
+export function checkOutput(
+    project: string,
+    deliverables: { id: string; outcome: string; failures: string[] }[],
+    commands: Record<string, Command>,
+    line: string,
+) {
+    const block = deliverables.length ? ["Deliverables"] : [];
+    for (const item of deliverables) {
+        const run = commands[item.id];
+        block.push(
+            `  ${item.id}: ${item.outcome}` +
+                (run?.exit_code === undefined ? "" : `, exit ${run.exit_code}`),
+            ...item.failures.map((failure) => `    ${failure}`),
+        );
+        const tail = tailBytes((run?.output ?? "").trimEnd(), 1024)
+            .split("\n").filter((row, index) => index > 0 || row !== "");
+        if (item.outcome === "failed" && run?.exit_code && tail.length) {
+            block.push(
+                `    Last lines of ${item.id}:`,
+                ...tail.map((row) => `      ${row}`),
+            );
+        }
+    }
+    const end = [...block, line].join("\n");
+    const head = project && !project.endsWith("\n") ? project + "\n" : project;
+    return bytes(end) >= OUTPUT_BYTES
+        ? tailBytes(end, OUTPUT_BYTES)
+        : tailBytes(head, OUTPUT_BYTES - bytes(end)) + end;
+}
+
+/** `result` with `outcome`, the last line of its output restated to agree. */
+function restated<T extends Record<string, unknown>>(
+    result: T,
+    outcome: string,
+    cause = "",
+): T & { outcome: string } {
+    return {
+        ...result,
+        outcome,
+        ...(typeof result.output === "string"
+            ? {
+                output: tailBytes(
+                    result.output.replace(
+                        /[^\n]*$/,
+                        outcomeLine(outcome, cause),
+                    ),
+                    OUTPUT_BYTES,
+                ),
+            }
+            : {}),
+    };
+}
+
 /** `git diff-tree -r --no-renames --name-status -z` rows, or null when the diff did not run. */
 export function diffRows(item: Run) {
     if (item.exitCode !== 0) return null;
@@ -417,8 +498,7 @@ export async function localResult(
             ? "passed"
             : "failed",
         exit_code: project.exit_code,
-        output: (setupOutput.slice(-OUTPUT_BYTES) + (project.output ?? ""))
-            .slice(-OUTPUT_BYTES),
+        output: "",
         head_before: before.head,
         tree_before: before.tree,
         head: after.head,
@@ -438,14 +518,28 @@ export async function localResult(
             (run(steps, "original").stdout ?? "").trim(),
     });
     const deliverables = deliverableResults(input, local);
+    const failed = local.outcome === "passed"
+        ? deliverables.filter((item) =>
+            ["failed", "not_run"].includes(item.outcome)
+        ).map((item) => item.id)
+        : [];
+    const outcome = failed.length ? "failed" : local.outcome;
     return {
         ...local,
-        outcome: local.outcome === "passed" &&
-                deliverables.some((item) =>
-                    ["failed", "not_run"].includes(item.outcome)
-                )
-            ? "failed"
-            : local.outcome,
+        outcome,
+        output: checkOutput(
+            setupOutput + (project.output ?? ""),
+            deliverables,
+            commands,
+            outcomeLine(
+                outcome,
+                failed.length
+                    ? `deliverable${failed.length > 1 ? "s" : ""} ${
+                        failed.join(", ")
+                    } did not pass`
+                    : "",
+            ),
+        ),
         check_id: input.check_id,
         group_id: input.group_id,
         subtask: input.subtask,
@@ -483,7 +577,7 @@ export function candidateResult(
         !Sha.test(commit) || tree !== local.tree ||
         (!recorded && parent !== local.head)
     ) {
-        return { ...local, outcome: "changed" };
+        return restated(local, "changed");
     }
     return { ...local, commit };
 }
@@ -528,10 +622,13 @@ export function ciResult(
             ? "tasks.handoff_ci_unavailable"
             : null);
     const result = {
-        ...local,
+        ...restated(
+            local,
+            read.fault === "change" ? "failed" : "passed",
+            "CI failed",
+        ),
         pending: !terminal,
         ci,
-        outcome: read.fault === "change" ? "failed" : "passed",
         failed_step: read.fault === "change" ? "ci" : local.failed_step,
         ...(error_code ? { error_code } : {}),
     };
@@ -642,7 +739,7 @@ export function observed(
     }
     return current.head === result.commit && current.tree === result.tree
         ? value
-        : { ...value, result: { ...result, outcome: "changed" } };
+        : { ...value, result: restated(result, "changed") };
 }
 
 /**

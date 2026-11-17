@@ -3,6 +3,7 @@ import { ciCacheImportProgram } from "../instance-deploy/app_step_runtime.ts";
 import {
     baseFields,
     candidateResult,
+    checkOutput,
     checkRuns,
     ciResult,
     diffRows,
@@ -289,7 +290,12 @@ Deno.test("a failed Project check retains failed evidence and reads skipped comm
     }
     assertEquals(value.outcome, "failed");
     assertEquals(value.exit_code, 23);
-    assertEquals(value.output, "project check failed");
+    assertEquals(
+        value.output,
+        "project check failed\nDeliverables\n  project-check: not_run\n" +
+            "    project-check: the command did not run: the Project check failed first.\n" +
+            "Task check FAILED",
+    );
     assertEquals(value.evidence?.commands, {});
     assertEquals(value.deliverables, [{
         id: "project-check",
@@ -339,7 +345,10 @@ Deno.test("command output is the redacted tail of its downloaded file, which is 
         project: ran(0),
     }, directory);
     if (!("output" in value)) throw new Error("Expected local evidence");
-    assertEquals(value.output, "API_KEY=[REDACTED]\n[REDACTED]\ndone\n");
+    assertEquals(
+        value.output,
+        "API_KEY=[REDACTED]\n[REDACTED]\ndone\nTask check PASSED",
+    );
     assertEquals([...Deno.readDirSync(directory)], []);
 });
 
@@ -373,6 +382,151 @@ Deno.test("the checked diff and changed paths come from NUL-separated diff-tree 
     if (!("changed_paths" in value)) throw new Error("Expected evidence");
     assertEquals(value.changed_paths, ["new"]);
     assertEquals(value.evidence?.diff, [{ status: "M", path: "code" }]);
+});
+
+/** A handoff whose Project check passed and printed `project`, with command deliverables that exited with `codes`. */
+const deliverablesChecked = (
+    project: string,
+    codes: number[],
+    tree = commit,
+) => localResult(
+    {
+        ...input,
+        command: "bin/check",
+        deliverables: codes.map((_, index) => ({
+            ...commandDeliverable,
+            id: `tests-${index}`,
+        })),
+    },
+    valid,
+    {
+        ...snapshots(),
+        "snapshot-after-tree": ran(0, tree + "\n"),
+        project: ran(0),
+        ...Object.fromEntries(
+            codes.map((code, index) => [`deliverable-${index}`, ran(code)]),
+        ),
+        diff: ran(0, ""),
+        changed: ran(0, ""),
+    },
+    outputs({
+        project,
+        ...Object.fromEntries(
+            codes.map((code, index) => [
+                `deliverable-${index}`,
+                `tests-${index} ran\nTOKEN=synthetic-private-value\n` +
+                (code ? "FAILED merge round\n" : "OK\n"),
+            ]),
+        ),
+    }),
+);
+const lastLine = (output: unknown) => String(output).split("\n").at(-1);
+
+Deno.test("a failed command deliverable ends the output FAILED, naming it, after the Project's PASSED", async () => {
+    // Check 2579: the outcome was failed, but the output ended with the Project's "Task check PASSED".
+    const value = await deliverablesChecked(
+        "pest apps/gateway passed\nTask check PASSED against abc in 9.0s\n",
+        [0, 1],
+    );
+    if (!("deliverables" in value)) throw new Error("Expected evidence");
+    assertEquals(value.outcome, "failed");
+    assertEquals(
+        value.output,
+        "pest apps/gateway passed\nTask check PASSED against abc in 9.0s\n" +
+            "Deliverables\n" +
+            "  tests-0: passed, exit 0\n" +
+            "  tests-1: failed, exit 1\n" +
+            "    tests-1: the required command did not pass.\n" +
+            "    Last lines of tests-1:\n" +
+            "      tests-1 ran\n" +
+            "      TOKEN=[REDACTED]\n" +
+            "      FAILED merge round\n" +
+            "Task check FAILED: deliverable tests-1 did not pass",
+    );
+});
+
+Deno.test("a passed check lists each deliverable passed and ends PASSED", async () => {
+    const value = await deliverablesChecked("Task check PASSED\n", [0, 0]);
+    if (!("deliverables" in value)) throw new Error("Expected evidence");
+    assertEquals(value.outcome, "passed");
+    assertEquals(
+        value.output,
+        "Task check PASSED\nDeliverables\n  tests-0: passed, exit 0\n" +
+            "  tests-1: passed, exit 0\nTask check PASSED",
+    );
+    // A check without deliverables still states its outcome last.
+    const plain = await localResult(
+        { ...input, command: "true" },
+        valid,
+        { ...snapshots(), project: ran(0) },
+        outputs({ project: "fine" }),
+    );
+    assertEquals("output" in plain && plain.output, "fine\nTask check PASSED");
+});
+
+Deno.test("a long Project output gives way to the deliverables block and the outcome line", async () => {
+    const value = await deliverablesChecked(
+        "older line\n".repeat(2048) + "Task check PASSED\n",
+        [1],
+    );
+    if (!("output" in value)) throw new Error("Expected evidence");
+    assertEquals(new TextEncoder().encode(value.output).length <= 16384, true);
+    assertEquals(
+        value.output.endsWith(
+            "Task check PASSED\nDeliverables\n  tests-0: failed, exit 1\n" +
+                "    tests-0: the required command did not pass.\n" +
+                "    Last lines of tests-0:\n      tests-0 ran\n" +
+                "      TOKEN=[REDACTED]\n      FAILED merge round\n" +
+                "Task check FAILED: deliverable tests-0 did not pass",
+        ),
+        true,
+    );
+    // A failed command's tail keeps at most 1 KiB of its last lines.
+    const long = checkOutput(
+        "",
+        [{ id: "t", outcome: "failed", failures: [] }],
+        { t: { exit_code: 1, output: "x".repeat(4000) + "\nlast\n" } },
+        "Task check FAILED",
+    );
+    assertEquals(long.split("\n").at(-2), "      last");
+    assertEquals(new TextEncoder().encode(long).length < 1200, true);
+});
+
+Deno.test("a moved workspace ends CHANGED", async () => {
+    const value = await deliverablesChecked(
+        "Task check PASSED\n",
+        [0],
+        "c".repeat(40),
+    );
+    if (!("output" in value)) throw new Error("Expected evidence");
+    assertEquals(value.outcome, "changed");
+    assertEquals(lastLine(value.output), "Task check CHANGED");
+});
+
+Deno.test("a later outcome restates the output's last line", async () => {
+    const local = await deliverablesChecked("Task check PASSED\n", [0]);
+    if (!("output" in local)) throw new Error("Expected evidence");
+    const moved = candidateResult(
+        { ...input, command: "bin/check" },
+        local,
+        ran(0, `${"d".repeat(40)}\n${"e".repeat(40)}\n${commit}\n`).outputs,
+    );
+    assertEquals([moved.outcome, lastLine(moved.output)], [
+        "changed",
+        "Task check CHANGED",
+    ]);
+    const failed = ciResult(
+        { ...pending, result: { ...pending.result, output: local.output } },
+        { runs: [{ ...run, conclusion: "failure" }] },
+        "2026-10-31T22:01:00Z",
+    );
+    assertEquals([
+        failed.result.outcome,
+        lastLine((failed.result as Record<string, unknown>).output),
+    ], [
+        "failed",
+        "Task check FAILED: CI failed",
+    ]);
 });
 
 Deno.test("start-commit preparation failures refuse the check", async () => {
