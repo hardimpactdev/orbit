@@ -20,6 +20,8 @@ pub enum Action {
     ProofNoop,
     /// Hibernate the entire Instance container.
     Sleep,
+    /// Restore and resume a sleeping Instance container.
+    Wake,
     /// Drop a stopped or replaced Instance's prepared state.
     Discard,
 }
@@ -39,7 +41,7 @@ impl Action {
     pub fn family(self) -> Family {
         match self {
             Self::ProofNoop => Family::Proof,
-            Self::Sleep | Self::Discard => Family::Power,
+            Self::Sleep | Self::Wake | Self::Discard => Family::Power,
         }
     }
 
@@ -47,7 +49,7 @@ impl Action {
     pub fn target_kind(self) -> TargetKind {
         match self {
             Self::ProofNoop => TargetKind::Node,
-            Self::Sleep | Self::Discard => TargetKind::Instance,
+            Self::Sleep | Self::Wake | Self::Discard => TargetKind::Instance,
         }
     }
 
@@ -56,6 +58,7 @@ impl Action {
         match self {
             Self::ProofNoop => "proof.noop",
             Self::Sleep => "sleep",
+            Self::Wake => "wake",
             Self::Discard => "discard",
         }
     }
@@ -73,6 +76,7 @@ impl FromStr for Action {
         match raw {
             "proof.noop" => Ok(Self::ProofNoop),
             "sleep" => Ok(Self::Sleep),
+            "wake" => Ok(Self::Wake),
             "discard" => Ok(Self::Discard),
             _ => Err(UnknownActionError),
         }
@@ -105,7 +109,7 @@ impl fmt::Display for Action {
 pub enum Family {
     /// The no-op proof action.
     Proof,
-    /// Whole-container sleep and discard.
+    /// Whole-container sleep, wake and discard.
     Power,
 }
 
@@ -165,6 +169,8 @@ mod tests {
     fn only_allowlisted_names_parse() {
         assert_eq!("proof.noop".parse(), Ok(Action::ProofNoop));
         assert_eq!("sleep".parse::<Action>(), Ok(Action::Sleep));
+        assert_eq!("wake".parse::<Action>(), Ok(Action::Wake));
+        assert_eq!(Action::Wake.family(), Family::Power);
         assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
         // The proof's `unknown_action` order (tools/swamp-proof-guest/executor-order.php) relies on this name staying unknown.
         assert_eq!("proof.unknown".parse::<Action>(), Err(UnknownActionError));

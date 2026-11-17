@@ -41,6 +41,9 @@ fn fixture() -> (tempfile::TempDir, Power, Fake) {
         proc: dir.path().join("proc"),
         markers: dir.path().join("markers"),
         incus: Incus(dir.path().join("socket")),
+        pool: pool::Pool::new(pool::MIN_THREADS),
+        restore_bound: Duration::from_secs(2),
+        web_port: 0,
     };
     let root = power.cgroups.join("lxc.payload.orbit-instances_instance-2");
     fs::create_dir_all(root.join("child")).expect("cgroup");
@@ -72,6 +75,7 @@ fn fixture() -> (tempfile::TempDir, Power, Fake) {
             status: "running".to_owned(),
             incarnation: "uuid-1".to_owned(),
             pid: 1,
+            address: None,
         }),
         root,
         actions: Mutex::new(Vec::new()),
@@ -247,6 +251,11 @@ impl orbit_executor_core::executor::Run for Runner {
                 .power
                 .discard(order.target().as_str())
                 .expect("discard"),
+            orbit_executor_core::action::Action::Wake => {
+                self.power
+                    .wake_with(self.api.as_ref(), order.target().as_str())
+                    .expect("power wake");
+            }
             orbit_executor_core::action::Action::ProofNoop => panic!("power actions only"),
         }
         orbit_executor_core::journal::Outcome::Done
@@ -479,6 +488,7 @@ fn incus_requests(action: &str) -> Vec<String> {
         status: "running".to_owned(),
         incarnation: "u".to_owned(),
         pid: 1,
+        address: None,
     };
     let _ = incus::Incus(socket).change(&instance, action);
     server.join().expect("stand-in socket")
@@ -514,4 +524,312 @@ fn freeze_and_unfreeze_stay_short() {
         assert!(seen[1].contains(r#""timeout":5"#), "{seen:?}");
         assert_eq!(seen[2], "GET /1.0/operations/1/wait?timeout=5 HTTP/1.1");
     }
+}
+
+/// A web port that answers every request with `status`, as the container's web server would.
+fn web(status: u16) -> u16 {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
+    let port = listener.local_addr().expect("address").port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut request = [0; 256];
+            let _ = std::io::Read::read(&mut stream, &mut request);
+            let _ = write!(stream, "HTTP/1.1 {status} X\r\nContent-Length: 0\r\n\r\n");
+        }
+    });
+    port
+}
+/// A slept fixture whose readiness check answers `status`.
+fn asleep(status: u16) -> (tempfile::TempDir, Power, Fake) {
+    let (dir, mut power, api) = fixture();
+    power.web_port = web(status);
+    api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+    power.sleep_with(&api, "2", "op1").expect("sleep");
+    (dir, power, api)
+}
+fn marker(power: &Power) -> PathBuf {
+    power.markers.join("app-instance-2.asleep")
+}
+fn swap_limits(api: &Fake) -> Vec<String> {
+    [api.root.clone(), api.root.join("child")]
+        .iter()
+        .map(|p| read(&p.join("memory.swap.max")).expect("limit"))
+        .collect()
+}
+
+#[test]
+fn wake_unfreezes_through_incus_closes_exactly_the_recorded_limits_and_removes_the_marker() {
+    let (_dir, power, api) = asleep(200);
+    assert_eq!(swap_limits(&api), ["max", "max"]);
+    fs::write(api.root.join("memory.swap.max"), "max").expect("an unrecorded limit");
+    let receipt = power.wake_with(&api, "2").expect("wake");
+    assert_eq!(receipt.restore, "complete");
+    assert_eq!(
+        *api.actions.lock().expect("actions"),
+        ["freeze", "unfreeze"]
+    );
+    assert_eq!(swap_limits(&api), ["0", "0"]);
+    for gone in [
+        marker(&power),
+        power.state.join("2/plan.json"),
+        power.state.join("2/limits.json"),
+    ] {
+        assert!(!gone.exists(), "{gone:?}");
+    }
+}
+
+/// Plant this test process as the container's only process, with `pages` swapped pages of a real buffer in its plan.
+fn plant_self(power: &Power, api: &Fake, buffer: &[u8], pages: u64) -> u64 {
+    let page = 4096_u64;
+    let start = u64::try_from(buffer.as_ptr().addr())
+        .expect("address fits u64")
+        .div_ceil(page)
+        * page;
+    let pid = std::process::id();
+    let base = power.proc.join(pid.to_string());
+    fs::create_dir_all(&base).expect("proc");
+    fs::write(
+        base.join("stat"),
+        format!("{pid} (self) S {} 77", vec!["0"; 18].join(" ")),
+    )
+    .expect("stat");
+    fs::write(
+        base.join("maps"),
+        format!(
+            "{start:x}-{:x} rw-p 00000000 00:00 0\n",
+            start + pages * page
+        ),
+    )
+    .expect("maps");
+    let pagemap = File::create(base.join("pagemap")).expect("pagemap");
+    for index in 0..pages {
+        std::os::unix::fs::FileExt::write_at(
+            &pagemap,
+            &(1_u64 << 62).to_le_bytes(),
+            (start / page + index) * 8,
+        )
+        .expect("swapped entry");
+    }
+    fs::write(api.root.join("child/cgroup.procs"), pid.to_string()).expect("procs");
+    start
+}
+
+#[test]
+fn wake_reads_every_recorded_page_that_is_not_resident_through_the_pool() {
+    let (_dir, mut power, api) = fixture();
+    power.web_port = web(200);
+    api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+    let buffer = vec![1_u8; 4096 * 9];
+    plant_self(&power, &api, &buffer, 8);
+    power.sleep_with(&api, "2", "op1").expect("sleep");
+    let receipt = power.wake_with(&api, "2").expect("wake");
+    assert_eq!(
+        (
+            receipt.restore.as_str(),
+            receipt.processes,
+            receipt.pages_read
+        ),
+        ("complete", 1, 8)
+    );
+}
+
+#[test]
+fn resident_pages_are_skipped() {
+    let (_dir, mut power, api) = fixture();
+    power.web_port = web(200);
+    api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+    let buffer = vec![1_u8; 4096 * 9];
+    let start = plant_self(&power, &api, &buffer, 8);
+    power.sleep_with(&api, "2", "op1").expect("sleep");
+    // Since the sleep every page came back into RAM.
+    let pagemap = OpenOptions::new()
+        .write(true)
+        .open(
+            power
+                .proc
+                .join(std::process::id().to_string())
+                .join("pagemap"),
+        )
+        .expect("pagemap");
+    for index in 0..8 {
+        std::os::unix::fs::FileExt::write_at(
+            &pagemap,
+            &(1_u64 << 63).to_le_bytes(),
+            (start / 4096 + index) * 8,
+        )
+        .expect("present entry");
+    }
+    let receipt = power.wake_with(&api, "2").expect("wake");
+    assert_eq!(
+        (receipt.restore.as_str(), receipt.pages_read),
+        ("complete", 0)
+    );
+}
+
+#[test]
+fn a_restore_cut_at_the_bound_reports_partial_and_the_wake_goes_on() {
+    let (_dir, mut power, api) = fixture();
+    power.web_port = web(200);
+    api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+    let buffer = vec![1_u8; 4096 * 9];
+    plant_self(&power, &api, &buffer, 8);
+    power.sleep_with(&api, "2", "op1").expect("sleep");
+    power.restore_bound = Duration::ZERO;
+    let receipt = power.wake_with(&api, "2").expect("wake");
+    assert_eq!(
+        (receipt.restore.as_str(), receipt.reason.as_deref()),
+        ("partial", Some("deadline"))
+    );
+    assert!(!marker(&power).exists());
+    assert_eq!(swap_limits(&api), ["0", "0"]);
+}
+
+#[test]
+fn every_identity_mismatch_skips_the_restore_before_any_memory_syscall() {
+    type Change = fn(&Power, &Fake);
+    let changes: [(&str, Change); 4] = [
+        ("boot id", |power, _| {
+            fs::write(power.proc.join("sys/kernel/random/boot_id"), "boot-2").expect("boot");
+        }),
+        ("cgroup inode", |power, _| {
+            let path = power.state.join("2/plan.json");
+            let mut plan: serde_json::Value = load(&path).expect("plan");
+            plan["identity"]["inode"] = 1.into();
+            publish(&path, &plan).expect("plan");
+        }),
+        ("incarnation", |_, api| {
+            "uuid-2".clone_into(&mut api.instance.lock().expect("instance").incarnation);
+        }),
+        ("process start time", |power, _| {
+            let pid = std::process::id();
+            fs::write(
+                power.proc.join(pid.to_string()).join("stat"),
+                format!("{pid} (self) S {} 78", vec!["0"; 18].join(" ")),
+            )
+            .expect("stat");
+        }),
+    ];
+    for (name, change) in changes {
+        let (_dir, mut power, api) = fixture();
+        power.web_port = web(200);
+        api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+        let buffer = vec![1_u8; 4096 * 9];
+        plant_self(&power, &api, &buffer, 8);
+        power.sleep_with(&api, "2", "op1").expect("sleep");
+        change(&power, &api);
+        let receipt = power.wake_with(&api, "2").expect(name);
+        assert_eq!(
+            (
+                receipt.restore.as_str(),
+                receipt.reason.as_deref(),
+                receipt.pages_read
+            ),
+            ("skipped", Some("plan_stale"), 0),
+            "{name}"
+        );
+        assert!(!power.state.join("2/plan.json").exists(), "{name}");
+    }
+}
+
+#[test]
+fn a_lost_incus_freeze_fails_the_wake_without_any_write() {
+    let (_dir, power, api) = asleep(200);
+    "running".clone_into(&mut api.instance.lock().expect("instance").status);
+    assert_eq!(
+        power
+            .wake_with(&api, "2")
+            .expect_err("lost freeze")
+            .to_string(),
+        UNMANAGED
+    );
+    assert_eq!(*api.actions.lock().expect("actions"), ["freeze"]);
+    assert!(marker(&power).exists());
+    assert_eq!(swap_limits(&api), ["max", "max"]);
+}
+
+#[test]
+fn an_unready_app_fails_the_wake_and_keeps_the_marker() {
+    let (_dir, power, api) = asleep(503);
+    assert_eq!(
+        power.wake_with(&api, "2").expect_err("unready").to_string(),
+        "instance.web_unready"
+    );
+    assert!(marker(&power).exists());
+}
+
+#[test]
+fn a_stopped_container_is_left_to_the_run_and_its_plan_dropped() {
+    let (_dir, power, api) = asleep(200);
+    "stopped".clone_into(&mut api.instance.lock().expect("instance").status);
+    assert_eq!(
+        power.wake_with(&api, "2").expect_err("stopped").to_string(),
+        "instance.container_stopped"
+    );
+    assert!(!power.state.join("2/plan.json").exists());
+}
+
+#[test]
+fn incus_reports_the_first_global_ipv4_address() {
+    let addresses = serde_json::json!([
+        {"family": "inet6", "address": "fd42::1", "scope": "global"},
+        {"family": "inet", "address": "127.0.0.1", "scope": "local"},
+        {"family": "inet", "address": "10.1.2.3", "scope": "global"}
+    ]);
+    assert_eq!(incus::address(&addresses), Some([10, 1, 2, 3].into()));
+    assert_eq!(incus::address(&serde_json::Value::Null), None);
+}
+
+/// A crash after the unfreeze leaves an open wake, a running container, open limits and the marker. Recovery repeats the wake,
+/// which finishes the steps after the unfreeze; a repeat of the Operation returns that result.
+#[test]
+fn crash_recovery_after_the_unfreeze_finishes_the_wake_and_a_repeat_returns_it() {
+    use orbit_executor_core::{
+        executor::Executor,
+        journal::{DoneKey, Record},
+    };
+    let (_dir, power, api) = asleep(200);
+    let slept = api.instance.lock().expect("instance").clone();
+    api.change(&slept, "unfreeze")
+        .expect("unfreeze before the crash");
+    let power = std::sync::Arc::new(power);
+    let api = std::sync::Arc::new(api);
+    let path = power.state.join("journal");
+    let order = signed_order("00000000000000000000000000000011", "wake");
+    fs::write(
+        &path,
+        format!(
+            "{}\n",
+            serde_json::to_string(&Record::Open {
+                nonce: order.nonce(),
+                key: DoneKey {
+                    operation: order.operation().clone(),
+                    action: order.action(),
+                    target: order.target().clone(),
+                },
+                expires_ms: 6000
+            })
+            .expect("record")
+        ),
+    )
+    .expect("open journal");
+    let runner = Runner {
+        power: std::sync::Arc::clone(&power),
+        api: std::sync::Arc::clone(&api),
+    };
+    let (executor, recovered) = Executor::start(&path, runner, || 1001, |_| {}).expect("recover");
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(swap_limits(&api), ["0", "0"]);
+    assert!(!marker(&power).exists());
+    let repeat = executor
+        .handle(
+            &signed_order("00000000000000000000000000000012", "wake"),
+            1001,
+        )
+        .expect("repeat");
+    assert!(repeat.repeat);
+    assert_eq!(
+        *api.actions.lock().expect("actions"),
+        ["freeze", "unfreeze"]
+    );
 }

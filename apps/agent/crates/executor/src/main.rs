@@ -22,6 +22,15 @@ const ENABLED_PATH: &str = "/etc/orbit/executor/enabled";
 const NODE_PATH: &str = "/etc/orbit/executor/node";
 const JOURNAL_PATH: &str = "/var/lib/orbit/executor/journal";
 const RELAY_USER: &str = "orbit-executor-relay";
+/// The restore pool's size, which the role writes (ADR 0266: one pool per Node, sized by the swap device, floor 16).
+const POOL_PATH: &str = "/etc/orbit/executor/restore-threads";
+/// The wake failures the Gateway can act on; any other error reports `instance.container_start_failed`.
+const WAKE_CODES: [&str; 4] = [
+    "instance.container_frozen_unmanaged",
+    "instance.container_stopped",
+    "instance.container_start_failed",
+    "instance.web_unready",
+];
 
 /// Joins the action families to the core. Every action is matched here, so a new one fails the build until
 /// its family runs it.
@@ -67,6 +76,39 @@ impl Run for Families {
                                 "instance.container_freeze_failed"
                             }
                             .to_owned(),
+                        }
+                    }
+                }
+            }
+            Action::Wake => {
+                let started = std::time::Instant::now();
+                match self.0.wake(order.target().as_str()) {
+                    Ok(receipt) => {
+                        log(&format!(
+                            "power wake {} {}: total_us={} restore_us={} pages_read={}",
+                            order.operation(),
+                            receipt.restore,
+                            started.elapsed().as_micros(),
+                            receipt.restore_us,
+                            receipt.pages_read
+                        ));
+                        match receipt.reason {
+                            // The container runs again either way; `partial` says its memory did not all come back first.
+                            Some(reason) => Outcome::Partial {
+                                code: format!("instance.restore_{reason}"),
+                            },
+                            None => Outcome::Done,
+                        }
+                    }
+                    Err(error) => {
+                        log(&format!("power wake failed: {error}"));
+                        let code = error.to_string();
+                        Outcome::Failed {
+                            code: if WAKE_CODES.contains(&code.as_str()) {
+                                code
+                            } else {
+                                "instance.container_start_failed".to_owned()
+                            },
                         }
                     }
                 }
@@ -152,14 +194,15 @@ fn serve() -> Result<(), String> {
         node,
     });
 
+    let threads: usize = read(POOL_PATH)?
+        .trim()
+        .parse()
+        .map_err(|error| format!("{POOL_PATH}: {error}"))?;
+    let power = orbit_executor_power::Power::new(threads)
+        .map_err(|error| format!("{POOL_PATH}: {error}"))?;
     let journal = Path::new(JOURNAL_PATH);
-    let (executor, recovered) = Executor::start(
-        journal,
-        Families(orbit_executor_power::Power::default()),
-        server::now_ms,
-        log,
-    )
-    .map_err(|error| error.to_string())?;
+    let (executor, recovered) = Executor::start(journal, Families(power), server::now_ms, log)
+        .map_err(|error| error.to_string())?;
     for done in &recovered {
         log(&format!(
             "recovered {} {} {}: {:?}",

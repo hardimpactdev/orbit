@@ -1,6 +1,7 @@
 //! The fixed local Incus API, with bounded requests and no child programs.
 use serde_json::{json, Value};
 use std::io::{self, BufRead as _, BufReader, Read as _, Write as _};
+use std::net::IpAddr;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -12,6 +13,8 @@ pub(crate) struct Instance {
     pub status: String,
     pub incarnation: String,
     pub pid: u32,
+    /// The container's global IPv4 address on `eth0`, where the wake's readiness check asks.
+    pub address: Option<IpAddr>,
 }
 
 pub(crate) trait Api: Send + Sync {
@@ -125,6 +128,15 @@ impl Incus {
         Ok((status, value))
     }
 }
+/// The first global `inet` address of an Incus interface's address list.
+pub(crate) fn address(addresses: &Value) -> Option<IpAddr> {
+    addresses.as_array()?.iter().find_map(|a| {
+        (a["family"] == "inet" && a["scope"] == "global")
+            .then(|| a["address"].as_str()?.parse().ok())
+            .flatten()
+    })
+}
+
 impl Api for Incus {
     fn instance(&self, id: &str) -> io::Result<Option<Instance>> {
         for project in ["orbit-instances", "orbit-instances-nested"] {
@@ -156,6 +168,7 @@ impl Api for Incus {
                 status: state.to_ascii_lowercase(),
                 incarnation: incarnation.to_owned(),
                 pid,
+                address: address(&meta["state"]["network"]["eth0"]["addresses"]),
             }));
         }
         Ok(None)

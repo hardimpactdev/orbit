@@ -1,9 +1,14 @@
-//! In-process whole-container sleep and discard (ADR 0266 slice 4).
+//! In-process whole-container sleep, wake and discard (ADR 0266 slices 4 and 5).
 //!
 //! The executor core supplies the per-target lock, Operation idempotency and recovery journal.
 //! State here is private to Rust until the production cutover; no Python helper is called.
 mod incus;
 mod plan;
+mod pool;
+mod wake;
+
+pub use pool::{MAX_THREADS, MIN_THREADS};
+pub use wake::WakeReceipt;
 
 use incus::{Api, Incus, Instance};
 use plan::{cgroup_identity, Plan};
@@ -137,19 +142,31 @@ pub struct Power {
     proc: PathBuf,
     markers: PathBuf,
     incus: Incus,
+    pool: pool::Pool,
+    restore_bound: Duration,
+    web_port: u16,
 }
-impl Default for Power {
-    fn default() -> Self {
-        Self {
+impl Power {
+    /// The Node's power family with its one restore pool of `threads` threads, which the role sizes.
+    ///
+    /// # Errors
+    /// Refuses a pool size outside [`MIN_THREADS`]..=[`MAX_THREADS`].
+    pub fn new(threads: usize) -> io::Result<Self> {
+        if !(MIN_THREADS..=MAX_THREADS).contains(&threads) {
+            return Err(invalid("restore pool size out of range"));
+        }
+        Ok(Self {
             state: "/var/lib/orbit/executor/power".into(),
             cgroups: "/sys/fs/cgroup".into(),
             proc: "/proc".into(),
             markers: "/data/caddy/orbit/hibernation".into(),
             incus: Incus("/var/lib/incus/unix.socket".into()),
-        }
+            pool: pool::Pool::new(threads),
+            restore_bound: Duration::from_secs(2),
+            web_port: 8080,
+        })
     }
-}
-impl Power {
+
     /// Whether the fixed Instance container exists in the local Incus.
     pub fn target_exists(&self, id: &str) -> bool {
         valid_id(id)
@@ -258,6 +275,12 @@ impl Power {
     }
 
     fn close_limits(&self, base: &Path, identity: &Identity) -> io::Result<()> {
+        self.close_limits_unsynced(base, identity)?;
+        File::open(base)?.sync_all()
+    }
+
+    /// Restore exactly the recorded limits and drop the record. The wake calls this without a disk sync.
+    fn close_limits_unsynced(&self, base: &Path, identity: &Identity) -> io::Result<()> {
         let path = base.join("limits.json");
         if !path.exists() {
             return Ok(());
@@ -285,8 +308,7 @@ impl Power {
                 Err(e) => return Err(e),
             }
         }
-        remove(&path)?;
-        File::open(base)?.sync_all()
+        remove(&path)
     }
 
     fn kernel_frozen(root: &Path) -> io::Result<bool> {

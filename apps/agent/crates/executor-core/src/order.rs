@@ -445,7 +445,7 @@ pub(crate) mod tests {
     #[test]
     fn each_check_has_its_own_refusal() {
         assert_eq!(
-            run(&with("action", "wake".into())),
+            run(&with("action", "hibernate".into())),
             Err(OrderRefusal::UnknownAction)
         );
         assert_eq!(run(&with("node", "8".into())), Err(OrderRefusal::WrongNode));
