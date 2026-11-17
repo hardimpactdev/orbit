@@ -448,3 +448,11 @@ The Rust `power` family implements whole-container sleep through signed orders o
 The plan records pages present or swapped (pagemap bit 63 or bit 62), so a partial wake cannot shrink the next plan. Both the limits record and plan publish atomically with fsync. After reclaim settles, or two seconds pass, the executor applies the same 32 MiB residual anonymous rule and writes the asleep marker. Nested-fleet containers resume and fail when swap cannot take their memory; other containers stop. That stop keeps today's clean-stop allowance of 30 s, as `incus stop --timeout 30` does; the executor waits up to 35 s for the Incus operation. Its freeze and unfreeze keep 5 s each.
 
 The Rust plan and limits record live separately under `/var/lib/orbit/executor/power` while the production Python flow remains in place. Crash recovery repeats an open sleep and preserves a valid published plan. Discard removes both records after a stop, destroy or a deployment that boots fresh. The executor refuses a running container whose kernel cgroup is frozen, preserving recovery state for the thaw described above.
+
+## Executor wake (ADR 0266 slice 5)
+
+The Rust `power` family also implements the wake, again only through signed orders on durable proof Operations; production wakes keep the Python helper until slices 6 to 8. It keeps three rules of the helper: identity before any memory syscall, restore before the unfreeze, and a restore as a hint.
+
+Before any memory syscall it checks the boot id, the cgroup inode, the Incus incarnation and every process's start time through a pidfd. It reads back the recorded pages that are not resident now, through the Node's one restore pool, with `process_madvise(MADV_WILLNEED)` and `process_vm_readv`, within 2 s. Then it unfreezes through the Incus local API, closes exactly the recorded swap limits, checks readiness with the rule above and removes the asleep marker.
+
+Two things differ from the helper. Because the plan also holds swapped pages, a wake restores memory that was in swap before the sleep too. And the executor never thaws a cgroup itself: a freeze that Incus lost fails `instance.container_frozen_unmanaged`, where the helper writes `cgroup.freeze`. [Executor: Rust wake](/reference/executor#rust-wake) has the steps and results.
