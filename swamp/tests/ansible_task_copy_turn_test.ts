@@ -279,7 +279,8 @@ Deno.test({ name: "a completed turn sends the prompt on stdin with the copy's mo
 } });
 
 Deno.test({ name: "a continued turn finds its thread by title and sends the prompt to it, with no model and no title", ignore: !available, async fn() {
-    const done = await phase("completed", { thread: "continue", provider: null, model: "claude-opus-5-5" });
+    // An intent admitted before answered was added omits it; JSON serialization drops undefined.
+    const done = await phase("completed", { thread: "continue", provider: null, model: "claude-opus-5-5", answered: undefined });
     assert(done.ok, done.output);
     assertEquals(done.calls.length, 5);
     assertEquals(done.calls[1].args.slice(18), ["thread", "list", "--project", "/srv/workspace", "--json"]);

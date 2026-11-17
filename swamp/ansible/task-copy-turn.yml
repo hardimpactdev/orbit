@@ -61,10 +61,10 @@
           - intent.turn.settle | rejectattr('operation_id', 'integer') | list | length == 0
           - intent.turn.settle | map(attribute='title') | reject('match', '^Orbit task [1-9][0-9]* thread [1-9][0-9]*$') | list | length == 0
           - intent.turn.settle | map(attribute='branch') | select('string') | reject('match', '^task-[1-9][0-9]*$') | list | length == 0
-          - intent.turn.answered is defined and intent.turn.answered is sequence and intent.turn.answered is not string
-          - intent.turn.answered | reject('string') | list | length == 0
-          - intent.turn.answered | select('equalto', '') | list | length == 0
-          - intent.turn.thread == 'continue' or intent.turn.answered | length == 0
+          - intent.turn.answered | default([]) is sequence and intent.turn.answered | default([]) is not string
+          - intent.turn.answered | default([]) | reject('string') | list | length == 0
+          - intent.turn.answered | default([]) | select('equalto', '') | list | length == 0
+          - intent.turn.thread == 'continue' or intent.turn.answered | default([]) | length == 0
         fail_msg: tasks.copy_turn_invalid
     # A copy the phase cannot reach fails here, before the launch mark: no turn can run there, so its group stays free.
     - name: Reach the copy as agent
@@ -331,7 +331,7 @@
     # A stopped run may leave a message-capability question pending in T3. Resolve only the admitted stored requests before the
     # answer's send, in one helper session. A refused or unreadable resolution launches nothing, and changes no reviewer checkout.
     - name: Resolve the stored answered questions
-      when: intent.turn.thread == 'continue' and intent.turn.answered | length > 0
+      when: intent.turn.thread == 'continue' and intent.turn.answered | default([]) | length > 0
       block:
         - name: Resolve the requests in T3
           ansible.builtin.command:
