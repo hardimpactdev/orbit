@@ -12,10 +12,11 @@ use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::os::fd::{AsRawFd as _, FromRawFd as _, OwnedFd};
 use std::os::unix::fs::FileExt as _;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Pages per pool item: one `process_madvise` and one `process_vm_readv` batch (`IOV_MAX`).
+/// Pages per pool item: one `process_madvise` and at most one `process_vm_readv` batch (`IOV_MAX`) per failed page plus one.
 const ITEM_PAGES: u64 = 1024;
 const READY_BOUND: Duration = Duration::from_millis(1500);
 const THAW_BOUND: Duration = Duration::from_secs(5);
@@ -31,6 +32,8 @@ pub struct WakeReceipt {
     pub processes: usize,
     /// Pages read back that were not resident.
     pub pages_read: u64,
+    /// Planned pages that could not be read; later pages in their items are still attempted.
+    pub pages_failed: u64,
     /// Time in the pool.
     pub restore_us: u64,
     /// Time from the order to the readiness answer.
@@ -43,6 +46,7 @@ pub(crate) struct Target {
     pid: libc::pid_t,
     pagemap: File,
     page: u64,
+    pages_failed: AtomicU64,
 }
 
 fn pidfd_open(pid: u32) -> io::Result<OwnedFd> {
@@ -112,9 +116,10 @@ fn remote(address: u64) -> *mut libc::c_void {
 }
 
 /// Read one item's missing pages back: one `process_madvise(MADV_WILLNEED)` to start every swap read at once, then one byte of
-/// each page through `process_vm_readv` to wait for them. A restore is a hint, so a refused call only reads fewer pages.
+/// each page through `process_vm_readv` to wait for them. A refused advice is only a lost head start.
 ///
-/// A pagemap that cannot be read, a failed read or a short one reports `read_failed`: the wake goes on, but as `partial`.
+/// A short read stops at one unreadable page. Count and skip that page, then read the rest of the item within its deadline.
+/// A pagemap that cannot be read or any failed page reports `read_failed`: the wake goes on, but as `partial`.
 pub(crate) fn restore(
     target: &Target,
     ranges: &[Range],
@@ -159,31 +164,44 @@ pub(crate) fn restore(
         })
         .collect();
     let mut scratch = vec![0_u8; remote.len()];
-    if Instant::now() >= deadline {
-        return (0, Some("deadline"));
+    let mut next = 0;
+    let mut pages_read = 0;
+    let mut shortfall = None;
+    while next < remote.len() {
+        if Instant::now() >= deadline {
+            return (pages_read, Some("deadline"));
+        }
+        let remaining = &remote[next..];
+        let local = libc::iovec {
+            iov_base: scratch.as_mut_ptr().cast(),
+            iov_len: remaining.len(),
+        };
+        // SAFETY: `local` fits in `scratch`, which outlives the call; the remote iovecs are only read by the kernel in the
+        // target process; both counts match their arrays. Every remote iovec is exactly one byte of a different page.
+        let read = unsafe {
+            libc::process_vm_readv(
+                target.pid,
+                &local,
+                1,
+                remaining.as_ptr(),
+                libc::c_ulong::try_from(remaining.len()).expect("an item has at most 1024 pages"),
+                0,
+            )
+        };
+        if read < 0 && io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+            continue;
+        }
+        let read = usize::try_from(read).unwrap_or(0);
+        pages_read += u64::try_from(read).expect("an item has at most 1024 pages");
+        next += read;
+        if next < remote.len() {
+            // No iovec is split: the next one names the unreadable page. Never abandon the readable tail.
+            target.pages_failed.fetch_add(1, Ordering::Relaxed);
+            shortfall = Some("read_failed");
+            next += 1;
+        }
     }
-    let local = libc::iovec {
-        iov_base: scratch.as_mut_ptr().cast(),
-        iov_len: scratch.len(),
-    };
-    // SAFETY: `local` covers exactly `scratch`, which outlives the call; the remote iovecs are only read by the kernel in the
-    // target process; both counts match their arrays.
-    let read = unsafe {
-        libc::process_vm_readv(
-            target.pid,
-            &local,
-            1,
-            remote.as_ptr(),
-            libc::c_ulong::try_from(remote.len()).unwrap_or(0),
-            0,
-        )
-    };
-    // The kernel stops at the first page it cannot read, so a short count is a failure too.
-    match usize::try_from(read) {
-        Ok(read) if read == remote.len() => (u64::try_from(read).unwrap_or(u64::MAX), None),
-        Ok(read) => (u64::try_from(read).unwrap_or(u64::MAX), Some("read_failed")),
-        Err(_) => (0, Some("read_failed")),
-    }
+    (pages_read, shortfall)
 }
 
 /// Split the plan into pool items of at most [`ITEM_PAGES`] pages, process by process.
@@ -299,6 +317,7 @@ impl Power {
             reason: None,
             processes: 0,
             pages_read: 0,
+            pages_failed: 0,
             restore_us: 0,
             total_us: 0,
         };
@@ -314,7 +333,8 @@ impl Power {
                     receipt.processes = plan.processes.len();
                     let work = items(
                         targets
-                            .into_iter()
+                            .iter()
+                            .map(Arc::clone)
                             .zip(&plan.processes)
                             .map(|(t, p)| (t, p.ranges.as_slice()))
                             .collect(),
@@ -326,6 +346,10 @@ impl Power {
                         self.pool
                             .restore(work, restoring + self.restore_bound, &self.readers(id));
                     receipt.pages_read = restored.pages;
+                    receipt.pages_failed = targets
+                        .iter()
+                        .map(|t| t.pages_failed.load(Ordering::Relaxed))
+                        .sum();
                     match restored.shortfall {
                         None => "complete".clone_into(&mut receipt.restore),
                         Some(reason) => {
@@ -390,6 +414,7 @@ impl Power {
                 pid: libc::pid_t::try_from(process.pid).map_err(|_| "plan_invalid")?,
                 pagemap,
                 page: plan.page_size,
+                pages_failed: AtomicU64::new(0),
             }));
         }
         Ok((plan, targets))

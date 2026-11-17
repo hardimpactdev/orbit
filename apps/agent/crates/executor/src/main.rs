@@ -85,12 +85,13 @@ impl Run for Families {
                 match self.0.wake(order.target().as_str()) {
                     Ok(receipt) => {
                         log(&format!(
-                            "power wake {} {}: total_us={} restore_us={} pages_read={}",
+                            "power wake {} {}: total_us={} restore_us={} pages_read={} pages_failed={}",
                             order.operation(),
                             receipt.restore,
                             started.elapsed().as_micros(),
                             receipt.restore_us,
-                            receipt.pages_read
+                            receipt.pages_read,
+                            receipt.pages_failed
                         ));
                         match receipt.reason {
                             // The container runs again either way; `partial` says its memory did not all come back first.

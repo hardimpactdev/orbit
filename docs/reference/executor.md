@@ -271,29 +271,33 @@ The executor wrote its `done` record 3–4 ms after the publish (median of 50 or
 
 Slice 4 adds the `power` family on `app-dev`. Signed `sleep` and `discard` orders target an Instance. `executor.power_proof` exercises them through durable Operations used only by the proof; production `instance.sleep` keeps the Python flow until slices 7/8. The observer still passes bytes only.
 
-The executor records and atomically fsyncs every non-`max` swap limit in the whole container cgroup subtree before opening it. It freezes through the Incus local API, lists every subtree process and scans readable maps and pagemap in parallel. Its plan includes present and swapped pages (bits 63 and 62), process start times, boot id, Incus incarnation and cgroup identity. The plan is atomically published with fsync before reclaim. Reclaim waits for `memory.current` to settle, for at most two seconds. The 32 MiB residual anonymous policy remains: ordinary containers stop when memory stays; nested-fleet containers resume and fail instead. The asleep marker comes last.
+The executor records and atomically fsyncs every non-`max` swap limit in the whole container cgroup subtree before opening it. It freezes through the Incus local API, lists every subtree process and scans readable maps and pagemap in parallel. Its plan includes every readable present or swapped page (bits 63 and 62), excluding guard markers (bit 58), process start times, boot id, Incus incarnation and cgroup identity.
+
+[Linux 7.0](https://github.com/torvalds/linux/blob/v7.0/fs/proc/task_mmu.c#L1975) reports lightweight guard markers inside readable mappings with both the swapped bit (62) and the guard bit (58); these markers contain no page to restore. Capture excludes them without excluding their readable neighbors. Mappings without read permission and the kernel special mappings remain excluded. The plan is atomically published with fsync before reclaim. Reclaim waits for `memory.current` to settle, for at most two seconds. The 32 MiB residual anonymous policy remains: ordinary containers stop when memory stays; nested-fleet containers resume and fail instead. The asleep marker comes last.
 
 A repeat Operation returns its journaled result under the per-target lock. Startup repeats an open sleep and keeps a valid plan already published. `discard` removes the plan and limits record after a stop, destroy or fresh boot. The Rust state lives under `/var/lib/orbit/executor/power`; it does not replace the Python state yet. A container Incus calls running while the kernel holds it frozen refuses with `instance.container_frozen_unmanaged`, preserving its recovery state.
 
 The kind chart is [`docs/cli/proof/executor-power-proof.mmd`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/proof/executor-power-proof.mmd). The executor logs the complete action time, including receipt and asleep-marker fsync, with reclaim measured separately. The private receipt timer ends before its own publication.
 
-**Measured on a real clone.** Subtask 5768 ran the approved binary from `f45b784f9` on `nested-app-dev`. Clone creation and completion Operations 237/238 made `executor-sleep-clone` (Instance 4) active, with T3 0.1.7 and Vite 7.2.2 running. Vite used port 8080 for the executor's readiness check. All 30 signed sleeps had durable `executor.power_proof` Operations, complete plans containing all 15 subtree processes, T3 and Vite included, and a committed asleep marker. The plan held 624,406,528–629,018,624 bytes, including pages still swapped after earlier partial wakes.
+**Measured on a real clone.** Subtask 5768 run 2 installed the fixed executor (SHA-256 `6c133c9cdf3d719b802791f23b7b46674548736d9cf6e06b2f671aafa985ce50`) on `nested-app-dev`. The existing `executor-sleep-clone` (Instance 4, creation/completion Operations 237/238) ran T3 0.1.7 and Vite 7.2.2, with Vite on port 8080. All 30 signed sleeps had durable `executor.power_proof` Operations, complete plans containing all 15 subtree processes, T3 and Vite included, and a committed asleep marker. Plans held 635,932,672–636,919,808 bytes.
 
-The copy and Node had swap allowances of 12,884,901,888 and 5,368,709,120 bytes. The clone's own `memory.swap.max` was `0` before every sleep, `max` while asleep and `0` after every wake; sleep also recorded its inner 32 MiB polkit limit. No Incus swap setting was applied to the clone. Every sleep used swap: Rust left 13.66–15.97 MiB in RAM and 349.63–354.03 MiB in swap; Python left 13.70–14.19 MiB in RAM and 354.18–355.41 MiB in swap.
+The copy and Node had swap allowances of 12,884,901,888 and 5,368,709,120 bytes. The clone's own `memory.swap.max` was `0` before every sleep, `max` while asleep and `0` after every wake; sleep also recorded its inner 32 MiB polkit limit. No Incus swap setting was applied to the clone. Every sleep used swap. Rust left 14,544,896–16,154,624 bytes in RAM and 378,744,832–379,793,408 in swap. Python left 14,553,088–14,766,080 bytes in RAM and 380,137,472–381,841,408 in swap.
 
-| Node sleep measurement, 30 samples | p50 | p95 | max |
+| Node measurement, 30 samples | p50 | p95 | max |
 | --- | --- | --- | --- |
-| Rust action, including receipt and marker fsync | 428.664 ms | 507.154 ms | 1,249.831 ms |
-| Rust reclaim and counter settling, included above | 372.334 ms | 435.810 ms | 437.837 ms |
-| Python marker, prepare and residual calls | 545.736 ms | 4,974.081 ms | 5,149.529 ms |
-| Python reclaim call, included above | 267 ms | 288 ms | 346 ms |
-| Python residual calls and settling, included above | 123.317 ms | 4,561.989 ms | 4,685.659 ms |
+| Rust sleep, including receipt and marker fsync | 452.304 ms | 543.592 ms | 551.332 ms |
+| Rust reclaim and counter settling, included above | 398.938 ms | 492.065 ms | 494.284 ms |
+| Python marker, prepare and residual calls; capture skipped | 509.563 ms | 5,644.503 ms | 5,822.532 ms |
+| Python reclaim call, included above | 293.000 ms | 500.000 ms | 511.000 ms |
+| Python residual calls and settling, included above | 92.990 ms | 4,206.703 ms | 4,227.580 ms |
 
-Percentiles use nearest rank. Both totals cover the Node's sleep work through its final publication and counter policy, excluding Gateway boot, transport and Ansible startup. Python ran the current helper through its production transient-unit path and residual retry rule, with a Rust sleep/wake before each sample to restore a comparable starting footprint.
+Percentiles use nearest rank. Both totals cover the Node's sleep work through final publication and the respective counter policy, excluding Gateway boot, transport and Ansible startup. Python ran the current helper through its production transient-unit path and residual retry rule, with a fixed Rust sleep/wake before each sample.
 
-Python's plan was `skipped / placement_unproven` in every sample: today's helper skips capture on a nested Instance host. Its separate capability probe also reported `process_madvise` unavailable. These are measurements of the current paths here, not a comparison of two complete-plan captures. Two Python samples took all 20 residual calls; Rust used its `memory.current` settling rule.
+Python skipped plan capture as `placement_unproven` in all 30 samples. Its timings do not cover the same work as Rust and are not a like-for-like comparison. The nested fleet also cannot use remote `process_madvise`; the wake section explains this limit.
 
-Raw samples, per-sleep RAM and swap, syscall timing, durable Operation records and the journal audit are under `.orbit-artifacts/5753/live-proof-5768/`, principally `rust-samples.jsonl`, `python-samples.jsonl`, `samples.csv` and `summary.json`. The 60 measured Rust sleep/wake Operations each have one done journal record. This was manual live proof through the existing proof helper; the shared fleet-reset runner and converge install were not rerun. CI proof remains disabled and its fresh fleet has no real T3/Vite clone fixture.
+Raw samples, per-sleep RAM and swap, syscall timing, durable Operation records and the journal audit are under `.orbit-artifacts/5753/live-proof-5768/run-2/`, principally `rust-samples.jsonl`, `python-samples.jsonl`, `samples.csv` and `summary.json`. All 64 audited measured/recovery Operations succeeded and have one done journal record: 60 single sleep/wakes, three burst wakes and one recovered wake.
+
+This was manual live proof through the existing proof helper; the shared fleet-reset runner, converge install and production command paths were not rerun. CI proof remains disabled and its fresh fleet has no real T3/Vite clone fixture. Doctor reported healthy with seven checks and zero drift, but its Instance/Process families checked zero items; direct process, plan, cgroup and HTTP assertions supply that evidence.
 
 | Error or result | Meaning |
 | --- | --- |
@@ -312,7 +316,9 @@ The wake reads the Incus state first. A stopped container drops its plan and fai
 
 **Identity, before any memory syscall.** The plan's boot id, cgroup device and inode, and Incus incarnation must equal the live ones. Its init PID must be the container's. For each recorded process the executor opens a pidfd, compares the process's start time, and sends signal 0 through the pidfd. A PID reused before the open fails the start time; one reused after it fails the signal. Any mismatch drops the plan with no memory syscall. The wake goes on without a restore.
 
-**Restore through the pool.** The plan's pages split into items of at most 1,024 pages. An item reads the process's pagemap and keeps only the pages that are not resident now. It calls `process_madvise(MADV_WILLNEED)` on them through the pidfd, so every swap read starts at once. Then it reads one byte of each page with `process_vm_readv`. The restore ends after 2 s. Items not started by then are skipped, and the result is `partial`.
+**Restore through the pool.** The plan's pages split into items of at most 1,024 pages. An item reads the process's pagemap and keeps only the pages that are not resident now. It calls `process_madvise(MADV_WILLNEED)` on them through the pidfd, so every swap read starts at once. Then it reads one byte of each page with `process_vm_readv`. A short read skips the failed page and continues through the rest of the item; the wake receipt and journal count unreadable pages as `pages_failed`.
+
+On Linux 7.0, [remote `process_madvise`](https://github.com/torvalds/linux/blob/v7.0/mm/madvise.c#L2154) requires `capable(CAP_SYS_NICE)`, which [checks the initial user namespace](https://github.com/torvalds/linux/blob/v7.0/kernel/capability.c#L414). It returns `EPERM` in the nested fleet. The hint is optional: nested measurements read pages through `process_vm_readv` without the WILLNEED head start. The restore ends after 2 s. Items not started by then are skipped, and the result is `partial`.
 
 An item still running stops at its next deadline check, and the wake waits for it for a grace of 250 ms.
 
@@ -349,27 +355,31 @@ A container that already runs gets only the limits and readiness steps, and repo
 
 The Rust tests cover the identity checks, pool order, the cut at the bound, resident pages, exact limits, the marker, readiness and crash recovery after the unfreeze; the restore tests read a real buffer of the test process.
 
-**Measured on the same clone.** All 30 signed wakes reached an HTTP 200 answer and closed their durable Operations successfully, with the result `partial / instance.restore_read_failed`. A separate syscall diagnostic observed short `process_vm_readv` reads and `process_madvise` returning `EPERM`; complete restoration is not established by this run. Every wake restored the clone's swap limit to `0` and removed its marker.
+**Measured on the same clone.** All 30 signed wakes returned `done`, answered HTTP 200, restored the clone's swap limit to `0` and removed the marker. Each read back 91,932–92,180 nonresident pages, with zero failed pages. Pages read p50/p95/max were 92,127/92,177/92,180; `samples.csv` records every wake's count.
 
 | Wake measurement, 30 samples | p50 | p95 | max |
 | --- | --- | --- | --- |
-| Node action through the app answering and marker removal | 417.586 ms | 458.040 ms | 599.969 ms |
-| Restore, included above | 384.604 ms | 424.331 ms | 567.185 ms |
-| Incus unfreeze API, included above | 5.944 ms | 11.747 ms | 12.300 ms |
-| Gateway publish through the waiting result | 433.813 ms | 472.584 ms | 613.803 ms |
+| Node action through the app answering and marker removal | 147.840 ms | 494.080 ms | 517.545 ms |
+| Restore, included above | 122.675 ms | 417.062 ms | 478.530 ms |
+| Incus unfreeze API, included above | 9.471 ms | 18.734 ms | 19.041 ms |
+| Gateway publish through the waiting result | 164.158 ms | 520.478 ms | 535.378 ms |
 
 The unfreeze measurement sums the local API's state-change request and operation wait, from socket connect to close. It excludes the surrounding identity/state reads and kernel-thaw polling. Wake samples used `strace` on connect, send and close calls; their totals include its overhead. The app check is the executor's direct Node-to-container request, not a visit through Caddy or the future Gateway fast path.
 
+**Unreadable-page diagnosis.** A frozen-clone diagnostic found 39 unreadable guard markers in 16 readable anonymous mappings: systemd-journald 2, T3 16, rsyslogd 2, Python 1, polkitd 5, T3's resource monitor 1 and Vite's Node process 12. Every failure had pagemap bits 58 and 62 set and returned `EFAULT`. These were lightweight guards inside `rw-p` mappings with `VmFlags: gu`, rather than PROT_NONE reservations or VM_IO/PFNMAP mappings. Capture already excluded mappings without read permission; it now also excludes the guard markers while retaining their readable neighbors. Exact mapping bounds and failed page addresses, without memory contents, are in `diagnostic-mappings.json` and `diagnostic-guard-bits.json` under `run-2`.
+
+A separate syscall diagnostic after the fix returned `done`, read 92,580 pages with zero failures and observed 129 `process_madvise` calls returning `EPERM`. All 129 `process_vm_readv` batches succeeded. This agrees with the Linux 7.0 capability rule above: these nested wake timings have no WILLNEED head start. The memory-read trace used raw syscall arguments, so it captured no target memory contents.
+
 Instances 5 and 6 were also real clones with T3 and Vite. One simultaneous three-clone burst used the same 32-thread pool:
 
-| Instance | Node wake to app answer | Restore, included | Incus unfreeze API, included | Gateway publish to result |
-| --- | --- | --- | --- | --- |
-| 5 | 737.429 ms | 525.197 ms | 25.173 ms | 820.775 ms |
-| 6 | 1,335.262 ms | 1,206.700 ms | 24.836 ms | 1,384.006 ms |
-| 4 | 1,702.093 ms | 1,661.800 ms | 8.066 ms | 1,735.952 ms |
+| Instance | Node wake to app answer | Restore, included | Incus unfreeze API, included | Pages read | Failed pages |
+| --- | --- | --- | --- | --- | --- |
+| 6 | 238.297 ms | 193.382 ms | 13.950 ms | 91,399 | 0 |
+| 5 | 402.372 ms | 354.889 ms | 8.632 ms | 90,808 | 0 |
+| 4 | 484.466 ms | 450.542 ms | 11.867 ms | 92,451 | 0 |
 
-All three answered HTTP 200 and reported `partial / instance.restore_read_failed`. Restore time includes waiting behind an earlier target. The last result arrived 1,972.415 ms after launching the three Gateway helper processes; that scope includes their boot time.
+All three answered HTTP 200 and returned `done`. Restore time includes waiting behind an earlier target. The last result arrived 1,163.346 ms after launching the three Gateway helper processes; that scope includes their boot time.
 
-**SIGKILL recovery passed.** The first restore syscall was delayed by 1 s for fault injection. The executor was killed while Instance 4 was frozen, with its plan intact and swap open. systemd restarted it, and startup replayed open Operation 377. The app answered HTTP 200 after 2,444.060 ms from the kill; its cgroup thawed, swap returned to `0`, and the plan and marker were removed.
+**SIGKILL recovery passed.** The first restore syscall was delayed by 1 s for fault injection. The executor was killed while Instance 4 was frozen, with its plan intact and swap open. systemd restarted it, and startup replayed open Operation 447. The recovered wake read 92,311 pages with zero failures. The app answered HTTP 200 after 2,352.641 ms from the kill; its cgroup thawed, swap returned to `0`, and the plan and marker were removed.
 
-The first waiter timed out. A fresh signed order for the same Operation returned `partial` with `repeat: true` in 7.514 ms, and the Operation succeeded. Its journal has one open, one done and one seen record. Raw evidence is in `burst.json`, `crash-node.jsonl`, `crash-gateway.jsonl` and `crash-recovery-journal.txt` beside the sleep samples. No executor code changed during this proof.
+The first waiter timed out. A fresh signed order for the same Operation returned `done` with `repeat: true` in 4.774 ms, and the Operation succeeded. Its journal has one open, one done and one seen record. Raw evidence is in `burst.json`, `crash-node.jsonl`, `crash-gateway.jsonl` and `crash-recovery-journal.txt` beside the sleep samples.

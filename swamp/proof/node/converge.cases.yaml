@@ -179,25 +179,30 @@ cases:
     exclusive: true
     covers: []
     summary: A signed sleep of the real executor-sleep-clone with T3 and Vite records a durable power proof Operation, a complete whole-container plan, swap limits and the asleep marker.
-    # Live evidence, subtask 5768 at f45b784f9: .orbit-artifacts/5753/live-proof-5768/summary.json,
+    # Live evidence, subtask 5768 run 2: .orbit-artifacts/5753/live-proof-5768/run-2/summary.json,
     # samples.csv, rust-samples.jsonl, python-samples.jsonl, durable-operations.json and journal-audit.json.
-    # Real clone 4, create/completion Operations 237/238: T3 0.1.7 + Vite 7.2.2 on port 8080.
-    # 30 signed sleep/wake pairs, Operations 245..304: all 15 subtree processes in every complete plan;
-    # each durable Operation succeeded and has one done journal record. Swap opened 0 -> max -> 0.
-    # Node sleep p50/p95/max ms: 428.664/507.154/1249.831, including reclaim 372.334/435.810/437.837.
-    # Rust RAM after sleep: 14323712..16748544 bytes; swap: 366612480..371224576 bytes, nonzero every time.
-    # Same-clone Python sleep p50/p95/max ms: 545.736/4974.081/5149.529; reclaim 267/288/346.
-    # Python RAM: 14360576..14876672 bytes; swap: 371388416..372674560 bytes.
-    # Python used the current transient-unit prepare/residual path, excluding Ansible and transport;
-    # its plans were skipped/placement_unproven on this nested host. Each sample followed a Rust wake.
-    # Rust wakes to HTTP 200 p50/p95/max ms: 417.586/458.040/599.969; restore 384.604/424.331/567.185.
-    # Incus PUT/unfreeze + operation wait: 5.944/11.747/12.300 ms (strace connect-to-close; overhead included).
-    # All wakes were partial/instance.restore_read_failed, not complete restores. Diagnostic: short reads, madvise EPERM.
-    # Three real T3/Vite clones woke at 737.429/1335.262/1702.093 ms; burst.json records the timing scopes.
-    # SIGKILL during a delayed first restore read: Operation 377 recovered, HTTP 200 at 2444.060 ms;
-    # signed repeat returned partial/repeat=true, one open/done/seen journal record. No code changed.
-    # Manual case-equivalent assertions ran through the existing proof helper; fleet-reset runner/converge not rerun.
-    fails_today: CI proof remains disabled; its fresh fleet does not create the real T3/Vite clone fixture. Live swap-backed measurements ran manually; complete restoration remains unproven because every measured wake was partial.
+    # Fixed executor SHA-256 6c133c9cdf3d719b802791f23b7b46674548736d9cf6e06b2f671aafa985ce50.
+    # Clone 4 runs T3 0.1.7 + Vite 7.2.2 (port 8080). Every plan includes all 15 subtree processes.
+    # 30 signed sleep/wake pairs: every Operation succeeded, every wake done, every failed-page count 0.
+    # Sleep p50/p95/max ms: 452.304/543.592/551.332; reclaim 398.938/492.065/494.284.
+    # RAM after each sleep: 14544896..16154624 bytes; swap 378744832..379793408, nonzero every time.
+    # Swap limits open 0 -> max -> 0. Every sample's RAM/swap and pages read are in samples.csv.
+    # Wake to HTTP 200 p50/p95/max ms: 147.840/494.080/517.545; restore 122.675/417.062/478.530.
+    # Incus PUT/unfreeze + wait: 9.471/18.734/19.041 ms (connect-to-close; strace overhead included).
+    # Pages read per wake: 91932..92180, p50/p95/max 92127/92177/92180; zero failed pages.
+    # Diagnosis: 39 lightweight guards inside 16 readable anonymous VMAs set pagemap bits 58 and 62.
+    # Capture excludes guard markers; short reads skip/count failed pages and continue the item.
+    # Linux 7.0 remote process_madvise checks CAP_SYS_NICE in the initial user namespace: nested EPERM.
+    # Post-fix diagnostic: 129 EPERM hints, 129 successful readv batches, zero failures, done.
+    # Same-clone Python sleep: 509.563/5644.503/5822.532 ms; reclaim 293/500/511.
+    # Python RAM: 14553088..14766080 bytes; swap 380137472..381841408.
+    # All 30 Python captures skipped/placement_unproven: timings do not cover the same work; not like for like.
+    # Three real clones woke done at 238.297/402.372/484.466 ms; zero failed pages (burst.json).
+    # SIGKILL during a delayed read recovered Operation 447: HTTP 200 after 2352.641 ms;
+    # restored 92311 pages, zero failures, signed repeat done/repeat=true (4.774 ms), one open/done/seen record.
+    # 64 audited measured/recovery Operations succeeded and have one done record each.
+    # Manual existing-helper proof; shared fleet-reset runner, converge and production flows not rerun.
+    fails_today: CI proof remains disabled; its fresh fleet does not create the real T3/Vite clone fixture. Live swap-backed manual proof returned done for all single, burst and recovered wakes.
     setup:
       - executor_key: {}
     act:

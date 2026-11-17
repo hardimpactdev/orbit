@@ -76,8 +76,9 @@ fn runs(file: &File, start: u64, end: u64, page: u64, deadline: Instant) -> io::
         }
         file.read_exact_at(&mut buffer[..count * 8], (address / page) * 8)?;
         for entry in buffer[..count * 8].chunks_exact(8) {
-            // The high byte contains present (63) and swapped (62); never inspect the PFN.
-            if entry[7] & 0xc0 != 0 {
+            // Linux also sets swapped (62) for guard markers (58), which hold no readable page.
+            // Keep every actual present-or-swapped page without inspecting the PFN.
+            if entry[7] & 0xc0 != 0 && entry[7] & 0x04 == 0 {
                 match ranges.last_mut() {
                     Some(last) if last.start + last.length == address => last.length += page,
                     _ => ranges.push(Range {

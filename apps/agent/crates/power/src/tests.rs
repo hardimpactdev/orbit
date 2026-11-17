@@ -890,6 +890,78 @@ fn review_failed_memory_read_must_not_report_complete() {
 }
 
 #[test]
+fn capture_excludes_unreadable_mappings_and_guard_markers_but_keeps_their_readable_neighbors() {
+    let (_dir, power, api) = fixture();
+    let buffer = vec![1_u8; 4096 * 9];
+    let start = plant_self(&power, &api, &buffer, 8);
+    let base = power.proc.join(std::process::id().to_string());
+    fs::write(
+        base.join("maps"),
+        format!(
+            "{start:x}-{:x} ---p 00000000 00:00 0\n{:x}-{:x} --xp 00000000 00:00 0\n{:x}-{:x} rw-p 00000000 00:00 0\n",
+            start + 4096, start + 4096, start + 8192, start + 8192, start + 8 * 4096,
+        ),
+    )
+    .expect("mapping permissions");
+    let pagemap = File::options()
+        .write(true)
+        .open(base.join("pagemap"))
+        .expect("pagemap");
+    // Linux 7.0 sets bit 62 as well as bit 58 on a lightweight guard inside a readable VMA.
+    std::os::unix::fs::FileExt::write_at(
+        &pagemap,
+        &((1_u64 << 62) | (1 << 58)).to_le_bytes(),
+        (start / 4096 + 3) * 8,
+    )
+    .expect("guard marker");
+    power.sleep_with(&api, "2", "op1").expect("sleep");
+    let plan: plan::Plan = load(&power.state.join("2/plan.json")).expect("plan");
+    assert_eq!(
+        plan.processes[0].ranges,
+        vec![
+            plan::Range {
+                start: start + 8192,
+                length: 4096
+            },
+            plan::Range {
+                start: start + 4 * 4096,
+                length: 4 * 4096
+            },
+        ]
+    );
+}
+
+#[test]
+fn restore_continues_after_each_unreadable_page_in_a_short_or_failed_batch() {
+    let (_dir, mut power, api) = fixture();
+    power.web_port = web(200);
+    api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+    let buffer = vec![1_u8; 4096 * 9];
+    let start = plant_self(&power, &api, &buffer, 8);
+    power.sleep_with(&api, "2", "op1").expect("sleep");
+    let path = power.state.join("2/plan.json");
+    let mut plan: serde_json::Value = load(&path).expect("plan");
+    // First fail at the batch's start, then after one valid page, then again with a readable tail.
+    plan["processes"][0]["ranges"] = serde_json::json!([
+        {"start":0,"length":4096}, {"start":start,"length":4096},
+        {"start":0,"length":4096}, {"start":start + 4096,"length":4096},
+        {"start":0,"length":4096}, {"start":start + 8192,"length":4096}
+    ]);
+    publish(&path, &plan).expect("plan");
+    let receipt = power.wake_with(&api, "2").expect("wake continues");
+    assert_eq!(
+        (receipt.restore.as_str(), receipt.reason.as_deref()),
+        ("partial", Some("read_failed"))
+    );
+    assert_eq!(
+        receipt.pages_read, 3,
+        "read every readable page after each failure"
+    );
+    assert_eq!(receipt.pages_failed, 3, "count only the failed pages");
+    assert!(!marker(&power).exists());
+}
+
+#[test]
 fn review_invalid_range_must_skip_plan_without_panicking() {
     let (_dir, mut power, api) = fixture();
     power.web_port = web(200);
