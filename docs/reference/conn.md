@@ -35,7 +35,8 @@ Conn uses the existing [node access](/cli/node/access-add) edges. It has no gran
 | Thread index list, `GET /threads` | Node access to at least one Node. The list covers only the container servers the server list shows the caller. |
 | Thread record, `POST /environments/{environment_id}/threads` | Node access to the Node that serves the server. |
 | Thread start, `POST /projects/{id}/instances` | Node access to the Node of the Project's default Instance. |
-| Durable launches, `/launches` | An active peer, a current profile binding, and access to the recorded target Node. The collection access rule also applies. |
+| Durable launch admission and replay, `POST /launches` | An active peer, matching `expected_node_id` and `expected_profile_id` checked against the authenticated Node and its current binding in the admission transaction, and current target Node access. The collection access rule also applies. |
+| Durable launch reads and controls | An active peer, a current binding to the recorded profile, and access to the recorded target Node. The collection access rule also applies. |
 | `POST /environments`, registration | No edge. |
 
 The Gateway Node, its serving host, and a Node with an edge to the Gateway Node have access to every Node, so they reach every server. When a server's Node was removed, only those callers reach it. A refused call gets `node_access.required` (403), with `details.consumer_node` and, for a server, `details.serving_node`.
@@ -664,7 +665,7 @@ A cancelled completion keeps the clone `source_resolved`, its container running 
 
 ## Durable launches (v1)
 
-One launch prepares an Orbit Instance, sends one first message to its T3 project, and publishes the accepted thread to the Conn profile. The device can disconnect after admission and another device on the same profile can follow the launch. V1 supports text only on the Orbit T3 recipe `0.1.7`. This is an additive Gateway API: the existing Conn endpoints and the installed clients' create-then-send path do not change. Conn Rust parity is not part of v1.
+**Contract v1.1.** One launch prepares an Orbit Instance, sends one first message to its T3 project, and publishes the accepted thread to the Conn profile. The device can disconnect after admission and another device on the same profile can follow the launch. The contract supports text only on the Orbit T3 recipe `0.1.7`. This is an additive Gateway API: the existing Conn endpoints and the installed clients' create-then-send path do not change. Conn Rust parity is out of scope.
 
 ### Admit and replay
 
@@ -672,6 +673,7 @@ One launch prepares an Orbit Instance, sends one first message to its T3 project
 
 | Field | Contract |
 | --- | --- |
+| `expected_profile_id`, `expected_node_id` | Required positive integers for the profile and device Node the client expects to launch as. They do not grant access. |
 | `project_id` | Orbit Project ID. |
 | `workspace_id` | Optional workspace ID in the caller's profile. Omit it or send `null` to attach to the profile without a workspace. |
 | `target` | New clone: `{ "kind": "new", "name": "fix-login-k3j9", "branch": … }`. Existing Instance: `{ "kind": "existing", "instance_id": 42 }` in this Project. An existing target keeps its checkout; omit `branch`. |
@@ -681,9 +683,13 @@ One launch prepares an Orbit Instance, sends one first message to its T3 project
 | `source` | `web` for desktop or web; `mobile` for iOS. |
 | `command_id`, `thread_id`, `message_id` | Stable client UUIDs for the T3 command, thread, and first message. |
 
-The Gateway derives the initiating Node from WireGuard and the profile from its current `ConnProfileBinding`. Neither is a request field. For a new clone it checks the same Project and default placement access as Conn create; for an existing Instance it checks the recorded Project, registered target and target Node access. It commits one `conn.launch` Operation and its encrypted private request before it returns `202` with `{ "data": LaunchSnapshot, "meta": { "request_id": … } }`.
+The Gateway derives the initiating Node from WireGuard and the profile from its current `ConnProfileBinding`. Inside the admission transaction, before any launch effect or replay response, compare both expected IDs with those authoritative IDs. Reuse the existing binding row and hold it through commit: SQLite uses the configured `IMMEDIATE` transaction to serialize writes; other drivers lock the binding row. Do not rely on a check before the transaction or let idempotency middleware replay a response first.
 
-The admission identity is the original Node and `launch_id`, not the profile or a later control device. On a lost reply, the same Node can replay the same key and normalized body. The Gateway rechecks current access to the recorded profile and target Node and returns the same Operation's current snapshot. One device does not inherit another device's admission key.
+Missing or invalid expected IDs fail request validation. A mismatch or absent binding returns `409 conn.launch_scope_changed`. Neither refusal adds an Operation, private input, or child, or returns an old snapshot.
+
+Matching IDs still require current target access. For a new clone the Gateway checks the same Project and default placement access as Conn create; for an existing Instance it checks the recorded Project, registered target and target Node access. It commits one `conn.launch` Operation and its encrypted private request before it returns `202` with `{ "data": LaunchSnapshot, "meta": { "request_id": … } }`.
+
+The admission identity is the original Node and `launch_id`, not the profile or a later control device. On a lost reply, the same Node can replay the same key and normalized body. Before returning the same Operation's current snapshot, the Gateway performs the same locked expected-ID check and rechecks current access to the recorded profile and target Node. A rebind makes a replay with the original expected IDs fail with `conn.launch_scope_changed`; supplying new expected IDs does not move the original launch to the new profile. One device does not inherit another device's admission key.
 
 Compare every accepted request field, including a keyed, protected fingerprint of the exact prompt. Normalize omitted and `null` `workspace_id`, and omitted and `null` new-target `branch`, to the same values before fingerprinting. Compare the admitted selectors, not defaults resolved later from live state. A changed normalized request for the same admission identity returns `409`.
 
@@ -739,6 +745,7 @@ Project the safe fields of `OperationData::summary`: `id`, `kind`, `status`, `cr
 | Field | Contract |
 | --- | --- |
 | `launch_id`, `project_id`, `instance_id`, `workspace_id` | Admission UUID, Orbit Project, exact Instance once known, and requested workspace. The last two can be `null`. |
+| `profile_id` | Recorded numeric Conn profile ID, present on every snapshot. |
 | `target_node_id`, `initiator_node_id`, `source` | Recorded target Node, initiating device Node, and `web` or `mobile`. |
 | `phase` | `preparing`, `dispatching`, `publishing`, `ready`, `needs_retry`, `cancelling`, or `cancelled`. `ready` means the accepted thread is published, not that the application preview works. `needs_retry` indicates launch recovery; application-only failure does not undo `ready`. |
 | `stages` | Object keyed by `workspace_server`, `first_message`, `publication`, `application_preview`, `cleanup`. Each value has `status` (`pending`, `running`, `succeeded`, `failed`, `cancelled`, `skipped`), `started_at`, `finished_at`, and `error` (`null` or sanitized `{ "code": …, "detail": … }`). An unrecorded timestamp is `null`. |
