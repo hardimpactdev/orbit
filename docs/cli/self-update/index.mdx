@@ -9,6 +9,8 @@ covers:
 
 `self-update` updates this machine's `orbit` CLI to the active Gateway's release. It replaces the `orbit` binary with the CLI release of the Gateway's commit, after a SHA-256 check. It never touches `orbit-agent`: a Node gets the agent from the Gateway through [install on mismatch](/reference/node-agent#install-on-mismatch). [Orbit self-update](/reference/self-update) describes the desired fleet state, each step, and the checks.
 
+Only release builds can self-update. For other builds, follow the [reinstall instruction](/reference/self-update#update-the-cli).
+
 ## Commands
 
 | Command | Result |

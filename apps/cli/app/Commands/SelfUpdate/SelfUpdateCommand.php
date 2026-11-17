@@ -35,7 +35,7 @@ final class SelfUpdateCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'self-update
-        {--allow-downgrade : Install the Gateway\'s CLI release even when it is older than this orbit, or this orbit is not a release}
+        {--allow-downgrade : Install the Gateway\'s CLI release even when it is older than this orbit}
         {--allow-downgrade-to= : Allow a downgrade only to this CLI release version, such as 0.4681.0}
         {--json : Return machine-readable JSON}';
 
