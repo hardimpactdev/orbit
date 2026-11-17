@@ -724,7 +724,9 @@ it('records why a removal waits: a held Node, the removal cap, the withdrawal sl
 it('takes the Instance slot the way the destroy workflow names its container steps', function (): void {
     $workflow = (string) file_get_contents(base_path('../../swamp/workflows/workflow-operation-instance-destroy.yaml'));
 
-    expect(substr_count($workflow, 'string(int(inputs.intent.instance_id) % '.RoutePublicationHolds::DestroySlots.')'))->toBe(7)
+    // Eight slot names: "Stop the container" takes the deletion's name of its slot, so a Node keeps its bound of names
+    // (swamp/tests/instance_destroy_slot_names_test.ts).
+    expect(substr_count($workflow, 'string(int(inputs.intent.instance_id) % '.RoutePublicationHolds::DestroySlots.')'))->toBe(8)
         ->and(RoutePublicationHolds::destroySlot(instanceRemoval(3206)))->toBe(3206 % RoutePublicationHolds::DestroySlots)
         ->and(RoutePublicationHolds::destroySlot(routeWrite([5])))->toBeNull();
 });

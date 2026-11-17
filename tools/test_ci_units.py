@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=9, runner_shards=9, self_hosted_shards=8, self_hosted_workers=2, default_cost=30, machinery_canary=[], capacity_gap=[])
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=9, runner_shards=9, spread_shards=9, self_hosted_shards=8, self_hosted_workers=2, default_cost=30, machinery_canary=[], capacity_gap=[])
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -439,7 +439,7 @@ class TableTest(unittest.TestCase):
     def test_table_files_costs_and_unsliceable_rules(self):
         budget, fixtures, defaults = units.configuration()
         self.assertEqual({**budget, 'machinery_canary': [], 'capacity_gap': []},
-                         {**BUDGET, 'shard_workers': 2, 'pr_shards': 18, 'runner_shards': 18})
+                         {**BUDGET, 'shard_workers': 2, 'pr_shards': 18, 'runner_shards': 18, 'spread_shards': 16})
         self.assertTrue(defaults)
         for f in fixtures.values():
             self.assertTrue((ROOT / f['file']).is_file(), f['file'])

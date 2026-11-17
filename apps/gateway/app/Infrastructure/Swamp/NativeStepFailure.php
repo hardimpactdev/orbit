@@ -26,12 +26,8 @@ final readonly class NativeStepFailure
             return null;
         }
         $candidates = [];
-        $target = match ($operation->target_type) {
-            'instance' => Instance::query()->find($operation->target_id),
-            'process' => Process::query()->find($operation->target_id),
-            default => null,
-        };
-        $values = $target instanceof Instance || $target instanceof Process ? $this->redactor->valuesFor($target) : [];
+        $target = $this->target($operation);
+        $values = $target === null ? [] : $this->redactor->valuesFor($target);
         foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
             if (! is_array($job)) {
                 continue;
@@ -69,6 +65,31 @@ final readonly class NativeStepFailure
         }
 
         return $candidates[0]['failure'] ?? null;
+    }
+
+    /**
+     * A failed step's stderr that its phase wrote into the run's result file, because Swamp keeps no stderr of a failed command
+     * step. It is redacted and bounded to its tail as a native step's stderr is.
+     *
+     * @return array{failed_step:string,detail:string,stderr_recorded:true}
+     */
+    public function written(string $failedStep, string $stderr, Operation $operation): array
+    {
+        $target = $this->target($operation);
+        $values = $target === null ? [] : $this->redactor->valuesFor($target);
+        $detail = $this->text($stderr, $values);
+
+        return ['failed_step' => $this->text($failedStep, $values, 255, false),
+            'detail' => $detail !== '' ? $detail : 'The incomplete native diagnostic line was omitted.', 'stderr_recorded' => true];
+    }
+
+    private function target(Operation $operation): Instance|Process|null
+    {
+        return match ($operation->target_type) {
+            'instance' => Instance::query()->find($operation->target_id),
+            'process' => Process::query()->find($operation->target_id),
+            default => null,
+        };
     }
 
     private function timeoutSeconds(mixed $command): ?string

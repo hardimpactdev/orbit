@@ -99,6 +99,10 @@ sequenceDiagram
       %%> If it is refused:
       %%> - the run goes on; the end frees the Nodes, and the result says route_hold_released false
     end
+    SW->>N: Stop the container<br/>Ansible · tags stop
+    %%> What it does:
+    %%> - stops the clone with `incus stop --force` under the deletion's slot name, so no worker or other client in it holds a database session when the drop runs
+    %%> - a stopped or missing container counts as stopped and changes nothing
     opt clone owns server databases
       %% path: server-database
       SW->>N: Drop owned databases<br/>child database-destroy
@@ -110,7 +114,11 @@ sequenceDiagram
     %%> - deleting T3 retires every session and unused pairing link; no T3 call or new vault key is needed
     %%> - removes its `instance-<id>` ACL from Incus project `default`, its owned UFW rules, its Node repository mirror and its private Node mail activation state
     %%> - an Instance whose runtime records an inner volume, a default or its copy: deletes the volume `inner-<id>` with its snapshots after the container; a copy's volume shares blocks with the default's seed until it goes
-    %%> - checks that the container, its storage volume and any inner volume are absent; already absent resources are removed
+    %%> - a part already gone counts as removed; Incus deletes first; a container or inner volume it refuses for a missing ZFS dataset then gets an empty dataset, and empty snapshots, with its own names, so Incus deletes the record; never a `zfs destroy`
+    %%> - a name that a dataset with data or children holds again when the step reads it once more refuses with `instance.removal_dataset_taken`; nothing is made or deleted
+    %%> - after a refusal the inner volume goes by name, its snapshots then the volume, also a clone whose origin went with another Instance; that origin and every other volume stay
+    %%> - checks that the container, its storage volume and any inner volume are absent, by this Instance's names only
+    %%> - a failed task writes its name, message and stderr tail into the result; the Gateway records it as `error.detail` with `stderr_recorded: true`
     %%> - the default and sibling clones stay; a migrated Instance's retained Git directory is untouched and can be purged only by hand
     opt a proof copy
       Note over N: Release the CI place<br/>orbit-ci-runner-hold release

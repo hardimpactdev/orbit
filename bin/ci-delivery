@@ -14,6 +14,8 @@ def validate(needs):
     needs = dict(needs)
     if needs['changes']['result'] != 'success':
         sys.exit('Build input selection failed')
+    if needs.pop('ci-policy', {}).get('result') != 'success':
+        sys.exit('CI policy checks failed')
     capacity = json.loads(needs['changes']['outputs']['fixture_capacity'])
     if capacity:
         sys.exit(f'Required fixture capacity exceeded: {capacity}')

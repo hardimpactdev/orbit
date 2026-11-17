@@ -43,6 +43,16 @@ const inside = (name: string, value: string) =>
   /^\/(srv|tmp|etc|home|usr\/local)\//.test(value) ? rootfs(name) + value : value;
 /** A container's /run: a tmpfs, so it lives beside its root file system, and a stop, snapshot or copy never holds it. */
 const tmpfs = (name: string) => `${folder}/tmpfs/${name}`;
+/**
+ * A ZFS pool's datasets, when a test lists them in `state.datasets` (instance-container-zfs.ts): Incus refuses to delete a record whose
+ * dataset is gone, and a delete takes the dataset with its snapshots and nothing else.
+ */
+const dataset = (kind: string, project: string | null, name: string) => `${state.pool?.config?.["zfs.pool_name"]}/${kind}/${project}_${name}`;
+const dropDataset = (path: string) => {
+  if (!state.datasets) return;
+  if (!state.datasets.includes(path)) fail(`Failed deleting storage volume: Failed to run: zfs destroy -r ${path}: exit status 1 (cannot open '${path}': dataset does not exist)`);
+  state.datasets = state.datasets.filter((each: string) => each !== path && !each.startsWith(`${path}@`));
+};
 
 if (args[0] === "query") {
   const [route, query = ""] = args.at(-1)!.slice(5).split("?");
@@ -54,12 +64,15 @@ if (args[0] === "query") {
     if (!state.containers[parts[4]]) fail("Storage pool volume not found");
     console.log(JSON.stringify({ name: parts[4], type: "container", config: state.containers[parts[4]].volume_config ?? {} }));
   } else if (parts[0] === "storage-pools" && parts[3] === "custom" && parts[5] === "snapshots") {
-    // A custom volume's snapshots, by their own names.
+    // A custom volume's snapshots, named `<volume>/<snapshot>` as Incus names them.
     if (!state.volumes?.[parts[4]]) fail("Storage pool volume not found");
-    console.log(JSON.stringify((state.volumes[parts[4]].snapshots ?? []).map((name: string) => ({ name }))));
+    console.log(JSON.stringify((state.volumes[parts[4]].snapshots ?? []).map((name: string) => ({ name: `${parts[4]}/${name}` }))));
   } else if (parts[0] === "storage-pools" && parts[3] === "custom") {
     if (!state.volumes?.[parts[4]]) fail("Storage pool volume not found");
     console.log(JSON.stringify({ name: parts[4], type: "custom", config: state.volumes[parts[4]].config }));
+  } else if (parts[0] === "storage-pools" && parts.length === 2) {
+    // The pool itself: a directory pool unless a test gives it, such as a ZFS pool with its dataset root.
+    console.log(JSON.stringify(state.pool ?? { name: parts[1], driver: "dir", config: {} }));
   } else if (parts[0] === "storage-pools") {
     console.log(JSON.stringify([...Object.keys(state.containers).map((name) => ({ name, type: "container" })),
       ...Object.keys(state.volumes ?? {}).map((name) => ({ name, type: "custom" }))]));
@@ -121,6 +134,7 @@ if (family === "list") {
   console.log(JSON.stringify(Object.entries(state.containers).map(([name, value]) => ({ name, ...(value as object) }))));
 } else if (family === "delete") {
   const name = args.at(-1)!;
+  dropDataset(dataset("containers", project, name));
   delete state.containers[name];
   Deno.removeSync(rootfs(name), { recursive: true });
 } else if (family === "init") {
@@ -185,6 +199,7 @@ if (family === "list") {
   if (!state.volumes?.[name]) fail("Storage pool volume not found");
   if (Object.values(state.containers).some((row) => Object.values((row as {added?: Record<string, {settings?: string[]}>}).added ?? {})
     .some((device) => device.settings?.includes(`source=${name}`)))) fail("Storage volume is still in use");
+  dropDataset(dataset("custom", project, name));
   delete state.volumes[name];
 } else if (family === "storage" && args[1] === "volume" && args[2] === "snapshot") {
   // A custom volume's snapshot: `volume_snapshot_fails` holds a create that Incus refuses.
@@ -206,6 +221,11 @@ if (family === "list") {
     volume.restored = [...(volume.restored ?? []), snapshot];
   } else if (verb === "delete") {
     if (!volume.snapshots.includes(snapshot)) fail("Snapshot not found");
+    if (state.datasets) {
+      const path = `${dataset("custom", project, name)}@snapshot-${snapshot}`;
+      if (!state.datasets.includes(path)) fail(`Failed to run: zfs destroy ${path}: exit status 1 (could not find any snapshots to destroy)`);
+      state.datasets = state.datasets.filter((each: string) => each !== path);
+    }
     volume.snapshots = volume.snapshots.filter((s: string) => s !== snapshot);
   } else if (verb === "rename") {
     const target = args[7];
@@ -249,6 +269,11 @@ if (family === "list") {
     Deno.exit(0);
   }
   if (family === "stop" && state.stop_fails) fail("Failed shutting down instance");
+  // A stop that fails with the given stderr, such as a long one with many lines.
+  if (family === "stop" && typeof state.stop_stderr === "string") {
+    console.error(state.stop_stderr);
+    Deno.exit(1);
+  }
   if (state.containers[name].status === "Frozen" && !args.includes("--force")) fail("Failed shutting down instance, status is \"Running\"");
   // A boot brings a web unit back that stayed silent after a resume.
   if (family === "start") delete state.containers[name].silent_until_boot;

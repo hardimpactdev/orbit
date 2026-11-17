@@ -75,7 +75,7 @@ class FixturePoolTest(unittest.TestCase):
         expected = [name for name, _ in units.units_for(fixtures[file], budget)]
         self.assertEqual(76, len(expected))
         self.assertEqual(set(expected), {name for name in selected if name.split('#')[0] == file})
-        self.assertEqual(18, len(plan['shards']) + len(plan['self_hosted_shards']))
+        self.assertEqual(16, len(plan['shards']) + len(plan['self_hosted_shards']))
         costs = {name: cost for fixture in fixtures.values() for name, cost in units.units_for(fixture, budget)}
         for shard in plan['shards'] + plan['self_hosted_shards']:
             self.assertEqual(2, units.shard_workers(shard['units'], budget, fixtures))
@@ -107,6 +107,18 @@ class FixturePoolTest(unittest.TestCase):
                          sorted(name for shard in result[False] for name in shard['units']))
         self.assertTrue(all(len(shard['units']) == 4 for shard in result[False]))
         self.assertEqual([], result[True])
+
+
+    def test_spread_target_limits_extra_jobs_but_never_rejects_admitted_units(self):
+        budget = {**BUDGET, 'runner_shards': 4, 'spread_shards': 2, 'pr_shards': 4, 'shard_workers': 2}
+        for count, seconds, expected_jobs in ((12, 50, 2), (8, 100, 4)):
+            with self.subTest(count=count, seconds=seconds):
+                rows = [(f'unit{i}', seconds, 0) for i in range(count)]
+                result = units.spread({False: rows, True: []}, budget)
+                self.assertEqual(expected_jobs, len(result[False]))
+                self.assertEqual(sorted(name for name, _, _ in rows),
+                                 sorted(name for shard in result[False] for name in shard['units']))
+                self.assertEqual([], result[True])
 
 
 if __name__ == '__main__':

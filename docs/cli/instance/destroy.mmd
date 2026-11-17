@@ -208,6 +208,14 @@ sequenceDiagram
     %%> - runs beside the database step; neither needs the other
   end
   end
+  opt container clone
+    SW->>N: Stop the container<br/>Ansible · tags stop
+    %%> What it does:
+    %%> - stops the container with `incus stop --force`, so its workers and every other client in it close their database sessions before the drop
+    %%> - a stopped or missing container counts as stopped and changes nothing
+    %%> Why:
+    %%> - a session on a planned database refuses the drop with `database.in_use` (Operation 25427, Instance 3472)
+  end
   opt owned databases
     SW->>N: Drop owned databases<br/>docker exec -i · SQL on stdin
     %%> What it does:
@@ -216,6 +224,8 @@ sequenceDiagram
     %%> - the admin login comes from the server's own vault key, as the first stdin line for MySQL and Postgres, `AUTH` on stdin for Valkey
     %%> Not included:
     %%> - registered external databases; their records go with the Instance, nothing on their host changes
+    %%> Failure:
+    %%> - a session or dependency on a planned database refuses the drop before the first DROP; the server's end check then fails, and the removal names the child's code, `database.in_use`, not `instance.removal_incomplete`
   end
   opt checkout Instance
   SW->>N: Remove hibernation files<br/>@swamp/cfgmgmt/file absent
@@ -242,6 +252,7 @@ sequenceDiagram
     Note over SW: Read container removal
     %%> Failure:
     %%> - a skipped deletion has no result and cannot report success
+    %%> - a failed deletion's result names the failed task with its stderr tail, which the Operation keeps
     Note over SW: Clean container files
     %%> When:
     %%> - after every user of the run folder settles, also after a failure

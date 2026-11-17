@@ -158,7 +158,7 @@ Every development container has the same layout. The image and the create set it
 | Sudo | Passwordless for `agent` alone, in every container, from the [shared file](#existing-containers) `/etc/sudoers.d/orbit-agent` (root:root, mode 0440). `orbit` has none. See [Sudo and secrets](#sudo-and-secrets) |
 | Workspace | `/srv/workspace` and every entry in it, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others, and `core.sharedRepository=group`. Root's [pass](#who-runs-what) gives `agent` what `orbit` made |
 | Git | `safe.directory=/srv/workspace` in `/etc/gitconfig`, for every user and only that path; the agent part of the T3 step also writes it to `agent`'s own Git config and preserves its other Git settings |
-| Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
+| Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped; unshifted on an [Instance fleet Node](#shared-folders) |
 | T3 unit | `User=agent`, `UMask=0007`, `PATH` from the shared folders, `Requires=nftables.service`, `ConditionPathExists=/etc/orbit/instance`. The unit file is mode 0640. A drop-in names the [container server](#container-server) it starts |
 | `PATH` | The runtime folder's `bin` first, for units, login shells and `incus exec` sessions, so `composer` is on it |
 | `php` | `/usr/local/bin/php` links to the Project's static `php` in the runtime folder. A Project without a PHP version has none. The create and each start set it |
@@ -320,15 +320,19 @@ The software that the app and the agents run lives once per Node, in two version
 | `/opt/orbit-runtime/<version>/{lib,fonts}` | The [browser libraries and fonts](#browser-libraries-and-fonts) | Everyone |
 | `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |
 | `/opt/orbit-runtime/vite-plus/<digest>` | The [Vite+ home](/reference/compute-drivers#the-vite-home) that `vp` runs from, linked as `<version>/vite-plus-home` | Everyone |
-| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex` and `conn-server` ([Container server](#container-server)) | `root:2750`, mode 0750 |
-| `/opt/orbit-agent/<version>/agent/{t3,conn-server,claude-code,codex}` | The releases | `root:2750`, mode 0750 |
+| `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex` and `conn-server` ([Container server](#container-server)) | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
+| `/opt/orbit-agent/<version>/agent/{t3,conn-server,claude-code,codex}` | The releases | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
 
 The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, Claude Code and Codex. The runtime folder holds Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
 
 A folder's version is the first 12 hex digits of a digest of everything in it, the notes included, so any change is a new version. Each program in `bin` links to its path in its part.
 
-The idmapped mount keeps gid 2750 the same in every container, whatever its ID map. The spike proved this with one container; PR 3 proves it with two containers whose ID maps differ. `orbit` sees the folder `agent`, but not what is in it.
+The idmapped mount keeps gid 2750 the same in every container, whatever its ID map. The spike proved this with one container; PR 3 proves it with two containers whose ID maps differ. `orbit` sees the folder `agent`, but not what is in it, except on an Instance fleet Node.
+
+**On an Instance fleet Node.** An idmapped mount fails a third level below the host: on `nested-app-dev` Incus tears the shifted mount of `orbit-agent` down at the start of the first container. So the Instance containers there mount both folders with `shift=false` ([Instance host in the fleet](#instance-host-in-the-fleet)). An isolated container then sees every file of a folder as owned by `nobody` and `nogroup`, and only the mode bits for others count.
+
+The runtime folder is mode 755 and 644 throughout, so everyone still reads it. Gid 2750 does not reach the container, so on that Node the agent's programs are open to everyone as well: `agent/` and its releases are mode 755, as the rest of the folder. Each folder plan of that Node's intent carries `shift: false`, so its folder versions differ from a real Node's and the host installs them fresh. A real `app-dev` or CI Node keeps the idmapped mounts and gid 2750.
 
 An update installs the new version beside the old one and flips `current`. It runs with the converge of each Node, so a recipe change reaches the Node with its release refresh. Both `agent` and `orbit` have `/opt/orbit-runtime/current/bin` on `PATH`, so a running clone gets added programs, such as Deno, without recreation.
 
@@ -1489,7 +1493,7 @@ A removal from Conn without acknowledgement reads the [workspace work state](#wo
 
 The run withdraws the clone's Route, drops its owned server databases, then stops and deletes its Incus container with its Processes, T3 history, snapshots, storage volume and published proxy device. It removes the `instance-<id>` ACL from Incus project `default`, its UFW rules, its Node repository mirror and, for a task copy, the Node scratch of [its sync](/reference/tasks#bring-main-into-a-copy), `/var/tmp/orbit-task-base-<id>`, which a cancelled sync may leave; it holds no credential. Deleting T3 retires every session and unused pairing link. Terminal projection removes execution copies and Conn records, then deletes the runtime row to free its address and T3 port. The default and other clones stay.
 
-An Instance with an [inner volume](#the-inner-volume) loses that volume and its snapshots too, after the container. The run checks that the volume is gone.
+An Instance with an [inner volume](#the-inner-volume) loses that volume and its snapshots too, after the container. The run checks that the volume is gone. A part that is already gone counts as removed, and a record whose ZFS dataset is gone still goes ([Retry and ownership](/reference/instance-removal#retry-and-ownership)).
 
 The run deletes each UFW rule by the rule itself, as `ufw show added` lists it under the Instance's comment. It never deletes by number: another removal on the Node can delete a rule at the same time and shift every number above it.
 
@@ -2383,6 +2387,9 @@ What the host needs, measured by hand on a task copy at 1,165,536 on 2026-11-16:
 | Pool | A directory pool: a copy is a full copy. `btrfs` would clone on `nested-app-dev`'s btrfs root, but the container branch accepts only `zfs` and `dir` |
 | Network | The Node's input rules drop DHCP on `orbitinst0` until the role converge adds `orbit:instances-*` |
 | Egress | One isolated container launched in 10 s and ran `apt-get update`, a `git` install and an HTTPS request through the egress proxy in 11 s |
+| Shared folders | A read-only disk with `shift=true` fails the start; `shift=false` starts. See below the table |
+
+The shared folders were measured by hand with Incus 6.0.5 on 2026-11-16. A read-only folder disk with `shift=true` failed the start: `idmapping abilities are required but aren't supported on system`. With `shift=false` an isolated container of 34,464 IDs started at once. Its uid 2750 read a file of mode 644 but not a `root:2750` directory of mode 0750. It read the directory once it was open to others.
 
 `nested-app-dev`'s own map is 0 to 165,535, with the three `raw.idmap` holes below 2,751. Its `/etc/subuid` names root's range at 1,000,000, outside that map, so Incus ignores the file and takes the rest of the map above 65,536. The holes lie below that base and change nothing.
 
@@ -2396,7 +2403,11 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 4. It writes the marker `/etc/orbit/instance-fleet-node`.
 5. It runs the rest of the branch as on any `app-dev` Node: project, bridge, folders, egress proxy and the Instance image.
 
-A real `app-dev` or CI Node gets no `fleet_node`, so its intent and its branch stay as they were.
+The [shared folders](#shared-folders) are the one other difference. An idmapped (`shift=true`) disk fails a third level below the host: the first window at 2,000,000 stopped at the start of the image's build container, and the journal showed the shifted mount of `orbit-agent` torn down at once.
+
+So the folder plans in the fleet Node's intent carry `shift: false`, and from them the profile `orbit-instances` mounts `orbit-runtime` and `orbit-agent` with `shift=false`. The start guard and the native clone of a nested-fleet container take the same two devices from the container intent's `allowed_devices`, so each admits only its Node's form: `shift=false` on the fleet Node and `shift=true` on every other Node. `InstanceFolderPlan::shift` is the one rule; it follows `ContainerNodes::fleetNode`. The Instance image does not change.
+
+A real `app-dev` or CI Node gets no `fleet_node` and no folder `shift`, so its intent, its profile and its containers' devices stay as they were.
 
 The fleet's egress proxy lies in the Instance container's own bridge, in `10.253.0.0/16` one level up. The nested Gateway reads its address from `HTTPS_PROXY` in its `/etc/environment`, which the fleet rules write whole. It gives the fleet Node no Instance bridge in that /24: a bridge that holds the proxy address makes `nested-app-dev` dial itself, and its Incus cannot fetch the stock image.
 
@@ -2474,7 +2485,7 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 
 | Rule | Where | Why |
 | --- | --- | --- |
-| The workspace `/srv/workspace` is the disk device `checkout`, with `shift=false` | `nested-gateway`, `nested-app-dev` | An edit reaches them at once. A shifted mount fails two levels below the host |
+| The workspace `/srv/workspace` is the disk device `checkout`, with `shift=false` | `nested-gateway`, `nested-app-dev` | An edit reaches them at once. A shifted mount fails two levels below the host, as the [shared folders](#instance-host-in-the-fleet) of `nested-app-dev`'s Instances do |
 | `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` in the inner Incus | All three nested containers | The workspace is `agent:work` (2750:2760) with files of `orbit` (1000). With only the `orbit` line, nested root cannot resolve the state mounts. The outer container still has no `raw.*` key |
 | The Club key folder device `club-key`: `/run/orbit-club` at `/home/orbit/.config/swamp/club`, `shift=false`, and the link `/home/orbit/.config/swamp/api-key` to `club/swamp-club-api-key` | `nested-gateway` | The nested Swamp reads the [Club key](#the-club-key-of-the-nested-gateway) that Orbit delivers to the outer container's `/run` |
 | A read-only disk device that shows `N` at `/sys/module/apparmor/parameters/enabled`, from `/etc/orbit/apparmor-off` | `nested-app-dev`, `nested-app-prod` | `docker run` fails without it: Docker's own profile cannot load two levels below the host |

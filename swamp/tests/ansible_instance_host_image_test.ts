@@ -50,6 +50,48 @@ for (const kind of ["dir", "zfs", "nested"] as const) {
         });
     }
 }
+// docs/reference/development-containers.md#instance-host-in-the-fleet: an Instance fleet Node's folder plans carry `shift: false`.
+const unshifted = (f: Awaited<ReturnType<typeof rawFixture>>) => f.write({ ...f.instances, folders: {
+    runtime: { ...f.instances.folders.runtime, shift: "false" }, agent: { ...f.instances.folders.agent, shift: "false" } } });
+Deno.test({
+    name: "a fleet Node's profile mounts the runtime and agent folders unshifted, as its folder plans say",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture(options("dir"), "system", ["prepare"]);
+        try {
+            unshifted(f);
+            const result = await f.run(); assert(result.ok, result.output);
+            const devices = f.state().profiles["orbit-instances"].devices;
+            for (const name of ["runtime", "agent"] as const) {
+                const path = f.instances.folders[name].path;
+                assertEquals(devices[`orbit-${name}`], { type: "disk", source: path, path, readonly: "true", shift: "false" });
+            }
+        } finally { f.cleanup(); }
+    },
+});
+Deno.test({
+    name: "an unshifted agent folder opens its programs to everyone; an idmapped one keeps them to gid 2750",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await rawFixture(options("dir"));
+        try {
+            unshifted(f);
+            const result = await stages(f)("system"); assert(result.ok, result.output);
+            const agent = `opt/orbit-agent/${f.instances.folders.agent.version}/agent`;
+            const opened = capture(f).entries;
+            const kept = boundaries["dir-system"].entries;
+            const programs = Object.keys(opened).filter((path) => path === agent || path.startsWith(`${agent}/`));
+            assert(programs.length > 1, Object.keys(opened).join("\n"));
+            // An isolated container reads them as nobody's, so the bits for others must open each directory and file, and run each program.
+            for (const path of programs.filter((path) => !opened[path].link)) {
+                const { mode, directory } = opened[path];
+                const need = directory || (mode & 0o100) !== 0 ? 0o005 : 0o004;
+                assertEquals(mode & need, need, path);
+            }
+            assertEquals(kept[agent].mode, 0o750);
+        } finally { f.cleanup(); }
+    },
+});
 Deno.test({
     name: "the normal image on a nested host reaches the verified nested-build boundary",
     ignore: !hasAnsible,
