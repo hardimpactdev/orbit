@@ -22,7 +22,6 @@ import type {
     QueueState,
     QuotaProvider,
     Schedule,
-    TasksStatus,
     Tool,
     ToolInventory,
 } from "./types";
@@ -210,15 +209,6 @@ export const aiRouterStatusQuery = queryOptions({
     queryKey: ["ai-router-status"],
     refetchInterval: AI_ROUTER_POLL_SECONDS * 1000,
     queryFn: () => get<AiRouterStatus>("/api/v1/ai-router").catch(() => disabledAiRouter()),
-    retry: false,
-});
-
-/**
- * A `tasks.updated` event stores a change, so callers poll task status only with `useTaskPoll()`.
- */
-export const tasksStatusQuery = queryOptions({
-    queryKey: ["task-status"],
-    queryFn: () => get<TasksStatus>("/api/v1/tasks/status").catch(() => ({ enabled: false })),
     retry: false,
 });
 

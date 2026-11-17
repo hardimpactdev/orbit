@@ -98,4 +98,3 @@ export function useAgentState(nodeId: number): AgentState {
         () => "not_seen",
     );
 }
-export const AGENT_PRESENCE_TIMEOUT_MS = TIMEOUT_MS;
