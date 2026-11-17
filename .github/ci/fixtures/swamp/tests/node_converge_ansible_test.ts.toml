@@ -32,9 +32,11 @@ cases = [
   "a converge writes the units of the Node's roles and reloads systemd once, never starts or restarts one, and a current unit changes nothing",
   "the base converge installs the executor only from its intent, after the agent, refusing an unplanned release first",
   "a converge before the executor's rollout records why it skips the install and changes nothing",
+  "the executor plan check accepts a valid plan without writes",
+  "the executor plan check rejects an invalid plan with its error code without writes",
 ]
 file = "swamp/tests/node_converge_ansible_test.ts"
-cost = 85 # ESTIMATE: local 40s for the file x 2.1, rounded up, plus 1s
+cost = 87 # ESTIMATE: local 40s for the file x 2.1, rounded up, plus 1s, plus 2s for the two executor plan cases
 inputs = [
   "apps/gateway/resources/machine-software/recipe.json",
   "bin/swamp-shape-gate",
