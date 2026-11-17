@@ -67,6 +67,35 @@ class BuildPlanTest(unittest.TestCase):
                 with self.subTest(path=path, main=main):
                     self.assertIn('gateway-static', self.selected([path], main))
 
+    def test_real_clients_follow_database_executor_and_shared_test_inputs(self):
+        for path in ('apps/gateway/app/Domain/DatabaseServers/DatabaseRead.php',
+                     'apps/gateway/app/Domain/DatabaseConnections/DatabaseDriver.php',
+                     'apps/gateway/app/Domain/Operations/OperationStatus.php',
+                     'apps/gateway/app/Domain/Shared/ResourceOperationException.php',
+                     'apps/gateway/app/Support/ValidatedData.php',
+                     'apps/gateway/app/Infrastructure/Executor/ExecutorResultWait.php',
+                     'apps/gateway/app/Infrastructure/Activity/CommandActivityInputSanitizer.php',
+                     'apps/gateway/app/Models/DatabaseServer.php', 'apps/gateway/app/Models/Node.php',
+                     'apps/gateway/app/Models/Operation.php', 'apps/gateway/app/Providers/AppServiceProvider.php',
+                     'apps/gateway/database/migrations/new.php', 'apps/gateway/bootstrap/app.php',
+                     'apps/gateway/.env.example',
+                     'apps/gateway/config/database.php', 'apps/gateway/composer.json', 'apps/gateway/composer.lock',
+                     'apps/gateway/phpunit.xml', 'apps/gateway/tests/bootstrap.php', 'apps/gateway/tests/Pest.php',
+                     'apps/gateway/tests/TestCase.php', 'apps/gateway/tests/Support/NoSudo.php',
+                     'apps/gateway/tests/Unit/Domain/DatabaseServers/DatabaseRealClientTest.php',
+                     'apps/gateway/tests/Feature/Domain/DatabaseServers/PostgresFirstStartTest.php',
+                     'apps/gateway/tests/Feature/Infrastructure/Executor/ExecutorResultWaitTest.php',
+                     'bin/ci-runner-prerequisites', '.github/actions/php/action.yml'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertIn('gateway-real-clients', self.selected([path], main))
+        for path in ('docs/reference/databases.md', 'apps/agent/src/main.rs', 'apps/web/src/main.ts',
+                     'apps/gateway/app/Http/Controllers/Api/InstancesController.php',
+                     'apps/gateway/tests/Feature/Tasks/TaskGroupDoneTest.php'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertNotIn('gateway-real-clients', self.selected([path], main))
+
     def test_gateway_pest_follows_every_gateway_and_cross_project_input(self):
         for path in ('apps/gateway/.env.example', 'apps/gateway/phpunit.xml',
                      'apps/gateway/tests/Feature/Http/NodeMetricsTest.php',

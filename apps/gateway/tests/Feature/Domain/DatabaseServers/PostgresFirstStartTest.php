@@ -49,7 +49,7 @@ it('gives a MySQL server only its root password', function (): void {
  * postgres; root and the loopback need the password; and Orbit's own admin login still works. It starts a throwaway
  * postgres:18 container, so it runs only in the `privileged` group with ORBIT_REAL_DATABASE_CLIENTS=1 on a host where
  * that is allowed, and removes it afterwards:
- * `ORBIT_REAL_DATABASE_CLIENTS=1 vendor/bin/pest --group privileged --default-time-limit=300 <this file>`. CI does not run it.
+ * `ORBIT_REAL_DATABASE_CLIENTS=1 vendor/bin/pest --group privileged <this file>`. The Gateway real database clients CI lane runs it too.
  */
 it('makes the real postgres:18 image ask every login but the socket peer for its password', function (): void {
     if (getenv('ORBIT_REAL_DATABASE_CLIENTS') !== '1') {

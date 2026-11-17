@@ -562,8 +562,10 @@ This is the layout `orbit self-update` keeps, so either one can update what the 
 | Found | Result |
 | --- | --- |
 | Nothing, or a version that is not a valid Orbit version | Install the admitted release: `cli_installed` |
-| An Orbit CLI that has `self-update` and is the desired release, a newer one, or a pre-release build | Leave it: `cli_present`. `orbit self-update` replaces it |
+| An Orbit CLI that has `self-update` and is the desired release, a newer one, or a pre-release build | Leave it: `cli_present` |
 | An older Orbit CLI release, or one without `self-update` | Install the admitted release |
+
+To replace a commit-stamped CLI on a CI runner, run `orbit node:converge NODE --base --full` from a working CLI. The base phase installs the Gateway's pinned release directly. On an operator machine, follow [Install a release](/reference/cli-binaries#install-a-release).
 
 To install, `@swamp/cfgmgmt/fetch` downloads the binary to `/usr/local/bin/orbit-<version>` with its SHA-256 from the desired state. The child runs that file with `--version` and requires the release version. Only then does `@swamp/cfgmgmt/link` switch `/usr/local/bin/orbit` to it. A failed download, checksum or version check leaves the link as it was. Then `@swamp/cfgmgmt/file` writes root's profile, `root:root` mode `0600`.
 
@@ -583,6 +585,8 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 ## Converge the Orbit footprint
 
 `orbit node:converge <node> [--base | --roles=a,b] [--idempotency-key=KEY] [--json]` repairs one active, managed Linux Node against the release. It never runs `node:add`, changes an Instance, or adds or removes a role assignment, so a Node that owns Instances can converge. Fleet release rollout remains a separate CLI and observer publication path.
+
+[Rollout base inventory](/reference/rollout-base-inventory) captures host metadata through the same pinned worker route and provides separate before-and-after evidence.
 
 With no scope flag, the attempt includes Orbit's base and every recorded role. `--base` selects only the agent, the Node’s CLI state and Orbit-owned files and units. `--roles=a,b` selects the base plus the named existing assignments, and refuses an empty, unknown or unassigned role. The two scope flags are mutually exclusive. `--full` runs every phase of the scope, whatever its [digest](#skip-a-phase-whose-input-did-not-change) says.
 

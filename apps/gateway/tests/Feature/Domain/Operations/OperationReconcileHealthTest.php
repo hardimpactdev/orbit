@@ -301,7 +301,7 @@ it('keeps proof of every terminal status when projection throws and counts the o
         'operation_settlement_count' => 2, 'operation_settlement_oldest_completed_at' => '2026-11-12T11:58:00.000000Z']);
 })->with(['succeeded', 'failed', 'cancelled', 'interrupted']);
 
-it('observes the selector-less Fleet reader without changing its generic settlement behavior', function (string $status): void {
+it('observes Fleet terminal history even when its projection cannot settle', function (string $status): void {
     $gateway = reconcileHealthNode();
     $operation = reconcileHealthOperation($gateway);
     $operation->update(['kind' => 'fleet.rollout', 'target_type' => 'fleet']);

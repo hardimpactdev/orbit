@@ -188,5 +188,45 @@ class GatewayTestsPolicyTest(unittest.TestCase):
         self.assertIn("artifact['sha512']", JOB)
 
 
+class GatewayRealClientsPolicyTest(unittest.TestCase):
+    def test_hosted_lane_provisions_real_services_and_fails_on_missing_coverage(self):
+        import yaml
+        jobs = yaml.safe_load(SOURCE)['jobs']
+        job = jobs['gateway-real-clients']
+        self.assertEqual(job['needs'], 'changes')
+        self.assertEqual(job['if'], "${{ toJSON(fromJSON(needs.changes.outputs.jobs)['gateway-real-clients']) != 'false' }}")
+        self.assertEqual(job['runs-on'], 'ubuntu-26.04')
+        self.assertEqual(job['timeout-minutes'], 4)
+        self.assertNotIn('continue-on-error', job)
+        steps = job['steps']
+        commands = '\n'.join(step.get('run', '') for step in steps)
+        for prerequisite in ('bin/ci-runner-prerequisites valkey-server', 'docker info',
+                             'docker pull postgres:18', 'docker pull mysql:8.4',
+                             'command -v valkey-server', 'command -v valkey-cli'):
+            self.assertIn(prerequisite, commands)
+        install = next(i for i, step in enumerate(steps) if 'composer install ' in step.get('run', ''))
+        test = next(step for step in steps if 'vendor/bin/pest ' in step.get('run', ''))
+        self.assertLess(install, steps.index(test))
+        self.assertEqual(test['working-directory'], 'apps/gateway')
+        self.assertEqual(test['env']['ORBIT_REAL_DATABASE_CLIENTS'], '1')
+        for argument in ('--group privileged', '--fail-on-skipped', '--fail-on-empty-test-suite',
+                         'tests/Unit/Domain/DatabaseServers', 'tests/Feature/Domain/DatabaseServers',
+                         'tests/Feature/Infrastructure/Executor/ExecutorResultWaitTest.php'):
+            self.assertIn(argument, test['run'])
+        self.assertNotIn('--default-time-limit', test['run'])
+        for step in steps:
+            self.assertNotIn('continue-on-error', step)
+        artifact = next(step for step in steps if step.get('uses', '').startswith('actions/upload-artifact@'))
+        self.assertEqual(test['id'], 'real-client-tests')
+        self.assertEqual(artifact['if'], "${{ always() && (steps.real-client-tests.outcome == 'success' || steps.real-client-tests.outcome == 'failure') }}")
+        self.assertEqual(artifact['with']['if-no-files-found'], 'error')
+        self.assertIn('--log-junit="$RUNNER_TEMP/gateway-real-clients.xml"', test['run'])
+        self.assertEqual(artifact['with']['path'], '${{ runner.temp }}/gateway-real-clients.xml')
+        for gate in ('required', 'delivery'):
+            self.assertIn('gateway-real-clients', jobs[gate]['needs'])
+        excluded = ET.parse(ROOT / 'apps/gateway/phpunit.xml').findall('./groups/exclude/group')
+        self.assertIn('privileged', [group.text for group in excluded])
+
+
 if __name__ == '__main__':
     unittest.main()

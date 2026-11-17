@@ -25,6 +25,7 @@ inputs:
       minimum: 1
     previous:
       type: object
+    intent: {type: object}
   required:
   - operation_id
   - node_id
@@ -32,6 +33,7 @@ inputs:
   - run_id
   - target_node_id
   - previous
+  - intent
   additionalProperties: false
 jobs:
 - name: node
@@ -52,6 +54,7 @@ jobs:
         run_id: ${{ inputs.run_id }}
         target_node_id: ${{ inputs.target_node_id }}
         previous: ${{ inputs.previous }}
+        intent: ${{ inputs.intent }}
   - name: cli
     labels: {role: swamp}
     writes: true

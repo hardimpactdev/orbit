@@ -1,0 +1,17 @@
+sequenceDiagram
+  %% status: draft
+  %% kind: node.base_inventory
+  autonumber
+  participant U as Caller
+  participant G as Gateway
+  participant S as Swamp worker
+  participant N as Target Node
+  U->>G: Request inventory<br/>NODE
+  Note over G: Check target grant<br/>Use the recorded host pin
+  G->>S: Start fixed inventory<br/>Private verifier reference
+  G-->>U: Queued Operation
+  S->>N: Read the Node<br/>Pinned SSH and fixed collector
+  N-->>S: Report observations<br/>Metadata and match results
+  S-->>G: Publish inventory
+  U->>G: Read Operation
+  G-->>U: Inventory<br/>Agent and Doctor evidence

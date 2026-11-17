@@ -183,11 +183,6 @@ final readonly class ProblemCollector
                 $evidence = $current;
                 unset($evidence['resolved_at'], $evidence['resolution']);
                 $occurrences = $row->occurrences;
-                $settled = $this->evidence->legacyEpisode($evidence, ProblemSource::Doctor);
-                if ($settled !== null) {
-                    $evidence = $settled['evidence'];
-                    $occurrences = $settled['occurrences'];
-                }
                 $times = $this->observationTimes($evidence);
                 $counts = $this->observationCounts($evidence, count($times));
                 $blocks = $this->countedBlocks($evidence, $times);
@@ -401,17 +396,6 @@ final readonly class ProblemCollector
         }
         unset($evidence['resolved_at'], $evidence['resolution']);
         $occurrences = $row->occurrences;
-        $settled = $this->evidence->legacyEpisode($evidence, $source);
-
-        if ($settled !== null) {
-            $evidence = $settled['evidence'];
-            $occurrences = $settled['occurrences'];
-
-            if ($settled['reset_seen']) {
-                $row->first_seen = null;
-                $row->last_seen = null;
-            }
-        }
 
         $times = $this->observationTimes($evidence);
         $counts = $this->observationCounts($evidence, count($times));
