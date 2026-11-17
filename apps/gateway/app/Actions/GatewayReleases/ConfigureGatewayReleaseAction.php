@@ -7,6 +7,8 @@ namespace App\Actions\GatewayReleases;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 
 /**
@@ -26,24 +28,68 @@ final readonly class ConfigureGatewayReleaseAction
     {
         return $this->lock->run(function (): array {
             $startedAt = hrtime(true);
-            $id = $this->layout->currentReleaseId();
-            $sha = $id === null ? null : $this->layout->preparedCommit($id);
+            $container = $this->layout->usesContainers();
+            $inventory = $this->layout->observe($container ? base_path() : null);
+            if ($inventory->superseded) {
+                throw new GatewayReleaseException('configuration', 'gateway.release_superseded', 'Run configure in the serving Gateway release.');
+            }
+            $id = $inventory->current;
+            $sha = $id === null ? null : ($inventory->commits[$id] ?? null);
             if ($id === null || $sha === null) {
                 throw new GatewayReleaseException('configuration', 'gateway.release_not_adopted', 'The Gateway is not running from a release.');
             }
-            $application = $this->layout->releaseApplicationPath($id);
-            $candidate = $application.'/bootstrap/cache/config.next-'.bin2hex(random_bytes(8)).'.php';
-            $cached = Process::path($application)->timeout(120)
-                ->env(['APP_CONFIG_CACHE' => $candidate, 'ORBIT_AGENT_DELIVERY' => $this->layout->releasePath($id).'/apps/agent/delivery/manifest.json'])
-                ->run([PHP_BINARY, 'artisan', 'config:cache', '--no-interaction', '--quiet']);
-            if (! $cached->successful() || ! chmod($candidate, 0600) || ! rename($candidate, $application.'/bootstrap/cache/config.php')) {
+            $release = $container ? $this->layout->currentPath() : $this->layout->releasePath($id);
+            $application = $release.'/apps/gateway';
+            $current = $application.'/bootstrap/cache/config.php';
+            $candidate = $current.'.next-'.bin2hex(random_bytes(8));
+            $previous = $candidate.'.previous';
+            $keepPrevious = false;
+            try {
+                $environment = ['APP_CONFIG_CACHE' => $candidate, 'ORBIT_AGENT_DELIVERY' => $release.'/apps/agent/delivery/manifest.json'];
+                if ($container) {
+                    $environment['ORBIT_GATEWAY_SSH_MUX'] = '/run/orbit/ssh-mux';
+                }
+                $cached = Process::path($application)->timeout(120)
+                    ->env($environment)
+                    ->run([PHP_BINARY, 'artisan', 'config:cache', '--no-interaction', '--quiet']);
+                if (! $cached->successful() || ! @chmod($candidate, 0600)) {
+                    throw new GatewayReleaseException('configuration', 'gateway.release_configuration_failed',
+                        'config:cache failed: '.mb_substr(trim($cached->errorOutput()), -500), 500, sha: $sha);
+                }
+                if (($container && ! @link($current, $previous)) || ! @rename($candidate, $current)) {
+                    throw new GatewayReleaseException('configuration', 'gateway.release_configuration_failed', 'Could not publish the new configuration.', 500, sha: $sha);
+                }
+                if ($container && ! $this->reloadWorkers()) {
+                    if (! @rename($previous, $current)) {
+                        $keepPrevious = true;
+                        throw new GatewayReleaseException('configuration', 'gateway.release_configuration_failed', "Worker reload failed. Restore the previous cache from [{$previous}].", 500, sha: $sha);
+                    }
+                    $restored = $this->reloadWorkers();
+                    throw new GatewayReleaseException('configuration', 'gateway.release_configuration_failed', $restored
+                        ? 'Worker reload failed. The previous configuration was restored.'
+                        : 'Worker reload failed. The previous cache was restored. Check the Gateway web service before retrying.', 500, sha: $sha);
+                }
+            } finally {
                 @unlink($candidate);
-
-                throw new GatewayReleaseException('configuration', 'gateway.release_configuration_failed',
-                    'config:cache failed: '.mb_substr(trim($cached->errorOutput()), -500), 500, sha: $sha);
+                if (! $keepPrevious) {
+                    @unlink($previous);
+                }
             }
 
             return ['release' => $id, 'sha' => $sha, 'duration_ms' => intdiv(hrtime(true) - $startedAt, 1_000_000)];
         });
+    }
+
+    /** @phpstan-impure */
+    private function reloadWorkers(): bool
+    {
+        try {
+            return Http::withoutRedirecting()->connectTimeout(2)->timeout(610)->withOptions([
+                'proxy' => '',
+                'curl' => [CURLOPT_UNIX_SOCKET_PATH => '/run/orbit-gateway-web/admin.sock'],
+            ])->post('http://localhost/frankenphp/workers/restart')->successful();
+        } catch (ConnectionException) {
+            return false;
+        }
     }
 }

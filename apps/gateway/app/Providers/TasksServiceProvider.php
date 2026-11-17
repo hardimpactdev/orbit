@@ -100,7 +100,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         $this->app->singleton(TaskExecutionLock::class, static fn (): TaskExecutionLock => new NativeTaskExecutionLock(
             rtrim(Config::string('orbit.home'), '/').'/locks/task-execution',
         ));
-        $this->app->singleton(TaskBroadcasts::class);
+        $this->app->scoped(TaskBroadcasts::class);
     }
 
     public function boot(): void
@@ -125,9 +125,10 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         });
 
         // One notice per changed record, when the request or command that changed it ends (ADR 0151).
-        $this->app->terminating(function (): void {
-            if ($this->app->resolved(TaskBroadcasts::class)) {
-                $this->app->make(TaskBroadcasts::class)->flush();
+        $this->app->terminating(static function (): void {
+            $app = app();
+            if ($app->resolved(TaskBroadcasts::class)) {
+                $app->make(TaskBroadcasts::class)->flush();
             }
         });
     }

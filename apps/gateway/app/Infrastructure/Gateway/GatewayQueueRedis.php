@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Gateway;
 
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Models\DatabaseConnection;
 use Illuminate\Support\Facades\Config;
 use Laravel\Horizon\Horizon;
@@ -44,6 +45,9 @@ final class GatewayQueueRedis
             throw new RuntimeException("ORBIT_GATEWAY_QUEUE_CONNECTION names [{$slug}], which is not a registered Redis Database connection with a host.");
         }
 
+        // Let Valkey return its BLPOP timeout before PHP gives up on the socket. Predis disconnects
+        // on transport timeouts, so a late reply cannot be consumed by the next worker request.
+        $socketTimeout = (int) ini_get('default_socket_timeout');
         Config::set('database.redis.gateway', [
             'host' => $connection->host,
             'port' => $connection->port ?? 6379,
@@ -51,6 +55,7 @@ final class GatewayQueueRedis
             'password' => $connection->password,
             'database' => Config::integer('orbit.gateway_queue.redis_database', 1),
             'options' => ['prefix' => self::KeyPrefix],
+            'read_write_timeout' => $socketTimeout <= 0 ? -1 : max($socketTimeout, ExecutorResultWait::boundSeconds() + 1),
         ]);
         Horizon::use('gateway');
     }

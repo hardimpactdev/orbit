@@ -1,0 +1,22 @@
+[Unit]
+Description=Orbit Gateway FrankenPHP workers
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=orbit
+Group=orbit
+WorkingDirectory=/home/orbit/orbit/apps/gateway
+EnvironmentFile=/etc/orbit/gateway-web/runtime.env
+ExecStart=/opt/orbit-runtime/current/php/8.5/bin/frankenphp run --config /etc/orbit/gateway-web/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=2s
+KillSignal=SIGTERM
+TimeoutStopSec=610s
+RuntimeDirectory=orbit-gateway-web
+RuntimeDirectoryMode=0700
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
