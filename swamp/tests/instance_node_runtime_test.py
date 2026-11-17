@@ -257,7 +257,7 @@ class NodeRuntimeTest(unittest.TestCase):
         helper = self.root / 'helper.py'
         helper.write_text(source)
         result = subprocess.run([sys.executable, str(helper), 'clone-fetch',
-                                 json.dumps({**self.container, 'processes': []})], capture_output=True, text=True, input='{}')
+                                 json.dumps({**self.container, 'processes': []})], capture_output=True, text=True, input='{}', check=False)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertTrue(runtime.private_store(self.home))
         self.assertEqual(json.loads(result.stdout)['status'], 'converted')
@@ -265,7 +265,7 @@ class NodeRuntimeTest(unittest.TestCase):
         self.assertFalse((self.home / 'calls').exists())
         with patch.dict(os.environ, self.environment):
             result = subprocess.run([sys.executable, str(helper), 'fetch', json.dumps(self.container)],
-                                     capture_output=True, text=True, input='{}')
+                                     capture_output=True, text=True, input='{}', check=False)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertTrue((self.home / 'js_runtime/node/22.23.5/bin/node').is_file())
         self.assertEqual(runtime.versions(self.home), ['22.23.5', '24.22.1'])
@@ -294,7 +294,7 @@ class NodeRuntimeTest(unittest.TestCase):
         helper = self.root / 'helper.py'
         helper.write_text(source)
         container = {**self.container, 'processes': [{'content': 'ExecStart=/bin/sh -c "exec vp dev"'}]}
-        result = subprocess.run([sys.executable, str(helper), 'clone-fetch', json.dumps(container)], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, str(helper), 'clone-fetch', json.dumps(container)], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertTrue(runtime.private_store(self.home))
         self.assertFalse((self.home / 'calls').exists())
@@ -309,7 +309,7 @@ class NodeRuntimeTest(unittest.TestCase):
         source = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
         helper = self.root / 'helper.py'
         helper.write_text(source)
-        result = subprocess.run([sys.executable, str(helper), 'seed-complete', json.dumps(self.container)], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, str(helper), 'seed-complete', json.dumps(self.container)], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertFalse(marker.exists())
 
@@ -319,7 +319,7 @@ class NodeRuntimeTest(unittest.TestCase):
         source = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
         helper = self.root / 'helper.py'
         helper.write_text(source)
-        result = subprocess.run([sys.executable, str(helper), 'fetch', json.dumps(self.container)], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, str(helper), 'fetch', json.dumps(self.container)], capture_output=True, text=True, check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('legacy stores are not converted', result.stdout)
         self.assertTrue((self.home / 'js_runtime').is_symlink())

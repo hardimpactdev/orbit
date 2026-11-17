@@ -81,6 +81,8 @@ it('gives a Node without the switch the same host intent members as before, and 
         'forwarder_port', 'ingress', 'bridge_admitted_at', 'bridge_endpoints', 'egress', 'ids', 'incus', 'image', 'folders',
         // `machine_names` names each container's presented machine name for the converge's files (InstanceMachineName::forNode).
         'machine_names',
+        // `t3_files` holds each T3 container's unit drop-ins, which the converge rewrites when their text changed.
+        't3_files',
         // `own_site` holds the bridge ACL rows and UFW rules of the own-site path (docs/reference/development-containers.md).
         'dev_ports', 'own_site', 'profile_config'])
         ->and($off['image'])->toBe(InstanceImage::for('10.253.0.1'))

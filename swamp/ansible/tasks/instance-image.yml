@@ -115,7 +115,8 @@
           changed_when: true
         - name: Keep the package scripts from starting services
           ansible.builtin.command:
-            argv: [incus, file, push, --project, "{{ instance_variant.project }}", --uid, "0", --gid, "0", --mode, "0755", "-", "{{ build }}/usr/sbin/policy-rc.d"]
+            argv: [incus, file, push, --project, "{{ instance_variant.project }}", --uid, "0", --gid, "0",
+                   --mode, "0755", "-", "{{ build }}/usr/sbin/policy-rc.d"]
             stdin: "#!/bin/sh\nexit 101\n"
             stdin_add_newline: false
           changed_when: true

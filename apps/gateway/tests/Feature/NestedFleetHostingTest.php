@@ -1295,7 +1295,9 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
         $default = Instance::query()->where('name', 'default')->sole();
         expect($actual['machine_names'] ?? null)->toBe([['project' => 'orbit-instances', 'container' => 'instance-'.$default->id,
             ...InstanceMachineName::intent($default)]])
-            ->and(json_encode(array_diff_key($actual ?? [], ['own_site' => true, 'machine_names' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
+            // So did `t3_files`; a default runs no T3, and InstanceHostIntentTest pins a clone's.
+            ->and($actual['t3_files'] ?? null)->toBe([])
+            ->and(json_encode(array_diff_key($actual ?? [], ['own_site' => true, 'machine_names' => true, 't3_files' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
             ->and($actual)->not->toHaveKeys(['nested', 'runtime_projects']);
     })->with(['absent', 'off'])->with([false, true]);
 

@@ -5,7 +5,7 @@ covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
   - bin/{review-check,task-check,test,ci-build-plan,ci-units,ci-delivery,ci-queue,ci-tree-receipt,ci-proof-eligibility,ci-proof-run,ci-proof-manual,ci-cache-ref,ci-runner-prerequisites,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
-  - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
+  - "{tools/check_budget.py,tools/pest_runtime.py,bin/pest-plain,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py,user-manager.sh},agent_command.py}
   - .github/{ci/**,workflows/*.yml,actions/php/action.yml}
@@ -62,6 +62,8 @@ The migration environment fixtures cover dependency-file isolation and explicit 
 Migration Git fixtures use real temporary repositories to compare branches, complete stash history, staging, status and tracked contents. They check that the source stays unchanged, objects are independent, partial imports can repeat and retirement refuses later changes. The smaller Git checks run in selected PR shards; the large fixture that runs the migration phases runs in [self-hosted fixture shards](#self-hosted-fixture-shards).
 
 Image fixture cases run one host preparation, image build, replacement or retry from a saved boundary. Producer cases run the shipped tasks and compare the full saved state before other cases consume it. The boundaries preserve the Incus state, persistent fixture files and facts used by the next stage. The saved files include the stock-image archives: the next stock check reads both the archive and the Incus API state.
+
+The ACL inheritance cases restore the verified directory-host finish boundary, attach the profile-only container, then run one complete host converge. They do not rebuild the host before testing the attachment. The image fixture's CI inputs include the installed power helper, its install tasks and the wake worker: changing any of them must select the boundary producers, even when no image task changed.
 
 When a host task changes persistent state, run `deno run -A swamp/tests/_support/regenerate_host_image_boundaries.ts --write` from the repository root with the pinned Ansible tools on `PATH`. The helper captures all twelve boundaries from the shipped stages, including replacement and failure states. Use `--check` to compare fresh captures with the saved file without writing it. Keep the producer comparisons and zero-change repeat assertions; do not repair expected state by hand.
 
@@ -132,6 +134,8 @@ Gateway static analysis checks `nft --version` before its two real-kernel cases.
 Each attempt uses private source and index files, a three-second connection timeout and no retries. An incomplete index update fails the attempt. Update and install share ten seconds for Azure and twenty seconds for the fallback. At the deadline, the helper kills the attempt's process group. It verifies the installed commands and fails if neither attempt supplies them. The job limits remain two minutes.
 
 The required CI policy job runs alongside input selection and fixture execution, so its tests do not delay fixture startup. Its failure still fails Required and main delivery. The CI policy tests run actionlint on every tracked file under `.github/workflows` to check Actions syntax, types and context availability. The checker defaults to the same tracked files; explicit file arguments limit the check to those files. It downloads pinned actionlint 1.7.12 and verifies its archive's SHA-256 before extraction, including cache hits. Its runner-label catalog predates `ubuntu-26.04`, so the actionlint configuration adds that label explicitly.
+
+The shared delivery validator has one behavioral truth table in `tools/test_ci_delivery.py`; workflow tests check the PR and main wrappers' wiring. Tests of fixture costs share `tools/test_ci_cost_evidence.py`, while each fixture family keeps its own JSON observations. `bin/pest-plain` launches the test-run owner in `tools/pest_runtime.py`; that helper is not a discoverable test module.
 
 Gateway bootstrap tests supply a fixed RSA key at the process boundary. The key has 4096 bits and is only for tests. Random prime search cannot consume the test deadline before the database's lazy migrations. Certificate signing, SSH-key generation and migration execution remain real; the tests check the requested key size and that a second bootstrap generates no new CA key.
 
@@ -596,6 +600,8 @@ bin/swamp-shape-gate --only shape   # or --only validate
 ```
 
 The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate` and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts`, the frozen agent command check and the workflow placement lint, `lint-workflow-placement.ts`. The placement lint needs no credential, so it is one of the static controls that `--only control` runs.
+
+Unit reloads and restarts that the next task depends on remain immediate tasks, with narrow `no-handler` annotations. Deferring them to handlers would change phase ordering.
 
 The venv folder is `venv-<digest>`. The digest covers two things:
 

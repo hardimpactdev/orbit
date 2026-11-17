@@ -26,9 +26,12 @@ cases = [
   "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing",
   "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched",
   "a refused model while an earlier turn waits to be settled settles nothing, touches no checkout and launches nothing",
+  "a continued answer resolves its stored requests before the send so a stale question cannot cut the work",
+  "an answered request that stays pending refuses the turn before launch or reviewer checkout",
+  "a failed or unreadable answered resolution launches nothing and names the resolution failure",
 ]
 file = "swamp/tests/ansible_task_copy_turn_test.ts"
-cost = 1004
+cost = 1065
 # Hosted runs 43621397546 (Sabre) and 43633174432 (PR): largest completed case time + 25%, rounded up + 1s.
 # Reviewer-detach has only censored hosted receipts: its 138s body cost (120s before task 5402 added one phase run) is an ESTIMATE until a complete hosted run.
 # The Conn Server case (ADR 0258) has no hosted receipt: its 17s is an ESTIMATE over a 7.4s local run (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
@@ -36,7 +39,7 @@ cost = 1004
 # alone, 57.3s and 40.7s two units at a time (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
 # The Codex create case (task 5645) has no hosted receipt: its 40s is an ESTIMATE over a 19s local run of its three phases, until a hosted run.
 # One case per slice prevents several slow Ansible paths sharing one unit.
-slices = 26
+slices = 29
 inputs = [
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -77,3 +80,8 @@ inputs = [
   "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing" = 100
   "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched" = 138
   "a refused model while an earlier turn waits to be settled settles nothing, touches no checkout and launches nothing" = 5
+
+# Task 5761: completed local Ansible timings rounded up, plus 25% and startup headroom; not hosted measurements.
+  "a continued answer resolves its stored requests before the send so a stale question cannot cut the work" = 20
+  "an answered request that stays pending refuses the turn before launch or reviewer checkout" = 15
+  "a failed or unreadable answered resolution launches nothing and names the resolution failure" = 26
