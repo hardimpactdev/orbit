@@ -364,7 +364,7 @@ The Rust tests cover the identity checks, pool order, the cut at the bound, resi
 | Incus unfreeze API, included above | 9.471 ms | 18.734 ms | 19.041 ms |
 | Gateway publish through the waiting result | 164.158 ms | 520.478 ms | 535.378 ms |
 
-Wakes 1–4 (432–518 ms) were the first wakes after the executor was installed, and restore took most of their time; the data does not separate storage latency from scheduling.
+Measured wakes 1–4 took 432–518 ms. Restore accounted for most of that time. The samples do not separate storage latency from scheduling.
 
 The unfreeze measurement sums the local API's state-change request and operation wait, from socket connect to close. It excludes the surrounding identity/state reads and kernel-thaw polling. Wake samples used `strace` on connect, send and close calls; their totals include its overhead. The app check is the executor's direct Node-to-container request, not a visit through Caddy or the future Gateway fast path.
 
