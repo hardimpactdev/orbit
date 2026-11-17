@@ -17,11 +17,25 @@ def pair(project, container, unit):
     return ["incus", "exec", "--project", project, container, "--", "/usr/bin/timeout", "2", "/usr/bin/env", "-i"]
 
 
+def read_command(project, container, unit, lines=None):
+    if project == "orbit-releases":
+        if not re.fullmatch(r"[0-9a-f]{40}", container) or not re.fullmatch(
+            r"orbit-process-[1-9][0-9]*-(?:schedule-work|horizon)\.service", unit
+        ):
+            raise ValueError("invalid serving Gateway Process")
+        return ["/usr/local/libexec/orbit-gateway-unit", container, "logs" if lines else "status", unit] + ([lines] if lines else [])
+    prefix = pair(project, container, unit)
+    if lines:
+        return prefix + ["/usr/bin/journalctl", "--no-pager", "--quiet", "--unit=" + unit,
+                         "--reverse", "--lines=" + lines, "--output=short-iso", "--utc"]
+    return prefix + ["/usr/bin/systemctl", "show", "--property=LoadState", "--property=ActiveState", "--", unit]
+
+
 def states(arguments):
     deadline = time.monotonic() + 2.5
     result = []
     for project, container, unit in zip(arguments[::3], arguments[1::3], arguments[2::3], strict=True):
-        command = pair(project, container, unit) + ["/usr/bin/systemctl", "show", "--property=LoadState", "--property=ActiveState", "--", unit]
+        command = read_command(project, container, unit)
         state = "unknown"
         remaining = deadline - time.monotonic()
         if remaining > 0:
@@ -42,8 +56,7 @@ def journal(arguments):
     lines, project, container, unit = arguments
     if not lines.isdecimal() or not 1 <= int(lines) <= 1000:
         raise ValueError("invalid line limit")
-    command = pair(project, container, unit) + ["/usr/bin/journalctl", "--no-pager", "--quiet", "--unit=" + unit,
-                                      "--reverse", "--lines=" + lines, "--output=short-iso", "--utc"]
+    command = read_command(project, container, unit, lines)
     child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     used = indent = total = 0
     cut = False

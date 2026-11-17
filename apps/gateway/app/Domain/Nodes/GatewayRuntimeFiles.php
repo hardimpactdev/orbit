@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\Config;
@@ -57,12 +59,29 @@ final readonly class GatewayRuntimeFiles
 
         $directory = static fn (string $path): array => ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
 
+        $inventory = $node === null ? null : GatewayReleaseHost::inventory($node);
+        $files = [
+            $file(self::RuntimeTmpfiles, self::RuntimeTmpfilesRule),
+        ];
+        if ($inventory === null) {
+            array_unshift($files, $file(self::Pool, $this->pool($application, $home)));
+            $files[] = $file('/etc/systemd/system/orbit-runtime-hibernator.service', $this->service('Orbit runtime hibernator', 'oneshot', 'orbit:runtime-hibernator'));
+        } elseif (count($inventory->retained) === 2) {
+            // The second serving container replaces the first move's host rollback.
+            $files[] = $file(self::Pool, '', 'absent');
+            foreach (Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)
+                ->where('runtime', 'systemd')->whereIn('name', GatewayReleaseHost::Processes)->get() as $process) {
+                $files[] = $file('/etc/systemd/system/'.app(SystemdProcessRenderer::class)->unitName($process), '', 'absent');
+            }
+            foreach (['orbit-runtime-hibernator.service', 'orbit-runtime-hibernator.timer', 'orbit-agent-view.service', 'orbit-gateway-schedule.service', 'orbit-gateway-horizon.service'] as $unit) {
+                $files[] = $file('/etc/systemd/system/'.$unit, '', 'absent');
+            }
+        }
+
         return [
             'directories' => [$directory('/etc/systemd/journald.conf.d'), $directory('/etc/systemd/system/logrotate.timer.d')],
             'files' => [
-                $file(self::Pool, $this->pool($application, $home)),
-                $file(self::RuntimeTmpfiles, self::RuntimeTmpfilesRule),
-                $file('/etc/systemd/system/orbit-runtime-hibernator.service', $this->service('Orbit runtime hibernator', 'oneshot', 'orbit:runtime-hibernator')),
+                ...$files,
                 $file('/etc/systemd/journald.conf.d/orbit-retention.conf', "# Managed by Orbit.\n[Journal]\nSystemMaxUse=".Config::integer('retention.journal_max_mb')
                     ."M\nSystemKeepFree=".Config::integer('retention.journal_keep_free_mb')."M\nRuntimeMaxUse=".Config::integer('retention.journal_runtime_max_mb')
                     ."M\nMaxRetentionSec=".Config::integer('retention.journal_days')."day\n"),
@@ -74,7 +93,7 @@ final readonly class GatewayRuntimeFiles
                 $file('/etc/systemd/system/php8.5-fpm.service.d/orbit-document-cleanup.conf', '', 'absent'),
                 $file('/etc/orbit/php-fpm-start-hooks', '', 'absent'),
             ],
-            'units' => [
+            'units' => $inventory !== null ? [] : [
                 ['name' => 'orbit-agent-view.service', 'unit' => $this->service('Orbit agent view subscriber', 'simple', 'orbit:agent-view',
                     "Restart=always\nRestartSec=2\nMemoryMax=256M\n\n[Install]\nWantedBy=multi-user.target\n")],
                 ...$this->recorder($node),

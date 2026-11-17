@@ -60,6 +60,9 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
+  opt Gateway scheduler or Horizon runs in a release container
+    SW->>N: Apply the Gateway Process<br/>store and apply the unit
+  end
   opt certificate account home is not recorded
     SW->>N: Check the account<br/>ssh exec · getent
   end

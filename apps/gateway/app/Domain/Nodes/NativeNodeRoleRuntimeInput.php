@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Analytics\PlausibleProcess;
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
@@ -67,6 +68,11 @@ final readonly class NativeNodeRoleRuntimeInput
             $runtime['gateway'] = ['pool' => GatewayRuntimeFiles::Pool, 'release_units' => GatewayRuntimeFiles::ReleaseUnits, 'account' => $node->user,
                 'environment' => GatewayReleaseLayout::fromConfig()->sharedPath().'/gateway.env', 'retired_settings' => GatewayRuntimeFiles::RetiredSettings,
                 'tmpfiles' => GatewayRuntimeFiles::RuntimeTmpfiles];
+            if (GatewayReleaseHost::inventory($node) !== null) {
+                $runtime['gateway']['inventory'] = GatewayReleaseLayout::fromConfig()->containerInventoryPath();
+                $runtime['gateway']['container'] = true;
+                $runtime['gateway']['retired_fpm'] = GatewayReleaseHost::retiredFpm($node);
+            }
             $runtime['directories'] = [...$runtime['directories'], ...$gateway['directories']];
             $runtime['files'] = [...$runtime['files'], ...$gateway['files']];
             $runtime['units'] = [...$runtime['units'], ...$gateway['units']];

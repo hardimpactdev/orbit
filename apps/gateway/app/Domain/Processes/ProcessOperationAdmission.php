@@ -6,6 +6,7 @@ namespace App\Domain\Processes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\VitePortAllocator;
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Shared\LifecycleStatus;
@@ -35,7 +36,7 @@ final readonly class ProcessOperationAdmission
                 throw new ResourceOperationException('process.removing', "Process [{$process->name}] is being removed: the Project removed its definition.", 409);
             }
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
-            if (isset($input['container']) && in_array($verb, ['create', 'update', 'destroy'], true)) {
+            if (is_array($input['container'] ?? null) && isset($input['container']['instance_id']) && in_array($verb, ['create', 'update', 'destroy'], true)) {
                 // A container Instance takes its Processes from the Project's development definitions, which a deployment installs.
                 app(ContainerProcessChange::class)->assertAdmissible($process, $verb, $namedInstanceId);
             }
@@ -87,6 +88,9 @@ final readonly class ProcessOperationAdmission
             'on_demand' => $target->onDemandHostStart, 'created' => $created, 'preserve_record' => $preserveRecord,
             'caller_node_id' => $caller?->id,
             'vite' => $verb !== 'stop' && $systemd && $hostVite ? ['path' => SystemdProcessRenderer::viteEnvironmentPath($process->owner_id), 'instance_id' => $process->owner_id] : null];
+        if (GatewayReleaseHost::hasProcess($process) && ($release = GatewayReleaseHost::target($target->node)) !== null) {
+            $input['container'] = $release;
+        }
         if ($target->container !== null) {
             // The unit lives in the Instance container; Swamp acts on it through `incus exec` on the Node.
             $input['container'] = $target->container;

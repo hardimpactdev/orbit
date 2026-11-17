@@ -12,7 +12,7 @@
 - name: Run the phase's tasks
   tags: [always]
   ansible.builtin.include_tasks:
-    file: "tasks/{{ 'instance-container-process.yml' if container_phase == 'process' else 'instance-container-phase.yml' }}"
+    file: "tasks/{{ ('gateway-container-process.yml' if container.release is defined else 'instance-container-process.yml') if container_phase == 'process' else 'instance-container-phase.yml' }}"
     apply:
       tags: "{{ ['always'] if container_phase == 'process' else [] }}"
   vars:

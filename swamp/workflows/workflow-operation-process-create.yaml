@@ -44,9 +44,22 @@ jobs:
 - name: process
   labels: {role: swamp}
   steps:
+  - name: Apply the Gateway Process
+    labels: {role: swamp}
+    writes: true
+    guard: ${{ !(has(inputs.intent.container) && has(inputs.intent.container.release)) }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-container
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: '${{ {"control": {"process_id": inputs.intent.control.process_id, "name": inputs.intent.control.name}, "container": (has(inputs.intent.container) && has(inputs.intent.container.release)) ? inputs.intent.container : {}, "installation": inputs.intent.installation, "ssh_execution": inputs.intent.ssh_execution} }}'
+        execution_secrets: ${{ inputs.execution_secrets }}
   - name: Check the account
     labels: {role: swamp}
-    guard: ${{ inputs.intent.control.runtime != "systemd" || !has(inputs.intent.installation.account_user) }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || inputs.intent.control.runtime != "systemd" || !has(inputs.intent.installation.account_user) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -59,6 +72,7 @@ jobs:
             }}'], sudo: true, timeoutSec: 25}
   - name: Prepare the definition
     labels: {role: swamp}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) }}
     dependsOn: [{step: Check the account, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
@@ -70,7 +84,7 @@ jobs:
   - name: Check required mounts
     labels: {role: swamp}
     dependsOn: [{step: Prepare the definition, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "running" || !has(inputs.intent.mounts) || size(inputs.intent.mounts) == 0 }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "running" || !has(inputs.intent.mounts) || size(inputs.intent.mounts) == 0 }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -84,7 +98,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Prepare the definition, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check required mounts, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.kind != "process.update" || inputs.intent.installation.retired == null) }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.kind != "process.update" || inputs.intent.installation.retired == null) }}
     writes: true
     task:
       type: workflow
@@ -106,7 +120,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Remove the retired unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check required mounts, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!inputs.intent.installation.has_environment) }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!inputs.intent.installation.has_environment) }}
     writes: true
     task:
       type: behavior
@@ -122,7 +136,7 @@ jobs:
     dependsOn: [{step: Remove the retired unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check required mounts, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}, {step: Write the environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Publish the dev route,
         condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
     writes: true
     task:
       type: behavior
@@ -136,7 +150,7 @@ jobs:
   - name: Reload systemd
     labels: {role: swamp}
     dependsOn: [{step: Apply the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "systemd" || !inputs.intent.installation.activation_pending }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || inputs.intent.control.runtime != "systemd" || !inputs.intent.installation.activation_pending }}
     writes: true
     task:
       type: behavior
@@ -151,7 +165,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Write the environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check required mounts, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}, {step: Remove the retired unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!has(inputs.intent.vite_plan) || inputs.kind == "process.stop") }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!has(inputs.intent.vite_plan) || inputs.kind == "process.stop") }}
     writes: true
     task:
       type: workflow
@@ -168,7 +182,7 @@ jobs:
   - name: Stop the unit
     labels: {role: swamp}
     dependsOn: [{step: Apply the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "stopped") }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "stopped") }}
     writes: true
     task:
       type: behavior
@@ -183,7 +197,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Apply the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Reload systemd, condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}, {step: Publish the dev route, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "running" || !(size(data.latest("process-service-"
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "running" || !(size(data.latest("process-service-"
       + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.changes) > 0 || (has(inputs.intent.installation.activation_pending)
       && inputs.intent.installation.activation_pending)) || data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.changes.exists(c,
       c == "start service")) }}
@@ -200,7 +214,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Apply the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Restart if changed, condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}, {step: Stop the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "systemd" }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || inputs.intent.control.runtime != "systemd" }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/systemd'
@@ -213,7 +227,7 @@ jobs:
   - name: Pull the image
     labels: {role: swamp}
     dependsOn: [{step: Remove the retired unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "docker") }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "docker") }}
     writes: true
     task:
       type: behavior
@@ -227,7 +241,7 @@ jobs:
   - name: Remove the old container
     labels: {role: swamp}
     dependsOn: [{step: Pull the image, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.kind != "process.update" || inputs.intent.control.runtime != "docker") }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.kind != "process.update" || inputs.intent.control.runtime != "docker") }}
     writes: true
     task:
       type: behavior
@@ -242,7 +256,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Pull the image, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Remove the old container, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}, {step: Write the environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.kind != "process.create" || inputs.intent.control.runtime != "docker") }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.kind != "process.create" || inputs.intent.control.runtime != "docker") }}
     writes: true
     task:
       type: behavior
@@ -257,7 +271,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Pull the image, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Remove the old container, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}, {step: Write the environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.kind != "process.update" || inputs.intent.control.runtime != "docker") }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.kind != "process.update" || inputs.intent.control.runtime != "docker") }}
     writes: true
     task:
       type: behavior
@@ -272,7 +286,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Run the container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Replace the container, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "docker" || inputs.intent.installation.desired != "stopped" }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || inputs.intent.control.runtime != "docker" || inputs.intent.installation.desired != "stopped" }}
     writes: true
     task:
       type: behavior
@@ -287,7 +301,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Run the container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Replace the container, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}, {step: Stop the container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "docker" }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || inputs.intent.control.runtime != "docker" }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/docker_container'
@@ -303,7 +317,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}]
-    guard: ${{ !has(inputs.intent.vite_plan) || inputs.intent.installation.desired != "running" }}
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || !has(inputs.intent.vite_plan) || inputs.intent.installation.desired != "running" }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -318,7 +332,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}, {step: Check the listener, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!has(inputs.intent.vite_plan) || inputs.intent.installation.desired != "running" || steps["Check the
+    guard: ${{ (has(inputs.intent.container) && has(inputs.intent.container.release)) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!has(inputs.intent.vite_plan) || inputs.intent.installation.desired != "running" || steps["Check the
       listener"].outputs.stdout == "") }}
     writes: true
     task:
@@ -332,12 +346,12 @@ jobs:
       inputs: {}
   - name: Verify it runs
     labels: {role: swamp}
-    dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
+    dependsOn: [{step: Apply the Gateway Process, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}, {step: Mark it awake, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the listener, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}]
     task:
       type: assert
-      expr: '(inputs.intent.control.runtime == "systemd" ? (data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status
+      expr: '(has(inputs.intent.container) && has(inputs.intent.container.release)) || (inputs.intent.control.runtime == "systemd" ? (data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status
         == "compliant" && data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.current.loaded
         && data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.current.active
         == (inputs.intent.installation.desired == "running" ? "active" : "inactive")) : ((data.latest("process-container-check-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id),

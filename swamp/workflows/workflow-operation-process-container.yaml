@@ -12,7 +12,7 @@ inputs:
     # 0 for the Gateway's migrated Schedule log read, which records no Operation.
     operation_id: {type: integer, minimum: 0}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [process.start, process.stop, process.restart, process.destroy, schedule.inspect]}
+    kind: {type: string, enum: [process.create, process.update, process.start, process.stop, process.restart, process.destroy, schedule.inspect]}
     intent:
       type: object
       properties:
@@ -27,8 +27,18 @@ inputs:
           properties:
             instance_id: {type: integer, minimum: 1}
             project: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$'}
-            name: {type: string, pattern: '^instance-[1-9][0-9]*$'}
-          required: [instance_id, project, name]
+            name: {type: string, pattern: '^(instance-[1-9][0-9]*|gateway-[0-9a-f]{12})$'}
+            release: {type: string, pattern: '^[0-9a-f]{40}$'}
+          required: [project, name]
+          oneOf:
+          - required: [instance_id]
+            properties:
+              name: {pattern: '^instance-[1-9][0-9]*$'}
+              project: {not: {const: orbit-releases}}
+          - required: [release]
+            properties:
+              project: {const: orbit-releases}
+              name: {pattern: '^gateway-[0-9a-f]{12}$'}
           additionalProperties: false
         schedule:
           type: object
@@ -36,6 +46,7 @@ inputs:
             id: {type: string, format: uuid}
           required: [id]
           additionalProperties: false
+        installation: {type: object}
         ssh_execution: {type: object}
         # A migrated Schedule log read: its line count and request-bound vault key.
         read:
@@ -49,7 +60,17 @@ inputs:
       oneOf:
       - required: [control, container]
       - required: [schedule, read]
-    execution_secrets: {type: object, additionalProperties: false}
+    execution_secrets:
+      type: object
+      properties:
+        environment:
+          type: object
+          properties:
+            vault: {type: string, const: orbit-control-inputs}
+            key: {type: string, pattern: '^process-(create|update)-operation-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
@@ -67,12 +88,29 @@ jobs:
       inputs:
         intent: '${{ inputs.intent }}'
         path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+  - name: Write Gateway Process environment
+    labels: {role: swamp}
+    writes: true
+    guard: ${{ !has(inputs.execution_secrets.environment) }}
+    dependsOn: [{step: input, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "gateway-process-environment-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'umask 077; printf %s "$ORBIT_VALUE" > "$ORBIT_FILE"'
+        env:
+          ORBIT_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/gateway-environment" }}'
+          ORBIT_VALUE: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.environment.key) }}'
   # Start, stop, restart or remove the unit and check its state.
   - name: Act on the Process
     guard: '${{ inputs.kind == "schedule.inspect" }}'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: input, condition: {type: succeeded}}]
+    dependsOn:
+    - {step: input, condition: {type: succeeded}}
+    - {step: Write Gateway Process environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
       type: behavior
       behaviorType: command/shell

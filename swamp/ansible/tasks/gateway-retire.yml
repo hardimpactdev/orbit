@@ -1,4 +1,13 @@
 ---
+- name: Read the Gateway deployment mode before changing the host runtime
+  ansible.builtin.stat: { path: "{{ rt.gateway.inventory | default('/home/orbit/.orbit/gateway-containers.json') }}" }
+  register: gateway_container_inventory
+
+- name: Refuse a Gateway role intent from before a deployment mode change
+  ansible.builtin.assert:
+    that: gateway_container_inventory.stat.exists == (rt.gateway.container | default(false))
+    fail_msg: gateway.release_changed
+    quiet: true
 # The scheduler runs the automatic release tick; the release unit's timer stops before its files go.
 - name: Read the release unit files
   ansible.builtin.stat: { path: "/etc/systemd/system/{{ item }}" }

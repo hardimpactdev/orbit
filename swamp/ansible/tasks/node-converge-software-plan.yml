@@ -14,7 +14,8 @@
     php_versions: "{{ versions }}"
     tool_list: >-
       {%- set out = [] -%}
-      {%- for name in ((names | reject('match', '^php:') | list) + php_names) | unique -%}
+      {%- set retired = ['php8.5-fpm'] if intent.retired_gateway_fpm | default(false) else [] -%}
+      {%- for name in ((names | reject('match', '^php:') | list) + php_names) | unique | reject('in', retired) -%}
       {%- set tool = recipe.tools[name] -%}
       {%- set artifact = (tool.artifacts | default({})).amd64 | default({}) -%}
       {%- set digest = artifact.sha256 | default(artifact.sha512 | default('')) -%}

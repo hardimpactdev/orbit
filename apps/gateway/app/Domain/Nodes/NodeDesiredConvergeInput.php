@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\CliConvergePlan;
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Tools\ToolManagerName;
@@ -172,6 +173,7 @@ final readonly class NodeDesiredConvergeInput
             'agent' => [...$agent, 'sha256' => $delivery->pin($node), 'url' => $delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
             'cli' => app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
+            ...(GatewayReleaseHost::retiredFpm($node) ? ['retired_gateway_fpm' => true] : []),
             'tools' => $tools, 'network' => $network, 'role_units' => NodeRoleUnits::for($node),
             // Only a Node whose roles enable an executor family carries the install (docs/reference/executor.md).
             ...(($executor = NodeExecutorInput::for($node)) === null ? [] : ['executor' => $executor]),
