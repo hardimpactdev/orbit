@@ -89,7 +89,7 @@ it("lists Activity after Tasks and opens the newest rows", async () => {
             );
         })
         .toBe(true);
-    await expect.element(footer()).toMatchTextContent("1-7 jump");
+    await expect.element(footer()).toMatchTextContent("1-8 jump");
     await expect.element(pane("Activity")).toMatchTextContent("gateway");
     await expect.element(pane("Activity")).toMatchTextContent("beast");
     await expect.element(pane("Activity")).toMatchTextContent("8s");
