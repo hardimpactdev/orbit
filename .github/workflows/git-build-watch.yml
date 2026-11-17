@@ -21,6 +21,7 @@ jobs:
   check:
     if: github.repository == 'hardimpactdev/orbit'
     runs-on: ubuntu-26.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,6 +40,7 @@ jobs:
     needs: check
     if: github.ref == 'refs/heads/main' && contains(fromJSON('["schedule", "workflow_dispatch"]'), github.event_name)
     runs-on: ubuntu-26.04
+    timeout-minutes: 5
     permissions:
       issues: write
     steps:
@@ -61,5 +63,5 @@ jobs:
             if (existing) {
               if (existing.body !== body) await github.rest.issues.update({owner, repo, issue_number: existing.number, body});
             } else {
-              await github.rest.issues.create({owner, repo, title: 'Review Git recipe security updates', body, assignees: [owner]});
+              await github.rest.issues.create({owner, repo, title: 'Review Git recipe security updates', body});
             }

@@ -9,6 +9,40 @@ SOURCE = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
 
 
 class RequiredGateTest(unittest.TestCase):
+    def test_git_build_watch_jobs_have_total_time_limits(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / '.github/workflows/git-build-watch.yml').read_text())
+        for name, maximum in (('check', 10), ('publish', 5)):
+            with self.subTest(job=name):
+                minutes = workflow['jobs'][name].get('timeout-minutes')
+                self.assertIs(type(minutes), int, 'set an explicit total job timeout')
+                self.assertGreater(minutes, 0)
+                self.assertLessEqual(minutes, maximum)
+
+    def test_git_build_watch_creates_an_unassigned_issue(self):
+        import json
+        import yaml
+        workflow = yaml.safe_load((ROOT / '.github/workflows/git-build-watch.yml').read_text())
+        script = next(step['with']['script'] for step in workflow['jobs']['publish']['steps']
+                      if 'script' in step.get('with', {}))
+        harness = """
+            const calls = [];
+            const context = {repo: {owner: 'hardimpactdev', repo: 'orbit'}};
+            const github = {
+              paginate: async () => [],
+              rest: {issues: {listForRepo: () => {}, create: async payload => calls.push(payload)}}
+            };
+            const require = () => ({readFileSync: () => '<!-- orbit-git-build-watch -->\\nNew Git build'});
+        """
+        result = subprocess.run(['node', '-e', harness + '\n(async () => {\n' + script
+                                 + '\nconsole.log(JSON.stringify(calls));\n})();'],
+                                text=True, capture_output=True, check=True, timeout=10)
+        self.assertEqual(json.loads(result.stdout), [{
+            'owner': 'hardimpactdev', 'repo': 'orbit',
+            'title': 'Review Git recipe security updates',
+            'body': '<!-- orbit-git-build-watch -->\nNew Git build',
+        }])
+
     def test_local_fixture_times_are_never_committed(self):
         paths = subprocess.check_output([
             'git', 'ls-files', '-z', '--', 'ci-unit-times.json', '**/ci-unit-times.json',
