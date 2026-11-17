@@ -57,6 +57,24 @@ it('restores pinned WireGuard hosts without scanning and leaves a current file i
         ->and(fileperms($this->path) & 0o777)->toBe(0o600);
 });
 
+it('repairs modes even when the recorded pins already match and reports the repair once', function (int $fileMode, int $directoryMode): void {
+    nodeWithSshPin();
+    Artisan::call('gateway:known-hosts:sync');
+    $contents = file_get_contents($this->path);
+    chmod($this->path, $fileMode);
+    chmod($this->folder, $directoryMode);
+
+    expect(Artisan::call('gateway:known-hosts:sync'))->toBe(0)
+        ->and(json_decode(Artisan::output(), true))->toBe(['changed' => true]);
+    clearstatcache();
+    expect(fileperms($this->path) & 0o7777)->toBe(0o600)
+        ->and(fileperms($this->folder) & 0o7777)->toBe(0o700)
+        ->and(file_get_contents($this->path))->toBe($contents);
+
+    expect(Artisan::call('gateway:known-hosts:sync'))->toBe(0)
+        ->and(json_decode(Artisan::output(), true))->toBe(['changed' => false]);
+})->with(['file' => [0o666, 0o700], 'directory' => [0o600, 0o777], 'both' => [0o666, 0o777]]);
+
 it('replaces stale pins and preserves unrelated hosts', function (): void {
     $store = app(KnownHostsStore::class);
     $store->put('unrelated.example', 2222, new HostKey('ssh-ed25519', 'unrelated-public-key', 'SHA256:unrelated'));

@@ -52,12 +52,12 @@ final readonly class KnownHostsRepository implements KnownHostsStore
             throw new RuntimeException("Could not create SSH directory [{$directory}].");
         }
 
-        chmod(filename: $directory, permissions: 0o700);
+        $directoryChanged = $this->protect($directory, 0o700);
 
         $lock = $this->acquireLock();
 
         try {
-            return $this->replace($host, $port, $key);
+            return $this->replace($host, $port, $key) || $directoryChanged;
         } finally {
             $this->releaseLock($lock);
         }
@@ -131,7 +131,7 @@ final readonly class KnownHostsRepository implements KnownHostsStore
         ));
         $wanted = $key === null ? [] : ["{$hostLabel} {$key->type} {$key->value}"];
         if ($existing === $wanted) {
-            return false;
+            return is_file($this->path) && $this->protect($this->path, 0o600);
         }
         $lines = array_values(array_filter(
             $lines,
@@ -174,6 +174,21 @@ final readonly class KnownHostsRepository implements KnownHostsStore
             if (is_file($candidatePath)) {
                 unlink($candidatePath);
             }
+        }
+
+        return true;
+    }
+
+    private function protect(string $path, int $permissions): bool
+    {
+        clearstatcache(clear_realpath_cache: true, filename: $path);
+
+        if ((fileperms($path) & 0o7777) === $permissions) {
+            return false;
+        }
+
+        if (! chmod(filename: $path, permissions: $permissions)) {
+            throw new RuntimeException("Could not protect SSH path [{$path}].");
         }
 
         return true;
