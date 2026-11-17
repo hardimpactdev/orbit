@@ -1392,14 +1392,14 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
 
 /**
  * The frozen baseline with the intended changes since it: a default's deploy steps put Playwright's browsers beside its package
- * (InstanceContainer::BrowserEnvironment), the machine name and the power helper's web port.
+ * and agent-browser opens the agent folder's headless Chrome (InstanceContainer::browserEnvironment), the machine name and the power helper's web port.
  *
  * @return array<string, mixed>
  */
 function normalContainerSinceMain(Instance $instance, InstanceRuntime $runtime): array
 {
     $expected = app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime);
-    $expected['environment'][] = 'PLAYWRIGHT_BROWSERS_PATH=0';
+    $expected['environment'] = [...$expected['environment'], 'PLAYWRIGHT_BROWSERS_PATH=0', 'AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell'];
     // The presented machine name came after main, right after the Incus name (InstanceMachineName).
     $name = array_search('name', array_keys($expected), true) + 1;
     $expected = [...array_slice($expected, 0, $name, true), 'machine_name' => InstanceMachineName::intent($instance), ...array_slice($expected, $name, null, true)];

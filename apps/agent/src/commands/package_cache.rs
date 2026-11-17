@@ -4,6 +4,7 @@ use crate::{
     command_errors,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -12,6 +13,7 @@ use std::{
     io::{self, Read},
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::Path,
+    sync::LazyLock,
     time::Duration,
 };
 pub(super) const HOST: &str = "/var/lib/orbit/package-cache";
@@ -55,27 +57,46 @@ pub struct Filled {
     hashes: BTreeMap<String, String>,
     failures: BTreeMap<String, String>,
 }
-fn matches(pattern: &str, value: &str) -> bool {
-    regex::Regex::new(pattern).unwrap().is_match(value)
-}
+static NPM_URL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\Ahttps://registry\.npmjs\.org/(?:@[a-z0-9][a-z0-9_.-]*/)?[a-z0-9][a-z0-9_.-]*/-/[a-z0-9][a-z0-9_.-]*-[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9_.-]+)?\.tgz\z")
+        .expect("literal pattern")
+});
+static GITHUB_REDIRECT_URL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\Ahttps://api\.github\.com/repositories/[1-9][0-9]*/zipball/[a-f0-9]{40}\z")
+        .expect("literal pattern")
+});
+static GITHUB_URL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\Ahttps://api\.github\.com/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/zipball/[a-f0-9]{40}\z",
+    )
+    .expect("literal pattern")
+});
+static CODELOAD_URL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\Ahttps://codeload\.github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:legacy\.zip|zip)/[a-f0-9]{40}\z")
+        .expect("literal pattern")
+});
+static COMPOSER_KEY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\Acomposer/[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*/[a-f0-9]{40}\.zip\z")
+        .expect("literal pattern")
+});
+static SHA1_INTEGRITY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\Asha1-[a-f0-9]{40}\z").expect("literal pattern"));
+static NPM_PACKAGE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\A(?:@[a-z0-9][a-z0-9_.-]*/)?[a-z0-9][a-z0-9_.-]*\z").expect("literal pattern")
+});
+static NPM_VERSION: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\A[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9_.-]+)?\z").expect("literal pattern")
+});
 fn github(url: &str) -> bool {
     url.starts_with("https://api.github.com/") || url.starts_with("https://codeload.github.com/")
 }
 fn allowed(url: &str, redirect: bool) -> bool {
-    matches(
-        r"\Ahttps://registry\.npmjs\.org/(?:@[a-z0-9][a-z0-9_.-]*/)?[a-z0-9][a-z0-9_.-]*/-/[a-z0-9][a-z0-9_.-]*-[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9_.-]+)?\.tgz\z",
-        url,
-    ) || matches(
-        if redirect {
-            r"\Ahttps://api\.github\.com/repositories/[1-9][0-9]*/zipball/[a-f0-9]{40}\z"
-        } else {
-            r"\Ahttps://api\.github\.com/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/zipball/[a-f0-9]{40}\z"
-        },
-        url,
-    ) || matches(
-        r"\Ahttps://codeload\.github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:legacy\.zip|zip)/[a-f0-9]{40}\z",
-        url,
-    )
+    let api = if redirect {
+        &GITHUB_REDIRECT_URL
+    } else {
+        &GITHUB_URL
+    };
+    NPM_URL.is_match(url) || api.is_match(url) || CODELOAD_URL.is_match(url)
 }
 fn redirect(from: &str, to: &str) -> bool {
     allowed(to, true)
@@ -114,10 +135,7 @@ fn validate(a: &Artifact) -> Result<Option<Integrity>, String> {
     let invalid = |message: &str| Err(message.to_string());
     let integrity = match a.manager.as_str() {
         "composer" => {
-            if !matches(
-                r"\Acomposer/[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*/[a-f0-9]{40}\.zip\z",
-                &a.key,
-            ) {
+            if !COMPOSER_KEY.is_match(&a.key) {
                 return invalid("Invalid Composer cache key");
             }
             if a.key
@@ -131,31 +149,31 @@ fn validate(a: &Artifact) -> Result<Option<Integrity>, String> {
             }
             match &a.integrity {
                 None => None,
-                Some(value) if matches(r"\Asha1-[a-f0-9]{40}\z", value) => Some(Integrity {
+                Some(value) if SHA1_INTEGRITY.is_match(value) => Some(Integrity {
                     algorithm: "sha1".into(),
                     wanted: (5..value.len())
                         .step_by(2)
-                        .map(|i| u8::from_str_radix(&value[i..i + 2], 16).unwrap())
+                        .map(|i| {
+                            u8::from_str_radix(&value[i..i + 2], 16)
+                                .expect("the integrity pattern admits only hex digits")
+                        })
                         .collect(),
                 }),
                 _ => return invalid("Invalid Composer integrity"),
             }
         }
         "npm" => {
-            if !matches(
-                r"\A(?:@[a-z0-9][a-z0-9_.-]*/)?[a-z0-9][a-z0-9_.-]*\z",
-                &a.package,
-            ) || !matches(
-                r"\A[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9_.-]+)?\z",
-                &a.version,
-            ) {
+            if !NPM_PACKAGE.is_match(&a.package) || !NPM_VERSION.is_match(&a.version) {
                 return invalid("Invalid npm identity");
             }
             if a.url
                 != format!(
                     "https://registry.npmjs.org/{}/-/{}-{}.tgz",
                     a.package,
-                    a.package.rsplit('/').next().unwrap(),
+                    a.package
+                        .rsplit('/')
+                        .next()
+                        .expect("rsplit yields at least one part"),
                     a.version
                 )
             {
@@ -292,7 +310,12 @@ fn fill(
                 )
                 .map_err(|_| "Cache write failed")?;
             }
-            fs::create_dir_all(target.parent().unwrap()).map_err(|_| "Cache write failed")?;
+            fs::create_dir_all(
+                target
+                    .parent()
+                    .expect("a validated key names a file in a directory"),
+            )
+            .map_err(|_| "Cache write failed")?;
             let temporary = root.join(format!(".download-{:016x}", rand::random::<u64>()));
             let downloaded = (|| {
                 let size = fetch.download(&a.url, &temporary, max_bytes.saturating_sub(used))?;
@@ -311,7 +334,7 @@ fn fill(
                 inventory.insert(a.key.clone(), digest.clone());
                 atomic(
                     &root.join(".inventory.json"),
-                    &serde_json::to_vec(&inventory).unwrap(),
+                    &serde_json::to_vec(&inventory).expect("a string map always serializes"),
                     0o644,
                 )
                 .map_err(|_| "Cache inventory write failed")?;

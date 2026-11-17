@@ -2,7 +2,9 @@
 pub(super) mod cask;
 use super::{homebrew_scope, recipe, tool_output};
 use crate::command::{Command, Context, Platform, Privilege};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use std::{collections::BTreeMap, path::Path, time::Duration};
 
 crate::command_errors! {
@@ -91,10 +93,10 @@ fn execute(
     Ok(output.stdout)
 }
 fn valid_package(name: &str) -> bool {
-    name.len() <= 255
-        && regex::Regex::new(r"\A[a-z0-9](?:[a-z0-9@+._-]*[a-z0-9])?\+*\z")
-            .unwrap()
-            .is_match(name)
+    static PACKAGE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\A[a-z0-9](?:[a-z0-9@+._-]*[a-z0-9])?\+*\z").expect("literal pattern")
+    });
+    name.len() <= 255 && PACKAGE.is_match(name)
 }
 fn safe_version(value: &str) -> bool {
     tool_output::safe_text(value) && !value.chars().any(char::is_whitespace)

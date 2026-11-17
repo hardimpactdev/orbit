@@ -6,9 +6,11 @@ use super::{
     Failure, Files, Host, WorkDir,
 };
 use crate::command::{Command, Context, Platform, Privilege};
+use regex::Regex;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::sync::LazyLock;
 use std::{
     collections::BTreeMap,
     fs,
@@ -121,12 +123,10 @@ pub(crate) fn binary_version(
     if output.code != 0 {
         return Ok(None);
     }
-    Ok(
-        regex::Regex::new(r"(?:\A|[\s v])([0-9]+\.[0-9]+\.[0-9]+)\b")
-            .unwrap()
-            .captures(&output.stdout)
-            .map(|m| m[1].into()),
-    )
+    static VERSION: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?:\A|[\s v])([0-9]+\.[0-9]+\.[0-9]+)\b").expect("literal pattern")
+    });
+    Ok(VERSION.captures(&output.stdout).map(|m| m[1].into()))
 }
 fn metadata_version(path: &Path) -> Result<Option<String>, Failure> {
     let object = store::json(path)?;
@@ -180,9 +180,7 @@ pub fn inspect(
                         if binary.is_file()
                             && binary
                                 .parent()
-                                .unwrap()
-                                .join(".vp-setup-complete")
-                                .is_file() =>
+                                .is_some_and(|bin| bin.join(".vp-setup-complete").is_file()) =>
                     {
                         binary_version(host, account, scope, &binary)?
                     }
@@ -321,7 +319,7 @@ pub fn install_vite(
             let manifest = json!({"name":lock["name"],"version":lock["version"],"private":true,"dependencies":dependencies});
             files.publish(
                 &candidate.join("package.json"),
-                &serde_json::to_vec(&manifest).unwrap(),
+                &serde_json::to_vec(&manifest).expect("a JSON value always serializes"),
                 0o644,
                 account.uid,
                 account.gid,

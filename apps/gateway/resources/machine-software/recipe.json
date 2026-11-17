@@ -1698,6 +1698,18 @@
                 "bin": {
                     "chrome-headless-shell": "chrome-headless-shell-linux64/chrome-headless-shell"
                 }
+            },
+            "agent-browser": {
+                "version": "0.41.2",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://github.com/vercel-labs/agent-browser/releases/download/v0.41.2/agent-browser-linux-x64",
+                        "sha256": "c4351f3802ffa5254d8c69f20a52e2fcf56925c6016fcf4203db25a07d811379"
+                    }
+                },
+                "bin": {
+                    "agent-browser": "agent-browser-linux-x64"
+                }
             }
         },
         "php": {

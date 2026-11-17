@@ -45,6 +45,7 @@ it('puts the group, then the subtask, then the copy rules in front of the prompt
     - tests (command: `vendor/bin/pest tests/Feature/DenyTest.php` in apps/gateway): The tests pass.
 
     Copy rules:
+    - Build and prove the feature end to end in this copy, with its nested fleet when it has one, before its pull request: change, run, fix the next layer and repeat until the real end result works here. A release or a live window only confirms a working feature; it never finds its bugs.
     - Run every command in the foreground. Leave none running when this turn ends.
     - The Project's long gates and full test sets are the work of the task check and CI (`task:check`). Run single test files by path.
     - Keep each new or changed test unit within the per-unit time cap of the Project's CI, which the task check prints.

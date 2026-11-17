@@ -531,13 +531,14 @@ async fn fetch_watch_list(
     };
     Ok((parse_watch_list(&body)?, facts))
 }
-/// Locks the shared states, recovering from a poisoned lock.
+/// Locks the shared states. A poisoned lock is fatal: the holder panics, `crate::supervise` ends the observer
+/// with exit code 1, and systemd restarts it.
 pub fn lock_workspaces(
     shared: &SharedWorkspaces,
 ) -> std::sync::MutexGuard<'_, BTreeMap<u64, WorkspaceState>> {
-    shared
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    shared.lock().expect(
+        "the workspace lock is never held across a panic: holders only read and update the map",
+    )
 }
 /// Replaces the watched set. Returns true when an Instance was added or removed, or its path, base, or start changed.
 fn apply_watch_list(
@@ -1273,5 +1274,18 @@ mod tests {
         check_pass(&mut watched, &shared, &tx, true).await;
         assert!(lock_workspaces(&shared).is_empty());
         assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "the workspace lock is never held across a panic")]
+    fn a_poisoned_workspace_lock_is_fatal() {
+        let shared = SharedWorkspaces::default();
+        let holder = shared.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = holder.lock();
+            panic!("poison the workspace lock");
+        })
+        .join();
+        let _guard = lock_workspaces(&shared);
     }
 }

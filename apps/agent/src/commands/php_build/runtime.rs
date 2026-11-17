@@ -1,4 +1,6 @@
 use super::*;
+use regex::Regex;
+use std::sync::LazyLock;
 use std::{
     io::{Read, Write},
     os::unix::{fs::symlink, net::UnixStream},
@@ -13,7 +15,10 @@ pub fn links(files: &Files, version: &str) -> Result<Links> {
         for path in paths(&files.path(&format!("/etc/php/{version}/{sapi}/conf.d")))? {
             if path.extension().is_some_and(|e| e == "ini") && path.is_symlink() {
                 found.insert(
-                    path.file_name().unwrap().to_string_lossy().into_owned(),
+                    path.file_name()
+                        .expect("a directory entry has a file name")
+                        .to_string_lossy()
+                        .into_owned(),
                     fs::read_link(path).map_err(Failure::io)?,
                 );
             }
@@ -83,7 +88,10 @@ pub fn disable_unowned(
             let kept = backup
                 .join(version)
                 .join(path.strip_prefix(&files.root).map_err(Failure::io)?);
-            directories(files, kept.parent().unwrap())?;
+            directories(
+                files,
+                kept.parent().expect("kept lies under the backup directory"),
+            )?;
             fs::rename(path, &kept).map_err(Failure::io)?;
             moved.push((path.clone(), kept));
         }
@@ -115,7 +123,11 @@ pub fn place_modules(
     Ok(())
 }
 pub fn write_ini(files: &Files, path: &Path, content: &[u8]) -> Result<()> {
-    directories(files, path.parent().unwrap())?;
+    directories(
+        files,
+        path.parent()
+            .expect("ini files live in a directory under /etc/php"),
+    )?;
     files.publish_root(path, content)?;
     Ok(())
 }
@@ -203,7 +215,9 @@ pub fn sockets(files: &Files, configuration: &Path) -> Result<BTreeSet<PathBuf>>
                     let pattern = if value.starts_with('/') {
                         files.path(value)
                     } else {
-                        path.parent().unwrap().join(value)
+                        path.parent()
+                            .expect("an ini file has a parent directory")
+                            .join(value)
                     };
                     pending.extend(glob(&pattern)?);
                 }
@@ -247,12 +261,13 @@ pub fn fpm_units(
         ],
         false,
     )?;
-    let pattern = regex::Regex::new(&format!(
+    static CONFIG: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"--fpm-config\s+(\S+)").expect("literal pattern"));
+    let pattern = Regex::new(&format!(
         r"\Aorbit-[a-z0-9_-]+-php{}-fpm\.service\z",
         regex::escape(version)
     ))
-    .unwrap();
-    let config = regex::Regex::new(r"--fpm-config\s+(\S+)").unwrap();
+    .expect("an escaped version keeps the pattern valid");
     for line in listed.stdout.lines() {
         let Some(unit) = line
             .split_whitespace()
@@ -266,7 +281,7 @@ pub fn fpm_units(
             &["systemctl", "show", "-p", "ExecStart", "--value", unit],
             false,
         )?;
-        let path = config
+        let path = CONFIG
             .captures(&start.stdout)
             .map(|c| files.path(&c[1]))
             .unwrap_or_default();

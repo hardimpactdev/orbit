@@ -21,6 +21,7 @@ final readonly class TaskTurnPrompt
 
     /** How an agent works in a task copy, for every role. Project-neutral: it names no command of one Project. */
     public const string CopyRules = "Copy rules:\n"
+        ."- Build and prove the feature end to end in this copy, with its nested fleet when it has one, before its pull request: change, run, fix the next layer and repeat until the real end result works here. A release or a live window only confirms a working feature; it never finds its bugs.\n"
         ."- Run every command in the foreground. Leave none running when this turn ends.\n"
         ."- The Project's long gates and full test sets are the work of the task check and CI (`task:check`). Run single test files by path.\n"
         ."- Keep each new or changed test unit within the per-unit time cap of the Project's CI, which the task check prints.\n"
