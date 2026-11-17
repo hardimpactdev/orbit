@@ -104,10 +104,23 @@ final readonly class InstanceContainer
      * Playwright keeps its browsers beside its own package, in `node_modules/playwright-core/.local-browsers`
      * (docs/reference/development-containers.md#playwright-browsers). The default's deploy steps run as `orbit` and a task
      * check runs as `agent`, so a per-user cache would be invisible to the check; the dependency folder is shared, comes with the
-     * seed, and always holds the build of the Project's own Playwright version. A default's deploy steps get it; a new clone gets it
-     * through its boot files. An existing container keeps what it has.
+     * seed, and always holds the build of the Project's own Playwright version. And agent-browser opens the agent folder's one pinned
+     * headless Chrome, the Conn Server's preview browser too (docs/reference/development-containers.md#agent-browser), so it never
+     * downloads one. A default's deploy steps get both; a new clone gets them through its boot files. An existing container keeps what
+     * it has.
+     *
+     * @return array<string, string>
      */
-    public const array BrowserEnvironment = ['PLAYWRIGHT_BROWSERS_PATH' => '0'];
+    public static function browserEnvironment(InstanceFolders $folders): array
+    {
+        return ['PLAYWRIGHT_BROWSERS_PATH' => '0', 'AGENT_BROWSER_EXECUTABLE_PATH' => self::headlessChrome($folders)];
+    }
+
+    /** The agent folder's pinned headless Chrome, in its unpacked part beside its support files: one browser for every agent and Conn. */
+    public static function headlessChrome(InstanceFolders $folders): string
+    {
+        return InstanceHostIntent::AgentFolder.'/current/agent/chrome-headless-shell/'.$folders->agent['chrome-headless-shell']->bin['chrome-headless-shell'];
+    }
 
     /** The boot files that give a new clone's units and login shells, the task check among them, the browser setting. */
     public const string BrowserUnitFile = '/etc/systemd/system.conf.d/91-orbit-browsers.conf';
@@ -340,7 +353,7 @@ final readonly class InstanceContainer
             // and the Playwright browser folder.
             'environment' => ['HOME=/home/agent', 'USER=agent', 'LOGNAME=agent', 'PATH='.self::path($project),
                 ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment),
-                ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys(self::BrowserEnvironment), self::BrowserEnvironment)],
+                ...self::assignments(self::browserEnvironment($this->folders()))],
             ...($nodeServices === [] ? [] : ['node_services' => $nodeServices]),
             ...self::privateNames($access),
             // The units and login shells read it from the one guest writer at their next start (instance_node_services.py `proxy`).
@@ -501,7 +514,7 @@ final readonly class InstanceContainer
             // The container phase writes these before a copy's first start, so its first boot, T3 included, reads them: the files every
             // container needs, which a seed taken before them lacks. A container that a migrate builds from the image has the files already.
             // The machine-info file is one of them: T3's first start reads its label from it (InstanceMachineName).
-            ...($source === null ? [] : ['boot_files' => [...self::bootFiles(), InstanceMachineName::bootFile($instance)]]),
+            ...($source === null ? [] : ['boot_files' => [...self::bootFiles($this->folders()), InstanceMachineName::bootFile($instance)]]),
             // `before_start`: the files T3 and its providers read at its start. The container phase writes them before the copy's first start, with the
             // model environment, and the file T3's unit waits for last; the agent part finds them in place.
             'files' => [
@@ -580,15 +593,14 @@ final readonly class InstanceContainer
      * dynamic linker ignores an empty cache until then (docs/reference/development-containers.md#existing-containers). Last, the
      * Node's Orbit root CA: the clone script reads it on the Node and adds its hashed name (docs/reference/development-containers.md#trust).
      * And `agent`'s NSS store, which names the trust module for Chromium: the clone script makes it or appends the entry
-     * (InstanceImage::browserTrust). And the Playwright browser folder (self::BrowserEnvironment) for units and login shells: only a
+     * (InstanceImage::browserTrust). And the browser settings (self::browserEnvironment) for units and login shells: only a
      * new clone gets it, so a running container whose agent installed browsers into its own cache keeps finding them.
      *
      * @return list<array<string, int|string|list<string>>>
      */
-    private static function bootFiles(): array
+    private static function bootFiles(InstanceFolders $folders): array
     {
-        $browser = implode(' ', array_map(static fn (string $name, string $value): string => "{$name}={$value}",
-            array_keys(self::BrowserEnvironment), self::BrowserEnvironment));
+        $browser = implode(' ', self::assignments(self::browserEnvironment($folders)));
 
         return [
             ...array_map(static fn (array $file): array => ['path' => $file['path'], 'content' => $file['content'], 'uid' => $file['uid'],
@@ -961,6 +973,15 @@ final readonly class InstanceContainer
         $php = is_string($project->php_version) ? InstanceHostIntent::RuntimeFolder.'/current/php/'.$project->php_version.'/bin:' : '';
 
         return $php.InstanceHostIntent::RuntimeFolder.'/current/bin:/usr/local/bin:/usr/bin:/bin';
+    }
+
+    /**
+     * @param  array<string, string>  $environment
+     * @return list<string>
+     */
+    private static function assignments(array $environment): array
+    {
+        return array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment);
     }
 
     /** The recipe's shared folders; a Project update checks its container server against them too. */
