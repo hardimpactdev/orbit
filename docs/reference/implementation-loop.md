@@ -270,6 +270,8 @@ A case cost is a high percentile of hosted runs, not one run. When a case is add
 
 The fleet refresh fixture uses one case per unit. Its costs combine hosted observations for earlier cases with local estimates for the split refresh cases. Before a CI sweep admits another change to a fleet input, compare completed `ci-unit-times-*.json` case bodies with `case_costs` on main, matching exact case names, and the artifact's source hash with the file on main. Warn on an observation above its estimate and recalibrate before the next affected PR; do not count deadline cuts as completed samples. This is a sweep check, not an automatic CI warning.
 
+Fleet subsystem cases run the shipped caller tasks, with their variables, conditions and order intact. Task selection fails if a named boundary disappears or moves. Mount and agent waits keep their real retries and refusal checks; Swamp pin cases use the shipped result expressions. Cases that prove the complete refresh order, upgrade path or saved state still run every phase. The local fixture transport uses Ansible pipelining to avoid staging each module through a temporary file.
+
 The fleet reboot fixture uses six interleaved units. Each unit is costed from the slowest measured group, including the declared startup allowance. All cases remain in Required.
 
 The 40 seconds between the 150-second lane and the 190-second shard deadline is the headroom above that percentile. A case whose own cost plus startup exceeds the 150-second lane is split or made faster; it stays in pull requests.

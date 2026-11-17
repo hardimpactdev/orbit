@@ -4,6 +4,7 @@
  * configuration shape exported from a task base. The connection is local and nothing becomes root.
  */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import { parse } from "jsr:@std/yaml@1";
 import { createHash } from "node:crypto";
 
 const hasAnsible = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
@@ -160,6 +161,29 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
   const state = () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
   return {
     state,
+    /** Select shipped refresh callers, preserving their order, vars, conditions and loops. */
+    scopeRefresh(selection: string[] | { through: string }, resultFields: string[] = []) {
+      const path = `${folder}/tasks/instance-fleet-refresh.yml`;
+      // deno-lint-ignore no-explicit-any
+      const tasks = parse(Deno.readTextFileSync(path)) as Record<string, any>[];
+      let selected;
+      if (Array.isArray(selection)) {
+        selected = tasks.filter((task) => selection.includes(task.name));
+        assertEquals(selected.map((task) => task.name), selection);
+      } else {
+        assertEquals(tasks.filter((task) => task.name === selection.through).length, 1);
+        selected = tasks.slice(0, tasks.findIndex((task) => task.name === selection.through) + 1);
+      }
+      if (resultFields.length) {
+        const reports = selected.filter((task) => task.name === "Name what the refresh did");
+        assertEquals(reports.length, 1);
+        const result = reports[0]["ansible.builtin.set_fact"].fleet_refresh_result;
+        for (const field of resultFields) assert(Object.hasOwn(result, field), field);
+        // Keep the shipped expressions for this subsystem, without inventing unrelated facts for the full report.
+        reports[0]["ansible.builtin.set_fact"].fleet_refresh_result = Object.fromEntries(resultFields.map((field) => [field, result[field]]));
+      }
+      Deno.writeTextFileSync(path, JSON.stringify(selected));
+    },
     // The state is the fixture's JSON; a test edits any part of it.
     // deno-lint-ignore no-explicit-any
     change(edit: (value: Record<string, any>) => void) {
@@ -189,6 +213,8 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
           HOST_FIXTURE: folder,
           PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
           ANSIBLE_NOCOLOR: "1",
+          // Run the same modules over the local connection without staging each one in a temporary file.
+          ANSIBLE_PIPELINING: "true",
           ANSIBLE_HOME: `${folder}/ansible`,
           ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
           ANSIBLE_COLLECTIONS_PATH: "",
@@ -604,9 +630,9 @@ Deno.test({
   name: "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture(ruled(), { club: true, base: true });
+    const f = refreshedOnce();
     try {
-      assert(f.run("start").ok);
+      f.scopeRefresh(["Name the fleet commands", "Look for the Club key", "Wait for the state mounts"]);
       f.calls();
       f.change((state) => state.activating = 1);
       const refreshed = f.run("refresh");
@@ -614,9 +640,9 @@ Deno.test({
       const mounts = f.calls().filter((call) => call.includes("systemctl is-active home-orbit"));
       assertEquals(mounts.map((call) => call.split(" ")[2]), ["nested-gateway", "nested-gateway", "nested-app-dev"]);
 
-      const g = fixture(ruled(), { club: true, base: true });
+      const g = refreshedOnce();
       try {
-        assert(g.run("start").ok);
+        g.scopeRefresh(["Name the fleet commands", "Look for the Club key", "Wait for the state mounts"]);
         g.change((state) => state.activating = 1000);
         const failed = g.run("refresh", ["-e", "fleet_boot_seconds=2", "-e", "fleet_ready_delay=1"]);
         assert(!failed.ok);
@@ -1089,19 +1115,31 @@ Deno.test({
   name: "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture(ruled(), { base: true });
+    // Start from the verified running boundary; a missing record makes the shipped restart and converge due.
+    const due = () => {
+      const f = refreshedOnce();
+      f.change((state) => {
+        delete state.outer.files[record];
+        delete state.outer.files[clubKey];
+      });
+      f.scopeRefresh({ through: "Converge the due nested Nodes one at a time" });
+      return f;
+    };
+    const f = due();
     try {
-      assert(f.run("start").ok);
       f.calls();
       f.change((state) => state.agentsOffline = 2);
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
       const firstConverge = calls.findIndex((call) => call.includes("/converge "));
+      assert(firstConverge >= 0, calls.join("\n"));
+      const restart = calls.findIndex((call) => call.includes("systemctl restart orbit-gateway-horizon.service"));
+      const agents = calls.findIndex((call) => call.endsWith("--fail https://10.45.0.1/api/v1/nodes"));
+      assert(restart >= 0 && restart < agents && agents < firstConverge, calls.join("\n"));
       assertEquals(calls.slice(0, firstConverge).filter((call) => call.endsWith("--fail https://10.45.0.1/api/v1/nodes")).length, 3);
-      const g = fixture(ruled(), { base: true });
+      const g = due();
       try {
-        assert(g.run("start").ok);
         g.calls();
         g.change((state) => state.agentsOffline = -1);
         const failed = g.run("refresh", ["-e", "fleet_ready_seconds=2", "-e", "fleet_ready_delay=1"]);
@@ -2063,6 +2101,10 @@ Deno.test({
   fn() {
     const f = refreshedOnce();
     try {
+      f.scopeRefresh([
+        "Name the fleet commands", "Look for the Club key", "Read the recipe's Swamp release", "Read the binary that serve runs",
+        "Work out whether the recipe's Swamp is due", "Install the recipe's Swamp on the nested Gateway", "Name what the refresh did",
+      ], ["swamp", "swamp_reason", "swamp_version"]);
       // The fleet build's own folder of the recipe's sha256: nothing to install.
       const built = f.run("refresh");
       assert(built.ok, built.output);
