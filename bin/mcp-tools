@@ -149,6 +149,7 @@ def tool(method, path, operation, components):
         'path_inputs': path_inputs,
         'query_inputs': query_inputs,
         **({'header_inputs': header_inputs} if header_inputs else {}),
+        **({'bodyless': True} if operation.get('x-orbit-bodyless') is True else {}),
         'starts_operation': operation.get('x-orbit-operation') == 'start',
         'destructive': operation.get('x-orbit-destructive') is True,
         'input_schema': schema,

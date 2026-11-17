@@ -545,6 +545,23 @@ jobs:
         working-directory: .
         run: composer install --working-dir=apps/gateway --no-dev --no-interaction --prefer-dist
       - run: bun install --frozen-lockfile
+      - name: Prepare browser download cache
+        id: browser-downloads
+        run: |
+          echo "playwright=$(bun --print 'require("playwright/package.json").version')" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
+          mkdir -p "$HOME/.cache/orbit-playwright-apt"
+          sudo install -d -o _apt -m 0700 "$HOME/.cache/orbit-playwright-apt/partial"
+          printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            "$HOME/.cache/orbit-playwright-apt" | sudo tee /etc/apt/apt.conf.d/99-orbit-playwright-cache >/dev/null
+      - name: Cache browser downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/orbit-playwright-apt/*.deb
+          key: web-browsers-v1-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-pw${{ steps.browser-downloads.outputs.playwright }}-${{ steps.browser-downloads.outputs.image }}
+          restore-keys: web-browsers-v1-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-pw${{ steps.browser-downloads.outputs.playwright }}-
       - name: Install test browsers and system libraries
         run: bunx playwright install --with-deps --only-shell webkit chromium
       - name: Unit and verification tests

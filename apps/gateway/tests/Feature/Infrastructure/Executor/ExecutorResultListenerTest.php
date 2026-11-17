@@ -138,7 +138,7 @@ function executorEvent(int $nodeId, int|string $operation, array|string $line, ?
         'data' => json_encode(['operation' => (string) $operation, 'line' => is_string($line) ? $line : json_encode($line)])];
 }
 
-it('records a result on the Operation first, then pushes it with a 60 s expiry, apart from the accepted line', function (): void {
+it('records a result on the Operation first, then pushes it after the accepted line, with a 60 s expiry', function (): void {
     $id = $this->operation->id;
     $done = ['operation' => (string) $id, 'action' => 'proof.noop', 'target' => '7', 'status' => 'done', 'repeat' => false, 'node_clock_ms' => 1];
 
@@ -146,7 +146,7 @@ it('records a result on the Operation first, then pushes it with a 60 s expiry, 
 
     expect($this->operation->refresh()->executor_result)->toBe($done)
         ->and($this->queue->pushes)->toBe([
-            ['key' => ExecutorResults::acceptedKey($id), 'line' => '{"status":"accepted"}', 'expiry' => 60, 'recorded' => null],
+            ['key' => ExecutorResults::resultKey($id), 'line' => '{"status":"accepted"}', 'expiry' => 60, 'recorded' => null],
             ['key' => ExecutorResults::resultKey($id), 'line' => json_encode($done), 'expiry' => 60, 'recorded' => $done],
         ]);
 });
@@ -173,6 +173,8 @@ it('drops a result from another member, a malformed event, and an Operation of a
         // The contract is exact: a numeric string, and no other key.
         ['event' => 'client-executor-result', 'channel' => $channel, 'user_id' => $agent, 'data' => json_encode(['operation' => $id, 'line' => '{"status":"done"}'])],
         ['event' => 'client-executor-result', 'channel' => $channel, 'user_id' => $agent, 'data' => json_encode(['operation' => (string) $id, 'line' => '{"status":"done"}', 'order' => 'x'])],
+        executorEvent($this->node->id, $other->id, ['status' => 'accepted']),
+        executorEvent($this->node->id, $id + 1000, ['status' => 'accepted']),
         executorEvent($this->node->id, $other->id, ['status' => 'done', 'operation' => (string) $other->id]),
     ]);
 
@@ -183,7 +185,7 @@ it('drops a result from another member, a malformed event, and an Operation of a
         ->and($this->queue->pushes)->toBe([])
         ->and($messages['The agent view subscriber dropped an executor result from another member.'])->toBe(3)
         ->and($messages['The agent view subscriber dropped a malformed executor result.'])->toBe(6)
-        ->and($messages['The agent view subscriber dropped an executor result for an Operation that is not on its Node.'])->toBe(1);
+        ->and($messages['The agent view subscriber dropped an executor reply for an Operation that is not on its Node.'])->toBe(3);
 });
 
 it('logs a refusal and raises a Problem through the collector, with no broadcast from the loop', function (): void {
