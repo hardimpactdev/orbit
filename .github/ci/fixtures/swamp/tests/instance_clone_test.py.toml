@@ -119,7 +119,7 @@ cases = [
   "test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 150
+cost = 157
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
