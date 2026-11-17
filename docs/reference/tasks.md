@@ -246,7 +246,7 @@ A subtask outside the group returns 404. Only the first open subtask by position
 
 The copy rules are one fixed text, the same for the implementer and the reviewer. They name no command of one Project:
 
-- Build and prove the feature end to end in the copy, with its nested fleet when it has one, before its pull request: change, run, fix the next layer and repeat until the real end result works there. A release or a live window only confirms a working feature; it never finds its bugs. See [Build a feature in one copy](#build-a-feature-in-one-copy).
+- Build and prove the feature end to end in the copy before its pull request. The line also names the nested fleet, the loop and the release rule of [Build a feature in one copy](#build-a-feature-in-one-copy).
 - Run every command in the foreground. Leave none running when the turn ends.
 - The Project's long gates and full test sets are the work of the task check and CI (`task:check`). Run single test files by path.
 - Keep each new or changed test unit within the per-unit time cap of the Project's CI, which the task check prints.
@@ -1061,9 +1061,11 @@ One group never runs two of these at once, because the Gateway admits one task O
 
 Build and prove a feature end to end inside one task copy before any pull request opens. When the feature touches the fleet, use the copy's nested fleet.
 
-1. Work live in the copy: change, run, fix the next layer, and repeat until the real end result works there. For example, an app container serves a page, or a create, deploy or wake really succeeds.
+1. Work live in the copy. Change it, run it and fix the next layer until the real end result works there.
 2. Log each change you make by hand.
-3. Codify all of it in one pull request and prove it once. Split it only when a reviewer asks.
+3. Codify all of it in one pull request and prove it once. A reviewer may ask you to split it.
+
+The end result is the real one: an app container serves a page, or a create, deploy or wake succeeds.
 
 Never split a feature into pull requests that each wait for a release or a live window to find the next problem. A release or a window is the final proof of a working feature, never the way to find its bugs.
 
