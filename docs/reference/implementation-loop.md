@@ -5,7 +5,7 @@ covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
   - bin/{review-check,task-check,test,ci-build-plan,ci-units,ci-delivery,ci-tree-receipt,ci-proof-eligibility,ci-proof-run,ci-proof-manual,ci-cache-ref,ci-runner-prerequisites,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
-  - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
+  - "{tools/check_budget.py,tools/pest_runtime.py,bin/pest-plain,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py,user-manager.sh},agent_command.py}
   - .github/{ci/**,workflows/*.yml,actions/php/action.yml}
@@ -132,6 +132,8 @@ Gateway static analysis checks `nft --version` before its two real-kernel cases.
 Each attempt uses private source and index files, a three-second connection timeout and no retries. An incomplete index update fails the attempt. Update and install share ten seconds for Azure and twenty seconds for the fallback. At the deadline, the helper kills the attempt's process group. It verifies the installed commands and fails if neither attempt supplies them. The job limits remain two minutes.
 
 The required CI policy job runs alongside input selection and fixture execution, so its tests do not delay fixture startup. Its failure still fails Required and main delivery. The CI policy tests run actionlint on every tracked file under `.github/workflows` to check Actions syntax, types and context availability. The checker defaults to the same tracked files; explicit file arguments limit the check to those files. It downloads pinned actionlint 1.7.12 and verifies its archive's SHA-256 before extraction, including cache hits. Its runner-label catalog predates `ubuntu-26.04`, so the actionlint configuration adds that label explicitly.
+
+The shared delivery validator has one behavioral truth table in `tools/test_ci_delivery.py`; workflow tests check the PR and main wrappers' wiring. Tests of fixture costs share `tools/test_ci_cost_evidence.py`, while each fixture family keeps its own JSON observations. `bin/pest-plain` launches the test-run owner in `tools/pest_runtime.py`; that helper is not a discoverable test module.
 
 Gateway bootstrap tests supply a fixed RSA key at the process boundary. The key has 4096 bits and is only for tests. Random prime search cannot consume the test deadline before the database's lazy migrations. Certificate signing, SSH-key generation and migration execution remain real; the tests check the requested key size and that a second bootstrap generates no new CA key.
 

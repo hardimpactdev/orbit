@@ -267,16 +267,6 @@ class BuildPlanTest(unittest.TestCase):
         for path in ('apps/web/src/main.ts', 'apps/agent/AGENTS.md'):
             self.assertNotIn('agent', self.selected([path]), path)
 
-    def test_the_removed_pi_server_has_no_check(self):
-        self.assertNotIn('pi', plan.JOBS)
-        self.assertNotIn('\n  pi:\n', (plan.ROOT / '.github/workflows/ci.yml').read_text())
-        self.assertFalse((plan.ROOT / 'apps/pi-server').exists())
-        # The deletion itself is a diff: its paths keep a root that selects no job, so planning it does not raise.
-        for path in ('apps/pi-server/src/main.ts', 'apps/pi-server/.gitignore', 'apps/pi-server/README.md'):
-            with self.subTest(path=path):
-                plan.check_source_roots([path])
-                self.assertEqual(set(), self.selected([path]))
-
     def test_each_frozen_pin_file_runs_the_published_binary_contract_check(self):
         for name in ('frozen-manifest.json', 'frozen-commands.json', 'frozen-commands-source.json'):
             for main in (False, True):

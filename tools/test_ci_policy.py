@@ -115,57 +115,6 @@ class RequiredGateTest(unittest.TestCase):
         self.assertNotIn('  native-plan:', SOURCE)
         self.assertNotIn('  native-tests:', SOURCE)
 
-    def run_required(self, *, proof_required=False,
-                     fork=False, results=None, statuses=None, snapshots=None, selections=None):
-        import json
-        import os
-        import subprocess
-        import textwrap
-        from unittest.mock import patch
-        caller = (ROOT / '.github/workflows/ci.yml').read_text()
-        block = caller.split('  required:\n', 1)[1]
-        code = textwrap.dedent(block.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON', 1)[0])
-        jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
-        needs = {job: {'result': 'success'} for job in jobs}
-        needs['self-hosted-fixtures']['result'] = 'skipped'
-        selection = {job: True for job in jobs if job not in ('changes', 'ci-policy', 'gateway-release', 'fixtures', 'self-hosted-fixtures')}
-        selection['swamp'] = True
-        for name, value in (selections or {}).items():
-            if value is None:
-                selection.pop(name, None)
-            else:
-                selection[name] = value
-        needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false', 'fixture_shards': '[]', 'fixture_capacity': '[]', 'self_hosted_shards': '[]'}
-        rows = {name: {'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1} for name in (
-            'Swamp / Swamp shape gate', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests', 'CI proof')}
-        rows['CI proof eligibility'] = {'name': 'CI proof eligibility', 'status': 'completed', 'conclusion': 'success',
-                                        'id': 2, 'run_attempt': 1, 'steps': []}
-        for name, result in (results or {}).items():
-            if name in needs:
-                needs[name]['result'] = result
-            else:
-                rows[name].update(status='in_progress' if result == 'pending' else 'completed', conclusion=result)
-        env = {'NEEDS': json.dumps(needs), 'PROOF_REQUIRED': str(proof_required).lower(),
-               'FORK_PROOF': str(fork).lower(), 'SELF_HOSTED_FIXTURES': 'fork' if fork else 'run',
-               'CI_RUN_ID': '123',
-               'PROOF_SHA': 'a' * 40, 'GH_REPO': 'hardimpactdev/orbit',
-               'PROOF_RUN_URL_PREFIX': 'https://github.com/hardimpactdev/orbit/actions/runs/'}
-        snapshots = iter(snapshots or [list(rows.values())])
-        def api(argv, **options):
-            if '/statuses?' in argv[-1]:
-                return json.dumps([statuses or []]).encode()
-            self.assertEqual(argv[-1], 'repos/hardimpactdev/orbit/actions/runs/123/jobs?filter=all&per_page=100')
-            self.assertIn('--paginate', argv)
-            return json.dumps([{'jobs': next(snapshots)}]).encode()
-        result = None
-        with patch.dict(os.environ, env), patch.object(subprocess, 'check_output', side_effect=api) as github, \
-                patch('time.sleep') as sleep:
-            try:
-                exec(code, {})
-            except SystemExit as error:
-                result = error.code
-        return result, github, sleep
-
     def test_one_always_reporting_gate_requires_swamp_statically_and_waits_only_for_proof(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         self.assertIn("name: ${{ github.ref == 'refs/heads/main' && 'PR required checks' || 'Required checks' }}", caller)
@@ -180,101 +129,6 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn('      actions: read', block)
         # No switch makes the proof report-only (ADR 0262).
         self.assertNotIn('BLOCKING', block)
-
-    def test_every_other_selected_failure_or_skip_still_blocks(self):
-        for component in ('gateway-tests', 'cli-tests', 'sdk-tests', 'agent', 'php', 'swamp'):
-            for result in ('failure', 'cancelled', 'skipped'):
-                with self.subTest(component=component, result=result):
-                    error, _, _ = self.run_required(results={component: result})
-                    self.assertIsNotNone(error)
-
-    def test_gateway_pest_skip_requires_explicit_false_and_complete_boolean_selection(self):
-        error, _, _ = self.run_required(results={'gateway-tests': 'skipped'},
-                                         selections={'gateway-tests': False})
-        self.assertIsNone(error)
-        for selections in ({'gateway-tests': None}, {'gateway-tests': 'false'},
-                           {'gateway-tests': 0}, {'unexpected-job': True}):
-            with self.subTest(selections=selections):
-                error, _, _ = self.run_required(selections=selections)
-                self.assertEqual(error, 'Incomplete build selections')
-        error, _, _ = self.run_required(results={'changes': 'failure'})
-        self.assertEqual(error, 'Build input selection failed')
-
-    def test_cli_and_sdk_pest_skip_require_explicit_false_and_complete_boolean_selection(self):
-        for job in ('cli-tests', 'sdk-tests'):
-            error, _, _ = self.run_required(results={job: 'skipped'}, selections={job: False})
-            self.assertIsNone(error)
-            for value in (None, 'false', 0):
-                with self.subTest(job=job, selection=value):
-                    error, _, _ = self.run_required(selections={job: value})
-                    self.assertEqual(error, 'Incomplete build selections')
-
-    def test_an_unselected_proof_needs_no_api_wait_and_a_selected_one_always_gates(self):
-        for result in ('pending', 'failure', 'cancelled'):
-            error, github, sleep = self.run_required(results={'CI proof': result})
-            self.assertIsNone(error)
-            self.assertEqual(github.call_count, 0)
-            sleep.assert_not_called()
-        for result in ('failure', 'cancelled'):
-            error, _, _ = self.run_required(proof_required=True, results={'CI proof': result})
-            self.assertIsNotNone(error)
-
-    def test_default_requires_swamp_and_selected_proof_success(self):
-        for component in ('swamp', 'CI proof'):
-            for result in ('success', 'failure', 'skipped', 'cancelled'):
-                error, _, _ = self.run_required(proof_required=True, results={component: result})
-                self.assertEqual(error is None, result == 'success', (component, result, error))
-
-    def test_default_waits_for_jobs_missing_from_the_first_api_response(self):
-        rows = [{'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1} for name in (
-            'Swamp / Swamp shape gate', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests', 'CI proof')]
-        error, github, sleep = self.run_required(proof_required=True, snapshots=[[], rows])
-        self.assertIsNone(error)
-        self.assertEqual(github.call_count, 2)
-        sleep.assert_called_once_with(15)
-
-    def test_rerun_waits_for_the_newest_proof_attempt(self):
-        fast = [{'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1}
-                for name in ('Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests')]
-        old = {'name': 'CI proof', 'status': 'completed', 'conclusion': 'failure',
-               'id': 2, 'run_attempt': 1}
-        new = {**old, 'status': 'in_progress', 'conclusion': None, 'id': 3, 'run_attempt': 2}
-        done = {**new, 'status': 'completed', 'conclusion': 'success'}
-        error, github, sleep = self.run_required(proof_required=True, snapshots=[[*fast, new, old], [*fast, done, old]])
-        self.assertIsNone(error)
-        self.assertEqual(github.call_count, 2)
-        sleep.assert_called_once_with(15)
-        error, _, sleep = self.run_required(proof_required=True, snapshots=[[*fast, done]])
-        self.assertIsNone(error)
-        sleep.assert_not_called()
-
-    def test_fork_gate_requires_the_trusted_outside_proof_status(self):
-        good = {'context': 'Orbit outside proof', 'state': 'success',
-                'creator': {'login': 'github-actions[bot]'},
-                'target_url': 'https://github.com/hardimpactdev/orbit/actions/runs/123'}
-        for statuses, passed in (([], False), ([good], True),
-                                 ([{**good, 'state': 'pending'}, good], False),
-                                 ([{**good, 'creator': {'login': 'contributor'}}], False)):
-            error, _, _ = self.run_required(proof_required=True, fork=True, statuses=statuses)
-            self.assertEqual(error is None, passed, error)
-
-    def test_intentionally_ineligible_proof_skips_without_waiting_when_blocking(self):
-        rows = [{'name': 'CI proof eligibility', 'status': 'completed', 'conclusion': 'success',
-                 'id': 1, 'run_attempt': 1, 'steps': [{'name': 'Skip ineligible proof', 'conclusion': 'success'}]},
-                {'name': 'CI proof', 'status': 'completed', 'conclusion': 'skipped', 'id': 2, 'run_attempt': 1}]
-        error, github, sleep = self.run_required(proof_required=True, snapshots=[rows])
-        self.assertIsNone(error)
-        self.assertEqual(github.call_count, 1)
-        sleep.assert_not_called()
-
-    def test_failed_eligibility_and_unexpected_skip_fail_closed_without_waiting(self):
-        for result in ('failure', 'cancelled', 'skipped'):
-            error, github, sleep = self.run_required(proof_required=True, results={'CI proof eligibility': result, 'CI proof': 'skipped'})
-            self.assertEqual(error, f'Proof eligibility failed: {result}')
-            sleep.assert_not_called()
-        error, _, sleep = self.run_required(proof_required=True, results={'CI proof': 'skipped'})
-        self.assertIn('without ineligible metadata evidence', error)
-        sleep.assert_not_called()
 
     def proof_selected(self, context, key='PROOF_REQUIRED: '):
         """Evaluate the Required step's proof selection, a conjunction of `name == 'value'` terms, for one context."""
@@ -292,15 +146,8 @@ class RequiredGateTest(unittest.TestCase):
         selected_pr = {'github.event_name': 'pull_request', 'needs.changes.outputs.proof_run': 'true'}
         switched_off = self.proof_selected({**selected_pr, 'vars.ORBIT_PROOF_ENABLED': 'false'})
         self.assertFalse(switched_off)
-        error, _, sleep = self.run_required(proof_required=switched_off,
-                                            results={'CI proof eligibility': 'skipped', 'CI proof': 'skipped'})
-        self.assertIsNone(error)
-        sleep.assert_not_called()
         switched_on = self.proof_selected({**selected_pr, 'vars.ORBIT_PROOF_ENABLED': 'true'})
         self.assertTrue(switched_on)
-        error, _, _ = self.run_required(proof_required=switched_on,
-                                        results={'CI proof eligibility': 'skipped', 'CI proof': 'skipped'})
-        self.assertEqual(error, 'Proof eligibility failed: skipped')
         # Required keeps the proof's wait budget only while a proof can run.
         for switch in ('true', 'false'):
             self.assertEqual(self.proof_selected({**selected_pr, 'vars.ORBIT_PROOF_ENABLED': switch}, key='timeout-minutes: '),
@@ -308,24 +155,6 @@ class RequiredGateTest(unittest.TestCase):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         for job in ('proof-eligibility', 'proof-run'):
             self.assertIn("vars.ORBIT_PROOF_ENABLED == 'true'", caller.split(f'\n  {job}:\n', 1)[1].split('\n    runs-on:', 1)[0])
-
-    def test_missing_or_stale_eligibility_evidence_fails_closed(self):
-        from unittest.mock import patch
-        proof = {'name': 'CI proof', 'status': 'completed', 'conclusion': 'skipped', 'id': 2, 'run_attempt': 2}
-        eligibility = {'name': 'CI proof eligibility', 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1,
-                       'steps': [{'name': 'Skip ineligible proof', 'conclusion': 'success'}]}
-        error, _, sleep = self.run_required(proof_required=True, snapshots=[[proof, eligibility]])
-        self.assertIn('same attempt', error)
-        sleep.assert_not_called()
-        with patch('time.monotonic', side_effect=[0, 0, 61]):
-            error, _, sleep = self.run_required(proof_required=True, snapshots=[[proof]])
-        self.assertEqual(error, 'Missing proof eligibility evidence')
-        sleep.assert_not_called()
-        eligibility['run_attempt'] = 2
-        error, github, sleep = self.run_required(proof_required=True, snapshots=[[proof], [proof, eligibility]])
-        self.assertIsNone(error)
-        self.assertEqual(github.call_count, 2)
-        sleep.assert_called_once_with(15)
 
     def test_proof_preflight_is_selected_hosted_bounded_and_outside_required_dependencies(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
@@ -411,15 +240,6 @@ class RequiredGateTest(unittest.TestCase):
             block = re.search(r'^  ' + re.escape(name) + r':\n(.*?)(?=^  [\w-]+:|\Z)', caller, re.M | re.S).group(1)
             self.assertIn('runs-on: ubuntu-26.04', block)
         self.assertIn('runs-on: ubuntu-26.04', SOURCE.split('\n  validate:\n', 1)[1])
-
-    def test_swamp_skip_requires_explicit_false_and_never_uses_the_jobs_api(self):
-        error, github, _ = self.run_required(results={'swamp': 'skipped'}, selections={'swamp': False})
-        self.assertIsNone(error)
-        github.assert_not_called()
-        for value in (None, 'false', 0):
-            error, _, _ = self.run_required(selections={'swamp': value})
-            self.assertEqual(error, 'Incomplete build selections')
-
 
 if __name__ == '__main__':
     unittest.main()

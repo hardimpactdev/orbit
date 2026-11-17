@@ -186,11 +186,5 @@ if operation == 'install' and mode != 'no-tools':
             self.assertIn(f"vendor/bin/pest --default-time-limit=5 --group privileged {path} --filter 'on a real kernel'", gateway)
         self.assertEqual(gateway.count("ORBIT_REAL_KERNEL_TESTS: '1'"), 2)
 
-    def test_the_acl_prerequisites_of_the_removed_pi_job_are_refused(self):
-        result = self.run_helper('acl')
-        self.assertEqual(result.returncode, 2)
-        self.assertIn('Usage: ci-runner-prerequisites {nftables}', result.stderr)
-        self.assertEqual(self.calls, [])
-
 if __name__ == '__main__':
     unittest.main()

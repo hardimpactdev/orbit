@@ -2,4 +2,4 @@
 
 # Give the run a temporary directory before Pest starts and keep its output plain.
 set -euo pipefail
-exec python3 "$(dirname "${BASH_SOURCE[0]}")/../tools/test_runtime.py" "$@"
+exec python3 "$(dirname "${BASH_SOURCE[0]}")/../tools/pest_runtime.py" "$@"
