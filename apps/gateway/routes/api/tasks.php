@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\AgentThreadsController;
 use App\Http\Controllers\Api\DependencyBatchMergeController;
+use App\Http\Controllers\Api\ProofPoolController;
 use App\Http\Controllers\Api\ProofRunsController;
 use App\Http\Controllers\Api\TaskEgressController;
 use App\Http\Controllers\Api\TaskGroupsController;
@@ -58,6 +59,8 @@ Route::middleware([
             ->whereNumber('task')->name('task:comment:list');
         Route::post('proof/run', [ProofRunsController::class, 'store'])->name('proof:run');
         Route::post('proof/verify', [ProofRunsController::class, 'verify'])->name('proof');
+        Route::post('proof/pool/drain', [ProofPoolController::class, 'drain'])->name('proof:pool:drain');
+        Route::post('proof/pool/resume', [ProofPoolController::class, 'resume'])->name('proof:pool:resume');
 
         Route::post('tasks/{task}/sync', [TaskGroupsController::class, 'sync'])
             ->whereNumber('task')->middleware(RequireTaskLevel::class.':parent')->name('task:sync');

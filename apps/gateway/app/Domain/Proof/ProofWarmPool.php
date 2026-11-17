@@ -69,6 +69,22 @@ final readonly class ProofWarmPool
     }
 
     /**
+     * What proof:pool:drain and proof:pool:resume answer: whether the pool is drained, the warm copies that exist (also those whose
+     * destroy runs) and the copies of running proofs, by Instance id.
+     *
+     * @return array{drained: bool, warm_copies: list<int>, proof_copies: list<int>}
+     */
+    public function state(): array
+    {
+        $copies = ProofCopyHosts::copies()->orderBy('id')->get(['id', 'task_workspace_owner_id']);
+        $warm = ProofWarmCopy::query()->pluck('task_id')->all();
+
+        return ['drained' => $this->drained(),
+            'warm_copies' => ValidatedData::integerList($copies->whereIn('task_workspace_owner_id', $warm)->pluck('id')->values()->all()),
+            'proof_copies' => ValidatedData::integerList($copies->whereNotIn('task_workspace_owner_id', $warm)->pluck('id')->values()->all())];
+    }
+
+    /**
      * The warm copies that a proof may take now on each Node, by Node id: each is ready (ProofCopies::copyState) and from the proof
      * default's current seed.
      *

@@ -923,6 +923,23 @@ describe('proof:run in copies: the warm pool', function (): void {
         expect(ProofWarmCopy::query()->count())->toBe(2);
     });
 
+    it('drains and resumes over the API for a caller with Gateway access, and answers the warm and the running proof copies', function (): void {
+        app(ProofWarmPool::class)->keep();
+        $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+            'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '10.44.0.1', 'user' => 'orbit']));
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $warm = Instance::query()->whereIn('task_workspace_owner_id', ProofWarmCopy::query()->pluck('task_id'))->orderBy('id')->pluck('id')->all();
+
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1'])->postJson('/api/v1/proof/pool/drain')->assertOk()
+            ->assertJsonPath('data.drained', true)->assertJsonPath('data.warm_copies', $warm)->assertJsonPath('data.proof_copies', []);
+        expect(app(ProofWarmPool::class)->drained())->toBeTrue();
+
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1'])->postJson('/api/v1/proof/pool/resume')->assertOk()->assertJsonPath('data.drained', false);
+        // A Node without Gateway access is refused.
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.209'])->postJson('/api/v1/proof/pool/drain')->assertForbidden();
+        expect(app(ProofWarmPool::class)->drained())->toBeFalse();
+    });
+
     it('makes none with proof.warm_copies at 0', function (): void {
         config(['proof.warm_copies' => 0]);
 
