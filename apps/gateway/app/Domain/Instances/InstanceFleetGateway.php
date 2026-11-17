@@ -24,17 +24,20 @@ final class InstanceFleetGateway
     }
 
     /**
-     * The address of the egress proxy the fleet goes out through, as the fleet rules name it in `HTTPS_PROXY`, or null on any other
-     * Gateway. That address lies in the Instance container's own bridge, so no Instance bridge of the fleet may hold it
-     * (docs/reference/development-containers.md#instance-host-in-the-fleet).
+     * The egress proxy the fleet goes out through, as the fleet rules name it in `HTTPS_PROXY`, or null on any other Gateway: the one
+     * reader of it. Its address lies in the Instance container's own bridge, so no Instance bridge of the fleet may hold it, and the
+     * fleet Node's own egress proxy takes it as its only parent (docs/reference/development-containers.md#instance-host-in-the-fleet).
+     *
+     * @return array{host: string, port: int}|null
      */
-    public static function egressAddress(): ?string
+    public static function egressProxy(): ?array
     {
         $file = config()->string('instances.fleet_environment');
         if (! self::holds() || ! is_readable($file)) {
             return null;
         }
 
-        return preg_match('/^HTTPS_PROXY="https?:\/\/(\d{1,3}(?:\.\d{1,3}){3}):\d+"$/m', (string) file_get_contents($file), $match) === 1 ? $match[1] : null;
+        return preg_match('/^HTTPS_PROXY="https?:\/\/(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})"$/m', (string) file_get_contents($file), $match) === 1
+            ? ['host' => $match[1], 'port' => (int) $match[2]] : null;
     }
 }
