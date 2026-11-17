@@ -7,6 +7,8 @@ namespace App\Domain\Processes;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -186,7 +188,7 @@ final readonly class ProcessTargetResolver
     {
         $this->ensureLinux($instance->node);
 
-        // An Instance in a container runs its Processes as `orbit` units in the container, with the workspace's .env
+        // An Instance in a container runs its Processes as `www-data` units in the container, with the workspace's .env
         // (docs/reference/development-containers.md#processes).
         $runtime = $instance->runtime()->first();
         if ($runtime instanceof InstanceRuntime) {
@@ -194,12 +196,13 @@ final readonly class ProcessTargetResolver
 
             return new ProcessTarget(
                 node: $instance->node,
-                user: 'orbit',
+                user: InstanceHostIntent::AppUser,
                 checkoutPath: $directory,
                 instance: $instance,
                 environmentFile: "{$directory}/.env",
                 routeDomain: $this->developmentRouteDomain($instance),
-                container: ['instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name],
+                container: ['instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
+                    'app_account' => InstanceImage::appAccount()],
             );
         }
 
