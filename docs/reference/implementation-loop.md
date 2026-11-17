@@ -47,6 +47,8 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, task handoff pushes and manual runs use the same fast checks. Main can [reuse a green PR tree](#reuse-a-green-pr-tree-on-main).
 
+The separate [Git build watch](/reference/compute-drivers#show-and-validate-the-recipe) is an advisory update signal, not a Required check. Its job-wide timeouts bound upstream retries and pagination; only scheduled or manual main runs can publish an update issue.
+
 Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units on the shared Sabre and Shark runner pool. Ordinary and [tool-dependent fixture shards](#self-hosted-fixture-shards) both pack and run two workers. Fork pull requests run ordinary shards on GitHub-hosted runners. Self-hosted fixture jobs use the managed Deno and Python installations and persistent local fixture-tools cache; hosted jobs install and cache their tools in Actions.
 
 Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees. The expression-end fixture reads every workflow file and fails when an expression holds a `}}` before its end, because Swamp ends a `${{ … }}` expression at the first `}}`. Any change under `swamp/workflows` selects it.
