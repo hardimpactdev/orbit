@@ -1,0 +1,64 @@
+---
+# ExecStartPre runs only after the prior unit's processes have exited. Swamp
+# refetches these immutable bundles; cache/machine-id binds enrollment and stays.
+- name: Create the Swamp worker housekeeping drop-in folder
+  ansible.builtin.file:
+    path: /etc/systemd/system/orbit-swamp-worker@.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+- name: Bound worker bundle storage at the drained start boundary
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/orbit-swamp-worker@.service.d/50-bundle-retention.conf
+    content: |
+      [Service]
+      TimeoutStartSec=180
+      ExecStartPre=/usr/bin/rm -rf -- /var/lib/orbit-swamp-worker/%i/cache/bundles
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload units
+- name: Install native Swamp host housekeeping units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - name: orbit-swamp-housekeeping.service
+      content: |
+        [Unit]
+        Description=Bound Orbit Swamp host journals and regenerable caches
+
+        [Service]
+        Type=oneshot
+        Nice=19
+        IOSchedulingClass=idle
+        ExecStart=/usr/bin/journalctl --rotate --vacuum-size=256M
+        ExecStart=/usr/bin/apt-get clean
+        ExecStart=/usr/sbin/runuser -u {{ rt.swamp.user }} -- /usr/bin/git \
+          -C /home/{{ rt.swamp.user }}/apps/orbit-monorepo-staging/checkout \
+          -c gc.autoDetach=false -c pack.threads=1 -c pack.windowMemory=64m gc --prune=2.weeks.ago
+        TimeoutStartSec=10min
+    - name: orbit-swamp-housekeeping.timer
+      content: |
+        [Unit]
+        Description=Schedule Orbit Swamp host housekeeping
+
+        [Timer]
+        OnCalendar=hourly
+        RandomizedDelaySec=5min
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target
+  loop_control: { label: "{{ item.name }}" }
+  notify: Reload units
+- name: Enable host housekeeping without restarting Swamp
+  ansible.builtin.systemd_service:
+    name: orbit-swamp-housekeeping.timer
+    daemon_reload: true
+    enabled: true
+    state: started
