@@ -22,7 +22,7 @@
     container_host: { incus: "{{ instances.incus }}" }
 
 # An Incus that started before the drop-in, such as one installed by hand, takes it now.
-- name: Restart Incus with the drop-in
+- name: Restart Incus with the drop-in # noqa: no-handler -- host bridge preparation needs the restarted daemon
   when: fleet_node_apparmor.changed
   ansible.builtin.systemd_service: { name: incus.service, daemon_reload: true, state: restarted }
 
