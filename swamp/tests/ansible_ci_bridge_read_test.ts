@@ -5,6 +5,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { fileURLToPath } from "node:url";
+import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 
 const tasks = fileURLToPath(new URL("../ansible/tasks/ci-bridge-read.yml", import.meta.url));
 const hasAnsible = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
@@ -45,6 +46,13 @@ Deno.test("the role converge reads the CI bridge before the Instance branch and 
     const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-node-role-add.yaml", import.meta.url))) as
         { jobs: { name: string; steps: Record<string, unknown>[] }[] };
     const step = workflow.jobs.find((job) => job.name === "node")!.steps.find((item) => item.name === "Read the CI bridge")!;
-    assertEquals(step.guard, '${{ inputs.intent.role != "ci-runner" }}');
+    const cel = new Environment({ unlistedVariablesAreDyn: true });
+    for (const role of ["ci-runner", "app-dev"]) {
+        for (const unchanged of [[], ["node"], ["agent"]]) {
+            assertEquals(cel.evaluate((step.guard as string).slice(3, -2).trim(), {
+                inputs: { intent: { role } }, steps: { "Compare phase digests": { outputs: { unchanged } } },
+            }), role !== "ci-runner" || unchanged.includes("node"));
+        }
+    }
     assertEquals(step.dependsOn, [{ step: "Apply the role on the Node", condition: { type: "always" } }]);
 });

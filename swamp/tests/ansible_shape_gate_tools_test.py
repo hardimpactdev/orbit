@@ -4,7 +4,6 @@ import importlib.util
 import io
 import json
 import os
-import shutil
 import stat
 import subprocess
 import sys
@@ -15,8 +14,6 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from threading import Event
 from unittest import mock
-
-import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 ANSIBLE = ROOT / 'swamp/ansible'
@@ -227,8 +224,8 @@ class InstanceShapeToolsTest(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in self.tools.iterdir()), ['collections-bbbbbbbbbbbbbbbb', 'lock', 'venv-aaaaaaaaaaaaaaaa'])
         self.assertTrue((self.tools / 'collections-bbbbbbbbbbbbbbbb/ansible_collections').is_dir())
         galaxy = [call for call in calls if call.startswith(str(self.tools))]
-        self.assertEqual(galaxy, [f'{self.tools}/venv-aaaaaaaaaaaaaaaa/bin/ansible-galaxy collection install -r '
-                                  f'{self.workspace}/swamp/ansible/requirements.yml -p {self.tools}/collections-bbbbbbbbbbbbbbbb.partial'])
+        self.assertEqual(galaxy, [(f'{self.tools}/venv-aaaaaaaaaaaaaaaa/bin/ansible-galaxy collection install -r '
+                                  f'{self.workspace}/swamp/ansible/requirements.yml -p {self.tools}/collections-bbbbbbbbbbbbbbbb.partial')])
         self.assertFalse([call for call in calls if 'apt-get' in call], 'python3-venv was installed, so apt is not called')
         # A reader is `agent`: the folders are readable by others.
         self.assertEqual(stat.S_IMODE((self.tools / 'collections-bbbbbbbbbbbbbbbb').stat().st_mode) & 0o005, 0o005)

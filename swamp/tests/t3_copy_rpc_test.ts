@@ -8,12 +8,12 @@ const thread = "mcp:66105c2c";
 const run = "run:thread:mcp%3A66105c2c:ordinal:1";
 const token = "t3-session-" + "x".repeat(40);
 
-type Request = { id: string; kind: string; status: string };
+type Request = { id: string; kind: string; status: string; responseCapability?: { type: "message" | "live" }; runId?: string };
 // `interrupt` is how T3 takes a `run.interrupt`: `end` ends the run, `refuse` answers a failure, `stuck` accepts it but the run never ends.
-type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck";
+type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck"; respond?: "refuse" | "stuck" | "raced";
     projects?: { id: string; workspaceRoot: string; archivedAt: string | null }[] };
 
-/** Answers T3's ticket and RPC as T3 0.1.7 does, for one thread whose state the test sets. A stop ends the run and cancels its requests. */
+/** Answers T3's ticket and RPC as T3 0.1.7 does, for one thread whose state the test sets. A stop cancels live requests but leaves message-capability questions pending. */
 function serve(state: Server) {
     return Deno.serve({ port: 0, hostname: "127.0.0.1", onListen: () => {} }, (request) => {
         const url = new URL(request.url);
@@ -32,17 +32,24 @@ function serve(state: Server) {
             }
             if (frame._tag === "Interrupt") return;
             if (frame.tag === "orchestration.getThreadProjection") {
-                value = { thread: { id: thread }, runs: [{ id: run, status: state.runStatus }], runtimeRequests: state.requests,
+                value = { nodes: state.requests.map((r) => ({ id: `node:${r.id}`, runId: r.runId ?? run })), thread: { id: thread }, runs: [{ id: run, status: state.runStatus }], runtimeRequests: state.requests.map((r) => ({ ...r, nodeId: `node:${r.id}` })),
                     turnItems: Object.entries(state.questions).map(([requestId, questions]) => ({ type: "user_input_request", requestId, questions })) };
             } else {
                 state.commands.push(frame.payload);
-                if (state.interrupt === "refuse") {
+                if (frame.payload.type === "runtime-request.respond") {
+                    const target = state.requests.find((r) => r.id === frame.payload.requestId)!;
+                    if (state.respond !== "stuck" && state.respond !== "refuse") target.status = "resolved";
+                    if (state.respond === "refuse" || state.respond === "raced") {
+                        socket.send(JSON.stringify({ _tag: "Exit", requestId: frame.id, exit: { _tag: "Failure", cause: { _tag: "Fail", error: "request already answered or refused" } } }) + "\n");
+                        return;
+                    }
+                } else if (state.interrupt === "refuse") {
                     socket.send(JSON.stringify({ _tag: "Exit", requestId: frame.id, exit: { _tag: "Failure", cause: { _tag: "Fail", error: "run is not interruptible" } } }) + "\n");
                     return;
                 }
-                if (state.interrupt !== "stuck") {
+                if (frame.payload.type === "run.interrupt" && state.interrupt !== "stuck") {
                     state.runStatus = "interrupted";
-                    state.requests = state.requests.map((pending) => ({ ...pending, status: "cancelled" }));
+                    state.requests = state.requests.map((pending) => ({ ...pending, status: pending.responseCapability?.type === "message" ? pending.status : "cancelled" }));
                 }
                 value = { sequence: 9 };
             }
@@ -87,7 +94,8 @@ exit 2
 }
 
 const color = { id: "Which color?", header: "Color", question: "Which color?", options: [{ label: "Red", description: "Choose red" }], multiSelect: false };
-const waiting = (requests: Request[], questions: Record<string, unknown[]>): Server => ({ requests, questions, runStatus: "running", commands: [] });
+const waiting = (requests: Request[], questions: Record<string, unknown[]>): Server => ({ requests: requests.map((r) => ({ ...r,
+    responseCapability: r.responseCapability ?? { type: r.kind === "user_input" ? "message" : "live" } })), questions, runStatus: "running", commands: [] });
 
 Deno.test({ name: "the read prints every pending question in the result step's shape and stops nothing; free text without options is stored whole",
     ignore: !available, async fn() {
@@ -110,8 +118,11 @@ Deno.test({ name: "the read prints every pending question in the result step's s
 Deno.test({ name: "the stop ends the run only while it waits for exactly the stored questions", ignore: !available, async fn() {
     const state = waiting([{ id: "r1", kind: "user_input", status: "pending" }], { r1: [color] });
     const stopped = await helper(state, ["interrupt", thread, run, "r1"]);
-    assertEquals(stopped.out, { interrupted: true, error: null, runs: [], pending: 0 });
+    assertEquals(stopped.out, { interrupted: true, error: null, runs: [], pending: 1 });
     assertEquals([state.commands.length, state.commands[0].type, state.commands[0].runId, stopped.revoked], [1, "run.interrupt", run, ["session-1"]]);
+    // Claude's live question is cancelled by the same interrupt; Codex's message question above stays pending.
+    const claude = waiting([{ id: "r1", kind: "user_input", status: "pending", responseCapability: { type: "live" } }], { r1: [color] });
+    assertEquals((await helper(claude, ["interrupt", thread, run, "r1"])).out, { interrupted: true, error: null, runs: [], pending: 0 });
     // R1 was answered and the run now asks R2, or also raises an approval: the run goes on and R2 is not lost.
     for (const requests of [[{ id: "r2", kind: "user_input", status: "pending" }],
         [{ id: "r1", kind: "user_input", status: "pending" }, { id: "a1", kind: "approval", status: "pending" }]]) {
@@ -182,4 +193,41 @@ Deno.test({ name: "the create makes a thread of the workspace's project with the
     assert(String(refused.out!.error).includes("run is not interruptible"));
     const none = await helper(waiting([], {}), ["create", "Orbit task 1 thread 5", "codexHigh", "gpt-6.1-sol", "[]"]);
     assertEquals(none.out, { thread_id: null, error: "T3 holds no project at /srv/workspace." });
+} });
+
+Deno.test({ name: "answered resolves exactly the stored pending questions once and leaves unrelated requests alone", ignore: !available, async fn() {
+    const state = { ...waiting([
+        { id: "r1", kind: "user_input", status: "pending" },
+        { id: "r2", kind: "user_input", status: "pending", responseCapability: { type: "live" as const } },
+        { id: "r3", kind: "user_input", status: "cancelled" },
+        { id: "other", kind: "user_input", status: "pending" },
+        { id: "approval", kind: "approval", status: "pending" },
+    ], { r1: [color], r2: [color] }), runStatus: "interrupted" };
+    const resolved = await helper(state, ["answered", thread, "r1", "r2", "r1", "r3", "missing"]);
+    assertEquals([resolved.code, resolved.out, resolved.revoked], [0, { resolved: true, pending: [], error: null }, ["session-1"]]);
+    assertEquals(state.commands.map(({ commandId: _, ...command }) => command), ["r1", "r2"].map((requestId) => ({
+        type: "runtime-request.respond", threadId: thread, requestId, decision: "cancel",
+    })));
+    assertEquals(state.requests.filter((r) => r.status === "pending").map((r) => r.id), ["other", "approval"]);
+    state.commands = [];
+    assertEquals((await helper(state, ["answered", thread, "r1", "r2", "r3", "missing"])).out, { resolved: true, pending: [], error: null });
+    assertEquals(state.commands, []);
+} });
+
+Deno.test({ name: "answered confirms resolution after a concurrent answer and refuses a stored request that stays pending", ignore: !available, async fn() {
+    for (const respond of ["refuse", "stuck", "raced"] as const) {
+        const state = { ...waiting([{ id: "r1", kind: "user_input", status: "pending" }], { r1: [color] }), respond };
+        const done = await helper(state, ["answered", thread, "r1"]);
+        assertEquals([done.code, done.out!.resolved, done.out!.pending, done.revoked], [0, respond === "raced", respond === "raced" ? [] : ["r1"], ["session-1"]]);
+        assertEquals(done.out!.error === null, respond === "raced");
+    }
+    const approval = waiting([{ id: "a1", kind: "approval", status: "pending" }], {});
+    const refused = await helper(approval, ["answered", thread, "a1"]);
+    assertEquals([refused.out!.resolved, refused.out!.pending, approval.commands], [false, ["a1"], []]);
+} });
+
+Deno.test({ name: "interrupt never stops a new run for a stored question owned by an earlier run", ignore: !available, async fn() {
+    const state = waiting([{ id: "r1", kind: "user_input", status: "pending", runId: "run:earlier" }], { r1: [color] });
+    const done = await helper(state, ["interrupt", thread, run, "r1"]);
+    assertEquals([done.out!.interrupted, state.commands, state.runStatus], [false, [], "running"]);
 } });
