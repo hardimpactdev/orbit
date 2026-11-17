@@ -59,9 +59,17 @@ jobs:
         sudo: true
         timeoutSec: ${{ inputs.intent.horizon_drain_seconds + inputs.intent.horizon_drain_seconds + 60 }}
         argv:
-        - /bin/sh
-        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-drain.sh
-        - ${{ inputs.intent.horizon_unit }}
+        - '/bin/bash'
+        - '-c'
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:4}"; fi; shift 4; exec "$@"'
+        - 'bash'
+        - 'drain'
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+        - '${{ inputs.intent.horizon_unit }}'
+        - '/bin/sh'
+        - '/home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-drain.sh'
+        - '${{ inputs.intent.horizon_unit }}'
     # The release's own switch script, as an operator's rollback uses it: the links, a PHP-FPM reload and a restart of
     # the running services under the application, such as the scheduler and agent-view. Horizon starts after its drain.
     # A scheduler start pauses the release cleanups, so it first prints their generations for the cleanup step.
@@ -80,13 +88,21 @@ jobs:
         sudo: true
         timeoutSec: 180
         argv:
-        - /usr/bin/timeout
+        - '/usr/bin/timeout'
         - '150'
-        - /bin/sh
-        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-switch.sh
-        - ${{ inputs.intent.id }}
-        - ${{ inputs.intent.sha }}
-        - ${{ inputs.intent.horizon_unit }}
+        - '/bin/bash'
+        - '-c'
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:4}"; fi; shift 4; exec "$@"'
+        - 'bash'
+        - 'switch'
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+        - '${{ inputs.intent.previous }}'
+        - '/bin/sh'
+        - '/home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-switch.sh'
+        - '${{ inputs.intent.id }}'
+        - '${{ inputs.intent.sha }}'
+        - '${{ inputs.intent.horizon_unit }}'
     # A failed check fails no run by itself: the switch-back after it does, so its marker reaches the Gateway.
   - name: Verify the Gateway
     labels: {role: swamp}
@@ -131,12 +147,19 @@ jobs:
         sudo: true
         timeoutSec: 180
         argv:
-        - /usr/bin/timeout
+        - '/usr/bin/timeout'
         - '150'
-        - /bin/sh
-        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-switch-back.sh
-        - ${{ inputs.intent.id }}
-        - ${{ inputs.intent.previous }}
+        - '/bin/bash'
+        - '-c'
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:3}"; fi; shift 3; exec "$@"'
+        - 'bash'
+        - 'switch-back'
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+        - '/bin/sh'
+        - '/home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-switch-back.sh'
+        - '${{ inputs.intent.id }}'
+        - '${{ inputs.intent.previous }}'
     # Always, also after a failed drain, switch or check: the drain stopped Horizon, so every end of the run starts it again, on
     # the release that is live. Starting a running unit changes nothing.
   - name: Start Horizon
@@ -158,7 +181,18 @@ jobs:
         hosts: name:target
         sudo: true
         timeoutSec: 60
-        argv: [/usr/bin/systemctl, start, '${{ inputs.intent.horizon_unit }}']
+        argv:
+        - '/bin/bash'
+        - '-c'
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:4}"; fi; shift 4; exec "$@"'
+        - 'bash'
+        - 'start-horizon'
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+        - '${{ inputs.intent.horizon_unit }}'
+        - '/usr/bin/systemctl'
+        - 'start'
+        - '${{ inputs.intent.horizon_unit }}'
     # Only verified code with its new Horizon running may queue jobs from the new release. A failed check or Horizon
     # start admits nothing.
     # Best effort: each nested-fleet default deploys to this release, which refreshes its inner fleet and its seed
@@ -179,7 +213,22 @@ jobs:
       inputs:
         hosts: name:target
         timeoutSec: 150
-        argv: [/usr/bin/timeout, '120', /bin/sh, -c, 'cd "/home/orbit/releases/$1/apps/gateway" && php8.5 artisan instances:refresh-nested-fleets --commit="$2" --no-interaction', sh, '${{ inputs.intent.id }}', '${{ inputs.intent.sha }}']
+        argv:
+        - '/usr/bin/timeout'
+        - '120'
+        - '/bin/bash'
+        - '-c'
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:3}"; fi; shift 3; exec "$@"'
+        - 'bash'
+        - 'refresh'
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+        - '/bin/sh'
+        - '-c'
+        - 'cd "/home/orbit/releases/$1/apps/gateway" && php8.5 artisan instances:refresh-nested-fleets --commit="$2" --no-interaction'
+        - 'sh'
+        - '${{ inputs.intent.id }}'
+        - '${{ inputs.intent.sha }}'
     # Best effort: the scheduler restart paused the release cleanups; they resume once a reconciliation finds no
     # differences. One that stays paused fails this step and keeps its own status; the release stays live.
   - name: Resume document cleanup
@@ -199,14 +248,53 @@ jobs:
       inputs:
         hosts: name:target
         timeoutSec: 360
-        argv: [/usr/bin/timeout, '300', php8.5, /home/orbit/orbit/apps/gateway/artisan, gateway:release:cleanup, --no-interaction,
-          '${{ "--before=" + steps["Switch the release"].outputs.stdout }}']
+        argv:
+        - '/usr/bin/timeout'
+        - '300'
+        - '/bin/bash'
+        - '-c'
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:4}"; fi; shift 4; exec "$@"'
+        - 'bash'
+        - 'cleanup'
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+        - '${{ "--before=" + steps["Switch the release"].outputs.stdout }}'
+        - 'php8.5'
+        - '/home/orbit/orbit/apps/gateway/artisan'
+        - 'gateway:release:cleanup'
+        - '--no-interaction'
+        - '${{ "--before=" + steps["Switch the release"].outputs.stdout }}'
     # Best effort: keep the newest sealed releases, the current and the previous one; a later release retries.
+  - name: Retire the previous Gateway
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Verify the Gateway, condition: {type: succeeded}}
+    - {step: Start Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-retire-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 900
+        argv:
+        - /usr/bin/timeout
+        - '860'
+        - /bin/bash
+        - -c
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "$@"; fi'
+        - bash
+        - retire
+        - ${{ inputs.intent.sha }}
+        - '${{ string(inputs.operation_id) }}'
   - name: Prune old releases
     labels: {role: swamp}
     writes: true
     allowFailure: true
-    dependsOn: [{step: Verify the Gateway, condition: {type: succeeded}}]
+    dependsOn: [{step: Retire the previous Gateway, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -217,10 +305,17 @@ jobs:
         hosts: name:target
         timeoutSec: 360
         argv:
-        - /usr/bin/timeout
+        - '/usr/bin/timeout'
         - '300'
-        - /bin/bash
-        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-prune.sh
-        - ${{ string(inputs.intent.keep) }}
-        - ${{ inputs.intent.id }}
-        - ${{ inputs.intent.previous }}
+        - '/bin/bash'
+        - '-c'
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:3}"; fi; shift 3; exec "$@"'
+        - 'bash'
+        - 'prune'
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+        - '/bin/bash'
+        - '/home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-prune.sh'
+        - '${{ string(inputs.intent.keep) }}'
+        - '${{ inputs.intent.id }}'
+        - '${{ inputs.intent.previous }}'

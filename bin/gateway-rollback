@@ -11,6 +11,56 @@ base=${ORBIT_RELEASE_BASE:-/home/orbit}
 id=${1:-}
 fail() { echo "gateway-rollback: $*" >&2; exit 1; }
 
+if [[ -f $base/.orbit/gateway-containers.json ]]; then
+    [[ $EUID == 0 ]] || fail "run container recovery as root on the Gateway Node"
+    inventory=$base/.orbit/gateway-containers.json
+    journal=/var/lib/orbit/gateway-release-switch
+    phase=/usr/local/libexec/orbit-gateway-release-phase
+    live=$(jq -er '.live' "$inventory")
+    [[ $live =~ ^[a-f0-9]{40}$ ]] || fail "container inventory is unreadable"
+    exec 9<>"$base/.orbit/gateway-release.lock"
+    export ORBIT_GATEWAY_RELEASE_LOCK_HELD=1
+    flock -n 9 || fail "another Gateway release holds the lock"
+    if [[ $id == --recover ]]; then
+        test -f "$journal/operation" || fail "there is no interrupted traffic switch"
+        operation=$(cat "$journal/operation")
+        candidate=$(cat "$journal/candidate")
+        "$phase" restore "$candidate" "$operation"
+        exit
+    fi
+    [[ ! -e $journal/operation ]] || fail "an interrupted switch must first be restored with --recover"
+    old=$(jq -r '.old // ""' "$inventory")
+    horizon=$(cat "$journal/horizon" 2>/dev/null || :)
+    if [[ $id == --host ]]; then
+        [[ -z $old && $(cat "$base/orbit/REVISION") == "$live" ]] || fail "host rollback is available only just after the move"
+        operation=$(cat "$journal/last-operation")
+        "$phase" restore-host "$live" "$operation" "$horizon"
+        exit
+    fi
+    [[ $old =~ ^[a-f0-9]{40}$ && ( -z $id || $id == "${old:0:12}" ) ]] || fail "choose the retained rollback container"
+    # Recovery works when neither Swamp nor the Gateway answers. The saved local
+    # release Operation identifies this recovery. It does not create an Operation.
+    operation=$(cat "$journal/last-operation")
+    candidate() { "$phase" "$1" "$old" "$operation" "${@:2}"; }
+    candidate build true '{}' >/dev/null
+    candidate ready
+    candidate drain "$horizon"
+    if ! candidate switch "${live:0:12}" >/dev/null; then
+        candidate start-horizon "$horizon"
+        fail "traffic switch failed"
+    fi
+    if ! candidate public-ready; then
+        candidate restore
+        candidate start-horizon "$horizon"
+        fail "rollback verification failed; restored previous traffic"
+    fi
+    candidate start-horizon "$horizon"
+    candidate retire
+    candidate prune
+    echo "gateway-rollback: serving ${old:0:12}"
+    exit
+fi
+
 [[ $id =~ ^[0-9a-f]{12}$ ]] || { echo 'usage: sudo bin/gateway-rollback <12-digit release id>' >&2; exit 64; }
 sha=$(cat "$base/releases/$id/REVISION" 2>/dev/null) || fail "release $id is not sealed: $base/releases/$id/REVISION is missing"
 [[ $sha == "$id"* ]] || fail "release $id holds REVISION $sha"

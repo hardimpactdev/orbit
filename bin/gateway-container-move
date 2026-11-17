@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Run on the Gateway Node, after converging its role, with a copy of the published web zip.
+# A completed Gateway release Operation supplies the SHA, artifact digest, agent manifest and Horizon unit.
+set -euo pipefail
+umask 077
+operation=${1:-}
+archive=${2:-}
+[[ $EUID == 0 && $operation =~ ^[1-9][0-9]*$ && -f $archive ]] || {
+  echo 'usage: sudo bin/gateway-container-move <verified-release-operation-id> <published-web.zip>' >&2; exit 64;
+}
+root=/home/orbit
+app=$root/orbit/apps/gateway
+inventory=$root/.orbit/gateway-containers.json
+[[ ! -e $inventory ]] || { echo 'Gateway already has a container inventory' >&2; exit 1; }
+phase=/usr/local/libexec/orbit-gateway-release-phase
+test -x "$phase"
+test -x /usr/local/libexec/orbit-gateway-site
+sha=$(cat "$root/orbit/REVISION")
+[[ $sha =~ ^[a-f0-9]{40}$ ]] || { echo 'The serving host release has no sealed commit' >&2; exit 1; }
+# This is the same admission lock as normal releases. The host still serves during preparation.
+lock=$root/.orbit/gateway-release.lock
+if [[ ! -e $lock ]]; then runuser -u orbit -- touch "$lock"; fi
+exec 9<>"$lock"
+export ORBIT_GATEWAY_RELEASE_LOCK_HELD=1
+flock -n 9 || { echo 'Another Gateway release is active' >&2; exit 1; }
+receipt=$(runuser -u orbit -- php8.5 -r '
+  require $argv[1]."/vendor/autoload.php"; $app = require $argv[1]."/bootstrap/app.php";
+  $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+  if ($app->make(App\Domain\GatewayReleases\GatewayReleaseAutomation::class)->enabled()) {
+      fwrite(STDERR, "Disable automatic releases before the move.\n"); exit(1);
+  }
+  if (App\Models\GatewayRelease::query()->whereIn("outcome", ["running","queued"])->exists()) {
+      fwrite(STDERR, "A Gateway release is already queued or running.\n"); exit(1);
+  }
+  $op = App\Models\Operation::query()->whereKey($argv[2])->where("kind","gateway.release")->firstOrFail();
+  $release = App\Models\GatewayRelease::query()->findOrFail($op->target_id);
+  if ($release->outcome !== "verified" || $op->input["sha"] !== $argv[3] || $release->sha !== $argv[3]) {
+      fwrite(STDERR, "The selected Operation did not verify the currently serving commit.\n"); exit(1);
+  }
+  echo json_encode($op->input, JSON_THROW_ON_ERROR);
+' "$app" "$operation" "$sha")
+repo=$(jq -er '.repository' <<< "$receipt")
+digest=$(jq -er '.web.digest' <<< "$receipt")
+[[ $digest == "sha256:$(sha256sum "$archive" | cut -d' ' -f1)" ]] || { echo 'Web archive differs from the verified release' >&2; exit 1; }
+horizon=$(jq -r '.horizon_unit' <<< "$receipt")
+run_phase() { env ORBIT_GATEWAY_INITIAL_MOVE=1 ORBIT_GATEWAY_WEB_ARCHIVE_STDIN=1 "$phase" "$1" "$sha" "$operation" "${@:2}"; }
+run_phase build false "$(jq -er '.manifest' <<< "$receipt")" >/dev/null
+run_phase web "$repo" "$(jq -er '.web.artifact_id' <<< "$receipt")" "$(jq -er '.web.size' <<< "$receipt")" "$digest" < "$archive"
+run_phase clone "$digest"
+run_phase park-preparation
+run_phase wait-idle
+run_phase ready
+drained=false
+restore() {
+  rc=$?
+  trap - EXIT
+  if [[ $rc != 0 ]]; then
+    if [[ -f $inventory ]]; then run_phase switch-back || :; fi
+    if [[ $drained == true && -n $horizon ]]; then systemctl start "$horizon"; fi
+  fi
+  exit "$rc"
+}
+trap restore EXIT
+if [[ -n $horizon ]]; then
+  drained=true
+  "$root/orbit/swamp/scripts/gateway-release-drain.sh" "$horizon"
+fi
+run_phase switch '' >/dev/null
+run_phase public-ready
+run_phase start-horizon "$horizon"
+if [[ -n $horizon ]]; then systemctl disable "$horizon"; fi
+run_phase retire
+run_phase prune
+trap - EXIT
+printf 'Gateway %s is serving in its release container. Automatic releases remain disabled.\n' "$sha"

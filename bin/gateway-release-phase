@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# The permanent Gateway Node entry point. Swamp runs each phase from the admitted commit.
+set -euo pipefail
+phase=$1 sha=$2 operation=$3
+shift 3
+[[ $sha =~ ^[a-f0-9]{40}$ && $operation =~ ^[1-9][0-9]*$ ]] || exit 64
+repo=/home/orbit/shared/orbit.git
+script=swamp/scripts/gateway-release-container.sh
+git -c safe.directory="$repo" -C "$repo" cat-file -e "$sha:$script"
+exec bash <(git -c safe.directory="$repo" -C "$repo" show "$sha:$script") "$phase" "$sha" "$operation" "$@"
