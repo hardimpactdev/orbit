@@ -367,11 +367,14 @@ The part `chrome-headless-shell` pins Chrome 157.0.8103.78 from `nckrtl/conn`'s 
 
 Every container, with T3 or Conn, gives its agents one headless browser: [agent-browser](https://github.com/vercel-labs/agent-browser) on the agent folder's `chrome-headless-shell`. The Conn Server's preview uses the same executable. So each Node holds one pinned Chrome for both, and no agent downloads a browser.
 
-- **The program.** The part `agent-browser` pins the release's single Linux x64 binary, `agent-browser-linux-x64` from the tag `v<version>` of `vercel-labs/agent-browser`, with its SHA-256. Its `bin` link is `agent-browser`, on the `PATH` of T3 and Conn and so of their agents.
-- **The browser.** `AGENT_BROWSER_EXECUTABLE_PATH` names `/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`, the path of `CONN_SERVER_BROWSER_PATH`. agent-browser accepts any headless Chrome, so the version that Conn needs serves both.
-- **Where it is set.** Beside `PLAYWRIGHT_BROWSERS_PATH=0`, in the same places: the deploy steps' environment, and a new clone's two boot files for units and login shells ([Playwright browsers](#playwright-browsers)). An existing container gets it only when Orbit clones it again.
-- **Who runs it.** Only `agent`: the agent folder's programs open only for gid 2750. The Project's own Playwright keeps its own build.
-- **Why the agent folder.** The browser serves the agents and the Conn Server, not the app. The runtime folder holds what the app and its Processes run, for every user. Both folders are one copy per Node, so the choice changes no disk use.
+- **The program.** The part `agent-browser` pins one release binary, `agent-browser-linux-x64`, with its SHA-256. It comes from the tag `v<version>` of `vercel-labs/agent-browser`.
+- **The link.** Its `bin` link is `agent-browser`. It is on the `PATH` of T3 and Conn, and so on the `PATH` of their agents.
+- **The browser.** `AGENT_BROWSER_EXECUTABLE_PATH` names the same executable as `CONN_SERVER_BROWSER_PATH`. agent-browser accepts any headless Chrome. So the version that Conn needs serves both.
+- **Where it is set.** It is set beside `PLAYWRIGHT_BROWSERS_PATH=0`, in the same places ([Playwright browsers](#playwright-browsers)). Those are the deploy steps' environment and a new clone's two boot files.
+- **Existing containers.** An existing container gets it only when Orbit clones it again.
+- **Who runs it.** Only `agent` runs it, because only gid 2750 opens the agent folder's programs. The Project's own Playwright keeps its own build.
+
+The browser is in the agent folder because it serves the agents and the Conn Server, not the app. The runtime folder holds what the app and its Processes run, for every user. Both folders are one copy per Node, so the choice changes no disk use.
 
 The [environment notes](#environment-notes) tell agents to use `agent-browser` for a headless check on the server, and the browser panel of their client, T3 or Conn, for a check in a real browser.
 
