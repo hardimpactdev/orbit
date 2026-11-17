@@ -10,6 +10,10 @@ Swamp lives under `swamp/`. Read the binding [Swamp shape guide](swamp/docs/swam
 
 Before you build on something, check [old paths](docs/reference/old-paths.md): it lists what a newer path replaces and when it goes.
 
+## Build a feature end to end first
+
+Build and prove every feature end to end in one Orbit container, a task copy with its nested fleet when the feature touches the fleet, before any PR opens. Then ship it in one PR. A release or a live window only confirms a working feature. See [Build a feature in one copy](docs/reference/tasks.md#build-a-feature-in-one-copy).
+
 ## Quality bar
 
 - Read [Mission](docs/mission.md) and the reference page or ADR that owns the behaviour before you change it.
